@@ -1,0 +1,35 @@
+{{define "tournaments-list.html"}}
+<h1>Турниры</h1>
+
+<a href="/tournaments/new" class="button">Создать новый турнир</a>
+
+{{if .Tournaments}}
+<table class="card" style="width:100%; border-collapse:collapse; margin-top:20px;">
+    <thead>
+        <tr style="background:#eee;">
+            <th>Название</th>
+            <th>Автор</th>
+            <th>Дата создания</th>
+            <th>Действия</th>
+        </tr>
+    </thead>
+    <tbody>
+    {{range .Tournaments}}
+        <tr>
+            <td><a href="/tournaments/{{.ID}}">{{.Name}}</a></td>
+            <td>{{.Author.Name}}</td>
+            <td>{{.CreatedAt.Format "02.01.2006"}}</td>
+            <td>
+                <a href="/tournaments/{{.ID}}" class="button">Просмотр</a>
+            </td>
+        </tr>
+    {{end}}
+    </tbody>
+</table>
+{{else}}
+<div class="card" style="margin-top:20px;">
+    <p>Пока нет ни одного турнира.</p>
+    <p>Создайте турнир, чтобы объединить несколько игр в серию с общей таблицей результатов.</p>
+</div>
+{{end}}
+{{end}}

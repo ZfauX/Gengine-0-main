@@ -1,0 +1,27 @@
+{{define "auth-register.html"}}
+<h1>Регистрация</h1>
+{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
+<form action="/auth/register" method="POST">
+    <input type="hidden" name="_csrf" value="{{.csrf}}">
+    <div>
+        <label>Имя:</label>
+        <input type="text" name="name" required onkeypress="if(event.key === 'Enter') this.form.submit()">
+    </div>
+    <div>
+        <label>Email:</label>
+        <input type="email" name="email" required>
+    </div>
+    <div>
+        <label>Пароль:</label>
+        <input type="password" name="password" required minlength="6">
+    </div>
+    {{if .RecaptchaSiteKey}}
+    <div style="margin:15px 0;">
+        <div class="g-recaptcha" data-sitekey="{{.RecaptchaSiteKey}}"></div>
+        <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+    </div>
+    {{end}}
+    <button type="submit" class="button">Зарегистрироваться</button>
+</form>
+<a href="/auth/login">Уже есть аккаунт? Войти</a>
+{{end}}

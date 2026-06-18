@@ -1,0 +1,12 @@
+{{define "export_import-import.html"}}
+<h1>Импорт CSV</h1>
+{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
+<form action="/games/{{.GameID}}/import" method="POST" enctype="multipart/form-data">
+    <input type="hidden" name="_csrf" value="{{.csrf}}">
+    <input type="file" name="csvfile" accept=".csv" required>
+    <button type="submit">Загрузить</button>
+</form>
+<hr>
+<p>Формат CSV: level_position,level_name,question_text,hint,answers (ответы через |)</p>
+<p><a href="/games/{{.GameID}}/export" download>Скачать текущий CSV</a></p>
+{{end}}

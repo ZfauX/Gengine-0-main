@@ -1,0 +1,78 @@
+{{define "logs-list.html"}}
+<h1>Логи игры</h1>
+<div class="card">
+    <ul id="log-list">
+        {{range .Logs}}
+            <li>{{.CreatedAt.Format "15:04:05"}} — {{.Message}}</li>
+        {{end}}
+    </ul>
+    <div id="connection-status" style="margin-top:10px; font-size:0.9em; color:#888;"></div>
+</div>
+
+<script>
+    const gameID = "{{.GameID}}";
+    // Автоматическое определение протокола WebSocket
+    const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${location.host}/games/${gameID}/logs/ws`;
+    let socket;
+    let reconnectAttempts = 0;
+    let reconnectTimer = null;
+    const MAX_RECONNECT_DELAY = 30000;
+    const BASE_RECONNECT_DELAY = 1000;
+
+    function updateConnectionStatus(text, color = '#888') {
+        const el = document.getElementById('connection-status');
+        if (el) {
+            el.textContent = text;
+            el.style.color = color;
+        }
+    }
+
+    function connect() {
+        socket = new WebSocket(wsUrl);
+        socket.onopen = function() {
+            console.log('Логи: WebSocket подключён');
+            updateConnectionStatus('Подключено', '#2ecc71');
+            reconnectAttempts = 0;
+        };
+        socket.onmessage = function(e) {
+            const data = JSON.parse(e.data);
+            const li = document.createElement('li');
+            li.textContent = data.timestamp + " - " + data.message;
+            document.getElementById('log-list').appendChild(li);
+        };
+        socket.onclose = function(event) {
+            if (!event.wasClean) {
+                console.log('Логи: WebSocket обрыв, переподключаю...');
+            }
+            updateConnectionStatus('Переподключение...', '#e67e22');
+            scheduleReconnect();
+        };
+        socket.onerror = function(error) {
+            console.error('Логи: WebSocket ошибка', error);
+            updateConnectionStatus('Ошибка соединения', '#e74c3c');
+        };
+    }
+
+    function scheduleReconnect() {
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        const delay = Math.min(MAX_RECONNECT_DELAY, BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts));
+        reconnectAttempts++;
+        console.log(`Логи: переподключение через ${delay}ms (попытка ${reconnectAttempts})`);
+        updateConnectionStatus(`Переподключение через ${Math.round(delay/1000)}с...`, '#e67e22');
+        reconnectTimer = setTimeout(() => {
+            connect();
+        }, delay);
+    }
+
+    connect();
+
+    window.addEventListener('beforeunload', () => {
+        if (socket) {
+            socket.onclose = null;
+            socket.close();
+        }
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+    });
+</script>
+{{end}}

@@ -1,0 +1,41 @@
+{{define "games-new.html"}}
+<h1>Новая игра</h1>
+{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
+<form action="/games" method="POST" enctype="multipart/form-data">
+    <input type="hidden" name="_csrf" value="{{.csrf}}">
+    <div>
+        <label>Название:</label>
+        <input type="text" name="name" required>
+    </div>
+    <div>
+        <label>Описание:</label>
+        <textarea name="description" rows="4"></textarea>
+    </div>
+    <div>
+        <label>Дата и время начала:</label>
+        <input type="datetime-local" name="starts_at">
+    </div>
+    <div>
+        <label>Крайний срок регистрации:</label>
+        <input type="datetime-local" name="registration_deadline">
+    </div>
+    <div>
+        <label>Максимальное количество команд:</label>
+        <input type="number" name="max_team_number" value="10" min="1">
+    </div>
+    <div>
+        <label>Видимость:</label>
+        <select name="visibility">
+            <option value="public">Публичная</option>
+            <option value="private">Приватная</option>
+            <option value="unlisted">Скрытая</option>
+        </select>
+    </div>
+    <div>
+        <label>Обложка игры (опционально):</label>
+        <input type="file" name="cover" accept="image/jpeg,image/png,image/webp">
+    </div>
+    <button type="submit" class="button">Создать</button>
+</form>
+<a href="/games">Назад к списку</a>
+{{end}}

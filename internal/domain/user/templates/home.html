@@ -1,0 +1,19 @@
+{{define "home.html"}}
+<div style="text-align:center; padding:50px 20px;">
+    <h1>Добро пожаловать в Encounter Engine</h1>
+    <p style="font-size:1.2em; color:#555;">Платформа для создания и проведения городских, полевых и онлайн‑квестов</p>
+    
+    {{if .CurrentUserID}}
+        <div style="margin-top:30px;">
+            <a href="/dashboard" class="button">Личный кабинет</a>
+            <a href="/games" class="button">Игры</a>
+            <a href="/teams" class="button">Команды</a>
+        </div>
+    {{else}}
+        <div style="margin-top:30px;">
+            <a href="/auth/login" class="button">Войти</a>
+            <a href="/auth/register" class="button">Зарегистрироваться</a>
+        </div>
+    {{end}}
+</div>
+{{end}}

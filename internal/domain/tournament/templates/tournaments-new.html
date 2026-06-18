@@ -1,0 +1,33 @@
+{{define "tournaments-new.html"}}
+<h1>Новый турнир</h1>
+{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
+<form action="/tournaments" method="POST">
+    <input type="hidden" name="_csrf" value="{{.csrf}}">
+    <div>
+        <label>Название:</label>
+        <input type="text" name="name" required>
+    </div>
+    <div>
+        <label>Описание:</label>
+        <textarea name="description" rows="4"></textarea>
+    </div>
+    <div>
+        <label>Очки за 1 место:</label>
+        <input type="number" name="points_for_first" value="10" min="0">
+    </div>
+    <div>
+        <label>Очки за 2 место:</label>
+        <input type="number" name="points_for_second" value="7" min="0">
+    </div>
+    <div>
+        <label>Очки за 3 место:</label>
+        <input type="number" name="points_for_third" value="5" min="0">
+    </div>
+    <div>
+        <label>Очки за участие:</label>
+        <input type="number" name="points_for_participation" value="2" min="0">
+    </div>
+    <button type="submit" class="button">Создать</button>
+</form>
+<a href="/tournaments">Назад к списку</a>
+{{end}}

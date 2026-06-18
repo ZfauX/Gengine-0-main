@@ -1,0 +1,62 @@
+{{define "gameplay-show.html"}}
+<h1>Прохождение уровня: {{.Level.Name}}</h1>
+<div class="card">
+    <h2>{{.Level.Name}}</h2>
+    {{range .Level.Questions}}
+        <div style="margin-bottom:15px">
+            <p><strong>Вопрос:</strong> {{.Text}}</p>
+            {{if .Hint}}<p><em>Подсказка: {{.Hint}}</em></p>{{end}}
+        </div>
+    {{end}}
+
+    <form id="code-form" action="/game/{{.PassingID}}" method="POST" class="fade-in">
+        <input type="hidden" name="_csrf" value="{{.csrf}}">
+        <input type="text" name="code" placeholder="Введите код" required autofocus style="padding:8px; font-size:1.1em; width:200px;" onkeypress="if(event.key === 'Enter') this.form.submit()">
+        <button type="submit" class="button">Отправить</button>
+    </form>
+    <div id="message-area"></div>
+</div>
+
+<div class="card">
+    <h3>История попыток</h3>
+    <ul id="attempts-list">
+        {{range .Attempts}}
+            <li style="color:{{if .Success}}green{{else}}red{{end}}">
+                {{.Code}} — {{if .Success}}✅ Верно{{else}}❌ Неверно{{end}} <small>({{.CreatedAt.Format "15:04:05"}})</small>
+            </li>
+        {{end}}
+    </ul>
+</div>
+
+<script>
+    {{if .TimeLimitSeconds}}
+    let timeLimit = {{.TimeLimitSeconds}};
+    let timerDisplay = document.createElement('p');
+    timerDisplay.className = 'timer';
+    timerDisplay.style.fontSize = '1.5em';
+    document.querySelector('.card').prepend(timerDisplay);
+
+    function updateTimer() {
+        if (timeLimit <= 0) {
+            timerDisplay.textContent = 'Время вышло!';
+            timerDisplay.style.color = 'red';
+            document.getElementById('code-form').style.display = 'none';
+            return;
+        }
+        const mins = Math.floor(timeLimit / 60);
+        const secs = timeLimit % 60;
+        timerDisplay.textContent = `Осталось: ${mins}:${secs.toString().padStart(2,'0')}`;
+        timeLimit--;
+    }
+    updateTimer();
+    setInterval(updateTimer, 1000);
+    {{end}}
+
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('error')) {
+        const msg = document.getElementById('message-area');
+        msg.innerHTML = '<div class="error-flash pulse">Неверный код! Попробуйте ещё раз.</div>';
+        setTimeout(() => msg.innerHTML = '', 3000);
+    }
+</script>
+{{end}}

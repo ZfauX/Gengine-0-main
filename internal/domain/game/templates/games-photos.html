@@ -1,0 +1,112 @@
+{{define "games-photos.html"}}
+<h1>Фотогалерея игры</h1>
+
+<!-- Скрытый CSRF-токен для использования в JS -->
+<meta name="csrf-token" content="{{.csrf}}">
+
+<div class="card">
+    <form id="upload-photo-form" enctype="multipart/form-data">
+        <input type="hidden" name="_csrf" value="{{.csrf}}">
+        <input type="file" name="photo" accept="image/jpeg,image/png,image/webp" required>
+        <button type="submit" class="button">Загрузить фото</button>
+    </form>
+    <div id="upload-status" style="margin-top:10px;"></div>
+</div>
+
+<div class="card" id="photos-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(250px, 1fr)); gap:15px;">
+    {{range .Photos}}
+    <div class="photo-card" style="border:1px solid #ddd; border-radius:8px; overflow:hidden;">
+        <img src="{{.Path}}" alt="Фото" style="width:100%; height:200px; object-fit:cover; cursor:pointer;" onclick="openPhotoModal('{{.Path}}', '{{.User.Name}}', '{{.CreatedAt.Format "02.01.2006 15:04"}}')">
+        <div style="padding:10px;">
+            <p style="margin:0; font-size:0.9em;"><strong>{{.User.Name}}</strong></p>
+            <p style="margin:0; font-size:0.8em; color:#888;">{{.CreatedAt.Format "02.01.2006 15:04"}}</p>
+            {{if .Level}}
+                <p style="margin:0; font-size:0.8em;">Уровень: {{.Level.Name}}</p>
+            {{end}}
+            {{if or (eq .UserID $.CurrentUserID) $.IsManager}}
+                <button class="button danger" style="margin-top:5px; padding:4px 8px; font-size:0.8em;" onclick="deletePhoto({{.ID}})">Удалить</button>
+            {{end}}
+        </div>
+    </div>
+    {{else}}
+    <p>Фотографий пока нет.</p>
+    {{end}}
+</div>
+
+<!-- Модальное окно для просмотра фото -->
+<div id="photo-modal" style="display:none; position:fixed; z-index:1000; left:0; top:0; width:100%; height:100%; overflow:auto; background-color:rgba(0,0,0,0.9);" onclick="closePhotoModal()">
+    <span style="position:absolute; top:20px; right:35px; color:#f1f1f1; font-size:40px; font-weight:bold; cursor:pointer;">×</span>
+    <img id="modal-image" src="" style="display:block; margin:auto; max-width:90%; max-height:80%; margin-top:50px;">
+    <div id="modal-caption" style="text-align:center; color:#ccc; padding:10px 20px;"></div>
+</div>
+
+<script>
+    const gameID = "{{.GameID}}";
+    const currentUserID = {{.CurrentUserID}};
+
+    // Получить CSRF-токен из мета-тега
+    function getCsrfToken() {
+        return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    }
+
+    // Загрузка фото
+    document.getElementById('upload-photo-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const fileInput = this.querySelector('input[type="file"]');
+        const file = fileInput.files[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append('photo', file);
+        // Добавляем CSRF-токен для multipart-запроса
+        formData.append('_csrf', getCsrfToken());
+
+        fetch('/games/' + gameID + '/photos', {
+            method: 'POST',
+            body: formData
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                document.getElementById('upload-status').innerHTML = '<span style="color:red;">' + data.error + '</span>';
+            } else {
+                document.getElementById('upload-status').innerHTML = '<span style="color:green;">Фото загружено! Обновите страницу.</span>';
+                setTimeout(() => location.reload(), 1000);
+            }
+        })
+        .catch(err => {
+            document.getElementById('upload-status').innerHTML = '<span style="color:red;">Ошибка загрузки</span>';
+        });
+    });
+
+    // Просмотр фото
+    function openPhotoModal(src, author, date) {
+        document.getElementById('photo-modal').style.display = 'block';
+        document.getElementById('modal-image').src = src;
+        document.getElementById('modal-caption').textContent = author + ' — ' + date;
+    }
+
+    function closePhotoModal() {
+        document.getElementById('photo-modal').style.display = 'none';
+    }
+
+    // Удаление фото
+    function deletePhoto(photoID) {
+        if (!confirm('Удалить это фото?')) return;
+        fetch('/games/' + gameID + '/photos/' + photoID, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRF-TOKEN': getCsrfToken()
+            }
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'ok') {
+                location.reload();
+            } else {
+                alert('Ошибка удаления');
+            }
+        });
+    }
+</script>
+{{end}}

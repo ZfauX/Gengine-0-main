@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Encounter Engine</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; color: #333; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .nav { background: #2c3e50; padding: 10px 20px; color: white; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+        .nav a { color: white; text-decoration: none; margin-left: 15px; }
+        .button { display: inline-block; background: #3498db; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none; margin: 5px; }
+        .button:hover { background: #2980b9; }
+    </style>
+    {{block "head" .}}{{end}}
+</head>
+<body>
+    <div class="nav">
+        <span><a href="/">Encounter Engine</a></span>
+        <span>
+            {{if .CurrentUserID}}
+                <a href="/dashboard">Личный кабинет</a>
+                <a href="/games">Игры</a>
+                <a href="/teams">Команды</a>
+                <a href="/profile">Профиль</a>
+                <a href="/auth/logout">Выйти</a>
+            {{else}}
+                <a href="/auth/login">Войти</a>
+                <a href="/auth/register">Регистрация</a>
+            {{end}}
+        </span>
+    </div>
+    <div class="container">
+        {{if .ContentBlock}}
+            {{if eq .ContentBlock "admin-audit.html"}}
+                {{template "admin-audit.html" .}}
+            {{else if eq .ContentBlock "admin-backups.html"}}
+                {{template "admin-backups.html" .}}
+            {{else if eq .ContentBlock "admin-games.html"}}
+                {{template "admin-games.html" .}}
+            {{else if eq .ContentBlock "admin-users.html"}}
+                {{template "admin-users.html" .}}
+            {{else if eq .ContentBlock "calendar-page.html"}}
+                {{template "calendar-page.html" .}}
+            {{else if eq .ContentBlock "export_import-import.html"}}
+                {{template "export_import-import.html" .}}
+            {{else if eq .ContentBlock "co_authors-manage.html"}}
+                {{template "co_authors-manage.html" .}}
+            {{else if eq .ContentBlock "game_passings-apply.html"}}
+                {{template "game_passings-apply.html" .}}
+            {{else if eq .ContentBlock "game_passings-list.html"}}
+                {{template "game_passings-list.html" .}}
+            {{else if eq .ContentBlock "gameplay-show.html"}}
+                {{template "gameplay-show.html" .}}
+            {{else if eq .ContentBlock "gameplay-test.html"}}
+                {{template "gameplay-test.html" .}}
+            {{else if eq .ContentBlock "games-edit.html"}}
+                {{template "games-edit.html" .}}
+            {{else if eq .ContentBlock "games-list.html"}}
+                {{template "games-list.html" .}}
+            {{else if eq .ContentBlock "games-new.html"}}
+                {{template "games-new.html" .}}
+            {{else if eq .ContentBlock "games-photos.html"}}
+                {{template "games-photos.html" .}}
+            {{else if eq .ContentBlock "games-show.html"}}
+                {{template "games-show.html" .}}
+            {{else if eq .ContentBlock "notes-manage.html"}}
+                {{template "notes-manage.html" .}}
+            {{else if eq .ContentBlock "simulate-results.html"}}
+                {{template "simulate-results.html" .}}
+            {{else if eq .ContentBlock "answers-index.html"}}
+                {{template "answers-index.html" .}}
+            {{else if eq .ContentBlock "levels-edit.html"}}
+                {{template "levels-edit.html" .}}
+            {{else if eq .ContentBlock "levels-list.html"}}
+                {{template "levels-list.html" .}}
+            {{else if eq .ContentBlock "levels-new.html"}}
+                {{template "levels-new.html" .}}
+            {{else if eq .ContentBlock "levels-show.html"}}
+                {{template "levels-show.html" .}}
+            {{else if eq .ContentBlock "questions-edit.html"}}
+                {{template "questions-edit.html" .}}
+            {{else if eq .ContentBlock "questions-list.html"}}
+                {{template "questions-list.html" .}}
+            {{else if eq .ContentBlock "questions-new.html"}}
+                {{template "questions-new.html" .}}
+            {{else if eq .ContentBlock "questions-show.html"}}
+                {{template "questions-show.html" .}}
+            {{else if eq .ContentBlock "chat-page.html"}}
+                {{template "chat-page.html" .}}
+            {{else if eq .ContentBlock "logs-list.html"}}
+                {{template "logs-list.html" .}}
+            {{else if eq .ContentBlock "monitor-page.html"}}
+                {{template "monitor-page.html" .}}
+            {{else if eq .ContentBlock "follow-list.html"}}
+                {{template "follow-list.html" .}}
+            {{else if eq .ContentBlock "ratings-leaderboard.html"}}
+                {{template "ratings-leaderboard.html" .}}
+            {{else if eq .ContentBlock "reviews-new.html"}}
+                {{template "reviews-new.html" .}}
+            {{else if eq .ContentBlock "invitations-index.html"}}
+                {{template "invitations-index.html" .}}
+            {{else if eq .ContentBlock "invitations-my.html"}}
+                {{template "invitations-my.html" .}}
+            {{else if eq .ContentBlock "invitations-new.html"}}
+                {{template "invitations-new.html" .}}
+            {{else if eq .ContentBlock "teams-add_member.html"}}
+                {{template "teams-add_member.html" .}}
+            {{else if eq .ContentBlock "teams-change_captain.html"}}
+                {{template "teams-change_captain.html" .}}
+            {{else if eq .ContentBlock "teams-members.html"}}
+                {{template "teams-members.html" .}}
+            {{else if eq .ContentBlock "teams-my.html"}}
+                {{template "teams-my.html" .}}
+            {{else if eq .ContentBlock "teams-new.html"}}
+                {{template "teams-new.html" .}}
+            {{else if eq .ContentBlock "tournaments-add_game.html"}}
+                {{template "tournaments-add_game.html" .}}
+            {{else if eq .ContentBlock "tournaments-edit.html"}}
+                {{template "tournaments-edit.html" .}}
+            {{else if eq .ContentBlock "tournaments-list.html"}}
+                {{template "tournaments-list.html" .}}
+            {{else if eq .ContentBlock "tournaments-new.html"}}
+                {{template "tournaments-new.html" .}}
+            {{else if eq .ContentBlock "tournaments-show.html"}}
+                {{template "tournaments-show.html" .}}
+            {{else if eq .ContentBlock "achievements-list.html"}}
+                {{template "achievements-list.html" .}}
+            {{else if eq .ContentBlock "auth-forgot.html"}}
+                {{template "auth-forgot.html" .}}
+            {{else if eq .ContentBlock "auth-login.html"}}
+                {{template "auth-login.html" .}}
+            {{else if eq .ContentBlock "auth-register.html"}}
+                {{template "auth-register.html" .}}
+            {{else if eq .ContentBlock "auth-reset.html"}}
+                {{template "auth-reset.html" .}}
+            {{else if eq .ContentBlock "auth-verify_error.html"}}
+                {{template "auth-verify_error.html" .}}
+            {{else if eq .ContentBlock "auth-verify_success.html"}}
+                {{template "auth-verify_success.html" .}}
+            {{else if eq .ContentBlock "dashboard-index.html"}}
+                {{template "dashboard-index.html" .}}
+            {{else if eq .ContentBlock "home.html"}}
+                {{template "home.html" .}}
+            {{else if eq .ContentBlock "profile-public.html"}}
+                {{template "profile-public.html" .}}
+            {{else if eq .ContentBlock "profile-show.html"}}
+                {{template "profile-show.html" .}}
+            {{else}}
+                <p>Контент не указан.</p>
+            {{end}}
+        {{else}}
+            <p>Контент не указан.</p>
+        {{end}}
+    </div>
+    {{block "scripts" .}}{{end}}
+</body>
+</html>

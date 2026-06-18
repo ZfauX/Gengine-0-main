@@ -1,0 +1,66 @@
+{{define "game_passings-list.html"}}
+<h1>Заявки и прохождения игры</h1>
+
+{{if .Passings}}
+<table class="card" style="width:100%; border-collapse:collapse;">
+    <thead>
+        <tr style="background:#eee;">
+            <th>Команда</th>
+            <th>Капитан</th>
+            <th>Статус</th>
+            <th>Действия</th>
+        </tr>
+    </thead>
+    <tbody>
+    {{range .Passings}}
+        <tr>
+            <td>{{.Team.Name}}</td>
+            <td>{{.Team.Captain.Name}} ({{.Team.Captain.Email}})</td>
+            <td>
+                {{if eq .Status "pending"}}
+                    <span style="color:orange;">Ожидает</span>
+                {{else if eq .Status "accepted"}}
+                    <span style="color:blue;">Принята</span>
+                {{else if eq .Status "rejected"}}
+                    <span style="color:red;">Отклонена</span>
+                {{else if eq .Status "started"}}
+                    <span style="color:green;">Идёт игра</span>
+                {{else if eq .Status "finished"}}
+                    <span style="color:purple;">Завершена</span>
+                {{else if eq .Status "disqualified"}}
+                    <span style="color:darkred;">Дисквалифицирована</span>
+                {{else}}
+                    {{.Status}}
+                {{end}}
+            </td>
+            <td>
+                {{if eq .Status "pending"}}
+                <form action="/games/{{$.GameID}}/passings/{{.ID}}/status" method="POST" style="display:inline">
+                    <input type="hidden" name="_csrf" value="{{$.csrf}}">
+                    <input type="hidden" name="status" value="accepted">
+                    <button type="submit" class="button">Принять</button>
+                </form>
+                <form action="/games/{{$.GameID}}/passings/{{.ID}}/status" method="POST" style="display:inline">
+                    <input type="hidden" name="_csrf" value="{{$.csrf}}">
+                    <input type="hidden" name="status" value="rejected">
+                    <button type="submit" class="button danger">Отклонить</button>
+                </form>
+                {{else if eq .Status "accepted"}}
+                <form action="/games/{{$.GameID}}/passings/{{.ID}}/start" method="POST" style="display:inline">
+                    <input type="hidden" name="_csrf" value="{{$.csrf}}">
+                    <button type="submit" class="button">Начать игру</button>
+                </form>
+                {{end}}
+            </td>
+        </tr>
+    {{end}}
+    </tbody>
+</table>
+{{else}}
+<div class="card">
+    <p>Заявок пока нет.</p>
+</div>
+{{end}}
+
+<a href="/games/{{.GameID}}">Назад к игре</a>
+{{end}}

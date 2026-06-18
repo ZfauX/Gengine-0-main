@@ -1,0 +1,15 @@
+{{define "game_passings-apply.html"}}
+<h1>Подать заявку на игру</h1>
+{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
+<form action="/games/{{.GameID}}/apply" method="POST">
+    <input type="hidden" name="_csrf" value="{{.csrf}}">
+    <select name="team_id" required>
+        <option value="">-- выберите команду --</option>
+        {{range .Teams}}
+            <option value="{{.ID}}">{{.Name}}</option>
+        {{end}}
+    </select>
+    <button type="submit">Подать заявку</button>
+</form>
+<a href="/teams/new">Создать новую команду</a>
+{{end}}

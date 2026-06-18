@@ -1,0 +1,211 @@
+// internal/domain/game/model.go
+package game
+
+import (
+	"time"
+
+	"gengine-0/internal/domain/team" // возвращаем реальный Team
+	"gengine-0/internal/domain/user"
+	"gorm.io/gorm"
+)
+
+// ---------- локальные модели только для уровней / голосований ----------
+
+type gameLevel struct {
+	gorm.Model
+	GameID    uint           `gorm:"index"`
+	Name      string
+	Position  int
+	Questions []gameQuestion `gorm:"foreignKey:LevelID"`
+}
+
+func (gameLevel) TableName() string { return "levels" }
+
+type gameQuestion struct {
+	gorm.Model
+	LevelID uint
+	Text    string
+	Hint    string
+	Answers []gameAnswer `gorm:"foreignKey:QuestionID"`
+}
+
+func (gameQuestion) TableName() string { return "questions" }
+
+type gameAnswer struct {
+	gorm.Model
+	QuestionID uint
+	Code       string
+}
+
+func (gameAnswer) TableName() string { return "answers" }
+
+type gameBlackboxVotingSession struct {
+	gorm.Model
+	GamePassingID uint
+	LevelID       uint
+	IsOpen        bool
+	WinnerOption  string
+}
+
+func (gameBlackboxVotingSession) TableName() string { return "blackbox_voting_sessions" }
+
+// ---------- основные модели ----------
+
+type Game struct {
+	gorm.Model
+	Name                 string     `form:"name" binding:"required,min=2,max=100"`
+	Description          string     `form:"description" binding:"max=5000"`
+	AuthorID             uint       `gorm:"not null;index"`
+	Author               user.User  `gorm:"foreignKey:AuthorID"`
+	IsDraft              bool       `gorm:"default:true"`
+	Visibility           string     `gorm:"default:'public'" form:"visibility"`
+	StartsAt             *time.Time `form:"starts_at" time_format:"2006-01-02T15:04"`
+	RegistrationDeadline *time.Time `form:"registration_deadline" time_format:"2006-01-02T15:04"`
+	MaxTeamNumber        int        `gorm:"default:10" form:"max_team_number"`
+	CoverPath            string
+	Levels               []gameLevel                 `gorm:"foreignKey:GameID"`
+	GameSetting          GameSetting                 `gorm:"foreignKey:GameID"`
+	Passings             []GamePassing               `gorm:"foreignKey:GameID"`
+	Reviews              []Review                    `gorm:"foreignKey:GameID"`
+	CoAuthors            []CoAuthor                  `gorm:"foreignKey:GameID"`
+	Notes                []Note                      `gorm:"foreignKey:GameID"`
+}
+
+type GameSetting struct {
+	gorm.Model
+	GameID                  uint  `gorm:"uniqueIndex"`
+	AllowHints              bool  `gorm:"default:true"`
+	HintPenaltySeconds      int   `gorm:"default:300"`
+	MaxHints                int   `gorm:"default:3"`
+	PerLevelTimeLimit       int   `gorm:"default:0"`
+	HideAnswersUntilFinished bool `gorm:"default:false"`
+	AutoStart               bool  `gorm:"default:false"`
+}
+
+type GamePassing struct {
+	gorm.Model
+	GameID         uint              `gorm:"not null;index"`
+	TeamID         uint              `gorm:"not null;index"`
+	Status         GamePassingStatus `gorm:"default:'pending'"`
+	ResultDuration *time.Duration    `gorm:"type:bigint"`   // <-- добавлен тег
+	Place          *int
+	Game           Game                   `gorm:"foreignKey:GameID"`
+	Team           team.Team              `gorm:"foreignKey:TeamID"` // реальный Team из team
+	Progresses     []LevelProgress        `gorm:"foreignKey:GamePassingID"`
+	Logs           []Log                  `gorm:"foreignKey:GamePassingID"`
+	VotingSessions []gameBlackboxVotingSession `gorm:"foreignKey:GamePassingID"`
+}
+
+type LevelProgress struct {
+	gorm.Model
+	GamePassingID  uint      `gorm:"not null;index"`
+	LevelID        uint      `gorm:"not null"`
+	StartedAt      time.Time
+	FinishedAt     *time.Time
+	HintsUsed      int
+	PenaltySeconds int
+	GamePassing    GamePassing `gorm:"foreignKey:GamePassingID"`
+	Level          gameLevel   `gorm:"foreignKey:LevelID"`
+	Attempts       []Attempt   `gorm:"foreignKey:LevelProgressID"`
+}
+
+type Attempt struct {
+	gorm.Model
+	LevelProgressID uint          `gorm:"not null;index"`
+	Code            string
+	FilePath        string
+	IsFile          bool
+	Success         bool
+	LevelProgress   LevelProgress `gorm:"foreignKey:LevelProgressID"`
+}
+
+type CoAuthor struct {
+	gorm.Model
+	GameID uint      `gorm:"not null;uniqueIndex:idx_game_user"`
+	UserID uint      `gorm:"not null;uniqueIndex:idx_game_user"`
+	Role   string    `gorm:"default:'content'"`
+	Game   Game      `gorm:"foreignKey:GameID"`
+	User   user.User `gorm:"foreignKey:UserID"`
+}
+
+type Note struct {
+	gorm.Model
+	GameID  uint      `gorm:"not null;index"`
+	UserID  uint      `gorm:"not null"`
+	LevelID *uint
+	Text    string
+	Game    Game      `gorm:"foreignKey:GameID"`
+	User    user.User `gorm:"foreignKey:UserID"`
+	Level   gameLevel `gorm:"foreignKey:LevelID"`
+}
+
+type Review struct {
+	gorm.Model
+	GameID  uint      `gorm:"not null;index"`
+	UserID  uint      `gorm:"not null"`
+	Rating  int       `gorm:"not null"`
+	Comment string
+	Game    Game      `gorm:"foreignKey:GameID"`
+	User    user.User `gorm:"foreignKey:UserID"`
+}
+
+// Photo – фотография, загруженная в галерею игры.
+type Photo struct {
+	gorm.Model
+	GameID  uint      `gorm:"not null;index"`
+	UserID  uint      `gorm:"not null"`
+	LevelID *uint
+	Path    string
+	Game    Game      `gorm:"foreignKey:GameID"`
+	User    user.User `gorm:"foreignKey:UserID"`
+	Level   gameLevel `gorm:"foreignKey:LevelID"`
+}
+
+type PlayerRating struct {
+	gorm.Model
+	UserID uint      `gorm:"uniqueIndex"`
+	Score  int       `gorm:"default:0"`
+	User   user.User `gorm:"foreignKey:UserID"`
+}
+
+type Log struct {
+	gorm.Model
+	GamePassingID uint        `gorm:"not null;index"`
+	LevelID       uint
+	Message       string
+	GamePassing   GamePassing `gorm:"foreignKey:GamePassingID"`
+	Level         gameLevel   `gorm:"foreignKey:LevelID"`
+}
+
+type GameFilter struct {
+	Status   string
+	Search   string
+	DateFrom string
+	DateTo   string
+	ViewerID uint
+	AuthorID *uint
+}
+
+type GameSort struct {
+	Field string
+	Order SortOrder
+}
+
+type GamePassingStatus string
+
+const (
+	StatusPending       GamePassingStatus = "pending"
+	StatusAccepted      GamePassingStatus = "accepted"
+	StatusRejected      GamePassingStatus = "rejected"
+	StatusStarted       GamePassingStatus = "started"
+	StatusFinished      GamePassingStatus = "finished"
+	StatusDisqualified  GamePassingStatus = "disqualified"
+	StatusTesting       GamePassingStatus = "testing"
+)
+
+type SortOrder string
+
+const (
+	SortAsc  SortOrder = "asc"
+	SortDesc SortOrder = "desc"
+)

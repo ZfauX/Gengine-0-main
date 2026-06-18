@@ -1,0 +1,43 @@
+{{define "levels-edit.html"}}
+<h1>Редактирование уровня</h1>
+{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
+<form action="/games/{{.GameID}}/levels/{{.Level.ID}}/update" method="POST">
+    <input type="hidden" name="_csrf" value="{{.csrf}}">
+    <div>
+        <label>Название:</label>
+        <input type="text" name="name" value="{{.Level.Name}}" required>
+    </div>
+    <div>
+        <label>Описание:</label>
+        <textarea name="description" rows="4">{{.Level.Description}}</textarea>
+    </div>
+    <div>
+        <label>Позиция:</label>
+        <input type="number" name="position" value="{{.Level.Position}}" min="1">
+    </div>
+    <div>
+        <label>Тип уровня:</label>
+        <select name="type">
+            <option value="single" {{if eq .Level.Type "single"}}selected{{end}}>Обычный</option>
+            <option value="checkpoint" {{if eq .Level.Type "checkpoint"}}selected{{end}}>Чекпоинт</option>
+            <option value="parallel_group" {{if eq .Level.Type "parallel_group"}}selected{{end}}>Параллельная группа</option>
+            <option value="blackbox" {{if eq .Level.Type "blackbox"}}selected{{end}}>Чёрный ящик</option>
+            <option value="file_upload" {{if eq .Level.Type "file_upload"}}selected{{end}}>Файловый ответ</option>
+        </select>
+    </div>
+    <div>
+        <label>Требует подтверждения автором:</label>
+        <input type="checkbox" name="requires_confirmation" value="true" {{if .Level.RequiresConfirmation}}checked{{end}}>
+    </div>
+    <div>
+        <label>Широта (Latitude):</label>
+        <input type="text" name="latitude" value="{{.Level.Latitude}}" placeholder="например 55.7558">
+    </div>
+    <div>
+        <label>Долгота (Longitude):</label>
+        <input type="text" name="longitude" value="{{.Level.Longitude}}" placeholder="например 37.6173">
+    </div>
+    <button type="submit" class="button">Сохранить</button>
+</form>
+<a href="/games/{{.GameID}}/levels">Назад к уровням</a>
+{{end}}

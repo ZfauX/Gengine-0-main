@@ -1,0 +1,10 @@
+{{define "invitations-index.html"}}
+<h1>Приглашения в команду</h1>
+<a href="/games/{{.GameID}}/teams/{{.TeamID}}/invitations/new">Создать новое приглашение</a>
+<ul>
+{{range .Invitations}}
+    <li>{{.User.Name}} ({{.User.Email}}) — {{.Status}}</li>
+{{end}}
+</ul>
+<a href="/games/{{.GameID}}/teams/{{.TeamID}}/members">Назад к составу</a>
+{{end}}

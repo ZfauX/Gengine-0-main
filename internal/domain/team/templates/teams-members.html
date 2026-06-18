@@ -1,0 +1,28 @@
+{{define "teams-members.html"}}
+<h1>Состав команды "{{.Team.Name}}"</h1>
+<p>Капитан: {{.Team.Captain.Name}} ({{.Team.Captain.Email}})</p>
+
+<h2>Участники ({{len .Members}})</h2>
+<ul>
+{{range .Members}}
+    <li>
+        {{.Name}} ({{.Email}})
+        {{if and $.CanManage $.GameID}}
+            <form action="/games/{{$.GameID}}/teams/{{$.TeamID}}/members/{{.ID}}/remove" method="POST" style="display:inline">
+                <input type="hidden" name="_csrf" value="{{$.csrf}}">
+                <button type="submit">Удалить</button>
+            </form>
+        {{end}}
+    </li>
+{{end}}
+</ul>
+
+{{if and .CanManage .GameID}}
+<div>
+    <a href="/games/{{.GameID}}/teams/{{.TeamID}}/members/add" class="button">Добавить участника</a>
+    <a href="/games/{{.GameID}}/teams/{{.TeamID}}/change-captain" class="button">Сменить капитана</a>
+</div>
+{{else if .CanManage}}
+    <p>Для управления командой перейдите к игре, в которой участвует эта команда.</p>
+{{end}}
+{{end}}

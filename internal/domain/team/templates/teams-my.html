@@ -1,0 +1,11 @@
+{{define "teams-my.html"}}
+<h1>Мои команды</h1>
+<a href="/teams/new">Создать новую команду</a>
+<ul>
+{{range .Teams}}
+    <li><a href="/teams/{{.ID}}">{{.Name}}</a></li>
+{{else}}
+    <li>У вас пока нет команд. <a href="/teams/new">Создайте первую</a></li>
+{{end}}
+</ul>
+{{end}}

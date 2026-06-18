@@ -1,0 +1,36 @@
+package game
+
+import (
+    "gorm.io/gorm"
+)
+
+type PhotoService struct {
+    DB *gorm.DB
+}
+
+func NewPhotoService(db *gorm.DB) *PhotoService {
+    return &PhotoService{DB: db}
+}
+
+func (s *PhotoService) List(gameID uint) ([]Photo, error) {
+    var photos []Photo
+    err := s.DB.Preload("User").Preload("Level").
+        Where("game_id = ?", gameID).
+        Order("created_at DESC").
+        Find(&photos).Error
+    return photos, err
+}
+
+func (s *PhotoService) Create(photo *Photo) error {
+    return s.DB.Create(photo).Error
+}
+
+func (s *PhotoService) Delete(photoID, userID uint) error {
+    var photo Photo
+    if err := s.DB.First(&photo, photoID).Error; err != nil {
+        return err
+    }
+    // Удалить может только владелец фото или менеджер игры
+    // (проверка прав должна быть в обработчике)
+    return s.DB.Delete(&photo).Error
+}

@@ -1,0 +1,29 @@
+{{define "auth-login.html"}}
+<h1>Вход</h1>
+{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
+<form action="/auth/login" method="POST">
+    <input type="hidden" name="_csrf" value="{{.csrf}}">
+    <div>
+        <label>Email:</label>
+        <input type="email" name="email" required onkeypress="if(event.key === 'Enter') this.form.submit()">
+    </div>
+    <div>
+        <label>Пароль:</label>
+        <input type="password" name="password" required>
+    </div>
+    <button type="submit" class="button">Войти</button>
+</form>
+<div style="margin-top:15px; display:flex; flex-direction:column; gap:10px;">
+    <a href="/auth/register">Нет аккаунта? Зарегистрироваться</a>
+    <a href="/auth/forgot">Забыли пароль?</a>
+</div>
+
+<div style="margin-top:20px; border-top:1px solid #ddd; padding-top:15px;">
+    <p>Или войдите через:</p>
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <a href="/auth/oauth/google" class="button" style="background:#db4437;">Google</a>
+        <a href="/auth/oauth/github" class="button" style="background:#333;">GitHub</a>
+        <a href="/auth/oauth/yandex" class="button" style="background:#fc3f1d;">Яндекс</a>
+    </div>
+</div>
+{{end}}

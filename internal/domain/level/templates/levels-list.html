@@ -1,0 +1,33 @@
+{{define "levels-list.html"}}
+<h1>Уровни игры</h1>
+{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
+<a href="/games/{{.GameID}}/levels/new">Добавить уровень</a>
+<ul>
+{{range .Levels}}
+    <li>
+        <a href="/games/{{$.GameID}}/levels/{{.ID}}">{{.Name}}</a> (позиция: {{.Position}})
+        <a href="/games/{{$.GameID}}/levels/{{.ID}}/edit">✎</a>
+        <a href="/games/{{$.GameID}}/levels/{{.ID}}/questions">Вопросы</a>
+        <form action="/games/{{$.GameID}}/levels/{{.ID}}/duplicate" method="POST" style="display:inline">
+            <input type="hidden" name="_csrf" value="{{$.csrf}}">
+            <button type="submit" class="button">Дублировать</button>
+        </form>
+        <form action="/games/{{$.GameID}}/levels/{{.ID}}/move" method="POST" style="display:inline">
+            <input type="hidden" name="_csrf" value="{{$.csrf}}">
+            <input type="hidden" name="direction" value="up">
+            <button type="submit" class="button">↑</button>
+        </form>
+        <form action="/games/{{$.GameID}}/levels/{{.ID}}/move" method="POST" style="display:inline">
+            <input type="hidden" name="_csrf" value="{{$.csrf}}">
+            <input type="hidden" name="direction" value="down">
+            <button type="submit" class="button">↓</button>
+        </form>
+        <form action="/games/{{$.GameID}}/levels/{{.ID}}/delete" method="POST" style="display:inline">
+            <input type="hidden" name="_csrf" value="{{$.csrf}}">
+            <button type="submit" class="button danger" onclick="return confirm('Удалить уровень?')">Удалить</button>
+        </form>
+    </li>
+{{end}}
+</ul>
+<a href="/games/{{.GameID}}">Назад к игре</a>
+{{end}}

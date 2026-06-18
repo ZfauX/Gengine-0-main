@@ -1,0 +1,26 @@
+{{define "gameplay-test.html"}}
+<h1>Тестовое прохождение</h1>
+<h2>Уровень: {{.Level.Name}}</h2>
+<p>{{.Level.Description}}</p>
+{{range .Level.Questions}}
+    <div style="border:1px solid #ddd; margin:10px; padding:10px">
+        <p><strong>Вопрос:</strong> {{.Text}}</p>
+        {{if .Hint}}<p><em>Подсказка:</em> {{.Hint}}</p>{{end}}
+        <p><strong>Ответы:</strong></p>
+        <ul>
+        {{range .Answers}}
+            <li><span style="color:green">{{.Code}}</span></li>
+        {{end}}
+        </ul>
+    </div>
+{{end}}
+<form action="/testing/{{.PassingID}}" method="POST">
+    <input type="hidden" name="_csrf" value="{{.csrf}}">
+    <input type="text" name="code" placeholder="Введите код (любой)" onkeypress="if(event.key === 'Enter') this.form.submit()">
+    <button type="submit">Отправить код</button>
+</form>
+<form action="/testing/{{.PassingID}}/skip" method="POST" style="margin-top:10px">
+    <input type="hidden" name="_csrf" value="{{.csrf}}">
+    <button type="submit">Пропустить уровень</button>
+</form>
+{{end}}

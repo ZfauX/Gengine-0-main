@@ -1,0 +1,14 @@
+{{define "auth-forgot.html"}}
+<h1>Восстановление пароля</h1>
+{{if .Message}}<p style="color:green">{{.Message}}</p>{{end}}
+{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
+<form action="/auth/forgot" method="POST">
+    <input type="hidden" name="_csrf" value="{{.csrf}}">
+    <div>
+        <label>Введите ваш email:</label>
+        <input type="email" name="email" required onkeypress="if(event.key === 'Enter') this.form.submit()">
+    </div>
+    <button type="submit" class="button">Отправить инструкции</button>
+</form>
+<a href="/auth/login">Вернуться на страницу входа</a>
+{{end}}

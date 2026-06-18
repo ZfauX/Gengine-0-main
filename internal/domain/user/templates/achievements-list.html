@@ -1,0 +1,23 @@
+{{define "achievements-list.html"}}
+<h1>Мои достижения</h1>
+
+{{if .Achievements}}
+<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(250px, 1fr)); gap:15px; margin-top:20px;">
+    {{range .Achievements}}
+    <div class="card" style="text-align:center; padding:20px;">
+        <div style="font-size:2.5em; margin-bottom:10px;">{{.Icon}}</div>
+        <h3 style="margin:5px 0;">{{.Name}}</h3>
+        <p style="color:#666; font-size:0.9em;">{{.Description}}</p>
+    </div>
+    {{end}}
+</div>
+{{else}}
+<div class="card" style="text-align:center; padding:40px;">
+    <div style="font-size:3em; margin-bottom:15px;">🏆</div>
+    <h2>Пока нет достижений</h2>
+    <p>Участвуйте в играх, создавайте уровни, побеждайте — и здесь появятся ваши награды.</p>
+</div>
+{{end}}
+
+<a href="/profile" class="button" style="margin-top:20px;">Назад в профиль</a>
+{{end}}

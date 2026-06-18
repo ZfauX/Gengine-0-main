@@ -1,0 +1,114 @@
+{{define "profile-public.html"}}
+<h1>{{.ProfileUser.Name}}</h1>
+
+<meta name="csrf-token" content="{{.csrf}}">
+
+<div class="card">
+    <div style="display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap;">
+        <div style="flex-shrink:0;">
+            {{if .ProfileUser.AvatarPath}}
+                <img src="{{.ProfileUser.AvatarPath}}" alt="Аватар" style="width:120px; height:120px; border-radius:50%; object-fit:cover;">
+            {{else}}
+                <div style="width:120px; height:120px; border-radius:50%; background:#ddd; display:flex; align-items:center; justify-content:center; font-size:2em; color:#888;">
+                    {{if .ProfileUser.Name}}{{slice .ProfileUser.Name 0 1}}{{else}}?{{end}}
+                </div>
+            {{end}}
+        </div>
+        <div style="flex:1; min-width:200px;">
+            {{if and .IsOwner .ProfileUser.Email}}
+                <p style="color:#888;">{{.ProfileUser.Email}}</p>
+            {{end}}
+            <div style="margin-top:15px; display:grid; grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); gap:10px;">
+                <div style="text-align:center; padding:10px; background:#f9f9f9; border-radius:8px;">
+                    <div style="font-size:1.5em; font-weight:bold;">{{.GamesCreated}}</div>
+                    <div style="font-size:0.85em; color:#666;">игр создано</div>
+                </div>
+                <div style="text-align:center; padding:10px; background:#f9f9f9; border-radius:8px;">
+                    <div style="font-size:1.5em; font-weight:bold;">{{.GamesPlayed}}</div>
+                    <div style="font-size:0.85em; color:#666;">игр пройдено</div>
+                </div>
+                <div style="text-align:center; padding:10px; background:#f9f9f9; border-radius:8px;">
+                    <div style="font-size:1.5em; font-weight:bold;">{{.Wins}}</div>
+                    <div style="font-size:0.85em; color:#666;">побед</div>
+                </div>
+                <div style="text-align:center; padding:10px; background:#f9f9f9; border-radius:8px;">
+                    <div style="font-size:1.5em; font-weight:bold;">{{.Rating}}</div>
+                    <div style="font-size:0.85em; color:#666;">рейтинг</div>
+                </div>
+            </div>
+            {{if .CurrentUserID}}
+                {{if not .IsOwner}}
+                <div style="margin-top:15px;">
+                    {{if .IsFollowing}}
+                        <button class="button" onclick="toggleFollow({{.ProfileUser.ID}})" id="follow-btn">Отписаться</button>
+                    {{else}}
+                        <button class="button" onclick="toggleFollow({{.ProfileUser.ID}})" id="follow-btn">Подписаться</button>
+                    {{end}}
+                </div>
+                {{end}}
+            {{end}}
+        </div>
+    </div>
+</div>
+
+{{if .Achievements}}
+<h2>Достижения</h2>
+<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:10px; margin-top:15px;">
+    {{range .Achievements}}
+    <div class="card" style="text-align:center; padding:15px;">
+        <div style="font-size:2em; margin-bottom:5px;">{{.Icon}}</div>
+        <strong>{{.Name}}</strong>
+        <p style="font-size:0.85em; color:#666;">{{.Description}}</p>
+    </div>
+    {{end}}
+</div>
+{{end}}
+
+{{if .RecentGames}}
+<h2>Последние игры автора</h2>
+<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:15px; margin-top:15px;">
+    {{range .RecentGames}}
+    <div class="card">
+        {{if .CoverPath}}
+            <img src="{{.CoverPath}}" alt="{{.Name}}" style="width:100%; height:140px; object-fit:cover; border-radius:4px; margin-bottom:10px;">
+        {{end}}
+        <h3><a href="/games/{{.ID}}">{{.Name}}</a></h3>
+        <p style="font-size:0.9em; color:#666;">{{.CreatedAt.Format "02.01.2006"}}</p>
+        {{if .IsDraft}}<span style="color:orange;">Черновик</span>{{end}}
+    </div>
+    {{end}}
+</div>
+{{end}}
+
+<a href="/dashboard" class="button" style="margin-top:20px;">Назад</a>
+
+{{if and .CurrentUserID (not .IsOwner)}}
+<script>
+    function getCsrfToken() {
+        return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    }
+
+    async function toggleFollow(authorID) {
+        const btn = document.getElementById('follow-btn');
+        const isFollowing = btn.textContent.trim() === 'Отписаться';
+        const method = isFollowing ? 'DELETE' : 'POST';
+        try {
+            const r = await fetch('/follow/' + authorID, { 
+                method,
+                headers: {
+                    'X-CSRF-TOKEN': getCsrfToken()
+                }
+            });
+            const data = await r.json();
+            if (data.status === 'followed') {
+                btn.textContent = 'Отписаться';
+            } else if (data.status === 'unfollowed') {
+                btn.textContent = 'Подписаться';
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    }
+</script>
+{{end}}
+{{end}}

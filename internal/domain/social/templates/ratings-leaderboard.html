@@ -1,0 +1,23 @@
+{{define "ratings-leaderboard.html"}}
+<h1>Рейтинг игроков</h1>
+<table class="card" style="width:100%; border-collapse:collapse;">
+    <thead>
+        <tr style="background:#eee;">
+            <th>Место</th><th>Игрок</th><th>Очки</th>
+        </tr>
+    </thead>
+    <tbody>
+    {{range .Entries}}
+        <tr>
+            <td>{{.Place}}</td>
+            <td><a href="/users/{{.User.ID}}">{{.User.Name}}</a></td>
+            <td>{{.Score}}</td>
+        </tr>
+    {{else}}
+        <tr>
+            <td colspan="3" style="text-align:center;">Рейтинг пока пуст</td>
+        </tr>
+    {{end}}
+    </tbody>
+</table>
+{{end}}

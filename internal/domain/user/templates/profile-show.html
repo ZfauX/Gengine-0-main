@@ -1,0 +1,147 @@
+{{define "profile-show.html"}}
+<h1>Личный кабинет</h1>
+
+<div class="card">
+    <div style="display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap;">
+        <div style="flex-shrink:0;">
+            {{if .User.AvatarPath}}
+                <img src="{{.User.AvatarPath}}" alt="Аватар" style="width:120px; height:120px; border-radius:50%; object-fit:cover;">
+            {{else}}
+                <div style="width:120px; height:120px; border-radius:50%; background:#ddd; display:flex; align-items:center; justify-content:center; font-size:2em; color:#888;">
+                    {{if .User.Name}}{{slice .User.Name 0 1}}{{else}}?{{end}}
+                </div>
+            {{end}}
+            <form action="/profile/upload-avatar" method="POST" enctype="multipart/form-data" style="margin-top:10px;">
+                <input type="hidden" name="_csrf" value="{{.csrf}}">
+                <input type="file" name="avatar" accept="image/jpeg,image/png,image/webp" onchange="this.form.submit()" style="display:none;" id="avatar-input">
+                <button type="button" class="button" onclick="document.getElementById('avatar-input').click()" style="width:100%;">Изменить</button>
+            </form>
+        </div>
+        <div style="flex:1; min-width:250px;">
+            <form action="/profile/update" method="POST">
+                <input type="hidden" name="_csrf" value="{{.csrf}}">
+                <div style="margin-bottom:10px;">
+                    <label>Имя:</label>
+                    <input type="text" name="name" value="{{.User.Name}}" required>
+                </div>
+                <div style="margin-bottom:10px;">
+                    <label>Email:</label>
+                    <input type="email" name="email" value="{{.User.Email}}" required>
+                </div>
+                <button type="submit" class="button">Сохранить изменения</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="card" style="margin-top:20px;">
+    <h3>Сменить пароль</h3>
+    {{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
+    <form action="/profile/change-password" method="POST">
+        <input type="hidden" name="_csrf" value="{{.csrf}}">
+        <div style="margin-bottom:10px;">
+            <label>Текущий пароль:</label>
+            <input type="password" name="old_password" required>
+        </div>
+        <div style="margin-bottom:10px;">
+            <label>Новый пароль:</label>
+            <input type="password" name="new_password" required minlength="6">
+        </div>
+        <button type="submit" class="button">Сменить пароль</button>
+    </form>
+</div>
+
+<div class="card" style="margin-top:20px;">
+    <h3>Достижения</h3>
+    {{if .Achievements}}
+    <div style="display:flex; flex-wrap:wrap; gap:10px;">
+        {{range .Achievements}}
+        <div style="text-align:center; padding:10px; border:1px solid #ddd; border-radius:8px; min-width:80px;">
+            <div style="font-size:1.5em;">{{.Icon}}</div>
+            <div style="font-size:0.8em;">{{.Name}}</div>
+        </div>
+        {{end}}
+    </div>
+    {{else}}
+    <p>Пока нет достижений. <a href="/achievements">Посмотреть все достижения</a></p>
+    {{end}}
+    <a href="/achievements" class="button" style="margin-top:10px;">Все достижения</a>
+</div>
+
+<div class="card" style="margin-top:20px;">
+    <h3>Настройки уведомлений</h3>
+    <p style="color:#888;">Настройте, какие уведомления вы хотите получать и через какие каналы.</p>
+    <div id="notification-settings">
+        <div class="setting-row">
+            <span>Новая игра от подписанного автора</span>
+            <label><input type="checkbox" class="notif-toggle" data-event="new_game" data-channel="web" checked onchange="updateNotificationSetting()"> Web</label>
+            <label><input type="checkbox" class="notif-toggle" data-event="new_game" data-channel="email" onchange="updateNotificationSetting()"> Email</label>
+            <label><input type="checkbox" class="notif-toggle" data-event="new_game" data-channel="push" onchange="updateNotificationSetting()"> Push</label>
+        </div>
+        <div class="setting-row">
+            <span>Старт игры</span>
+            <label><input type="checkbox" class="notif-toggle" data-event="game_start" data-channel="web" checked onchange="updateNotificationSetting()"> Web</label>
+            <label><input type="checkbox" class="notif-toggle" data-event="game_start" data-channel="email" onchange="updateNotificationSetting()"> Email</label>
+            <label><input type="checkbox" class="notif-toggle" data-event="game_start" data-channel="push" checked onchange="updateNotificationSetting()"> Push</label>
+        </div>
+        <div class="setting-row">
+            <span>Финиш игры</span>
+            <label><input type="checkbox" class="notif-toggle" data-event="game_finish" data-channel="web" checked onchange="updateNotificationSetting()"> Web</label>
+            <label><input type="checkbox" class="notif-toggle" data-event="game_finish" data-channel="email" onchange="updateNotificationSetting()"> Email</label>
+            <label><input type="checkbox" class="notif-toggle" data-event="game_finish" data-channel="push" checked onchange="updateNotificationSetting()"> Push</label>
+        </div>
+        <div class="setting-row">
+            <span>Приглашение в команду</span>
+            <label><input type="checkbox" class="notif-toggle" data-event="team_invitation" data-channel="web" checked onchange="updateNotificationSetting()"> Web</label>
+            <label><input type="checkbox" class="notif-toggle" data-event="team_invitation" data-channel="email" checked onchange="updateNotificationSetting()"> Email</label>
+            <label><input type="checkbox" class="notif-toggle" data-event="team_invitation" data-channel="push" checked onchange="updateNotificationSetting()"> Push</label>
+        </div>
+        <div class="setting-row">
+            <span>Изменение в составе команды</span>
+            <label><input type="checkbox" class="notif-toggle" data-event="team_change" data-channel="web" checked onchange="updateNotificationSetting()"> Web</label>
+            <label><input type="checkbox" class="notif-toggle" data-event="team_change" data-channel="email" onchange="updateNotificationSetting()"> Email</label>
+            <label><input type="checkbox" class="notif-toggle" data-event="team_change" data-channel="push" onchange="updateNotificationSetting()"> Push</label>
+        </div>
+        <div class="setting-row">
+            <span>Получен отзыв на игру</span>
+            <label><input type="checkbox" class="notif-toggle" data-event="review_received" data-channel="web" checked onchange="updateNotificationSetting()"> Web</label>
+            <label><input type="checkbox" class="notif-toggle" data-event="review_received" data-channel="email" onchange="updateNotificationSetting()"> Email</label>
+            <label><input type="checkbox" class="notif-toggle" data-event="review_received" data-channel="push" onchange="updateNotificationSetting()"> Push</label>
+        </div>
+    </div>
+</div>
+
+<div style="margin-top:20px; display:flex; gap:10px; flex-wrap:wrap;">
+    <a href="/dashboard" class="button">Назад в личный кабинет</a>
+    <a href="/users/{{.User.ID}}" class="button" target="_blank">Публичный профиль</a>
+    <form action="/auth/logout" method="POST" style="display:inline">
+        <input type="hidden" name="_csrf" value="{{.csrf}}">
+        <button type="submit" class="button danger">Выйти</button>
+    </form>
+</div>
+
+<script>
+    async function updateNotificationSetting() {
+        const toggles = document.querySelectorAll('.notif-toggle');
+        const settings = {};
+        toggles.forEach(toggle => {
+            const event = toggle.dataset.event;
+            const channel = toggle.dataset.channel;
+            if (!settings[event]) settings[event] = {};
+            settings[event][channel] = toggle.checked;
+        });
+        try {
+            await fetch('/api/notifications/settings', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                },
+                body: JSON.stringify(settings)
+            });
+        } catch (err) {
+            console.error('Ошибка сохранения настроек уведомлений:', err);
+        }
+    }
+</script>
+{{end}}

@@ -1,0 +1,80 @@
+{{define "tournaments-show.html"}}
+<h1>{{.Tournament.Name}}</h1>
+
+{{if .Tournament.Description}}
+<p>{{.Tournament.Description}}</p>
+{{end}}
+
+<p>Автор: {{.Tournament.Author.Name}}</p>
+
+<div class="card">
+    <h3>Система начисления очков</h3>
+    <ul>
+        <li>1 место: {{.Tournament.PointsForFirst}} очков</li>
+        <li>2 место: {{.Tournament.PointsForSecond}} очков</li>
+        <li>3 место: {{.Tournament.PointsForThird}} очков</li>
+        <li>Участие: {{.Tournament.PointsForParticipation}} очков</li>
+    </ul>
+</div>
+
+<h2>Турнирная таблица</h2>
+{{if .Results}}
+<table class="card" style="width:100%; border-collapse:collapse;">
+    <thead>
+        <tr style="background:#eee;">
+            <th>Место</th>
+            <th>Команда</th>
+            <th>Очки</th>
+            <th>Игр сыграно</th>
+        </tr>
+    </thead>
+    <tbody>
+    {{range $index, $result := .Results}}
+        <tr>
+            <td>{{add1 $index}}</td>
+            <td>{{.Team.Name}}</td>
+            <td>{{.Score}}</td>
+            <td>{{.GamesPlayed}}</td>
+        </tr>
+    {{end}}
+    </tbody>
+</table>
+{{else}}
+<div class="card">
+    <p>Пока нет результатов. Команды ещё не завершили игры турнира.</p>
+</div>
+{{end}}
+
+<h2>Игры турнира</h2>
+{{if .Games}}
+<ul>
+{{range .Games}}
+    <li>
+        <a href="/games/{{.ID}}">{{.Name}}</a>
+        {{if .StartsAt}} — {{.StartsAt.Format "02.01.2006 15:04"}}{{end}}
+    </li>
+{{end}}
+</ul>
+{{else}}
+<div class="card">
+    <p>В турнир пока не добавлены игры.</p>
+</div>
+{{end}}
+
+<div style="margin-top:20px; display:flex; gap:10px; flex-wrap:wrap;">
+    {{if .CanApply}}
+        <form action="/tournaments/{{.Tournament.ID}}/apply" method="POST">
+            <input type="hidden" name="_csrf" value="{{.csrf}}">
+            <select name="team_id" required>
+                <option value="">-- выберите команду --</option>
+                {{range .UserTeams}}
+                    <option value="{{.ID}}">{{.Name}}</option>
+                {{end}}
+            </select>
+            <button type="submit" class="button">Подать заявку</button>
+        </form>
+    {{end}}
+    <a href="/tournaments/{{.Tournament.ID}}/edit" class="button">Редактировать</a>
+    <a href="/tournaments" class="button">Назад к списку</a>
+</div>
+{{end}}

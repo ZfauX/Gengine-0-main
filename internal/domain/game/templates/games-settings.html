@@ -1,0 +1,30 @@
+{{define "games-settings.html"}}
+<h1>Настройки игры «{{.Game.Name}}»</h1>
+{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
+<form action="/games/{{.Game.ID}}/settings" method="POST">
+    <input type="hidden" name="_csrf" value="{{.csrf}}">
+    <div>
+        <label><input type="checkbox" name="allow_hints" {{if .Settings.AllowHints}}checked{{end}}> Разрешить подсказки</label>
+    </div>
+    <div>
+        <label>Штраф за подсказку (секунд):</label>
+        <input type="number" name="hint_penalty_seconds" value="{{.Settings.HintPenaltySeconds}}" min="0">
+    </div>
+    <div>
+        <label>Максимальное количество подсказок:</label>
+        <input type="number" name="max_hints" value="{{.Settings.MaxHints}}" min="0">
+    </div>
+    <div>
+        <label>Лимит времени на уровень (минут, 0 — без ограничения):</label>
+        <input type="number" name="per_level_time_limit" value="{{.Settings.PerLevelTimeLimit}}" min="0">
+    </div>
+    <div>
+        <label><input type="checkbox" name="hide_answers_until_finished" {{if .Settings.HideAnswersUntilFinished}}checked{{end}}> Скрывать ответы до финиша</label>
+    </div>
+    <div>
+        <label><input type="checkbox" name="auto_start" {{if .Settings.AutoStart}}checked{{end}}> Автоматический старт в указанное время</label>
+    </div>
+    <button type="submit" class="button">Сохранить</button>
+</form>
+<a href="/games/{{.Game.ID}}">Назад к игре</a>
+{{end}}

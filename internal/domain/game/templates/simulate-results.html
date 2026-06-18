@@ -1,0 +1,36 @@
+{{define "simulate-results.html"}}
+<h1>Результаты симуляции</h1>
+
+<div class="card">
+    <h3>Общее время: {{.Result.TotalTime}}</h3>
+    <p>Пройдено уровней: {{.Result.LevelsPassed}}</p>
+</div>
+
+<div class="card">
+    <h3>Хронология прохождения</h3>
+    <table style="width:100%; border-collapse:collapse;">
+        <thead>
+            <tr style="background:#eee;">
+                <th>Уровень</th>
+                <th>Код</th>
+                <th>Время от старта</th>
+                <th>Статус</th>
+            </tr>
+        </thead>
+        <tbody>
+        {{range .Result.Log}}
+            <tr>
+                <td>{{.LevelName}}</td>
+                <td>{{.Code}}</td>
+                <td>{{.Duration}}</td>
+                <td style="color:{{if .Success}}green{{else}}red{{end}};">
+                    {{if .Success}}Успешно{{else}}Ошибка{{end}}
+                </td>
+            </tr>
+        {{end}}
+        </tbody>
+    </table>
+</div>
+
+<a href="/games/{{.GameID}}" class="button">Назад к игре</a>
+{{end}}

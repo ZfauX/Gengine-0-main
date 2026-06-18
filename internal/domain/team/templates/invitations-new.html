@@ -1,0 +1,10 @@
+{{define "invitations-new.html"}}
+<h1>Новое приглашение</h1>
+{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
+<form action="/games/{{.GameID}}/teams/{{.TeamID}}/invitations" method="POST">
+    <input type="hidden" name="_csrf" value="{{.csrf}}">
+    <input type="text" name="user_id" placeholder="ID пользователя" required>
+    <button type="submit">Пригласить</button>
+</form>
+<a href="/games/{{.GameID}}/teams/{{.TeamID}}/invitations">Назад к приглашениям</a>
+{{end}}
