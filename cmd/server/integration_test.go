@@ -3,7 +3,6 @@ package main_test
 
 import (
 	"fmt"
-	"html/template"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,10 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"gengine-0/internal/app"
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/admin"
-	"gengine-0/internal/domain/calendar"
-	"gengine-0/internal/domain/export"
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/monitor"
@@ -24,17 +22,13 @@ import (
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/tournament"
 	"gengine-0/internal/domain/user"
-	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/storage"
-	"gengine-0/internal/testutil"
 	ws "gengine-0/internal/pkg/websocket"
+	"gengine-0/internal/testutil"
 
-	"github.com/gin-contrib/sessions"
-	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/utrack/gin-csrf"
 	"gorm.io/gorm"
 )
 
@@ -44,72 +38,13 @@ func setupTestRouter(t *testing.T, db *gorm.DB, cfg *config.Config) *gin.Engine 
 	t.Helper()
 
 	gin.SetMode(gin.TestMode)
-	router := gin.New()
-
-	store := cookie.NewStore([]byte(cfg.Session.Secret))
-	router.Use(sessions.Sessions("test_session", store))
-	router.Use(csrf.Middleware(csrf.Options{
-		Secret: cfg.Session.Secret,
-		ErrorFunc: func(c *gin.Context) {
-			c.String(http.StatusForbidden, "CSRF token mismatch")
-			c.Abort()
-		},
-	}))
-
-	router.SetFuncMap(template.FuncMap{
-		"add1": func(i int) int { return i + 1 },
-		"sub":  func(a, b int) int { return a - b },
-		"add":  func(a, b int) int { return a + b },
-		"loop": func(start, end int) []int {
-			s := make([]int, end-start+1)
-			for i := range s { s[i] = start + i }
-			return s
-		},
-		"formatBytes": func(b int64) string {
-			const unit = 1024
-			if b < unit { return fmt.Sprintf("%d B", b) }
-			div, exp := int64(unit), 0
-			for n := b / unit; n >= unit; n /= unit { div *= unit; exp++ }
-			return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
-		},
-	})
-
-	router.LoadHTMLGlob("../../internal/domain/*/templates/*.html")
-	router.Use(middleware.SecurityHeadersMiddleware())
-	router.Use(middleware.GzipMiddleware())
-	router.Use(middleware.StaticCacheMiddleware())
-	router.Static("/static", "../../static")
-	router.Static("/uploads", "../../uploads")
-	router.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok"}) })
 
 	localStorage := storage.NewLocalStorage()
 	hub := ws.NewRoomHub()
 	go hub.Run()
 
-	userAuthSvc := user.NewAuthService(db, cfg)
-	coAuthorSvc := game.NewCoAuthorService(db)
-	reviewSvc := game.NewReviewService(db)
-	attemptSvc := game.NewAttemptService(db)
-	progressSvc := game.NewLevelProgressService(db)
-	monitorSvc := game.NewMonitorService(db)
-	gameSvc := game.NewGameService(db, coAuthorSvc, reviewSvc, monitorSvc, hub, attemptSvc, progressSvc, cfg)
-
-	user.RegisterRoutes(router, db, cfg)
-	game.RegisterRoutes(router, db, localStorage, hub, cfg, coAuthorSvc, attemptSvc, progressSvc, monitorSvc)
-	level.RegisterRoutes(router, db, localStorage, hub, cfg, coAuthorSvc, gameSvc)
-	team.RegisterRoutes(router, db, cfg, localStorage, coAuthorSvc)
-
-	gameplayHandler := game.NewGameplayHandler(gameSvc, attemptSvc, progressSvc, monitorSvc, hub, localStorage, db)
-	protected := router.Group("/")
-	protected.Use(middleware.AuthRequired(userAuthSvc))
-	game.RegisterGameplayRoutes(protected, gameplayHandler, coAuthorSvc)
-
-	monitor.RegisterRoutes(router, db, hub, cfg, coAuthorSvc, monitorSvc, attemptSvc, progressSvc)
-	social.RegisterRoutes(router, db, cfg)
-	admin.RegisterRoutes(router, db, cfg)
-	calendar.RegisterRoutes(router, db)
-	export.RegisterRoutes(router, db, localStorage, cfg, gameSvc, coAuthorSvc) // исправлено
-	tournament.RegisterRoutes(router, db, cfg)
+	router := app.SetupRouter(db, localStorage, hub, cfg, "../..")
+	router.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok"}) })
 
 	return router
 }
@@ -220,7 +155,10 @@ func TestFullGameFlow(t *testing.T) {
 	cookies := w.Result().Cookies()
 	var jwtCookie *http.Cookie
 	for _, c := range cookies {
-		if c.Name == "jwt" { jwtCookie = c; break }
+		if c.Name == "jwt" {
+			jwtCookie = c
+			break
+		}
 	}
 	require.NotNil(t, jwtCookie, "JWT кука должна быть установлена")
 	sessionCookies = append(sessionCookies, jwtCookie)

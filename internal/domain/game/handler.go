@@ -213,7 +213,7 @@ func (h *GameHandler) Create(c *gin.Context) {
 			return
 		}
 
-		webPath, err := h.storage.Save("uploads/covers", file, header.Filename, userID, allowedTypes)
+		webPath, err := h.storage.Save("uploads/covers", file, header.Filename, userID, 5*1024*1024, allowedTypes)
 		if err != nil {
 			log.Error().Err(err).Str("filename", header.Filename).Msg("Create game: failed to save cover")
 			c.HTML(http.StatusOK, "layout.html", gin.H{
@@ -324,7 +324,7 @@ func (h *GameHandler) Update(c *gin.Context) {
 				return
 			}
 
-			webPath, err := h.storage.Save("uploads/covers", file, header.Filename, userID, allowedTypes)
+			webPath, err := h.storage.Save("uploads/covers", file, header.Filename, userID, 5*1024*1024, allowedTypes)
 			if err != nil {
 				log.Error().Err(err).Str("filename", header.Filename).Msg("Update game: failed to save new cover")
 				c.HTML(http.StatusOK, "layout.html", gin.H{
@@ -750,7 +750,7 @@ func (h *GameHandler) UploadPhoto(c *gin.Context) {
 	defer func() { _ = file.Close() }()   // errcheck исправлен
 
 	allowedTypes := []string{"image/jpeg", "image/png", "image/webp"}
-	webPath, err := h.storage.Save("uploads/photos", file, header.Filename, userID, allowedTypes)
+	webPath, err := h.storage.Save("uploads/photos", file, header.Filename, userID, 10*1024*1024, allowedTypes)
 	if err != nil {
 		log.Error().Err(err).Str("filename", header.Filename).Msg("UploadPhoto: failed to save file")
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1007,7 +1007,7 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 	}
 
 	allowedTypes := []string{"image/jpeg", "image/png", "image/gif", "application/pdf", "text/plain"}
-	webPath, err := h.storage.Save("uploads/answers", file, header.Filename, userID, allowedTypes)
+	webPath, err := h.storage.Save("uploads/answers", file, header.Filename, userID, 10*1024*1024, allowedTypes)
 	if err != nil {
 		log.Error().Err(err).Str("filename", header.Filename).Msg("SubmitFile: failed to save file")
 		c.HTML(http.StatusOK, "layout.html", gin.H{

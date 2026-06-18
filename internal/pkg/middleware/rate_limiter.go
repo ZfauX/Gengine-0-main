@@ -2,6 +2,7 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -107,7 +108,7 @@ func CodeSubmissionRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		key := "code:" + c.GetString("userID")
+		key := fmt.Sprintf("code:%d", c.GetUint("userID"))
 		if !rl.allow(key) {
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "слишком частый ввод кодов"})
 			return

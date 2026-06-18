@@ -1,0 +1,35 @@
+# Environment
+.env
+
+# Binary
+/gengine
+/gengine-*
+*.exe
+
+# Uploaded user content (keep .gitkeep)
+/uploads/*
+!/uploads/**/.gitkeep
+
+# Backups
+/backups/*
+!/backups/.gitkeep
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage.out
+*.test
+
+# Certificates (generated)
+/certs/
+
+# Dependencies
+vendor/

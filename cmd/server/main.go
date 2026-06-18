@@ -17,23 +17,19 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gin-contrib/sessions"
-	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"github.com/utrack/gin-csrf"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"gengine-0/internal/app"
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/admin"
-	"gengine-0/internal/domain/calendar"
-	"gengine-0/internal/domain/export"
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/monitor"
@@ -99,8 +95,8 @@ func loggerMiddleware() gin.HandlerFunc {
 			Str("ip", c.ClientIP()).
 			Msg("HTTP запрос")
 
-		httpRequestsTotal.WithLabelValues(method, path, fmt.Sprintf("%d", status)).Inc()
-		httpRequestDuration.WithLabelValues(method, path).Observe(latency.Seconds())
+		httpRequestsTotal.WithLabelValues(method, c.Request.URL.Path, fmt.Sprintf("%d", status)).Inc()
+		httpRequestDuration.WithLabelValues(method, c.Request.URL.Path).Observe(latency.Seconds())
 	}
 }
 
@@ -205,51 +201,11 @@ func main() {
 	hub := ws.NewRoomHub()
 	go hub.Run()
 
-	userAuthSvc := user.NewAuthService(db, cfg)
-	coAuthorSvc := game.NewCoAuthorService(db)
-	attemptSvc := game.NewAttemptService(db)
-	progressSvc := game.NewLevelProgressService(db)
-	monitorSvc := game.NewMonitorService(db)
+	// Настройка роутера (вынесена в internal/app/router.go)
+	r := app.SetupRouter(db, localStorage, hub, cfg, ".")
 
-	r := gin.New()
+	// Добавляем middleware уровня main (должны быть после сессий/CSRF из router.go)
 	r.Use(loggerMiddleware())
-	r.Use(gin.Recovery())
-
-	store := cookie.NewStore([]byte(cfg.Session.Secret))
-	r.Use(sessions.Sessions("gengine_session", store))
-	r.Use(csrf.Middleware(csrf.Options{
-		Secret: cfg.Session.Secret,
-		ErrorFunc: func(c *gin.Context) {
-			c.String(http.StatusForbidden, "CSRF token mismatch")
-			c.Abort()
-		},
-	}))
-
-	// Регистрируем пользовательские функции шаблонов
-	r.FuncMap["add1"] = func(i int) int { return i + 1 }
-	r.FuncMap["sub"] = func(a, b int) int { return a - b }
-	r.FuncMap["add"] = func(a, b int) int { return a + b }
-	r.FuncMap["loop"] = func(start, end int) []int {
-		s := make([]int, end-start+1)
-		for i := range s { s[i] = start + i }
-		return s
-	}
-	r.FuncMap["formatBytes"] = func(b int64) string {
-		const unit = 1024
-		if b < unit { return fmt.Sprintf("%d B", b) }
-		div, exp := int64(unit), 0
-		for n := b / unit; n >= unit; n /= unit { div *= unit; exp++ }
-		return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
-	}
-	r.FuncMap["csrfToken"] = func() string { return "{{ .csrf }}" }
-
-	r.LoadHTMLGlob("internal/domain/*/templates/*.html")
-	r.Use(middleware.SecurityHeadersMiddleware())
-	r.Use(middleware.GzipMiddleware())
-	r.Use(middleware.StaticCacheMiddleware())
-
-	r.Static("/static", "./static")
-	r.Static("/uploads", "./uploads")
 
 	r.GET("/healthz", func(c *gin.Context) {
 		if err := sqlDB.Ping(); err != nil {
@@ -259,13 +215,12 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	// Метрики Prometheus
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	// Опциональная аутентификация для главной страницы
+	userAuthSvc := user.NewAuthService(db, cfg)
 	optionalAuth := middleware.OptionalAuth(userAuthSvc)
 	r.GET("/", optionalAuth, func(c *gin.Context) {
-		// Если пользователь уже авторизован – сразу на дашборд
 		if c.GetUint("userID") > 0 {
 			c.Redirect(http.StatusFound, "/dashboard")
 			return
@@ -273,30 +228,13 @@ func main() {
 		c.HTML(http.StatusOK, "layout.html", gin.H{"ContentBlock": "home.html"})
 	})
 
-	user.RegisterRoutes(r, db, cfg)
-	game.RegisterRoutes(r, db, localStorage, hub, cfg, coAuthorSvc, attemptSvc, progressSvc, monitorSvc)
-
-	gameSvc := game.NewGameService(db, coAuthorSvc, game.NewReviewService(db), monitorSvc, hub, attemptSvc, progressSvc, cfg)
-	level.RegisterRoutes(r, db, localStorage, hub, cfg, coAuthorSvc, gameSvc)
-	team.RegisterRoutes(r, db, cfg, localStorage, coAuthorSvc)
-
-	gameplayHandler := game.NewGameplayHandler(gameSvc, attemptSvc, progressSvc, monitorSvc, hub, localStorage, db)
-	protected := r.Group("/")
-	protected.Use(middleware.AuthRequired(userAuthSvc))
-	game.RegisterGameplayRoutes(protected, gameplayHandler, coAuthorSvc)
-
-	monitor.RegisterRoutes(r, db, hub, cfg, coAuthorSvc, monitorSvc, attemptSvc, progressSvc)
-	social.RegisterRoutes(r, db, cfg)
-	admin.RegisterRoutes(r, db, cfg)
-	calendar.RegisterRoutes(r, db)
-	export.RegisterRoutes(r, db, localStorage, cfg, gameSvc, coAuthorSvc)
-	tournament.RegisterRoutes(r, db, cfg)
-
+	// Фоновые задачи
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go game.CheckTimeouts(db, ctx)
 	go game.CheckAutoStartGames(db, ctx)
 
+	// TLS
 	if cfg.TLS.CertFile != "" && cfg.TLS.KeyFile != "" {
 		certDir := filepath.Dir(cfg.TLS.CertFile)
 		keyDir := filepath.Dir(cfg.TLS.KeyFile)
@@ -325,7 +263,9 @@ func main() {
 		if cfg.TLS.CertFile != "" && cfg.TLS.KeyFile != "" {
 			go func() {
 				httpPort := "80"
-				if port == "443" { httpPort = "80" }
+				if port == "443" {
+					httpPort = "80"
+				}
 				log.Info().Str("port", httpPort).Msg("Запущен HTTP-редирект")
 				err := http.ListenAndServe(":"+httpPort, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					target := "https://" + r.Host + r.URL.RequestURI()
@@ -397,25 +337,12 @@ func generateSelfSignedCert(certFile, keyFile string) {
 		log.Fatal().Err(err).Msg("Не удалось создать файл сертификата")
 	}
 	defer func() { _ = certOut.Close() }()
-
-	err = pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certDER})
-	if err != nil {
-		log.Fatal().Err(err).Msg("Не удалось записать сертификат")
-	}
+	pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certDER})
 
 	keyOut, err := os.OpenFile(keyFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Не удалось создать файл ключа")
 	}
 	defer func() { _ = keyOut.Close() }()
-
-	pemBlock, err := x509.MarshalPKCS8PrivateKey(priv)
-	if err != nil {
-		log.Fatal().Err(err).Msg("Не удалось закодировать ключ")
-	}
-
-	err = pem.Encode(keyOut, &pem.Block{Type: "PRIVATE KEY", Bytes: pemBlock})
-	if err != nil {
-		log.Fatal().Err(err).Msg("Не удалось записать ключ")
-	}
+	pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
 }

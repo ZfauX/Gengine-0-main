@@ -90,7 +90,10 @@ func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 	}
 
 	go ws.HandleWebSocket(client)
-	defer h.hub.UnregisterClient(client)
+	defer func() {
+		h.hub.UnregisterClient(client)
+		client.Close()
+	}()
 }
 
 // ChatPage отображает HTML-страницу чата игры.
@@ -157,7 +160,10 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 	}
 
 	go func() {
-		defer h.hub.UnregisterClient(client)
+		defer func() {
+			h.hub.UnregisterClient(client)
+			client.Close()
+		}()
 		for {
 			_, message, err := conn.ReadMessage()
 			if err != nil {

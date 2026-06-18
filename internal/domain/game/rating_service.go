@@ -4,7 +4,9 @@ package game
 import (
 	"time"
 
+	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type RatingService struct {
@@ -18,14 +20,13 @@ func NewRatingService(db *gorm.DB) *RatingService {
 func (s *RatingService) UpdateRatingsForGame(gameID uint) error {
 	now := time.Now()
 
-	// Очки автору
-	s.DB.Exec(`
-		INSERT INTO player_ratings (user_id, score, updated_at)
-		SELECT author_id, 5, ?
-		FROM games
-		WHERE id = ?
-		ON CONFLICT (user_id) DO UPDATE SET score = player_ratings.score + 5, updated_at = ?
-	`, now, gameID, now)
+	var g Game
+	if err := s.DB.Select("author_id").First(&g, gameID).Error; err != nil {
+		return err
+	}
+	if err := s.awardPoints(g.AuthorID, 5, now); err != nil {
+		log.Error().Err(err).Uint("user_id", g.AuthorID).Msg("failed to award author points")
+	}
 
 	var passings []GamePassing
 	s.DB.Where("game_id = ? AND status = ?", gameID, StatusFinished).Find(&passings)
@@ -50,14 +51,22 @@ func (s *RatingService) UpdateRatingsForGame(gameID uint) error {
 			}
 		}
 		for _, uid := range userIDs {
-			s.DB.Exec(`
-				INSERT INTO player_ratings (user_id, score, updated_at)
-				VALUES (?, ?, ?)
-				ON CONFLICT (user_id) DO UPDATE SET score = player_ratings.score + ?, updated_at = ?
-			`, uid, basePoints, now, basePoints, now)
+			if err := s.awardPoints(uid, basePoints, now); err != nil {
+				log.Error().Err(err).Uint("user_id", uid).Msg("failed to award participant points")
+			}
 		}
 	}
 	return nil
+}
+
+func (s *RatingService) awardPoints(userID uint, points int, now time.Time) error {
+	return s.DB.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "user_id"}},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"score":      gorm.Expr("player_ratings.score + ?", points),
+			"updated_at": now,
+		}),
+	}).Create(&PlayerRating{UserID: userID, Score: points}).Error
 }
 
 func (s *RatingService) GetLeaderboard(limit int) ([]PlayerRating, error) {
