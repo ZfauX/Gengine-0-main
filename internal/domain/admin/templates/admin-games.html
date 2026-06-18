@@ -1,0 +1,20 @@
+{{define "admin-games.html"}}
+<h1>Модерация игр</h1>
+<p><a href="?status=draft">Черновики</a> | <a href="?status=published">Опубликованные</a> | <a href="?">Все</a></p>
+
+<!-- Скрытый CSRF-токен для возможных AJAX-запросов -->
+<input type="hidden" id="csrf_token" value="{{.csrf}}">
+
+<table class="card" style="width:100%; border-collapse:collapse;">
+<tr><th>ID</th><th>Название</th><th>Автор</th><th>Статус</th><th>Действия</th></tr>
+{{range .Games}}
+<tr>
+    <td>{{.ID}}</td><td>{{.Name}}</td><td>{{.Author.Name}}</td><td>{{if .IsDraft}}Черновик{{else}}Опубликована{{end}}</td>
+    <td>
+        <a href="/games/{{.ID}}" class="button">Просмотр</a>
+        <a href="/admin/games/{{.ID}}/delete" class="button danger" onclick="return confirm('Удалить игру?')">Удалить</a>
+    </td>
+</tr>
+{{end}}
+</table>
+{{end}}

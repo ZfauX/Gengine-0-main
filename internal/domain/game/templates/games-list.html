@@ -1,0 +1,29 @@
+{{define "games-list.html"}}
+<h1>Игры</h1>
+
+<form method="GET" action="/games" style="margin-bottom:20px">
+    <input type="text" name="search" placeholder="Поиск по названию" value="{{.Filter.Search}}">
+    <select name="status">
+        <option value="">Все статусы</option>
+        <option value="draft" {{if eq .Filter.Status "draft"}}selected{{end}}>Черновики</option>
+        <option value="published" {{if eq .Filter.Status "published"}}selected{{end}}>Опубликованные</option>
+    </select>
+    <input type="date" name="date_from" value="{{.Filter.DateFrom}}" placeholder="Дата начала (с)">
+    <input type="date" name="date_to" value="{{.Filter.DateTo}}" placeholder="Дата начала (по)">
+    <button type="submit">Найти</button>
+    <a href="/games">Сбросить</a>
+</form>
+
+<a href="/games/new">Создать новую игру</a>
+<ul>
+{{range .Games}}
+    <li>
+        <a href="/games/{{.ID}}">{{.Name}}</a> — {{.Author.Name}}
+        {{if .IsDraft}} <span style="color:orange">(черновик)</span> {{end}}
+        {{if .StartsAt}} ({{.StartsAt.Format "02.01.2006"}}) {{end}}
+    </li>
+{{else}}
+    <li>Игры не найдены</li>
+{{end}}
+</ul>
+{{end}}

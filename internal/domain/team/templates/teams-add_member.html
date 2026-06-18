@@ -1,0 +1,15 @@
+{{define "teams-add_member.html"}}
+<h1>Добавить участника</h1>
+{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
+<form action="/games/{{.GameID}}/teams/{{.TeamID}}/members/add" method="POST">
+    <input type="hidden" name="_csrf" value="{{.csrf}}">
+    <select name="user_id" required>
+        <option value="">-- выберите пользователя --</option>
+        {{range .Users}}
+            <option value="{{.ID}}">{{.Name}} ({{.Email}})</option>
+        {{end}}
+    </select>
+    <button type="submit" class="button">Добавить</button>
+</form>
+<a href="/games/{{.GameID}}/teams/{{.TeamID}}/members">Назад к составу</a>
+{{end}}

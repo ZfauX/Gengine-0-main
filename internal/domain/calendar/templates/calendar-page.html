@@ -1,0 +1,189 @@
+{{define "calendar-page.html"}}
+<h1>Календарь игр</h1>
+
+<!-- Скрытый CSRF-токен для AJAX-запросов -->
+<meta name="csrf-token" content="{{.csrf}}">
+
+<div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+        <button id="prev-month" class="button">← Предыдущий месяц</button>
+        <h2 id="month-year" style="margin:0;"></h2>
+        <button id="next-month" class="button">Следующий месяц →</button>
+    </div>
+
+    <div id="calendar-container">
+        <table style="width:100%; border-collapse:collapse; text-align:center;">
+            <thead>
+                <tr style="background:#eee;">
+                    <th>Пн</th><th>Вт</th><th>Ср</th><th>Чт</th><th>Пт</th><th>Сб</th><th>Вс</th>
+                </tr>
+            </thead>
+            <tbody id="calendar-body">
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card" id="selected-day-games" style="display:none;">
+    <h3 id="selected-date-title"></h3>
+    <ul id="selected-games-list"></ul>
+</div>
+
+<script>
+    let currentYear, currentMonth;
+    // Функция для получения CSRF-токена из meta-тега
+    function getCsrfToken() {
+        return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    }
+
+    const monthNames = [
+        'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+        'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
+    ];
+
+    function loadCalendar(year, month) {
+        currentYear = year;
+        currentMonth = month;
+
+        document.getElementById('month-year').textContent = `${monthNames[month]} ${year}`;
+
+        fetch(`/api/v1/calendar?year=${year}&month=${month + 1}`, {
+            headers: {
+                'X-CSRF-TOKEN': getCsrfToken()
+            }
+        })
+            .then(r => r.json())
+            .then(data => {
+                renderCalendar(data.year, data.month, data.events);
+            })
+            .catch(err => {
+                console.error('Ошибка загрузки календаря:', err);
+                document.getElementById('calendar-body').innerHTML =
+                    '<tr><td colspan="7">Ошибка загрузки данных</td></tr>';
+            });
+    }
+
+    function renderCalendar(year, month, events) {
+        const tbody = document.getElementById('calendar-body');
+        tbody.innerHTML = '';
+
+        const firstDay = new Date(year, month - 1, 1);
+        const lastDay = new Date(year, month, 0);
+        const daysInMonth = lastDay.getDate();
+        const startDayOfWeek = (firstDay.getDay() + 6) % 7; // Пн=0, Вс=6
+
+        let row = document.createElement('tr');
+        for (let i = 0; i < startDayOfWeek; i++) {
+            const cell = document.createElement('td');
+            cell.style.padding = '8px';
+            row.appendChild(cell);
+        }
+
+        for (let day = 1; day <= daysInMonth; day++) {
+            if ((startDayOfWeek + day - 1) % 7 === 0 && day !== 1) {
+                tbody.appendChild(row);
+                row = document.createElement('tr');
+            }
+
+            const cell = document.createElement('td');
+            cell.style.padding = '8px';
+            cell.style.verticalAlign = 'top';
+            cell.style.cursor = 'default';
+
+            const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const dayGames = events[dateStr] || [];
+
+            const daySpan = document.createElement('div');
+            daySpan.style.fontWeight = 'bold';
+            daySpan.style.marginBottom = '4px';
+            daySpan.textContent = day;
+
+            const today = new Date();
+            if (year === today.getFullYear() && month - 1 === today.getMonth() && day === today.getDate()) {
+                cell.style.backgroundColor = '#e3f2fd';
+                cell.style.borderRadius = '4px';
+            }
+
+            cell.appendChild(daySpan);
+
+            if (dayGames.length > 0) {
+                const indicator = document.createElement('div');
+                indicator.style.backgroundColor = '#3498db';
+                indicator.style.color = 'white';
+                indicator.style.borderRadius = '50%';
+                indicator.style.width = '24px';
+                indicator.style.height = '24px';
+                indicator.style.display = 'inline-flex';
+                indicator.style.alignItems = 'center';
+                indicator.style.justifyContent = 'center';
+                indicator.style.fontSize = '12px';
+                indicator.style.cursor = 'pointer';
+                indicator.textContent = dayGames.length;
+                indicator.title = `${dayGames.length} игр(ы)`;
+                indicator.onclick = (e) => {
+                    e.stopPropagation();
+                    showGamesForDate(dateStr, dayGames);
+                };
+                cell.appendChild(indicator);
+            }
+
+            row.appendChild(cell);
+        }
+
+        const lastDayOfWeek = (lastDay.getDay() + 6) % 7;
+        for (let i = lastDayOfWeek; i < 6; i++) {
+            const cell = document.createElement('td');
+            cell.style.padding = '8px';
+            row.appendChild(cell);
+        }
+
+        tbody.appendChild(row);
+    }
+
+    function showGamesForDate(dateStr, games) {
+        const container = document.getElementById('selected-day-games');
+        const title = document.getElementById('selected-date-title');
+        const list = document.getElementById('selected-games-list');
+
+        const [y, m, d] = dateStr.split('-');
+        title.textContent = `Игры на ${d}.${m}.${y}`;
+        list.innerHTML = '';
+
+        if (games.length === 0) {
+            list.innerHTML = '<li>Нет запланированных игр</li>';
+        } else {
+            games.forEach(game => {
+                const li = document.createElement('li');
+                li.innerHTML = `<a href="/games/${game.id}">${game.name}</a> — начало в ${game.time || 'не указано'}`;
+                list.appendChild(li);
+            });
+        }
+
+        container.style.display = 'block';
+        container.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    document.getElementById('prev-month').onclick = () => {
+        let newMonth = currentMonth - 1;
+        let newYear = currentYear;
+        if (newMonth < 0) {
+            newMonth = 11;
+            newYear--;
+        }
+        loadCalendar(newYear, newMonth);
+    };
+
+    document.getElementById('next-month').onclick = () => {
+        let newMonth = currentMonth + 1;
+        let newYear = currentYear;
+        if (newMonth > 11) {
+            newMonth = 0;
+            newYear++;
+        }
+        loadCalendar(newYear, newMonth);
+    };
+
+    const now = new Date();
+    loadCalendar(now.getFullYear(), now.getMonth());
+</script>
+{{end}}

@@ -1,0 +1,25 @@
+{{define "answers-index.html"}}
+<h1>Ответы на вопрос</h1>
+
+{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
+
+<h2>Существующие варианты кодов</h2>
+<ul>
+{{range .Answers}}
+    <li>
+        {{.Code}}
+        <form action="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{$.QuestionID}}/answers/{{.ID}}/delete" method="POST" style="display:inline">
+            <input type="hidden" name="_csrf" value="{{$.csrf}}">
+            <button type="submit" class="button danger">Удалить</button>
+        </form>
+    </li>
+{{end}}
+</ul>
+
+<h2>Добавить новый вариант</h2>
+<form action="/games/{{.GameID}}/levels/{{.LevelID}}/questions/{{.QuestionID}}/answers" method="POST">
+    <input type="hidden" name="_csrf" value="{{.csrf}}">
+    <input type="text" name="code" placeholder="Код" required>
+    <button type="submit" class="button">Добавить</button>
+</form>
+{{end}}

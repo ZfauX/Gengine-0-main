@@ -1,0 +1,17 @@
+{{define "questions-new.html"}}
+<h1>Новый вопрос</h1>
+{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
+<form action="/games/{{.GameID}}/levels/{{.LevelID}}/questions" method="POST">
+    <input type="hidden" name="_csrf" value="{{.csrf}}">
+    <div>
+        <label>Текст вопроса:</label>
+        <input type="text" name="text" required>
+    </div>
+    <div>
+        <label>Подсказка:</label>
+        <input type="text" name="hint">
+    </div>
+    <button type="submit" class="button">Создать</button>
+</form>
+<a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions">Назад к вопросам</a>
+{{end}}

@@ -1,0 +1,14 @@
+{{define "teams-change_captain.html"}}
+<h1>Смена капитана команды "{{.Team.Name}}"</h1>
+<form action="/games/{{.GameID}}/teams/{{.TeamID}}/change-captain" method="POST">
+    <input type="hidden" name="_csrf" value="{{.csrf}}">
+    <select name="captain_id" required>
+        <option value="">-- выберите нового капитана --</option>
+        {{range .Members}}
+            <option value="{{.ID}}">{{.Name}} ({{.Email}})</option>
+        {{end}}
+    </select>
+    <button type="submit">Сменить</button>
+</form>
+<a href="/games/{{.GameID}}/teams/{{.TeamID}}/members">Назад</a>
+{{end}}

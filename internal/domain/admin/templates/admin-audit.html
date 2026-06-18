@@ -1,0 +1,60 @@
+{{define "admin-audit.html"}}
+<h1>Аудит действий</h1>
+
+<form method="GET" action="/admin/audit" style="margin-bottom:20px">
+    <input type="text" name="user_id" placeholder="ID пользователя" value="{{.UserID}}">
+    <select name="action">
+        <option value="">Все действия</option>
+        <option value="create" {{if eq .Action "create"}}selected{{end}}>Создание</option>
+        <option value="update" {{if eq .Action "update"}}selected{{end}}>Обновление</option>
+        <option value="delete" {{if eq .Action "delete"}}selected{{end}}>Удаление</option>
+        <option value="login" {{if eq .Action "login"}}selected{{end}}>Вход</option>
+        <option value="register" {{if eq .Action "register"}}selected{{end}}>Регистрация</option>
+        <option value="export" {{if eq .Action "export"}}selected{{end}}>Экспорт</option>
+        <option value="import" {{if eq .Action "import"}}selected{{end}}>Импорт</option>
+    </select>
+    <button type="submit" class="button">Фильтр</button>
+    <a href="/admin/audit" class="button">Сбросить</a>
+</form>
+
+<table class="card" style="width:100%; border-collapse:collapse;">
+    <thead>
+        <tr style="background:#eee;">
+            <th>Время</th>
+            <th>Пользователь</th>
+            <th>Действие</th>
+            <th>Объект</th>
+            <th>ID объекта</th>
+            <th>Детали</th>
+        </tr>
+    </thead>
+    <tbody>
+    {{range .Logs}}
+        <tr>
+            <td>{{.CreatedAt.Format "02.01.2006 15:04:05"}}</td>
+            <td>{{.User.Name}} ({{.User.ID}})</td>
+            <td>{{.Action}}</td>
+            <td>{{.ObjectType}}</td>
+            <td>{{.ObjectID}}</td>
+            <td>{{.Details}}</td>
+        </tr>
+    {{else}}
+        <tr>
+            <td colspan="6" style="text-align:center;">Записи аудита не найдены</td>
+        </tr>
+    {{end}}
+    </tbody>
+</table>
+
+{{if gt .TotalPages 1}}
+<div style="margin-top:20px; text-align:center;">
+    {{if gt .Page 1}}
+        <a href="?page={{.PrevPage}}&user_id={{$.UserID}}&action={{$.Action}}">← Предыдущая</a>
+    {{end}}
+    Страница {{.Page}} из {{.TotalPages}}
+    {{if lt .Page .TotalPages}}
+        <a href="?page={{.NextPage}}&user_id={{$.UserID}}&action={{$.Action}}">Следующая →</a>
+    {{end}}
+</div>
+{{end}}
+{{end}}

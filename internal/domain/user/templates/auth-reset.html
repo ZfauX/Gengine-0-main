@@ -1,0 +1,14 @@
+{{define "auth-reset.html"}}
+<h1>Сброс пароля</h1>
+{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
+<form action="/auth/reset" method="POST">
+    <input type="hidden" name="_csrf" value="{{.csrf}}">
+    <input type="hidden" name="token" value="{{.Token}}">
+    <div>
+        <label>Новый пароль:</label>
+        <input type="password" name="password" required minlength="6" onkeypress="if(event.key === 'Enter') this.form.submit()">
+    </div>
+    <button type="submit" class="button">Установить пароль</button>
+</form>
+<a href="/auth/login">Вернуться на страницу входа</a>
+{{end}}

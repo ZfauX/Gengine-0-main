@@ -1,0 +1,17 @@
+{{define "tournaments-add_game.html"}}
+<h1>Добавить игру в турнир</h1>
+{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
+<form action="/tournaments/{{.TournamentID}}/games/add" method="POST">
+    <input type="hidden" name="_csrf" value="{{.csrf}}">
+    <select name="game_id" required>
+        <option value="">-- выберите игру --</option>
+        {{range .Games}}
+            <option value="{{.ID}}">{{.Name}}</option>
+        {{else}}
+            <option value="" disabled>Нет доступных игр</option>
+        {{end}}
+    </select>
+    <button type="submit" class="button">Добавить</button>
+</form>
+<a href="/tournaments/{{.TournamentID}}">Назад к турниру</a>
+{{end}}

@@ -1,0 +1,27 @@
+{{define "co_authors-manage.html"}}
+<h1>Управление соавторами</h1>
+
+<h2>Текущие соавторы</h2>
+<ul>
+{{range .CoAuthors}}
+    <li>
+        {{.User.Name}} ({{.User.Email}})
+        <form action="/games/{{$.GameID}}/co-authors/{{.UserID}}/remove" method="POST" style="display:inline">
+            <input type="hidden" name="_csrf" value="{{$.csrf}}">
+            <button type="submit">Удалить</button>
+        </form>
+    </li>
+{{else}}
+    <li>Соавторов пока нет</li>
+{{end}}
+</ul>
+
+<h2>Добавить соавтора</h2>
+{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
+<form action="/games/{{.GameID}}/co-authors" method="POST">
+    <input type="hidden" name="_csrf" value="{{.csrf}}">
+    <input type="text" name="user_id" placeholder="ID пользователя" required>
+    <button type="submit">Добавить</button>
+</form>
+<a href="/games/{{.GameID}}">Назад к игре</a>
+{{end}}

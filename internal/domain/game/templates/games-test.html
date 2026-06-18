@@ -1,0 +1,20 @@
+{{define "games-test.html"}}
+<h1>Тестирование «{{.Game.Name}}»</h1>
+
+<p>Здесь вы можете запустить тестовое прохождение игры, чтобы проверить уровни и ответы.</p>
+
+<form action="/games/{{.Game.ID}}/testing/start" method="GET">
+    <button type="submit" class="button">Начать новое тестовое прохождение</button>
+</form>
+
+{{if .TestPassings}}
+<h3>Активные тестовые сессии</h3>
+<ul>
+{{range .TestPassings}}
+    <li><a href="/testing/{{.ID}}">Прохождение #{{.ID}} ({{.Status}})</a></li>
+{{end}}
+</ul>
+{{end}}
+
+<a href="/games/{{.Game.ID}}">Назад к игре</a>
+{{end}}

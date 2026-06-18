@@ -1,0 +1,20 @@
+{{define "admin-users.html"}}
+<h1>Управление пользователями</h1>
+<p><a href="?role=admin">Администраторы</a> | <a href="?role=user">Пользователи</a> | <a href="?">Все</a></p>
+
+<!-- Скрытый CSRF-токен для единообразия -->
+<input type="hidden" id="csrf_token" value="{{.csrf}}">
+
+<table class="card" style="width:100%; border-collapse:collapse;">
+<tr><th>ID</th><th>Имя</th><th>Email</th><th>Роль</th><th>Действия</th></tr>
+{{range .Users}}
+<tr>
+    <td>{{.ID}}</td><td>{{.Name}}</td><td>{{.Email}}</td><td>{{.Role}}</td>
+    <td>
+        <a href="/admin/users/{{.ID}}/toggle-admin" class="button">{{if eq .Role "admin"}}Разжаловать{{else}}Сделать админом{{end}}</a>
+        <a href="/admin/users/{{.ID}}/delete" class="button danger" onclick="return confirm('Удалить пользователя?')">Удалить</a>
+    </td>
+</tr>
+{{end}}
+</table>
+{{end}}

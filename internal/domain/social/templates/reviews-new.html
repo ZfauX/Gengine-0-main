@@ -1,0 +1,27 @@
+{{define "reviews-new.html"}}
+<h1>Оставить отзыв</h1>
+{{if .Error}}<p class="error-flash">{{.Error}}</p>{{end}}
+<form action="/games/{{.GameID}}/review" method="POST">
+    <input type="hidden" name="_csrf" value="{{.csrf}}">
+    <div style="margin-bottom:10px;">
+        <label>Оценка (1-10):</label>
+        <select name="rating" required>
+            <option value="">--</option>
+            <option value="1">1 - Ужасно</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5 - Средне</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
+            <option value="9">9</option>
+            <option value="10">10 - Отлично</option>
+        </select>
+    </div>
+    <textarea name="comment" rows="4" placeholder="Ваш комментарий (необязательно)"></textarea>
+    <br>
+    <button type="submit" class="button">Отправить</button>
+</form>
+<a href="/games/{{.GameID}}">Назад</a>
+{{end}}

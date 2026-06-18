@@ -1,0 +1,20 @@
+{{define "invitations-my.html"}}
+<h1>Мои приглашения</h1>
+<ul>
+{{range .Invitations}}
+    <li>
+        Команда: {{.Team.Name}} ({{.Status}})
+        {{if eq .Status "pending"}}
+            <form action="/invitations/{{.ID}}/accept" method="POST" style="display:inline">
+                <input type="hidden" name="_csrf" value="{{$.csrf}}">
+                <button type="submit" class="button">Принять</button>
+            </form>
+            <form action="/invitations/{{.ID}}/decline" method="POST" style="display:inline">
+                <input type="hidden" name="_csrf" value="{{$.csrf}}">
+                <button type="submit" class="button danger">Отклонить</button>
+            </form>
+        {{end}}
+    </li>
+{{end}}
+</ul>
+{{end}}

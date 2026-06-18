@@ -1,0 +1,33 @@
+{{define "tournaments-edit.html"}}
+<h1>Редактирование турнира</h1>
+{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
+<form action="/tournaments/{{.Tournament.ID}}/update" method="POST">
+    <input type="hidden" name="_csrf" value="{{.csrf}}">
+    <div>
+        <label>Название:</label>
+        <input type="text" name="name" value="{{.Tournament.Name}}" required>
+    </div>
+    <div>
+        <label>Описание:</label>
+        <textarea name="description" rows="4">{{.Tournament.Description}}</textarea>
+    </div>
+    <div>
+        <label>Очки за 1 место:</label>
+        <input type="number" name="points_for_first" value="{{.Tournament.PointsForFirst}}" min="0">
+    </div>
+    <div>
+        <label>Очки за 2 место:</label>
+        <input type="number" name="points_for_second" value="{{.Tournament.PointsForSecond}}" min="0">
+    </div>
+    <div>
+        <label>Очки за 3 место:</label>
+        <input type="number" name="points_for_third" value="{{.Tournament.PointsForThird}}" min="0">
+    </div>
+    <div>
+        <label>Очки за участие:</label>
+        <input type="number" name="points_for_participation" value="{{.Tournament.PointsForParticipation}}" min="0">
+    </div>
+    <button type="submit" class="button">Сохранить</button>
+</form>
+<a href="/tournaments/{{.Tournament.ID}}">Назад к турниру</a>
+{{end}}

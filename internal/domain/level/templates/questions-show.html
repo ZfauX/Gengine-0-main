@@ -1,0 +1,29 @@
+{{define "questions-show.html"}}
+<h1>Вопрос: {{.Question.Text}}</h1>
+
+{{if .Question.Hint}}
+<p><em>Подсказка: {{.Question.Hint}}</em></p>
+{{end}}
+
+<h2>Ответы</h2>
+<a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions/{{.Question.ID}}/answers/new">Добавить ответ</a>
+<ul>
+{{range .Question.Answers}}
+    <li>
+        {{.Code}}
+        <form action="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{$.Question.ID}}/answers/{{.ID}}" method="POST" style="display:inline">
+            <input type="hidden" name="_method" value="DELETE">
+            <input type="hidden" name="_csrf" value="{{$.csrf}}">
+            <button type="submit" class="button danger" onclick="return confirm('Удалить ответ?')">Удалить</button>
+        </form>
+    </li>
+{{else}}
+    <li>Ответов пока нет.</li>
+{{end}}
+</ul>
+
+<div style="margin-top:20px; display:flex; gap:10px; flex-wrap:wrap;">
+    <a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions/{{.Question.ID}}/edit" class="button">Редактировать</a>
+    <a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions" class="button">Назад к вопросам</a>
+</div>
+{{end}}

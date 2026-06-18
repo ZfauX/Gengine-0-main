@@ -1,0 +1,45 @@
+{{define "games-edit.html"}}
+<h1>Редактировать игру</h1>
+{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
+<form action="/games/{{.Game.ID}}/update" method="POST" enctype="multipart/form-data">
+    <input type="hidden" name="_csrf" value="{{.csrf}}">
+    <div>
+        <label>Название:</label>
+        <input type="text" name="name" value="{{.Game.Name}}" required>
+    </div>
+    <div>
+        <label>Описание:</label>
+        <textarea name="description" rows="4">{{.Game.Description}}</textarea>
+    </div>
+    <div>
+        <label>Дата и время начала:</label>
+        <input type="datetime-local" name="starts_at" value="{{if .Game.StartsAt}}{{.Game.StartsAt.Format "2006-01-02T15:04"}}{{end}}">
+    </div>
+    <div>
+        <label>Крайний срок регистрации:</label>
+        <input type="datetime-local" name="registration_deadline" value="{{if .Game.RegistrationDeadline}}{{.Game.RegistrationDeadline.Format "2006-01-02T15:04"}}{{end}}">
+    </div>
+    <div>
+        <label>Максимальное количество команд:</label>
+        <input type="number" name="max_team_number" value="{{.Game.MaxTeamNumber}}" min="1">
+    </div>
+    <div>
+        <label>Видимость:</label>
+        <select name="visibility">
+            <option value="public" {{if eq .Game.Visibility "public"}}selected{{end}}>Публичная</option>
+            <option value="private" {{if eq .Game.Visibility "private"}}selected{{end}}>Приватная</option>
+            <option value="unlisted" {{if eq .Game.Visibility "unlisted"}}selected{{end}}>Скрытая</option>
+        </select>
+    </div>
+    <div>
+        <label>Обложка игры:</label>
+        {{if .Game.CoverPath}}
+            <img src="{{.Game.CoverPath}}" style="max-height:150px; display:block; margin-bottom:5px">
+            <label><input type="checkbox" name="delete_cover" value="1"> Удалить обложку</label>
+        {{end}}
+        <input type="file" name="cover" accept="image/jpeg,image/png,image/webp">
+    </div>
+    <button type="submit" class="button">Сохранить</button>
+</form>
+<a href="/games/{{.Game.ID}}">Назад к игре</a>
+{{end}}

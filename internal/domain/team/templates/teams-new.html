@@ -1,0 +1,10 @@
+{{define "teams-new.html"}}
+<h1>Новая команда</h1>
+{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
+<form action="/teams" method="POST">
+    <input type="hidden" name="_csrf" value="{{.csrf}}">
+    <input type="text" name="name" placeholder="Название команды" required>
+    <button type="submit">Создать</button>
+</form>
+<a href="/teams">Назад</a>
+{{end}}

@@ -1,0 +1,19 @@
+{{define "questions-list.html"}}
+<h1>Вопросы уровня</h1>
+<a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions/new">Добавить вопрос</a>
+<ul>
+{{range .Questions}}
+    <li>
+        <a href="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{.ID}}">{{.Text}}</a>
+        <a href="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{.ID}}/edit">✎</a>
+        <a href="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{.ID}}/answers">Ответы</a>
+        <form action="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{.ID}}" method="POST" style="display:inline">
+            <input type="hidden" name="_method" value="DELETE">
+            <input type="hidden" name="_csrf" value="{{$.csrf}}">
+            <button type="submit" class="button danger" onclick="return confirm('Удалить вопрос?')">Удалить</button>
+        </form>
+    </li>
+{{end}}
+</ul>
+<a href="/games/{{.GameID}}/levels/{{.LevelID}}">Назад к уровню</a>
+{{end}}

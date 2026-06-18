@@ -1,0 +1,92 @@
+{{define "dashboard-index.html"}}
+<h1>Личный кабинет</h1>
+
+<div style="display:flex; gap:20px; flex-wrap:wrap; margin-top:20px;">
+    <div class="card" style="flex:1; min-width:300px;">
+        <h2>Мои игры <small>(авторство)</small></h2>
+        {{if .Dashboard.AuthoredGames}}
+        <ul>
+        {{range .Dashboard.AuthoredGames}}
+            <li>
+                <a href="/games/{{.ID}}">{{.Name}}</a>
+                {{if .IsDraft}}<span style="color:orange;"> (черновик)</span>{{end}}
+            </li>
+        {{end}}
+        </ul>
+        {{else}}
+        <p>У вас пока нет созданных игр.</p>
+        {{end}}
+        <a href="/games/new" class="button">Создать игру</a>
+    </div>
+
+    <div class="card" style="flex:1; min-width:300px;">
+        <h2>Мои команды <small>(капитанство)</small></h2>
+        {{if .Dashboard.CaptainTeams}}
+        <ul>
+        {{range .Dashboard.CaptainTeams}}
+            <li>{{.Team.Name}} в игре {{.Game.Name}}</li>
+        {{end}}
+        </ul>
+        {{else}}
+        <p>Вы не являетесь капитаном ни одной команды.</p>
+        {{end}}
+        <a href="/teams/new" class="button">Создать команду</a>
+    </div>
+</div>
+
+<div style="display:flex; gap:20px; flex-wrap:wrap; margin-top:20px;">
+    <div class="card" style="flex:1; min-width:300px;">
+        <h2>Участие в командах</h2>
+        {{if .Dashboard.MemberTeams}}
+        <ul>
+        {{range .Dashboard.MemberTeams}}
+            <li>{{.Team.Name}} в игре {{.Game.Name}}</li>
+        {{end}}
+        </ul>
+        {{else}}
+        <p>Вы не состоите ни в одной команде.</p>
+        {{end}}
+    </div>
+
+    <div class="card" style="flex:1; min-width:300px;">
+        <h2>Активные прохождения</h2>
+        {{if .Dashboard.ActivePassings}}
+        <ul>
+        {{range .Dashboard.ActivePassings}}
+            <li>
+                {{.GameName}} — {{.TeamName}} ({{.PassingStatus}})
+                {{if eq .PassingStatus "started"}}
+                    <a href="/game/{{.PassingID}}">Продолжить</a>
+                {{end}}
+            </li>
+        {{end}}
+        </ul>
+        {{else}}
+        <p>Нет активных прохождений.</p>
+        {{end}}
+    </div>
+</div>
+
+<div class="card" style="margin-top:20px;">
+    <h2>Приглашения</h2>
+    {{if .Dashboard.PendingInvitations}}
+    <ul>
+    {{range .Dashboard.PendingInvitations}}
+        <li>
+            Команда {{.Team.Name}}
+            <form action="/invitations/{{.ID}}/accept" method="POST" style="display:inline">
+                <input type="hidden" name="_csrf" value="{{$.csrf}}">
+                <button type="submit" class="button">Принять</button>
+            </form>
+            <form action="/invitations/{{.ID}}/decline" method="POST" style="display:inline">
+                <input type="hidden" name="_csrf" value="{{$.csrf}}">
+                <button type="submit" class="button danger">Отклонить</button>
+            </form>
+        </li>
+    {{end}}
+    </ul>
+    {{else}}
+    <p>Нет ожидающих приглашений.</p>
+    {{end}}
+</div>
+{{end}}
