@@ -9,6 +9,7 @@ import (
 	"gengine-0/internal/config"
 	"gengine-0/internal/pkg/storage"
 
+	"github.com/rs/zerolog/log"
 	"github.com/utrack/gin-csrf"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -194,8 +195,9 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	var user User
 	if err := h.db.Where("email = ?", input.Email).First(&user).Error; err == nil {
 		passwordResetService := NewPasswordResetService(h.db, h.cfg)
-		token, _ := passwordResetService.GenerateToken(user)
-		_ = token
+		if _, err := passwordResetService.GenerateToken(user); err != nil {
+			log.Error().Err(err).Str("email", input.Email).Msg("failed to generate password reset token")
+		}
 	}
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "auth-forgot.html",
@@ -349,7 +351,7 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 	defer func() { _ = file.Close() }()
 
 	allowedTypes := []string{"image/jpeg", "image/png", "image/webp"}
-	webPath, err := h.storage.Save("uploads/avatars", file, header.Filename, userID, allowedTypes)
+	webPath, err := h.storage.Save("uploads/avatars", file, header.Filename, userID, 2*1024*1024, allowedTypes)
 	if err != nil {
 		c.HTML(http.StatusOK, "layout.html", gin.H{
 			"ContentBlock": "profile-show.html",

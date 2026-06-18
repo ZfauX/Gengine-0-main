@@ -24,7 +24,7 @@ func sanitizeFilename(name string) string {
 	return filepath.Base(clean)
 }
 
-func (s *LocalStorage) Save(baseDir string, reader io.Reader, originalName string, userID uint, allowedMIMETypes []string) (string, error) {
+func (s *LocalStorage) Save(baseDir string, reader io.Reader, originalName string, userID uint, maxSize int64, allowedMIMETypes []string) (string, error) {
 	safeName := sanitizeFilename(originalName)
 	ext := filepath.Ext(safeName)
 	if ext == "" {
@@ -86,6 +86,18 @@ func (s *LocalStorage) Save(baseDir string, reader io.Reader, originalName strin
 	if _, err := io.Copy(dst, dataReader); err != nil {
 		_ = os.Remove(fullPath)
 		return "", fmt.Errorf("не удалось записать файл: %w", err)
+	}
+
+	if maxSize > 0 {
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			_ = os.Remove(fullPath)
+			return "", fmt.Errorf("не удалось проверить файл: %w", err)
+		}
+		if info.Size() > maxSize {
+			_ = os.Remove(fullPath)
+			return "", fmt.Errorf("размер файла превышает допустимый лимит %d байт", maxSize)
+		}
 	}
 
 	return "/" + filepath.ToSlash(fullPath), nil

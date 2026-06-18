@@ -5,26 +5,22 @@ services:
   app:
     build: .
     ports:
-      - "8080:8080"
+      - "${PORT:-8080}:${PORT:-8080}"
+    env_file:
+      - .env
     environment:
-      - DATABASE_URL=postgres://encounter:encounter@db:5432/encounter?sslmode=disable
-      - JWT_SECRET=supersecretkey
-      - BASE_URL=http://localhost:8080
-      - TLS_ENABLED=true
-      - TLS_CERT_FILE=/etc/ssl/certs/server.crt
-      - TLS_KEY_FILE=/etc/ssl/private/server.key
-      - HTTP_PORT=80
-      - HTTPS_PORT=443
-      - SMTP_HOST=smtp.yandex.com
-      - SMTP_PORT=587
-      - SMTP_USER=no-reply@vash-domen.ru      # <-- Замените на ваш реальный адрес
-      - SMTP_PASSWORD=XXXXXXXXXXXXXXXXXXXXX   # <-- Пароль приложения (см. ниже)
-      - SMTP_FROM=no-reply@vash-domen.ru      # <-- Тот же адрес или любой ваш
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - DB_SSLMODE=disable
+      - BASE_URL=${BASE_URL:-http://localhost:8080}
     depends_on:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "--spider", "http://localhost:${PORT:-8080}/healthz"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -32,19 +28,17 @@ services:
     volumes:
       - ./uploads:/root/uploads
       - ./backups:/root/backups
-      - ./certs:/etc/ssl/certs:ro
-      - ./certs:/etc/ssl/private:ro
 
   db:
     image: postgres:18-alpine
     environment:
-      POSTGRES_USER: encounter
-      POSTGRES_PASSWORD: encounter
-      POSTGRES_DB: encounter
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U encounter"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
       interval: 10s
       timeout: 5s
       retries: 5

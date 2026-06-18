@@ -3,8 +3,9 @@ package websocket
 
 import (
 	"encoding/json"
-	"log"
 	"sync"
+
+	"github.com/rs/zerolog/log"
 )
 
 type RoomHub struct {
@@ -35,22 +36,25 @@ func (h *RoomHub) UnregisterClient(client *Client) {
 	if clients, ok := h.rooms[client.RoomID]; ok {
 		delete(clients, client)
 	}
-	client.Close()
 }
 
 func (h *RoomHub) BroadcastToRoom(roomID string, msg interface{}) {
 	h.mu.RLock()
 	clients, ok := h.rooms[roomID]
+	snapshot := make([]*Client, 0, len(clients))
+	for client := range clients {
+		snapshot = append(snapshot, client)
+	}
 	h.mu.RUnlock()
 	if !ok {
 		return
 	}
 	data, err := json.Marshal(msg)
 	if err != nil {
-		log.Println("broadcast marshal error:", err)
+		log.Error().Err(err).Msg("broadcast marshal error")
 		return
 	}
-	for client := range clients {
+	for _, client := range snapshot {
 		client.mu.Lock()
 		if client.closed {
 			client.mu.Unlock()
