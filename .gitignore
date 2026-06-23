@@ -8,6 +8,7 @@
 
 # Uploaded user content (keep .gitkeep)
 /uploads/*
+/uploads/*/*
 !/uploads/**/.gitkeep
 
 # Backups
@@ -33,3 +34,5 @@ coverage.out
 
 # Dependencies
 vendor/
+
+AGENTS.md
