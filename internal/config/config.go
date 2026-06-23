@@ -1,3 +1,5 @@
+// Package config загружает и валидирует конфигурацию приложения из переменных окружения.
+// Package config загружает и валидирует конфигурацию приложения из переменных окружения.
 package config
 
 import (
@@ -8,7 +10,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// Config содержит все настройки приложения
+// Config содержит все настройки приложения.
 type Config struct {
 	Server   ServerConfig
 	Database DatabaseConfig
@@ -23,6 +25,7 @@ type Config struct {
 	TLS      TLSConfig
 }
 
+// ServerConfig содержит параметры HTTP-сервера.
 type ServerConfig struct {
 	Port       string
 	GinMode    string
@@ -30,54 +33,65 @@ type ServerConfig struct {
 	MaxBackups int
 }
 
+// DatabaseConfig содержит параметры подключения к PostgreSQL.
 type DatabaseConfig struct {
-	Host     string
-	Port     string
-	User     string
-	Password string
-	Name     string
-	SSLMode  string
+	Host         string
+	Port         string
+	User         string
+	Password     string
+	Name         string
+	SSLMode      string
+	MaxOpenConns int
+	MaxIdleConns int
 }
 
+// RedisConfig содержит параметры подключения к Redis (опционально).
 type RedisConfig struct {
 	Host     string
 	Port     string
 	Password string
 }
 
+// JWTConfig содержит параметры JWT-аутентификации.
 type JWTConfig struct {
 	Secret        string
 	AccessExpiry  time.Duration
 	RefreshExpiry time.Duration
 }
 
+// SessionConfig содержит параметры сессий.
 type SessionConfig struct {
 	Secret string
 }
 
+// AdminConfig содержит учётные данные администратора.
 type AdminConfig struct {
 	Email    string
 	Password string
 }
 
+// OAuthConfig содержит конфигурацию OAuth-провайдеров.
 type OAuthConfig struct {
 	Google OAuthProvider
 	GitHub OAuthProvider
 	Yandex OAuthProvider
 }
 
+// OAuthProvider содержит параметры одного OAuth-провайдера.
 type OAuthProvider struct {
 	Enabled      bool
 	ClientID     string
 	ClientSecret string
 }
 
+// StripeConfig содержит параметры Stripe.
 type StripeConfig struct {
 	Enabled       bool
 	SecretKey     string
 	WebhookSecret string
 }
 
+// SMTPConfig содержит параметры SMTP-сервера.
 type SMTPConfig struct {
 	Enabled  bool
 	Host     string
@@ -87,18 +101,20 @@ type SMTPConfig struct {
 	From     string
 }
 
+// ReCAPTCHAConfig содержит параметры reCAPTCHA.
 type ReCAPTCHAConfig struct {
 	Enabled   bool
 	SiteKey   string
 	SecretKey string
 }
 
+// TLSConfig содержит пути к TLS-сертификатам.
 type TLSConfig struct {
 	CertFile string
 	KeyFile  string
 }
 
-// LoadConfig загружает конфигурацию из переменных окружения с жёсткой проверкой обязательных секретов
+// LoadConfig загружает конфигурацию из переменных окружения с жёсткой проверкой обязательных секретов.
 func LoadConfig() *Config {
 	cfg := &Config{}
 

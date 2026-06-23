@@ -189,6 +189,7 @@ func (s *TournamentService) CanApply(tournamentID, userID uint) bool {
 	}
 	var count int64
 	for _, t := range teams {
+		count = 0
 		s.DB.Model(&TournamentTeam{}).Where("tournament_id = ? AND team_id = ?", tournamentID, t.ID).Count(&count)
 		if count == 0 {
 			return true

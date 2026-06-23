@@ -25,16 +25,20 @@ func (s *ReviewService) CanReview(gameID, userID uint) (bool, error) {
 		return false, err
 	}
 	var captainCount int64
-	s.DB.Model(&GamePassing{}).
+	if err := s.DB.Model(&GamePassing{}).
 		Joins("JOIN teams ON teams.id = game_passings.team_id").
 		Where("game_passings.game_id = ? AND game_passings.status = ? AND teams.captain_id = ?",
 			gameID, StatusFinished, userID).
-		Count(&captainCount)
+		Count(&captainCount).Error; err != nil {
+		return false, err
+	}
 	if count+int64(captainCount) == 0 {
 		return false, nil
 	}
 	var reviewCount int64
-	s.DB.Model(&Review{}).Where("game_id = ? AND user_id = ?", gameID, userID).Count(&reviewCount)
+	if err := s.DB.Model(&Review{}).Where("game_id = ? AND user_id = ?", gameID, userID).Count(&reviewCount).Error; err != nil {
+		return false, err
+	}
 	return reviewCount == 0, nil
 }
 

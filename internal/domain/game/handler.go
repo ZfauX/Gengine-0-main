@@ -3,6 +3,8 @@ package game
 
 import (
 	"net/http"
+	"slices"
+
 	"strconv"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 
 	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/team"
+	"gengine-0/internal/pkg/audit"
 	"gengine-0/internal/pkg/storage"
 	ws "gengine-0/internal/pkg/websocket"
 )
@@ -39,7 +42,7 @@ type SubmitTestCodeInput struct {
 	Code string `form:"code" binding:"required"`
 }
 
-// ---------- Вспомогательные типы для FullPreview ----------
+// ---------- Вспомогательные типы для FullPreview ----------.
 type levelPreview struct {
 	ID          uint              `json:"id"`
 	Position    int               `json:"position"`
@@ -62,7 +65,8 @@ type GameHandler struct {
 	coAuthorService *CoAuthorService
 	noteService     *NoteService
 	simulateService *SimulateService
-	photoService    *PhotoService         // сервис для фотографий
+	photoService    *PhotoService
+	auditService    *audit.Service
 	storage         storage.FileStorage
 	hub             *ws.RoomHub
 }
@@ -76,6 +80,7 @@ func NewGameHandler(
 	photoService *PhotoService,
 	storage storage.FileStorage,
 	hub *ws.RoomHub,
+	auditSvc *audit.Service,
 ) *GameHandler {
 	return &GameHandler{
 		gameService:     gameService,
@@ -84,6 +89,7 @@ func NewGameHandler(
 		noteService:     noteService,
 		simulateService: simulateService,
 		photoService:    photoService,
+		auditService:    auditSvc,
 		storage:         storage,
 		hub:             hub,
 	}
@@ -147,10 +153,15 @@ func (h *GameHandler) Show(c *gin.Context) {
 	}
 
 	isManager, _ := h.coAuthorService.IsUserManager(uint(id), userID)
-	reviews, _ := h.gameService.reviewService.ListByGame(uint(id))
-	avgRating, reviewsCount, _ := h.gameService.reviewService.GetAverageRating(uint(id))
+	var reviews []Review
+	var avgRating float64
+	var reviewsCount int64
+	if h.gameService.reviewService != nil {
+		reviews, _ = h.gameService.reviewService.ListByGame(uint(id))
+		avgRating, reviewsCount, _ = h.gameService.reviewService.GetAverageRating(uint(id))
+	}
 
-	canApply := !g.IsDraft && g.StartsAt != nil && g.StartsAt.After(time.Now())
+	canApply := !g.IsDraft && (g.StartsAt == nil || g.StartsAt.After(time.Now()))
 
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "games-show.html",
@@ -200,11 +211,7 @@ func (h *GameHandler) Create(c *gin.Context) {
 
 		allowedTypes := []string{"image/jpeg", "image/png", "image/webp"}
 		contentType := header.Header.Get("Content-Type")
-		allowed := false
-		for _, t := range allowedTypes {
-			if t == contentType { allowed = true; break }
-		}
-		if !allowed {
+		if !slices.Contains(allowedTypes, contentType) {
 			c.HTML(http.StatusOK, "layout.html", gin.H{
 				"ContentBlock": "games-new.html",
 				"Error":        "Допустимы только JPEG, PNG и WebP",
@@ -239,6 +246,8 @@ func (h *GameHandler) Create(c *gin.Context) {
 		})
 		return
 	}
+
+	h.auditService.Log(userID, "create", "game", g.ID, g.Name)
 
 	c.Redirect(http.StatusFound, "/games")
 }
@@ -311,11 +320,7 @@ func (h *GameHandler) Update(c *gin.Context) {
 
 			allowedTypes := []string{"image/jpeg", "image/png", "image/webp"}
 			contentType := header.Header.Get("Content-Type")
-			allowed := false
-			for _, t := range allowedTypes {
-				if t == contentType { allowed = true; break }
-			}
-			if !allowed {
+			if !slices.Contains(allowedTypes, contentType) {
 				c.HTML(http.StatusOK, "layout.html", gin.H{
 					"ContentBlock": "games-edit.html",
 					"Error":        "Допустимы только JPEG, PNG и WebP",
@@ -350,6 +355,8 @@ func (h *GameHandler) Update(c *gin.Context) {
 		return
 	}
 
+	h.auditService.Log(userID, "update", "game", uint(id), updated.Name)
+
 	c.Redirect(http.StatusFound, "/games/"+c.Param("id"))
 }
 
@@ -363,6 +370,8 @@ func (h *GameHandler) Delete(c *gin.Context) {
 		return
 	}
 
+	h.auditService.Log(userID, "delete", "game", uint(id), "")
+
 	c.Redirect(http.StatusFound, "/games")
 }
 
@@ -375,6 +384,8 @@ func (h *GameHandler) Publish(c *gin.Context) {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
+
+	h.auditService.Log(userID, "publish", "game", uint(id), "")
 
 	c.Redirect(http.StatusFound, "/games/"+c.Param("id"))
 }
@@ -790,16 +801,16 @@ func (h *GameHandler) DeletePhoto(c *gin.Context) {
 		return
 	}
 
-	// Удаляем файл
-	if err := h.storage.Delete(photo.Path); err != nil {
-		log.Error().Err(err).Str("path", photo.Path).Msg("DeletePhoto: failed to delete file")
-	}
-
-	// Удаляем запись (два аргумента: photoID и userID)
+	// Удаляем запись из БД
 	if err := h.photoService.Delete(photo.ID, userID); err != nil {
 		log.Error().Err(err).Uint("photo_id", photo.ID).Msg("DeletePhoto: failed to delete record")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось удалить фото"})
 		return
+	}
+
+	// Удаляем файл
+	if err := h.storage.Delete(photo.Path); err != nil {
+		log.Error().Err(err).Str("path", photo.Path).Msg("DeletePhoto: failed to delete file")
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
@@ -900,7 +911,7 @@ func (h *GameplayHandler) ShowGame(c *gin.Context) {
 			elapsed := time.Since(progress.StartedAt)
 			limit := time.Duration(settings.PerLevelTimeLimit) * time.Minute
 			remaining := limit - elapsed
-			if remaining < 0 { remaining = 0 }
+			remaining = max(remaining, 0)
 			timeLimitSec = int(remaining.Seconds())
 		}
 	}

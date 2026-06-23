@@ -1,4 +1,3 @@
-// internal/pkg/middleware/game_manager.go
 package middleware
 
 import (
@@ -26,6 +25,7 @@ func GameManager(authorizer GameAuthorizer) gin.HandlerFunc {
 			c.AbortWithStatus(http.StatusForbidden)
 			return
 		}
+		c.Set("isGameManager", true)
 		c.Next()
 	}
 }

@@ -1,6 +1,13 @@
 {{define "dashboard-index.html"}}
 <h1>Личный кабинет</h1>
 
+{{if .IsAdmin}}
+<div class="card" style="margin-bottom:20px; background:#fff3cd; border:1px solid #ffc107;">
+    <h2 style="margin:0;">Администрирование</h2>
+    <p style="margin:10px 0 0 0;"><a href="/admin" class="button" style="background:#f39c12;">Панель администратора</a></p>
+</div>
+{{end}}
+
 <div style="display:flex; gap:20px; flex-wrap:wrap; margin-top:20px;">
     <div class="card" style="flex:1; min-width:300px;">
         <h2>Мои игры <small>(авторство)</small></h2>

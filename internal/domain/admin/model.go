@@ -14,10 +14,10 @@ type AuditLog struct {
 	gorm.Model
 	UserID     uint      `gorm:"not null;index"`
 	User       user.User `gorm:"foreignKey:UserID"`
-	Action     string    `gorm:"not null"`          // например, "game_created", "team_disqualified"
-	ObjectType string    `gorm:"not null"`          // "game", "level", "team", "passing" и т.д.
+	Action     string    `gorm:"not null"`
+	ObjectType string    `gorm:"not null"`
 	ObjectID   uint      `gorm:"not null"`
-	Details    string    `gorm:"type:text"`         // JSON или произвольное описание изменений
+	Details    string    `gorm:"type:text"`
 }
 
 // Backup — информация о резервной копии базы данных.

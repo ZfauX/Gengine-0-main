@@ -87,8 +87,9 @@ func SetupRouter(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub,
 	gameSvc := game.NewGameService(db, coAuthorSvc, reviewSvc, monitorSvc, hub, attemptSvc, progressSvc, cfg)
 
 	// Регистрация маршрутов
-	user.RegisterRoutes(r, db, cfg)
-	game.RegisterRoutes(r, db, localStorage, hub, cfg, coAuthorSvc, attemptSvc, progressSvc, monitorSvc)
+	auditSvc := admin.RegisterRoutes(r, db, cfg)
+	user.RegisterRoutes(r, db, cfg, auditSvc)
+	game.RegisterRoutes(r, db, localStorage, hub, cfg, coAuthorSvc, attemptSvc, progressSvc, monitorSvc, auditSvc)
 	level.RegisterRoutes(r, db, localStorage, hub, cfg, coAuthorSvc, gameSvc)
 	team.RegisterRoutes(r, db, cfg, localStorage, coAuthorSvc)
 
@@ -99,7 +100,6 @@ func SetupRouter(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub,
 
 	monitor.RegisterRoutes(r, db, hub, cfg, coAuthorSvc, monitorSvc, attemptSvc, progressSvc)
 	social.RegisterRoutes(r, db, cfg)
-	admin.RegisterRoutes(r, db, cfg)
 	calendar.RegisterRoutes(r, db)
 	export.RegisterRoutes(r, db, localStorage, cfg, gameSvc, coAuthorSvc)
 	tournament.RegisterRoutes(r, db, cfg)

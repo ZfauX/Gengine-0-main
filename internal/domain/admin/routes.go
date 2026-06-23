@@ -6,15 +6,16 @@ import (
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/user"
+	"gengine-0/internal/pkg/audit"
 	"gengine-0/internal/pkg/middleware"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-func RegisterRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
-	auditService := NewAuditService(db)
-	backupService := NewBackupService(db, "backups", cfg.Server.MaxBackups)
+func RegisterRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) *audit.Service {
+	auditService := audit.NewService(db)
+	backupService := NewBackupService(db, "backups", cfg.Server.MaxBackups, cfg.Database)
 	adminHandler := NewAdminHandler(db, backupService, auditService)
 
 	authService := user.NewAuthService(db, cfg)
@@ -24,6 +25,7 @@ func RegisterRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	protected := router.Group("/admin")
 	protected.Use(authRequired, adminOnly)
 	{
+		protected.GET("/", adminHandler.Dashboard)
 		protected.GET("/users", adminHandler.ListUsers)
 		protected.GET("/users/:id/toggle-admin", adminHandler.ToggleAdmin)
 		protected.GET("/users/:id/delete", adminHandler.DeleteUser)
@@ -35,6 +37,8 @@ func RegisterRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 		protected.GET("/backups/:id/download", adminHandler.DownloadBackup)
 		protected.POST("/backups/rotate", adminHandler.RotateBackups)
 	}
+
+	return auditService
 }
 
 func adminOnlyMiddleware(db *gorm.DB) gin.HandlerFunc {
@@ -50,6 +54,7 @@ func adminOnlyMiddleware(db *gorm.DB) gin.HandlerFunc {
 			c.AbortWithStatus(http.StatusForbidden)
 			return
 		}
+		c.Set("IsAdmin", true)
 		c.Next()
 	}
 }

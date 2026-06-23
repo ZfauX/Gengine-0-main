@@ -1,4 +1,4 @@
-// internal/domain/level/model.go
+// Package level реализует управление уровнями, вопросами и ответами игр.
 package level
 
 import (

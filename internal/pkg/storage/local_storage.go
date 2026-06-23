@@ -1,3 +1,4 @@
+// Package storage предоставляет интерфейс и реализацию файлового хранилища.
 package storage
 
 import (
@@ -8,12 +9,15 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
 
+// LocalStorage реализует FileStorage через локальную файловую систему.
 type LocalStorage struct{}
 
+// NewLocalStorage создаёт новый LocalStorage.
 func NewLocalStorage() *LocalStorage {
 	return &LocalStorage{}
 }
@@ -41,14 +45,7 @@ func (s *LocalStorage) Save(baseDir string, reader io.Reader, originalName strin
 	// Проверка MIME типа, если заданы разрешённые
 	if len(allowedMIMETypes) > 0 {
 		contentType := http.DetectContentType(header[:n])
-		allowed := false
-		for _, allowedType := range allowedMIMETypes {
-			if contentType == allowedType {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
+		if !slices.Contains(allowedMIMETypes, contentType) {
 			return "", fmt.Errorf("недопустимый тип файла: %s", contentType)
 		}
 	}

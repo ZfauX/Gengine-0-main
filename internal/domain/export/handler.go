@@ -135,7 +135,7 @@ func (h *ExportHandler) ImportGame(c *gin.Context) {
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels")
+	c.Redirect(http.StatusFound, "/games/"+strconv.Itoa(int(gameID))+"/levels")
 }
 
 // ExportResultsCSV отдаёт CSV-файл с итоговой таблицей результатов игры.

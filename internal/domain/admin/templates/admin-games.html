@@ -1,4 +1,11 @@
 {{define "admin-games.html"}}
+<div style="display:flex; gap:10px; flex-wrap:wrap; margin:15px 0; padding:10px; background:#e8e8e8; border-radius:4px;">
+    <a href="/admin" class="button">Дашборд</a>
+    <a href="/admin/users" class="button">Пользователи</a>
+    <a href="/admin/games" class="button" style="background:#2c3e50;">Игры</a>
+    <a href="/admin/audit" class="button">Аудит</a>
+    <a href="/admin/backups" class="button">Бэкапы</a>
+</div>
 <h1>Модерация игр</h1>
 <p><a href="?status=draft">Черновики</a> | <a href="?status=published">Опубликованные</a> | <a href="?">Все</a></p>
 

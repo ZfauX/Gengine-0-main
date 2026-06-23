@@ -1,4 +1,4 @@
-// internal/testutil/postgres.go
+// Package testutil содержит утилиты для тестирования с изолированными схемами PostgreSQL.
 package testutil
 
 import (
@@ -14,7 +14,7 @@ import (
 // SetupPostgresDB создаёт изолированную схему в тестовой PostgreSQL,
 // выполняет миграцию моделей и возвращает подключение к ней.
 // После завершения теста схема автоматически удаляется.
-func SetupPostgresDB(t *testing.T, models ...interface{}) *gorm.DB {
+func SetupPostgresDB(t *testing.T, models ...any) *gorm.DB {
 	t.Helper()
 
 	// Уникальное имя схемы: test_<случайный hex>
@@ -51,7 +51,7 @@ func SetupPostgresDB(t *testing.T, models ...interface{}) *gorm.DB {
 		// Закрываем текущее соединение, чтобы не мешать удалению схемы
 		sqlDB, _ := db.DB()
 		if sqlDB != nil {
-			sqlDB.Close()
+			_ = sqlDB.Close()
 		}
 		// Создаём новое подключение для удаления схемы
 		cleanupDB, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
@@ -61,7 +61,7 @@ func SetupPostgresDB(t *testing.T, models ...interface{}) *gorm.DB {
 		}
 		defer func() {
 			if sqlDB, err := cleanupDB.DB(); err == nil {
-				sqlDB.Close()
+				_ = sqlDB.Close()
 			}
 		}()
 		if err := cleanupDB.Exec(fmt.Sprintf("DROP SCHEMA %s CASCADE", schemaName)).Error; err != nil {

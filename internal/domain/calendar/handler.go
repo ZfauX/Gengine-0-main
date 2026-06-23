@@ -46,6 +46,9 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 
 	events := make(map[string][]gin.H)
 	for _, g := range games {
+		if g.StartsAt == nil {
+			continue
+		}
 		dateStr := g.StartsAt.Format("2006-01-02")
 		events[dateStr] = append(events[dateStr], gin.H{
 			"id":   g.ID,

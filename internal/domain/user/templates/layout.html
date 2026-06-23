@@ -21,6 +21,7 @@
         <span>
             {{if .CurrentUserID}}
                 <a href="/dashboard">Личный кабинет</a>
+                {{if .IsAdmin}}<a href="/admin">Админка</a>{{end}}
                 <a href="/games">Игры</a>
                 <a href="/teams">Команды</a>
                 <a href="/profile">Профиль</a>
@@ -33,7 +34,9 @@
     </div>
     <div class="container">
         {{if .ContentBlock}}
-            {{if eq .ContentBlock "admin-audit.html"}}
+            {{if eq .ContentBlock "admin-dashboard.html"}}
+                {{template "admin-dashboard.html" .}}
+            {{else if eq .ContentBlock "admin-audit.html"}}
                 {{template "admin-audit.html" .}}
             {{else if eq .ContentBlock "admin-backups.html"}}
                 {{template "admin-backups.html" .}}
@@ -139,6 +142,8 @@
                 {{template "auth-verify_error.html" .}}
             {{else if eq .ContentBlock "auth-verify_success.html"}}
                 {{template "auth-verify_success.html" .}}
+            {{else if eq .ContentBlock "errors/500.html"}}
+                {{template "errors/500.html" .}}
             {{else if eq .ContentBlock "dashboard-index.html"}}
                 {{template "dashboard-index.html" .}}
             {{else if eq .ContentBlock "home.html"}}

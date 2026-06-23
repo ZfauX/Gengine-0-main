@@ -1,4 +1,4 @@
-// internal/pkg/websocket/client.go
+// Package websocket предоставляет WebSocket-клиент и хаб для real-time уведомлений.
 package websocket
 
 import (
@@ -44,6 +44,11 @@ func HandleWebSocket(client *Client) {
 			break
 		}
 	}
+}
+
+// WritePump запускает pump записи в горутине от имени клиента.
+func WritePump(client *Client) {
+	go client.writePump()
 }
 
 func (c *Client) writePump() {

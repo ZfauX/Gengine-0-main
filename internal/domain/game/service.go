@@ -64,20 +64,31 @@ func (s *GameService) Create(game *Game, authorID uint) error {
 
 // GetByID возвращает игру по ID с учётом видимости и прав.
 func (s *GameService) GetByID(id uint, viewerID uint) (*Game, error) {
-	var game Game
-	if err := s.DB.Preload("Author").Preload("GameSetting").First(&game, id).Error; err != nil {
+	var g Game
+	if err := s.DB.Preload("Author").Preload("GameSetting").First(&g, id).Error; err != nil {
 		return nil, err
 	}
-	if game.IsDraft && game.AuthorID != viewerID {
-		return nil, errors.New("игра не найдена")
-	}
-	if game.Visibility == "private" {
+	if g.IsDraft {
 		isManager, _ := s.CoAuthor.IsUserManager(id, viewerID)
 		if !isManager {
-			return nil, errors.New("игра не найдена")
+			var role string
+			s.DB.Table("users").Select("role").Where("id = ?", viewerID).Scan(&role)
+			if role != "admin" {
+				return nil, errors.New("игра не найдена")
+			}
 		}
 	}
-	return &game, nil
+	if g.Visibility == "private" {
+		isManager, _ := s.CoAuthor.IsUserManager(id, viewerID)
+		if !isManager {
+			var role string
+			s.DB.Table("users").Select("role").Where("id = ?", viewerID).Scan(&role)
+			if role != "admin" {
+				return nil, errors.New("игра не найдена")
+			}
+		}
+	}
+	return &g, nil
 }
 
 // ListFilteredPaginated возвращает игры с фильтрацией, сортировкой и пагинацией.
@@ -173,6 +184,13 @@ func (s *GameService) Publish(id uint, userID uint) error {
 	}
 	if !game.IsDraft {
 		return errors.New("игра уже опубликована")
+	}
+	var levelCount int64
+	if err := s.DB.Model(&level.Level{}).Where("game_id = ?", id).Count(&levelCount).Error; err != nil {
+		return err
+	}
+	if levelCount == 0 {
+		return errors.New("нельзя опубликовать игру без уровней")
 	}
 	game.IsDraft = false
 	return s.DB.Save(&game).Error
@@ -303,7 +321,7 @@ func (s *GameService) AcceptBlackboxAnswer(passingID, userID uint) error {
 
 // ForceFinishGame принудительно завершает игру.
 func (s *GameService) ForceFinishGame(gameID uint) error {
-	return s.DB.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB.Transaction(func(tx *gorm.DB) error {
 		var passings []GamePassing
 		if err := tx.Where("game_id = ? AND status = ?", gameID, StatusStarted).Find(&passings).Error; err != nil {
 			return err
@@ -320,9 +338,13 @@ func (s *GameService) ForceFinishGame(gameID uint) error {
 			s.notifyCaptainAboutFinish(tx, p.TeamID, gameID)
 		}
 
-		s.updateMonitorAndResults(gameID)
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+
+	s.updateMonitorAndResults(gameID)
+	return nil
 }
 
 // DisqualifyTeam дисквалифицирует команду.
@@ -545,7 +567,7 @@ func (s *GameService) updateMonitorAndResults(gameID uint) {
 	}
 }
 
-func (s *GameService) logAndNotify(progress *LevelProgress, message string, userID uint) {
+func (s *GameService) logAndNotify(progress *LevelProgress, message string, _ uint) {
 	logEntry := Log{
 		GamePassingID: progress.GamePassingID,
 		LevelID:       progress.LevelID,
@@ -560,11 +582,17 @@ func (s *GameService) broadcastSnapshot(passingID uint) {
 	if s.monitorService == nil || s.hub == nil {
 		return
 	}
-	s.monitorService.InvalidateCache(passingID)
-	snapshot, err := s.monitorService.GetOrFetchSnapshot(passingID)
-	if err != nil {
-		log.Error().Err(err).Uint("passing", passingID).Msg("GameService.broadcastSnapshot: GetOrFetchSnapshot error")
+	var passing GamePassing
+	if err := s.DB.Select("game_id").First(&passing, passingID).Error; err != nil {
+		log.Error().Err(err).Uint("passing", passingID).Msg("GameService.broadcastSnapshot: failed to find passing")
 		return
 	}
-	s.hub.BroadcastToRoom(strconv.Itoa(int(passingID)), snapshot)
+	gameID := passing.GameID
+	s.monitorService.InvalidateCache(gameID)
+	snapshot, err := s.monitorService.GetOrFetchSnapshot(gameID)
+	if err != nil {
+		log.Error().Err(err).Uint("game", gameID).Msg("GameService.broadcastSnapshot: GetOrFetchSnapshot error")
+		return
+	}
+	s.hub.BroadcastToRoom(strconv.Itoa(int(gameID)), snapshot)
 }

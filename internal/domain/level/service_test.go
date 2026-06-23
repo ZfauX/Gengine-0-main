@@ -485,7 +485,7 @@ func newAnswerService(db *gorm.DB) *level.AnswerService {
 	return level.NewAnswerService(db, &simpleGameAuthorizer{db})
 }
 
-func createUser(t *testing.T, db *gorm.DB, email, password string) *user.User {
+func createUser(t *testing.T, db *gorm.DB, email, _ string) *user.User {
 	t.Helper()
 	u := &user.User{Email: email, Password: "hashed", Name: email}
 	require.NoError(t, db.Create(u).Error)

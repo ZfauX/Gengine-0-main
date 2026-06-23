@@ -22,7 +22,9 @@ func (s *CoAuthorService) IsUserManager(gameID, userID uint) (bool, error) {
 		return true, nil
 	}
 	var count int64
-	s.DB.Model(&CoAuthor{}).Where("game_id = ? AND user_id = ?", gameID, userID).Count(&count)
+	if err := s.DB.Model(&CoAuthor{}).Where("game_id = ? AND user_id = ?", gameID, userID).Count(&count).Error; err != nil {
+		return false, err
+	}
 	return count > 0, nil
 }
 

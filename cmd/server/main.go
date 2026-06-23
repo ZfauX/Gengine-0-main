@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -37,6 +38,7 @@ import (
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/tournament"
 	"gengine-0/internal/domain/user"
+	"gengine-0/internal/pkg/audit"
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/storage"
 	ws "gengine-0/internal/pkg/websocket"
@@ -143,6 +145,41 @@ func (l *gormLogger) Trace(ctx context.Context, begin time.Time, fc func() (sql 
 		Msg("GORM trace")
 }
 
+func ensureAdmin(db *gorm.DB, cfg *config.Config) {
+	hashed, err := bcrypt.GenerateFromPassword([]byte(cfg.Admin.Password), bcrypt.DefaultCost)
+	if err != nil {
+		log.Error().Err(err).Msg("ensureAdmin: не удалось захешировать пароль")
+		return
+	}
+
+	var adminUser user.User
+	result := db.Where("role = ?", "admin").First(&adminUser)
+	if result.Error == nil {
+		adminUser.Password = string(hashed)
+		adminUser.Email = cfg.Admin.Email
+		if err := db.Save(&adminUser).Error; err != nil {
+			log.Error().Err(err).Msg("ensureAdmin: не удалось обновить администратора")
+			return
+		}
+		log.Info().Str("email", adminUser.Email).Msg("Администратор обновлён")
+		return
+	}
+
+	adminUser = user.User{
+		Email:         cfg.Admin.Email,
+		Password:      string(hashed),
+		Name:          "Администратор",
+		Role:          "admin",
+		EmailVerified: true,
+	}
+	if err := db.Create(&adminUser).Error; err != nil {
+		log.Error().Err(err).Msg("ensureAdmin: не удалось создать администратора")
+		return
+	}
+
+	log.Info().Str("email", adminUser.Email).Msg("Создан администратор")
+}
+
 func main() {
 	// Загрузка .env файла (если существует)
 	if err := godotenv.Load(); err != nil {
@@ -190,12 +227,14 @@ func main() {
 		&monitor.ChatRoom{}, &monitor.ChatMessage{}, &monitor.BlackboxVotingSession{}, &monitor.BlackboxVote{},
 		&social.PlayerRating{}, &social.Follow{},
 		&game.Review{}, &game.PlayerRating{},
-		&admin.AuditLog{}, &admin.Backup{},
+		&admin.AuditLog{}, &admin.Backup{}, &audit.Entry{},
 		&tournament.Tournament{}, &tournament.TournamentGame{}, &tournament.TournamentTeam{}, &tournament.TournamentResult{},
 	}
 	if err := db.AutoMigrate(models...); err != nil {
 		log.Fatal().Err(err).Msg("Ошибка миграции")
 	}
+
+	ensureAdmin(db, cfg)
 
 	localStorage := storage.NewLocalStorage()
 	hub := ws.NewRoomHub()

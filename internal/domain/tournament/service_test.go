@@ -16,7 +16,7 @@ import (
 
 func setupTournamentDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db := testutil.SetupTestDB(t,
+	return testutil.SetupPostgresDB(t,
 		&tournament.Tournament{},
 		&tournament.TournamentGame{},
 		&tournament.TournamentTeam{},
@@ -25,11 +25,10 @@ func setupTournamentDB(t *testing.T) *gorm.DB {
 		&team.Team{},
 		&user.User{},
 	)
-	return db
 }
 
 func createTournamentUser(t *testing.T, db *gorm.DB, email string) *user.User {
-	u := &user.User{Email: email, Name: email}
+	u := &user.User{Email: email, Name: email, Password: "hashed"}
 	require.NoError(t, db.Create(u).Error)
 	return u
 }
@@ -85,16 +84,15 @@ func TestTournamentService_Leaderboard(t *testing.T) {
 
 	author := createTournamentUser(t, db, "lb@test.com")
 	trn := &tournament.Tournament{
-		Name:                 "Leaderboard",
-		AuthorID:             author.ID,
-		PointsForFirst:       10,
-		PointsForSecond:      7,
-		PointsForThird:       5,
+		Name:                  "Leaderboard",
+		AuthorID:              author.ID,
+		PointsForFirst:        10,
+		PointsForSecond:       7,
+		PointsForThird:        5,
 		PointsForParticipation: 2,
 	}
 	require.NoError(t, svc.Create(trn))
 
-	// Создаём команды и результаты
 	tm1, _ := teamSvc.CreateTeam("T1", author.ID)
 	tm2, _ := teamSvc.CreateTeam("T2", author.ID)
 
@@ -104,6 +102,6 @@ func TestTournamentService_Leaderboard(t *testing.T) {
 	results, err := svc.GetLeaderboard(trn.ID)
 	require.NoError(t, err)
 	assert.Len(t, results, 2)
-	assert.Equal(t, tm1.ID, results[0].TeamID) // первое место по очкам
+	assert.Equal(t, tm1.ID, results[0].TeamID)
 	assert.Equal(t, tm2.ID, results[1].TeamID)
 }

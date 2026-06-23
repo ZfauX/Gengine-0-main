@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gengine-0/internal/domain/level"
+	"gengine-0/internal/pkg/util"
 
 	"gorm.io/gorm"
 )
@@ -57,6 +58,13 @@ func (s *MonitorService) GetOrFetchSnapshot(gameID uint) ([]TeamProgress, error)
 	}
 	s.mu.RUnlock()
 
+	s.mu.Lock()
+	if cached, ok := s.cache[gameID]; ok && time.Since(cached.timestamp) < s.cacheTTL {
+		s.mu.Unlock()
+		return cached.data, nil
+	}
+	s.mu.Unlock()
+
 	snapshot, err := s.GameSnapshot(gameID)
 	if err != nil {
 		return nil, err
@@ -84,7 +92,7 @@ func (s *MonitorService) GameSnapshot(gameID uint) ([]TeamProgress, error) {
 	var passings []GamePassing
 	err := s.DB.
 		Preload("Team").
-		Preload("Progresses").
+		Preload("Progresses.Attempts").
 		Where("game_id = ?", gameID).
 		Find(&passings).Error
 	if err != nil {
@@ -124,7 +132,7 @@ func (s *MonitorService) GameSnapshot(gameID uint) ([]TeamProgress, error) {
 
 		tp.CompletedLevels = completed
 		tp.CurrentLevel = currentLevel
-		tp.TotalTime = formatDuration(totalDuration)
+		tp.TotalTime = util.FormatDuration(totalDuration)
 		tp.Attempts = attemptsCount
 
 		sus, reason := s.analyzeTeamBehavior(p.TeamID, gameID)
@@ -151,7 +159,9 @@ func (s *MonitorService) CalculateResults(gameID uint) error {
 	var results []passingResult
 	for _, p := range passings {
 		var progresses []LevelProgress
-		s.DB.Where("game_passing_id = ?", p.ID).Find(&progresses)
+		if err := s.DB.Where("game_passing_id = ?", p.ID).Find(&progresses).Error; err != nil {
+			return err
+		}
 		var total time.Duration
 		for _, pr := range progresses {
 			if pr.FinishedAt != nil {
@@ -159,13 +169,17 @@ func (s *MonitorService) CalculateResults(gameID uint) error {
 			}
 		}
 		results = append(results, passingResult{ID: p.ID, Duration: total})
-		s.DB.Model(&p).Update("result_duration", total)
+		if err := s.DB.Model(&p).Update("result_duration", total).Error; err != nil {
+			return err
+		}
 	}
 
 	sort.Slice(results, func(i, j int) bool { return results[i].Duration < results[j].Duration })
 	for i, res := range results {
 		place := i + 1
-		s.DB.Model(&GamePassing{}).Where("id = ?", res.ID).Update("place", place)
+		if err := s.DB.Model(&GamePassing{}).Where("id = ?", res.ID).Update("place", place).Error; err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -213,14 +227,4 @@ func (s *MonitorService) analyzeTeamBehavior(teamID, gameID uint) (bool, string)
 		}
 	}
 	return false, ""
-}
-
-func formatDuration(d time.Duration) string {
-	h := int(d.Hours())
-	m := int(d.Minutes()) % 60
-	s := int(d.Seconds()) % 60
-	if h > 0 {
-		return fmt.Sprintf("%dч %02dм %02dс", h, m, s)
-	}
-	return fmt.Sprintf("%dм %02dс", m, s)
 }

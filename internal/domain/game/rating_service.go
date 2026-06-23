@@ -29,15 +29,34 @@ func (s *RatingService) UpdateRatingsForGame(gameID uint) error {
 	}
 
 	var passings []GamePassing
-	s.DB.Where("game_id = ? AND status = ?", gameID, StatusFinished).Find(&passings)
+	if err := s.DB.Where("game_id = ? AND status = ?", gameID, StatusFinished).Find(&passings).Error; err != nil {
+		log.Error().Err(err).Uint("game", gameID).Msg("UpdateRatingsForGame: failed to load passings")
+		return nil
+	}
 
 	for _, p := range passings {
+		type memberResult struct {
+			UserID    uint
+			CaptainID uint
+		}
+		var members []memberResult
+		s.DB.Table("team_members").
+			Select("team_members.user_id, teams.captain_id").
+			Joins("JOIN teams ON teams.id = team_members.team_id").
+			Where("team_members.team_id = ?", p.TeamID).
+			Scan(&members)
+
+		seen := make(map[uint]bool)
 		var userIDs []uint
-		s.DB.Table("team_members").Where("team_id = ?", p.TeamID).Pluck("user_id", &userIDs)
-		var captainID uint
-		s.DB.Table("teams").Select("captain_id").Where("id = ?", p.TeamID).Scan(&captainID)
-		userIDs = append(userIDs, captainID)
-		userIDs = uniqueUintSlice(userIDs)
+		for _, m := range members {
+			if !seen[m.UserID] {
+				seen[m.UserID] = true
+				userIDs = append(userIDs, m.UserID)
+			}
+		}
+		if len(members) > 0 && !seen[members[0].CaptainID] {
+			userIDs = append(userIDs, members[0].CaptainID)
+		}
 
 		basePoints := 2
 		if p.Place != nil {
@@ -62,7 +81,7 @@ func (s *RatingService) UpdateRatingsForGame(gameID uint) error {
 func (s *RatingService) awardPoints(userID uint, points int, now time.Time) error {
 	return s.DB.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "user_id"}},
-		DoUpdates: clause.Assignments(map[string]interface{}{
+		DoUpdates: clause.Assignments(map[string]any{
 			"score":      gorm.Expr("player_ratings.score + ?", points),
 			"updated_at": now,
 		}),
