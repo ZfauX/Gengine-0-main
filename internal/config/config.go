@@ -35,14 +35,15 @@ type ServerConfig struct {
 
 // DatabaseConfig содержит параметры подключения к PostgreSQL.
 type DatabaseConfig struct {
-	Host         string
-	Port         string
-	User         string
-	Password     string
-	Name         string
-	SSLMode      string
-	MaxOpenConns int
-	MaxIdleConns int
+	Host            string
+	Port            string
+	User            string
+	Password        string
+	Name            string
+	SSLMode         string
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime time.Duration
 }
 
 // RedisConfig содержит параметры подключения к Redis (опционально).
@@ -131,6 +132,9 @@ func LoadConfig() *Config {
 	cfg.Database.Password = requireEnv("DB_PASSWORD")
 	cfg.Database.Name = requireEnv("DB_NAME")
 	cfg.Database.SSLMode = getEnvOrDefault("DB_SSLMODE", "disable")
+	cfg.Database.MaxOpenConns = getEnvAsInt("DB_MAX_OPEN_CONNS", 25)
+	cfg.Database.MaxIdleConns = getEnvAsInt("DB_MAX_IDLE_CONNS", 10)
+	cfg.Database.ConnMaxLifetime = parseDuration("DB_CONN_MAX_LIFETIME", "5m")
 
 	// Redis (опционально)
 	cfg.Redis.Host = os.Getenv("REDIS_HOST")
