@@ -22,6 +22,7 @@ import (
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/tournament"
 	"gengine-0/internal/domain/user"
+	"gengine-0/internal/pkg/audit"
 	"gengine-0/internal/pkg/storage"
 	ws "gengine-0/internal/pkg/websocket"
 	"gengine-0/internal/testutil"
@@ -95,7 +96,7 @@ func TestFullGameFlow(t *testing.T) {
 		},
 	}
 
-	db := testutil.SetupTestDB(t,
+	db := testutil.SetupPostgresDB(t,
 		&user.User{}, &user.Achievement{}, &user.PasswordResetToken{}, &user.EmailVerificationToken{},
 		&game.Game{}, &game.GamePassing{}, &game.GameSetting{}, &game.CoAuthor{}, &game.Note{},
 		&game.LevelProgress{}, &game.Attempt{},
@@ -106,7 +107,7 @@ func TestFullGameFlow(t *testing.T) {
 		&team.Team{}, &team.Invitation{},
 		&monitor.ChatRoom{}, &monitor.ChatMessage{},
 		&social.PlayerRating{}, &social.Follow{},
-		&admin.AuditLog{}, &admin.Backup{},
+		&admin.AuditLog{}, &admin.Backup{}, &audit.Entry{},
 		&tournament.Tournament{}, &tournament.TournamentGame{}, &tournament.TournamentTeam{}, &tournament.TournamentResult{},
 	)
 
@@ -169,9 +170,8 @@ func TestFullGameFlow(t *testing.T) {
 	w = httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusOK, w.Code, "Дашборд должен быть доступен")
-	body, _ := io.ReadAll(w.Body)
-	t.Logf("Dashboard body: %s", string(body))
-	assert.Contains(t, string(body), "Личный кабинет", "Страница дашборда должна содержать заголовок")
+	bodyBytes, _ := io.ReadAll(w.Body)
+	assert.Contains(t, string(bodyBytes), "Личный кабинет", "Страница дашборда должна содержать заголовок")
 
 	// Шаг 3: создание игры
 	csrfToken, sessionCookies = getCSRFToken(router, "/games/new", sessionCookies)
@@ -237,10 +237,6 @@ func TestFullGameFlow(t *testing.T) {
 	}
 	w = httptest.NewRecorder()
 	router.ServeHTTP(w, req)
-	if w.Code != http.StatusFound {
-		body, _ := io.ReadAll(w.Body)
-		t.Logf("Apply response: %s", string(body))
-	}
 	require.Equal(t, http.StatusFound, w.Code, "Шаг 6: подача заявки")
 
 	// Шаг 7: принятие заявки

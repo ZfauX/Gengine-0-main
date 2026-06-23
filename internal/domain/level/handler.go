@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strconv"
 
+	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/storage"
 	ws "gengine-0/internal/pkg/websocket"
 
@@ -53,7 +54,7 @@ func (h *LevelHandler) ListLevels(c *gin.Context) {
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
-	errorMsg := c.Query("error")
+	errorMsg := sanitize.StripHTML(c.Query("error"))
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "levels-list.html",
 		"GameID":       gameID,
@@ -99,7 +100,7 @@ func (h *LevelHandler) CreateLevel(c *gin.Context) {
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels")
+	c.Redirect(http.StatusFound, "/games/"+strconv.Itoa(gameID)+"/levels")
 }
 
 // ShowLevel показывает уровень и его вопросы.

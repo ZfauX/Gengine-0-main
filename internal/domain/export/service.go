@@ -7,12 +7,13 @@ import (
 	"io"
 	"strconv"
 	"strings"
-	"time"
 
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/level"
+	"gengine-0/internal/pkg/util"
 
 	"github.com/jung-kurt/gofpdf"
+	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
 
@@ -28,7 +29,7 @@ type ExportService struct {
 // boldFont — байты жирного Unicode-шрифта.
 func NewExportService(db *gorm.DB, normalFont, boldFont []byte) *ExportService {
 	if len(normalFont) == 0 || len(boldFont) == 0 {
-		panic("ExportService: не удалось загрузить один или оба встроенных шрифта DejaVuSans. " +
+	log.Fatal().Msg("ExportService: не удалось загрузить один или оба встроенных шрифта DejaVuSans. " +
 			"Проверьте, что файлы DejaVuSans.ttf и DejaVuSans-Bold.ttf существуют " +
 			"и правильно добавлены в embed.go.")
 	}
@@ -76,87 +77,89 @@ func (s *ExportService) ExportGameToCSV(gameID uint, w io.Writer) error {
 
 // ImportGameFromCSV парсит CSV и создаёт уровни/вопросы/ответы для указанной игры.
 func (s *ExportService) ImportGameFromCSV(gameID uint, r io.Reader) error {
-	reader := csv.NewReader(r)
+	return s.DB.Transaction(func(tx *gorm.DB) error {
+		reader := csv.NewReader(r)
 
-	if _, err := reader.Read(); err != nil {
-		return fmt.Errorf("не удалось прочитать заголовок: %w", err)
-	}
-
-	var g game.Game
-	if err := s.DB.First(&g, gameID).Error; err != nil {
-		return fmt.Errorf("игра не найдена: %w", err)
-	}
-
-	levelMap := make(map[int]*level.Level)
-
-	for {
-		record, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("ошибка чтения строки: %w", err)
-		}
-		if len(record) < 5 {
-			continue
+		if _, err := reader.Read(); err != nil {
+			return fmt.Errorf("не удалось прочитать заголовок: %w", err)
 		}
 
-		pos, err := strconv.Atoi(record[0])
-		if err != nil {
-			return fmt.Errorf("неверная позиция уровня: %s", record[0])
+		var g game.Game
+		if err := tx.First(&g, gameID).Error; err != nil {
+			return fmt.Errorf("игра не найдена: %w", err)
 		}
-		levelName := record[1]
-		questionText := record[2]
-		hint := record[3]
-		answersStr := record[4]
 
-		lvl, exists := levelMap[pos]
-		if !exists {
-			var existing level.Level
-			err := s.DB.Where("game_id = ? AND position = ?", gameID, pos).First(&existing).Error
-			if err == nil {
-				lvl = &existing
-			} else {
-				newLevel := level.Level{
-					GameID:   gameID,
-					Name:     levelName,
-					Position: pos,
-				}
-				if err := s.DB.Create(&newLevel).Error; err != nil {
-					return fmt.Errorf("не удалось создать уровень: %w", err)
-				}
-				lvl = &newLevel
+		levelMap := make(map[int]*level.Level)
+
+		for {
+			record, err := reader.Read()
+			if err == io.EOF {
+				break
 			}
-			levelMap[pos] = lvl
-		}
+			if err != nil {
+				return fmt.Errorf("ошибка чтения строки: %w", err)
+			}
+			if len(record) < 5 {
+				continue
+			}
 
-		question := level.Question{
-			LevelID: lvl.ID,
-			Text:    questionText,
-			Hint:    hint,
-		}
-		if err := s.DB.Create(&question).Error; err != nil {
-			return fmt.Errorf("не удалось создать вопрос: %w", err)
-		}
+			pos, err := strconv.Atoi(record[0])
+			if err != nil {
+				return fmt.Errorf("неверная позиция уровня: %s", record[0])
+			}
+			levelName := record[1]
+			questionText := record[2]
+			hint := record[3]
+			answersStr := record[4]
 
-		if answersStr != "" {
-			codes := strings.Split(answersStr, "|")
-			for _, code := range codes {
-				code = strings.TrimSpace(code)
-				if code == "" {
-					continue
+			lvl, exists := levelMap[pos]
+			if !exists {
+				var existing level.Level
+				err := tx.Where("game_id = ? AND position = ?", gameID, pos).First(&existing).Error
+				if err == nil {
+					lvl = &existing
+				} else {
+					newLevel := level.Level{
+						GameID:   gameID,
+						Name:     levelName,
+						Position: pos,
+					}
+					if err := tx.Create(&newLevel).Error; err != nil {
+						return fmt.Errorf("не удалось создать уровень: %w", err)
+					}
+					lvl = &newLevel
 				}
-				answer := level.Answer{
-					QuestionID: question.ID,
-					Code:       code,
-				}
-				if err := s.DB.Create(&answer).Error; err != nil {
-					return fmt.Errorf("не удалось создать ответ: %w", err)
+				levelMap[pos] = lvl
+			}
+
+			question := level.Question{
+				LevelID: lvl.ID,
+				Text:    questionText,
+				Hint:    hint,
+			}
+			if err := tx.Create(&question).Error; err != nil {
+				return fmt.Errorf("не удалось создать вопрос: %w", err)
+			}
+
+			if answersStr != "" {
+				codes := strings.Split(answersStr, "|")
+				for _, code := range codes {
+					code = strings.TrimSpace(code)
+					if code == "" {
+						continue
+					}
+					answer := level.Answer{
+						QuestionID: question.ID,
+						Code:       code,
+					}
+					if err := tx.Create(&answer).Error; err != nil {
+						return fmt.Errorf("не удалось создать ответ: %w", err)
+					}
 				}
 			}
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
 // ExportResultsToCSV записывает итоговую таблицу результатов игры в CSV.
@@ -182,7 +185,7 @@ func (s *ExportService) ExportResultsToCSV(gameID uint, w io.Writer) error {
 		}
 		timeStr := ""
 		if p.ResultDuration != nil {
-			timeStr = formatDuration(*p.ResultDuration)
+			timeStr = util.FormatDuration(*p.ResultDuration)
 		}
 		attempts := 0
 		for _, lp := range p.Progresses {
@@ -309,7 +312,7 @@ func (s *ExportService) ExportStatisticsToPDF(gameID uint, w io.Writer) error {
 
 		duration := ""
 		if p.ResultDuration != nil {
-			duration = formatDuration(*p.ResultDuration)
+			duration = util.FormatDuration(*p.ResultDuration)
 		}
 		pdf.SetFont("DejaVu", "", 11)
 		pdf.Cell(0, 6, fmt.Sprintf("Общее время: %s", duration))
@@ -319,7 +322,7 @@ func (s *ExportService) ExportStatisticsToPDF(gameID uint, w io.Writer) error {
 			levelTime := ""
 			if lp.FinishedAt != nil {
 				d := lp.FinishedAt.Sub(lp.StartedAt)
-				levelTime = formatDuration(d)
+				levelTime = util.FormatDuration(d)
 			}
 			attempts := len(lp.Attempts)
 			pdf.Cell(10, 6, "")
@@ -330,15 +333,4 @@ func (s *ExportService) ExportStatisticsToPDF(gameID uint, w io.Writer) error {
 	}
 
 	return pdf.Output(w)
-}
-
-// formatDuration форматирует длительность в человекочитаемую строку.
-func formatDuration(d time.Duration) string {
-	h := int(d.Hours())
-	m := int(d.Minutes()) % 60
-	s := int(d.Seconds()) % 60
-	if h > 0 {
-		return fmt.Sprintf("%dч %02dм %02dс", h, m, s)
-	}
-	return fmt.Sprintf("%dм %02dс", m, s)
 }

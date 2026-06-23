@@ -15,16 +15,21 @@ import (
 	"gorm.io/gorm"
 )
 
-// ---------- RatingService ----------
-
-func TestRatingService_UpdateRatingsForGame(t *testing.T) {
-	db := testutil.SetupTestDB(t,
+func setupSocialDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	return testutil.SetupPostgresDB(t,
 		&social.PlayerRating{}, &social.Follow{},
 		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
 		&game.Review{}, &game.PlayerRating{},
 		&team.Team{},
 		&user.User{},
 	)
+}
+
+// ---------- RatingService ----------
+
+func TestRatingService_UpdateRatingsForGame(t *testing.T) {
+	db := setupSocialDB(t)
 	rs := game.NewRatingService(db)
 
 	author := createUser(t, db, "author@test.com", "pass")
@@ -54,13 +59,7 @@ func TestRatingService_UpdateRatingsForGame(t *testing.T) {
 }
 
 func TestRatingService_GetLeaderboard(t *testing.T) {
-	db := testutil.SetupTestDB(t,
-		&social.PlayerRating{}, &social.Follow{},
-		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
-		&game.Review{}, &game.PlayerRating{},
-		&team.Team{},
-		&user.User{},
-	)
+	db := setupSocialDB(t)
 	rs := game.NewRatingService(db)
 
 	u1 := createUser(t, db, "u1@test.com", "pass")
@@ -76,13 +75,7 @@ func TestRatingService_GetLeaderboard(t *testing.T) {
 }
 
 func TestRatingService_GetLeaderboardEmpty(t *testing.T) {
-	db := testutil.SetupTestDB(t,
-		&social.PlayerRating{}, &social.Follow{},
-		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
-		&game.Review{}, &game.PlayerRating{},
-		&team.Team{},
-		&user.User{},
-	)
+	db := setupSocialDB(t)
 	rs := game.NewRatingService(db)
 
 	board, err := rs.GetLeaderboard(10)
@@ -91,13 +84,7 @@ func TestRatingService_GetLeaderboardEmpty(t *testing.T) {
 }
 
 func TestRatingService_UpdateRatingsForGame_NoPassings(t *testing.T) {
-	db := testutil.SetupTestDB(t,
-		&social.PlayerRating{}, &social.Follow{},
-		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
-		&game.Review{}, &game.PlayerRating{},
-		&team.Team{},
-		&user.User{},
-	)
+	db := setupSocialDB(t)
 	rs := game.NewRatingService(db)
 
 	author := createUser(t, db, "author@test.com", "pass")
@@ -106,13 +93,11 @@ func TestRatingService_UpdateRatingsForGame_NoPassings(t *testing.T) {
 	err := rs.UpdateRatingsForGame(g.ID)
 	require.NoError(t, err)
 
-	// Автор всегда получает очки за создание игры, даже без прохождений
 	var authorRating game.PlayerRating
 	err = db.Where("user_id = ?", author.ID).First(&authorRating).Error
 	require.NoError(t, err)
 	assert.Equal(t, 5, authorRating.Score)
 
-	// Для других пользователей записей быть не должно
 	var count int64
 	db.Model(&game.PlayerRating{}).Where("user_id != ?", author.ID).Count(&count)
 	assert.Equal(t, int64(0), count)
@@ -121,13 +106,7 @@ func TestRatingService_UpdateRatingsForGame_NoPassings(t *testing.T) {
 // ---------- FollowService ----------
 
 func TestFollowService_FollowAndUnfollow(t *testing.T) {
-	db := testutil.SetupTestDB(t,
-		&social.PlayerRating{}, &social.Follow{},
-		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
-		&game.Review{}, &game.PlayerRating{},
-		&team.Team{},
-		&user.User{},
-	)
+	db := setupSocialDB(t)
 	fs := social.NewFollowService(db)
 
 	follower := createUser(t, db, "follower@test.com", "pass")
@@ -146,13 +125,7 @@ func TestFollowService_FollowAndUnfollow(t *testing.T) {
 }
 
 func TestFollowService_GetSubscriptions(t *testing.T) {
-	db := testutil.SetupTestDB(t,
-		&social.PlayerRating{}, &social.Follow{},
-		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
-		&game.Review{}, &game.PlayerRating{},
-		&team.Team{},
-		&user.User{},
-	)
+	db := setupSocialDB(t)
 	fs := social.NewFollowService(db)
 
 	follower := createUser(t, db, "follower@test.com", "pass")
@@ -168,13 +141,7 @@ func TestFollowService_GetSubscriptions(t *testing.T) {
 }
 
 func TestFollowService_UnfollowWhenNotFollowing(t *testing.T) {
-	db := testutil.SetupTestDB(t,
-		&social.PlayerRating{}, &social.Follow{},
-		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
-		&game.Review{}, &game.PlayerRating{},
-		&team.Team{},
-		&user.User{},
-	)
+	db := setupSocialDB(t)
 	fs := social.NewFollowService(db)
 
 	follower := createUser(t, db, "f@test.com", "pass")
@@ -186,13 +153,7 @@ func TestFollowService_UnfollowWhenNotFollowing(t *testing.T) {
 }
 
 func TestFollowService_IsFollowingFalse(t *testing.T) {
-	db := testutil.SetupTestDB(t,
-		&social.PlayerRating{}, &social.Follow{},
-		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
-		&game.Review{}, &game.PlayerRating{},
-		&team.Team{},
-		&user.User{},
-	)
+	db := setupSocialDB(t)
 	fs := social.NewFollowService(db)
 
 	follower := createUser(t, db, "f@test.com", "pass")
@@ -202,13 +163,7 @@ func TestFollowService_IsFollowingFalse(t *testing.T) {
 }
 
 func TestFollowService_GetSubscriptionsEmpty(t *testing.T) {
-	db := testutil.SetupTestDB(t,
-		&social.PlayerRating{}, &social.Follow{},
-		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
-		&game.Review{}, &game.PlayerRating{},
-		&team.Team{},
-		&user.User{},
-	)
+	db := setupSocialDB(t)
 	fs := social.NewFollowService(db)
 
 	u := createUser(t, db, "u@test.com", "pass")
@@ -220,7 +175,7 @@ func TestFollowService_GetSubscriptionsEmpty(t *testing.T) {
 
 // ---------- Вспомогательные функции ----------
 
-func createUser(t *testing.T, db *gorm.DB, email, password string) *user.User {
+func createUser(t *testing.T, db *gorm.DB, email, _ string) *user.User {
 	t.Helper()
 	u := &user.User{Email: email, Password: "hashed", Name: email}
 	require.NoError(t, db.Create(u).Error)

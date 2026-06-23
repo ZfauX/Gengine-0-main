@@ -15,14 +15,19 @@ import (
 	"gorm.io/gorm"
 )
 
-// ---------- TeamService ----------
-
-func TestTeamService_CreateTeam(t *testing.T) {
-	db := testutil.SetupTestDB(t,
+func setupTeamDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	return testutil.SetupPostgresDB(t,
 		&team.Team{}, &team.Invitation{},
 		&user.User{},
 		&game.Game{}, &game.GamePassing{}, &game.CoAuthor{},
 	)
+}
+
+// ---------- TeamService ----------
+
+func TestTeamService_CreateTeam(t *testing.T) {
+	db := setupTeamDB(t)
 	ts := team.NewTeamService(db)
 
 	cap := createUser(t, db, "cap@test.com", "pass")
@@ -33,11 +38,7 @@ func TestTeamService_CreateTeam(t *testing.T) {
 }
 
 func TestTeamService_AddMember_ByCaptain(t *testing.T) {
-	db := testutil.SetupTestDB(t,
-		&team.Team{}, &team.Invitation{},
-		&user.User{},
-		&game.Game{}, &game.GamePassing{}, &game.CoAuthor{},
-	)
+	db := setupTeamDB(t)
 	ts := team.NewTeamService(db)
 
 	cap := createUser(t, db, "cap@test.com", "pass")
@@ -53,11 +54,7 @@ func TestTeamService_AddMember_ByCaptain(t *testing.T) {
 }
 
 func TestTeamService_AddMember_NotCaptain(t *testing.T) {
-	db := testutil.SetupTestDB(t,
-		&team.Team{}, &team.Invitation{},
-		&user.User{},
-		&game.Game{}, &game.GamePassing{}, &game.CoAuthor{},
-	)
+	db := setupTeamDB(t)
 	ts := team.NewTeamService(db)
 
 	cap := createUser(t, db, "cap@test.com", "pass")
@@ -70,11 +67,7 @@ func TestTeamService_AddMember_NotCaptain(t *testing.T) {
 }
 
 func TestTeamService_RemoveMember(t *testing.T) {
-	db := testutil.SetupTestDB(t,
-		&team.Team{}, &team.Invitation{},
-		&user.User{},
-		&game.Game{}, &game.GamePassing{}, &game.CoAuthor{},
-	)
+	db := setupTeamDB(t)
 	ts := team.NewTeamService(db)
 
 	cap := createUser(t, db, "cap@test.com", "pass")
@@ -91,11 +84,7 @@ func TestTeamService_RemoveMember(t *testing.T) {
 }
 
 func TestTeamService_RemoveCaptain(t *testing.T) {
-	db := testutil.SetupTestDB(t,
-		&team.Team{}, &team.Invitation{},
-		&user.User{},
-		&game.Game{}, &game.GamePassing{}, &game.CoAuthor{},
-	)
+	db := setupTeamDB(t)
 	ts := team.NewTeamService(db)
 
 	cap := createUser(t, db, "cap@test.com", "pass")
@@ -106,11 +95,7 @@ func TestTeamService_RemoveCaptain(t *testing.T) {
 }
 
 func TestTeamService_ChangeCaptain(t *testing.T) {
-	db := testutil.SetupTestDB(t,
-		&team.Team{}, &team.Invitation{},
-		&user.User{},
-		&game.Game{}, &game.GamePassing{}, &game.CoAuthor{},
-	)
+	db := setupTeamDB(t)
 	ts := team.NewTeamService(db)
 
 	oldCap := createUser(t, db, "old@test.com", "pass")
@@ -127,11 +112,7 @@ func TestTeamService_ChangeCaptain(t *testing.T) {
 }
 
 func TestTeamService_ChangeCaptain_NewNotMember(t *testing.T) {
-	db := testutil.SetupTestDB(t,
-		&team.Team{}, &team.Invitation{},
-		&user.User{},
-		&game.Game{}, &game.GamePassing{}, &game.CoAuthor{},
-	)
+	db := setupTeamDB(t)
 	ts := team.NewTeamService(db)
 
 	oldCap := createUser(t, db, "old@test.com", "pass")
@@ -143,11 +124,7 @@ func TestTeamService_ChangeCaptain_NewNotMember(t *testing.T) {
 }
 
 func TestTeamService_CanManageTeam(t *testing.T) {
-	db := testutil.SetupTestDB(t,
-		&team.Team{}, &team.Invitation{},
-		&user.User{},
-		&game.Game{}, &game.GamePassing{}, &game.CoAuthor{},
-	)
+	db := setupTeamDB(t)
 	ts := team.NewTeamService(db)
 
 	cap := createUser(t, db, "cap@test.com", "pass")
@@ -155,33 +132,23 @@ func TestTeamService_CanManageTeam(t *testing.T) {
 	tm, _ := ts.CreateTeam("Test", cap.ID)
 	_ = ts.AddMember(tm.ID, member.ID, cap.ID)
 
-	// Капитан всегда может управлять командой
 	assert.True(t, ts.CanManageTeam(tm.ID, cap.ID))
-	// Обычный участник не может
 	assert.False(t, ts.CanManageTeam(tm.ID, member.ID))
 }
 
 func TestTeamService_GetMyTeams(t *testing.T) {
-	db := testutil.SetupTestDB(t,
-		&team.Team{}, &team.Invitation{},
-		&user.User{},
-		&game.Game{}, &game.GamePassing{}, &game.CoAuthor{},
-	)
+	db := setupTeamDB(t)
 	ts := team.NewTeamService(db)
 
 	u1 := createUser(t, db, "user1@test.com", "pass")
 	u2 := createUser(t, db, "user2@test.com", "pass")
 
-	// u1 капитан команды A
 	tmA, _ := ts.CreateTeam("Team A", u1.ID)
-	// u2 капитан команды B
 	tmB, _ := ts.CreateTeam("Team B", u2.ID)
-	// u1 добавлен в команду B как участник
 	_ = ts.AddMember(tmB.ID, u1.ID, u2.ID)
 
 	teams, err := ts.GetMyTeams(u1.ID)
 	require.NoError(t, err)
-	// u1 должен видеть обе команды
 	assert.Len(t, teams, 2)
 
 	ids := []uint{teams[0].ID, teams[1].ID}
@@ -192,11 +159,7 @@ func TestTeamService_GetMyTeams(t *testing.T) {
 // ---------- InvitationService ----------
 
 func TestInvitationService_Create(t *testing.T) {
-	db := testutil.SetupTestDB(t,
-		&team.Team{}, &team.Invitation{},
-		&user.User{},
-		&game.Game{}, &game.GamePassing{}, &game.CoAuthor{},
-	)
+	db := setupTeamDB(t)
 	ts := team.NewTeamService(db)
 	authorizer := &gameAuthorizerStub{db}
 	invSvc := team.NewInvitationService(db, ts, authorizer, &config.Config{})
@@ -212,11 +175,7 @@ func TestInvitationService_Create(t *testing.T) {
 }
 
 func TestInvitationService_Accept(t *testing.T) {
-	db := testutil.SetupTestDB(t,
-		&team.Team{}, &team.Invitation{},
-		&user.User{},
-		&game.Game{}, &game.GamePassing{}, &game.CoAuthor{},
-	)
+	db := setupTeamDB(t)
 	ts := team.NewTeamService(db)
 	authorizer := &gameAuthorizerStub{db}
 	invSvc := team.NewInvitationService(db, ts, authorizer, &config.Config{})
@@ -240,11 +199,7 @@ func TestInvitationService_Accept(t *testing.T) {
 }
 
 func TestInvitationService_Decline(t *testing.T) {
-	db := testutil.SetupTestDB(t,
-		&team.Team{}, &team.Invitation{},
-		&user.User{},
-		&game.Game{}, &game.GamePassing{}, &game.CoAuthor{},
-	)
+	db := setupTeamDB(t)
 	ts := team.NewTeamService(db)
 	authorizer := &gameAuthorizerStub{db}
 	invSvc := team.NewInvitationService(db, ts, authorizer, &config.Config{})
@@ -277,8 +232,7 @@ func (g *gameAuthorizerStub) IsUserManager(gameID, userID uint) (bool, error) {
 	return ga.AuthorID == userID, nil
 }
 
-// вспомогательные функции
-func createUser(t *testing.T, db *gorm.DB, email, password string) *user.User {
+func createUser(t *testing.T, db *gorm.DB, email, _ string) *user.User {
 	t.Helper()
 	u := &user.User{Email: email, Password: "hashed", Name: email}
 	require.NoError(t, db.Create(u).Error)

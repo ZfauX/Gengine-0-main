@@ -8,6 +8,7 @@ import (
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/user"
+	"gengine-0/internal/pkg/audit"
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/storage"
 	ws "gengine-0/internal/pkg/websocket"
@@ -26,6 +27,7 @@ func RegisterRoutes(
 	attemptSvc *AttemptService,
 	progressSvc *LevelProgressService,
 	monitorSvc *MonitorService,
+	auditSvc *audit.Service,
 ) {
 	authService := user.NewAuthService(db, cfg)
 	reviewService := NewReviewService(db)
@@ -38,7 +40,7 @@ func RegisterRoutes(
 	simulateService := NewSimulateService(db, coAuthorSvc)
 	photoService := NewPhotoService(db) // новый сервис для фото
 
-	gameHandler := NewGameHandler(gameService, passingService, coAuthorSvc, noteService, simulateService, photoService, store, hub)
+	gameHandler := NewGameHandler(gameService, passingService, coAuthorSvc, noteService, simulateService, photoService, store, hub, auditSvc)
 	reviewHandler := NewReviewHandler(reviewService)
 	ratingHandler := NewRatingHandler(ratingService)
 

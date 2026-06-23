@@ -1,4 +1,4 @@
-// internal/domain/level/service.go
+// Package level реализует управление уровнями, вопросами и ответами игр.
 package level
 
 import (
@@ -131,49 +131,56 @@ func (s *LevelService) Duplicate(levelID, userID uint) (*Level, error) {
 		return nil, errors.New("недостаточно прав")
 	}
 
-	targetPos := original.Position + 1
-	if err := s.DB.Model(&Level{}).Where("game_id = ? AND position >= ?", original.GameID, targetPos).
-		Update("position", gorm.Expr("position + 1")).Error; err != nil {
+	var newLevel *Level
+	err = s.DB.Transaction(func(tx *gorm.DB) error {
+		targetPos := original.Position + 1
+		if err := tx.Model(&Level{}).Where("game_id = ? AND position >= ?", original.GameID, targetPos).
+			Update("position", gorm.Expr("position + 1")).Error; err != nil {
+			return err
+		}
+
+		newLevel = &Level{
+			GameID:               original.GameID,
+			Name:                 original.Name + " (копия)",
+			Description:          original.Description,
+			Position:             targetPos,
+			Type:                 original.Type,
+			ParentID:             original.ParentID,
+			GroupID:              original.GroupID,
+			MinChildren:          original.MinChildren,
+			RequiresConfirmation: original.RequiresConfirmation,
+			Latitude:             original.Latitude,
+			Longitude:            original.Longitude,
+		}
+		if err := tx.Create(newLevel).Error; err != nil {
+			return err
+		}
+
+		for _, q := range original.Questions {
+			newQ := Question{
+				LevelID: newLevel.ID,
+				Text:    q.Text,
+				Hint:    q.Hint,
+			}
+			if err := tx.Create(&newQ).Error; err != nil {
+				return err
+			}
+			for _, a := range q.Answers {
+				newA := Answer{
+					QuestionID: newQ.ID,
+					Code:       a.Code,
+				}
+				if err := tx.Create(&newA).Error; err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
-
-	newLevel := Level{
-		GameID:               original.GameID,
-		Name:                 original.Name + " (копия)",
-		Description:          original.Description,
-		Position:             targetPos,
-		Type:                 original.Type,
-		ParentID:             original.ParentID,
-		GroupID:              original.GroupID,
-		MinChildren:          original.MinChildren,
-		RequiresConfirmation: original.RequiresConfirmation,
-		Latitude:             original.Latitude,
-		Longitude:            original.Longitude,
-	}
-	if err := s.DB.Create(&newLevel).Error; err != nil {
-		return nil, err
-	}
-
-	for _, q := range original.Questions {
-		newQ := Question{
-			LevelID: newLevel.ID,
-			Text:    q.Text,
-			Hint:    q.Hint,
-		}
-		if err := s.DB.Create(&newQ).Error; err != nil {
-			return nil, err
-		}
-		for _, a := range q.Answers {
-			newA := Answer{
-				QuestionID: newQ.ID,
-				Code:       a.Code,
-			}
-			if err := s.DB.Create(&newA).Error; err != nil {
-				return nil, err
-			}
-		}
-	}
-	return &newLevel, nil
+	return newLevel, nil
 }
 
 // Move перемещает уровень вверх или вниз (атомарный обмен с временной позицией maxPos+1).
@@ -213,6 +220,10 @@ func (s *LevelService) Move(levelID uint, direction string, userID uint) error {
 		return tx.Error
 	}
 
+	// Сохраняем оригинальные позиции до начала изменений
+	oldLevelPos := level.Position
+	oldSiblingPos := sibling.Position
+
 	// Вычисляем максимальную позицию в игре внутри транзакции
 	var maxPos int
 	if err := tx.Model(&Level{}).
@@ -230,12 +241,12 @@ func (s *LevelService) Move(levelID uint, direction string, userID uint) error {
 		return err
 	}
 	// 2) sibling → старая позиция level
-	if err := tx.Model(&sibling).Update("position", level.Position).Error; err != nil {
+	if err := tx.Model(&sibling).Update("position", oldLevelPos).Error; err != nil {
 		tx.Rollback()
 		return err
 	}
 	// 3) level → старая позиция sibling
-	if err := tx.Model(&level).Update("position", sibling.Position).Error; err != nil {
+	if err := tx.Model(&level).Update("position", oldSiblingPos).Error; err != nil {
 		tx.Rollback()
 		return err
 	}
@@ -381,7 +392,9 @@ func (s *AnswerService) Delete(answerID uint, userID uint) error {
 	}
 
 	var count int64
-	s.DB.Model(&Answer{}).Where("question_id = ?", answer.QuestionID).Count(&count)
+	if err := s.DB.Model(&Answer{}).Where("question_id = ?", answer.QuestionID).Count(&count).Error; err != nil {
+		return err
+	}
 	if count <= 1 {
 		return errors.New("должен остаться хотя бы один вариант кода")
 	}

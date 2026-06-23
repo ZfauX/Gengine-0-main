@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/user"
@@ -16,7 +17,17 @@ import (
 )
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true
+		}
+		host := r.Host
+		if strings.HasPrefix(origin, "http://"+host) || strings.HasPrefix(origin, "https://"+host) {
+			return true
+		}
+		return false
+	},
 }
 
 // ---------- Входные структуры для валидации ----------
@@ -85,14 +96,17 @@ func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 	id, _ := strconv.Atoi(gameID)
 	snapshot, err := h.monitorService.GetOrFetchSnapshot(uint(id))
 	if err == nil {
-		data, _ := json.Marshal(snapshot)
-		client.Send <- data
+		if data, err := json.Marshal(snapshot); err == nil {
+			client.Send <- data
+		}
 	}
 
-	go ws.HandleWebSocket(client)
-	defer func() {
-		h.hub.UnregisterClient(client)
-		client.Close()
+	go func() {
+		defer func() {
+			h.hub.UnregisterClient(client)
+			client.Close()
+		}()
+		ws.HandleWebSocket(client)
 	}()
 }
 
@@ -160,10 +174,8 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 	}
 
 	go func() {
-		defer func() {
-			h.hub.UnregisterClient(client)
-			client.Close()
-		}()
+		defer h.hub.UnregisterClient(client)
+		ws.WritePump(client)
 		for {
 			_, message, err := conn.ReadMessage()
 			if err != nil {
@@ -171,15 +183,12 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 			}
 			msg, err := h.chatService.SaveMessage(uint(roomIDUint), userID, string(message))
 			if err == nil {
-				// Подгружаем пользователя для ответа
 				h.db.Preload("User").First(&msg, msg.ID)
 				resp, _ := json.Marshal(gin.H{"type": "message", "message": msg})
 				h.hub.BroadcastToRoom(roomID, resp)
 			}
 		}
 	}()
-
-	go ws.HandleWebSocket(client)
 }
 
 // ChatRoomIDs возвращает ID комнат чата (общая и командная) для игры.
@@ -241,8 +250,13 @@ func (h *MonitorHandler) LogsWS(c *gin.Context) {
 		RoomID: "logs_" + gameID,
 	}
 	h.hub.RegisterClient("logs_"+gameID, client)
-	go ws.HandleWebSocket(client)
-	defer h.hub.UnregisterClient(client)
+	go func() {
+		defer func() {
+			h.hub.UnregisterClient(client)
+			client.Close()
+		}()
+		ws.HandleWebSocket(client)
+	}()
 }
 
 // StartVoting запускает голосование по текущему уровню-чёрному ящику.

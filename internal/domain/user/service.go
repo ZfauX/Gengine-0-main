@@ -7,7 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"os"
+	"slices"
 	"time"
 
 	"gengine-0/internal/config"
@@ -66,9 +66,14 @@ func (s *AuthService) Login(emailStr, password string) (string, error) {
 	return s.generateJWT(user)
 }
 
+// GenerateJWT создаёт JWT-токен для пользователя (публичный, для OAuth).
+func (s *AuthService) GenerateJWT(user User) (string, error) {
+	return s.generateJWT(user)
+}
+
 // ParseToken проверяет JWT и возвращает ID пользователя.
 func (s *AuthService) ParseToken(tokenStr string) (uint, error) {
-	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("неверный метод подписи")
 		}
@@ -133,7 +138,7 @@ func (s *UserService) GetPublicProfile(id uint) (*User, error) {
 }
 
 func (s *UserService) UpdateProfile(id uint, name, emailStr string) error {
-	return s.db.Model(&User{}).Where("id = ?", id).Updates(map[string]interface{}{
+	return s.db.Model(&User{}).Where("id = ?", id).Updates(map[string]any{
 		"name":  name,
 		"email": emailStr,
 	}).Error
@@ -199,7 +204,9 @@ func (s *AchievementService) SeedAchievements() {
 		{Code: "speed_demon", Name: "Быстрый старт", Description: "Завершите игру менее чем за 5 минут", Icon: "⚡"},
 	}
 	for _, a := range achievements {
-		s.db.Where("code = ?", a.Code).FirstOrCreate(&a)
+		if err := s.db.Where("code = ?", a.Code).FirstOrCreate(&a).Error; err != nil {
+			log.Error().Err(err).Str("achievement", a.Code).Msg("SeedAchievements: failed to seed")
+		}
 	}
 }
 
@@ -217,22 +224,22 @@ func NewOAuthService(db *gorm.DB, cfg *config.Config) *OAuthService {
 		cfg: cfg,
 		configs: map[string]*oauth2.Config{
 			"google": {
-				ClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
-				ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+				ClientID:     cfg.OAuth.Google.ClientID,
+				ClientSecret: cfg.OAuth.Google.ClientSecret,
 				RedirectURL:  cfg.Server.BaseURL + "/auth/oauth/google/callback",
 				Scopes:       []string{"email", "profile"},
 				Endpoint:     google.Endpoint,
 			},
 			"github": {
-				ClientID:     os.Getenv("GITHUB_CLIENT_ID"),
-				ClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
+				ClientID:     cfg.OAuth.GitHub.ClientID,
+				ClientSecret: cfg.OAuth.GitHub.ClientSecret,
 				RedirectURL:  cfg.Server.BaseURL + "/auth/oauth/github/callback",
 				Scopes:       []string{"user:email"},
 				Endpoint:     github.Endpoint,
 			},
 			"yandex": {
-				ClientID:     os.Getenv("YANDEX_CLIENT_ID"),
-				ClientSecret: os.Getenv("YANDEX_CLIENT_SECRET"),
+				ClientID:     cfg.OAuth.Yandex.ClientID,
+				ClientSecret: cfg.OAuth.Yandex.ClientSecret,
 				RedirectURL:  cfg.Server.BaseURL + "/auth/oauth/yandex/callback",
 				Scopes:       []string{"login:email", "login:info"},
 				Endpoint:     yandex.Endpoint,
@@ -246,10 +253,18 @@ func (s *OAuthService) GetAuthURL(provider string) (string, error) {
 	if !ok {
 		return "", errors.New("неподдерживаемый провайдер")
 	}
-	return cfg.AuthCodeURL("state", oauth2.AccessTypeOffline), nil
+	stateBytes := make([]byte, 16)
+	if _, err := rand.Read(stateBytes); err != nil {
+		return "", fmt.Errorf("не удалось сгенерировать state: %w", err)
+	}
+	state := hex.EncodeToString(stateBytes)
+	return cfg.AuthCodeURL(state, oauth2.AccessTypeOffline), nil
 }
 
 func (s *OAuthService) Authenticate(provider, code, state string) (*User, error) {
+	if len(state) != 32 {
+		return nil, errors.New("неверный state-параметр")
+	}
 	cfg, ok := s.configs[provider]
 	if !ok {
 		return nil, errors.New("неподдерживаемый провайдер")
@@ -573,10 +588,5 @@ func uniqueUintSlice(input []uint) []uint {
 }
 
 func contains(slice []uint, item uint) bool {
-	for _, a := range slice {
-		if a == item {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slice, item)
 }

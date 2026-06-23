@@ -60,6 +60,8 @@ func TestGameService_Publish(t *testing.T) {
 	g := &game.Game{Name: "Game", AuthorID: author.ID, IsDraft: true}
 	require.NoError(t, db.Create(g).Error)
 
+	createLevel(t, db, g.ID, "Test Level", 1)
+
 	err := svc.Publish(g.ID, author.ID)
 	require.NoError(t, err)
 
@@ -466,7 +468,7 @@ func newPassingService(db *gorm.DB) *game.GamePassingService {
 	return game.NewGamePassingService(db, ts, ca)
 }
 
-func createUser(t *testing.T, db *gorm.DB, email, password string) *user.User {
+func createUser(t *testing.T, db *gorm.DB, email, _ string) *user.User {
 	t.Helper()
 	u := &user.User{Email: email, Password: "hashed", Name: email}
 	require.NoError(t, db.Create(u).Error)

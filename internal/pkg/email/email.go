@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/smtp"
+	"strings"
 
 	"gengine-0/internal/config"
 
@@ -41,11 +42,13 @@ func SendEmail(cfg *config.Config, to, subject, body string) error {
 	headers["MIME-Version"] = "1.0"
 	headers["Content-Type"] = "text/plain; charset=\"UTF-8\""
 
-	message := ""
+	var msg strings.Builder
 	for k, v := range headers {
-		message += fmt.Sprintf("%s: %s\r\n", k, v)
+		fmt.Fprintf(&msg, "%s: %s\r\n", k, v)
 	}
-	message += "\r\n" + body
+	msg.WriteString("\r\n")
+	msg.WriteString(body)
+	message := msg.String()
 
 	var auth smtp.Auth
 	if cfg.SMTP.User != "" && cfg.SMTP.Password != "" {

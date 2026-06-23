@@ -7,7 +7,9 @@ import (
 
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/user"
+	"gengine-0/internal/pkg/audit"
 
+	"github.com/rs/zerolog/log"
 	"github.com/utrack/gin-csrf"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -17,11 +19,11 @@ import (
 type AdminHandler struct {
 	DB            *gorm.DB
 	backupService *BackupService
-	auditService  *AuditService
+	auditService  *audit.Service
 }
 
 // NewAdminHandler создаёт новый AdminHandler.
-func NewAdminHandler(db *gorm.DB, backupSvc *BackupService, auditSvc *AuditService) *AdminHandler {
+func NewAdminHandler(db *gorm.DB, backupSvc *BackupService, auditSvc *audit.Service) *AdminHandler {
 	return &AdminHandler{
 		DB:            db,
 		backupService: backupSvc,
@@ -30,6 +32,26 @@ func NewAdminHandler(db *gorm.DB, backupSvc *BackupService, auditSvc *AuditServi
 }
 
 // ---------- Пользователи ----------
+
+// Dashboard отображает главную страницу админ-панели.
+func (h *AdminHandler) Dashboard(c *gin.Context) {
+	var userCount, gameCount, auditCount, backupCount int64
+	h.DB.Model(&user.User{}).Count(&userCount)
+	h.DB.Model(&game.Game{}).Count(&gameCount)
+	h.DB.Model(&audit.Entry{}).Count(&auditCount)
+	h.DB.Model(&Backup{}).Count(&backupCount)
+
+	c.HTML(http.StatusOK, "layout.html", gin.H{
+		"ContentBlock":  "admin-dashboard.html",
+		"UserCount":     userCount,
+		"GameCount":     gameCount,
+		"AuditCount":    auditCount,
+		"BackupCount":   backupCount,
+		"CurrentUserID": c.GetUint("userID"),
+		"IsAdmin":       true,
+		"csrf":          csrf.GetToken(c),
+	})
+}
 
 // ListUsers отображает список всех пользователей с возможностью фильтрации по роли.
 func (h *AdminHandler) ListUsers(c *gin.Context) {
@@ -42,10 +64,12 @@ func (h *AdminHandler) ListUsers(c *gin.Context) {
 	query.Find(&users)
 
 	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "admin-users.html",
-		"Users":        users,
-		"Role":         role,
-		"csrf":         csrf.GetToken(c),
+		"ContentBlock":  "admin-users.html",
+		"Users":         users,
+		"Role":          role,
+		"CurrentUserID": c.GetUint("userID"),
+		"IsAdmin":       true,
+		"csrf":          csrf.GetToken(c),
 	})
 }
 
@@ -69,7 +93,9 @@ func (h *AdminHandler) ToggleAdmin(c *gin.Context) {
 	} else {
 		u.Role = "admin"
 	}
-	h.DB.Save(&u)
+	if err := h.DB.Save(&u).Error; err != nil {
+		log.Error().Err(err).Uint("user", u.ID).Msg("ToggleAdmin: failed to save")
+	}
 
 	c.Redirect(http.StatusFound, "/admin/users")
 }
@@ -83,7 +109,9 @@ func (h *AdminHandler) DeleteUser(c *gin.Context) {
 		return
 	}
 
-	h.DB.Delete(&user.User{}, userID)
+	if err := h.DB.Delete(&user.User{}, userID).Error; err != nil {
+		log.Error().Err(err).Int("user", userID).Msg("DeleteUser: failed to delete")
+	}
 	c.Redirect(http.StatusFound, "/admin/users")
 }
 
@@ -103,10 +131,12 @@ func (h *AdminHandler) ListGames(c *gin.Context) {
 	query.Find(&games)
 
 	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "admin-games.html",
-		"Games":        games,
-		"Status":       status,
-		"csrf":         csrf.GetToken(c),
+		"ContentBlock":  "admin-games.html",
+		"Games":         games,
+		"Status":        status,
+		"CurrentUserID": c.GetUint("userID"),
+		"IsAdmin":       true,
+		"csrf":          csrf.GetToken(c),
 	})
 }
 
@@ -119,7 +149,9 @@ func (h *AdminHandler) DeleteGame(c *gin.Context) {
 		return
 	}
 
-	h.DB.Delete(&game.Game{}, gameID)
+	if err := h.DB.Delete(&game.Game{}, gameID).Error; err != nil {
+		log.Error().Err(err).Int("game", gameID).Msg("DeleteGame: failed to delete")
+	}
 	c.Redirect(http.StatusFound, "/admin/games")
 }
 
@@ -141,31 +173,28 @@ func (h *AdminHandler) AuditLog(c *gin.Context) {
 
 	logs, total, err := h.auditService.List(userIDStr, action, page, perPage)
 	if err != nil {
-		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		log.Error().Err(err).Msg("AuditLog list failed")
+		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{"ContentBlock": "errors/500.html", "Error": err.Error()})
 		return
 	}
 
 	totalPages := int((total + int64(perPage) - 1) / int64(perPage))
 
-	prevPage := page - 1
-	if prevPage < 1 {
-		prevPage = 1
-	}
-	nextPage := page + 1
-	if nextPage > totalPages {
-		nextPage = totalPages
-	}
+	prevPage := max(page-1, 1)
+	nextPage := min(page+1, totalPages)
 
 	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "admin-audit.html",
-		"Logs":         logs,
-		"Page":         page,
-		"TotalPages":   totalPages,
-		"PrevPage":     prevPage,
-		"NextPage":     nextPage,
-		"UserID":       userIDStr,
-		"Action":       action,
-		"csrf":         csrf.GetToken(c),
+		"ContentBlock":  "admin-audit.html",
+		"Logs":          logs,
+		"Page":          page,
+		"TotalPages":    totalPages,
+		"PrevPage":      prevPage,
+		"NextPage":      nextPage,
+		"UserID":        userIDStr,
+		"Action":        action,
+		"CurrentUserID": c.GetUint("userID"),
+		"IsAdmin":       true,
+		"csrf":          csrf.GetToken(c),
 	})
 }
 
@@ -175,23 +204,27 @@ func (h *AdminHandler) AuditLog(c *gin.Context) {
 func (h *AdminHandler) ListBackups(c *gin.Context) {
 	backups, err := h.backupService.List()
 	if err != nil {
-		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		log.Error().Err(err).Msg("ListBackups failed")
+		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{"ContentBlock": "errors/500.html", "Error": err.Error()})
 		return
 	}
 	maxBackups := h.backupService.GetMaxBackups()
 	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "admin-backups.html",
-		"Backups":      backups,
-		"MaxBackups":   maxBackups,
-		"Count":        len(backups),
-		"csrf":         csrf.GetToken(c),
+		"ContentBlock":  "admin-backups.html",
+		"Backups":       backups,
+		"MaxBackups":    maxBackups,
+		"Count":         len(backups),
+		"CurrentUserID": c.GetUint("userID"),
+		"IsAdmin":       true,
+		"csrf":          csrf.GetToken(c),
 	})
 }
 
 // CreateBackup запускает ручное создание бекапа.
 func (h *AdminHandler) CreateBackup(c *gin.Context) {
 	if err := h.backupService.CreateNow(); err != nil {
-		c.HTML(http.StatusInternalServerError, "errors/500.html", gin.H{"Error": err.Error()})
+		log.Error().Err(err).Msg("CreateBackup failed")
+		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{"ContentBlock": "errors/500.html", "Error": err.Error()})
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/backups")
@@ -211,7 +244,8 @@ func (h *AdminHandler) DownloadBackup(c *gin.Context) {
 // RotateBackups запускает принудительную ротацию старых бекапов.
 func (h *AdminHandler) RotateBackups(c *gin.Context) {
 	if err := h.backupService.RotateBackups(); err != nil {
-		c.HTML(http.StatusInternalServerError, "errors/500.html", gin.H{"Error": err.Error()})
+		log.Error().Err(err).Msg("RotateBackups failed")
+		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{"ContentBlock": "errors/500.html", "Error": err.Error()})
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/backups")

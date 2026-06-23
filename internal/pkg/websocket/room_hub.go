@@ -1,4 +1,3 @@
-// internal/pkg/websocket/room_hub.go
 package websocket
 
 import (
@@ -38,7 +37,7 @@ func (h *RoomHub) UnregisterClient(client *Client) {
 	}
 }
 
-func (h *RoomHub) BroadcastToRoom(roomID string, msg interface{}) {
+func (h *RoomHub) BroadcastToRoom(roomID string, msg any) {
 	h.mu.RLock()
 	clients, ok := h.rooms[roomID]
 	snapshot := make([]*Client, 0, len(clients))
@@ -61,10 +60,13 @@ func (h *RoomHub) BroadcastToRoom(roomID string, msg interface{}) {
 			continue
 		}
 		client.mu.Unlock()
-		select {
-		case client.Send <- data:
-		default:
-			client.Close()
-		}
+		func() {
+			defer func() { _ = recover() }()
+			select {
+			case client.Send <- data:
+			default:
+				client.Close()
+			}
+		}()
 	}
 }

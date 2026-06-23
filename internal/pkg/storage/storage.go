@@ -1,3 +1,4 @@
+// Package storage предоставляет интерфейс и реализацию файлового хранилища.
 package storage
 
 import "io"

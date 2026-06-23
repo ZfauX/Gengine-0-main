@@ -19,6 +19,11 @@ func GzipMiddleware() gin.HandlerFunc {
 			return
 		}
 
+		if c.Request.URL.Path == "/metrics" {
+			c.Next()
+			return
+		}
+
 		gz := gzip.NewWriter(c.Writer)
 		defer func() { _ = gz.Close() }()
 

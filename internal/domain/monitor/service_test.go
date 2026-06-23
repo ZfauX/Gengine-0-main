@@ -300,7 +300,7 @@ func TestChatService_SaveAndGetMessages(t *testing.T) {
 
 // ---------- Вспомогательные функции ----------
 
-func createUser(t *testing.T, db *gorm.DB, email, password string) *user.User {
+func createUser(t *testing.T, db *gorm.DB, email, _ string) *user.User {
 	t.Helper()
 	u := &user.User{Email: email, Password: "hashed", Name: email}
 	require.NoError(t, db.Create(u).Error)

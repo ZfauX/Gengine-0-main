@@ -37,7 +37,14 @@ func (h *ReviewHandler) ShowForm(c *gin.Context) {
 func (h *ReviewHandler) Create(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("game_id"))
 	userID := c.GetUint("userID")
-	rating, _ := strconv.Atoi(c.PostForm("rating"))
+	rating, err := strconv.Atoi(c.PostForm("rating"))
+	if err != nil {
+		c.HTML(http.StatusOK, "reviews/new.html", gin.H{
+			"GameID": gameID,
+			"Error":  "Неверный рейтинг",
+		})
+		return
+	}
 	comment := c.PostForm("comment")
 
 	if err := h.reviewService.Create(uint(gameID), userID, rating, comment); err != nil {

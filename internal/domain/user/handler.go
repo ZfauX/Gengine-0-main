@@ -4,15 +4,15 @@ package user
 import (
 	"net/http"
 	"strconv"
-	"time"
 
 	"gengine-0/internal/config"
+	"gengine-0/internal/pkg/audit"
+	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/storage"
 
 	"github.com/rs/zerolog/log"
 	"github.com/utrack/gin-csrf"
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -53,12 +53,14 @@ type ChangePasswordInput struct {
 
 // AuthHandler обрабатывает аутентификацию и регистрацию.
 type AuthHandler struct {
-	db  *gorm.DB
-	cfg *config.Config
+	db       *gorm.DB
+	cfg      *config.Config
+	authSvc  *AuthService
+	auditSvc *audit.Service
 }
 
-func NewAuthHandler(db *gorm.DB, cfg *config.Config) *AuthHandler {
-	return &AuthHandler{db: db, cfg: cfg}
+func NewAuthHandler(db *gorm.DB, cfg *config.Config, auditSvc *audit.Service) *AuthHandler {
+	return &AuthHandler{db: db, cfg: cfg, authSvc: NewAuthService(db, cfg), auditSvc: auditSvc}
 }
 
 // ShowLoginForm отображает страницу входа.
@@ -81,34 +83,18 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	var user User
-	if err := h.db.Where("email = ?", input.Email).First(&user).Error; err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
-			"ContentBlock": "auth-login.html",
-			"Error":        "Неверный email или пароль",
-			"csrf":         csrf.GetToken(c),
-		})
-		return
-	}
-
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)); err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
-			"ContentBlock": "auth-login.html",
-			"Error":        "Неверный email или пароль",
-			"csrf":         csrf.GetToken(c),
-		})
-		return
-	}
-
-	token, err := h.generateJWT(user)
+	token, err := h.authSvc.Login(input.Email, input.Password)
 	if err != nil {
 		c.HTML(http.StatusOK, "layout.html", gin.H{
 			"ContentBlock": "auth-login.html",
-			"Error":        "Внутренняя ошибка",
+			"Error":        "Неверный email или пароль",
 			"csrf":         csrf.GetToken(c),
 		})
 		return
 	}
+
+	userID, _ := h.authSvc.ParseToken(token)
+	h.auditSvc.Log(userID, "login", "user", userID, input.Email)
 
 	c.SetCookie("jwt", token, int(h.cfg.JWT.AccessExpiry.Seconds()), "/", "", false, true)
 	c.Redirect(http.StatusFound, "/dashboard")
@@ -140,22 +126,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+	user, err := h.authSvc.Register(input.Email, input.Password, input.Name)
 	if err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
-			"ContentBlock": "auth-register.html",
-			"Error":        "Ошибка создания пользователя",
-			"csrf":         csrf.GetToken(c),
-		})
-		return
-	}
-
-	user := User{
-		Email:    input.Email,
-		Password: string(hashedPassword),
-		Name:     input.Name,
-	}
-	if err := h.db.Create(&user).Error; err != nil {
 		c.HTML(http.StatusOK, "layout.html", gin.H{
 			"ContentBlock": "auth-register.html",
 			"Error":        "Email уже зарегистрирован",
@@ -164,10 +136,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	if h.cfg.SMTP.Enabled && h.cfg.SMTP.Host != "" {
-		emailVerificationService := NewEmailVerificationService(h.db, h.cfg)
-		emailVerificationService.SendVerificationEmail(user)
-	}
+	h.auditSvc.Log(user.ID, "register", "user", user.ID, input.Email)
 
 	c.Redirect(http.StatusFound, "/auth/login")
 }
@@ -208,7 +177,7 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 
 // ShowResetForm отображает форму установки нового пароля.
 func (h *AuthHandler) ShowResetForm(c *gin.Context) {
-	token := c.Query("token")
+	token := sanitize.StripHTML(c.Query("token"))
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "auth-reset.html",
 		"Token":        token,
@@ -287,7 +256,15 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 		return
 	}
 
-	token, _ := h.generateJWT(*user)
+	token, err := h.authSvc.GenerateJWT(*user)
+	if err != nil {
+		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
+			"ContentBlock": "auth-login.html",
+			"Error":        "Внутренняя ошибка",
+			"csrf":         csrf.GetToken(c),
+		})
+		return
+	}
 	c.SetCookie("jwt", token, int(h.cfg.JWT.AccessExpiry.Seconds()), "/", "", false, true)
 	c.Redirect(http.StatusFound, "/dashboard")
 }
@@ -361,7 +338,9 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 		return
 	}
 
-	h.db.Model(&User{}).Where("id = ?", userID).Update("avatar_path", webPath)
+	if err := h.db.Model(&User{}).Where("id = ?", userID).Update("avatar_path", webPath).Error; err != nil {
+		log.Error().Err(err).Uint("user", userID).Msg("UploadAvatar: failed to update avatar_path")
+	}
 	c.Redirect(http.StatusFound, "/profile")
 }
 
@@ -379,10 +358,18 @@ func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	h.db.Model(&User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+	if err := h.db.Model(&User{}).Where("id = ?", userID).Updates(map[string]any{
 		"name":  input.Name,
 		"email": input.Email,
-	})
+	}).Error; err != nil {
+		log.Error().Err(err).Uint("user", userID).Msg("UpdateProfile: failed to update")
+		c.HTML(http.StatusOK, "layout.html", gin.H{
+			"ContentBlock": "profile-show.html",
+			"Error":        "Ошибка обновления профиля",
+			"csrf":         csrf.GetToken(c),
+		})
+		return
+	}
 	c.Redirect(http.StatusFound, "/profile")
 }
 
@@ -419,8 +406,24 @@ func (h *ProfileHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	hashed, _ := bcrypt.GenerateFromPassword([]byte(input.NewPassword), bcrypt.DefaultCost)
-	h.db.Model(&user).Update("password", string(hashed))
+	hashed, err := bcrypt.GenerateFromPassword([]byte(input.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		c.HTML(http.StatusOK, "layout.html", gin.H{
+			"ContentBlock": "profile-show.html",
+			"Error":        "Ошибка смены пароля",
+			"csrf":         csrf.GetToken(c),
+		})
+		return
+	}
+	if err := h.db.Model(&user).Update("password", string(hashed)).Error; err != nil {
+		log.Error().Err(err).Uint("user", userID).Msg("ChangePassword: failed to update")
+		c.HTML(http.StatusOK, "layout.html", gin.H{
+			"ContentBlock": "profile-show.html",
+			"Error":        "Ошибка смены пароля",
+			"csrf":         csrf.GetToken(c),
+		})
+		return
+	}
 	c.Redirect(http.StatusFound, "/profile")
 }
 
@@ -452,10 +455,11 @@ func (h *AchievementHandler) List(c *gin.Context) {
 
 type DashboardHandler struct {
 	dashboardService *UserDashboardService
+	db               *gorm.DB
 }
 
-func NewDashboardHandler(dashboardService *UserDashboardService) *DashboardHandler {
-	return &DashboardHandler{dashboardService: dashboardService}
+func NewDashboardHandler(dashboardService *UserDashboardService, db *gorm.DB) *DashboardHandler {
+	return &DashboardHandler{dashboardService: dashboardService, db: db}
 }
 
 // Index отображает личный кабинет.
@@ -466,22 +470,12 @@ func (h *DashboardHandler) Index(c *gin.Context) {
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
+	var role string
+	h.db.Table("users").Select("role").Where("id = ?", userID).Scan(&role)
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock":  "dashboard-index.html",
 		"Dashboard":     dash,
-		"CurrentUserID": userID, // ← теперь хидер будет как у авторизованного
+		"CurrentUserID": userID,
+		"IsAdmin":       role == "admin",
 	})
-}
-
-// ---------- Вспомогательные ----------
-
-// generateJWT создаёт JWT-токен для пользователя.
-func (h *AuthHandler) generateJWT(user User) (string, error) {
-	claims := jwt.MapClaims{
-		"user_id": user.ID,
-		"email":   user.Email,
-		"exp":     time.Now().Add(h.cfg.JWT.AccessExpiry).Unix(),
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(h.cfg.JWT.Secret))
 }

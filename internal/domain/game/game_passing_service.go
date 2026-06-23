@@ -3,6 +3,8 @@ package game
 import (
 	"errors"
 	"gengine-0/internal/domain/team"
+
+	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
 
@@ -68,7 +70,9 @@ func (s *GamePassingService) StartGame(passingID, userID uint) error {
 		return err
 	}
 	var t team.Team
-	s.DB.First(&t, passing.TeamID)
+	if err := s.DB.First(&t, passing.TeamID).Error; err != nil {
+		return err
+	}
 	isCaptain := (t.CaptainID == userID)
 	if !isCaptain {
 		ok, _ := s.coAuthor.HasPermission(passing.GameID, userID, "moderator")
@@ -80,5 +84,11 @@ func (s *GamePassingService) StartGame(passingID, userID uint) error {
 		return errors.New("игра ещё не принята или уже началась")
 	}
 	passing.Status = StatusStarted
-	return s.DB.Save(&passing).Error
+	if err := s.DB.Save(&passing).Error; err != nil {
+		return err
+	}
+	if err := NewLevelProgressService(s.DB).InitFirstLevel(passingID); err != nil {
+		log.Error().Err(err).Uint("passing", passingID).Msg("StartGame: InitFirstLevel failed")
+	}
+	return nil
 }

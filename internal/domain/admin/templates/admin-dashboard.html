@@ -1,0 +1,39 @@
+{{define "admin-dashboard.html"}}
+<h1>Панель администратора</h1>
+
+{{block "admin-nav" .}}
+<div style="display:flex; gap:10px; flex-wrap:wrap; margin:15px 0; padding:10px; background:#e8e8e8; border-radius:4px;">
+    <a href="/admin" class="button"{{if eq .ContentBlock "admin-dashboard.html"}} style="background:#2c3e50;"{{end}}>Дашборд</a>
+    <a href="/admin/users" class="button">Пользователи</a>
+    <a href="/admin/games" class="button">Игры</a>
+    <a href="/admin/audit" class="button">Аудит</a>
+    <a href="/admin/backups" class="button">Бэкапы</a>
+</div>
+{{end}}
+
+<div style="display:flex; gap:20px; flex-wrap:wrap; margin-top:20px;">
+    <div class="card" style="flex:1; min-width:250px; text-align:center;">
+        <h2>Пользователи</h2>
+        <p style="font-size:2em; color:#3498db;">{{.UserCount}}</p>
+        <a href="/admin/users" class="button">Управление</a>
+    </div>
+
+    <div class="card" style="flex:1; min-width:250px; text-align:center;">
+        <h2>Игры</h2>
+        <p style="font-size:2em; color:#3498db;">{{.GameCount}}</p>
+        <a href="/admin/games" class="button">Модерация</a>
+    </div>
+
+    <div class="card" style="flex:1; min-width:250px; text-align:center;">
+        <h2>Аудит</h2>
+        <p style="font-size:2em; color:#3498db;">{{.AuditCount}}</p>
+        <a href="/admin/audit" class="button">Журнал</a>
+    </div>
+
+    <div class="card" style="flex:1; min-width:250px; text-align:center;">
+        <h2>Бэкапы</h2>
+        <p style="font-size:2em; color:#3498db;">{{.BackupCount}}</p>
+        <a href="/admin/backups" class="button">Резервные копии</a>
+    </div>
+</div>
+{{end}}

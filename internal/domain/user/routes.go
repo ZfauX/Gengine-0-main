@@ -3,6 +3,7 @@ package user
 
 import (
 	"gengine-0/internal/config"
+	"gengine-0/internal/pkg/audit"
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/storage"
 
@@ -10,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func RegisterRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
+func RegisterRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config, auditSvc *audit.Service) {
 	// Инициализация сервисов
 	authService := NewAuthService(db, cfg)
 	dashboardService := NewUserDashboardService(db)
@@ -19,10 +20,10 @@ func RegisterRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
 	avatarStorage := storage.NewLocalStorage()
 
 	// Обработчики
-	authHandler := &AuthHandler{db: db, cfg: cfg}
+	authHandler := NewAuthHandler(db, cfg, auditSvc)
 	profileHandler := &ProfileHandler{db: db, storage: avatarStorage}
 	achievementHandler := &AchievementHandler{db: db}
-	dashboardHandler := NewDashboardHandler(dashboardService)
+	dashboardHandler := NewDashboardHandler(dashboardService, db)
 
 	// Middleware
 	optionalAuth := middleware.OptionalAuth(authService)

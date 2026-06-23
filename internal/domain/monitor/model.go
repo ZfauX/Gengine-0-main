@@ -30,9 +30,9 @@ type ChatMessage struct {
 
 type BlackboxVotingSession struct {
 	gorm.Model
-	GamePassingID uint             `gorm:"uniqueIndex"`
+	GamePassingID uint             `gorm:"uniqueIndex:idx_passing_level"`
 	GamePassing   game.GamePassing `gorm:"foreignKey:GamePassingID"`
-	LevelID       uint             `gorm:"not null"`
+	LevelID       uint             `gorm:"not null;uniqueIndex:idx_passing_level"`
 	Level         level.Level      `gorm:"foreignKey:LevelID"`
 	IsOpen        bool             `gorm:"default:true"`
 	WinnerOption  string
