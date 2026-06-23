@@ -6,6 +6,7 @@ import (
 	"gengine-0/internal/pkg/audit"
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/storage"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -28,15 +29,19 @@ func RegisterRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config, auditSv
 	// Middleware
 	optionalAuth := middleware.OptionalAuth(authService)
 
+	// Rate limiting для чувствительных эндпоинтов
+	loginLimiter := middleware.LoginRateLimit(1*time.Minute, 5)
+	globalLimiter := middleware.GlobalRateLimit(1*time.Minute, 100)
+
 	// Публичные маршруты (без аутентификации)
 	router.GET("/auth/login", authHandler.ShowLoginForm)
-	router.POST("/auth/login", authHandler.Login)
+	router.POST("/auth/login", loginLimiter, authHandler.Login)
 	router.GET("/auth/register", authHandler.ShowRegisterForm)
-	router.POST("/auth/register", authHandler.Register)
+	router.POST("/auth/register", loginLimiter, authHandler.Register)
 	router.GET("/auth/forgot", authHandler.ShowForgotForm)
-	router.POST("/auth/forgot", authHandler.ForgotPassword)
+	router.POST("/auth/forgot", globalLimiter, authHandler.ForgotPassword)
 	router.GET("/auth/reset", authHandler.ShowResetForm)
-	router.POST("/auth/reset", authHandler.ResetPassword)
+	router.POST("/auth/reset", globalLimiter, authHandler.ResetPassword)
 	router.GET("/auth/verify", authHandler.VerifyEmail)
 
 	// OAuth

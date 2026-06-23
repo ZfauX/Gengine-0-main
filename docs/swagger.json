@@ -1,0 +1,287 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Gengine API",
+    "version": "1.0.0",
+    "description": "Платформа для городских квест-игр (Encounter). Серверный рендеринг (HTML) + WebSocket.",
+    "contact": { "name": "Gengine Team" }
+  },
+  "servers": [{ "url": "http://localhost:8080", "description": "Локальный сервер" }],
+  "security": [{ "BearerAuth": [] }],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Введите JWT-токен, полученный через /auth/login"
+      }
+    }
+  },
+  "paths": {
+    "/healthz": {
+      "get": {
+        "summary": "Проверка здоровья",
+        "tags": ["System"],
+        "responses": {
+          "200": { "description": "OK" },
+          "503": { "description": "БД недоступна" }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "summary": "Prometheus метрики",
+        "tags": ["System"],
+        "responses": { "200": { "description": "Метрики в формате Prometheus" } }
+      }
+    },
+    "/": {
+      "get": {
+        "summary": "Главная страница",
+        "tags": ["Pages"],
+        "responses": { "200": { "description": "HTML-страница" } }
+      }
+    },
+    "/auth/login": {
+      "get": { "summary": "Форма входа", "tags": ["Auth"], "responses": { "200": { "description": "HTML-форма" } } },
+      "post": {
+        "summary": "Вход в систему",
+        "tags": ["Auth"],
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string", "minLength": 6 },
+                  "_csrf": { "type": "string", "description": "CSRF-токен" }
+                },
+                "required": ["email", "password", "_csrf"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "302": { "description": "Успешный вход, редирект на /dashboard" },
+          "400": { "description": "Неверные учётные данные" },
+          "429": { "description": "Слишком много попыток (rate limit: 5/мин)" }
+        }
+      }
+    },
+    "/auth/register": {
+      "get": { "summary": "Форма регистрации", "tags": ["Auth"], "responses": { "200": { "description": "HTML-форма" } } },
+      "post": {
+        "summary": "Регистрация",
+        "tags": ["Auth"],
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string", "minLength": 6 },
+                  "name": { "type": "string" },
+                  "_csrf": { "type": "string" }
+                },
+                "required": ["email", "password", "name", "_csrf"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "302": { "description": "Успешная регистрация" },
+          "429": { "description": "Слишком много попыток (rate limit: 5/мин)" }
+        }
+      }
+    },
+    "/auth/forgot": {
+      "post": {
+        "summary": "Восстановление пароля",
+        "tags": ["Auth"],
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "_csrf": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "302": { "description": "Письмо отправлено" } }
+      }
+    },
+    "/auth/logout": {
+      "get": { "summary": "Выход", "tags": ["Auth"], "responses": { "302": { "description": "Редирект на /" } } }
+    },
+    "/auth/oauth/{provider}": {
+      "get": {
+        "summary": "Вход через OAuth",
+        "tags": ["Auth"],
+        "parameters": [{ "name": "provider", "in": "path", "required": true, "schema": { "type": "string", "enum": ["google", "github", "yandex"] } }],
+        "responses": { "302": { "description": "Редирект к провайдеру" } }
+      }
+    },
+    "/auth/verify": {
+      "get": {
+        "summary": "Подтверждение email",
+        "tags": ["Auth"],
+        "parameters": [{ "name": "token", "in": "query", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Email подтверждён" } }
+      }
+    },
+    "/dashboard": {
+      "get": { "summary": "Личный кабинет", "tags": ["User"], "security": [{ "BearerAuth": [] }], "responses": { "200": { "description": "HTML-дашборд" } } }
+    },
+    "/profile": {
+      "get": { "summary": "Профиль", "tags": ["User"], "security": [{ "BearerAuth": [] }], "responses": { "200": { "description": "HTML-страница профиля" } } }
+    },
+    "/games": {
+      "get": { "summary": "Список игр", "tags": ["Game"], "responses": { "200": { "description": "HTML-страница" } } },
+      "post": {
+        "summary": "Создать игру",
+        "tags": ["Game"],
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "description": { "type": "string" },
+                  "_csrf": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "302": { "description": "Игра создана" } }
+      }
+    },
+    "/games/{id}": {
+      "get": {
+        "summary": "Просмотр игры",
+        "tags": ["Game"],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "HTML-страница игры" } }
+      }
+    },
+    "/games/{id}/apply": {
+      "post": {
+        "summary": "Подать заявку",
+        "tags": ["Game"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "team_id": { "type": "integer" },
+                  "_csrf": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "302": { "description": "Заявка подана" } }
+      }
+    },
+    "/game/{passing_id}": {
+      "get": {
+        "summary": "Игровой интерфейс",
+        "tags": ["Gameplay"],
+        "parameters": [{ "name": "passing_id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "HTML-страница игры" } }
+      },
+      "post": {
+        "summary": "Отправить код",
+        "tags": ["Gameplay"],
+        "parameters": [{ "name": "passing_id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": { "type": "string" },
+                  "_csrf": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Результат проверки кода" } }
+      }
+    },
+    "/game/{passing_id}/hint": {
+      "post": {
+        "summary": "Использовать подсказку",
+        "tags": ["Gameplay"],
+        "parameters": [{ "name": "passing_id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "302": { "description": "Подсказка применена" } }
+      }
+    },
+    "/ratings": {
+      "get": { "summary": "Рейтинг игроков", "tags": ["Social"], "responses": { "200": { "description": "HTML-страница рейтинга" } } }
+    },
+    "/teams": {
+      "get": { "summary": "Список команд", "tags": ["Team"], "security": [{ "BearerAuth": [] }], "responses": { "200": { "description": "HTML-страница" } } },
+      "post": {
+        "summary": "Создать команду",
+        "tags": ["Team"],
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "_csrf": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "302": { "description": "Команда создана" } }
+      }
+    },
+    "/api/v1/games/{id}/full-preview": {
+      "get": {
+        "summary": "API: полный превью игры",
+        "tags": ["API"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": { "description": "JSON с уровнями и вопросами" },
+          "401": { "description": "Требуется авторизация" },
+          "403": { "description": "Нет прав" }
+        }
+      }
+    },
+    "/api/games/{id}/notes": {
+      "get": {
+        "summary": "API: заметки игры",
+        "tags": ["API"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "JSON массив заметок" } }
+      },
+      "post": {
+        "summary": "API: создать заметку",
+        "tags": ["API"],
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "201": { "description": "Заметка создана" } }
+      }
+    }
+  }
+}

@@ -4,6 +4,7 @@ package game
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/team"
@@ -120,10 +121,12 @@ func RegisterGameplayRoutes(
 	handler *GameplayHandler,
 	coAuthorSvc *CoAuthorService,
 ) {
+	codeLimiter := middleware.CodeSubmissionRateLimit(1*time.Minute, 20)
+
 	router.GET("/game/:passing_id", handler.ShowGame)
-	router.POST("/game/:passing_id", handler.SubmitCode)
-	router.POST("/game/:passing_id/hint", handler.UseHint)
-	router.POST("/game/:passing_id/file", handler.SubmitFile)
+	router.POST("/game/:passing_id", codeLimiter, handler.SubmitCode)
+	router.POST("/game/:passing_id/hint", codeLimiter, handler.UseHint)
+	router.POST("/game/:passing_id/file", codeLimiter, handler.SubmitFile)
 
 	testingGroup := router.Group("/games/:id")
 	testingGroup.Use(middleware.GameManager(coAuthorSvc))

@@ -20,10 +20,13 @@ import (
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/storage"
 	ws "gengine-0/internal/pkg/websocket"
+	"time"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	"github.com/utrack/gin-csrf"
 	"gorm.io/gorm"
 )
@@ -70,12 +73,16 @@ func SetupRouter(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub,
 
 	r.SetFuncMap(template.FuncMap(r.FuncMap))
 	r.LoadHTMLGlob(filepath.Join(baseDir, "internal", "domain", "*", "templates", "*.html"))
+	r.Use(middleware.ContextTimeout(30 * time.Second))
 	r.Use(middleware.SecurityHeadersMiddleware())
 	r.Use(middleware.GzipMiddleware())
 	r.Use(middleware.StaticCacheMiddleware())
 
 	r.Static("/static", filepath.Join(baseDir, "static"))
 	r.Static("/uploads", filepath.Join(baseDir, "uploads"))
+
+	// Swagger UI
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// Инициализация сервисов
 	userAuthSvc := user.NewAuthService(db, cfg)
