@@ -2,6 +2,7 @@
 package team_test
 
 import (
+	"context"
 	"testing"
 
 	"gengine-0/internal/config"
@@ -28,10 +29,10 @@ func setupTeamDB(t *testing.T) *gorm.DB {
 
 func TestTeamService_CreateTeam(t *testing.T) {
 	db := setupTeamDB(t)
-	ts := team.NewTeamService(db)
+	ts := newTeamService(db)
 
 	cap := createUser(t, db, "cap@test.com", "pass")
-	tm, err := ts.CreateTeam("Dream Team", cap.ID)
+	tm, err := ts.CreateTeam(context.Background(), "Dream Team", cap.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "Dream Team", tm.Name)
 	assert.Equal(t, cap.ID, tm.CaptainID)
@@ -39,13 +40,13 @@ func TestTeamService_CreateTeam(t *testing.T) {
 
 func TestTeamService_AddMember_ByCaptain(t *testing.T) {
 	db := setupTeamDB(t)
-	ts := team.NewTeamService(db)
+	ts := newTeamService(db)
 
 	cap := createUser(t, db, "cap@test.com", "pass")
 	member := createUser(t, db, "mem@test.com", "pass")
-	tm, _ := ts.CreateTeam("Test", cap.ID)
+	tm, _ := ts.CreateTeam(context.Background(), "Test", cap.ID)
 
-	err := ts.AddMember(tm.ID, member.ID, cap.ID)
+	err := ts.AddMember(context.Background(), tm.ID, member.ID, cap.ID)
 	require.NoError(t, err)
 
 	var count int64
@@ -55,27 +56,27 @@ func TestTeamService_AddMember_ByCaptain(t *testing.T) {
 
 func TestTeamService_AddMember_NotCaptain(t *testing.T) {
 	db := setupTeamDB(t)
-	ts := team.NewTeamService(db)
+	ts := newTeamService(db)
 
 	cap := createUser(t, db, "cap@test.com", "pass")
 	member := createUser(t, db, "mem@test.com", "pass")
 	other := createUser(t, db, "other@test.com", "pass")
-	tm, _ := ts.CreateTeam("Test", cap.ID)
+	tm, _ := ts.CreateTeam(context.Background(), "Test", cap.ID)
 
-	err := ts.AddMember(tm.ID, member.ID, other.ID)
+	err := ts.AddMember(context.Background(), tm.ID, member.ID, other.ID)
 	assert.Error(t, err)
 }
 
 func TestTeamService_RemoveMember(t *testing.T) {
 	db := setupTeamDB(t)
-	ts := team.NewTeamService(db)
+	ts := newTeamService(db)
 
 	cap := createUser(t, db, "cap@test.com", "pass")
 	member := createUser(t, db, "mem@test.com", "pass")
-	tm, _ := ts.CreateTeam("Test", cap.ID)
-	_ = ts.AddMember(tm.ID, member.ID, cap.ID)
+	tm, _ := ts.CreateTeam(context.Background(), "Test", cap.ID)
+	_ = ts.AddMember(context.Background(), tm.ID, member.ID, cap.ID)
 
-	err := ts.RemoveMember(tm.ID, member.ID, cap.ID)
+	err := ts.RemoveMember(context.Background(), tm.ID, member.ID, cap.ID)
 	require.NoError(t, err)
 
 	var count int64
@@ -85,25 +86,25 @@ func TestTeamService_RemoveMember(t *testing.T) {
 
 func TestTeamService_RemoveCaptain(t *testing.T) {
 	db := setupTeamDB(t)
-	ts := team.NewTeamService(db)
+	ts := newTeamService(db)
 
 	cap := createUser(t, db, "cap@test.com", "pass")
-	tm, _ := ts.CreateTeam("Test", cap.ID)
+	tm, _ := ts.CreateTeam(context.Background(), "Test", cap.ID)
 
-	err := ts.RemoveMember(tm.ID, cap.ID, cap.ID)
+	err := ts.RemoveMember(context.Background(), tm.ID, cap.ID, cap.ID)
 	assert.Error(t, err)
 }
 
 func TestTeamService_ChangeCaptain(t *testing.T) {
 	db := setupTeamDB(t)
-	ts := team.NewTeamService(db)
+	ts := newTeamService(db)
 
 	oldCap := createUser(t, db, "old@test.com", "pass")
 	newCap := createUser(t, db, "new@test.com", "pass")
-	tm, _ := ts.CreateTeam("Test", oldCap.ID)
-	_ = ts.AddMember(tm.ID, newCap.ID, oldCap.ID)
+	tm, _ := ts.CreateTeam(context.Background(), "Test", oldCap.ID)
+	_ = ts.AddMember(context.Background(), tm.ID, newCap.ID, oldCap.ID)
 
-	err := ts.ChangeCaptain(tm.ID, newCap.ID, oldCap.ID)
+	err := ts.ChangeCaptain(context.Background(), tm.ID, newCap.ID, oldCap.ID)
 	require.NoError(t, err)
 
 	var updated team.Team
@@ -113,41 +114,41 @@ func TestTeamService_ChangeCaptain(t *testing.T) {
 
 func TestTeamService_ChangeCaptain_NewNotMember(t *testing.T) {
 	db := setupTeamDB(t)
-	ts := team.NewTeamService(db)
+	ts := newTeamService(db)
 
 	oldCap := createUser(t, db, "old@test.com", "pass")
 	newCap := createUser(t, db, "new@test.com", "pass")
-	tm, _ := ts.CreateTeam("Test", oldCap.ID)
+	tm, _ := ts.CreateTeam(context.Background(), "Test", oldCap.ID)
 
-	err := ts.ChangeCaptain(tm.ID, newCap.ID, oldCap.ID)
+	err := ts.ChangeCaptain(context.Background(), tm.ID, newCap.ID, oldCap.ID)
 	assert.Error(t, err)
 }
 
 func TestTeamService_CanManageTeam(t *testing.T) {
 	db := setupTeamDB(t)
-	ts := team.NewTeamService(db)
+	ts := newTeamService(db)
 
 	cap := createUser(t, db, "cap@test.com", "pass")
 	member := createUser(t, db, "mem@test.com", "pass")
-	tm, _ := ts.CreateTeam("Test", cap.ID)
-	_ = ts.AddMember(tm.ID, member.ID, cap.ID)
+	tm, _ := ts.CreateTeam(context.Background(), "Test", cap.ID)
+	_ = ts.AddMember(context.Background(), tm.ID, member.ID, cap.ID)
 
-	assert.True(t, ts.CanManageTeam(tm.ID, cap.ID))
-	assert.False(t, ts.CanManageTeam(tm.ID, member.ID))
+	assert.True(t, ts.CanManageTeam(context.Background(), tm.ID, cap.ID))
+	assert.False(t, ts.CanManageTeam(context.Background(), tm.ID, member.ID))
 }
 
 func TestTeamService_GetMyTeams(t *testing.T) {
 	db := setupTeamDB(t)
-	ts := team.NewTeamService(db)
+	ts := newTeamService(db)
 
 	u1 := createUser(t, db, "user1@test.com", "pass")
 	u2 := createUser(t, db, "user2@test.com", "pass")
 
-	tmA, _ := ts.CreateTeam("Team A", u1.ID)
-	tmB, _ := ts.CreateTeam("Team B", u2.ID)
-	_ = ts.AddMember(tmB.ID, u1.ID, u2.ID)
+	tmA, _ := ts.CreateTeam(context.Background(), "Team A", u1.ID)
+	tmB, _ := ts.CreateTeam(context.Background(), "Team B", u2.ID)
+	_ = ts.AddMember(context.Background(), tmB.ID, u1.ID, u2.ID)
 
-	teams, err := ts.GetMyTeams(u1.ID)
+	teams, err := ts.GetMyTeams(context.Background(), u1.ID)
 	require.NoError(t, err)
 	assert.Len(t, teams, 2)
 
@@ -160,15 +161,13 @@ func TestTeamService_GetMyTeams(t *testing.T) {
 
 func TestInvitationService_Create(t *testing.T) {
 	db := setupTeamDB(t)
-	ts := team.NewTeamService(db)
-	authorizer := &gameAuthorizerStub{db}
-	invSvc := team.NewInvitationService(db, ts, authorizer, &config.Config{})
+	ts, invSvc := newTeamAndInvitationServices(db)
 
 	cap := createUser(t, db, "cap@test.com", "pass")
 	invited := createUser(t, db, "inv@test.com", "pass")
-	tm, _ := ts.CreateTeam("Inv Team", cap.ID)
+	tm, _ := ts.CreateTeam(context.Background(), "Inv Team", cap.ID)
 
-	inv, err := invSvc.CreateInvitation(tm.ID, invited.ID, cap.ID)
+	inv, err := invSvc.CreateInvitation(context.Background(), tm.ID, invited.ID, cap.ID)
 	require.NoError(t, err)
 	assert.Equal(t, team.InvitationPending, inv.Status)
 	assert.Equal(t, invited.ID, inv.UserID)
@@ -176,17 +175,15 @@ func TestInvitationService_Create(t *testing.T) {
 
 func TestInvitationService_Accept(t *testing.T) {
 	db := setupTeamDB(t)
-	ts := team.NewTeamService(db)
-	authorizer := &gameAuthorizerStub{db}
-	invSvc := team.NewInvitationService(db, ts, authorizer, &config.Config{})
+	ts, invSvc := newTeamAndInvitationServices(db)
 
 	cap := createUser(t, db, "cap@test.com", "pass")
 	invited := createUser(t, db, "inv@test.com", "pass")
-	tm, _ := ts.CreateTeam("Inv Team", cap.ID)
+	tm, _ := ts.CreateTeam(context.Background(), "Inv Team", cap.ID)
 
-	inv, _ := invSvc.CreateInvitation(tm.ID, invited.ID, cap.ID)
+	inv, _ := invSvc.CreateInvitation(context.Background(), tm.ID, invited.ID, cap.ID)
 
-	err := invSvc.AcceptInvitation(inv.ID, invited.ID)
+	err := invSvc.AcceptInvitation(context.Background(), inv.ID, invited.ID)
 	require.NoError(t, err)
 
 	var updated team.Invitation
@@ -200,17 +197,15 @@ func TestInvitationService_Accept(t *testing.T) {
 
 func TestInvitationService_Decline(t *testing.T) {
 	db := setupTeamDB(t)
-	ts := team.NewTeamService(db)
-	authorizer := &gameAuthorizerStub{db}
-	invSvc := team.NewInvitationService(db, ts, authorizer, &config.Config{})
+	ts, invSvc := newTeamAndInvitationServices(db)
 
 	cap := createUser(t, db, "cap@test.com", "pass")
 	invited := createUser(t, db, "inv@test.com", "pass")
-	tm, _ := ts.CreateTeam("Inv Team", cap.ID)
+	tm, _ := ts.CreateTeam(context.Background(), "Inv Team", cap.ID)
 
-	inv, _ := invSvc.CreateInvitation(tm.ID, invited.ID, cap.ID)
+	inv, _ := invSvc.CreateInvitation(context.Background(), tm.ID, invited.ID, cap.ID)
 
-	err := invSvc.DeclineInvitation(inv.ID, invited.ID)
+	err := invSvc.DeclineInvitation(context.Background(), inv.ID, invited.ID)
 	require.NoError(t, err)
 
 	var updated team.Invitation
@@ -218,8 +213,9 @@ func TestInvitationService_Decline(t *testing.T) {
 	assert.Equal(t, team.InvitationDeclined, updated.Status)
 }
 
-// ---------- заглушки ----------
+// ---------- Вспомогательные функции ----------
 
+// gameAuthorizerStub — заглушка для middleware.GameAuthorizer.
 type gameAuthorizerStub struct {
 	db *gorm.DB
 }
@@ -230,6 +226,26 @@ func (g *gameAuthorizerStub) IsUserManager(gameID, userID uint) (bool, error) {
 		return false, err
 	}
 	return ga.AuthorID == userID, nil
+}
+
+func (g *gameAuthorizerStub) HasPermission(gameID, userID uint, role string) (bool, error) {
+	return g.IsUserManager(gameID, userID)
+}
+
+func newTeamService(db *gorm.DB) *team.TeamService {
+	teamRepo := team.NewGormTeamRepo(db)
+	authorizer := &gameAuthorizerStub{db}
+	return team.NewTeamService(teamRepo, authorizer)
+}
+
+func newTeamAndInvitationServices(db *gorm.DB) (*team.TeamService, *team.InvitationService) {
+	teamRepo := team.NewGormTeamRepo(db)
+	invRepo := team.NewGormInvitationRepo(db)
+	authorizer := &gameAuthorizerStub{db}
+	cfg := &config.Config{}
+	ts := team.NewTeamService(teamRepo, authorizer)
+	invSvc := team.NewInvitationService(invRepo, teamRepo, authorizer, cfg)
+	return ts, invSvc
 }
 
 func createUser(t *testing.T, db *gorm.DB, email, _ string) *user.User {

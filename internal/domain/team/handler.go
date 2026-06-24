@@ -7,8 +7,8 @@ import (
 
 	"gengine-0/internal/pkg/storage"
 
-	"github.com/utrack/gin-csrf"
 	"github.com/gin-gonic/gin"
+	csrf "github.com/utrack/gin-csrf"
 )
 
 // ---------- Входные структуры для валидации ----------
@@ -47,7 +47,7 @@ func NewTeamHandler(teamService *TeamService, st storage.FileStorage) *TeamHandl
 // MyTeams отображает список команд текущего пользователя (капитанство + участие).
 func (h *TeamHandler) MyTeams(c *gin.Context) {
 	userID := c.GetUint("userID")
-	teams, err := h.teamService.GetMyTeams(userID)
+	teams, err := h.teamService.GetMyTeams(c.Request.Context(), userID)
 	if err != nil {
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
@@ -55,7 +55,7 @@ func (h *TeamHandler) MyTeams(c *gin.Context) {
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock":  "teams-my.html",
 		"Teams":         teams,
-		"CurrentUserID": userID, // для отображения навигации как у авторизованного
+		"CurrentUserID": userID,
 	})
 }
 
@@ -80,7 +80,7 @@ func (h *TeamHandler) CreateTeam(c *gin.Context) {
 	}
 
 	userID := c.GetUint("userID")
-	_, err := h.teamService.CreateTeam(input.Name, userID)
+	_, err := h.teamService.CreateTeam(c.Request.Context(), input.Name, userID)
 	if err != nil {
 		c.HTML(http.StatusOK, "layout.html", gin.H{
 			"ContentBlock": "teams-new.html",
@@ -98,13 +98,13 @@ func (h *TeamHandler) ViewTeam(c *gin.Context) {
 	teamID, _ := strconv.Atoi(c.Param("team_id"))
 	userID := c.GetUint("userID")
 
-	team, members, err := h.teamService.GetTeamWithMembers(uint(teamID))
+	team, members, err := h.teamService.GetTeamWithMembers(c.Request.Context(), uint(teamID))
 	if err != nil {
 		c.HTML(http.StatusNotFound, "errors/404.html", nil)
 		return
 	}
 
-	canManage := h.teamService.CanManageTeam(uint(teamID), userID)
+	canManage := h.teamService.CanManageTeam(c.Request.Context(), uint(teamID), userID)
 
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock":  "teams-members.html",
@@ -113,7 +113,6 @@ func (h *TeamHandler) ViewTeam(c *gin.Context) {
 		"CanManage":     canManage,
 		"IsCaptain":     team.CaptainID == userID,
 		"CurrentUserID": userID,
-		// GameID не передаётся, поэтому кнопки управления (добавить, сменить) не покажутся
 	})
 }
 
@@ -122,13 +121,13 @@ func (h *TeamHandler) Members(c *gin.Context) {
 	teamID, _ := strconv.Atoi(c.Param("team_id"))
 	userID := c.GetUint("userID")
 
-	team, members, err := h.teamService.GetTeamWithMembers(uint(teamID))
+	team, members, err := h.teamService.GetTeamWithMembers(c.Request.Context(), uint(teamID))
 	if err != nil {
 		c.HTML(http.StatusNotFound, "errors/404.html", nil)
 		return
 	}
 
-	canManage := h.teamService.CanManageTeam(uint(teamID), userID)
+	canManage := h.teamService.CanManageTeam(c.Request.Context(), uint(teamID), userID)
 
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock":  "teams-members.html",
@@ -145,7 +144,7 @@ func (h *TeamHandler) Members(c *gin.Context) {
 // AddMemberForm показывает форму добавления участника.
 func (h *TeamHandler) AddMemberForm(c *gin.Context) {
 	teamID, _ := strconv.Atoi(c.Param("team_id"))
-	availableUsers, err := h.teamService.GetAvailableUsers(uint(teamID))
+	availableUsers, err := h.teamService.GetAvailableUsers(c.Request.Context(), uint(teamID))
 	if err != nil {
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
@@ -174,7 +173,7 @@ func (h *TeamHandler) AddMember(c *gin.Context) {
 		return
 	}
 
-	if err := h.teamService.AddMember(uint(teamID), input.UserID, actorID); err != nil {
+	if err := h.teamService.AddMember(c.Request.Context(), uint(teamID), input.UserID, actorID); err != nil {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
@@ -187,7 +186,7 @@ func (h *TeamHandler) RemoveMember(c *gin.Context) {
 	memberID, _ := strconv.Atoi(c.Param("member_id"))
 	actorID := c.GetUint("userID")
 
-	if err := h.teamService.RemoveMember(uint(teamID), uint(memberID), actorID); err != nil {
+	if err := h.teamService.RemoveMember(c.Request.Context(), uint(teamID), uint(memberID), actorID); err != nil {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
@@ -197,7 +196,7 @@ func (h *TeamHandler) RemoveMember(c *gin.Context) {
 // ChangeCaptainForm показывает форму смены капитана.
 func (h *TeamHandler) ChangeCaptainForm(c *gin.Context) {
 	teamID, _ := strconv.Atoi(c.Param("team_id"))
-	_, members, err := h.teamService.GetTeamWithMembers(uint(teamID))
+	_, members, err := h.teamService.GetTeamWithMembers(c.Request.Context(), uint(teamID))
 	if err != nil {
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
@@ -226,7 +225,7 @@ func (h *TeamHandler) ChangeCaptain(c *gin.Context) {
 		return
 	}
 
-	if err := h.teamService.ChangeCaptain(uint(teamID), input.CaptainID, actorID); err != nil {
+	if err := h.teamService.ChangeCaptain(c.Request.Context(), uint(teamID), input.CaptainID, actorID); err != nil {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
@@ -247,7 +246,7 @@ func NewInvitationHandler(invitationService *InvitationService) *InvitationHandl
 // Index отображает список приглашений команды (для автора/капитана).
 func (h *InvitationHandler) Index(c *gin.Context) {
 	teamID, _ := strconv.Atoi(c.Param("team_id"))
-	invitations, err := h.invitationService.ListByTeam(uint(teamID))
+	invitations, err := h.invitationService.ListByTeam(c.Request.Context(), uint(teamID))
 	if err != nil {
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
@@ -286,7 +285,7 @@ func (h *InvitationHandler) Create(c *gin.Context) {
 		return
 	}
 
-	_, err := h.invitationService.CreateInvitation(uint(teamID), input.UserID, userID)
+	_, err := h.invitationService.CreateInvitation(c.Request.Context(), uint(teamID), input.UserID, userID)
 	if err != nil {
 		c.HTML(http.StatusOK, "layout.html", gin.H{
 			"ContentBlock": "invitations-new.html",
@@ -301,7 +300,7 @@ func (h *InvitationHandler) Create(c *gin.Context) {
 // MyInvitations отображает мои приглашения.
 func (h *InvitationHandler) MyInvitations(c *gin.Context) {
 	userID := c.GetUint("userID")
-	invitations, err := h.invitationService.GetPendingForUser(userID)
+	invitations, err := h.invitationService.GetPendingForUser(c.Request.Context(), userID)
 	if err != nil {
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
@@ -317,7 +316,7 @@ func (h *InvitationHandler) MyInvitations(c *gin.Context) {
 func (h *InvitationHandler) Accept(c *gin.Context) {
 	invitationID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
-	if err := h.invitationService.AcceptInvitation(uint(invitationID), userID); err != nil {
+	if err := h.invitationService.AcceptInvitation(c.Request.Context(), uint(invitationID), userID); err != nil {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
@@ -328,7 +327,7 @@ func (h *InvitationHandler) Accept(c *gin.Context) {
 func (h *InvitationHandler) Decline(c *gin.Context) {
 	invitationID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
-	if err := h.invitationService.DeclineInvitation(uint(invitationID), userID); err != nil {
+	if err := h.invitationService.DeclineInvitation(c.Request.Context(), uint(invitationID), userID); err != nil {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}

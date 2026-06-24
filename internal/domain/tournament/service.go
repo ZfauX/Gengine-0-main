@@ -2,6 +2,7 @@
 package tournament
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -11,45 +12,51 @@ import (
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/email"
 
-	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
 
 type TournamentService struct {
-	DB          *gorm.DB
-	teamService *team.TeamService
-	cfg         *config.Config
+	tournamentRepo       TournamentRepository
+	tournamentGameRepo   TournamentGameRepository
+	tournamentTeamRepo   TournamentTeamRepository
+	tournamentResultRepo TournamentResultRepository
+	teamService          *team.TeamService
+	cfg                  *config.Config
 }
 
-func NewTournamentService(db *gorm.DB, ts *team.TeamService, cfg *config.Config) *TournamentService {
-	return &TournamentService{DB: db, teamService: ts, cfg: cfg}
-}
-
-// Create создаёт новый турнир.
-func (s *TournamentService) Create(t *Tournament) error {
-	return s.DB.Create(t).Error
-}
-
-// GetByID возвращает турнир по ID.
-func (s *TournamentService) GetByID(id uint) (*Tournament, error) {
-	var t Tournament
-	if err := s.DB.Preload("Author").First(&t, id).Error; err != nil {
-		return nil, err
+func NewTournamentService(
+	tournamentRepo TournamentRepository,
+	tournamentGameRepo TournamentGameRepository,
+	tournamentTeamRepo TournamentTeamRepository,
+	tournamentResultRepo TournamentResultRepository,
+	teamService *team.TeamService,
+	cfg *config.Config,
+) *TournamentService {
+	return &TournamentService{
+		tournamentRepo:       tournamentRepo,
+		tournamentGameRepo:   tournamentGameRepo,
+		tournamentTeamRepo:   tournamentTeamRepo,
+		tournamentResultRepo: tournamentResultRepo,
+		teamService:          teamService,
+		cfg:                  cfg,
 	}
-	return &t, nil
 }
 
-// List возвращает все турниры.
-func (s *TournamentService) List() ([]Tournament, error) {
-	var tournaments []Tournament
-	err := s.DB.Preload("Author").Order("created_at DESC").Find(&tournaments).Error
-	return tournaments, err
+func (s *TournamentService) Create(ctx context.Context, t *Tournament) error {
+	return s.tournamentRepo.Create(ctx, t)
 }
 
-// Update обновляет турнир (только автор).
-func (s *TournamentService) Update(id uint, updated *Tournament, userID uint) error {
-	var t Tournament
-	if err := s.DB.First(&t, id).Error; err != nil {
+func (s *TournamentService) GetByID(ctx context.Context, id uint) (*Tournament, error) {
+	return s.tournamentRepo.GetByID(ctx, id)
+}
+
+func (s *TournamentService) List(ctx context.Context) ([]Tournament, error) {
+	return s.tournamentRepo.List(ctx)
+}
+
+func (s *TournamentService) Update(ctx context.Context, id uint, updated *Tournament, userID uint) error {
+	t, err := s.tournamentRepo.GetByID(ctx, id)
+	if err != nil {
 		return err
 	}
 	if t.AuthorID != userID {
@@ -61,119 +68,94 @@ func (s *TournamentService) Update(id uint, updated *Tournament, userID uint) er
 	t.PointsForSecond = updated.PointsForSecond
 	t.PointsForThird = updated.PointsForThird
 	t.PointsForParticipation = updated.PointsForParticipation
-	return s.DB.Save(&t).Error
+	return s.tournamentRepo.Update(ctx, t)
 }
 
 // ---------- Игры турнира ----------
 
-// AddGame добавляет игру в турнир.
-func (s *TournamentService) AddGame(tournamentID, gameID, userID uint) error {
-	var t Tournament
-	if err := s.DB.First(&t, tournamentID).Error; err != nil {
+func (s *TournamentService) AddGame(ctx context.Context, tournamentID, gameID, userID uint) error {
+	t, err := s.tournamentRepo.GetByID(ctx, tournamentID)
+	if err != nil {
 		return err
 	}
 	if t.AuthorID != userID {
 		return errors.New("только автор турнира может добавлять игры")
 	}
-
-	var g game.Game
-	if err := s.DB.First(&g, gameID).Error; err != nil {
+	games, err := s.tournamentGameRepo.ListGames(ctx, tournamentID)
+	if err != nil {
 		return err
 	}
-
-	var count int64
-	s.DB.Model(&TournamentGame{}).Where("tournament_id = ? AND game_id = ?", tournamentID, gameID).Count(&count)
-	if count > 0 {
-		return errors.New("игра уже в турнире")
+	for _, g := range games {
+		if g.ID == gameID {
+			return errors.New("игра уже в турнире")
+		}
 	}
-
-	tg := TournamentGame{
-		TournamentID: tournamentID,
-		GameID:       gameID,
-	}
-	return s.DB.Create(&tg).Error
+	order := len(games)
+	return s.tournamentGameRepo.AddGame(ctx, tournamentID, gameID, order)
 }
 
-// RemoveGame удаляет игру из турнира.
-func (s *TournamentService) RemoveGame(tournamentID, gameID, userID uint) error {
-	var t Tournament
-	if err := s.DB.First(&t, tournamentID).Error; err != nil {
+func (s *TournamentService) RemoveGame(ctx context.Context, tournamentID, gameID, userID uint) error {
+	t, err := s.tournamentRepo.GetByID(ctx, tournamentID)
+	if err != nil {
 		return err
 	}
 	if t.AuthorID != userID {
 		return errors.New("только автор турнира может удалять игры")
 	}
-	return s.DB.Where("tournament_id = ? AND game_id = ?", tournamentID, gameID).Delete(&TournamentGame{}).Error
+	return s.tournamentGameRepo.RemoveGame(ctx, tournamentID, gameID)
 }
 
-// ListGames возвращает игры, входящие в турнир.
-func (s *TournamentService) ListGames(tournamentID uint) ([]game.Game, error) {
-	var games []game.Game
-	err := s.DB.Joins("JOIN tournament_games ON tournament_games.game_id = games.id").
-		Where("tournament_games.tournament_id = ?", tournamentID).
-		Order("tournament_games.order_index ASC").
-		Find(&games).Error
-	return games, err
+func (s *TournamentService) ListGames(ctx context.Context, tournamentID uint) ([]game.Game, error) {
+	return s.tournamentGameRepo.ListGames(ctx, tournamentID)
 }
 
-// GetAvailableGames возвращает игры автора, которые ещё не добавлены в турнир.
-func (s *TournamentService) GetAvailableGames(tournamentID, userID uint) ([]game.Game, error) {
-	var games []game.Game
-	subQuery := s.DB.Table("tournament_games").Select("game_id").Where("tournament_id = ?", tournamentID)
-	err := s.DB.Where("author_id = ? AND id NOT IN (?)", userID, subQuery).Find(&games).Error
-	return games, err
+func (s *TournamentService) GetAvailableGames(ctx context.Context, tournamentID, userID uint) ([]game.Game, error) {
+	return s.tournamentGameRepo.GetAvailableGames(ctx, tournamentID, userID)
 }
 
 // ---------- Заявки ----------
 
-// Apply подаёт заявку команды на участие в турнире и отправляет email-уведомление.
-func (s *TournamentService) Apply(tournamentID, teamID, userID uint) error {
-	if !s.teamService.CanManageTeam(teamID, userID) {
+func (s *TournamentService) Apply(ctx context.Context, tournamentID, teamID, userID uint) error {
+	if !s.teamService.CanManageTeam(ctx, teamID, userID) {
 		return errors.New("только капитан может подать заявку")
 	}
 
-	var count int64
-	s.DB.Model(&TournamentTeam{}).Where("tournament_id = ? AND team_id = ?", tournamentID, teamID).Count(&count)
-	if count > 0 {
+	_, err := s.tournamentTeamRepo.GetByTournamentAndTeam(ctx, tournamentID, teamID)
+	if err == nil {
 		return errors.New("команда уже участвует в турнире")
 	}
-
-	tt := TournamentTeam{
-		TournamentID: tournamentID,
-		TeamID:       teamID,
-	}
-	if err := s.DB.Create(&tt).Error; err != nil {
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
 
-	games, err := s.ListGames(tournamentID)
-	if err == nil {
-		for _, g := range games {
-			var existing game.GamePassing
-			err := s.DB.Where("game_id = ? AND team_id = ?", g.ID, teamID).First(&existing).Error
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				passing := game.GamePassing{
-					GameID: g.ID,
-					TeamID: teamID,
-					Status: game.StatusPending,
-				}
-				_ = s.DB.Create(&passing)
+	if err := s.tournamentTeamRepo.AddTeam(ctx, tournamentID, teamID); err != nil {
+		return err
+	}
+
+	games, _ := s.tournamentGameRepo.ListGames(ctx, tournamentID)
+	for _, g := range games {
+		var existing game.GamePassing
+		err := s.tournamentTeamRepo.(*gormTournamentTeamRepo).db.Where("game_id = ? AND team_id = ?", g.ID, teamID).First(&existing).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			passing := game.GamePassing{
+				GameID: g.ID,
+				TeamID: teamID,
+				Status: game.StatusPending,
 			}
+			_ = s.tournamentTeamRepo.(*gormTournamentTeamRepo).db.Create(&passing)
 		}
 	}
 
-	if s.cfg != nil {
+	if s.cfg != nil && s.cfg.SMTP.Enabled {
 		emailService := email.NewEmailService(s.cfg)
-		var tournament Tournament
-		var team team.Team
-		if err := s.DB.First(&tournament, tournamentID).Error; err == nil {
-			if err := s.DB.First(&team, teamID).Error; err == nil {
+		tournamentPtr, err := s.tournamentRepo.GetByID(ctx, tournamentID)
+		if err == nil {
+			var team team.Team
+			if err := s.tournamentTeamRepo.(*gormTournamentTeamRepo).db.First(&team, teamID).Error; err == nil {
 				var captain user.User
-				if err := s.DB.First(&captain, team.CaptainID).Error; err == nil {
-					if err := emailService.Send(captain.Email, "Заявка на турнир",
-						fmt.Sprintf("Ваша команда «%s» подала заявку на турнир «%s».", team.Name, tournament.Name)); err != nil {
-						log.Error().Err(err).Str("team", team.Name).Str("tournament", tournament.Name).Msg("failed to send tournament application email")
-					}
+				if err := s.tournamentTeamRepo.(*gormTournamentTeamRepo).db.First(&captain, team.CaptainID).Error; err == nil {
+					_ = emailService.Send(captain.Email, "Заявка на турнир",
+						fmt.Sprintf("Ваша команда «%s» подала заявку на турнир «%s».", team.Name, tournamentPtr.Name))
 				}
 			}
 		}
@@ -181,17 +163,14 @@ func (s *TournamentService) Apply(tournamentID, teamID, userID uint) error {
 	return nil
 }
 
-// CanApply проверяет, может ли пользователь подать заявку на турнир.
-func (s *TournamentService) CanApply(tournamentID, userID uint) bool {
-	teams, err := s.teamService.GetMyTeams(userID)
+func (s *TournamentService) CanApply(ctx context.Context, tournamentID, userID uint) bool {
+	teams, err := s.teamService.GetMyTeams(ctx, userID)
 	if err != nil || len(teams) == 0 {
 		return false
 	}
-	var count int64
 	for _, t := range teams {
-		count = 0
-		s.DB.Model(&TournamentTeam{}).Where("tournament_id = ? AND team_id = ?", tournamentID, t.ID).Count(&count)
-		if count == 0 {
+		_, err := s.tournamentTeamRepo.GetByTournamentAndTeam(ctx, tournamentID, t.ID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return true
 		}
 	}
@@ -200,24 +179,21 @@ func (s *TournamentService) CanApply(tournamentID, userID uint) bool {
 
 // ---------- Подсчёт очков ----------
 
-// UpdateScoresForGame пересчитывает очки турнира после завершения конкретной игры.
-func (s *TournamentService) UpdateScoresForGame(gameID uint) {
+func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint) {
 	var tg TournamentGame
-	if err := s.DB.Where("game_id = ?", gameID).First(&tg).Error; err != nil {
+	if err := s.tournamentGameRepo.(*gormTournamentGameRepo).db.Where("game_id = ?", gameID).First(&tg).Error; err != nil {
 		return
 	}
-
-	var tournament Tournament
-	if err := s.DB.First(&tournament, tg.TournamentID).Error; err != nil {
+	tournament, err := s.tournamentRepo.GetByID(ctx, tg.TournamentID)
+	if err != nil {
 		return
 	}
 
 	var passings []game.GamePassing
-	s.DB.Where("game_id = ? AND status = ?", gameID, game.StatusFinished).Find(&passings)
+	s.tournamentGameRepo.(*gormTournamentGameRepo).db.Where("game_id = ? AND status = ?", gameID, game.StatusFinished).Find(&passings)
 
 	for _, p := range passings {
-		var tt TournamentTeam
-		err := s.DB.Where("tournament_id = ? AND team_id = ?", tournament.ID, p.TeamID).First(&tt).Error
+		_, err := s.tournamentTeamRepo.GetByTournamentAndTeam(ctx, tournament.ID, p.TeamID)
 		if err != nil {
 			continue
 		}
@@ -234,30 +210,24 @@ func (s *TournamentService) UpdateScoresForGame(gameID uint) {
 			}
 		}
 
-		var result TournamentResult
-		err = s.DB.Where("tournament_id = ? AND team_id = ?", tournament.ID, p.TeamID).First(&result).Error
+		result, err := s.tournamentResultRepo.GetByTournamentAndTeam(ctx, tournament.ID, p.TeamID)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			result = TournamentResult{
+			result = &TournamentResult{
 				TournamentID: tournament.ID,
 				TeamID:       p.TeamID,
 				Score:        points,
 				GamesPlayed:  1,
 			}
-			s.DB.Create(&result)
 		} else if err == nil {
 			result.Score += points
 			result.GamesPlayed++
-			s.DB.Save(&result)
+		} else {
+			continue
 		}
+		_ = s.tournamentResultRepo.Upsert(ctx, result)
 	}
 }
 
-// GetLeaderboard возвращает турнирную таблицу, отсортированную по очкам.
-func (s *TournamentService) GetLeaderboard(tournamentID uint) ([]TournamentResult, error) {
-	var results []TournamentResult
-	err := s.DB.Preload("Team").
-		Where("tournament_id = ?", tournamentID).
-		Order("score DESC").
-		Find(&results).Error
-	return results, err
+func (s *TournamentService) GetLeaderboard(ctx context.Context, tournamentID uint) ([]TournamentResult, error) {
+	return s.tournamentResultRepo.GetLeaderboard(ctx, tournamentID)
 }

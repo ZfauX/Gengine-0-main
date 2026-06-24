@@ -80,7 +80,7 @@ func (s *RatingService) UpdateRatingsForGame(gameID uint) error {
 
 func (s *RatingService) awardPoints(userID uint, points int, now time.Time) error {
 	return s.DB.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "user_id"}},
+		Columns: []clause.Column{{Name: "user_id"}},
 		DoUpdates: clause.Assignments(map[string]any{
 			"score":      gorm.Expr("player_ratings.score + ?", points),
 			"updated_at": now,
@@ -92,16 +92,4 @@ func (s *RatingService) GetLeaderboard(limit int) ([]PlayerRating, error) {
 	var ratings []PlayerRating
 	err := s.DB.Preload("User").Order("score DESC").Limit(limit).Find(&ratings).Error
 	return ratings, err
-}
-
-func uniqueUintSlice(input []uint) []uint {
-	u := make([]uint, 0, len(input))
-	m := make(map[uint]bool)
-	for _, val := range input {
-		if _, ok := m[val]; !ok {
-			m[val] = true
-			u = append(u, val)
-		}
-	}
-	return u
 }

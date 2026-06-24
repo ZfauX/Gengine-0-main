@@ -6,64 +6,145 @@ import (
 	"strconv"
 
 	"gengine-0/internal/config"
-	"gengine-0/internal/domain/game"
-	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/middleware"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
-func RegisterRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
-	teamService := team.NewTeamService(db)
-	coAuthorService := game.NewCoAuthorService(db)
+func RegisterRoutes(
+	r *gin.Engine,
+	tournamentService *TournamentService,
+	cfg *config.Config,
+	authService *user.AuthService,
+) {
+	public := r.Group("/tournaments")
+	{
+		public.GET("/", func(c *gin.Context) {
+			tournaments, err := tournamentService.List(c.Request.Context())
+			if err != nil {
+				c.String(http.StatusInternalServerError, err.Error())
+				return
+			}
+			c.HTML(http.StatusOK, "tournaments_list.html", gin.H{
+				"title":       "Турниры",
+				"tournaments": tournaments,
+			})
+		})
 
-	gameService := game.NewGameService(db, coAuthorService, nil, nil, nil, nil, nil, cfg)
-	tournamentService := NewTournamentService(db, teamService, cfg)
-	tournamentHandler := NewTournamentHandler(tournamentService, teamService, gameService)
-
-	authService := user.NewAuthService(db, cfg)
-	authRequired := middleware.AuthRequired(authService)
-
-	tournamentAuthor := func(c *gin.Context) {
-		id, err := strconv.Atoi(c.Param("id"))
-		if err != nil {
-			c.AbortWithStatus(http.StatusBadRequest)
-			return
-		}
-		var t Tournament
-		if err := db.First(&t, id).Error; err != nil {
-			c.AbortWithStatus(http.StatusNotFound)
-			return
-		}
-		userID := c.GetUint("userID")
-		if t.AuthorID != userID {
-			c.AbortWithStatus(http.StatusForbidden)
-			return
-		}
-		c.Next()
+		public.GET("/:id", func(c *gin.Context) {
+			id, _ := strconv.Atoi(c.Param("id"))
+			t, err := tournamentService.GetByID(c.Request.Context(), uint(id))
+			if err != nil {
+				c.String(http.StatusNotFound, err.Error())
+				return
+			}
+			leaderboard, _ := tournamentService.GetLeaderboard(c.Request.Context(), uint(id))
+			c.HTML(http.StatusOK, "tournament_detail.html", gin.H{
+				"title":       t.Name,
+				"tournament":  t,
+				"leaderboard": leaderboard,
+			})
+		})
 	}
 
-	router.GET("/tournaments", tournamentHandler.ListTournaments)
-	router.GET("/tournaments/:id", tournamentHandler.ShowTournament)
-
-	protected := router.Group("/")
-	protected.Use(authRequired)
+	protected := r.Group("/tournaments")
+	protected.Use(middleware.AuthRequired(authService))
 	{
-		protected.GET("/tournaments/new", tournamentHandler.NewTournamentForm)
-		protected.POST("/tournaments", tournamentHandler.CreateTournament)
+		protected.GET("/create", func(c *gin.Context) {
+			c.HTML(http.StatusOK, "tournament_create.html", gin.H{
+				"title": "Создать турнир",
+				"csrf":  c.GetString("csrf"),
+			})
+		})
+		protected.POST("/create", func(c *gin.Context) {
+			var t Tournament
+			if err := c.ShouldBind(&t); err != nil {
+				c.HTML(http.StatusBadRequest, "tournament_create.html", gin.H{"error": err.Error()})
+				return
+			}
+			t.AuthorID = c.GetUint("user_id")
+			if err := tournamentService.Create(c.Request.Context(), &t); err != nil {
+				c.HTML(http.StatusBadRequest, "tournament_create.html", gin.H{"error": err.Error()})
+				return
+			}
+			c.Redirect(http.StatusFound, "/tournaments/"+strconv.Itoa(int(t.ID)))
+		})
 
-		authorGroup := protected.Group("/tournaments/:id")
-		authorGroup.Use(tournamentAuthor)
-		{
-			authorGroup.GET("/edit", tournamentHandler.EditTournamentForm)
-			authorGroup.PUT("/update", tournamentHandler.UpdateTournament)
-			authorGroup.GET("/games/add", tournamentHandler.AddGameForm)
-			authorGroup.POST("/games/add", tournamentHandler.AddGame)
-			authorGroup.POST("/games/:id/remove", tournamentHandler.RemoveGame)
-		}
+		protected.GET("/:id/edit", func(c *gin.Context) {
+			id, _ := strconv.Atoi(c.Param("id"))
+			t, err := tournamentService.GetByID(c.Request.Context(), uint(id))
+			if err != nil {
+				c.String(http.StatusNotFound, err.Error())
+				return
+			}
+			if t.AuthorID != c.GetUint("user_id") {
+				c.String(http.StatusForbidden, "Только автор может редактировать")
+				return
+			}
+			c.HTML(http.StatusOK, "tournament_edit.html", gin.H{
+				"title":      "Редактировать турнир",
+				"tournament": t,
+				"csrf":       c.GetString("csrf"),
+			})
+		})
+		protected.POST("/:id/edit", func(c *gin.Context) {
+			id, _ := strconv.Atoi(c.Param("id"))
+			var updated Tournament
+			if err := c.ShouldBind(&updated); err != nil {
+				c.HTML(http.StatusBadRequest, "tournament_edit.html", gin.H{"error": err.Error()})
+				return
+			}
+			if err := tournamentService.Update(c.Request.Context(), uint(id), &updated, c.GetUint("user_id")); err != nil {
+				c.HTML(http.StatusBadRequest, "tournament_edit.html", gin.H{"error": err.Error()})
+				return
+			}
+			c.Redirect(http.StatusFound, "/tournaments/"+strconv.Itoa(id))
+		})
 
-		protected.POST("/tournaments/:id/apply", tournamentHandler.Apply)
+		protected.GET("/:id/games", func(c *gin.Context) {
+			id, _ := strconv.Atoi(c.Param("id"))
+			games, err := tournamentService.ListGames(c.Request.Context(), uint(id))
+			if err != nil {
+				c.String(http.StatusInternalServerError, err.Error())
+				return
+			}
+			available, _ := tournamentService.GetAvailableGames(c.Request.Context(), uint(id), c.GetUint("user_id"))
+			c.HTML(http.StatusOK, "tournament_games.html", gin.H{
+				"title":        "Игры турнира",
+				"games":        games,
+				"available":    available,
+				"tournamentID": id,
+				"csrf":         c.GetString("csrf"),
+			})
+		})
+		protected.POST("/:id/games/add", func(c *gin.Context) {
+			id, _ := strconv.Atoi(c.Param("id"))
+			gameID, _ := strconv.Atoi(c.PostForm("game_id"))
+			if err := tournamentService.AddGame(c.Request.Context(), uint(id), uint(gameID), c.GetUint("user_id")); err != nil {
+				c.String(http.StatusBadRequest, err.Error())
+				return
+			}
+			c.Redirect(http.StatusFound, "/tournaments/"+strconv.Itoa(id)+"/games")
+		})
+		protected.POST("/:id/games/:game_id/remove", func(c *gin.Context) {
+			id, _ := strconv.Atoi(c.Param("id"))
+			gameID, _ := strconv.Atoi(c.Param("game_id"))
+			if err := tournamentService.RemoveGame(c.Request.Context(), uint(id), uint(gameID), c.GetUint("user_id")); err != nil {
+				c.String(http.StatusBadRequest, err.Error())
+				return
+			}
+			c.Redirect(http.StatusFound, "/tournaments/"+strconv.Itoa(id)+"/games")
+		})
+
+		protected.POST("/:id/apply", func(c *gin.Context) {
+			id, _ := strconv.Atoi(c.Param("id"))
+			teamID, _ := strconv.Atoi(c.PostForm("team_id"))
+			if err := tournamentService.Apply(c.Request.Context(), uint(id), uint(teamID), c.GetUint("user_id")); err != nil {
+				c.String(http.StatusBadRequest, err.Error())
+				return
+			}
+			c.Redirect(http.StatusFound, "/tournaments/"+strconv.Itoa(id))
+		})
 	}
 }

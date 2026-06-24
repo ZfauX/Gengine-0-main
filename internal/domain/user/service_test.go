@@ -1,6 +1,8 @@
+// internal/domain/user/service_test.go
 package user
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -15,13 +17,13 @@ import (
 
 func newTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	return testutil.SetupPostgresDB(t, &User{}, &PasswordResetToken{}, &EmailVerificationToken{})
+	return testutil.SetupPostgresDB(t, &User{}, &Achievement{}, &PasswordResetToken{}, &EmailVerificationToken{})
 }
 
 func newTestConfig() *config.Config {
 	return &config.Config{
 		JWT: config.JWTConfig{
-			Secret:       "test-secret",
+			Secret:       "test-secret-secret-secret-secret",
 			AccessExpiry: 24 * time.Hour,
 		},
 		Server: config.ServerConfig{
@@ -33,12 +35,18 @@ func newTestConfig() *config.Config {
 	}
 }
 
+// Создаём репозитории для тестов
+func newTestRepos(db *gorm.DB) (UserRepository, AchievementRepository, EmailVerificationRepository) {
+	return NewGormUserRepo(db), NewGormAchievementRepo(db), NewGormEmailVerificationRepo(db)
+}
+
 func TestRegister(t *testing.T) {
 	db := newTestDB(t)
 	cfg := newTestConfig()
-	service := NewAuthService(db, cfg)
+	userRepo, achievRepo, emailVerifRepo := newTestRepos(db)
+	service := NewAuthService(userRepo, achievRepo, emailVerifRepo, cfg)
 
-	user, err := service.Register("test@example.com", "password123", "Test User")
+	user, err := service.Register(context.Background(), "test@example.com", "password123", "Test User")
 	require.NoError(t, err)
 	assert.NotZero(t, user.ID)
 	assert.Equal(t, "test@example.com", user.Email)
@@ -48,28 +56,30 @@ func TestRegister(t *testing.T) {
 func TestLogin(t *testing.T) {
 	db := newTestDB(t)
 	cfg := newTestConfig()
-	service := NewAuthService(db, cfg)
+	userRepo, achievRepo, emailVerifRepo := newTestRepos(db)
+	service := NewAuthService(userRepo, achievRepo, emailVerifRepo, cfg)
 
-	_, err := service.Register("test@example.com", "password123", "Test User")
+	_, err := service.Register(context.Background(), "test@example.com", "password123", "Test User")
 	require.NoError(t, err)
 
-	token, err := service.Login("test@example.com", "password123")
+	token, err := service.Login(context.Background(), "test@example.com", "password123")
 	require.NoError(t, err)
 	assert.NotEmpty(t, token)
 
-	_, err = service.Login("test@example.com", "wrongpassword")
+	_, err = service.Login(context.Background(), "test@example.com", "wrongpassword")
 	assert.Error(t, err)
 }
 
 func TestParseToken(t *testing.T) {
 	db := newTestDB(t)
 	cfg := newTestConfig()
-	service := NewAuthService(db, cfg)
+	userRepo, achievRepo, emailVerifRepo := newTestRepos(db)
+	service := NewAuthService(userRepo, achievRepo, emailVerifRepo, cfg)
 
-	user, err := service.Register("test@example.com", "password123", "Test User")
+	user, err := service.Register(context.Background(), "test@example.com", "password123", "Test User")
 	require.NoError(t, err)
 
-	token, err := service.Login("test@example.com", "password123")
+	token, err := service.Login(context.Background(), "test@example.com", "password123")
 	require.NoError(t, err)
 
 	parsedID, err := service.ParseToken(token)
@@ -79,7 +89,8 @@ func TestParseToken(t *testing.T) {
 
 func TestChangePassword(t *testing.T) {
 	db := newTestDB(t)
-	userService := NewUserService(db)
+	userRepo, _, _ := newTestRepos(db)
+	userService := NewUserService(userRepo)
 
 	hashed, _ := bcrypt.GenerateFromPassword([]byte("oldpassword"), bcrypt.DefaultCost)
 	user := User{
@@ -89,7 +100,7 @@ func TestChangePassword(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&user).Error)
 
-	err := userService.ChangePassword(user.ID, "oldpassword", "newpassword")
+	err := userService.ChangePassword(context.Background(), user.ID, "oldpassword", "newpassword")
 	require.NoError(t, err)
 
 	var updated User
@@ -99,8 +110,9 @@ func TestChangePassword(t *testing.T) {
 
 func TestAwardAchievement(t *testing.T) {
 	db := newTestDB(t)
-	achievementService := NewAchievementService(db)
-	achievementService.SeedAchievements()
+	_, achievRepo, _ := newTestRepos(db)
+	achievementService := NewAchievementService(achievRepo)
+	achievementService.SeedAchievements(context.Background())
 
 	user := User{
 		Email:    "test@example.com",
@@ -109,12 +121,12 @@ func TestAwardAchievement(t *testing.T) {
 	}
 	require.NoError(t, db.Create(&user).Error)
 
-	err := achievementService.AwardAchievement(user.ID, "first_level_created")
+	err := achievementService.AwardAchievement(context.Background(), user.ID, "first_level_created")
 	require.NoError(t, err)
 
-	err = achievementService.AwardAchievement(user.ID, "first_level_created")
+	err = achievementService.AwardAchievement(context.Background(), user.ID, "first_level_created")
 	require.NoError(t, err)
 
-	achievements, _ := achievementService.GetUserAchievements(user.ID)
+	achievements, _ := achievementService.GetUserAchievements(context.Background(), user.ID)
 	assert.Len(t, achievements, 1)
 }

@@ -3,24 +3,61 @@ package level
 
 import (
 	"net/http"
-	"net/url"
 	"strconv"
 
-	"gengine-0/internal/pkg/sanitize"
+	"gengine-0/internal/config"
+	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/storage"
 	ws "gengine-0/internal/pkg/websocket"
 
-	"github.com/utrack/gin-csrf"
 	"github.com/gin-gonic/gin"
+	csrf "github.com/utrack/gin-csrf"
+	"gorm.io/gorm"
 )
 
-// ---------- Входные структуры для валидации ----------
+// ---------- Входные структуры ----------
 
-type MoveLevelInput struct {
-	Direction string `form:"direction" binding:"required,oneof=up down"`
+type CreateLevelInput struct {
+	Name                 string  `form:"name" binding:"required,min=2,max=100"`
+	Description          string  `form:"description" binding:"max=5000"`
+	Position             int     `form:"position" binding:"min=0"`
+	Type                 string  `form:"type"`
+	ParentID             *uint   `form:"parent_id"`
+	GroupID              *uint   `form:"group_id"`
+	MinChildren          int     `form:"min_children" binding:"min=0"`
+	RequiresConfirmation bool    `form:"requires_confirmation"`
+	Latitude             float64 `form:"latitude"`
+	Longitude            float64 `form:"longitude"`
 }
 
-// ---------- LevelHandler ----------
+type UpdateLevelInput struct {
+	Name                 string  `form:"name" binding:"min=2,max=100"`
+	Description          string  `form:"description" binding:"max=5000"`
+	Position             int     `form:"position" binding:"min=0"`
+	Type                 string  `form:"type"`
+	ParentID             *uint   `form:"parent_id"`
+	GroupID              *uint   `form:"group_id"`
+	MinChildren          int     `form:"min_children" binding:"min=0"`
+	RequiresConfirmation bool    `form:"requires_confirmation"`
+	Latitude             float64 `form:"latitude"`
+	Longitude            float64 `form:"longitude"`
+}
+
+type CreateQuestionInput struct {
+	Text string `form:"text" binding:"required"`
+	Hint string `form:"hint"`
+}
+
+type UpdateQuestionInput struct {
+	Text string `form:"text" binding:"required"`
+	Hint string `form:"hint"`
+}
+
+type CreateAnswerInput struct {
+	Code string `form:"code" binding:"required"`
+}
+
+// ---------- Обработчики ----------
 
 type LevelHandler struct {
 	levelService    *LevelService
@@ -28,6 +65,9 @@ type LevelHandler struct {
 	answerService   *AnswerService
 	storage         storage.FileStorage
 	hub             *ws.RoomHub
+	cfg             *config.Config
+	authorizer      middleware.GameAuthorizer
+	db              *gorm.DB
 }
 
 func NewLevelHandler(
@@ -36,6 +76,9 @@ func NewLevelHandler(
 	answerService *AnswerService,
 	storage storage.FileStorage,
 	hub *ws.RoomHub,
+	cfg *config.Config,
+	authorizer middleware.GameAuthorizer,
+	db *gorm.DB,
 ) *LevelHandler {
 	return &LevelHandler{
 		levelService:    levelService,
@@ -43,30 +86,42 @@ func NewLevelHandler(
 		answerService:   answerService,
 		storage:         storage,
 		hub:             hub,
+		cfg:             cfg,
+		authorizer:      authorizer,
+		db:              db,
 	}
 }
 
-// ListLevels отображает список уровней игры.
-func (h *LevelHandler) ListLevels(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
-	levels, err := h.levelService.ListByGame(uint(gameID))
+// ----- Уровни -----
+
+// ListByGame отображает список уровней игры.
+func (h *LevelHandler) ListByGame(c *gin.Context) {
+	gameID, _ := strconv.Atoi(c.Param("game_id"))
+	userID := c.GetUint("userID")
+
+	ok, err := h.authorizer.IsUserManager(uint(gameID), userID)
+	if err != nil || !ok {
+		c.HTML(http.StatusForbidden, "errors/403.html", nil)
+		return
+	}
+
+	levels, err := h.levelService.ListByGame(c.Request.Context(), uint(gameID))
 	if err != nil {
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
-	errorMsg := sanitize.StripHTML(c.Query("error"))
+
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "levels-list.html",
 		"GameID":       gameID,
 		"Levels":       levels,
-		"Error":        errorMsg,
 		"csrf":         csrf.GetToken(c),
 	})
 }
 
-// NewLevelForm показывает форму создания уровня.
-func (h *LevelHandler) NewLevelForm(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
+// NewForm отображает форму создания уровня.
+func (h *LevelHandler) NewForm(c *gin.Context) {
+	gameID, _ := strconv.Atoi(c.Param("game_id"))
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "levels-new.html",
 		"GameID":       gameID,
@@ -74,27 +129,40 @@ func (h *LevelHandler) NewLevelForm(c *gin.Context) {
 	})
 }
 
-// CreateLevel создаёт новый уровень.
-func (h *LevelHandler) CreateLevel(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
+// Create создаёт новый уровень.
+func (h *LevelHandler) Create(c *gin.Context) {
+	gameID, _ := strconv.Atoi(c.Param("game_id"))
 	userID := c.GetUint("userID")
 
-	var level Level
-	if err := c.ShouldBind(&level); err != nil {
+	var input CreateLevelInput
+	if err := c.ShouldBind(&input); err != nil {
 		c.HTML(http.StatusOK, "layout.html", gin.H{
 			"ContentBlock": "levels-new.html",
-			"Error":        "Неверные данные: " + err.Error(),
 			"GameID":       gameID,
+			"Error":        "Неверные данные: " + err.Error(),
 			"csrf":         csrf.GetToken(c),
 		})
 		return
 	}
 
-	if err := h.levelService.Create(uint(gameID), &level, userID); err != nil {
+	level := &Level{
+		Name:                 input.Name,
+		Description:          input.Description,
+		Position:             input.Position,
+		Type:                 input.Type,
+		ParentID:             input.ParentID,
+		GroupID:              input.GroupID,
+		MinChildren:          input.MinChildren,
+		RequiresConfirmation: input.RequiresConfirmation,
+		Latitude:             input.Latitude,
+		Longitude:            input.Longitude,
+	}
+
+	if err := h.levelService.Create(c.Request.Context(), uint(gameID), level, userID); err != nil {
 		c.HTML(http.StatusOK, "layout.html", gin.H{
 			"ContentBlock": "levels-new.html",
-			"Error":        err.Error(),
 			"GameID":       gameID,
+			"Error":        err.Error(),
 			"csrf":         csrf.GetToken(c),
 		})
 		return
@@ -103,45 +171,37 @@ func (h *LevelHandler) CreateLevel(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/games/"+strconv.Itoa(gameID)+"/levels")
 }
 
-// ShowLevel показывает уровень и его вопросы.
-func (h *LevelHandler) ShowLevel(c *gin.Context) {
-	levelID, _ := strconv.Atoi(c.Param("level_id"))
-	level, err := h.levelService.GetByID(uint(levelID))
-	if err != nil {
-		c.HTML(http.StatusNotFound, "errors/404.html", nil)
-		return
-	}
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "levels-show.html",
-		"GameID":       c.Param("id"),
-		"Level":        level,
-		"csrf":         csrf.GetToken(c),
-	})
-}
-
-// EditLevelForm показывает форму редактирования уровня.
-func (h *LevelHandler) EditLevelForm(c *gin.Context) {
-	levelID, _ := strconv.Atoi(c.Param("level_id"))
-	level, err := h.levelService.GetByID(uint(levelID))
-	if err != nil {
-		c.HTML(http.StatusNotFound, "errors/404.html", nil)
-		return
-	}
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "levels-edit.html",
-		"GameID":       c.Param("id"),
-		"Level":        level,
-		"csrf":         csrf.GetToken(c),
-	})
-}
-
-// UpdateLevel обновляет уровень.
-func (h *LevelHandler) UpdateLevel(c *gin.Context) {
+// EditForm отображает форму редактирования уровня.
+func (h *LevelHandler) EditForm(c *gin.Context) {
 	levelID, _ := strconv.Atoi(c.Param("level_id"))
 	userID := c.GetUint("userID")
 
-	var updated Level
-	if err := c.ShouldBind(&updated); err != nil {
+	level, err := h.levelService.GetByID(c.Request.Context(), uint(levelID))
+	if err != nil {
+		c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		return
+	}
+
+	ok, err := h.authorizer.IsUserManager(level.GameID, userID)
+	if err != nil || !ok {
+		c.HTML(http.StatusForbidden, "errors/403.html", nil)
+		return
+	}
+
+	c.HTML(http.StatusOK, "layout.html", gin.H{
+		"ContentBlock": "levels-edit.html",
+		"Level":        level,
+		"csrf":         csrf.GetToken(c),
+	})
+}
+
+// Update обновляет уровень.
+func (h *LevelHandler) Update(c *gin.Context) {
+	levelID, _ := strconv.Atoi(c.Param("level_id"))
+	userID := c.GetUint("userID")
+
+	var input UpdateLevelInput
+	if err := c.ShouldBind(&input); err != nil {
 		c.HTML(http.StatusOK, "layout.html", gin.H{
 			"ContentBlock": "levels-edit.html",
 			"Error":        "Неверные данные: " + err.Error(),
@@ -150,169 +210,188 @@ func (h *LevelHandler) UpdateLevel(c *gin.Context) {
 		return
 	}
 
-	if err := h.levelService.Update(uint(levelID), &updated, userID); err != nil {
-		c.HTML(http.StatusForbidden, "levels/edit.html", gin.H{"Error": err.Error(), "csrf": csrf.GetToken(c)})
+	updated := &Level{
+		Name:                 input.Name,
+		Description:          input.Description,
+		Position:             input.Position,
+		Type:                 input.Type,
+		ParentID:             input.ParentID,
+		GroupID:              input.GroupID,
+		MinChildren:          input.MinChildren,
+		RequiresConfirmation: input.RequiresConfirmation,
+		Latitude:             input.Latitude,
+		Longitude:            input.Longitude,
+	}
+
+	if err := h.levelService.Update(c.Request.Context(), uint(levelID), updated, userID); err != nil {
+		c.HTML(http.StatusOK, "layout.html", gin.H{
+			"ContentBlock": "levels-edit.html",
+			"Level":        updated,
+			"Error":        err.Error(),
+			"csrf":         csrf.GetToken(c),
+		})
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels")
+	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels")
 }
 
-// DeleteLevel удаляет уровень (мягкое удаление, если игра запущена — делегирует в game).
-func (h *LevelHandler) DeleteLevel(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
+// Delete удаляет уровень (вызов через ActiveGameManager).
+func (h *LevelHandler) Delete(c *gin.Context) {
+	gameID, _ := strconv.Atoi(c.Param("game_id"))
 	levelID, _ := strconv.Atoi(c.Param("level_id"))
 	userID := c.GetUint("userID")
 
-	if err := h.levelService.DeleteFromActiveGame(uint(gameID), uint(levelID), userID); err != nil {
+	if err := h.levelService.DeleteFromActiveGame(c.Request.Context(), uint(gameID), uint(levelID), userID); err != nil {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels")
+	c.Redirect(http.StatusFound, "/games/"+strconv.Itoa(gameID)+"/levels")
 }
 
-// DuplicateLevel создаёт копию уровня со всеми вопросами и ответами.
-func (h *LevelHandler) DuplicateLevel(c *gin.Context) {
+// Duplicate дублирует уровень.
+func (h *LevelHandler) Duplicate(c *gin.Context) {
 	levelID, _ := strconv.Atoi(c.Param("level_id"))
 	userID := c.GetUint("userID")
 
-	_, err := h.levelService.Duplicate(uint(levelID), userID)
+	newLevel, err := h.levelService.Duplicate(c.Request.Context(), uint(levelID), userID)
 	if err != nil {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels")
+	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+strconv.Itoa(int(newLevel.ID)))
 }
 
-// MoveLevel перемещает уровень вверх или вниз по порядку.
-func (h *LevelHandler) MoveLevel(c *gin.Context) {
+// Move перемещает уровень.
+func (h *LevelHandler) Move(c *gin.Context) {
+	levelID, _ := strconv.Atoi(c.Param("level_id"))
+	userID := c.GetUint("userID")
+	direction := c.PostForm("direction")
+
+	if err := h.levelService.Move(c.Request.Context(), uint(levelID), direction, userID); err != nil {
+		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
+		return
+	}
+
+	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels")
+}
+
+// ----- Вопросы -----
+
+// ListQuestions отображает список вопросов уровня.
+func (h *LevelHandler) ListQuestions(c *gin.Context) {
 	levelID, _ := strconv.Atoi(c.Param("level_id"))
 	userID := c.GetUint("userID")
 
-	var input MoveLevelInput
-	if err := c.ShouldBind(&input); err != nil {
-		c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels?error="+url.QueryEscape("Неверные данные"))
+	level, err := h.levelService.GetByID(c.Request.Context(), uint(levelID))
+	if err != nil {
+		c.HTML(http.StatusNotFound, "errors/404.html", nil)
 		return
 	}
 
-	if err := h.levelService.Move(uint(levelID), input.Direction, userID); err != nil {
-		c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels?error="+url.QueryEscape(err.Error()))
+	ok, err := h.authorizer.IsUserManager(level.GameID, userID)
+	if err != nil || !ok {
+		c.HTML(http.StatusForbidden, "errors/403.html", nil)
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels")
-}
-
-// ---------- QuestionHandler ----------
-
-type QuestionHandler struct {
-	questionService *QuestionService
-}
-
-func NewQuestionHandler(questionService *QuestionService) *QuestionHandler {
-	return &QuestionHandler{questionService: questionService}
-}
-
-// ListQuestions отображает список вопросов уровня.
-func (h *QuestionHandler) ListQuestions(c *gin.Context) {
-	levelID, _ := strconv.Atoi(c.Param("level_id"))
-	questions, err := h.questionService.ListByLevel(uint(levelID))
+	questions, err := h.questionService.ListByLevel(c.Request.Context(), uint(levelID))
 	if err != nil {
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
+
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "questions-list.html",
-		"GameID":       c.Param("id"),
 		"LevelID":      levelID,
 		"Questions":    questions,
 		"csrf":         csrf.GetToken(c),
 	})
 }
 
-// NewQuestionForm показывает форму создания вопроса.
-func (h *QuestionHandler) NewQuestionForm(c *gin.Context) {
+// NewQuestionForm отображает форму создания вопроса.
+func (h *LevelHandler) NewQuestionForm(c *gin.Context) {
 	levelID, _ := strconv.Atoi(c.Param("level_id"))
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "questions-new.html",
-		"GameID":       c.Param("id"),
 		"LevelID":      levelID,
 		"csrf":         csrf.GetToken(c),
 	})
 }
 
-// CreateQuestion создаёт новый вопрос (и опционально ответы).
-func (h *QuestionHandler) CreateQuestion(c *gin.Context) {
+// CreateQuestion создаёт новый вопрос.
+func (h *LevelHandler) CreateQuestion(c *gin.Context) {
 	levelID, _ := strconv.Atoi(c.Param("level_id"))
 	userID := c.GetUint("userID")
 
-	var question Question
-	if err := c.ShouldBind(&question); err != nil {
+	var input CreateQuestionInput
+	if err := c.ShouldBind(&input); err != nil {
 		c.HTML(http.StatusOK, "layout.html", gin.H{
 			"ContentBlock": "questions-new.html",
+			"LevelID":      levelID,
 			"Error":        "Неверные данные: " + err.Error(),
-			"LevelID":      levelID,
 			"csrf":         csrf.GetToken(c),
 		})
 		return
 	}
 
-	if err := h.questionService.Create(uint(levelID), &question, userID); err != nil {
+	question := &Question{
+		Text: input.Text,
+		Hint: input.Hint,
+	}
+
+	if err := h.questionService.Create(c.Request.Context(), uint(levelID), question, userID); err != nil {
 		c.HTML(http.StatusOK, "layout.html", gin.H{
 			"ContentBlock": "questions-new.html",
-			"Error":        err.Error(),
 			"LevelID":      levelID,
+			"Error":        err.Error(),
 			"csrf":         csrf.GetToken(c),
 		})
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels/"+c.Param("level_id")+"/questions")
+	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+c.Param("level_id")+"/questions")
 }
 
-// ShowQuestion показывает вопрос и его ответы.
-func (h *QuestionHandler) ShowQuestion(c *gin.Context) {
+// EditQuestionForm отображает форму редактирования вопроса.
+func (h *LevelHandler) EditQuestionForm(c *gin.Context) {
 	questionID, _ := strconv.Atoi(c.Param("question_id"))
-	question, err := h.questionService.GetByID(uint(questionID))
+	userID := c.GetUint("userID")
+
+	question, err := h.questionService.GetByID(c.Request.Context(), uint(questionID))
 	if err != nil {
 		c.HTML(http.StatusNotFound, "errors/404.html", nil)
 		return
 	}
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "questions-show.html",
-		"GameID":       c.Param("id"),
-		"LevelID":      c.Param("level_id"),
-		"Question":     question,
-		"csrf":         csrf.GetToken(c),
-	})
-}
 
-// EditQuestionForm показывает форму редактирования вопроса.
-func (h *QuestionHandler) EditQuestionForm(c *gin.Context) {
-	questionID, _ := strconv.Atoi(c.Param("question_id"))
-	question, err := h.questionService.GetByID(uint(questionID))
+	level, err := h.levelService.GetByID(c.Request.Context(), question.LevelID)
 	if err != nil {
 		c.HTML(http.StatusNotFound, "errors/404.html", nil)
 		return
 	}
+
+	ok, err := h.authorizer.IsUserManager(level.GameID, userID)
+	if err != nil || !ok {
+		c.HTML(http.StatusForbidden, "errors/403.html", nil)
+		return
+	}
+
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "questions-edit.html",
-		"GameID":       c.Param("id"),
-		"LevelID":      c.Param("level_id"),
 		"Question":     question,
 		"csrf":         csrf.GetToken(c),
 	})
 }
 
 // UpdateQuestion обновляет вопрос.
-func (h *QuestionHandler) UpdateQuestion(c *gin.Context) {
+func (h *LevelHandler) UpdateQuestion(c *gin.Context) {
 	questionID, _ := strconv.Atoi(c.Param("question_id"))
 	userID := c.GetUint("userID")
 
-	var updated Question
-	if err := c.ShouldBind(&updated); err != nil {
+	var input UpdateQuestionInput
+	if err := c.ShouldBind(&input); err != nil {
 		c.HTML(http.StatusOK, "layout.html", gin.H{
 			"ContentBlock": "questions-edit.html",
 			"Error":        "Неверные данные: " + err.Error(),
@@ -321,118 +400,118 @@ func (h *QuestionHandler) UpdateQuestion(c *gin.Context) {
 		return
 	}
 
-	if err := h.questionService.Update(uint(questionID), &updated, userID); err != nil {
-		c.HTML(http.StatusForbidden, "questions/edit.html", gin.H{"Error": err.Error(), "csrf": csrf.GetToken(c)})
+	updated := &Question{
+		Text: input.Text,
+		Hint: input.Hint,
+	}
+
+	if err := h.questionService.Update(c.Request.Context(), uint(questionID), updated, userID); err != nil {
+		c.HTML(http.StatusOK, "layout.html", gin.H{
+			"ContentBlock": "questions-edit.html",
+			"Question":     updated,
+			"Error":        err.Error(),
+			"csrf":         csrf.GetToken(c),
+		})
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels/"+c.Param("level_id")+"/questions")
+	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+c.Param("level_id")+"/questions")
 }
 
 // DeleteQuestion удаляет вопрос.
-func (h *QuestionHandler) DeleteQuestion(c *gin.Context) {
+func (h *LevelHandler) DeleteQuestion(c *gin.Context) {
 	questionID, _ := strconv.Atoi(c.Param("question_id"))
 	userID := c.GetUint("userID")
 
-	if err := h.questionService.Delete(uint(questionID), userID); err != nil {
+	if err := h.questionService.Delete(c.Request.Context(), uint(questionID), userID); err != nil {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels/"+c.Param("level_id")+"/questions")
+	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+c.Param("level_id")+"/questions")
 }
 
-// ---------- AnswerHandler ----------
+// ----- Ответы -----
 
-type AnswerHandler struct {
-	answerService *AnswerService
-}
-
-func NewAnswerHandler(answerService *AnswerService) *AnswerHandler {
-	return &AnswerHandler{answerService: answerService}
-}
-
-// Index отображает список ответов вопроса и форму создания нового ответа.
-func (h *AnswerHandler) Index(c *gin.Context) {
+// ListAnswers отображает список ответов вопроса.
+func (h *LevelHandler) ListAnswers(c *gin.Context) {
 	questionID, _ := strconv.Atoi(c.Param("question_id"))
-	answers, err := h.answerService.ListByQuestion(uint(questionID))
+	userID := c.GetUint("userID")
+
+	question, err := h.questionService.GetByID(c.Request.Context(), uint(questionID))
+	if err != nil {
+		c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		return
+	}
+
+	level, err := h.levelService.GetByID(c.Request.Context(), question.LevelID)
+	if err != nil {
+		c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		return
+	}
+
+	ok, err := h.authorizer.IsUserManager(level.GameID, userID)
+	if err != nil || !ok {
+		c.HTML(http.StatusForbidden, "errors/403.html", nil)
+		return
+	}
+
+	answers, err := h.answerService.ListByQuestion(c.Request.Context(), uint(questionID))
 	if err != nil {
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
-	newAnswer := Answer{QuestionID: uint(questionID)}
 
 	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "answers-index.html",
-		"GameID":       c.Param("id"),
-		"LevelID":      c.Param("level_id"),
+		"ContentBlock": "answers-list.html",
 		"QuestionID":   questionID,
 		"Answers":      answers,
-		"NewAnswer":    newAnswer,
 		"csrf":         csrf.GetToken(c),
 	})
 }
 
-// Create создаёт новый ответ.
-func (h *AnswerHandler) Create(c *gin.Context) {
+// CreateAnswer создаёт новый ответ.
+func (h *LevelHandler) CreateAnswer(c *gin.Context) {
 	questionID, _ := strconv.Atoi(c.Param("question_id"))
 	userID := c.GetUint("userID")
 
-	var answer Answer
-	if err := c.ShouldBind(&answer); err != nil {
-		answers, _ := h.answerService.ListByQuestion(uint(questionID))
+	var input CreateAnswerInput
+	if err := c.ShouldBind(&input); err != nil {
 		c.HTML(http.StatusOK, "layout.html", gin.H{
-			"ContentBlock": "answers-index.html",
-			"GameID":       c.Param("id"),
-			"LevelID":      c.Param("level_id"),
+			"ContentBlock": "answers-list.html",
 			"QuestionID":   questionID,
-			"Answers":      answers,
-			"NewAnswer":    answer,
 			"Error":        "Неверные данные: " + err.Error(),
 			"csrf":         csrf.GetToken(c),
 		})
 		return
 	}
 
-	if err := h.answerService.Create(uint(questionID), &answer, userID); err != nil {
-		answers, _ := h.answerService.ListByQuestion(uint(questionID))
+	answer := &Answer{
+		Code: input.Code,
+	}
+
+	if err := h.answerService.Create(c.Request.Context(), uint(questionID), answer, userID); err != nil {
 		c.HTML(http.StatusOK, "layout.html", gin.H{
-			"ContentBlock": "answers-index.html",
-			"GameID":       c.Param("id"),
-			"LevelID":      c.Param("level_id"),
+			"ContentBlock": "answers-list.html",
 			"QuestionID":   questionID,
-			"Answers":      answers,
-			"NewAnswer":    answer,
 			"Error":        err.Error(),
 			"csrf":         csrf.GetToken(c),
 		})
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels/"+c.Param("level_id")+"/questions/"+c.Param("question_id")+"/answers")
+	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+c.Param("level_id")+"/questions/"+c.Param("question_id")+"/answers")
 }
 
-// Delete удаляет ответ, если он не последний в вопросе.
-func (h *AnswerHandler) Delete(c *gin.Context) {
+// DeleteAnswer удаляет ответ.
+func (h *LevelHandler) DeleteAnswer(c *gin.Context) {
 	answerID, _ := strconv.Atoi(c.Param("answer_id"))
 	userID := c.GetUint("userID")
-	questionID, _ := strconv.Atoi(c.Param("question_id"))
 
-	if err := h.answerService.Delete(uint(answerID), userID); err != nil {
-		answers, _ := h.answerService.ListByQuestion(uint(questionID))
-		newAnswer := Answer{QuestionID: uint(questionID)}
-		c.HTML(http.StatusOK, "layout.html", gin.H{
-			"ContentBlock": "answers-index.html",
-			"GameID":       c.Param("id"),
-			"LevelID":      c.Param("level_id"),
-			"QuestionID":   questionID,
-			"Answers":      answers,
-			"NewAnswer":    newAnswer,
-			"Error":        err.Error(),
-			"csrf":         csrf.GetToken(c),
-		})
+	if err := h.answerService.Delete(c.Request.Context(), uint(answerID), userID); err != nil {
+		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels/"+c.Param("level_id")+"/questions/"+c.Param("question_id")+"/answers")
+	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+c.Param("level_id")+"/questions/"+c.Param("question_id")+"/answers")
 }

@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"gengine-0/internal/config"
-	"gengine-0/internal/domain/user"
+	"gengine-0/internal/domain/user" // убрать импорт user? но мы передаём authService
 	"gengine-0/internal/pkg/audit"
 	"gengine-0/internal/pkg/middleware"
 
@@ -13,14 +13,15 @@ import (
 	"gorm.io/gorm"
 )
 
-func RegisterRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) *audit.Service {
+// RegisterRoutes теперь принимает authService (уже созданный), чтобы не создавать его внутри
+func RegisterRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config, authService *user.AuthService) *audit.Service {
 	auditService := audit.NewService(db)
 	backupService := NewBackupService(db, "backups", cfg.Server.MaxBackups, cfg.Database)
 	adminHandler := NewAdminHandler(db, backupService, auditService)
 
-	authService := user.NewAuthService(db, cfg)
+	// Используем переданный authService, не создаём новый
 	authRequired := middleware.AuthRequired(authService)
-	adminOnly := adminOnlyMiddleware(db)
+	adminOnly := adminOnlyMiddleware(db) // оставляем как есть
 
 	protected := router.Group("/admin")
 	protected.Use(authRequired, adminOnly)

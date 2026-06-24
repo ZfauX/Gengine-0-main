@@ -18,7 +18,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// Версия и дата сборки (заполняются при линковке)
 var (
 	version   = "dev"
 	buildDate = "unknown"

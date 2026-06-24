@@ -2,6 +2,7 @@
 package level_test
 
 import (
+	"context"
 	"testing"
 
 	"gengine-0/internal/domain/game"
@@ -31,7 +32,7 @@ func TestLevelService_Create(t *testing.T) {
 	g := createGame(t, db, author.ID, "Test Game")
 
 	lvl := &level.Level{Name: "Level 1", Position: 1}
-	err := svc.Create(g.ID, lvl, author.ID)
+	err := svc.Create(context.Background(), g.ID, lvl, author.ID)
 	require.NoError(t, err)
 	assert.NotZero(t, lvl.ID)
 	assert.Equal(t, g.ID, lvl.GameID)
@@ -50,7 +51,7 @@ func TestLevelService_Create_NotAuthor(t *testing.T) {
 	g := createGame(t, db, author.ID, "Game")
 
 	lvl := &level.Level{Name: "L1", Position: 1}
-	err := svc.Create(g.ID, lvl, other.ID)
+	err := svc.Create(context.Background(), g.ID, lvl, other.ID)
 	assert.Error(t, err)
 }
 
@@ -69,7 +70,7 @@ func TestLevelService_Update(t *testing.T) {
 	require.NoError(t, db.Create(lvl).Error)
 
 	updated := &level.Level{Name: "New", Position: 2}
-	err := svc.Update(lvl.ID, updated, author.ID)
+	err := svc.Update(context.Background(), lvl.ID, updated, author.ID)
 	require.NoError(t, err)
 
 	var result level.Level
@@ -96,7 +97,7 @@ func TestLevelService_Duplicate(t *testing.T) {
 	a := &level.Answer{QuestionID: q.ID, Code: "code"}
 	require.NoError(t, db.Create(a).Error)
 
-	newLvl, err := svc.Duplicate(original.ID, author.ID)
+	newLvl, err := svc.Duplicate(context.Background(), original.ID, author.ID)
 	require.NoError(t, err)
 	assert.Contains(t, newLvl.Name, "копия")
 
@@ -127,7 +128,7 @@ func TestLevelService_Move(t *testing.T) {
 	require.NoError(t, db.Create(l1).Error)
 	require.NoError(t, db.Create(l2).Error)
 
-	err := svc.Move(l2.ID, "up", author.ID)
+	err := svc.Move(context.Background(), l2.ID, "up", author.ID)
 	require.NoError(t, err)
 
 	db.First(l1, l1.ID)
@@ -152,7 +153,7 @@ func TestLevelService_MoveDown(t *testing.T) {
 	require.NoError(t, db.Create(l1).Error)
 	require.NoError(t, db.Create(l2).Error)
 
-	err := svc.Move(l1.ID, "down", author.ID)
+	err := svc.Move(context.Background(), l1.ID, "down", author.ID)
 	require.NoError(t, err)
 
 	db.First(l1, l1.ID)
@@ -176,7 +177,7 @@ func TestLevelService_Duplicate_NotAuthor(t *testing.T) {
 	original := &level.Level{Name: "Original", Position: 1, GameID: g.ID}
 	require.NoError(t, db.Create(original).Error)
 
-	_, err := svc.Duplicate(original.ID, other.ID)
+	_, err := svc.Duplicate(context.Background(), original.ID, other.ID)
 	assert.Error(t, err)
 }
 
@@ -196,7 +197,7 @@ func TestLevelService_ListByGame(t *testing.T) {
 	require.NoError(t, db.Create(l1).Error)
 	require.NoError(t, db.Create(l2).Error)
 
-	levels, err := svc.ListByGame(g.ID)
+	levels, err := svc.ListByGame(context.Background(), g.ID)
 	require.NoError(t, err)
 	assert.Len(t, levels, 2)
 }
@@ -214,7 +215,7 @@ func TestLevelService_GetByID(t *testing.T) {
 	lvl := &level.Level{Name: "Test", Position: 1, GameID: g.ID}
 	require.NoError(t, db.Create(lvl).Error)
 
-	result, err := svc.GetByID(lvl.ID)
+	result, err := svc.GetByID(context.Background(), lvl.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "Test", result.Name)
 }
@@ -235,7 +236,7 @@ func TestQuestionService_Create(t *testing.T) {
 	require.NoError(t, db.Create(lvl).Error)
 
 	q := &level.Question{Text: "What?"}
-	err := qSvc.Create(lvl.ID, q, author.ID)
+	err := qSvc.Create(context.Background(), lvl.ID, q, author.ID)
 	require.NoError(t, err)
 	assert.NotZero(t, q.ID)
 	assert.Equal(t, "What?", q.Text)
@@ -257,7 +258,7 @@ func TestQuestionService_Delete(t *testing.T) {
 	q := &level.Question{LevelID: lvl.ID, Text: "Delete me"}
 	require.NoError(t, db.Create(q).Error)
 
-	err := qSvc.Delete(q.ID, author.ID)
+	err := qSvc.Delete(context.Background(), q.ID, author.ID)
 	require.NoError(t, err)
 
 	var deleted level.Question
@@ -282,7 +283,7 @@ func TestQuestionService_Update(t *testing.T) {
 	require.NoError(t, db.Create(q).Error)
 
 	updated := &level.Question{Text: "New text"}
-	err := qSvc.Update(q.ID, updated, author.ID)
+	err := qSvc.Update(context.Background(), q.ID, updated, author.ID)
 	require.NoError(t, err)
 
 	var result level.Question
@@ -308,7 +309,7 @@ func TestQuestionService_ListByLevel(t *testing.T) {
 	require.NoError(t, db.Create(q1).Error)
 	require.NoError(t, db.Create(q2).Error)
 
-	questions, err := qSvc.ListByLevel(lvl.ID)
+	questions, err := qSvc.ListByLevel(context.Background(), lvl.ID)
 	require.NoError(t, err)
 	assert.Len(t, questions, 2)
 }
@@ -328,7 +329,7 @@ func TestQuestionService_Create_NotAuthor(t *testing.T) {
 	require.NoError(t, db.Create(lvl).Error)
 
 	q := &level.Question{Text: "Q"}
-	err := qSvc.Create(lvl.ID, q, other.ID)
+	err := qSvc.Create(context.Background(), lvl.ID, q, other.ID)
 	assert.Error(t, err)
 }
 
@@ -350,7 +351,7 @@ func TestAnswerService_Create(t *testing.T) {
 	require.NoError(t, db.Create(q).Error)
 
 	a := &level.Answer{Code: "123"}
-	err := aSvc.Create(q.ID, a, author.ID)
+	err := aSvc.Create(context.Background(), q.ID, a, author.ID)
 	require.NoError(t, err)
 	assert.NotZero(t, a.ID)
 	assert.Equal(t, "123", a.Code)
@@ -374,7 +375,7 @@ func TestAnswerService_DeleteLast(t *testing.T) {
 	a := &level.Answer{QuestionID: q.ID, Code: "only"}
 	require.NoError(t, db.Create(a).Error)
 
-	err := aSvc.Delete(a.ID, author.ID)
+	err := aSvc.Delete(context.Background(), a.ID, author.ID)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "хотя бы один вариант")
 }
@@ -399,7 +400,7 @@ func TestAnswerService_Delete(t *testing.T) {
 	require.NoError(t, db.Create(a1).Error)
 	require.NoError(t, db.Create(a2).Error)
 
-	err := aSvc.Delete(a1.ID, author.ID)
+	err := aSvc.Delete(context.Background(), a1.ID, author.ID)
 	require.NoError(t, err)
 
 	var deleted level.Answer
@@ -427,7 +428,7 @@ func TestAnswerService_ListByQuestion(t *testing.T) {
 	require.NoError(t, db.Create(a1).Error)
 	require.NoError(t, db.Create(a2).Error)
 
-	answers, err := aSvc.ListByQuestion(q.ID)
+	answers, err := aSvc.ListByQuestion(context.Background(), q.ID)
 	require.NoError(t, err)
 	assert.Len(t, answers, 2)
 }
@@ -449,12 +450,13 @@ func TestAnswerService_Create_NotAuthor(t *testing.T) {
 	require.NoError(t, db.Create(q).Error)
 
 	a := &level.Answer{Code: "456"}
-	err := aSvc.Create(q.ID, a, other.ID)
+	err := aSvc.Create(context.Background(), q.ID, a, other.ID)
 	assert.Error(t, err)
 }
 
 // ---------- Вспомогательные функции ----------
 
+// simpleGameAuthorizer — реализация middleware.GameAuthorizer для тестов.
 type simpleGameAuthorizer struct {
 	db *gorm.DB
 }
@@ -467,22 +469,40 @@ func (a *simpleGameAuthorizer) IsUserManager(gameID, userID uint) (bool, error) 
 	return g.AuthorID == userID, nil
 }
 
+func (a *simpleGameAuthorizer) HasPermission(gameID, userID uint, role string) (bool, error) {
+	return a.IsUserManager(gameID, userID)
+}
+
+// simpleActiveGameManager — реализация level.ActiveGameManager для тестов.
 type simpleActiveGameManager struct{}
 
-func (m *simpleActiveGameManager) DeleteLevelFromActiveGame(gameID, levelID, userID uint) error {
+func (m *simpleActiveGameManager) DeleteLevelFromActiveGame(ctx context.Context, gameID, levelID, userID uint) error {
 	return nil
 }
 
+// Конструкторы сервисов с репозиториями.
 func newLevelService(db *gorm.DB) *level.LevelService {
-	return level.NewLevelService(db, &simpleGameAuthorizer{db}, &simpleActiveGameManager{})
+	levelRepo := level.NewGormLevelRepo(db)
+	questionRepo := level.NewGormQuestionRepo(db)
+	answerRepo := level.NewGormAnswerRepo(db)
+	authorizer := &simpleGameAuthorizer{db}
+	agm := &simpleActiveGameManager{}
+	return level.NewLevelService(levelRepo, questionRepo, answerRepo, authorizer, agm)
 }
 
 func newQuestionService(db *gorm.DB) *level.QuestionService {
-	return level.NewQuestionService(db, &simpleGameAuthorizer{db})
+	questionRepo := level.NewGormQuestionRepo(db)
+	levelRepo := level.NewGormLevelRepo(db)
+	authorizer := &simpleGameAuthorizer{db}
+	return level.NewQuestionService(questionRepo, levelRepo, authorizer)
 }
 
 func newAnswerService(db *gorm.DB) *level.AnswerService {
-	return level.NewAnswerService(db, &simpleGameAuthorizer{db})
+	answerRepo := level.NewGormAnswerRepo(db)
+	questionRepo := level.NewGormQuestionRepo(db)
+	levelRepo := level.NewGormLevelRepo(db)
+	authorizer := &simpleGameAuthorizer{db}
+	return level.NewAnswerService(answerRepo, questionRepo, levelRepo, authorizer)
 }
 
 func createUser(t *testing.T, db *gorm.DB, email, _ string) *user.User {

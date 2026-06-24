@@ -2,14 +2,17 @@
 package game_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"gengine-0/internal/config"
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/monitor"
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/user"
+	"gengine-0/internal/pkg/websocket"
 	"gengine-0/internal/testutil"
 
 	"github.com/stretchr/testify/assert"
@@ -38,7 +41,7 @@ func TestGameService_Create(t *testing.T) {
 	author := createUser(t, db, "author@test.com", "pass")
 	g := &game.Game{Name: "Test Game"}
 
-	err := svc.Create(g, author.ID)
+	err := svc.Create(context.Background(), g, author.ID)
 	require.NoError(t, err)
 	assert.True(t, g.IsDraft)
 	assert.Equal(t, author.ID, g.AuthorID)
@@ -62,7 +65,7 @@ func TestGameService_Publish(t *testing.T) {
 
 	createLevel(t, db, g.ID, "Test Level", 1)
 
-	err := svc.Publish(g.ID, author.ID)
+	err := svc.Publish(context.Background(), g.ID, author.ID)
 	require.NoError(t, err)
 
 	var updated game.Game
@@ -91,7 +94,7 @@ func TestGameService_ForceFinishGame(t *testing.T) {
 	lvl := createLevel(t, db, g.ID, "L1", 1)
 	createLevelProgress(t, db, passing.ID, lvl.ID, false)
 
-	err := svc.ForceFinishGame(g.ID)
+	err := svc.ForceFinishGame(context.Background(), g.ID)
 	require.NoError(t, err)
 
 	var updated game.GamePassing
@@ -120,7 +123,7 @@ func TestGameService_DisqualifyTeam(t *testing.T) {
 	lvl := createLevel(t, db, g.ID, "L1", 1)
 	createLevelProgress(t, db, passing.ID, lvl.ID, false)
 
-	err := svc.DisqualifyTeam(g.ID, tm.ID)
+	err := svc.DisqualifyTeam(context.Background(), g.ID, tm.ID)
 	require.NoError(t, err)
 
 	var updated game.GamePassing
@@ -450,22 +453,45 @@ func TestCoAuthorService_AddAndRemove(t *testing.T) {
 // ---------- Вспомогательные функции ----------
 
 func newGameService(db *gorm.DB) *game.GameService {
+	cfg := &config.Config{} // minimal config for tests
+	hub := websocket.NewRoomHub()
 	monitorSvc := game.NewMonitorService(db)
-	return game.NewGameService(db,
-		game.NewCoAuthorService(db),
-		nil,
+	gameRepo := game.NewGormGameRepo(db)
+	passingRepo := game.NewGormGamePassingRepo(db)
+	coAuthorSvc := game.NewCoAuthorService(db)
+	attemptSvc := game.NewAttemptService(db)
+	progressSvc := game.NewLevelProgressService(db)
+
+	return game.NewGameService(
+		gameRepo,
+		passingRepo,
+		coAuthorSvc,
+		nil, // reviewService
 		monitorSvc,
-		nil,
-		game.NewAttemptService(db),
-		game.NewLevelProgressService(db),
-		nil,
+		hub,
+		attemptSvc,
+		progressSvc,
+		cfg,
 	)
 }
 
 func newPassingService(db *gorm.DB) *game.GamePassingService {
-	ts := team.NewTeamService(db)
+	teamRepo := team.NewGormTeamRepo(db)
+	// Используем заглушку для authorizer, т.к. в тестах он не требуется
+	authorizer := &testAuthorizer{}
+	teamSvc := team.NewTeamService(teamRepo, authorizer)
 	ca := game.NewCoAuthorService(db)
-	return game.NewGamePassingService(db, ts, ca)
+	return game.NewGamePassingService(db, teamSvc, ca)
+}
+
+// testAuthorizer — заглушка для middleware.GameAuthorizer
+type testAuthorizer struct{}
+
+func (t *testAuthorizer) IsUserManager(gameID, userID uint) (bool, error) {
+	return true, nil
+}
+func (t *testAuthorizer) HasPermission(gameID, userID uint, role string) (bool, error) {
+	return true, nil
 }
 
 func createUser(t *testing.T, db *gorm.DB, email, _ string) *user.User {
