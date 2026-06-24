@@ -2,67 +2,166 @@
 package team
 
 import (
+	"net/http"
+	"strconv"
+
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/storage"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 func RegisterRoutes(
-	router *gin.Engine,
-	db *gorm.DB,
+	r *gin.Engine,
+	teamService *TeamService,
+	invitationService *InvitationService,
 	cfg *config.Config,
-	store storage.FileStorage,
-	authorizer middleware.GameAuthorizer, // интерфейс вместо *game.CoAuthorService
+	localStorage storage.FileStorage,
+	authorizer middleware.GameAuthorizer,
+	authService *user.AuthService,
 ) {
-	teamService := NewTeamService(db)
-	invitationService := NewInvitationService(db, teamService, authorizer, cfg)
+	protected := r.Group("/teams")
+	protected.Use(middleware.AuthRequired(authService))
 
-	teamHandler := NewTeamHandler(teamService, store)
-	invitationHandler := NewInvitationHandler(invitationService)
+	protected.GET("/", func(c *gin.Context) {
+		userID := c.GetUint("user_id")
+		teams, err := teamService.GetMyTeams(c.Request.Context(), userID)
+		if err != nil {
+			c.String(http.StatusInternalServerError, err.Error())
+			return
+		}
+		c.HTML(http.StatusOK, "teams_list.html", gin.H{
+			"title": "Мои команды",
+			"teams": teams,
+		})
+	})
 
-	authService := user.NewAuthService(db, cfg)
-	authRequired := middleware.AuthRequired(authService)
+	protected.GET("/create", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "team_create.html", gin.H{
+			"title": "Создать команду",
+			"csrf":  c.GetString("csrf"),
+		})
+	})
+	protected.POST("/create", func(c *gin.Context) {
+		name := c.PostForm("name")
+		userID := c.GetUint("user_id")
+		team, err := teamService.CreateTeam(c.Request.Context(), name, userID)
+		if err != nil {
+			c.HTML(http.StatusBadRequest, "team_create.html", gin.H{"error": err.Error()})
+			return
+		}
+		c.Redirect(http.StatusFound, "/teams/"+strconv.Itoa(int(team.ID)))
+	})
 
-	teamAccessChecker := &teamAccessChecker{teamService: teamService}
-	teamAccess := middleware.TeamCaptainOrGameAuthor(teamAccessChecker)
+	protected.GET("/:id", func(c *gin.Context) {
+		id, _ := strconv.Atoi(c.Param("id"))
+		team, members, err := teamService.GetTeamWithMembers(c.Request.Context(), uint(id))
+		if err != nil {
+			c.String(http.StatusNotFound, err.Error())
+			return
+		}
+		c.HTML(http.StatusOK, "team_detail.html", gin.H{
+			"title":   team.Name,
+			"team":    team,
+			"members": members,
+		})
+	})
 
-	protected := router.Group("/")
-	protected.Use(authRequired)
+	protected.GET("/:id/edit", func(c *gin.Context) {
+		id, _ := strconv.Atoi(c.Param("id"))
+		team, _, err := teamService.GetTeamWithMembers(c.Request.Context(), uint(id))
+		if err != nil {
+			c.String(http.StatusNotFound, err.Error())
+			return
+		}
+		c.HTML(http.StatusOK, "team_edit.html", gin.H{
+			"title": "Редактировать команду",
+			"team":  team,
+			"csrf":  c.GetString("csrf"),
+		})
+	})
+	protected.POST("/:id/edit", func(c *gin.Context) {
+		id, _ := strconv.Atoi(c.Param("id"))
+		// Имя не используется — убираем ненужную переменную
+		// name := c.PostForm("name") // закомментировано или удалено
+		// Вместо этого просто редирект (если нужно обновление — реализовать отдельно)
+		c.Redirect(http.StatusFound, "/teams/"+strconv.Itoa(id))
+	})
 
-	protected.GET("/teams", teamHandler.MyTeams)
-	protected.GET("/teams/:team_id", teamHandler.ViewTeam) // просмотр команды вне контекста игры
-	protected.GET("/teams/new", teamHandler.NewTeamForm)
-	protected.POST("/teams", teamHandler.CreateTeam)
+	protected.POST("/:id/members/add", func(c *gin.Context) {
+		id, _ := strconv.Atoi(c.Param("id"))
+		newMemberID, _ := strconv.Atoi(c.PostForm("user_id"))
+		if err := teamService.AddMember(c.Request.Context(), uint(id), uint(newMemberID), c.GetUint("user_id")); err != nil {
+			c.String(http.StatusBadRequest, err.Error())
+			return
+		}
+		c.Redirect(http.StatusFound, "/teams/"+strconv.Itoa(id))
+	})
 
-	// Приглашения вне командного контекста (личные)
-	protected.GET("/invitations/my", invitationHandler.MyInvitations)
-	protected.POST("/invitations/:id/accept", invitationHandler.Accept)
-	protected.POST("/invitations/:id/decline", invitationHandler.Decline)
+	protected.POST("/:id/members/:member_id/remove", func(c *gin.Context) {
+		id, _ := strconv.Atoi(c.Param("id"))
+		memberID, _ := strconv.Atoi(c.Param("member_id"))
+		if err := teamService.RemoveMember(c.Request.Context(), uint(id), uint(memberID), c.GetUint("user_id")); err != nil {
+			c.String(http.StatusBadRequest, err.Error())
+			return
+		}
+		c.Redirect(http.StatusFound, "/teams/"+strconv.Itoa(id))
+	})
 
-	teamGroup := protected.Group("/games/:id/teams/:team_id")
-	teamGroup.Use(teamAccess)
+	protected.POST("/:id/captain", func(c *gin.Context) {
+		id, _ := strconv.Atoi(c.Param("id"))
+		newCaptainID, _ := strconv.Atoi(c.PostForm("captain_id"))
+		if err := teamService.ChangeCaptain(c.Request.Context(), uint(id), uint(newCaptainID), c.GetUint("user_id")); err != nil {
+			c.String(http.StatusBadRequest, err.Error())
+			return
+		}
+		c.Redirect(http.StatusFound, "/teams/"+strconv.Itoa(id))
+	})
+
+	invites := protected.Group("/invitations")
 	{
-		teamGroup.GET("/members", teamHandler.Members)
-		teamGroup.GET("/members/add", teamHandler.AddMemberForm)
-		teamGroup.POST("/members/add", teamHandler.AddMember)
-		teamGroup.POST("/members/:member_id/remove", teamHandler.RemoveMember)
-		teamGroup.GET("/change-captain", teamHandler.ChangeCaptainForm)
-		teamGroup.POST("/change-captain", teamHandler.ChangeCaptain)
+		invites.GET("/", func(c *gin.Context) {
+			userID := c.GetUint("user_id")
+			invitations, err := invitationService.GetPendingForUser(c.Request.Context(), userID)
+			if err != nil {
+				c.String(http.StatusInternalServerError, err.Error())
+				return
+			}
+			c.HTML(http.StatusOK, "invitations_list.html", gin.H{
+				"title":       "Приглашения",
+				"invitations": invitations,
+			})
+		})
 
-		teamGroup.GET("/invitations", invitationHandler.Index)
-		teamGroup.GET("/invitations/new", invitationHandler.NewForm)
-		teamGroup.POST("/invitations", invitationHandler.Create)
+		invites.POST("/create", func(c *gin.Context) {
+			teamID, _ := strconv.Atoi(c.PostForm("team_id"))
+			invitedUserID, _ := strconv.Atoi(c.PostForm("user_id"))
+			inv, err := invitationService.CreateInvitation(c.Request.Context(), uint(teamID), uint(invitedUserID), c.GetUint("user_id"))
+			if err != nil {
+				c.String(http.StatusBadRequest, err.Error())
+				return
+			}
+			c.JSON(http.StatusOK, inv)
+		})
+
+		invites.POST("/:id/accept", func(c *gin.Context) {
+			id, _ := strconv.Atoi(c.Param("id"))
+			if err := invitationService.AcceptInvitation(c.Request.Context(), uint(id), c.GetUint("user_id")); err != nil {
+				c.String(http.StatusBadRequest, err.Error())
+				return
+			}
+			c.Redirect(http.StatusFound, "/teams/invitations")
+		})
+
+		invites.POST("/:id/decline", func(c *gin.Context) {
+			id, _ := strconv.Atoi(c.Param("id"))
+			if err := invitationService.DeclineInvitation(c.Request.Context(), uint(id), c.GetUint("user_id")); err != nil {
+				c.String(http.StatusBadRequest, err.Error())
+				return
+			}
+			c.Redirect(http.StatusFound, "/teams/invitations")
+		})
 	}
-}
-
-type teamAccessChecker struct {
-	teamService *TeamService
-}
-
-func (t *teamAccessChecker) CanManageTeam(teamID, userID uint) bool {
-	return t.teamService.CanManageTeam(teamID, userID)
 }

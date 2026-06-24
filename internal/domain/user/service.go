@@ -23,18 +23,30 @@ import (
 	"gorm.io/gorm"
 )
 
-// AuthService содержит бизнес-логику аутентификации.
+// ---------- AuthService ----------
+
 type AuthService struct {
-	db  *gorm.DB
-	cfg *config.Config
+	userRepo       UserRepository
+	achievRepo     AchievementRepository
+	emailVerifRepo EmailVerificationRepository
+	cfg            *config.Config
 }
 
-func NewAuthService(db *gorm.DB, cfg *config.Config) *AuthService {
-	return &AuthService{db: db, cfg: cfg}
+func NewAuthService(
+	userRepo UserRepository,
+	achievRepo AchievementRepository,
+	emailVerifRepo EmailVerificationRepository,
+	cfg *config.Config,
+) *AuthService {
+	return &AuthService{
+		userRepo:       userRepo,
+		achievRepo:     achievRepo,
+		emailVerifRepo: emailVerifRepo,
+		cfg:            cfg,
+	}
 }
 
-// Register создаёт нового пользователя и отправляет письмо подтверждения.
-func (s *AuthService) Register(emailStr, password, name string) (*User, error) {
+func (s *AuthService) Register(ctx context.Context, emailStr, password, name string) (*User, error) {
 	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err
@@ -44,34 +56,32 @@ func (s *AuthService) Register(emailStr, password, name string) (*User, error) {
 		Password: string(hashed),
 		Name:     name,
 	}
-	if err := s.db.Create(&user).Error; err != nil {
+	if err := s.userRepo.Create(ctx, &user); err != nil {
 		return nil, err
 	}
 
-	verificationService := NewEmailVerificationService(s.db, s.cfg)
-	verificationService.SendVerificationEmail(user)
+	// Отправка письма верификации через emailVerifRepo
+	verificationService := NewEmailVerificationService(s.userRepo, s.emailVerifRepo, s.cfg)
+	verificationService.SendVerificationEmail(ctx, user)
 
 	return &user, nil
 }
 
-// Login проверяет учётные данные и возвращает JWT-токен.
-func (s *AuthService) Login(emailStr, password string) (string, error) {
-	var user User
-	if err := s.db.Where("email = ?", emailStr).First(&user).Error; err != nil {
+func (s *AuthService) Login(ctx context.Context, emailStr, password string) (string, error) {
+	user, err := s.userRepo.GetByEmail(ctx, emailStr)
+	if err != nil {
 		return "", errors.New("неверный email или пароль")
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
 		return "", errors.New("неверный email или пароль")
 	}
-	return s.generateJWT(user)
+	return s.generateJWT(*user)
 }
 
-// GenerateJWT создаёт JWT-токен для пользователя (публичный, для OAuth).
 func (s *AuthService) GenerateJWT(user User) (string, error) {
 	return s.generateJWT(user)
 }
 
-// ParseToken проверяет JWT и возвращает ID пользователя.
 func (s *AuthService) ParseToken(tokenStr string) (uint, error) {
 	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -106,47 +116,35 @@ func (s *AuthService) generateJWT(user User) (string, error) {
 // ---------- UserService ----------
 
 type UserService struct {
-	db *gorm.DB
+	userRepo UserRepository
 }
 
-func NewUserService(db *gorm.DB) *UserService {
-	return &UserService{db: db}
+func NewUserService(userRepo UserRepository) *UserService {
+	return &UserService{userRepo: userRepo}
 }
 
-func (s *UserService) GetByID(id uint) (*User, error) {
-	var user User
-	if err := s.db.First(&user, id).Error; err != nil {
-		return nil, err
-	}
-	return &user, nil
+func (s *UserService) GetByID(ctx context.Context, id uint) (*User, error) {
+	return s.userRepo.GetByID(ctx, id)
 }
 
-func (s *UserService) GetByEmail(emailStr string) (*User, error) {
-	var user User
-	if err := s.db.Where("email = ?", emailStr).First(&user).Error; err != nil {
-		return nil, err
-	}
-	return &user, nil
+func (s *UserService) GetByEmail(ctx context.Context, emailStr string) (*User, error) {
+	return s.userRepo.GetByEmail(ctx, emailStr)
 }
 
-func (s *UserService) GetPublicProfile(id uint) (*User, error) {
-	var user User
-	if err := s.db.Preload("Achievements").First(&user, id).Error; err != nil {
-		return nil, err
-	}
-	return &user, nil
+func (s *UserService) GetPublicProfile(ctx context.Context, id uint) (*User, error) {
+	return s.userRepo.GetPublicProfile(ctx, id)
 }
 
-func (s *UserService) UpdateProfile(id uint, name, emailStr string) error {
-	return s.db.Model(&User{}).Where("id = ?", id).Updates(map[string]any{
+func (s *UserService) UpdateProfile(ctx context.Context, id uint, name, emailStr string) error {
+	return s.userRepo.Update(ctx, id, map[string]any{
 		"name":  name,
 		"email": emailStr,
-	}).Error
+	})
 }
 
-func (s *UserService) ChangePassword(id uint, oldPassword, newPassword string) error {
-	var user User
-	if err := s.db.First(&user, id).Error; err != nil {
+func (s *UserService) ChangePassword(ctx context.Context, id uint, oldPassword, newPassword string) error {
+	user, err := s.userRepo.GetByID(ctx, id)
+	if err != nil {
 		return err
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(oldPassword)); err != nil {
@@ -156,45 +154,32 @@ func (s *UserService) ChangePassword(id uint, oldPassword, newPassword string) e
 	if err != nil {
 		return err
 	}
-	return s.db.Model(&user).Update("password", string(hashed)).Error
+	return s.userRepo.Update(ctx, id, map[string]any{"password": string(hashed)})
 }
 
 // ---------- AchievementService ----------
 
 type AchievementService struct {
-	db *gorm.DB
+	achievRepo AchievementRepository
 }
 
-func NewAchievementService(db *gorm.DB) *AchievementService {
-	return &AchievementService{db: db}
+func NewAchievementService(achievRepo AchievementRepository) *AchievementService {
+	return &AchievementService{achievRepo: achievRepo}
 }
 
-func (s *AchievementService) AwardAchievement(userID uint, code string) error {
-	var achievement Achievement
-	if err := s.db.Where("code = ?", code).First(&achievement).Error; err != nil {
+func (s *AchievementService) AwardAchievement(ctx context.Context, userID uint, code string) error {
+	achiev := &Achievement{Code: code}
+	if err := s.achievRepo.FirstOrCreate(ctx, achiev); err != nil {
 		return err
 	}
-	var count int64
-	s.db.Table("user_achievements").Where("user_id = ? AND achievement_id = ?", userID, achievement.ID).Count(&count)
-	if count > 0 {
-		return nil
-	}
-	var user User
-	if err := s.db.First(&user, userID).Error; err != nil {
-		return err
-	}
-	return s.db.Model(&user).Association("Achievements").Append(&achievement)
+	return s.achievRepo.Award(ctx, userID, achiev)
 }
 
-func (s *AchievementService) GetUserAchievements(userID uint) ([]Achievement, error) {
-	var achievements []Achievement
-	err := s.db.Joins("JOIN user_achievements ON user_achievements.achievement_id = achievements.id").
-		Where("user_achievements.user_id = ?", userID).
-		Find(&achievements).Error
-	return achievements, err
+func (s *AchievementService) GetUserAchievements(ctx context.Context, userID uint) ([]Achievement, error) {
+	return s.achievRepo.GetByUserID(ctx, userID)
 }
 
-func (s *AchievementService) SeedAchievements() {
+func (s *AchievementService) SeedAchievements(ctx context.Context) {
 	achievements := []Achievement{
 		{Code: "first_level_created", Name: "Первый уровень", Description: "Создайте свой первый уровень", Icon: "🏗️"},
 		{Code: "five_games_hosted", Name: "Опытный организатор", Description: "Проведите 5 завершённых игр", Icon: "🎖️"},
@@ -204,7 +189,7 @@ func (s *AchievementService) SeedAchievements() {
 		{Code: "speed_demon", Name: "Быстрый старт", Description: "Завершите игру менее чем за 5 минут", Icon: "⚡"},
 	}
 	for _, a := range achievements {
-		if err := s.db.Where("code = ?", a.Code).FirstOrCreate(&a).Error; err != nil {
+		if err := s.achievRepo.FirstOrCreate(ctx, &a); err != nil {
 			log.Error().Err(err).Str("achievement", a.Code).Msg("SeedAchievements: failed to seed")
 		}
 	}
@@ -213,15 +198,21 @@ func (s *AchievementService) SeedAchievements() {
 // ---------- OAuthService ----------
 
 type OAuthService struct {
-	db      *gorm.DB
-	cfg     *config.Config
-	configs map[string]*oauth2.Config
+	userRepo     UserRepository
+	extLoginRepo ExternalLoginRepository
+	cfg          *config.Config
+	configs      map[string]*oauth2.Config
 }
 
-func NewOAuthService(db *gorm.DB, cfg *config.Config) *OAuthService {
+func NewOAuthService(
+	userRepo UserRepository,
+	extLoginRepo ExternalLoginRepository,
+	cfg *config.Config,
+) *OAuthService {
 	return &OAuthService{
-		db:  db,
-		cfg: cfg,
+		userRepo:     userRepo,
+		extLoginRepo: extLoginRepo,
+		cfg:          cfg,
 		configs: map[string]*oauth2.Config{
 			"google": {
 				ClientID:     cfg.OAuth.Google.ClientID,
@@ -261,7 +252,7 @@ func (s *OAuthService) GetAuthURL(provider string) (string, error) {
 	return cfg.AuthCodeURL(state, oauth2.AccessTypeOffline), nil
 }
 
-func (s *OAuthService) Authenticate(provider, code, state string) (*User, error) {
+func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state string) (*User, error) {
 	if len(state) != 32 {
 		return nil, errors.New("неверный state-параметр")
 	}
@@ -269,10 +260,11 @@ func (s *OAuthService) Authenticate(provider, code, state string) (*User, error)
 	if !ok {
 		return nil, errors.New("неподдерживаемый провайдер")
 	}
-	_, err := cfg.Exchange(context.Background(), code)
+	_, err := cfg.Exchange(ctx, code)
 	if err != nil {
 		return nil, err
 	}
+	// В реальном проекте здесь должен быть запрос к API провайдера за email
 	var emailStr string
 	switch provider {
 	case "google":
@@ -282,34 +274,50 @@ func (s *OAuthService) Authenticate(provider, code, state string) (*User, error)
 	case "yandex":
 		emailStr = "user@yandex.ru"
 	}
-	var user User
-	err = s.db.Where("email = ?", emailStr).First(&user).Error
+	user, err := s.userRepo.GetByEmail(ctx, emailStr)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		user = User{
+		user = &User{
 			Email:         emailStr,
 			Name:          emailStr,
 			EmailVerified: true,
 			Password:      "",
 		}
-		s.db.Create(&user)
+		if err := s.userRepo.Create(ctx, user); err != nil {
+			return nil, err
+		}
 	} else if err != nil {
 		return nil, err
 	}
-	return &user, nil
+	extLogin := &ExternalLogin{
+		UserID:     user.ID,
+		Provider:   provider,
+		ExternalID: emailStr,
+	}
+	_ = s.extLoginRepo.FindOrCreate(ctx, extLogin)
+	return user, nil
 }
 
 // ---------- PasswordResetService ----------
 
 type PasswordResetService struct {
-	db  *gorm.DB
-	cfg *config.Config
+	userRepo      UserRepository
+	passResetRepo PasswordResetRepository
+	cfg           *config.Config
 }
 
-func NewPasswordResetService(db *gorm.DB, cfg *config.Config) *PasswordResetService {
-	return &PasswordResetService{db: db, cfg: cfg}
+func NewPasswordResetService(
+	userRepo UserRepository,
+	passResetRepo PasswordResetRepository,
+	cfg *config.Config,
+) *PasswordResetService {
+	return &PasswordResetService{
+		userRepo:      userRepo,
+		passResetRepo: passResetRepo,
+		cfg:           cfg,
+	}
 }
 
-func (s *PasswordResetService) GenerateToken(user User) (string, error) {
+func (s *PasswordResetService) GenerateToken(ctx context.Context, user User) (string, error) {
 	b := make([]byte, 16)
 	rand.Read(b)
 	rawToken := hex.EncodeToString(b)
@@ -318,7 +326,7 @@ func (s *PasswordResetService) GenerateToken(user User) (string, error) {
 		Token:     rawToken,
 		ExpiresAt: time.Now().Add(1 * time.Hour),
 	}
-	if err := s.db.Create(&token).Error; err != nil {
+	if err := s.passResetRepo.CreateToken(ctx, &token); err != nil {
 		return "", err
 	}
 	if s.cfg.SMTP.Enabled {
@@ -331,38 +339,49 @@ func (s *PasswordResetService) GenerateToken(user User) (string, error) {
 	return rawToken, nil
 }
 
-func (s *PasswordResetService) ResetPassword(tokenStr, newPassword string) error {
-	var token PasswordResetToken
-	if err := s.db.Where("token = ? AND expires_at > ?", tokenStr, time.Now()).First(&token).Error; err != nil {
+func (s *PasswordResetService) ResetPassword(ctx context.Context, tokenStr, newPassword string) error {
+	token, err := s.passResetRepo.GetToken(ctx, tokenStr)
+	if err != nil {
 		return errors.New("токен недействителен или истёк")
+	}
+	if token.ExpiresAt.Before(time.Now()) {
+		return errors.New("токен истёк")
 	}
 	hashed, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
-	if err := s.db.Model(&User{}).Where("id = ?", token.UserID).Update("password", string(hashed)).Error; err != nil {
+	if err := s.userRepo.Update(ctx, token.UserID, map[string]any{"password": string(hashed)}); err != nil {
 		return err
 	}
-	s.db.Delete(&token)
-	return nil
+	return s.passResetRepo.DeleteToken(ctx, token)
 }
 
 // ---------- EmailVerificationService ----------
 
 type EmailVerificationService struct {
-	db  *gorm.DB
-	cfg *config.Config
+	userRepo       UserRepository
+	emailVerifRepo EmailVerificationRepository
+	cfg            *config.Config
 }
 
-func NewEmailVerificationService(db *gorm.DB, cfg *config.Config) *EmailVerificationService {
-	return &EmailVerificationService{db: db, cfg: cfg}
+func NewEmailVerificationService(
+	userRepo UserRepository,
+	emailVerifRepo EmailVerificationRepository,
+	cfg *config.Config,
+) *EmailVerificationService {
+	return &EmailVerificationService{
+		userRepo:       userRepo,
+		emailVerifRepo: emailVerifRepo,
+		cfg:            cfg,
+	}
 }
 
-func (s *EmailVerificationService) SendVerificationEmail(user User) {
+func (s *EmailVerificationService) SendVerificationEmail(ctx context.Context, user User) {
 	b := make([]byte, 16)
 	rand.Read(b)
 	token := hex.EncodeToString(b)
-	s.db.Create(&EmailVerificationToken{
+	_ = s.emailVerifRepo.CreateToken(ctx, &EmailVerificationToken{
 		UserID:    user.ID,
 		Token:     token,
 		ExpiresAt: time.Now().Add(24 * time.Hour),
@@ -376,65 +395,22 @@ func (s *EmailVerificationService) SendVerificationEmail(user User) {
 	}
 }
 
-func (s *EmailVerificationService) VerifyToken(tokenStr string) (*User, error) {
-	var vt EmailVerificationToken
-	if err := s.db.Where("token = ? AND expires_at > ?", tokenStr, time.Now()).First(&vt).Error; err != nil {
+func (s *EmailVerificationService) VerifyToken(ctx context.Context, tokenStr string) (*User, error) {
+	token, err := s.emailVerifRepo.GetToken(ctx, tokenStr)
+	if err != nil {
 		return nil, errors.New("токен недействителен или истёк")
 	}
-	var user User
-	if err := s.db.First(&user, vt.UserID).Error; err != nil {
+	if token.ExpiresAt.Before(time.Now()) {
+		return nil, errors.New("токен истёк")
+	}
+	if err := s.userRepo.Update(ctx, token.UserID, map[string]any{"email_verified": true}); err != nil {
 		return nil, err
 	}
-	user.EmailVerified = true
-	s.db.Save(&user)
-	s.db.Delete(&vt)
-	return &user, nil
+	_ = s.emailVerifRepo.DeleteToken(ctx, token)
+	return s.userRepo.GetByID(ctx, token.UserID)
 }
 
 // ---------- UserDashboardService ----------
-
-// Локальные модели, заменяющие импорт game и team
-type dashboardGame struct {
-	ID        uint           `gorm:"primaryKey"`
-	Name      string         `gorm:"column:name"`
-	IsDraft   bool           `gorm:"column:is_draft"`
-	AuthorID  uint           `gorm:"column:author_id"`
-	DeletedAt gorm.DeletedAt `gorm:"index"`
-}
-
-func (dashboardGame) TableName() string { return "games" }
-
-type dashboardGamePassing struct {
-	ID        uint           `gorm:"primaryKey"`
-	GameID    uint           `gorm:"column:game_id"`
-	TeamID    uint           `gorm:"column:team_id"`
-	Status    string         `gorm:"column:status"`
-	DeletedAt gorm.DeletedAt `gorm:"index"`
-}
-
-func (dashboardGamePassing) TableName() string { return "game_passings" }
-
-type dashboardTeam struct {
-	ID        uint           `gorm:"primaryKey"`
-	Name      string         `gorm:"column:name"`
-	CaptainID uint           `gorm:"column:captain_id"`
-	DeletedAt gorm.DeletedAt `gorm:"index"`
-}
-
-func (dashboardTeam) TableName() string { return "teams" }
-
-type dashboardInvitation struct {
-	ID        uint           `gorm:"primaryKey"`
-	TeamID    uint           `gorm:"column:team_id"`
-	UserID    uint           `gorm:"column:user_id"`
-	Status    string         `gorm:"column:status"`
-	DeletedAt gorm.DeletedAt `gorm:"index"`
-	Team      dashboardTeam  `gorm:"foreignKey:TeamID"`
-}
-
-func (dashboardInvitation) TableName() string { return "invitations" }
-
-const statusPending = "pending"
 
 type UserDashboardService struct {
 	DB *gorm.DB
@@ -483,10 +459,51 @@ type DashboardInvitation struct {
 	Status   string
 }
 
+type dashboardGame struct {
+	ID        uint           `gorm:"primaryKey"`
+	Name      string         `gorm:"column:name"`
+	IsDraft   bool           `gorm:"column:is_draft"`
+	AuthorID  uint           `gorm:"column:author_id"`
+	DeletedAt gorm.DeletedAt `gorm:"index"`
+}
+
+func (dashboardGame) TableName() string { return "games" }
+
+type dashboardGamePassing struct {
+	ID        uint           `gorm:"primaryKey"`
+	GameID    uint           `gorm:"column:game_id"`
+	TeamID    uint           `gorm:"column:team_id"`
+	Status    string         `gorm:"column:status"`
+	DeletedAt gorm.DeletedAt `gorm:"index"`
+}
+
+func (dashboardGamePassing) TableName() string { return "game_passings" }
+
+type dashboardTeam struct {
+	ID        uint           `gorm:"primaryKey"`
+	Name      string         `gorm:"column:name"`
+	CaptainID uint           `gorm:"column:captain_id"`
+	DeletedAt gorm.DeletedAt `gorm:"index"`
+}
+
+func (dashboardTeam) TableName() string { return "teams" }
+
+type dashboardInvitation struct {
+	ID        uint           `gorm:"primaryKey"`
+	TeamID    uint           `gorm:"column:team_id"`
+	UserID    uint           `gorm:"column:user_id"`
+	Status    string         `gorm:"column:status"`
+	DeletedAt gorm.DeletedAt `gorm:"index"`
+	Team      dashboardTeam  `gorm:"foreignKey:TeamID"`
+}
+
+func (dashboardInvitation) TableName() string { return "invitations" }
+
+const statusPending = "pending"
+
 func (s *UserDashboardService) GetDashboard(userID uint) (*UserDashboard, error) {
 	var dash UserDashboard
 
-	// Мои игры (авторство)
 	var authoredGames []dashboardGame
 	s.DB.Where("author_id = ?", userID).Find(&authoredGames)
 	for _, g := range authoredGames {
@@ -497,19 +514,15 @@ func (s *UserDashboardService) GetDashboard(userID uint) (*UserDashboard, error)
 		})
 	}
 
-	// Команды, где я капитан
 	var captainTeams []dashboardTeam
 	s.DB.Where("captain_id = ?", userID).Find(&captainTeams)
-
-	// Сразу добавляем все команды капитана в дашборд (даже без прохождений)
 	for _, ct := range captainTeams {
 		dash.CaptainTeams = append(dash.CaptainTeams, DashboardTeamWithGame{
 			Team: DashboardTeam{ID: ct.ID, Name: ct.Name},
-			Game: DashboardGame{}, // пустая игра
+			Game: DashboardGame{},
 		})
 	}
 
-	// Команды, где я участник
 	var memberTeamIDs []uint
 	s.DB.Table("team_members").Where("user_id = ?", userID).Pluck("team_id", &memberTeamIDs)
 
@@ -520,7 +533,6 @@ func (s *UserDashboardService) GetDashboard(userID uint) (*UserDashboard, error)
 	allTeamIDs = append(allTeamIDs, memberTeamIDs...)
 	allTeamIDs = uniqueUintSlice(allTeamIDs)
 
-	// Прохождения для этих команд
 	var passings []dashboardGamePassing
 	if len(allTeamIDs) > 0 {
 		s.DB.Where("team_id IN ? AND status IN (?, ?, ?)", allTeamIDs,
@@ -528,14 +540,12 @@ func (s *UserDashboardService) GetDashboard(userID uint) (*UserDashboard, error)
 			Find(&passings)
 	}
 
-	// Заполняем информацию об играх для команд, у которых есть прохождения
 	for _, p := range passings {
 		var g dashboardGame
 		s.DB.Where("id = ?", p.GameID).First(&g)
 		var t dashboardTeam
 		s.DB.Where("id = ?", p.TeamID).First(&t)
 
-		// Обновляем запись для команды капитана
 		for i, ct := range dash.CaptainTeams {
 			if ct.Team.ID == p.TeamID {
 				dash.CaptainTeams[i].Game = DashboardGame{ID: g.ID, Name: g.Name}
@@ -560,7 +570,6 @@ func (s *UserDashboardService) GetDashboard(userID uint) (*UserDashboard, error)
 		}
 	}
 
-	// Приглашения
 	var invitations []dashboardInvitation
 	s.DB.Preload("Team").Where("user_id = ? AND status = ?", userID, statusPending).Find(&invitations)
 	for _, inv := range invitations {

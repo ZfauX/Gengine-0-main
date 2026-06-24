@@ -13,6 +13,8 @@ import (
 	"gorm.io/gorm"
 )
 
+// RegisterRoutes регистрирует маршруты для экспорта/импорта.
+// Принимает готовый authService для избежания дублирования инициализации.
 func RegisterRoutes(
 	router *gin.Engine,
 	db *gorm.DB,
@@ -20,12 +22,12 @@ func RegisterRoutes(
 	cfg *config.Config,
 	gameService *game.GameService,
 	coAuthorSvc *game.CoAuthorService,
+	authService *user.AuthService, // добавлен параметр
 ) {
 	// Передаём оба шрифта в сервис экспорта
 	exportService := NewExportService(db, fonts.DejaVuSans, fonts.DejaVuSansBold)
 	exportHandler := NewExportHandler(exportService, gameService, store)
 
-	authService := user.NewAuthService(db, cfg)
 	authRequired := middleware.AuthRequired(authService)
 	gameManager := middleware.GameManager(coAuthorSvc)
 

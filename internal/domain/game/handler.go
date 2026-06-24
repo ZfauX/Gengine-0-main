@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/rs/zerolog/log"
-	"github.com/utrack/gin-csrf"
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
+	csrf "github.com/utrack/gin-csrf"
 	"gorm.io/gorm"
 
 	"gengine-0/internal/domain/level"
@@ -69,6 +69,7 @@ type GameHandler struct {
 	auditService    *audit.Service
 	storage         storage.FileStorage
 	hub             *ws.RoomHub
+	db              *gorm.DB // добавлено поле для доступа к БД
 }
 
 func NewGameHandler(
@@ -81,6 +82,7 @@ func NewGameHandler(
 	storage storage.FileStorage,
 	hub *ws.RoomHub,
 	auditSvc *audit.Service,
+	db *gorm.DB, // добавлен параметр
 ) *GameHandler {
 	return &GameHandler{
 		gameService:     gameService,
@@ -92,6 +94,7 @@ func NewGameHandler(
 		auditService:    auditSvc,
 		storage:         storage,
 		hub:             hub,
+		db:              db,
 	}
 }
 
@@ -100,8 +103,12 @@ func (h *GameHandler) List(c *gin.Context) {
 	userID := c.GetUint("userID")
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	perPage, _ := strconv.Atoi(c.DefaultQuery("per_page", "20"))
-	if page < 1 { page = 1 }
-	if perPage < 1 || perPage > 100 { perPage = 20 }
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 || perPage > 100 {
+		perPage = 20
+	}
 
 	sortField := c.DefaultQuery("sort", "created_at")
 	sortOrder := c.DefaultQuery("order", "desc")
@@ -122,7 +129,7 @@ func (h *GameHandler) List(c *gin.Context) {
 
 	sort := &GameSort{Field: sortField, Order: SortOrder(sortOrder)}
 
-	games, total, err := h.gameService.ListFilteredPaginated(filter, sort, page, perPage)
+	games, total, err := h.gameService.ListFilteredPaginated(c.Request.Context(), filter, sort, page, perPage)
 	if err != nil {
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
@@ -130,7 +137,7 @@ func (h *GameHandler) List(c *gin.Context) {
 
 	totalPages := (total + int64(perPage) - 1) / int64(perPage)
 	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "games-list.html",
+		"ContentBlock":  "games-list.html",
 		"Games":         games,
 		"CurrentUserID": userID,
 		"Filter":        filter,
@@ -146,7 +153,7 @@ func (h *GameHandler) Show(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
 
-	g, err := h.gameService.GetByID(uint(id), userID)
+	g, err := h.gameService.GetByID(c.Request.Context(), uint(id), userID)
 	if err != nil {
 		c.HTML(http.StatusNotFound, "errors/404.html", nil)
 		return
@@ -164,7 +171,7 @@ func (h *GameHandler) Show(c *gin.Context) {
 	canApply := !g.IsDraft && (g.StartsAt == nil || g.StartsAt.After(time.Now()))
 
 	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "games-show.html",
+		"ContentBlock":  "games-show.html",
 		"Game":          g,
 		"CurrentUserID": userID,
 		"IsManager":     isManager,
@@ -233,7 +240,7 @@ func (h *GameHandler) Create(c *gin.Context) {
 		g.CoverPath = webPath
 	}
 
-	if err := h.gameService.Create(&g, userID); err != nil {
+	if err := h.gameService.Create(c.Request.Context(), &g, userID); err != nil {
 		if g.CoverPath != "" {
 			if delErr := h.storage.Delete(g.CoverPath); delErr != nil {
 				log.Error().Err(delErr).Str("path", g.CoverPath).Msg("Create game: failed to delete orphaned cover")
@@ -257,7 +264,7 @@ func (h *GameHandler) EditForm(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
 
-	g, err := h.gameService.GetByID(uint(id), userID)
+	g, err := h.gameService.GetByID(c.Request.Context(), uint(id), userID)
 	if err != nil {
 		c.HTML(http.StatusNotFound, "errors/404.html", nil)
 		return
@@ -292,7 +299,7 @@ func (h *GameHandler) Update(c *gin.Context) {
 	}
 	updated.ID = uint(id)
 
-	oldGame, err := h.gameService.GetByID(uint(id), userID)
+	oldGame, err := h.gameService.GetByID(c.Request.Context(), uint(id), userID)
 	if err != nil {
 		c.HTML(http.StatusNotFound, "errors/404.html", nil)
 		return
@@ -350,7 +357,7 @@ func (h *GameHandler) Update(c *gin.Context) {
 		}
 	}
 
-	if err := h.gameService.Update(uint(id), &updated, userID); err != nil {
+	if err := h.gameService.Update(c.Request.Context(), uint(id), &updated, userID); err != nil {
 		c.HTML(http.StatusForbidden, "games/edit.html", gin.H{"Error": err.Error(), "Game": &updated, "csrf": csrf.GetToken(c)})
 		return
 	}
@@ -365,7 +372,7 @@ func (h *GameHandler) Delete(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
 
-	if err := h.gameService.Delete(uint(id), userID); err != nil {
+	if err := h.gameService.Delete(c.Request.Context(), uint(id), userID); err != nil {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
@@ -380,7 +387,7 @@ func (h *GameHandler) Publish(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
 
-	if err := h.gameService.Publish(uint(id), userID); err != nil {
+	if err := h.gameService.Publish(c.Request.Context(), uint(id), userID); err != nil {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
@@ -417,7 +424,7 @@ func (h *GameHandler) ApplyForm(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
 
-	teams, _ := h.passingService.teamService.GetTeamsByCaptain(userID)
+	teams, _ := h.passingService.teamService.GetTeamsByCaptain(c.Request.Context(), userID)
 
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "game_passings-apply.html",
@@ -434,7 +441,7 @@ func (h *GameHandler) Apply(c *gin.Context) {
 
 	var input ApplyInput
 	if err := c.ShouldBind(&input); err != nil {
-		teams, _ := h.passingService.teamService.GetTeamsByCaptain(userID)
+		teams, _ := h.passingService.teamService.GetTeamsByCaptain(c.Request.Context(), userID)
 		c.HTML(http.StatusOK, "layout.html", gin.H{
 			"ContentBlock": "game_passings-apply.html",
 			"GameID":       gameID,
@@ -446,7 +453,7 @@ func (h *GameHandler) Apply(c *gin.Context) {
 	}
 
 	if err := h.passingService.Apply(uint(gameID), input.TeamID, userID); err != nil {
-		teams, _ := h.passingService.teamService.GetTeamsByCaptain(userID)
+		teams, _ := h.passingService.teamService.GetTeamsByCaptain(c.Request.Context(), userID)
 		c.HTML(http.StatusOK, "layout.html", gin.H{
 			"ContentBlock": "game_passings-apply.html",
 			"GameID":       gameID,
@@ -489,7 +496,7 @@ func (h *GameHandler) StartGame(c *gin.Context) {
 func (h *GameHandler) ForceFinish(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("id"))
 
-	if err := h.gameService.ForceFinishGame(uint(gameID)); err != nil {
+	if err := h.gameService.ForceFinishGame(c.Request.Context(), uint(gameID)); err != nil {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
@@ -507,7 +514,7 @@ func (h *GameHandler) DisqualifyTeam(c *gin.Context) {
 		return
 	}
 
-	if err := h.gameService.DisqualifyTeam(uint(gameID), input.TeamID); err != nil {
+	if err := h.gameService.DisqualifyTeam(c.Request.Context(), uint(gameID), input.TeamID); err != nil {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
@@ -634,22 +641,22 @@ func (h *GameHandler) SettingsPage(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
 
-	g, err := h.gameService.GetByID(uint(gameID), userID)
+	g, err := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID)
 	if err != nil {
 		c.HTML(http.StatusNotFound, "errors/404.html", nil)
 		return
 	}
 
 	var settings GameSetting
-	if err := h.gameService.DB.Where("game_id = ?", g.ID).First(&settings).Error; err != nil {
+	if err := h.db.Where("game_id = ?", g.ID).First(&settings).Error; err != nil {
 		settings = GameSetting{
-			GameID:                  g.ID,
-			AllowHints:              true,
-			HintPenaltySeconds:      300,
-			MaxHints:                3,
-			PerLevelTimeLimit:       0,
+			GameID:                   g.ID,
+			AllowHints:               true,
+			HintPenaltySeconds:       300,
+			MaxHints:                 3,
+			PerLevelTimeLimit:        0,
 			HideAnswersUntilFinished: false,
-			AutoStart:               false,
+			AutoStart:                false,
 		}
 	}
 
@@ -668,7 +675,7 @@ func (h *GameHandler) SaveSettings(c *gin.Context) {
 
 	var settings GameSetting
 	if err := c.ShouldBind(&settings); err != nil {
-		g, _ := h.gameService.GetByID(uint(gameID), userID)
+		g, _ := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID)
 		c.HTML(http.StatusOK, "layout.html", gin.H{
 			"ContentBlock": "games-settings.html",
 			"Game":         g,
@@ -679,7 +686,7 @@ func (h *GameHandler) SaveSettings(c *gin.Context) {
 		return
 	}
 
-	g, err := h.gameService.GetByID(uint(gameID), userID)
+	g, err := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID)
 	if err != nil {
 		c.HTML(http.StatusNotFound, "errors/404.html", nil)
 		return
@@ -691,7 +698,7 @@ func (h *GameHandler) SaveSettings(c *gin.Context) {
 	}
 
 	settings.GameID = g.ID
-	if err := h.gameService.DB.Save(&settings).Error; err != nil {
+	if err := h.db.Save(&settings).Error; err != nil {
 		c.HTML(http.StatusOK, "layout.html", gin.H{
 			"ContentBlock": "games-settings.html",
 			"Game":         g,
@@ -710,14 +717,14 @@ func (h *GameHandler) TestPage(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
 
-	g, err := h.gameService.GetByID(uint(gameID), userID)
+	g, err := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID)
 	if err != nil {
 		c.HTML(http.StatusNotFound, "errors/404.html", nil)
 		return
 	}
 
 	var testPassings []GamePassing
-	h.gameService.DB.Where("game_id = ? AND status = ?", g.ID, StatusTesting).Find(&testPassings)
+	h.db.Where("game_id = ? AND status = ?", g.ID, StatusTesting).Find(&testPassings)
 
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "games-test.html",
@@ -758,7 +765,7 @@ func (h *GameHandler) UploadPhoto(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Файл не выбран"})
 		return
 	}
-	defer func() { _ = file.Close() }()   // errcheck исправлен
+	defer func() { _ = file.Close() }()
 
 	allowedTypes := []string{"image/jpeg", "image/png", "image/webp"}
 	webPath, err := h.storage.Save("uploads/photos", file, header.Filename, userID, 10*1024*1024, allowedTypes)
@@ -788,7 +795,7 @@ func (h *GameHandler) DeletePhoto(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	var photo Photo
-	if err := h.gameService.DB.First(&photo, photoID).Error; err != nil {
+	if err := h.db.First(&photo, photoID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Фото не найдено"})
 		return
 	}
@@ -821,14 +828,14 @@ func (h *GameHandler) FullPreview(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
 
-	_, err := h.gameService.GetByID(uint(gameID), userID)
+	_, err := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID)
 	if err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Нет доступа"})
 		return
 	}
 
 	var levels []level.Level
-	h.gameService.DB.Preload("Questions.Answers").Where("game_id = ?", gameID).Order("position ASC").Find(&levels)
+	h.db.Preload("Questions.Answers").Where("game_id = ?", gameID).Order("position ASC").Find(&levels)
 
 	var result []levelPreview
 	for _, lvl := range levels {
@@ -924,15 +931,15 @@ func (h *GameplayHandler) ShowGame(c *gin.Context) {
 	votingActive := h.db.Where("game_passing_id = ? AND level_id = ? AND is_open = true", passingID, progress.LevelID).First(&gameBlackboxVotingSession{}).Error == nil
 
 	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock":    "gameplay-show.html",
-		"PassingID":       passingID,
-		"Level":           progress.Level,
-		"Attempts":        attempts,
+		"ContentBlock":     "gameplay-show.html",
+		"PassingID":        passingID,
+		"Level":            progress.Level,
+		"Attempts":         attempts,
 		"TimeLimitSeconds": timeLimitSec,
-		"HideAnswers":     hideAnswers,
-		"VotingActive":    votingActive,
-		"TeamID":          passing.TeamID,
-		"csrf":            csrf.GetToken(c),
+		"HideAnswers":      hideAnswers,
+		"VotingActive":     votingActive,
+		"TeamID":           passing.TeamID,
+		"csrf":             csrf.GetToken(c),
 	})
 }
 
@@ -956,7 +963,7 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 		return
 	}
 
-	attempt, err := h.gameService.SubmitCode(uint(passingID), userID, input.Code)
+	attempt, err := h.gameService.SubmitCode(c.Request.Context(), uint(passingID), userID, input.Code)
 	if err != nil {
 		c.HTML(http.StatusOK, "layout.html", gin.H{
 			"ContentBlock": "gameplay-show.html",
@@ -976,7 +983,7 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 // UseHint использует подсказку для текущего уровня.
 func (h *GameplayHandler) UseHint(c *gin.Context) {
 	passingID, _ := strconv.Atoi(c.Param("passing_id"))
-	if err := h.gameService.UseHint(uint(passingID), c.GetUint("userID")); err != nil {
+	if err := h.gameService.UseHint(c.Request.Context(), uint(passingID), c.GetUint("userID")); err != nil {
 		c.HTML(http.StatusOK, "layout.html", gin.H{
 			"ContentBlock": "gameplay-show.html",
 			"Error":        err.Error(),
@@ -1029,7 +1036,7 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 		return
 	}
 
-	_, err = h.gameService.SubmitFile(uint(passingID), userID, webPath)
+	_, err = h.gameService.SubmitFile(c.Request.Context(), uint(passingID), userID, webPath)
 	if err != nil {
 		log.Error().Err(err).Uint("passing", uint(passingID)).Msg("SubmitFile: service error")
 		c.HTML(http.StatusOK, "layout.html", gin.H{
@@ -1049,7 +1056,7 @@ func (h *GameplayHandler) StartTesting(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
 
-	passing, err := h.gameService.StartTesting(uint(gameID), userID)
+	passing, err := h.gameService.StartTesting(c.Request.Context(), uint(gameID), userID)
 	if err != nil {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
@@ -1087,7 +1094,7 @@ func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
 		return
 	}
 
-	if _, err := h.gameService.SubmitTestCode(uint(passingID), c.GetUint("userID"), input.Code); err != nil {
+	if _, err := h.gameService.SubmitTestCode(c.Request.Context(), uint(passingID), c.GetUint("userID"), input.Code); err != nil {
 		c.HTML(http.StatusInternalServerError, "errors/500.html", gin.H{"Error": err.Error()})
 		return
 	}
@@ -1097,7 +1104,7 @@ func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
 // SkipTestLevel пропускает уровень в тестовом режиме.
 func (h *GameplayHandler) SkipTestLevel(c *gin.Context) {
 	passingID, _ := strconv.Atoi(c.Param("passing_id"))
-	if err := h.gameService.SkipLevelTest(uint(passingID), c.GetUint("userID")); err != nil {
+	if err := h.gameService.SkipLevelTest(c.Request.Context(), uint(passingID), c.GetUint("userID")); err != nil {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
@@ -1109,7 +1116,7 @@ func (h *GameplayHandler) SkipTestLevel(c *gin.Context) {
 // AcceptAnswer принимает ответ.
 func (h *GameplayHandler) AcceptAnswer(c *gin.Context) {
 	passingID, _ := strconv.Atoi(c.Param("passing_id"))
-	if err := h.gameService.AcceptBlackboxAnswer(uint(passingID), c.GetUint("userID")); err != nil {
+	if err := h.gameService.AcceptBlackboxAnswer(c.Request.Context(), uint(passingID), c.GetUint("userID")); err != nil {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}

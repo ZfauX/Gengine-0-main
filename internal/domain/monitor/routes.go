@@ -12,6 +12,8 @@ import (
 	"gorm.io/gorm"
 )
 
+// RegisterRoutes регистрирует маршруты мониторинга.
+// Принимает готовый authService для избежания дублирования инициализации.
 func RegisterRoutes(
 	router *gin.Engine,
 	db *gorm.DB,
@@ -21,13 +23,13 @@ func RegisterRoutes(
 	monitorSvc *game.MonitorService,
 	attemptSvc *game.AttemptService,
 	progressSvc *game.LevelProgressService,
+	authService *user.AuthService, // добавлен параметр
 ) {
 	chatService := NewChatService(db)
 	blackboxVoteService := NewBlackboxVoteService(db, cfg)
 
 	monitorHandler := NewMonitorHandler(db, monitorSvc, blackboxVoteService, chatService, hub)
 
-	authService := user.NewAuthService(db, cfg)
 	authRequired := middleware.AuthRequired(authService)
 	gameManager := middleware.GameManager(coAuthorSvc)
 

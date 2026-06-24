@@ -10,9 +10,9 @@ import (
 	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/storage"
 
-	"github.com/rs/zerolog/log"
-	"github.com/utrack/gin-csrf"
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
+	csrf "github.com/utrack/gin-csrf"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -53,14 +53,33 @@ type ChangePasswordInput struct {
 
 // AuthHandler обрабатывает аутентификацию и регистрацию.
 type AuthHandler struct {
-	db       *gorm.DB
-	cfg      *config.Config
-	authSvc  *AuthService
-	auditSvc *audit.Service
+	cfg                  *config.Config
+	authSvc              *AuthService
+	userService          *UserService // добавлено для поиска пользователя
+	passwordResetSvc     *PasswordResetService
+	emailVerificationSvc *EmailVerificationService
+	oauthSvc             *OAuthService
+	auditSvc             *audit.Service
 }
 
-func NewAuthHandler(db *gorm.DB, cfg *config.Config, auditSvc *audit.Service) *AuthHandler {
-	return &AuthHandler{db: db, cfg: cfg, authSvc: NewAuthService(db, cfg), auditSvc: auditSvc}
+func NewAuthHandler(
+	cfg *config.Config,
+	authSvc *AuthService,
+	userService *UserService,
+	passwordResetSvc *PasswordResetService,
+	emailVerificationSvc *EmailVerificationService,
+	oauthSvc *OAuthService,
+	auditSvc *audit.Service,
+) *AuthHandler {
+	return &AuthHandler{
+		cfg:                  cfg,
+		authSvc:              authSvc,
+		userService:          userService,
+		passwordResetSvc:     passwordResetSvc,
+		emailVerificationSvc: emailVerificationSvc,
+		oauthSvc:             oauthSvc,
+		auditSvc:             auditSvc,
+	}
 }
 
 // ShowLoginForm отображает страницу входа.
@@ -83,7 +102,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, err := h.authSvc.Login(input.Email, input.Password)
+	token, err := h.authSvc.Login(c.Request.Context(), input.Email, input.Password)
 	if err != nil {
 		c.HTML(http.StatusOK, "layout.html", gin.H{
 			"ContentBlock": "auth-login.html",
@@ -126,7 +145,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	user, err := h.authSvc.Register(input.Email, input.Password, input.Name)
+	user, err := h.authSvc.Register(c.Request.Context(), input.Email, input.Password, input.Name)
 	if err != nil {
 		c.HTML(http.StatusOK, "layout.html", gin.H{
 			"ContentBlock": "auth-register.html",
@@ -161,13 +180,15 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 		return
 	}
 
-	var user User
-	if err := h.db.Where("email = ?", input.Email).First(&user).Error; err == nil {
-		passwordResetService := NewPasswordResetService(h.db, h.cfg)
-		if _, err := passwordResetService.GenerateToken(user); err != nil {
+	// Используем userService для поиска пользователя
+	user, err := h.userService.GetByEmail(c.Request.Context(), input.Email)
+	if err == nil {
+		// Пользователь найден — генерируем токен
+		if _, err := h.passwordResetSvc.GenerateToken(c.Request.Context(), *user); err != nil {
 			log.Error().Err(err).Str("email", input.Email).Msg("failed to generate password reset token")
 		}
 	}
+	// В любом случае показываем сообщение об успехе (безопасность)
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "auth-forgot.html",
 		"Message":      "Инструкции отправлены на почту",
@@ -198,8 +219,7 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 		return
 	}
 
-	passwordResetService := NewPasswordResetService(h.db, h.cfg)
-	if err := passwordResetService.ResetPassword(input.Token, input.Password); err != nil {
+	if err := h.passwordResetSvc.ResetPassword(c.Request.Context(), input.Token, input.Password); err != nil {
 		c.HTML(http.StatusOK, "layout.html", gin.H{
 			"ContentBlock": "auth-reset.html",
 			"Token":        input.Token,
@@ -214,8 +234,7 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 // VerifyEmail подтверждает email пользователя.
 func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 	token := c.Query("token")
-	emailVerificationService := NewEmailVerificationService(h.db, h.cfg)
-	if _, err := emailVerificationService.VerifyToken(token); err != nil {
+	if _, err := h.emailVerificationSvc.VerifyToken(c.Request.Context(), token); err != nil {
 		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 			"ContentBlock": "auth-verify_error.html",
 			"Error":        err.Error(),
@@ -230,8 +249,7 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 // OAuthLogin начинает процесс OAuth-авторизации.
 func (h *AuthHandler) OAuthLogin(c *gin.Context) {
 	provider := c.Param("provider")
-	oauthService := NewOAuthService(h.db, h.cfg)
-	url, err := oauthService.GetAuthURL(provider)
+	url, err := h.oauthSvc.GetAuthURL(provider)
 	if err != nil {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": err.Error()})
 		return
@@ -245,8 +263,7 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 	code := c.Query("code")
 	state := c.Query("state")
 
-	oauthService := NewOAuthService(h.db, h.cfg)
-	user, err := oauthService.Authenticate(provider, code, state)
+	user, err := h.oauthSvc.Authenticate(c.Request.Context(), provider, code, state)
 	if err != nil {
 		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 			"ContentBlock": "auth-login.html",
@@ -292,7 +309,7 @@ func (h *ProfileHandler) Show(c *gin.Context) {
 		"ContentBlock":  "profile-show.html",
 		"User":          user,
 		"Achievements":  user.Achievements,
-		"CurrentUserID": userID, // ← передаём ID для навигации
+		"CurrentUserID": userID,
 		"csrf":          csrf.GetToken(c),
 	})
 }
@@ -313,7 +330,7 @@ func (h *ProfileHandler) PublicProfile(c *gin.Context) {
 		"ContentBlock":  "profile-public.html",
 		"ProfileUser":   user,
 		"Achievements":  user.Achievements,
-		"CurrentUserID": c.GetUint("userID"), // на случай, если зритель авторизован
+		"CurrentUserID": c.GetUint("userID"),
 	})
 }
 
@@ -447,7 +464,7 @@ func (h *AchievementHandler) List(c *gin.Context) {
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock":  "achievements-list.html",
 		"Achievements":  achievements,
-		"CurrentUserID": userID, // ← для навигации
+		"CurrentUserID": userID,
 	})
 }
 

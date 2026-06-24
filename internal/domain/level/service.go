@@ -1,7 +1,8 @@
-// Package level реализует управление уровнями, вопросами и ответами игр.
+// internal/domain/level/service.go
 package level
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -10,45 +11,44 @@ import (
 	"gorm.io/gorm"
 )
 
-// ActiveGameManager – интерфейс для операций, затрагивающих активную игру.
+// ActiveGameManager определяет контракт для операций, влияющих на активную игру.
 type ActiveGameManager interface {
-	DeleteLevelFromActiveGame(gameID, levelID, userID uint) error
+	DeleteLevelFromActiveGame(ctx context.Context, gameID, levelID, userID uint) error
 }
 
 type LevelService struct {
-	DB                *gorm.DB
-	authorizer        middleware.GameAuthorizer
-	activeGameManager ActiveGameManager
+	levelRepo     LevelRepository
+	questionRepo  QuestionRepository
+	answerRepo    AnswerRepository
+	authorizer    middleware.GameAuthorizer
+	activeGameMgr ActiveGameManager
 }
 
 func NewLevelService(
-	db *gorm.DB,
+	levelRepo LevelRepository,
+	questionRepo QuestionRepository,
+	answerRepo AnswerRepository,
 	authorizer middleware.GameAuthorizer,
 	agm ActiveGameManager,
 ) *LevelService {
 	return &LevelService{
-		DB:                db,
-		authorizer:        authorizer,
-		activeGameManager: agm,
+		levelRepo:     levelRepo,
+		questionRepo:  questionRepo,
+		answerRepo:    answerRepo,
+		authorizer:    authorizer,
+		activeGameMgr: agm,
 	}
 }
 
-// ListByGame возвращает все уровни игры, отсортированные по позиции.
-func (s *LevelService) ListByGame(gameID uint) ([]Level, error) {
-	var levels []Level
-	err := s.DB.Where("game_id = ?", gameID).Order("position ASC").Find(&levels).Error
-	return levels, err
+func (s *LevelService) ListByGame(ctx context.Context, gameID uint) ([]Level, error) {
+	return s.levelRepo.ListByGameOrdered(ctx, gameID)
 }
 
-// GetByID возвращает уровень с вопросами и ответами.
-func (s *LevelService) GetByID(levelID uint) (*Level, error) {
-	var level Level
-	err := s.DB.Preload("Questions.Answers").First(&level, levelID).Error
-	return &level, err
+func (s *LevelService) GetByID(ctx context.Context, levelID uint) (*Level, error) {
+	return s.levelRepo.GetByIDWithQuestions(ctx, levelID)
 }
 
-// Create создаёт новый уровень.
-func (s *LevelService) Create(gameID uint, level *Level, userID uint) error {
+func (s *LevelService) Create(ctx context.Context, gameID uint, level *Level, userID uint) error {
 	ok, err := s.authorizer.IsUserManager(gameID, userID)
 	if err != nil {
 		return errors.New("ошибка проверки прав")
@@ -58,27 +58,30 @@ func (s *LevelService) Create(gameID uint, level *Level, userID uint) error {
 	}
 
 	if level.Position == 0 {
-		var maxPos int
-		s.DB.Model(&Level{}).Where("game_id = ?", gameID).Select("COALESCE(MAX(position), 0)").Scan(&maxPos)
+		maxPos, err := s.levelRepo.GetMaxPosition(ctx, gameID)
+		if err != nil {
+			return err
+		}
 		level.Position = maxPos + 1
 	}
 
-	var count int64
-	if err := s.DB.Model(&Level{}).Where("game_id = ? AND position = ?", gameID, level.Position).Count(&count).Error; err != nil {
+	existing, err := s.levelRepo.GetByGameID(ctx, gameID)
+	if err != nil {
 		return err
 	}
-	if count > 0 {
-		return fmt.Errorf("уровень с позицией %d уже существует в этой игре", level.Position)
+	for _, l := range existing {
+		if l.Position == level.Position {
+			return fmt.Errorf("уровень с позицией %d уже существует в этой игре", level.Position)
+		}
 	}
 
 	level.GameID = gameID
-	return s.DB.Create(level).Error
+	return s.levelRepo.Create(ctx, level)
 }
 
-// Update обновляет уровень.
-func (s *LevelService) Update(levelID uint, updated *Level, userID uint) error {
-	var level Level
-	if err := s.DB.First(&level, levelID).Error; err != nil {
+func (s *LevelService) Update(ctx context.Context, levelID uint, updated *Level, userID uint) error {
+	level, err := s.levelRepo.GetByID(ctx, levelID)
+	if err != nil {
 		return err
 	}
 	ok, err := s.authorizer.IsUserManager(level.GameID, userID)
@@ -90,12 +93,14 @@ func (s *LevelService) Update(levelID uint, updated *Level, userID uint) error {
 	}
 
 	if updated.Position != 0 && updated.Position != level.Position {
-		var count int64
-		if err := s.DB.Model(&Level{}).Where("game_id = ? AND position = ? AND id != ?", level.GameID, updated.Position, levelID).Count(&count).Error; err != nil {
+		existing, err := s.levelRepo.GetByGameID(ctx, level.GameID)
+		if err != nil {
 			return err
 		}
-		if count > 0 {
-			return fmt.Errorf("уровень с позицией %d уже существует в этой игре", updated.Position)
+		for _, l := range existing {
+			if l.Position == updated.Position && l.ID != levelID {
+				return fmt.Errorf("уровень с позицией %d уже существует в этой игре", updated.Position)
+			}
 		}
 	}
 
@@ -109,18 +114,16 @@ func (s *LevelService) Update(levelID uint, updated *Level, userID uint) error {
 	level.Latitude = updated.Latitude
 	level.Longitude = updated.Longitude
 	level.RequiresConfirmation = updated.RequiresConfirmation
-	return s.DB.Save(&level).Error
+	return s.levelRepo.Update(ctx, level)
 }
 
-// DeleteFromActiveGame удаляет уровень, делегируя реализацию в game.
-func (s *LevelService) DeleteFromActiveGame(gameID, levelID, userID uint) error {
-	return s.activeGameManager.DeleteLevelFromActiveGame(gameID, levelID, userID)
+func (s *LevelService) DeleteFromActiveGame(ctx context.Context, gameID, levelID, userID uint) error {
+	return s.activeGameMgr.DeleteLevelFromActiveGame(ctx, gameID, levelID, userID)
 }
 
-// Duplicate создаёт копию уровня.
-func (s *LevelService) Duplicate(levelID, userID uint) (*Level, error) {
-	var original Level
-	if err := s.DB.Preload("Questions.Answers").First(&original, levelID).Error; err != nil {
+func (s *LevelService) Duplicate(ctx context.Context, levelID, userID uint) (*Level, error) {
+	original, err := s.levelRepo.GetFullLevel(ctx, levelID)
+	if err != nil {
 		return nil, err
 	}
 	ok, err := s.authorizer.IsUserManager(original.GameID, userID)
@@ -132,7 +135,7 @@ func (s *LevelService) Duplicate(levelID, userID uint) (*Level, error) {
 	}
 
 	var newLevel *Level
-	err = s.DB.Transaction(func(tx *gorm.DB) error {
+	err = s.levelRepo.(*gormLevelRepo).db.Transaction(func(tx *gorm.DB) error {
 		targetPos := original.Position + 1
 		if err := tx.Model(&Level{}).Where("game_id = ? AND position >= ?", original.GameID, targetPos).
 			Update("position", gorm.Expr("position + 1")).Error; err != nil {
@@ -183,10 +186,9 @@ func (s *LevelService) Duplicate(levelID, userID uint) (*Level, error) {
 	return newLevel, nil
 }
 
-// Move перемещает уровень вверх или вниз (атомарный обмен с временной позицией maxPos+1).
-func (s *LevelService) Move(levelID uint, direction string, userID uint) error {
-	var level Level
-	if err := s.DB.First(&level, levelID).Error; err != nil {
+func (s *LevelService) Move(ctx context.Context, levelID uint, direction string, userID uint) error {
+	level, err := s.levelRepo.GetByID(ctx, levelID)
+	if err != nil {
 		return err
 	}
 	ok, err := s.authorizer.IsUserManager(level.GameID, userID)
@@ -200,13 +202,13 @@ func (s *LevelService) Move(levelID uint, direction string, userID uint) error {
 	var sibling Level
 	switch direction {
 	case "up":
-		err := s.DB.Where("game_id = ? AND position < ?", level.GameID, level.Position).
+		err := s.levelRepo.(*gormLevelRepo).db.Where("game_id = ? AND position < ?", level.GameID, level.Position).
 			Order("position DESC").First(&sibling).Error
 		if err != nil {
 			return errors.New("некуда двигать")
 		}
 	case "down":
-		err := s.DB.Where("game_id = ? AND position > ?", level.GameID, level.Position).
+		err := s.levelRepo.(*gormLevelRepo).db.Where("game_id = ? AND position > ?", level.GameID, level.Position).
 			Order("position ASC").First(&sibling).Error
 		if err != nil {
 			return errors.New("некуда двигать")
@@ -215,16 +217,14 @@ func (s *LevelService) Move(levelID uint, direction string, userID uint) error {
 		return errors.New("неверное направление")
 	}
 
-	tx := s.DB.Begin()
+	tx := s.levelRepo.(*gormLevelRepo).db.Begin()
 	if tx.Error != nil {
 		return tx.Error
 	}
 
-	// Сохраняем оригинальные позиции до начала изменений
 	oldLevelPos := level.Position
 	oldSiblingPos := sibling.Position
 
-	// Вычисляем максимальную позицию в игре внутри транзакции
 	var maxPos int
 	if err := tx.Model(&Level{}).
 		Where("game_id = ?", level.GameID).
@@ -233,19 +233,16 @@ func (s *LevelService) Move(levelID uint, direction string, userID uint) error {
 		tx.Rollback()
 		return err
 	}
-	tempPos := maxPos + 1 // гарантированно свободная положительная позиция
+	tempPos := maxPos + 1
 
-	// 1) level → tempPos (освобождаем его место)
 	if err := tx.Model(&level).Update("position", tempPos).Error; err != nil {
 		tx.Rollback()
 		return err
 	}
-	// 2) sibling → старая позиция level
 	if err := tx.Model(&sibling).Update("position", oldLevelPos).Error; err != nil {
 		tx.Rollback()
 		return err
 	}
-	// 3) level → старая позиция sibling
 	if err := tx.Model(&level).Update("position", oldSiblingPos).Error; err != nil {
 		tx.Rollback()
 		return err
@@ -257,29 +254,34 @@ func (s *LevelService) Move(levelID uint, direction string, userID uint) error {
 // ---------- QuestionService ----------
 
 type QuestionService struct {
-	DB         *gorm.DB
-	authorizer middleware.GameAuthorizer
+	questionRepo QuestionRepository
+	levelRepo    LevelRepository
+	authorizer   middleware.GameAuthorizer
 }
 
-func NewQuestionService(db *gorm.DB, authorizer middleware.GameAuthorizer) *QuestionService {
-	return &QuestionService{DB: db, authorizer: authorizer}
+func NewQuestionService(
+	questionRepo QuestionRepository,
+	levelRepo LevelRepository,
+	authorizer middleware.GameAuthorizer,
+) *QuestionService {
+	return &QuestionService{
+		questionRepo: questionRepo,
+		levelRepo:    levelRepo,
+		authorizer:   authorizer,
+	}
 }
 
-func (s *QuestionService) ListByLevel(levelID uint) ([]Question, error) {
-	var questions []Question
-	err := s.DB.Where("level_id = ?", levelID).Find(&questions).Error
-	return questions, err
+func (s *QuestionService) ListByLevel(ctx context.Context, levelID uint) ([]Question, error) {
+	return s.questionRepo.ListByLevelID(ctx, levelID)
 }
 
-func (s *QuestionService) GetByID(questionID uint) (*Question, error) {
-	var question Question
-	err := s.DB.Preload("Answers").First(&question, questionID).Error
-	return &question, err
+func (s *QuestionService) GetByID(ctx context.Context, questionID uint) (*Question, error) {
+	return s.questionRepo.GetByIDWithAnswers(ctx, questionID)
 }
 
-func (s *QuestionService) Create(levelID uint, question *Question, userID uint) error {
-	var level Level
-	if err := s.DB.First(&level, levelID).Error; err != nil {
+func (s *QuestionService) Create(ctx context.Context, levelID uint, question *Question, userID uint) error {
+	level, err := s.levelRepo.GetByID(ctx, levelID)
+	if err != nil {
 		return err
 	}
 	ok, err := s.authorizer.IsUserManager(level.GameID, userID)
@@ -290,16 +292,16 @@ func (s *QuestionService) Create(levelID uint, question *Question, userID uint) 
 		return errors.New("только автор или контент-менеджер может создавать вопросы")
 	}
 	question.LevelID = levelID
-	return s.DB.Create(question).Error
+	return s.questionRepo.Create(ctx, question)
 }
 
-func (s *QuestionService) Update(questionID uint, updated *Question, userID uint) error {
-	var question Question
-	if err := s.DB.First(&question, questionID).Error; err != nil {
+func (s *QuestionService) Update(ctx context.Context, questionID uint, updated *Question, userID uint) error {
+	question, err := s.questionRepo.GetByID(ctx, questionID)
+	if err != nil {
 		return err
 	}
-	var level Level
-	if err := s.DB.First(&level, question.LevelID).Error; err != nil {
+	level, err := s.levelRepo.GetByID(ctx, question.LevelID)
+	if err != nil {
 		return err
 	}
 	ok, err := s.authorizer.IsUserManager(level.GameID, userID)
@@ -311,16 +313,16 @@ func (s *QuestionService) Update(questionID uint, updated *Question, userID uint
 	}
 	question.Text = updated.Text
 	question.Hint = updated.Hint
-	return s.DB.Save(&question).Error
+	return s.questionRepo.Update(ctx, question)
 }
 
-func (s *QuestionService) Delete(questionID uint, userID uint) error {
-	var question Question
-	if err := s.DB.First(&question, questionID).Error; err != nil {
+func (s *QuestionService) Delete(ctx context.Context, questionID uint, userID uint) error {
+	question, err := s.questionRepo.GetByID(ctx, questionID)
+	if err != nil {
 		return err
 	}
-	var level Level
-	if err := s.DB.First(&level, question.LevelID).Error; err != nil {
+	level, err := s.levelRepo.GetByID(ctx, question.LevelID)
+	if err != nil {
 		return err
 	}
 	ok, err := s.authorizer.IsUserManager(level.GameID, userID)
@@ -330,33 +332,43 @@ func (s *QuestionService) Delete(questionID uint, userID uint) error {
 	if !ok {
 		return errors.New("нет прав на удаление вопроса")
 	}
-	return s.DB.Delete(&question).Error
+	return s.questionRepo.Delete(ctx, questionID)
 }
 
 // ---------- AnswerService ----------
 
 type AnswerService struct {
-	DB         *gorm.DB
-	authorizer middleware.GameAuthorizer
+	answerRepo   AnswerRepository
+	questionRepo QuestionRepository
+	levelRepo    LevelRepository
+	authorizer   middleware.GameAuthorizer
 }
 
-func NewAnswerService(db *gorm.DB, authorizer middleware.GameAuthorizer) *AnswerService {
-	return &AnswerService{DB: db, authorizer: authorizer}
+func NewAnswerService(
+	answerRepo AnswerRepository,
+	questionRepo QuestionRepository,
+	levelRepo LevelRepository,
+	authorizer middleware.GameAuthorizer,
+) *AnswerService {
+	return &AnswerService{
+		answerRepo:   answerRepo,
+		questionRepo: questionRepo,
+		levelRepo:    levelRepo,
+		authorizer:   authorizer,
+	}
 }
 
-func (s *AnswerService) ListByQuestion(questionID uint) ([]Answer, error) {
-	var answers []Answer
-	err := s.DB.Where("question_id = ?", questionID).Find(&answers).Error
-	return answers, err
+func (s *AnswerService) ListByQuestion(ctx context.Context, questionID uint) ([]Answer, error) {
+	return s.answerRepo.ListByQuestionID(ctx, questionID)
 }
 
-func (s *AnswerService) Create(questionID uint, answer *Answer, userID uint) error {
-	var question Question
-	if err := s.DB.First(&question, questionID).Error; err != nil {
+func (s *AnswerService) Create(ctx context.Context, questionID uint, answer *Answer, userID uint) error {
+	question, err := s.questionRepo.GetByID(ctx, questionID)
+	if err != nil {
 		return err
 	}
-	var level Level
-	if err := s.DB.First(&level, question.LevelID).Error; err != nil {
+	level, err := s.levelRepo.GetByID(ctx, question.LevelID)
+	if err != nil {
 		return err
 	}
 	ok, err := s.authorizer.IsUserManager(level.GameID, userID)
@@ -367,20 +379,21 @@ func (s *AnswerService) Create(questionID uint, answer *Answer, userID uint) err
 		return errors.New("нет прав на создание ответа")
 	}
 	answer.QuestionID = questionID
-	return s.DB.Create(answer).Error
+	return s.answerRepo.Create(ctx, answer)
 }
 
-func (s *AnswerService) Delete(answerID uint, userID uint) error {
-	var answer Answer
-	if err := s.DB.First(&answer, answerID).Error; err != nil {
+func (s *AnswerService) Delete(ctx context.Context, answerID uint, userID uint) error {
+	// Получаем ответ через репозиторий (добавим метод GetByID)
+	answer, err := s.answerRepo.GetByID(ctx, answerID)
+	if err != nil {
 		return err
 	}
-	var question Question
-	if err := s.DB.First(&question, answer.QuestionID).Error; err != nil {
+	question, err := s.questionRepo.GetByID(ctx, answer.QuestionID)
+	if err != nil {
 		return err
 	}
-	var level Level
-	if err := s.DB.First(&level, question.LevelID).Error; err != nil {
+	level, err := s.levelRepo.GetByID(ctx, question.LevelID)
+	if err != nil {
 		return err
 	}
 	ok, err := s.authorizer.IsUserManager(level.GameID, userID)
@@ -391,12 +404,12 @@ func (s *AnswerService) Delete(answerID uint, userID uint) error {
 		return errors.New("нет прав на удаление ответа")
 	}
 
-	var count int64
-	if err := s.DB.Model(&Answer{}).Where("question_id = ?", answer.QuestionID).Count(&count).Error; err != nil {
+	count, err := s.answerRepo.CountByQuestionID(ctx, answer.QuestionID)
+	if err != nil {
 		return err
 	}
 	if count <= 1 {
 		return errors.New("должен остаться хотя бы один вариант кода")
 	}
-	return s.DB.Delete(&answer).Error
+	return s.answerRepo.Delete(ctx, answerID)
 }

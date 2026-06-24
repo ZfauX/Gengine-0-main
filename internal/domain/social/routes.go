@@ -11,14 +11,19 @@ import (
 )
 
 // RegisterRoutes регистрирует маршруты социальных функций: подписки.
-func RegisterRoutes(router *gin.Engine, db *gorm.DB, cfg *config.Config) {
+// Принимает готовый authService для избежания дублирования инициализации.
+func RegisterRoutes(
+	router *gin.Engine,
+	db *gorm.DB,
+	cfg *config.Config,
+	authService *user.AuthService, // добавлен параметр
+) {
 	// Сервисы, оставшиеся в social
 	followService := NewFollowService(db)
 
 	// Обработчики
 	followHandler := NewFollowHandler(followService)
 
-	authService := user.NewAuthService(db, cfg)
 	authRequired := middleware.AuthRequired(authService)
 
 	// Защищённые маршруты

@@ -2,6 +2,9 @@
 package level
 
 import (
+	"net/http"
+	"strconv"
+
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/middleware"
@@ -9,60 +12,236 @@ import (
 	ws "gengine-0/internal/pkg/websocket"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 func RegisterRoutes(
-	router *gin.Engine,
-	db *gorm.DB,
-	store storage.FileStorage,
+	r *gin.Engine,
+	levelService *LevelService,
+	questionService *QuestionService,
+	answerService *AnswerService,
+	localStorage storage.FileStorage,
 	hub *ws.RoomHub,
 	cfg *config.Config,
-	coAuthorSvc middleware.GameAuthorizer,
+	authorizer middleware.GameAuthorizer,
 	activeGameManager ActiveGameManager,
+	authService *user.AuthService,
 ) {
-	authService := user.NewAuthService(db, cfg)
+	protected := r.Group("/games/:game_id/levels")
+	protected.Use(middleware.AuthRequired(authService))
 
-	levelService := NewLevelService(db, coAuthorSvc, activeGameManager)
-	questionService := NewQuestionService(db, coAuthorSvc)
-	answerService := NewAnswerService(db, coAuthorSvc)
+	protected.GET("/", func(c *gin.Context) {
+		gameID, _ := strconv.Atoi(c.Param("game_id"))
+		levels, err := levelService.ListByGame(c.Request.Context(), uint(gameID))
+		if err != nil {
+			c.String(http.StatusInternalServerError, err.Error())
+			return
+		}
+		c.HTML(http.StatusOK, "levels_list.html", gin.H{
+			"title":  "Уровни",
+			"levels": levels,
+			"gameID": gameID,
+		})
+	})
 
-	levelHandler := NewLevelHandler(levelService, questionService, answerService, store, hub)
-	questionHandler := NewQuestionHandler(questionService)
-	answerHandler := NewAnswerHandler(answerService)
+	protected.GET("/create", func(c *gin.Context) {
+		gameID, _ := strconv.Atoi(c.Param("game_id"))
+		c.HTML(http.StatusOK, "level_create.html", gin.H{
+			"title":  "Создать уровень",
+			"gameID": gameID,
+			"csrf":   c.GetString("csrf"),
+		})
+	})
+	protected.POST("/create", func(c *gin.Context) {
+		gameID, _ := strconv.Atoi(c.Param("game_id"))
+		var level Level
+		if err := c.ShouldBind(&level); err != nil {
+			c.HTML(http.StatusBadRequest, "level_create.html", gin.H{"error": err.Error()})
+			return
+		}
+		if err := levelService.Create(c.Request.Context(), uint(gameID), &level, c.GetUint("user_id")); err != nil {
+			c.HTML(http.StatusBadRequest, "level_create.html", gin.H{"error": err.Error()})
+			return
+		}
+		c.Redirect(http.StatusFound, "/games/"+strconv.Itoa(gameID)+"/levels")
+	})
 
-	authRequired := middleware.AuthRequired(authService)
-	gameManager := middleware.GameManager(coAuthorSvc)
+	protected.GET("/:level_id", func(c *gin.Context) {
+		levelID, _ := strconv.Atoi(c.Param("level_id"))
+		level, err := levelService.GetByID(c.Request.Context(), uint(levelID))
+		if err != nil {
+			c.String(http.StatusNotFound, err.Error())
+			return
+		}
+		c.HTML(http.StatusOK, "level_detail.html", gin.H{
+			"title": level.Name,
+			"level": level,
+		})
+	})
 
-	protected := router.Group("/")
-	protected.Use(authRequired)
+	protected.GET("/:level_id/edit", func(c *gin.Context) {
+		levelID, _ := strconv.Atoi(c.Param("level_id"))
+		level, err := levelService.GetByID(c.Request.Context(), uint(levelID))
+		if err != nil {
+			c.String(http.StatusNotFound, err.Error())
+			return
+		}
+		c.HTML(http.StatusOK, "level_edit.html", gin.H{
+			"title": "Редактировать уровень",
+			"level": level,
+			"csrf":  c.GetString("csrf"),
+		})
+	})
+	protected.POST("/:level_id/edit", func(c *gin.Context) {
+		levelID, _ := strconv.Atoi(c.Param("level_id"))
+		var updated Level
+		if err := c.ShouldBind(&updated); err != nil {
+			c.HTML(http.StatusBadRequest, "level_edit.html", gin.H{"error": err.Error()})
+			return
+		}
+		if err := levelService.Update(c.Request.Context(), uint(levelID), &updated, c.GetUint("user_id")); err != nil {
+			c.HTML(http.StatusBadRequest, "level_edit.html", gin.H{"error": err.Error()})
+			return
+		}
+		c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+strconv.Itoa(levelID))
+	})
 
-	// Уровни – требуют прав на игру
-	levelGroup := protected.Group("/games/:id/levels")
-	levelGroup.Use(gameManager)
+	protected.POST("/:level_id/delete", func(c *gin.Context) {
+		levelID, _ := strconv.Atoi(c.Param("level_id"))
+		gameID, _ := strconv.Atoi(c.Param("game_id"))
+		if err := levelService.DeleteFromActiveGame(c.Request.Context(), uint(gameID), uint(levelID), c.GetUint("user_id")); err != nil {
+			c.String(http.StatusBadRequest, err.Error())
+			return
+		}
+		c.Redirect(http.StatusFound, "/games/"+strconv.Itoa(gameID)+"/levels")
+	})
+
+	protected.POST("/:level_id/duplicate", func(c *gin.Context) {
+		levelID, _ := strconv.Atoi(c.Param("level_id"))
+		newLevel, err := levelService.Duplicate(c.Request.Context(), uint(levelID), c.GetUint("user_id"))
+		if err != nil {
+			c.String(http.StatusBadRequest, err.Error())
+			return
+		}
+		c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+strconv.Itoa(int(newLevel.ID)))
+	})
+
+	protected.POST("/:level_id/move", func(c *gin.Context) {
+		levelID, _ := strconv.Atoi(c.Param("level_id"))
+		direction := c.PostForm("direction")
+		if err := levelService.Move(c.Request.Context(), uint(levelID), direction, c.GetUint("user_id")); err != nil {
+			c.String(http.StatusBadRequest, err.Error())
+			return
+		}
+		c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels")
+	})
+
+	questionGroup := protected.Group("/:level_id/questions")
 	{
-		levelGroup.GET("", levelHandler.ListLevels)
-		levelGroup.GET("/new", levelHandler.NewLevelForm)
-		levelGroup.POST("", levelHandler.CreateLevel)
-		levelGroup.GET("/:level_id", levelHandler.ShowLevel)                 // <-- вот этот маршрут должен обрабатывать GET /games/:id/levels/:level_id
-		levelGroup.GET("/:level_id/edit", levelHandler.EditLevelForm)
-		levelGroup.POST("/:level_id/update", levelHandler.UpdateLevel)
-		levelGroup.POST("/:level_id/delete", levelHandler.DeleteLevel)
-		levelGroup.POST("/:level_id/duplicate", levelHandler.DuplicateLevel)
-		levelGroup.POST("/:level_id/move", levelHandler.MoveLevel)
+		questionGroup.GET("/", func(c *gin.Context) {
+			levelID, _ := strconv.Atoi(c.Param("level_id"))
+			questions, err := questionService.ListByLevel(c.Request.Context(), uint(levelID))
+			if err != nil {
+				c.String(http.StatusInternalServerError, err.Error())
+				return
+			}
+			c.HTML(http.StatusOK, "questions_list.html", gin.H{
+				"title":     "Вопросы",
+				"questions": questions,
+				"levelID":   levelID,
+			})
+		})
+		questionGroup.GET("/create", func(c *gin.Context) {
+			levelID, _ := strconv.Atoi(c.Param("level_id"))
+			c.HTML(http.StatusOK, "question_create.html", gin.H{
+				"title":   "Создать вопрос",
+				"levelID": levelID,
+				"csrf":    c.GetString("csrf"),
+			})
+		})
+		questionGroup.POST("/create", func(c *gin.Context) {
+			levelID, _ := strconv.Atoi(c.Param("level_id"))
+			var question Question
+			if err := c.ShouldBind(&question); err != nil {
+				c.HTML(http.StatusBadRequest, "question_create.html", gin.H{"error": err.Error()})
+				return
+			}
+			if err := questionService.Create(c.Request.Context(), uint(levelID), &question, c.GetUint("user_id")); err != nil {
+				c.HTML(http.StatusBadRequest, "question_create.html", gin.H{"error": err.Error()})
+				return
+			}
+			c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+c.Param("level_id")+"/questions")
+		})
+		questionGroup.GET("/:question_id/edit", func(c *gin.Context) {
+			questionID, _ := strconv.Atoi(c.Param("question_id"))
+			question, err := questionService.GetByID(c.Request.Context(), uint(questionID))
+			if err != nil {
+				c.String(http.StatusNotFound, err.Error())
+				return
+			}
+			c.HTML(http.StatusOK, "question_edit.html", gin.H{
+				"title":    "Редактировать вопрос",
+				"question": question,
+				"csrf":     c.GetString("csrf"),
+			})
+		})
+		questionGroup.POST("/:question_id/edit", func(c *gin.Context) {
+			questionID, _ := strconv.Atoi(c.Param("question_id"))
+			var updated Question
+			if err := c.ShouldBind(&updated); err != nil {
+				c.HTML(http.StatusBadRequest, "question_edit.html", gin.H{"error": err.Error()})
+				return
+			}
+			if err := questionService.Update(c.Request.Context(), uint(questionID), &updated, c.GetUint("user_id")); err != nil {
+				c.HTML(http.StatusBadRequest, "question_edit.html", gin.H{"error": err.Error()})
+				return
+			}
+			c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+c.Param("level_id")+"/questions")
+		})
+		questionGroup.POST("/:question_id/delete", func(c *gin.Context) {
+			questionID, _ := strconv.Atoi(c.Param("question_id"))
+			if err := questionService.Delete(c.Request.Context(), uint(questionID), c.GetUint("user_id")); err != nil {
+				c.String(http.StatusBadRequest, err.Error())
+				return
+			}
+			c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+c.Param("level_id")+"/questions")
+		})
 
-		// Вопросы
-		levelGroup.GET("/:level_id/questions", questionHandler.ListQuestions)
-		levelGroup.GET("/:level_id/questions/new", questionHandler.NewQuestionForm)
-		levelGroup.POST("/:level_id/questions", questionHandler.CreateQuestion)
-		levelGroup.GET("/:level_id/questions/:question_id", questionHandler.ShowQuestion)
-		levelGroup.GET("/:level_id/questions/:question_id/edit", questionHandler.EditQuestionForm)
-		levelGroup.POST("/:level_id/questions/:question_id/update", questionHandler.UpdateQuestion)
-		levelGroup.POST("/:level_id/questions/:question_id/delete", questionHandler.DeleteQuestion)
-
-		// Ответы
-		levelGroup.GET("/:level_id/questions/:question_id/answers", answerHandler.Index)
-		levelGroup.POST("/:level_id/questions/:question_id/answers", answerHandler.Create)
-		levelGroup.POST("/:level_id/questions/:question_id/answers/:answer_id/delete", answerHandler.Delete)
+		answerGroup := questionGroup.Group("/:question_id/answers")
+		{
+			answerGroup.GET("/", func(c *gin.Context) {
+				questionID, _ := strconv.Atoi(c.Param("question_id"))
+				answers, err := answerService.ListByQuestion(c.Request.Context(), uint(questionID))
+				if err != nil {
+					c.String(http.StatusInternalServerError, err.Error())
+					return
+				}
+				c.HTML(http.StatusOK, "answers_list.html", gin.H{
+					"title":      "Ответы",
+					"answers":    answers,
+					"questionID": questionID,
+				})
+			})
+			answerGroup.POST("/create", func(c *gin.Context) {
+				questionID, _ := strconv.Atoi(c.Param("question_id"))
+				var answer Answer
+				if err := c.ShouldBind(&answer); err != nil {
+					c.String(http.StatusBadRequest, err.Error())
+					return
+				}
+				if err := answerService.Create(c.Request.Context(), uint(questionID), &answer, c.GetUint("user_id")); err != nil {
+					c.String(http.StatusBadRequest, err.Error())
+					return
+				}
+				c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+c.Param("level_id")+"/questions/"+c.Param("question_id")+"/answers")
+			})
+			answerGroup.POST("/:answer_id/delete", func(c *gin.Context) {
+				answerID, _ := strconv.Atoi(c.Param("answer_id"))
+				if err := answerService.Delete(c.Request.Context(), uint(answerID), c.GetUint("user_id")); err != nil {
+					c.String(http.StatusBadRequest, err.Error())
+					return
+				}
+				c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+c.Param("level_id")+"/questions/"+c.Param("question_id")+"/answers")
+			})
+		}
 	}
 }
