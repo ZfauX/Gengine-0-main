@@ -1,38 +1,56 @@
-# Environment
-.env
-
-# Binary
-/gengine
-/gengine-*
+# Бинарные файлы (Windows, Linux, macOS)
 *.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
 
-# Uploaded user content (keep .gitkeep)
-/uploads/*
-/uploads/*/*
-!/uploads/**/.gitkeep
+# Отчёты о покрытии и профили
+coverage.out
+coverage.html
+*.prof
 
-# Backups
-/backups/*
-!/backups/.gitkeep
+# Вендорские зависимости (если используются)
+vendor/
+node_modules/
 
-# IDE
+# Файлы рабочей области Go (модули, суммы)
+go.work
+go.work.sum
+
+# Конфигурации IDE
 .idea/
 .vscode/
 *.swp
 *.swo
+*~
+*.iml
+.project
+.classpath
+.settings/
 
-# OS
+# Переменные окружения (секреты)
+.env
+.env.local
+.env.*.local
+
+# Каталоги сборки и временные артефакты
+/bin/
+/dist/
+/build/
+/tmp/
+/out/
+
+# Системные файлы ОС
 .DS_Store
 Thumbs.db
+ehthumbs.db
+Desktop.ini
 
-# Test coverage
-coverage.out
-*.test
+# Логи
+*.log
 
-# Certificates (generated)
-/certs/
-
-# Dependencies
-vendor/
-
-AGENTS.md
+# Сгенерированная документация Swagger (если генерируется в папку)
+/docs/swagger/
