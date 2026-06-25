@@ -15,6 +15,10 @@ import (
 	"gorm.io/gorm"
 )
 
+// =============================================================================
+// Вспомогательные функции для настройки тестов
+// =============================================================================
+
 func newTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	return testutil.SetupPostgresDB(t, &User{}, &Achievement{}, &PasswordResetToken{}, &EmailVerificationToken{})
@@ -32,101 +36,409 @@ func newTestConfig() *config.Config {
 		SMTP: config.SMTPConfig{
 			Enabled: false,
 		},
+		OAuth: config.OAuthConfig{
+			Google: config.OAuthProvider{ClientID: "test", ClientSecret: "test"},
+			GitHub: config.OAuthProvider{ClientID: "test", ClientSecret: "test"},
+			Yandex: config.OAuthProvider{ClientID: "test", ClientSecret: "test"},
+		},
 	}
 }
 
-// Создаём репозитории для тестов
-func newTestRepos(db *gorm.DB) (UserRepository, AchievementRepository, EmailVerificationRepository) {
-	return NewGormUserRepo(db), NewGormAchievementRepo(db), NewGormEmailVerificationRepo(db)
+// Создаём все репозитории для тестов
+func newTestRepos(db *gorm.DB) (
+	UserRepository,
+	AchievementRepository,
+	PasswordResetRepository,
+	EmailVerificationRepository,
+	ExternalLoginRepository,
+) {
+	return NewGormUserRepo(db),
+		NewGormAchievementRepo(db),
+		NewGormPasswordResetRepo(db),
+		NewGormEmailVerificationRepo(db),
+		NewGormExternalLoginRepo(db)
 }
 
-func TestRegister(t *testing.T) {
-	db := newTestDB(t)
-	cfg := newTestConfig()
-	userRepo, achievRepo, emailVerifRepo := newTestRepos(db)
-	service := NewAuthService(userRepo, achievRepo, emailVerifRepo, cfg)
-
-	user, err := service.Register(context.Background(), "test@example.com", "password123", "Test User")
-	require.NoError(t, err)
-	assert.NotZero(t, user.ID)
-	assert.Equal(t, "test@example.com", user.Email)
-	assert.True(t, bcrypt.CompareHashAndPassword([]byte(user.Password), []byte("password123")) == nil)
+// Создаёт тестового пользователя в БД
+func createTestUser(t *testing.T, db *gorm.DB, email, password, name string) *User {
+	t.Helper()
+	hashed, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	user := &User{
+		Email:         email,
+		Password:      string(hashed),
+		Name:          name,
+		EmailVerified: false,
+	}
+	require.NoError(t, db.Create(user).Error)
+	return user
 }
 
-func TestLogin(t *testing.T) {
+// =============================================================================
+// Тесты для AuthService
+// =============================================================================
+
+func TestAuthService_Register(t *testing.T) {
 	db := newTestDB(t)
 	cfg := newTestConfig()
-	userRepo, achievRepo, emailVerifRepo := newTestRepos(db)
+	userRepo, achievRepo, _, emailVerifRepo, _ := newTestRepos(db)
 	service := NewAuthService(userRepo, achievRepo, emailVerifRepo, cfg)
 
-	_, err := service.Register(context.Background(), "test@example.com", "password123", "Test User")
+	t.Run("успешная регистрация", func(t *testing.T) {
+		user, err := service.Register(context.Background(), "test@example.com", "password123", "Test User")
+		require.NoError(t, err)
+		assert.NotZero(t, user.ID)
+		assert.Equal(t, "test@example.com", user.Email)
+		assert.Equal(t, "Test User", user.Name)
+		assert.NotEmpty(t, user.Password)
+		// Проверяем, что пароль захэширован
+		err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte("password123"))
+		assert.NoError(t, err)
+	})
+
+	t.Run("регистрация с существующим email", func(t *testing.T) {
+		// Создаём пользователя
+		createTestUser(t, db, "duplicate@example.com", "pass", "Dupe")
+		// Пытаемся зарегистрировать ещё одного
+		_, err := service.Register(context.Background(), "duplicate@example.com", "newpass", "Another")
+		assert.Error(t, err)
+	})
+}
+
+func TestAuthService_Login(t *testing.T) {
+	db := newTestDB(t)
+	cfg := newTestConfig()
+	userRepo, achievRepo, _, emailVerifRepo, _ := newTestRepos(db)
+	service := NewAuthService(userRepo, achievRepo, emailVerifRepo, cfg)
+
+	// Создаём пользователя
+	createTestUser(t, db, "login@example.com", "correctpass", "Login User")
+
+	t.Run("успешный логин", func(t *testing.T) {
+		token, err := service.Login(context.Background(), "login@example.com", "correctpass")
+		require.NoError(t, err)
+		assert.NotEmpty(t, token)
+	})
+
+	t.Run("неверный пароль", func(t *testing.T) {
+		_, err := service.Login(context.Background(), "login@example.com", "wrongpass")
+		assert.Error(t, err)
+		assert.Equal(t, "неверный email или пароль", err.Error())
+	})
+
+	t.Run("неизвестный email", func(t *testing.T) {
+		_, err := service.Login(context.Background(), "unknown@example.com", "anything")
+		assert.Error(t, err)
+		assert.Equal(t, "неверный email или пароль", err.Error())
+	})
+}
+
+func TestAuthService_ParseToken(t *testing.T) {
+	db := newTestDB(t)
+	cfg := newTestConfig()
+	userRepo, achievRepo, _, emailVerifRepo, _ := newTestRepos(db)
+	service := NewAuthService(userRepo, achievRepo, emailVerifRepo, cfg)
+
+	user := createTestUser(t, db, "parse@example.com", "pass", "Parse")
+	tokenStr, err := service.GenerateJWT(*user)
 	require.NoError(t, err)
 
-	token, err := service.Login(context.Background(), "test@example.com", "password123")
+	t.Run("валидный токен", func(t *testing.T) {
+		id, err := service.ParseToken(tokenStr)
+		require.NoError(t, err)
+		assert.Equal(t, user.ID, id)
+	})
+
+	t.Run("невалидный токен", func(t *testing.T) {
+		_, err := service.ParseToken("invalid.token.string")
+		assert.Error(t, err)
+	})
+
+	t.Run("просроченный токен", func(t *testing.T) {
+		// Создаём просроченный токен вручную
+		oldCfg := *cfg
+		oldCfg.JWT.AccessExpiry = -time.Hour
+		expiredService := NewAuthService(userRepo, achievRepo, emailVerifRepo, &oldCfg)
+		token, _ := expiredService.GenerateJWT(*user)
+		_, err := expiredService.ParseToken(token)
+		assert.Error(t, err)
+	})
+}
+
+// =============================================================================
+// Тесты для UserService
+// =============================================================================
+
+func TestUserService_GetByID(t *testing.T) {
+	db := newTestDB(t)
+	userRepo, _, _, _, _ := newTestRepos(db)
+	service := NewUserService(userRepo)
+
+	user := createTestUser(t, db, "getbyid@example.com", "pass", "GetByID")
+
+	t.Run("пользователь найден", func(t *testing.T) {
+		found, err := service.GetByID(context.Background(), user.ID)
+		require.NoError(t, err)
+		assert.Equal(t, user.Email, found.Email)
+	})
+
+	t.Run("пользователь не найден", func(t *testing.T) {
+		_, err := service.GetByID(context.Background(), 99999)
+		assert.Error(t, err)
+	})
+}
+
+func TestUserService_GetByEmail(t *testing.T) {
+	db := newTestDB(t)
+	userRepo, _, _, _, _ := newTestRepos(db)
+	service := NewUserService(userRepo)
+
+	user := createTestUser(t, db, "getbyemail@example.com", "pass", "GetByEmail")
+
+	t.Run("пользователь найден", func(t *testing.T) {
+		found, err := service.GetByEmail(context.Background(), "getbyemail@example.com")
+		require.NoError(t, err)
+		assert.Equal(t, user.ID, found.ID)
+	})
+
+	t.Run("пользователь не найден", func(t *testing.T) {
+		_, err := service.GetByEmail(context.Background(), "nonexistent@example.com")
+		assert.Error(t, err)
+	})
+}
+
+func TestUserService_GetPublicProfile(t *testing.T) {
+	db := newTestDB(t)
+	userRepo, _, _, _, _ := newTestRepos(db)
+	service := NewUserService(userRepo)
+
+	user := createTestUser(t, db, "public@example.com", "pass", "Public")
+	// Добавляем достижение (для проверки прелоада)
+	achievRepo := NewGormAchievementRepo(db)
+	achievSvc := NewAchievementService(achievRepo)
+	achievSvc.SeedAchievements(context.Background())
+	_ = achievSvc.AwardAchievement(context.Background(), user.ID, "first_level_created")
+
+	t.Run("профиль с достижениями", func(t *testing.T) {
+		profile, err := service.GetPublicProfile(context.Background(), user.ID)
+		require.NoError(t, err)
+		assert.Equal(t, user.Name, profile.Name)
+		// Проверяем, что достижения подгружены (если есть)
+		assert.NotNil(t, profile.Achievements)
+	})
+}
+
+func TestUserService_UpdateProfile(t *testing.T) {
+	db := newTestDB(t)
+	userRepo, _, _, _, _ := newTestRepos(db)
+	service := NewUserService(userRepo)
+
+	user := createTestUser(t, db, "update@example.com", "pass", "Old Name")
+
+	err := service.UpdateProfile(context.Background(), user.ID, "New Name", "newemail@example.com")
+	require.NoError(t, err)
+
+	updated, _ := service.GetByID(context.Background(), user.ID)
+	assert.Equal(t, "New Name", updated.Name)
+	assert.Equal(t, "newemail@example.com", updated.Email)
+}
+
+func TestUserService_ChangePassword(t *testing.T) {
+	db := newTestDB(t)
+	userRepo, _, _, _, _ := newTestRepos(db)
+	service := NewUserService(userRepo)
+
+	user := createTestUser(t, db, "changepass@example.com", "oldpass", "Change")
+
+	t.Run("успешная смена", func(t *testing.T) {
+		err := service.ChangePassword(context.Background(), user.ID, "oldpass", "newpass")
+		require.NoError(t, err)
+
+		updated, _ := service.GetByID(context.Background(), user.ID)
+		// Проверяем, что хеш изменился
+		err = bcrypt.CompareHashAndPassword([]byte(updated.Password), []byte("newpass"))
+		assert.NoError(t, err)
+	})
+
+	t.Run("неверный старый пароль", func(t *testing.T) {
+		err := service.ChangePassword(context.Background(), user.ID, "wrongold", "anything")
+		assert.Error(t, err)
+		assert.Equal(t, "неверный текущий пароль", err.Error())
+	})
+}
+
+// =============================================================================
+// Тесты для AchievementService
+// =============================================================================
+
+func TestAchievementService_AwardAndGet(t *testing.T) {
+	db := newTestDB(t)
+	_, achievRepo, _, _, _ := newTestRepos(db)
+	service := NewAchievementService(achievRepo)
+	service.SeedAchievements(context.Background())
+
+	user := createTestUser(t, db, "achiev@example.com", "pass", "Achiever")
+
+	t.Run("выдача достижения", func(t *testing.T) {
+		err := service.AwardAchievement(context.Background(), user.ID, "first_level_created")
+		require.NoError(t, err)
+	})
+
+	t.Run("повторная выдача того же достижения не создаёт дубликат", func(t *testing.T) {
+		err := service.AwardAchievement(context.Background(), user.ID, "first_level_created")
+		require.NoError(t, err)
+		achievements, _ := service.GetUserAchievements(context.Background(), user.ID)
+		assert.Len(t, achievements, 1) // должно быть только одно
+	})
+
+	t.Run("получение всех достижений пользователя", func(t *testing.T) {
+		_ = service.AwardAchievement(context.Background(), user.ID, "five_games_hosted")
+		achievements, err := service.GetUserAchievements(context.Background(), user.ID)
+		require.NoError(t, err)
+		assert.GreaterOrEqual(t, len(achievements), 2)
+	})
+}
+
+// =============================================================================
+// Тесты для PasswordResetService
+// =============================================================================
+
+func TestPasswordResetService_GenerateToken(t *testing.T) {
+	db := newTestDB(t)
+	cfg := newTestConfig()
+	userRepo, _, passResetRepo, _, _ := newTestRepos(db)
+	service := NewPasswordResetService(userRepo, passResetRepo, cfg)
+
+	user := createTestUser(t, db, "reset@example.com", "pass", "Reset")
+
+	token, err := service.GenerateToken(context.Background(), *user)
 	require.NoError(t, err)
 	assert.NotEmpty(t, token)
 
-	_, err = service.Login(context.Background(), "test@example.com", "wrongpassword")
-	assert.Error(t, err)
+	// Проверяем, что токен сохранён в БД
+	var stored PasswordResetToken
+	err = db.Where("token = ?", token).First(&stored).Error
+	require.NoError(t, err)
+	assert.Equal(t, user.ID, stored.UserID)
+	assert.True(t, stored.ExpiresAt.After(time.Now()))
 }
 
-func TestParseToken(t *testing.T) {
+func TestPasswordResetService_ResetPassword(t *testing.T) {
 	db := newTestDB(t)
 	cfg := newTestConfig()
-	userRepo, achievRepo, emailVerifRepo := newTestRepos(db)
-	service := NewAuthService(userRepo, achievRepo, emailVerifRepo, cfg)
+	userRepo, _, passResetRepo, _, _ := newTestRepos(db)
+	service := NewPasswordResetService(userRepo, passResetRepo, cfg)
 
-	user, err := service.Register(context.Background(), "test@example.com", "password123", "Test User")
+	user := createTestUser(t, db, "reset2@example.com", "oldpass", "Reset2")
+
+	// Генерируем токен
+	tokenStr, err := service.GenerateToken(context.Background(), *user)
 	require.NoError(t, err)
 
-	token, err := service.Login(context.Background(), "test@example.com", "password123")
-	require.NoError(t, err)
+	t.Run("успешный сброс пароля", func(t *testing.T) {
+		err := service.ResetPassword(context.Background(), tokenStr, "newpass")
+		require.NoError(t, err)
 
-	parsedID, err := service.ParseToken(token)
-	require.NoError(t, err)
-	assert.Equal(t, user.ID, parsedID)
+		updated, _ := userRepo.GetByID(context.Background(), user.ID)
+		err = bcrypt.CompareHashAndPassword([]byte(updated.Password), []byte("newpass"))
+		assert.NoError(t, err)
+
+		// Токен должен быть удалён
+		_, err = passResetRepo.GetToken(context.Background(), tokenStr)
+		assert.Error(t, err)
+	})
+
+	t.Run("попытка сброса с истекшим токеном", func(t *testing.T) {
+		// Создаём просроченный токен вручную
+		expiredToken := &PasswordResetToken{
+			UserID:    user.ID,
+			Token:     "expiredtoken",
+			ExpiresAt: time.Now().Add(-time.Hour),
+		}
+		_ = passResetRepo.CreateToken(context.Background(), expiredToken)
+		err := service.ResetPassword(context.Background(), "expiredtoken", "any")
+		assert.Error(t, err)
+		assert.Equal(t, "токен истёк", err.Error())
+	})
+
+	t.Run("несуществующий токен", func(t *testing.T) {
+		err := service.ResetPassword(context.Background(), "nonexistent", "any")
+		assert.Error(t, err)
+		assert.Equal(t, "токен недействителен или истёк", err.Error())
+	})
 }
 
-func TestChangePassword(t *testing.T) {
+// =============================================================================
+// Тесты для EmailVerificationService
+// =============================================================================
+
+func TestEmailVerificationService_VerifyToken(t *testing.T) {
 	db := newTestDB(t)
-	userRepo, _, _ := newTestRepos(db)
-	userService := NewUserService(userRepo)
+	cfg := newTestConfig()
+	userRepo, _, _, emailVerifRepo, _ := newTestRepos(db)
+	service := NewEmailVerificationService(userRepo, emailVerifRepo, cfg)
 
-	hashed, _ := bcrypt.GenerateFromPassword([]byte("oldpassword"), bcrypt.DefaultCost)
-	user := User{
-		Email:    "test@example.com",
-		Password: string(hashed),
-		Name:     "Test User",
+	user := createTestUser(t, db, "verify@example.com", "pass", "Verify")
+
+	// Создаём токен вручную (в реальности он создаётся при регистрации)
+	token := &EmailVerificationToken{
+		UserID:    user.ID,
+		Token:     "validtoken",
+		ExpiresAt: time.Now().Add(time.Hour),
 	}
-	require.NoError(t, db.Create(&user).Error)
+	_ = emailVerifRepo.CreateToken(context.Background(), token)
 
-	err := userService.ChangePassword(context.Background(), user.ID, "oldpassword", "newpassword")
-	require.NoError(t, err)
+	t.Run("успешная верификация", func(t *testing.T) {
+		verifiedUser, err := service.VerifyToken(context.Background(), "validtoken")
+		require.NoError(t, err)
+		assert.True(t, verifiedUser.EmailVerified)
+		// Токен должен быть удалён
+		_, err = emailVerifRepo.GetToken(context.Background(), "validtoken")
+		assert.Error(t, err)
+	})
 
-	var updated User
-	db.First(&updated, user.ID)
-	assert.True(t, bcrypt.CompareHashAndPassword([]byte(updated.Password), []byte("newpassword")) == nil)
+	t.Run("истекший токен", func(t *testing.T) {
+		expired := &EmailVerificationToken{
+			UserID:    user.ID,
+			Token:     "expiredverif",
+			ExpiresAt: time.Now().Add(-time.Hour),
+		}
+		_ = emailVerifRepo.CreateToken(context.Background(), expired)
+		_, err := service.VerifyToken(context.Background(), "expiredverif")
+		assert.Error(t, err)
+		assert.Equal(t, "токен истёк", err.Error())
+	})
+
+	t.Run("недействительный токен", func(t *testing.T) {
+		_, err := service.VerifyToken(context.Background(), "nonexistent")
+		assert.Error(t, err)
+		assert.Equal(t, "токен недействителен или истёк", err.Error())
+	})
 }
 
-func TestAwardAchievement(t *testing.T) {
+// =============================================================================
+// Тесты для OAuthService
+// =============================================================================
+
+func TestOAuthService_GetAuthURL(t *testing.T) {
+	cfg := newTestConfig()
 	db := newTestDB(t)
-	_, achievRepo, _ := newTestRepos(db)
-	achievementService := NewAchievementService(achievRepo)
-	achievementService.SeedAchievements(context.Background())
+	userRepo, _, _, _, extLoginRepo := newTestRepos(db)
+	service := NewOAuthService(userRepo, extLoginRepo, cfg)
 
-	user := User{
-		Email:    "test@example.com",
-		Password: "password",
-		Name:     "Test User",
-	}
-	require.NoError(t, db.Create(&user).Error)
+	t.Run("поддерживаемый провайдер", func(t *testing.T) {
+		url, err := service.GetAuthURL("google")
+		require.NoError(t, err)
+		assert.Contains(t, url, "accounts.google.com")
+	})
 
-	err := achievementService.AwardAchievement(context.Background(), user.ID, "first_level_created")
-	require.NoError(t, err)
+	t.Run("неподдерживаемый провайдер", func(t *testing.T) {
+		_, err := service.GetAuthURL("facebook")
+		assert.Error(t, err)
+		assert.Equal(t, "неподдерживаемый провайдер", err.Error())
+	})
+}
 
-	err = achievementService.AwardAchievement(context.Background(), user.ID, "first_level_created")
-	require.NoError(t, err)
-
-	achievements, _ := achievementService.GetUserAchievements(context.Background(), user.ID)
-	assert.Len(t, achievements, 1)
+// Тест Authenticate требует реального обмена кодами, поэтому пропускаем его.
+func TestOAuthService_Authenticate(t *testing.T) {
+	t.Skip("Для выполнения требуется реальный OAuth-сервер, используйте интеграционные тесты")
 }

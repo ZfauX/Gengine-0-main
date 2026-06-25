@@ -17,11 +17,11 @@ type visitor struct {
 
 // RateLimiter — общий in‑memory rate limiter.
 type RateLimiter struct {
-	mu      sync.Mutex
+	mu       sync.Mutex
 	visitors map[string]*visitor
-	window  time.Duration
-	limit   int
-	stopCh  chan struct{}
+	window   time.Duration
+	limit    int
+	stopCh   chan struct{}
 }
 
 // NewRateLimiter создаёт новый лимитер. Параметр window задаёт временное окно (например, 1 минута),
@@ -29,9 +29,9 @@ type RateLimiter struct {
 func NewRateLimiter(window time.Duration, limit int) *RateLimiter {
 	rl := &RateLimiter{
 		visitors: make(map[string]*visitor),
-		window:  window,
-		limit:   limit,
-		stopCh:  make(chan struct{}),
+		window:   window,
+		limit:    limit,
+		stopCh:   make(chan struct{}),
 	}
 	// Фоновая очистка устаревших записей каждую минуту
 	go rl.cleanup()
@@ -43,8 +43,8 @@ func (rl *RateLimiter) Stop() {
 	close(rl.stopCh)
 }
 
-// allow возвращает true, если запрос с ключом key разрешён.
-func (rl *RateLimiter) allow(key string) bool {
+// Allow возвращает true, если запрос с ключом key разрешён.
+func (rl *RateLimiter) Allow(key string) bool {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
@@ -94,7 +94,7 @@ func GlobalRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 	rl := NewRateLimiter(window, limit)
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
-		if !rl.allow(ip) {
+		if !rl.Allow(ip) {
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "слишком много запросов"})
 			return
 		}
@@ -107,7 +107,7 @@ func LoginRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 	rl := NewRateLimiter(window, limit)
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
-		if !rl.allow("login:" + ip) {
+		if !rl.Allow("login:" + ip) {
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "слишком много попыток входа, попробуйте позже"})
 			return
 		}
@@ -126,7 +126,7 @@ func CodeSubmissionRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 			return
 		}
 		key := fmt.Sprintf("code:%d", c.GetUint("userID"))
-		if !rl.allow(key) {
+		if !rl.Allow(key) {
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "слишком частый ввод кодов"})
 			return
 		}

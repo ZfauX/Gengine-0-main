@@ -26,20 +26,22 @@ func RegisterRoutes(
 	activeGameManager ActiveGameManager,
 	authService *user.AuthService,
 ) {
-	protected := r.Group("/games/:game_id/levels")
+	// Группа уровней использует параметр :id вместо :game_id,
+	// чтобы избежать конфликта с :id в /games/:id из game/routes.go
+	protected := r.Group("/games/:id/levels")
 	protected.Use(middleware.AuthRequired(authService))
 
 	// @Summary Список уровней игры
 	// @Description Возвращает HTML-страницу со списком всех уровней игры
 	// @Tags levels
 	// @Produce html
-	// @Param game_id path int true "ID игры"
+	// @Param id path int true "ID игры"
 	// @Success 200 {string} html "Страница со списком уровней"
 	// @Failure 403 {object} map[string]interface{} "Нет прав доступа"
-	// @Router /games/{game_id}/levels [get]
+	// @Router /games/{id}/levels [get]
 	// @Security JWT
 	protected.GET("/", func(c *gin.Context) {
-		gameID, _ := strconv.Atoi(c.Param("game_id"))
+		gameID, _ := strconv.Atoi(c.Param("id"))
 		levels, err := levelService.ListByGame(c.Request.Context(), uint(gameID))
 		if err != nil {
 			c.String(http.StatusInternalServerError, err.Error())
@@ -56,12 +58,12 @@ func RegisterRoutes(
 	// @Description Возвращает HTML-страницу с формой для создания нового уровня
 	// @Tags levels
 	// @Produce html
-	// @Param game_id path int true "ID игры"
+	// @Param id path int true "ID игры"
 	// @Success 200 {string} html "Форма создания уровня"
-	// @Router /games/{game_id}/levels/create [get]
+	// @Router /games/{id}/levels/create [get]
 	// @Security JWT
 	protected.GET("/create", func(c *gin.Context) {
-		gameID, _ := strconv.Atoi(c.Param("game_id"))
+		gameID, _ := strconv.Atoi(c.Param("id"))
 		c.HTML(http.StatusOK, "level_create.html", gin.H{
 			"title":  "Создать уровень",
 			"gameID": gameID,
@@ -74,7 +76,7 @@ func RegisterRoutes(
 	// @Tags levels
 	// @Accept x-www-form-urlencoded
 	// @Produce html
-	// @Param game_id path int true "ID игры"
+	// @Param id path int true "ID игры"
 	// @Param name formData string true "Название уровня"
 	// @Param description formData string false "Описание"
 	// @Param position formData int false "Позиция"
@@ -85,12 +87,12 @@ func RegisterRoutes(
 	// @Param requires_confirmation formData bool false "Требуется подтверждение"
 	// @Param latitude formData number false "Широта"
 	// @Param longitude formData number false "Долгота"
-	// @Success 302 {string} string "Перенаправление на /games/{game_id}/levels"
+	// @Success 302 {string} string "Перенаправление на /games/{id}/levels"
 	// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-	// @Router /games/{game_id}/levels [post]
+	// @Router /games/{id}/levels [post]
 	// @Security JWT
 	protected.POST("/create", func(c *gin.Context) {
-		gameID, _ := strconv.Atoi(c.Param("game_id"))
+		gameID, _ := strconv.Atoi(c.Param("id"))
 		var level Level
 		if err := c.ShouldBind(&level); err != nil {
 			c.HTML(http.StatusBadRequest, "level_create.html", gin.H{"error": err.Error()})
@@ -100,18 +102,18 @@ func RegisterRoutes(
 			c.HTML(http.StatusBadRequest, "level_create.html", gin.H{"error": err.Error()})
 			return
 		}
-		c.Redirect(http.StatusFound, "/games/"+strconv.Itoa(gameID)+"/levels")
+		c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels")
 	})
 
 	// @Summary Детали уровня
 	// @Description Отображает подробную информацию об уровне
 	// @Tags levels
 	// @Produce html
-	// @Param game_id path int true "ID игры"
+	// @Param id path int true "ID игры"
 	// @Param level_id path int true "ID уровня"
 	// @Success 200 {string} html "Страница уровня"
 	// @Failure 404 {object} map[string]interface{} "Уровень не найден"
-	// @Router /games/{game_id}/levels/{level_id} [get]
+	// @Router /games/{id}/levels/{level_id} [get]
 	// @Security JWT
 	protected.GET("/:level_id", func(c *gin.Context) {
 		levelID, _ := strconv.Atoi(c.Param("level_id"))
@@ -130,11 +132,11 @@ func RegisterRoutes(
 	// @Description Возвращает HTML-страницу с формой для редактирования уровня
 	// @Tags levels
 	// @Produce html
-	// @Param game_id path int true "ID игры"
+	// @Param id path int true "ID игры"
 	// @Param level_id path int true "ID уровня"
 	// @Success 200 {string} html "Форма редактирования уровня"
 	// @Failure 404 {object} map[string]interface{} "Уровень не найден"
-	// @Router /games/{game_id}/levels/{level_id}/edit [get]
+	// @Router /games/{id}/levels/{level_id}/edit [get]
 	// @Security JWT
 	protected.GET("/:level_id/edit", func(c *gin.Context) {
 		levelID, _ := strconv.Atoi(c.Param("level_id"))
@@ -155,7 +157,7 @@ func RegisterRoutes(
 	// @Tags levels
 	// @Accept x-www-form-urlencoded
 	// @Produce html
-	// @Param game_id path int true "ID игры"
+	// @Param id path int true "ID игры"
 	// @Param level_id path int true "ID уровня"
 	// @Param name formData string false "Название уровня"
 	// @Param description formData string false "Описание"
@@ -167,9 +169,9 @@ func RegisterRoutes(
 	// @Param requires_confirmation formData bool false "Требуется подтверждение"
 	// @Param latitude formData number false "Широта"
 	// @Param longitude formData number false "Долгота"
-	// @Success 302 {string} string "Перенаправление на /games/{game_id}/levels/{level_id}"
+	// @Success 302 {string} string "Перенаправление на /games/{id}/levels/{level_id}"
 	// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-	// @Router /games/{game_id}/levels/{level_id} [put]
+	// @Router /games/{id}/levels/{level_id} [put]
 	// @Security JWT
 	protected.POST("/:level_id/edit", func(c *gin.Context) {
 		levelID, _ := strconv.Atoi(c.Param("level_id"))
@@ -182,7 +184,7 @@ func RegisterRoutes(
 			c.HTML(http.StatusBadRequest, "level_edit.html", gin.H{"error": err.Error()})
 			return
 		}
-		c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+strconv.Itoa(levelID))
+		c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels/"+strconv.Itoa(levelID))
 	})
 
 	// @Summary Удаление уровня
@@ -190,20 +192,20 @@ func RegisterRoutes(
 	// @Tags levels
 	// @Accept x-www-form-urlencoded
 	// @Produce html
-	// @Param game_id path int true "ID игры"
+	// @Param id path int true "ID игры"
 	// @Param level_id path int true "ID уровня"
-	// @Success 302 {string} string "Перенаправление на /games/{game_id}/levels"
+	// @Success 302 {string} string "Перенаправление на /games/{id}/levels"
 	// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-	// @Router /games/{game_id}/levels/{level_id} [delete]
+	// @Router /games/{id}/levels/{level_id} [delete]
 	// @Security JWT
 	protected.POST("/:level_id/delete", func(c *gin.Context) {
 		levelID, _ := strconv.Atoi(c.Param("level_id"))
-		gameID, _ := strconv.Atoi(c.Param("game_id"))
+		gameID, _ := strconv.Atoi(c.Param("id"))
 		if err := levelService.DeleteFromActiveGame(c.Request.Context(), uint(gameID), uint(levelID), c.GetUint("user_id")); err != nil {
 			c.String(http.StatusBadRequest, err.Error())
 			return
 		}
-		c.Redirect(http.StatusFound, "/games/"+strconv.Itoa(gameID)+"/levels")
+		c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels")
 	})
 
 	// @Summary Дублирование уровня
@@ -211,11 +213,11 @@ func RegisterRoutes(
 	// @Tags levels
 	// @Accept x-www-form-urlencoded
 	// @Produce html
-	// @Param game_id path int true "ID игры"
+	// @Param id path int true "ID игры"
 	// @Param level_id path int true "ID уровня"
-	// @Success 302 {string} string "Перенаправление на /games/{game_id}/levels/{new_level_id}"
+	// @Success 302 {string} string "Перенаправление на /games/{id}/levels/{new_level_id}"
 	// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-	// @Router /games/{game_id}/levels/{level_id}/duplicate [post]
+	// @Router /games/{id}/levels/{level_id}/duplicate [post]
 	// @Security JWT
 	protected.POST("/:level_id/duplicate", func(c *gin.Context) {
 		levelID, _ := strconv.Atoi(c.Param("level_id"))
@@ -224,7 +226,7 @@ func RegisterRoutes(
 			c.String(http.StatusBadRequest, err.Error())
 			return
 		}
-		c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+strconv.Itoa(int(newLevel.ID)))
+		c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels/"+strconv.Itoa(int(newLevel.ID)))
 	})
 
 	// @Summary Перемещение уровня
@@ -232,12 +234,12 @@ func RegisterRoutes(
 	// @Tags levels
 	// @Accept x-www-form-urlencoded
 	// @Produce html
-	// @Param game_id path int true "ID игры"
+	// @Param id path int true "ID игры"
 	// @Param level_id path int true "ID уровня"
 	// @Param direction formData string true "Направление (up/down)"
-	// @Success 302 {string} string "Перенаправление на /games/{game_id}/levels"
+	// @Success 302 {string} string "Перенаправление на /games/{id}/levels"
 	// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-	// @Router /games/{game_id}/levels/{level_id}/move [post]
+	// @Router /games/{id}/levels/{level_id}/move [post]
 	// @Security JWT
 	protected.POST("/:level_id/move", func(c *gin.Context) {
 		levelID, _ := strconv.Atoi(c.Param("level_id"))
@@ -246,7 +248,7 @@ func RegisterRoutes(
 			c.String(http.StatusBadRequest, err.Error())
 			return
 		}
-		c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels")
+		c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels")
 	})
 
 	questionGroup := protected.Group("/:level_id/questions")
@@ -255,11 +257,11 @@ func RegisterRoutes(
 		// @Description Возвращает HTML-страницу со списком всех вопросов уровня
 		// @Tags questions
 		// @Produce html
-		// @Param game_id path int true "ID игры"
+		// @Param id path int true "ID игры"
 		// @Param level_id path int true "ID уровня"
 		// @Success 200 {string} html "Страница со списком вопросов"
 		// @Failure 403 {object} map[string]interface{} "Нет прав доступа"
-		// @Router /games/{game_id}/levels/{level_id}/questions [get]
+		// @Router /games/{id}/levels/{level_id}/questions [get]
 		// @Security JWT
 		questionGroup.GET("/", func(c *gin.Context) {
 			levelID, _ := strconv.Atoi(c.Param("level_id"))
@@ -279,10 +281,10 @@ func RegisterRoutes(
 		// @Description Возвращает HTML-страницу с формой для создания нового вопроса
 		// @Tags questions
 		// @Produce html
-		// @Param game_id path int true "ID игры"
+		// @Param id path int true "ID игры"
 		// @Param level_id path int true "ID уровня"
 		// @Success 200 {string} html "Форма создания вопроса"
-		// @Router /games/{game_id}/levels/{level_id}/questions/create [get]
+		// @Router /games/{id}/levels/{level_id}/questions/create [get]
 		// @Security JWT
 		questionGroup.GET("/create", func(c *gin.Context) {
 			levelID, _ := strconv.Atoi(c.Param("level_id"))
@@ -298,13 +300,13 @@ func RegisterRoutes(
 		// @Tags questions
 		// @Accept x-www-form-urlencoded
 		// @Produce html
-		// @Param game_id path int true "ID игры"
+		// @Param id path int true "ID игры"
 		// @Param level_id path int true "ID уровня"
 		// @Param text formData string true "Текст вопроса"
 		// @Param hint formData string false "Подсказка"
-		// @Success 302 {string} string "Перенаправление на /games/{game_id}/levels/{level_id}/questions"
+		// @Success 302 {string} string "Перенаправление на /games/{id}/levels/{level_id}/questions"
 		// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-		// @Router /games/{game_id}/levels/{level_id}/questions [post]
+		// @Router /games/{id}/levels/{level_id}/questions [post]
 		// @Security JWT
 		questionGroup.POST("/create", func(c *gin.Context) {
 			levelID, _ := strconv.Atoi(c.Param("level_id"))
@@ -317,19 +319,19 @@ func RegisterRoutes(
 				c.HTML(http.StatusBadRequest, "question_create.html", gin.H{"error": err.Error()})
 				return
 			}
-			c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+c.Param("level_id")+"/questions")
+			c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels/"+c.Param("level_id")+"/questions")
 		})
 
 		// @Summary Форма редактирования вопроса
 		// @Description Возвращает HTML-страницу с формой для редактирования вопроса
 		// @Tags questions
 		// @Produce html
-		// @Param game_id path int true "ID игры"
+		// @Param id path int true "ID игры"
 		// @Param level_id path int true "ID уровня"
 		// @Param question_id path int true "ID вопроса"
 		// @Success 200 {string} html "Форма редактирования вопроса"
 		// @Failure 404 {object} map[string]interface{} "Вопрос не найден"
-		// @Router /games/{game_id}/levels/{level_id}/questions/{question_id}/edit [get]
+		// @Router /games/{id}/levels/{level_id}/questions/{question_id}/edit [get]
 		// @Security JWT
 		questionGroup.GET("/:question_id/edit", func(c *gin.Context) {
 			questionID, _ := strconv.Atoi(c.Param("question_id"))
@@ -350,14 +352,14 @@ func RegisterRoutes(
 		// @Tags questions
 		// @Accept x-www-form-urlencoded
 		// @Produce html
-		// @Param game_id path int true "ID игры"
+		// @Param id path int true "ID игры"
 		// @Param level_id path int true "ID уровня"
 		// @Param question_id path int true "ID вопроса"
 		// @Param text formData string true "Текст вопроса"
 		// @Param hint formData string false "Подсказка"
-		// @Success 302 {string} string "Перенаправление на /games/{game_id}/levels/{level_id}/questions"
+		// @Success 302 {string} string "Перенаправление на /games/{id}/levels/{level_id}/questions"
 		// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-		// @Router /games/{game_id}/levels/{level_id}/questions/{question_id} [put]
+		// @Router /games/{id}/levels/{level_id}/questions/{question_id} [put]
 		// @Security JWT
 		questionGroup.POST("/:question_id/edit", func(c *gin.Context) {
 			questionID, _ := strconv.Atoi(c.Param("question_id"))
@@ -370,7 +372,7 @@ func RegisterRoutes(
 				c.HTML(http.StatusBadRequest, "question_edit.html", gin.H{"error": err.Error()})
 				return
 			}
-			c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+c.Param("level_id")+"/questions")
+			c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels/"+c.Param("level_id")+"/questions")
 		})
 
 		// @Summary Удаление вопроса
@@ -378,12 +380,12 @@ func RegisterRoutes(
 		// @Tags questions
 		// @Accept x-www-form-urlencoded
 		// @Produce html
-		// @Param game_id path int true "ID игры"
+		// @Param id path int true "ID игры"
 		// @Param level_id path int true "ID уровня"
 		// @Param question_id path int true "ID вопроса"
-		// @Success 302 {string} string "Перенаправление на /games/{game_id}/levels/{level_id}/questions"
+		// @Success 302 {string} string "Перенаправление на /games/{id}/levels/{level_id}/questions"
 		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-		// @Router /games/{game_id}/levels/{level_id}/questions/{question_id} [delete]
+		// @Router /games/{id}/levels/{level_id}/questions/{question_id} [delete]
 		// @Security JWT
 		questionGroup.POST("/:question_id/delete", func(c *gin.Context) {
 			questionID, _ := strconv.Atoi(c.Param("question_id"))
@@ -391,7 +393,7 @@ func RegisterRoutes(
 				c.String(http.StatusBadRequest, err.Error())
 				return
 			}
-			c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+c.Param("level_id")+"/questions")
+			c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels/"+c.Param("level_id")+"/questions")
 		})
 
 		answerGroup := questionGroup.Group("/:question_id/answers")
@@ -400,12 +402,12 @@ func RegisterRoutes(
 			// @Description Возвращает HTML-страницу со списком всех ответов на вопрос
 			// @Tags answers
 			// @Produce html
-			// @Param game_id path int true "ID игры"
+			// @Param id path int true "ID игры"
 			// @Param level_id path int true "ID уровня"
 			// @Param question_id path int true "ID вопроса"
 			// @Success 200 {string} html "Страница со списком ответов"
 			// @Failure 403 {object} map[string]interface{} "Нет прав доступа"
-			// @Router /games/{game_id}/levels/{level_id}/questions/{question_id}/answers [get]
+			// @Router /games/{id}/levels/{level_id}/questions/{question_id}/answers [get]
 			// @Security JWT
 			answerGroup.GET("/", func(c *gin.Context) {
 				questionID, _ := strconv.Atoi(c.Param("question_id"))
@@ -426,13 +428,13 @@ func RegisterRoutes(
 			// @Tags answers
 			// @Accept x-www-form-urlencoded
 			// @Produce html
-			// @Param game_id path int true "ID игры"
+			// @Param id path int true "ID игры"
 			// @Param level_id path int true "ID уровня"
 			// @Param question_id path int true "ID вопроса"
 			// @Param code formData string true "Код ответа"
-			// @Success 302 {string} string "Перенаправление на /games/{game_id}/levels/{level_id}/questions/{question_id}/answers"
+			// @Success 302 {string} string "Перенаправление на /games/{id}/levels/{level_id}/questions/{question_id}/answers"
 			// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-			// @Router /games/{game_id}/levels/{level_id}/questions/{question_id}/answers [post]
+			// @Router /games/{id}/levels/{level_id}/questions/{question_id}/answers [post]
 			// @Security JWT
 			answerGroup.POST("/create", func(c *gin.Context) {
 				questionID, _ := strconv.Atoi(c.Param("question_id"))
@@ -445,7 +447,7 @@ func RegisterRoutes(
 					c.String(http.StatusBadRequest, err.Error())
 					return
 				}
-				c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+c.Param("level_id")+"/questions/"+c.Param("question_id")+"/answers")
+				c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels/"+c.Param("level_id")+"/questions/"+c.Param("question_id")+"/answers")
 			})
 
 			// @Summary Удаление ответа
@@ -453,13 +455,13 @@ func RegisterRoutes(
 			// @Tags answers
 			// @Accept x-www-form-urlencoded
 			// @Produce html
-			// @Param game_id path int true "ID игры"
+			// @Param id path int true "ID игры"
 			// @Param level_id path int true "ID уровня"
 			// @Param question_id path int true "ID вопроса"
 			// @Param answer_id path int true "ID ответа"
-			// @Success 302 {string} string "Перенаправление на /games/{game_id}/levels/{level_id}/questions/{question_id}/answers"
+			// @Success 302 {string} string "Перенаправление на /games/{id}/levels/{level_id}/questions/{question_id}/answers"
 			// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-			// @Router /games/{game_id}/levels/{level_id}/questions/{question_id}/answers/{answer_id} [delete]
+			// @Router /games/{id}/levels/{level_id}/questions/{question_id}/answers/{answer_id} [delete]
 			// @Security JWT
 			answerGroup.POST("/:answer_id/delete", func(c *gin.Context) {
 				answerID, _ := strconv.Atoi(c.Param("answer_id"))
@@ -467,7 +469,7 @@ func RegisterRoutes(
 					c.String(http.StatusBadRequest, err.Error())
 					return
 				}
-				c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+c.Param("level_id")+"/questions/"+c.Param("question_id")+"/answers")
+				c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels/"+c.Param("level_id")+"/questions/"+c.Param("question_id")+"/answers")
 			})
 		}
 	}

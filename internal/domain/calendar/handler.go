@@ -53,7 +53,8 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 	}
 
 	startOfMonth := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
-	endOfMonth := startOfMonth.AddDate(0, 1, -1)
+	// Конец месяца – последняя секунда последнего дня
+	endOfMonth := time.Date(year, time.Month(month)+1, 1, 0, 0, 0, 0, time.UTC).Add(-time.Second)
 
 	ctx := c.Request.Context()
 	games, err := h.gameRepo.ListByDateRange(ctx, startOfMonth, endOfMonth)

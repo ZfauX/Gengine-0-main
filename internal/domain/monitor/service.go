@@ -37,7 +37,6 @@ func NewBlackboxVoteService(
 
 // StartVoting открывает новую сессию голосования и оповещает участников.
 func (s *BlackboxVoteService) StartVoting(ctx context.Context, gamePassingID, levelID, userID uint) error {
-	// Получаем прохождение через репозиторий, используя метод DB()
 	var passing game.GamePassing
 	if err := s.gameRepo.DB(ctx).First(&passing, gamePassingID).Error; err != nil {
 		return err
@@ -50,7 +49,6 @@ func (s *BlackboxVoteService) StartVoting(ctx context.Context, gamePassingID, le
 		return errors.New("только автор может запустить голосование")
 	}
 
-	// Проверяем, существует ли уже сессия голосования для этого прохождения и уровня
 	session, err := s.blackboxRepo.GetSessionByPassingAndLevel(ctx, gamePassingID, levelID)
 	if err == nil {
 		if session.IsOpen {
@@ -102,7 +100,6 @@ func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID u
 		return errors.New("голосование закрыто")
 	}
 
-	// Проверка, что вариант существует в попытках
 	var attempts []game.Attempt
 	s.gameRepo.DB(ctx).
 		Where("level_progress_id IN (SELECT id FROM level_progresses WHERE game_passing_id = ? AND level_id = ?)",
@@ -119,8 +116,8 @@ func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID u
 		return errors.New("недопустимый вариант ответа")
 	}
 
-	// Проверяем, не голосовала ли уже эта команда
-	vote, err := s.blackboxRepo.GetVoteBySessionAndVoter(ctx, sessionID, voterTeamID)
+	// Исправлено: неиспользуемая переменная vote заменена на _
+	_, err = s.blackboxRepo.GetVoteBySessionAndVoter(ctx, sessionID, voterTeamID)
 	if err == nil {
 		return errors.New("ваш голос уже учтён")
 	}
@@ -128,7 +125,7 @@ func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID u
 		return err
 	}
 
-	vote = &BlackboxVote{
+	vote := &BlackboxVote{
 		SessionID: sessionID,
 		VoterID:   voterTeamID,
 		Option:    option,

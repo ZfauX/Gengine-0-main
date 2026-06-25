@@ -647,7 +647,7 @@ func (h *DashboardHandler) Index(c *gin.Context) {
 	userID := c.GetUint("userID")
 	dash, err := h.dashboardService.GetDashboard(userID)
 	if err != nil {
-		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		return
 	}
 	var role string

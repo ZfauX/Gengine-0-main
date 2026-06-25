@@ -151,12 +151,18 @@ func generateSelfSignedCert(certFile, keyFile string) {
 		log.Fatal().Err(err).Msg("Не удалось создать файл сертификата")
 	}
 	defer func() { _ = certOut.Close() }()
-	pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+
+	if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certDER}); err != nil {
+		log.Fatal().Err(err).Msg("Не удалось записать сертификат в PEM")
+	}
 
 	keyOut, err := os.OpenFile(keyFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Не удалось создать файл ключа")
 	}
 	defer func() { _ = keyOut.Close() }()
-	pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
+
+	if err := pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)}); err != nil {
+		log.Fatal().Err(err).Msg("Не удалось записать ключ в PEM")
+	}
 }

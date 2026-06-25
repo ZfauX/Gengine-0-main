@@ -4,6 +4,7 @@ package export
 import (
 	"context"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -76,8 +77,6 @@ func (s *ExportService) ExportGameToCSV(ctx context.Context, gameID uint, w io.W
 
 // ImportGameFromCSV парсит CSV и создаёт уровни/вопросы/ответы для указанной игры.
 // Этот метод работает напрямую с БД через транзакцию, поэтому требует *gorm.DB.
-// Чтобы сохранить чистоту, мы оставляем прямой доступ к БД через переданный db.
-// Альтернативно можно создать метод в репозитории для импорта, но пока оставим так.
 func (s *ExportService) ImportGameFromCSV(db *gorm.DB, gameID uint, r io.Reader) error {
 	return db.Transaction(func(tx *gorm.DB) error {
 		reader := csv.NewReader(r)
@@ -120,7 +119,7 @@ func (s *ExportService) ImportGameFromCSV(db *gorm.DB, gameID uint, r io.Reader)
 				err := tx.Where("game_id = ? AND position = ?", gameID, pos).First(&existing).Error
 				if err == nil {
 					lvl = &existing
-				} else {
+				} else if errors.Is(err, gorm.ErrRecordNotFound) {
 					newLevel := level.Level{
 						GameID:   gameID,
 						Name:     levelName,
@@ -130,6 +129,8 @@ func (s *ExportService) ImportGameFromCSV(db *gorm.DB, gameID uint, r io.Reader)
 						return fmt.Errorf("не удалось создать уровень: %w", err)
 					}
 					lvl = &newLevel
+				} else {
+					return fmt.Errorf("не удалось найти уровень: %w", err)
 				}
 				levelMap[pos] = lvl
 			}
