@@ -1,4 +1,4 @@
-// Package storage предоставляет интерфейс и реализацию файлового хранилища.
+// internal/pkg/storage/local_storage.go
 package storage
 
 import (
@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 )
@@ -22,13 +21,27 @@ func NewLocalStorage() *LocalStorage {
 	return &LocalStorage{}
 }
 
+// sanitizeFilename очищает имя файла, оставляя только безопасные символы.
+// Пустое имя или имя, состоящее только из "." — возвращается как пустая строка.
 func sanitizeFilename(name string) string {
+	if name == "" {
+		return ""
+	}
 	reg := regexp.MustCompile(`[^a-zA-Z0-9.\-]`)
 	clean := reg.ReplaceAllString(name, "_")
-	return filepath.Base(clean)
+	clean = filepath.Base(clean)
+	if clean == "." || clean == "" {
+		return ""
+	}
+	return clean
 }
 
 func (s *LocalStorage) Save(baseDir string, reader io.Reader, originalName string, userID uint, maxSize int64, allowedMIMETypes []string) (string, error) {
+	// Защита от path traversal на уровне исходного имени
+	if strings.Contains(originalName, "..") || filepath.IsAbs(originalName) {
+		return "", fmt.Errorf("недопустимое имя файла")
+	}
+
 	safeName := sanitizeFilename(originalName)
 	ext := filepath.Ext(safeName)
 	if ext == "" {
@@ -42,10 +55,20 @@ func (s *LocalStorage) Save(baseDir string, reader io.Reader, originalName strin
 		return "", fmt.Errorf("не удалось прочитать заголовок файла: %w", err)
 	}
 
-	// Проверка MIME типа, если заданы разрешённые
+	// Проверка MIME-типа, если заданы разрешённые
 	if len(allowedMIMETypes) > 0 {
 		contentType := http.DetectContentType(header[:n])
-		if !slices.Contains(allowedMIMETypes, contentType) {
+		// Убираем параметры (charset и т.п.)
+		contentTypeBase, _, _ := strings.Cut(contentType, ";")
+		allowed := false
+		for _, t := range allowedMIMETypes {
+			tBase, _, _ := strings.Cut(t, ";")
+			if contentTypeBase == tBase {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
 			return "", fmt.Errorf("недопустимый тип файла: %s", contentType)
 		}
 	}
@@ -104,13 +127,11 @@ func (s *LocalStorage) Delete(webPath string) error {
 	if webPath == "" {
 		return nil
 	}
-	// Убираем ведущий слеш и конвертируем в локальный разделитель
 	localPath := filepath.FromSlash(strings.TrimPrefix(webPath, "/"))
 	absPath, err := filepath.Abs(localPath)
 	if err != nil {
 		return fmt.Errorf("не удалось получить абсолютный путь: %w", err)
 	}
-	// Если файла нет, не считаем это ошибкой
 	if _, err := os.Stat(absPath); os.IsNotExist(err) {
 		return nil
 	}
