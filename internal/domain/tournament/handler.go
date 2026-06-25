@@ -61,6 +61,12 @@ func NewTournamentHandler(
 }
 
 // List отображает список турниров.
+// @Summary Список турниров
+// @Description Возвращает HTML-страницу со списком всех турниров
+// @Tags tournaments
+// @Produce html
+// @Success 200 {string} html "Страница со списком турниров"
+// @Router /tournaments [get]
 func (h *TournamentHandler) List(c *gin.Context) {
 	tournaments, err := h.tournamentService.List(c.Request.Context())
 	if err != nil {
@@ -74,6 +80,15 @@ func (h *TournamentHandler) List(c *gin.Context) {
 }
 
 // Show отображает один турнир с таблицей лидеров.
+// @Summary Детали турнира
+// @Description Отображает информацию о турнире, список игр и таблицу лидеров
+// @Tags tournaments
+// @Produce html
+// @Param id path int true "ID турнира"
+// @Success 200 {string} html "Страница турнира"
+// @Failure 404 {object} map[string]interface{} "Турнир не найден"
+// @Router /tournaments/{id} [get]
+// @Security JWT
 func (h *TournamentHandler) Show(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
@@ -100,6 +115,13 @@ func (h *TournamentHandler) Show(c *gin.Context) {
 }
 
 // NewForm отображает форму создания турнира.
+// @Summary Форма создания турнира
+// @Description Возвращает HTML-страницу с формой для создания нового турнира
+// @Tags tournaments
+// @Produce html
+// @Success 200 {string} html "Форма создания турнира"
+// @Router /tournaments/new [get]
+// @Security JWT
 func (h *TournamentHandler) NewForm(c *gin.Context) {
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "tournaments-new.html",
@@ -108,6 +130,21 @@ func (h *TournamentHandler) NewForm(c *gin.Context) {
 }
 
 // Create создаёт новый турнир.
+// @Summary Создание турнира
+// @Description Создаёт новый турнир
+// @Tags tournaments
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param name formData string true "Название турнира"
+// @Param description formData string false "Описание турнира"
+// @Param points_for_first formData int false "Очков за 1 место" default(10)
+// @Param points_for_second formData int false "Очков за 2 место" default(7)
+// @Param points_for_third formData int false "Очков за 3 место" default(5)
+// @Param points_for_participation formData int false "Очков за участие" default(2)
+// @Success 302 {string} string "Перенаправление на /tournaments/{id}"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Router /tournaments [post]
+// @Security JWT
 func (h *TournamentHandler) Create(c *gin.Context) {
 	userID := c.GetUint("userID")
 
@@ -144,6 +181,15 @@ func (h *TournamentHandler) Create(c *gin.Context) {
 }
 
 // EditForm отображает форму редактирования турнира.
+// @Summary Форма редактирования турнира
+// @Description Возвращает HTML-страницу с формой для редактирования турнира
+// @Tags tournaments
+// @Produce html
+// @Param id path int true "ID турнира"
+// @Success 200 {string} html "Форма редактирования турнира"
+// @Failure 404 {object} map[string]interface{} "Турнир не найден"
+// @Router /tournaments/{id}/edit [get]
+// @Security JWT
 func (h *TournamentHandler) EditForm(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
@@ -166,6 +212,22 @@ func (h *TournamentHandler) EditForm(c *gin.Context) {
 }
 
 // Update обновляет турнир.
+// @Summary Обновление турнира
+// @Description Обновляет данные турнира (доступно только автору)
+// @Tags tournaments
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID турнира"
+// @Param name formData string false "Название турнира"
+// @Param description formData string false "Описание турнира"
+// @Param points_for_first formData int false "Очков за 1 место"
+// @Param points_for_second formData int false "Очков за 2 место"
+// @Param points_for_third formData int false "Очков за 3 место"
+// @Param points_for_participation formData int false "Очков за участие"
+// @Success 302 {string} string "Перенаправление на /tournaments/{id}"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /tournaments/{id} [put]
+// @Security JWT
 func (h *TournamentHandler) Update(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
@@ -202,6 +264,14 @@ func (h *TournamentHandler) Update(c *gin.Context) {
 }
 
 // Games отображает список игр турнира.
+// @Summary Список игр турнира
+// @Description Отображает список игр, включённых в турнир, и доступные для добавления
+// @Tags tournaments
+// @Produce html
+// @Param id path int true "ID турнира"
+// @Success 200 {string} html "Страница управления играми турнира"
+// @Router /tournaments/{id}/games [get]
+// @Security JWT
 func (h *TournamentHandler) Games(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
@@ -224,6 +294,17 @@ func (h *TournamentHandler) Games(c *gin.Context) {
 }
 
 // AddGame добавляет игру в турнир.
+// @Summary Добавление игры в турнир
+// @Description Добавляет существующую игру в турнир (доступно автору турнира)
+// @Tags tournaments
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID турнира"
+// @Param game_id formData uint true "ID игры"
+// @Success 302 {string} string "Перенаправление на /tournaments/{id}/games"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /tournaments/{id}/games [post]
+// @Security JWT
 func (h *TournamentHandler) AddGame(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
@@ -243,6 +324,17 @@ func (h *TournamentHandler) AddGame(c *gin.Context) {
 }
 
 // RemoveGame удаляет игру из турнира.
+// @Summary Удаление игры из турнира
+// @Description Удаляет игру из турнира (доступно автору турнира)
+// @Tags tournaments
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID турнира"
+// @Param game_id path int true "ID игры"
+// @Success 302 {string} string "Перенаправление на /tournaments/{id}/games"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /tournaments/{id}/games/{game_id} [delete]
+// @Security JWT
 func (h *TournamentHandler) RemoveGame(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	gameID, _ := strconv.Atoi(c.Param("game_id"))
@@ -257,6 +349,14 @@ func (h *TournamentHandler) RemoveGame(c *gin.Context) {
 }
 
 // ApplyForm отображает форму подачи заявки на турнир.
+// @Summary Форма подачи заявки
+// @Description Возвращает HTML-страницу с формой для подачи заявки команды на турнир
+// @Tags tournaments
+// @Produce html
+// @Param id path int true "ID турнира"
+// @Success 200 {string} html "Форма подачи заявки"
+// @Router /tournaments/{id}/apply [get]
+// @Security JWT
 func (h *TournamentHandler) ApplyForm(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
@@ -272,6 +372,17 @@ func (h *TournamentHandler) ApplyForm(c *gin.Context) {
 }
 
 // Apply подаёт заявку на турнир.
+// @Summary Подача заявки на турнир
+// @Description Команда подаёт заявку на участие в турнире (доступно капитану)
+// @Tags tournaments
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID турнира"
+// @Param team_id formData uint true "ID команды"
+// @Success 302 {string} string "Перенаправление на /tournaments/{id}"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /tournaments/{id}/apply [post]
+// @Security JWT
 func (h *TournamentHandler) Apply(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")

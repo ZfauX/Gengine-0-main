@@ -2,6 +2,7 @@
 package export
 
 import (
+	"context"
 	"encoding/csv"
 	"fmt"
 	"io"
@@ -19,35 +20,33 @@ import (
 
 // ExportService содержит логику экспорта и импорта данных игры.
 type ExportService struct {
-	DB                 *gorm.DB
-	dejaVuSansFont     []byte // обычный шрифт
-	dejaVuSansBoldFont []byte // жирный шрифт
+	exportRepo         ExportRepository
+	dejaVuSansFont     []byte
+	dejaVuSansBoldFont []byte
 }
 
 // NewExportService создаёт новый экземпляр ExportService.
 // normalFont — байты обычного Unicode-шрифта,
 // boldFont — байты жирного Unicode-шрифта.
-func NewExportService(db *gorm.DB, normalFont, boldFont []byte) *ExportService {
+func NewExportService(
+	exportRepo ExportRepository,
+	normalFont, boldFont []byte,
+) *ExportService {
 	if len(normalFont) == 0 || len(boldFont) == 0 {
-	log.Fatal().Msg("ExportService: не удалось загрузить один или оба встроенных шрифта DejaVuSans. " +
+		log.Fatal().Msg("ExportService: не удалось загрузить один или оба встроенных шрифта DejaVuSans. " +
 			"Проверьте, что файлы DejaVuSans.ttf и DejaVuSans-Bold.ttf существуют " +
 			"и правильно добавлены в embed.go.")
 	}
 	return &ExportService{
-		DB:                 db,
+		exportRepo:         exportRepo,
 		dejaVuSansFont:     normalFont,
 		dejaVuSansBoldFont: boldFont,
 	}
 }
 
 // ExportGameToCSV записывает все уровни, вопросы и ответы игры в CSV-формате.
-func (s *ExportService) ExportGameToCSV(gameID uint, w io.Writer) error {
-	var levels []level.Level
-	err := s.DB.
-		Preload("Questions.Answers").
-		Where("game_id = ?", gameID).
-		Order("position ASC").
-		Find(&levels).Error
+func (s *ExportService) ExportGameToCSV(ctx context.Context, gameID uint, w io.Writer) error {
+	_, levels, err := s.exportRepo.GetGameWithLevels(ctx, gameID)
 	if err != nil {
 		return err
 	}
@@ -76,8 +75,11 @@ func (s *ExportService) ExportGameToCSV(gameID uint, w io.Writer) error {
 }
 
 // ImportGameFromCSV парсит CSV и создаёт уровни/вопросы/ответы для указанной игры.
-func (s *ExportService) ImportGameFromCSV(gameID uint, r io.Reader) error {
-	return s.DB.Transaction(func(tx *gorm.DB) error {
+// Этот метод работает напрямую с БД через транзакцию, поэтому требует *gorm.DB.
+// Чтобы сохранить чистоту, мы оставляем прямой доступ к БД через переданный db.
+// Альтернативно можно создать метод в репозитории для импорта, но пока оставим так.
+func (s *ExportService) ImportGameFromCSV(db *gorm.DB, gameID uint, r io.Reader) error {
+	return db.Transaction(func(tx *gorm.DB) error {
 		reader := csv.NewReader(r)
 
 		if _, err := reader.Read(); err != nil {
@@ -163,12 +165,8 @@ func (s *ExportService) ImportGameFromCSV(gameID uint, r io.Reader) error {
 }
 
 // ExportResultsToCSV записывает итоговую таблицу результатов игры в CSV.
-func (s *ExportService) ExportResultsToCSV(gameID uint, w io.Writer) error {
-	var passings []game.GamePassing
-	err := s.DB.Preload("Team").
-		Where("game_id = ? AND status = ?", gameID, game.StatusFinished).
-		Order("place ASC").
-		Find(&passings).Error
+func (s *ExportService) ExportResultsToCSV(ctx context.Context, gameID uint, w io.Writer) error {
+	passings, err := s.exportRepo.GetFinishedPassingsWithDetails(ctx, gameID)
 	if err != nil {
 		return err
 	}
@@ -189,9 +187,7 @@ func (s *ExportService) ExportResultsToCSV(gameID uint, w io.Writer) error {
 		}
 		attempts := 0
 		for _, lp := range p.Progresses {
-			var count int64
-			s.DB.Model(&game.Attempt{}).Where("level_progress_id = ?", lp.ID).Count(&count)
-			attempts += int(count)
+			attempts += len(lp.Attempts)
 		}
 		_ = csvWriter.Write([]string{
 			place,
@@ -204,34 +200,24 @@ func (s *ExportService) ExportResultsToCSV(gameID uint, w io.Writer) error {
 }
 
 // ExportGameToPDF генерирует PDF-файл со всеми уровнями, вопросами и ответами игры.
-func (s *ExportService) ExportGameToPDF(gameID uint, w io.Writer) error {
-	var g game.Game
-	if err := s.DB.Preload("Author").First(&g, gameID).Error; err != nil {
+func (s *ExportService) ExportGameToPDF(ctx context.Context, gameID uint, w io.Writer) error {
+	g, levels, err := s.exportRepo.GetGameWithLevels(ctx, gameID)
+	if err != nil {
 		return fmt.Errorf("игра не найдена: %w", err)
 	}
 
-	var levels []level.Level
-	if err := s.DB.Preload("Questions.Answers").Where("game_id = ?", gameID).Order("position ASC").Find(&levels).Error; err != nil {
-		return err
-	}
-
 	pdf := gofpdf.New("P", "mm", "A4", "")
-	// Регистрируем обычный и жирный шрифты
 	pdf.AddUTF8FontFromBytes("DejaVu", "", s.dejaVuSansFont)
 	pdf.AddUTF8FontFromBytes("DejaVu", "B", s.dejaVuSansBoldFont)
 	pdf.AddPage()
 
-	// Заголовок (жирный)
 	pdf.SetFont("DejaVu", "B", 18)
 	pdf.CellFormat(0, 10, fmt.Sprintf("Игра: %s", g.Name), "", 1, "C", false, 0, "")
-	// Имя автора (обычный)
 	pdf.SetFont("DejaVu", "", 12)
 	pdf.CellFormat(0, 10, fmt.Sprintf("Автор: %s", g.Author.Name), "", 1, "C", false, 0, "")
 	pdf.Ln(5)
 
-	// Уровни
 	for _, lvl := range levels {
-		// Название уровня жирным
 		pdf.SetFont("DejaVu", "B", 14)
 		pdf.Cell(0, 10, fmt.Sprintf("Уровень %d: %s", lvl.Position, lvl.Name))
 		pdf.Ln(8)
@@ -243,13 +229,11 @@ func (s *ExportService) ExportGameToPDF(gameID uint, w io.Writer) error {
 		}
 
 		for _, q := range lvl.Questions {
-			// Вопрос жирным
 			pdf.SetFont("DejaVu", "B", 11)
 			pdf.Cell(0, 7, fmt.Sprintf("Вопрос: %s", q.Text))
 			pdf.Ln(6)
 
 			if q.Hint != "" {
-				// Подсказка обычным шрифтом (курсив недоступен)
 				pdf.SetFont("DejaVu", "", 10)
 				pdf.Cell(0, 6, fmt.Sprintf("Подсказка: %s", q.Hint))
 				pdf.Ln(5)
@@ -272,21 +256,14 @@ func (s *ExportService) ExportGameToPDF(gameID uint, w io.Writer) error {
 }
 
 // ExportStatisticsToPDF генерирует PDF-отчёт с расширенной статистикой игры.
-func (s *ExportService) ExportStatisticsToPDF(gameID uint, w io.Writer) error {
-	var g game.Game
-	if err := s.DB.First(&g, gameID).Error; err != nil {
+func (s *ExportService) ExportStatisticsToPDF(ctx context.Context, gameID uint, w io.Writer) error {
+	g, _, err := s.exportRepo.GetGameWithLevels(ctx, gameID)
+	if err != nil {
 		return fmt.Errorf("игра не найдена: %w", err)
 	}
 
-	var passings []game.GamePassing
-	if err := s.DB.
-		Preload("Team").
-		Preload("Progresses").
-		Preload("Progresses.Attempts").
-		Preload("Progresses.Level").
-		Where("game_id = ? AND status = ?", gameID, game.StatusFinished).
-		Order("place ASC").
-		Find(&passings).Error; err != nil {
+	passings, err := s.exportRepo.GetFinishedPassingsWithDetails(ctx, gameID)
+	if err != nil {
 		return err
 	}
 
@@ -295,12 +272,10 @@ func (s *ExportService) ExportStatisticsToPDF(gameID uint, w io.Writer) error {
 	pdf.AddUTF8FontFromBytes("DejaVu", "B", s.dejaVuSansBoldFont)
 	pdf.AddPage()
 
-	// Заголовок жирным
 	pdf.SetFont("DejaVu", "B", 16)
 	pdf.CellFormat(0, 10, fmt.Sprintf("Статистика игры: %s", g.Name), "", 1, "C", false, 0, "")
 	pdf.Ln(8)
 
-	// Команды
 	for i, p := range passings {
 		pdf.SetFont("DejaVu", "B", 13)
 		place := fmt.Sprintf("%d", i+1)

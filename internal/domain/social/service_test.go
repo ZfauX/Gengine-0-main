@@ -2,6 +2,7 @@
 package social_test
 
 import (
+	"context"
 	"testing"
 
 	"gengine-0/internal/domain/game"
@@ -107,68 +108,78 @@ func TestRatingService_UpdateRatingsForGame_NoPassings(t *testing.T) {
 
 func TestFollowService_FollowAndUnfollow(t *testing.T) {
 	db := setupSocialDB(t)
-	fs := social.NewFollowService(db)
+	ctx := context.Background()
+	followRepo := social.NewGormFollowRepo(db)
+	fs := social.NewFollowService(followRepo)
 
 	follower := createUser(t, db, "follower@test.com", "pass")
 	author := createUser(t, db, "author@test.com", "pass")
 
-	err := fs.Follow(follower.ID, author.ID)
+	err := fs.Follow(ctx, follower.ID, author.ID)
 	require.NoError(t, err)
-	assert.True(t, fs.IsFollowing(follower.ID, author.ID))
+	assert.True(t, fs.IsFollowing(ctx, follower.ID, author.ID))
 
-	err = fs.Follow(follower.ID, author.ID)
+	err = fs.Follow(ctx, follower.ID, author.ID)
 	require.NoError(t, err)
 
-	err = fs.Unfollow(follower.ID, author.ID)
+	err = fs.Unfollow(ctx, follower.ID, author.ID)
 	require.NoError(t, err)
-	assert.False(t, fs.IsFollowing(follower.ID, author.ID))
+	assert.False(t, fs.IsFollowing(ctx, follower.ID, author.ID))
 }
 
 func TestFollowService_GetSubscriptions(t *testing.T) {
 	db := setupSocialDB(t)
-	fs := social.NewFollowService(db)
+	ctx := context.Background()
+	followRepo := social.NewGormFollowRepo(db)
+	fs := social.NewFollowService(followRepo)
 
 	follower := createUser(t, db, "follower@test.com", "pass")
 	author1 := createUser(t, db, "a1@test.com", "pass")
 	author2 := createUser(t, db, "a2@test.com", "pass")
 
-	_ = fs.Follow(follower.ID, author1.ID)
-	_ = fs.Follow(follower.ID, author2.ID)
+	_ = fs.Follow(ctx, follower.ID, author1.ID)
+	_ = fs.Follow(ctx, follower.ID, author2.ID)
 
-	authors, err := fs.GetSubscriptions(follower.ID)
+	authors, err := fs.GetSubscriptions(ctx, follower.ID)
 	require.NoError(t, err)
 	assert.Len(t, authors, 2)
 }
 
 func TestFollowService_UnfollowWhenNotFollowing(t *testing.T) {
 	db := setupSocialDB(t)
-	fs := social.NewFollowService(db)
+	ctx := context.Background()
+	followRepo := social.NewGormFollowRepo(db)
+	fs := social.NewFollowService(followRepo)
 
 	follower := createUser(t, db, "f@test.com", "pass")
 	author := createUser(t, db, "a@test.com", "pass")
 
-	err := fs.Unfollow(follower.ID, author.ID)
+	err := fs.Unfollow(ctx, follower.ID, author.ID)
 	assert.NoError(t, err)
-	assert.False(t, fs.IsFollowing(follower.ID, author.ID))
+	assert.False(t, fs.IsFollowing(ctx, follower.ID, author.ID))
 }
 
 func TestFollowService_IsFollowingFalse(t *testing.T) {
 	db := setupSocialDB(t)
-	fs := social.NewFollowService(db)
+	ctx := context.Background()
+	followRepo := social.NewGormFollowRepo(db)
+	fs := social.NewFollowService(followRepo)
 
 	follower := createUser(t, db, "f@test.com", "pass")
 	author := createUser(t, db, "a@test.com", "pass")
 
-	assert.False(t, fs.IsFollowing(follower.ID, author.ID))
+	assert.False(t, fs.IsFollowing(ctx, follower.ID, author.ID))
 }
 
 func TestFollowService_GetSubscriptionsEmpty(t *testing.T) {
 	db := setupSocialDB(t)
-	fs := social.NewFollowService(db)
+	ctx := context.Background()
+	followRepo := social.NewGormFollowRepo(db)
+	fs := social.NewFollowService(followRepo)
 
 	u := createUser(t, db, "u@test.com", "pass")
 
-	authors, err := fs.GetSubscriptions(u.ID)
+	authors, err := fs.GetSubscriptions(ctx, u.ID)
 	require.NoError(t, err)
 	assert.Len(t, authors, 0)
 }

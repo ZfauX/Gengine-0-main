@@ -69,7 +69,7 @@ type GameHandler struct {
 	auditService    *audit.Service
 	storage         storage.FileStorage
 	hub             *ws.RoomHub
-	db              *gorm.DB // добавлено поле для доступа к БД
+	db              *gorm.DB
 }
 
 func NewGameHandler(
@@ -82,7 +82,7 @@ func NewGameHandler(
 	storage storage.FileStorage,
 	hub *ws.RoomHub,
 	auditSvc *audit.Service,
-	db *gorm.DB, // добавлен параметр
+	db *gorm.DB,
 ) *GameHandler {
 	return &GameHandler{
 		gameService:     gameService,
@@ -99,6 +99,19 @@ func NewGameHandler(
 }
 
 // List отображает список игр с фильтрацией и пагинацией.
+// @Summary Список игр
+// @Description Возвращает список игр с фильтрацией и пагинацией
+// @Tags games
+// @Produce html
+// @Param status query string false "Статус игры (draft, published)"
+// @Param search query string false "Поиск по названию"
+// @Param sort query string false "Поле сортировки (created_at, name, starts_at, rating, participants)"
+// @Param order query string false "Порядок сортировки (asc, desc)"
+// @Param page query int false "Номер страницы" default(1)
+// @Param per_page query int false "Количество на странице" default(20)
+// @Param author_id query int false "ID автора"
+// @Success 200 {string} html "Страница со списком игр"
+// @Router /games [get]
 func (h *GameHandler) List(c *gin.Context) {
 	userID := c.GetUint("userID")
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -149,6 +162,14 @@ func (h *GameHandler) List(c *gin.Context) {
 }
 
 // Show отображает одну игру.
+// @Summary Детали игры
+// @Description Показывает полную информацию об игре
+// @Tags games
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Страница игры"
+// @Failure 404 {object} map[string]interface{} "Игра не найдена"
+// @Router /games/{id} [get]
 func (h *GameHandler) Show(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
@@ -184,6 +205,13 @@ func (h *GameHandler) Show(c *gin.Context) {
 }
 
 // NewForm отображает форму создания игры.
+// @Summary Форма создания игры
+// @Description Возвращает HTML-страницу с формой для создания новой игры
+// @Tags games
+// @Produce html
+// @Success 200 {string} html "Форма создания игры"
+// @Router /games/new [get]
+// @Security JWT
 func (h *GameHandler) NewForm(c *gin.Context) {
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "games-new.html",
@@ -192,6 +220,18 @@ func (h *GameHandler) NewForm(c *gin.Context) {
 }
 
 // Create создаёт новую игру.
+// @Summary Создание игры
+// @Description Создаёт новую игру как черновик
+// @Tags games
+// @Accept multipart/form-data
+// @Produce html
+// @Param name formData string true "Название игры"
+// @Param description formData string false "Описание игры"
+// @Param cover formData file false "Обложка игры (jpeg, png, webp)"
+// @Success 302 {string} string "Перенаправление на /games"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Router /games [post]
+// @Security JWT
 func (h *GameHandler) Create(c *gin.Context) {
 	userID := c.GetUint("userID")
 	var g Game
@@ -260,6 +300,15 @@ func (h *GameHandler) Create(c *gin.Context) {
 }
 
 // EditForm отображает форму редактирования игры.
+// @Summary Форма редактирования игры
+// @Description Возвращает HTML-страницу с формой для редактирования игры
+// @Tags games
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Форма редактирования игры"
+// @Failure 404 {object} map[string]interface{} "Игра не найдена"
+// @Router /games/{id}/edit [get]
+// @Security JWT
 func (h *GameHandler) EditForm(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
@@ -284,6 +333,20 @@ func (h *GameHandler) EditForm(c *gin.Context) {
 }
 
 // Update обновляет игру.
+// @Summary Обновление игры
+// @Description Обновляет данные игры
+// @Tags games
+// @Accept multipart/form-data
+// @Produce html
+// @Param id path int true "ID игры"
+// @Param name formData string false "Название игры"
+// @Param description formData string false "Описание игры"
+// @Param cover formData file false "Обложка игры"
+// @Param delete_cover formData string false "Удалить обложку (1)"
+// @Success 302 {string} string "Перенаправление на /games/{id}"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Router /games/{id}/edit [post]
+// @Security JWT
 func (h *GameHandler) Update(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
@@ -368,6 +431,16 @@ func (h *GameHandler) Update(c *gin.Context) {
 }
 
 // Delete удаляет игру (только владелец).
+// @Summary Удаление игры
+// @Description Удаляет игру (доступно только владельцу)
+// @Tags games
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 302 {string} string "Перенаправление на /games"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /games/{id}/delete [post]
+// @Security JWT
 func (h *GameHandler) Delete(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
@@ -383,6 +456,16 @@ func (h *GameHandler) Delete(c *gin.Context) {
 }
 
 // Publish публикует черновик игры.
+// @Summary Публикация игры
+// @Description Публикует черновик игры (доступно автору или контент-менеджеру)
+// @Tags games
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 302 {string} string "Перенаправление на /games/{id}"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /games/{id}/publish [post]
+// @Security JWT
 func (h *GameHandler) Publish(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
@@ -400,11 +483,19 @@ func (h *GameHandler) Publish(c *gin.Context) {
 // ----- Прохождения и заявки -----
 
 // ListPassings отображает все заявки и прохождения игры.
+// @Summary Список заявок и прохождений
+// @Description Отображает все заявки и прохождения для игры
+// @Tags passings
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Страница со списком прохождений"
+// @Router /games/{id}/passings [get]
+// @Security JWT
 func (h *GameHandler) ListPassings(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
 
-	passings, err := h.passingService.ListByGame(uint(gameID))
+	passings, err := h.passingService.ListByGame(c.Request.Context(), uint(gameID))
 	if err != nil {
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
@@ -420,6 +511,14 @@ func (h *GameHandler) ListPassings(c *gin.Context) {
 }
 
 // ApplyForm отображает форму подачи заявки.
+// @Summary Форма подачи заявки
+// @Description Возвращает HTML-страницу с формой для подачи заявки на игру
+// @Tags passings
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Форма подачи заявки"
+// @Router /games/{id}/apply [get]
+// @Security JWT
 func (h *GameHandler) ApplyForm(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
@@ -435,6 +534,17 @@ func (h *GameHandler) ApplyForm(c *gin.Context) {
 }
 
 // Apply подаёт заявку на игру.
+// @Summary Подача заявки
+// @Description Капитан команды подаёт заявку на участие в игре
+// @Tags passings
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID игры"
+// @Param team_id formData uint true "ID команды"
+// @Success 302 {string} string "Перенаправление на /games/{id}"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Router /games/{id}/apply [post]
+// @Security JWT
 func (h *GameHandler) Apply(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
@@ -452,7 +562,7 @@ func (h *GameHandler) Apply(c *gin.Context) {
 		return
 	}
 
-	if err := h.passingService.Apply(uint(gameID), input.TeamID, userID); err != nil {
+	if err := h.passingService.Apply(c.Request.Context(), uint(gameID), input.TeamID, userID); err != nil {
 		teams, _ := h.passingService.teamService.GetTeamsByCaptain(c.Request.Context(), userID)
 		c.HTML(http.StatusOK, "layout.html", gin.H{
 			"ContentBlock": "game_passings-apply.html",
@@ -468,11 +578,23 @@ func (h *GameHandler) Apply(c *gin.Context) {
 }
 
 // UpdatePassingStatus изменяет статус заявки (принять/отклонить).
+// @Summary Изменение статуса заявки
+// @Description Автор или модератор может принять или отклонить заявку
+// @Tags passings
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID игры"
+// @Param passing_id path int true "ID прохождения"
+// @Param status formData string true "Новый статус (accepted, rejected)"
+// @Success 302 {string} string "Перенаправление на /games/{id}/passings"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /games/{id}/passings/{passing_id}/status [post]
+// @Security JWT
 func (h *GameHandler) UpdatePassingStatus(c *gin.Context) {
 	passingID, _ := strconv.Atoi(c.Param("passing_id"))
 	status := GamePassingStatus(c.PostForm("status"))
 
-	if err := h.passingService.UpdateStatus(uint(passingID), status, c.GetUint("userID")); err != nil {
+	if err := h.passingService.UpdateStatus(c.Request.Context(), uint(passingID), status, c.GetUint("userID")); err != nil {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
@@ -481,10 +603,21 @@ func (h *GameHandler) UpdatePassingStatus(c *gin.Context) {
 }
 
 // StartGame запускает игру для конкретного прохождения.
+// @Summary Запуск игры
+// @Description Запускает игру для команды (доступно капитану или автору/модератору)
+// @Tags passings
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID игры"
+// @Param passing_id path int true "ID прохождения"
+// @Success 302 {string} string "Перенаправление на /games/{id}/monitor"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /games/{id}/passings/{passing_id}/start [post]
+// @Security JWT
 func (h *GameHandler) StartGame(c *gin.Context) {
 	passingID, _ := strconv.Atoi(c.Param("passing_id"))
 
-	if err := h.passingService.StartGame(uint(passingID), c.GetUint("userID")); err != nil {
+	if err := h.passingService.StartGame(c.Request.Context(), uint(passingID), c.GetUint("userID")); err != nil {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
@@ -493,6 +626,16 @@ func (h *GameHandler) StartGame(c *gin.Context) {
 }
 
 // ForceFinish принудительно завершает игру.
+// @Summary Принудительное завершение игры
+// @Description Автор игры принудительно завершает игру
+// @Tags games
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 302 {string} string "Перенаправление на /games/{id}/results"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /games/{id}/finish [post]
+// @Security JWT
 func (h *GameHandler) ForceFinish(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("id"))
 
@@ -505,6 +648,17 @@ func (h *GameHandler) ForceFinish(c *gin.Context) {
 }
 
 // DisqualifyTeam дисквалифицирует команду.
+// @Summary Дисквалификация команды
+// @Description Автор игры дисквалифицирует команду
+// @Tags games
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID игры"
+// @Param team_id formData uint true "ID команды"
+// @Success 302 {string} string "Перенаправление на /games/{id}/monitor"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /games/{id}/disqualify [post]
+// @Security JWT
 func (h *GameHandler) DisqualifyTeam(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("id"))
 
@@ -525,6 +679,14 @@ func (h *GameHandler) DisqualifyTeam(c *gin.Context) {
 // ----- Соавторы -----
 
 // ManageCoAuthors отображает страницу управления соавторами.
+// @Summary Управление соавторами
+// @Description Отображает страницу управления соавторами игры
+// @Tags coauthors
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Страница управления соавторами"
+// @Router /games/{id}/coauthors [get]
+// @Security JWT
 func (h *GameHandler) ManageCoAuthors(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("id"))
 	coAuthors, err := h.coAuthorService.List(uint(gameID))
@@ -541,6 +703,17 @@ func (h *GameHandler) ManageCoAuthors(c *gin.Context) {
 }
 
 // AddCoAuthor добавляет соавтора.
+// @Summary Добавление соавтора
+// @Description Добавляет нового соавтора к игре (доступно владельцу)
+// @Tags coauthors
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID игры"
+// @Param user_id formData uint true "ID пользователя"
+// @Success 302 {string} string "Перенаправление на /games/{id}/coauthors"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /games/{id}/coauthors [post]
+// @Security JWT
 func (h *GameHandler) AddCoAuthor(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("id"))
 	ownerID := c.GetUint("userID")
@@ -559,6 +732,17 @@ func (h *GameHandler) AddCoAuthor(c *gin.Context) {
 }
 
 // RemoveCoAuthor удаляет соавтора.
+// @Summary Удаление соавтора
+// @Description Удаляет соавтора из игры (доступно владельцу)
+// @Tags coauthors
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID игры"
+// @Param user_id path int true "ID пользователя"
+// @Success 302 {string} string "Перенаправление на /games/{id}/coauthors"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /games/{id}/coauthors/{user_id} [delete]
+// @Security JWT
 func (h *GameHandler) RemoveCoAuthor(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("id"))
 	userID, _ := strconv.Atoi(c.Param("user_id"))
@@ -574,6 +758,14 @@ func (h *GameHandler) RemoveCoAuthor(c *gin.Context) {
 // ----- Заметки автора -----
 
 // Notes отображает заметки к игре (JSON API).
+// @Summary Получить заметки к игре
+// @Description Возвращает JSON-список заметок автора к игре
+// @Tags notes
+// @Produce json
+// @Param id path int true "ID игры"
+// @Success 200 {object} map[string]interface{} "Список заметок"
+// @Router /games/{id}/notes [get]
+// @Security JWT
 func (h *GameHandler) Notes(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
@@ -586,6 +778,16 @@ func (h *GameHandler) Notes(c *gin.Context) {
 }
 
 // CreateNote создаёт новую заметку.
+// @Summary Создание заметки
+// @Description Создаёт новую заметку для игры
+// @Tags notes
+// @Accept json
+// @Produce json
+// @Param id path int true "ID игры"
+// @Param request body object true "Данные заметки" example({"level_id":1,"text":"Заметка"})
+// @Success 201 {object} map[string]interface{} "Созданная заметка"
+// @Router /games/{id}/notes [post]
+// @Security JWT
 func (h *GameHandler) CreateNote(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
@@ -606,6 +808,15 @@ func (h *GameHandler) CreateNote(c *gin.Context) {
 }
 
 // DeleteNote удаляет заметку.
+// @Summary Удаление заметки
+// @Description Удаляет заметку по ID
+// @Tags notes
+// @Produce json
+// @Param id path int true "ID игры"
+// @Param note_id path int true "ID заметки"
+// @Success 200 {object} map[string]interface{} "Статус OK"
+// @Router /games/{id}/notes/{note_id} [delete]
+// @Security JWT
 func (h *GameHandler) DeleteNote(c *gin.Context) {
 	noteID, _ := strconv.Atoi(c.Param("note_id"))
 	userID := c.GetUint("userID")
@@ -619,6 +830,14 @@ func (h *GameHandler) DeleteNote(c *gin.Context) {
 // ----- Симуляция -----
 
 // Simulate запускает симуляцию прохождения игры.
+// @Summary Симуляция прохождения игры
+// @Description Запускает симуляцию прохождения игры для проверки
+// @Tags games
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Результаты симуляции"
+// @Router /games/{id}/simulate [get]
+// @Security JWT
 func (h *GameHandler) Simulate(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
@@ -637,6 +856,14 @@ func (h *GameHandler) Simulate(c *gin.Context) {
 // ---------- Новые страницы ----------
 
 // SettingsPage отображает страницу настроек игры.
+// @Summary Настройки игры
+// @Description Отображает страницу настроек игры
+// @Tags games
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Страница настроек"
+// @Router /games/{id}/settings [get]
+// @Security JWT
 func (h *GameHandler) SettingsPage(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
@@ -669,6 +896,21 @@ func (h *GameHandler) SettingsPage(c *gin.Context) {
 }
 
 // SaveSettings сохраняет настройки игры.
+// @Summary Сохранение настроек игры
+// @Description Сохраняет настройки игры (доступно автору или контент-менеджеру)
+// @Tags games
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID игры"
+// @Param allow_hints formData bool false "Разрешить подсказки"
+// @Param hint_penalty_seconds formData int false "Штраф за подсказку (сек)"
+// @Param max_hints formData int false "Максимальное количество подсказок"
+// @Param per_level_time_limit formData int false "Лимит времени на уровень (мин)"
+// @Param hide_answers_until_finished formData bool false "Скрывать ответы до завершения"
+// @Param auto_start formData bool false "Автоматический старт"
+// @Success 302 {string} string "Перенаправление на /games/{id}/settings"
+// @Router /games/{id}/settings [post]
+// @Security JWT
 func (h *GameHandler) SaveSettings(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
@@ -713,6 +955,14 @@ func (h *GameHandler) SaveSettings(c *gin.Context) {
 }
 
 // TestPage отображает страницу управления тестовыми прохождениями.
+// @Summary Тестовые прохождения
+// @Description Отображает страницу управления тестовыми прохождениями игры
+// @Tags games
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Страница тестовых прохождений"
+// @Router /games/{id}/test [get]
+// @Security JWT
 func (h *GameHandler) TestPage(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
@@ -735,6 +985,14 @@ func (h *GameHandler) TestPage(c *gin.Context) {
 }
 
 // PhotosPage отображает страницу фотогалереи.
+// @Summary Фотогалерея игры
+// @Description Отображает страницу с фотографиями игры
+// @Tags games
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Страница фотогалереи"
+// @Router /games/{id}/photos [get]
+// @Security JWT
 func (h *GameHandler) PhotosPage(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
@@ -756,6 +1014,16 @@ func (h *GameHandler) PhotosPage(c *gin.Context) {
 }
 
 // UploadPhoto загружает новое фото в галерею игры.
+// @Summary Загрузка фото
+// @Description Загружает новое фото в галерею игры (доступно автору или контент-менеджеру)
+// @Tags games
+// @Accept multipart/form-data
+// @Produce json
+// @Param id path int true "ID игры"
+// @Param photo formData file true "Файл изображения (jpeg, png, webp)"
+// @Success 200 {object} map[string]interface{} "Статус OK и данные фото"
+// @Router /games/{id}/photos [post]
+// @Security JWT
 func (h *GameHandler) UploadPhoto(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
@@ -790,6 +1058,15 @@ func (h *GameHandler) UploadPhoto(c *gin.Context) {
 }
 
 // DeletePhoto удаляет фото из галереи.
+// @Summary Удаление фото
+// @Description Удаляет фото из галереи игры (доступно автору или владельцу фото)
+// @Tags games
+// @Produce json
+// @Param id path int true "ID игры"
+// @Param photo_id path int true "ID фото"
+// @Success 200 {object} map[string]interface{} "Статус OK"
+// @Router /games/{id}/photos/{photo_id} [delete]
+// @Security JWT
 func (h *GameHandler) DeletePhoto(c *gin.Context) {
 	photoID, _ := strconv.Atoi(c.Param("photo_id"))
 	userID := c.GetUint("userID")
@@ -824,6 +1101,14 @@ func (h *GameHandler) DeletePhoto(c *gin.Context) {
 }
 
 // FullPreview возвращает структуру игры для быстрого просмотра.
+// @Summary Полный превью игры
+// @Description Возвращает JSON-структуру игры с уровнями, вопросами и ответами
+// @Tags games
+// @Produce json
+// @Param id path int true "ID игры"
+// @Success 200 {object} map[string]interface{} "Данные игры"
+// @Router /games/{id}/full-preview [get]
+// @Security JWT
 func (h *GameHandler) FullPreview(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
@@ -891,6 +1176,14 @@ func NewGameplayHandler(
 }
 
 // ShowGame отображает страницу прохождения уровня для команды.
+// @Summary Страница прохождения уровня
+// @Description Отображает страницу прохождения текущего уровня для команды
+// @Tags gameplay
+// @Produce html
+// @Param passing_id path int true "ID прохождения"
+// @Success 200 {string} html "Страница прохождения уровня"
+// @Router /game/{passing_id} [get]
+// @Security JWT
 func (h *GameplayHandler) ShowGame(c *gin.Context) {
 	passingID, _ := strconv.Atoi(c.Param("passing_id"))
 	userID := c.GetUint("userID")
@@ -944,6 +1237,16 @@ func (h *GameplayHandler) ShowGame(c *gin.Context) {
 }
 
 // SubmitCode обрабатывает ввод текстового кода.
+// @Summary Отправка кода
+// @Description Отправляет текстовый код для проверки на текущем уровне
+// @Tags gameplay
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param passing_id path int true "ID прохождения"
+// @Param code formData string true "Код"
+// @Success 302 {string} string "Перенаправление на /game/{passing_id}"
+// @Router /game/{passing_id}/submit [post]
+// @Security JWT
 func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 	passingID, _ := strconv.Atoi(c.Param("passing_id"))
 	userID := c.GetUint("userID")
@@ -981,6 +1284,15 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 }
 
 // UseHint использует подсказку для текущего уровня.
+// @Summary Использование подсказки
+// @Description Использует подсказку для текущего уровня
+// @Tags gameplay
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param passing_id path int true "ID прохождения"
+// @Success 302 {string} string "Перенаправление на /game/{passing_id}"
+// @Router /game/{passing_id}/hint [post]
+// @Security JWT
 func (h *GameplayHandler) UseHint(c *gin.Context) {
 	passingID, _ := strconv.Atoi(c.Param("passing_id"))
 	if err := h.gameService.UseHint(c.Request.Context(), uint(passingID), c.GetUint("userID")); err != nil {
@@ -995,6 +1307,16 @@ func (h *GameplayHandler) UseHint(c *gin.Context) {
 }
 
 // SubmitFile обрабатывает файловый ответ.
+// @Summary Отправка файлового ответа
+// @Description Отправляет файл в качестве ответа на текущем уровне
+// @Tags gameplay
+// @Accept multipart/form-data
+// @Produce html
+// @Param passing_id path int true "ID прохождения"
+// @Param answer_file formData file true "Файл (jpeg, png, gif, pdf, txt)"
+// @Success 302 {string} string "Перенаправление на /game/{passing_id}"
+// @Router /game/{passing_id}/file [post]
+// @Security JWT
 func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 	passingID, _ := strconv.Atoi(c.Param("passing_id"))
 	userID := c.GetUint("userID")
@@ -1052,6 +1374,15 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 // ---------- Тестовое прохождение ----------
 
 // StartTesting инициирует тестовое прохождение.
+// @Summary Запуск тестового прохождения
+// @Description Запускает тестовое прохождение игры (доступно автору или контент-менеджеру)
+// @Tags testing
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 302 {string} string "Перенаправление на /testing/{passing_id}"
+// @Router /games/{id}/test-start [post]
+// @Security JWT
 func (h *GameplayHandler) StartTesting(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
@@ -1065,6 +1396,14 @@ func (h *GameplayHandler) StartTesting(c *gin.Context) {
 }
 
 // ShowTestGame отображает страницу тестового прохождения.
+// @Summary Страница тестового прохождения
+// @Description Отображает страницу тестового прохождения уровня
+// @Tags testing
+// @Produce html
+// @Param passing_id path int true "ID прохождения"
+// @Success 200 {string} html "Страница тестового прохождения"
+// @Router /testing/{passing_id} [get]
+// @Security JWT
 func (h *GameplayHandler) ShowTestGame(c *gin.Context) {
 	passingID, _ := strconv.Atoi(c.Param("passing_id"))
 	progress, err := GetCurrentProgress(h.db, uint(passingID))
@@ -1081,6 +1420,16 @@ func (h *GameplayHandler) ShowTestGame(c *gin.Context) {
 }
 
 // SubmitTestCode обрабатывает ввод кода в тестовом режиме.
+// @Summary Отправка кода (тестовый режим)
+// @Description Отправляет код в тестовом режиме (всегда считается правильным)
+// @Tags testing
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param passing_id path int true "ID прохождения"
+// @Param code formData string true "Код"
+// @Success 302 {string} string "Перенаправление на /testing/{passing_id}"
+// @Router /testing/{passing_id}/submit [post]
+// @Security JWT
 func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
 	passingID, _ := strconv.Atoi(c.Param("passing_id"))
 
@@ -1102,6 +1451,15 @@ func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
 }
 
 // SkipTestLevel пропускает уровень в тестовом режиме.
+// @Summary Пропуск уровня (тестовый режим)
+// @Description Пропускает текущий уровень в тестовом прохождении
+// @Tags testing
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param passing_id path int true "ID прохождения"
+// @Success 302 {string} string "Перенаправление на /testing/{passing_id}"
+// @Router /testing/{passing_id}/skip [post]
+// @Security JWT
 func (h *GameplayHandler) SkipTestLevel(c *gin.Context) {
 	passingID, _ := strconv.Atoi(c.Param("passing_id"))
 	if err := h.gameService.SkipLevelTest(c.Request.Context(), uint(passingID), c.GetUint("userID")); err != nil {
@@ -1114,6 +1472,16 @@ func (h *GameplayHandler) SkipTestLevel(c *gin.Context) {
 // ---------- Ручное подтверждение автором ----------
 
 // AcceptAnswer принимает ответ.
+// @Summary Принятие ответа автором
+// @Description Автор принимает ответ команды (для Blackbox-уровня)
+// @Tags gameplay
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param passing_id path int true "ID прохождения"
+// @Param game_id query int true "ID игры"
+// @Success 302 {string} string "Перенаправление на /games/{game_id}/monitor"
+// @Router /game/{passing_id}/accept [post]
+// @Security JWT
 func (h *GameplayHandler) AcceptAnswer(c *gin.Context) {
 	passingID, _ := strconv.Atoi(c.Param("passing_id"))
 	if err := h.gameService.AcceptBlackboxAnswer(c.Request.Context(), uint(passingID), c.GetUint("userID")); err != nil {

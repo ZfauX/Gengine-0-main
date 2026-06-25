@@ -1,3 +1,4 @@
+// internal/domain/game/level_progress_service.go
 package game
 
 import (
@@ -18,15 +19,16 @@ func NewLevelProgressService(db *gorm.DB) *LevelProgressService {
 }
 
 // InitFirstLevel инициализирует прогресс первого уровня при старте игры.
-func (s *LevelProgressService) InitFirstLevel(gamePassingID uint) error {
+// Принимает контекст.
+func (s *LevelProgressService) InitFirstLevel(ctx context.Context, gamePassingID uint) error {
 	var count int64
-	s.DB.Model(&LevelProgress{}).Where("game_passing_id = ?", gamePassingID).Count(&count)
+	s.DB.WithContext(ctx).Model(&LevelProgress{}).Where("game_passing_id = ?", gamePassingID).Count(&count)
 	if count > 0 {
 		return nil
 	}
 
 	var passing GamePassing
-	if err := s.DB.Preload("Game.Levels", func(db *gorm.DB) *gorm.DB {
+	if err := s.DB.WithContext(ctx).Preload("Game.Levels", func(db *gorm.DB) *gorm.DB {
 		return db.Order("position ASC")
 	}).First(&passing, gamePassingID).Error; err != nil {
 		return err
@@ -43,7 +45,7 @@ func (s *LevelProgressService) InitFirstLevel(gamePassingID uint) error {
 		LevelID:       firstLevel.ID,
 		StartedAt:     time.Now(),
 	}
-	return s.DB.Create(progress).Error
+	return s.DB.WithContext(ctx).Create(progress).Error
 }
 
 // GetCurrentProgress возвращает текущий незавершённый прогресс уровня.
@@ -115,7 +117,7 @@ func CheckTimeouts(db *gorm.DB, ctx context.Context) {
 			return
 		case <-ticker.C:
 			var activeProgresses []LevelProgress
-			db.Where("finished_at IS NULL").
+			db.WithContext(ctx).Where("finished_at IS NULL").
 				Preload("GamePassing.Game.GameSetting").
 				Find(&activeProgresses)
 
@@ -127,7 +129,7 @@ func CheckTimeouts(db *gorm.DB, ctx context.Context) {
 					limit := time.Duration(setting.PerLevelTimeLimit) * time.Minute
 					if elapsed >= limit {
 						p.FinishedAt = &now
-						if err := db.Save(&p).Error; err != nil {
+						if err := db.WithContext(ctx).Save(&p).Error; err != nil {
 							log.Error().Err(err).Uint("progress_id", p.ID).Msg("CheckTimeouts: failed to save progress")
 							continue
 						}
@@ -153,7 +155,7 @@ func CheckAutoStartGames(db *gorm.DB, ctx context.Context) {
 		case <-ticker.C:
 			var games []Game
 			now := time.Now()
-			db.Where("is_draft = false AND starts_at IS NOT NULL AND starts_at <= ?", now).
+			db.WithContext(ctx).Where("is_draft = false AND starts_at IS NOT NULL AND starts_at <= ?", now).
 				Preload("GameSetting").
 				Find(&games)
 
@@ -162,17 +164,18 @@ func CheckAutoStartGames(db *gorm.DB, ctx context.Context) {
 					continue
 				}
 				var startedCount int64
-				db.Model(&GamePassing{}).Where("game_id = ? AND status = ?", g.ID, StatusStarted).Count(&startedCount)
+				db.WithContext(ctx).Model(&GamePassing{}).Where("game_id = ? AND status = ?", g.ID, StatusStarted).Count(&startedCount)
 				if startedCount > 0 {
 					continue
 				}
 
 				var passings []GamePassing
-				db.Where("game_id = ? AND status = ?", g.ID, StatusAccepted).Find(&passings)
+				db.WithContext(ctx).Where("game_id = ? AND status = ?", g.ID, StatusAccepted).Find(&passings)
 				for _, p := range passings {
 					p.Status = StatusStarted
-					db.Save(&p)
-					_ = NewLevelProgressService(db).InitFirstLevel(p.ID)
+					db.WithContext(ctx).Save(&p)
+					// Исправлено: передаём контекст
+					_ = NewLevelProgressService(db).InitFirstLevel(ctx, p.ID)
 				}
 			}
 		}

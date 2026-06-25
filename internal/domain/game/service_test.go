@@ -150,7 +150,7 @@ func TestGamePassingService_Apply(t *testing.T) {
 	g := createPublishedGame(t, db, author.ID, "Apply Game")
 	tm := createTeamWithCaptain(t, db, cap.ID)
 
-	err := svc.Apply(g.ID, tm.ID, cap.ID)
+	err := svc.Apply(context.Background(), g.ID, tm.ID, cap.ID)
 	require.NoError(t, err)
 
 	var passing game.GamePassing
@@ -175,7 +175,7 @@ func TestGamePassingService_Apply_NotCaptain(t *testing.T) {
 	g := createPublishedGame(t, db, author.ID, "Game")
 	tm := createTeamWithCaptain(t, db, other.ID)
 
-	err := svc.Apply(g.ID, tm.ID, other.ID+1)
+	err := svc.Apply(context.Background(), g.ID, tm.ID, other.ID+1)
 	assert.Error(t, err)
 }
 
@@ -196,12 +196,12 @@ func TestGamePassingService_Accept(t *testing.T) {
 	g := createPublishedGame(t, db, author.ID, "Accept Game")
 	tm := createTeamWithCaptain(t, db, cap.ID)
 
-	require.NoError(t, svc.Apply(g.ID, tm.ID, cap.ID))
+	require.NoError(t, svc.Apply(context.Background(), g.ID, tm.ID, cap.ID))
 
 	var passing game.GamePassing
 	require.NoError(t, db.Where("game_id = ? AND team_id = ?", g.ID, tm.ID).First(&passing).Error)
 
-	err := svc.UpdateStatus(passing.ID, game.StatusAccepted, author.ID)
+	err := svc.UpdateStatus(context.Background(), passing.ID, game.StatusAccepted, author.ID)
 	require.NoError(t, err)
 
 	db.First(&passing, passing.ID)
@@ -225,12 +225,12 @@ func TestGamePassingService_StartGame(t *testing.T) {
 	g := createPublishedGame(t, db, author.ID, "Start Game")
 	tm := createTeamWithCaptain(t, db, cap.ID)
 
-	require.NoError(t, svc.Apply(g.ID, tm.ID, cap.ID))
+	require.NoError(t, svc.Apply(context.Background(), g.ID, tm.ID, cap.ID))
 	var passing game.GamePassing
 	require.NoError(t, db.Where("game_id = ? AND team_id = ?", g.ID, tm.ID).First(&passing).Error)
-	require.NoError(t, svc.UpdateStatus(passing.ID, game.StatusAccepted, author.ID))
+	require.NoError(t, svc.UpdateStatus(context.Background(), passing.ID, game.StatusAccepted, author.ID))
 
-	err := svc.StartGame(passing.ID, cap.ID)
+	err := svc.StartGame(context.Background(), passing.ID, cap.ID)
 	require.NoError(t, err)
 
 	db.First(&passing, passing.ID)
@@ -347,7 +347,7 @@ func TestLevelProgressService_InitFirstLevel(t *testing.T) {
 	tm := createTeam(t, db, author.ID)
 	passing := createPassing(t, db, g.ID, tm.ID, game.StatusStarted)
 
-	err := progressSvc.InitFirstLevel(passing.ID)
+	err := progressSvc.InitFirstLevel(context.Background(), passing.ID)
 	require.NoError(t, err)
 
 	var progress game.LevelProgress
@@ -374,7 +374,7 @@ func TestLevelProgressService_CompleteLevel(t *testing.T) {
 
 	tm := createTeam(t, db, author.ID)
 	passing := createPassing(t, db, g.ID, tm.ID, game.StatusStarted)
-	require.NoError(t, progressSvc.InitFirstLevel(passing.ID))
+	require.NoError(t, progressSvc.InitFirstLevel(context.Background(), passing.ID))
 
 	var progress game.LevelProgress
 	db.Where("game_passing_id = ? AND finished_at IS NULL", passing.ID).First(&progress)
@@ -408,7 +408,7 @@ func TestLevelProgressService_FinishGame(t *testing.T) {
 
 	tm := createTeam(t, db, author.ID)
 	passing := createPassing(t, db, g.ID, tm.ID, game.StatusStarted)
-	require.NoError(t, progressSvc.InitFirstLevel(passing.ID))
+	require.NoError(t, progressSvc.InitFirstLevel(context.Background(), passing.ID))
 
 	var progress game.LevelProgress
 	db.Where("game_passing_id = ? AND finished_at IS NULL", passing.ID).First(&progress)

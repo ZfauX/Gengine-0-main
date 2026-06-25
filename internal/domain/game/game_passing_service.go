@@ -1,7 +1,10 @@
+// internal/domain/game/game_passing_service.go
 package game
 
 import (
+	"context"
 	"errors"
+
 	"gengine-0/internal/domain/team"
 
 	"github.com/rs/zerolog/log"
@@ -18,42 +21,42 @@ func NewGamePassingService(db *gorm.DB, ts *team.TeamService, ca *CoAuthorServic
 	return &GamePassingService{DB: db, teamService: ts, coAuthor: ca}
 }
 
-func (s *GamePassingService) Apply(gameID, teamID, userID uint) error {
+func (s *GamePassingService) Apply(ctx context.Context, gameID, teamID, userID uint) error {
 	var t team.Team
-	if err := s.DB.First(&t, teamID).Error; err != nil {
+	if err := s.DB.WithContext(ctx).First(&t, teamID).Error; err != nil {
 		return err
 	}
 	if t.CaptainID != userID {
 		return errors.New("только капитан может подать заявку")
 	}
 	var game Game
-	if err := s.DB.First(&game, gameID).Error; err != nil {
+	if err := s.DB.WithContext(ctx).First(&game, gameID).Error; err != nil {
 		return err
 	}
 	if game.IsDraft {
 		return errors.New("нельзя подать заявку на черновик")
 	}
 	var existing GamePassing
-	if err := s.DB.Where("game_id = ? AND team_id = ?", gameID, teamID).First(&existing).Error; err == nil {
+	if err := s.DB.WithContext(ctx).Where("game_id = ? AND team_id = ?", gameID, teamID).First(&existing).Error; err == nil {
 		return errors.New("заявка уже подана")
 	}
 	passing := GamePassing{GameID: gameID, TeamID: teamID, Status: StatusPending}
-	return s.DB.Create(&passing).Error
+	return s.DB.WithContext(ctx).Create(&passing).Error
 }
 
-func (s *GamePassingService) ListByGame(gameID uint) ([]GamePassing, error) {
+func (s *GamePassingService) ListByGame(ctx context.Context, gameID uint) ([]GamePassing, error) {
 	var passings []GamePassing
-	err := s.DB.Preload("Team.Captain").Where("game_id = ?", gameID).Find(&passings).Error
+	err := s.DB.WithContext(ctx).Preload("Team.Captain").Where("game_id = ?", gameID).Find(&passings).Error
 	return passings, err
 }
 
-func (s *GamePassingService) UpdateStatus(passingID uint, status GamePassingStatus, userID uint) error {
+func (s *GamePassingService) UpdateStatus(ctx context.Context, passingID uint, status GamePassingStatus, userID uint) error {
 	var passing GamePassing
-	if err := s.DB.First(&passing, passingID).Error; err != nil {
+	if err := s.DB.WithContext(ctx).First(&passing, passingID).Error; err != nil {
 		return err
 	}
 	var g Game
-	if err := s.DB.First(&g, passing.GameID).Error; err != nil {
+	if err := s.DB.WithContext(ctx).First(&g, passing.GameID).Error; err != nil {
 		return err
 	}
 	ok, _ := s.coAuthor.HasPermission(passing.GameID, userID, "moderator")
@@ -61,16 +64,16 @@ func (s *GamePassingService) UpdateStatus(passingID uint, status GamePassingStat
 		return errors.New("только автор или модератор может менять статус заявки")
 	}
 	passing.Status = status
-	return s.DB.Save(&passing).Error
+	return s.DB.WithContext(ctx).Save(&passing).Error
 }
 
-func (s *GamePassingService) StartGame(passingID, userID uint) error {
+func (s *GamePassingService) StartGame(ctx context.Context, passingID, userID uint) error {
 	var passing GamePassing
-	if err := s.DB.First(&passing, passingID).Error; err != nil {
+	if err := s.DB.WithContext(ctx).First(&passing, passingID).Error; err != nil {
 		return err
 	}
 	var t team.Team
-	if err := s.DB.First(&t, passing.TeamID).Error; err != nil {
+	if err := s.DB.WithContext(ctx).First(&t, passing.TeamID).Error; err != nil {
 		return err
 	}
 	isCaptain := (t.CaptainID == userID)
@@ -84,10 +87,11 @@ func (s *GamePassingService) StartGame(passingID, userID uint) error {
 		return errors.New("игра ещё не принята или уже началась")
 	}
 	passing.Status = StatusStarted
-	if err := s.DB.Save(&passing).Error; err != nil {
+	if err := s.DB.WithContext(ctx).Save(&passing).Error; err != nil {
 		return err
 	}
-	if err := NewLevelProgressService(s.DB).InitFirstLevel(passingID); err != nil {
+	// Передаём контекст
+	if err := NewLevelProgressService(s.DB).InitFirstLevel(ctx, passingID); err != nil {
 		log.Error().Err(err).Uint("passing", passingID).Msg("StartGame: InitFirstLevel failed")
 	}
 	return nil

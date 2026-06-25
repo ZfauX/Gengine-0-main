@@ -18,6 +18,24 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// @title Gengine API
+// @version 1.0
+// @description API для платформы квестов Gengine
+// @termsOfService http://swagger.io/terms/
+
+// @contact.name API Support
+// @contact.email support@gengine.io
+
+// @license.name MIT
+// @license.url https://opensource.org/licenses/MIT
+
+// @host localhost:8080
+// @BasePath /
+
+// @securityDefinitions.apikey JWT
+// @in cookie
+// @name jwt
+
 var (
 	version   = "dev"
 	buildDate = "unknown"
@@ -40,8 +58,8 @@ func main() {
 		log.Fatal().Err(err).Msg("Не удалось подключиться к БД")
 	}
 
-	if err := db.Migrate(database); err != nil {
-		log.Fatal().Err(err).Msg("Ошибка миграции")
+	if err := db.MigrateFromFiles(database, "migrations"); err != nil {
+		log.Fatal().Err(err).Msg("Ошибка применения миграций")
 	}
 
 	db.EnsureAdmin(database, cfg)

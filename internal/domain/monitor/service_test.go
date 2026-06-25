@@ -2,6 +2,7 @@
 package monitor_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -136,7 +137,9 @@ func TestBlackboxVoteService_StartVoteAndClose(t *testing.T) {
 		&user.User{},
 	)
 	cfg := &config.Config{}
-	voteSvc := monitor.NewBlackboxVoteService(db, cfg)
+	gameRepo := game.NewGormGameRepo(db)
+	blackboxRepo := monitor.NewGormBlackboxRepo(db)
+	voteSvc := monitor.NewBlackboxVoteService(blackboxRepo, gameRepo, cfg)
 
 	author := createUser(t, db, "auth@test.com", "pass")
 	g := createGame(t, db, author.ID, "Vote Game")
@@ -148,7 +151,7 @@ func TestBlackboxVoteService_StartVoteAndClose(t *testing.T) {
 	passing1 := createPassing(t, db, g.ID, tm1.ID, game.StatusStarted)
 	_ = createPassing(t, db, g.ID, tm2.ID, game.StatusStarted)
 
-	err := voteSvc.StartVoting(passing1.ID, lvl.ID, author.ID)
+	err := voteSvc.StartVoting(context.Background(), passing1.ID, lvl.ID, author.ID)
 	require.NoError(t, err)
 
 	progress := createLevelProgress(t, db, passing1.ID, lvl.ID, false)
@@ -157,17 +160,17 @@ func TestBlackboxVoteService_StartVoteAndClose(t *testing.T) {
 	att2 := &game.Attempt{LevelProgressID: progress.ID, Code: "optB", Success: false}
 	require.NoError(t, db.Create(att2).Error)
 
-	err = voteSvc.Vote(1, tm1.ID, "optA")
+	err = voteSvc.Vote(context.Background(), 1, tm1.ID, "optA")
 	require.NoError(t, err)
-	err = voteSvc.Vote(1, tm2.ID, "optB")
+	err = voteSvc.Vote(context.Background(), 1, tm2.ID, "optB")
 	require.NoError(t, err)
 
-	results, err := voteSvc.GetVotingResults(1)
+	results, err := voteSvc.GetVotingResults(context.Background(), 1)
 	require.NoError(t, err)
 	assert.Equal(t, 1, results["optA"])
 	assert.Equal(t, 1, results["optB"])
 
-	winner, err := voteSvc.CloseVoting(1, author.ID)
+	winner, err := voteSvc.CloseVoting(context.Background(), 1, author.ID)
 	require.NoError(t, err)
 	assert.Contains(t, []string{"optA", "optB"}, winner)
 }
@@ -182,7 +185,9 @@ func TestBlackboxVoteService_DuplicateVote(t *testing.T) {
 		&team.Team{},
 		&user.User{},
 	)
-	voteSvc := monitor.NewBlackboxVoteService(db, &config.Config{})
+	gameRepo := game.NewGormGameRepo(db)
+	blackboxRepo := monitor.NewGormBlackboxRepo(db)
+	voteSvc := monitor.NewBlackboxVoteService(blackboxRepo, gameRepo, &config.Config{})
 
 	author := createUser(t, db, "auth@test.com", "pass")
 	g := createGame(t, db, author.ID, "Dup Vote")
@@ -190,13 +195,13 @@ func TestBlackboxVoteService_DuplicateVote(t *testing.T) {
 	tm := createTeam(t, db, author.ID)
 	passing := createPassing(t, db, g.ID, tm.ID, game.StatusStarted)
 
-	require.NoError(t, voteSvc.StartVoting(passing.ID, lvl.ID, author.ID))
+	require.NoError(t, voteSvc.StartVoting(context.Background(), passing.ID, lvl.ID, author.ID))
 
 	prog := createLevelProgress(t, db, passing.ID, lvl.ID, false)
 	db.Create(&game.Attempt{LevelProgressID: prog.ID, Code: "optA"})
 
-	require.NoError(t, voteSvc.Vote(1, tm.ID, "optA"))
-	err := voteSvc.Vote(1, tm.ID, "optA")
+	require.NoError(t, voteSvc.Vote(context.Background(), 1, tm.ID, "optA"))
+	err := voteSvc.Vote(context.Background(), 1, tm.ID, "optA")
 	assert.Error(t, err)
 }
 
@@ -210,7 +215,9 @@ func TestBlackboxVoteService_CloseVotingNotAuthor(t *testing.T) {
 		&team.Team{},
 		&user.User{},
 	)
-	voteSvc := monitor.NewBlackboxVoteService(db, &config.Config{})
+	gameRepo := game.NewGormGameRepo(db)
+	blackboxRepo := monitor.NewGormBlackboxRepo(db)
+	voteSvc := monitor.NewBlackboxVoteService(blackboxRepo, gameRepo, &config.Config{})
 
 	author := createUser(t, db, "auth@test.com", "pass")
 	other := createUser(t, db, "other@test.com", "pass")
@@ -218,9 +225,9 @@ func TestBlackboxVoteService_CloseVotingNotAuthor(t *testing.T) {
 	lvl := createLevel(t, db, g.ID, "L1", 1)
 	passing := createPassing(t, db, g.ID, createTeam(t, db, author.ID).ID, game.StatusStarted)
 
-	require.NoError(t, voteSvc.StartVoting(passing.ID, lvl.ID, author.ID))
+	require.NoError(t, voteSvc.StartVoting(context.Background(), passing.ID, lvl.ID, author.ID))
 
-	_, err := voteSvc.CloseVoting(1, other.ID)
+	_, err := voteSvc.CloseVoting(context.Background(), 1, other.ID)
 	assert.Error(t, err)
 }
 
@@ -236,13 +243,13 @@ func TestChatService_CreateGameRoom(t *testing.T) {
 		&team.Team{},
 		&user.User{},
 	)
-	cs := monitor.NewChatService(db)
+	chatRepo := monitor.NewGormChatRepo(db)
+	cs := monitor.NewChatService(chatRepo)
 
-	// Создаём игру, чтобы получить реальный game_id
 	author := createUser(t, db, "chat@test.com", "pass")
 	g := createGame(t, db, author.ID, "Chat Game")
 
-	room, err := cs.GetOrCreateGameRoom(g.ID)
+	room, err := cs.GetOrCreateGameRoom(context.Background(), g.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "Общий чат игры", room.Name)
 	assert.Nil(t, room.TeamID)
@@ -258,13 +265,14 @@ func TestChatService_CreateTeamRoom(t *testing.T) {
 		&team.Team{},
 		&user.User{},
 	)
-	cs := monitor.NewChatService(db)
+	chatRepo := monitor.NewGormChatRepo(db)
+	cs := monitor.NewChatService(chatRepo)
 
 	author := createUser(t, db, "teamchat@test.com", "pass")
 	g := createGame(t, db, author.ID, "Team Chat Game")
 	tm := createTeam(t, db, author.ID)
 
-	room, err := cs.GetOrCreateTeamRoom(g.ID, tm.ID, 100)
+	room, err := cs.GetOrCreateTeamRoom(context.Background(), g.ID, tm.ID, 100)
 	require.NoError(t, err)
 	assert.Equal(t, "Командный чат", room.Name)
 	assert.NotNil(t, room.TeamID)
@@ -280,19 +288,20 @@ func TestChatService_SaveAndGetMessages(t *testing.T) {
 		&team.Team{},
 		&user.User{},
 	)
-	cs := monitor.NewChatService(db)
+	chatRepo := monitor.NewGormChatRepo(db)
+	cs := monitor.NewChatService(chatRepo)
 
 	author := createUser(t, db, "msg@test.com", "pass")
 	g := createGame(t, db, author.ID, "Msg Game")
 
-	room, err := cs.GetOrCreateGameRoom(g.ID)
+	room, err := cs.GetOrCreateGameRoom(context.Background(), g.ID)
 	require.NoError(t, err)
 
-	msg, err := cs.SaveMessage(room.ID, author.ID, "Hello")
+	msg, err := cs.SaveMessage(context.Background(), room.ID, author.ID, "Hello")
 	require.NoError(t, err)
 	assert.Equal(t, "Hello", msg.Content)
 
-	msgs, err := cs.GetMessages(room.ID, 10)
+	msgs, err := cs.GetMessages(context.Background(), room.ID, 10)
 	require.NoError(t, err)
 	assert.Len(t, msgs, 1)
 	assert.Equal(t, "Hello", msgs[0].Content)

@@ -3,6 +3,7 @@ package export_test
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
@@ -34,26 +35,28 @@ func setupExportTest(t *testing.T) (*export.ExportService, *gorm.DB, *game.Game)
 	g := game.Game{Name: "Export Test", AuthorID: author.ID, IsDraft: false}
 	require.NoError(t, db.Create(&g).Error)
 
-	svc := export.NewExportService(db, fonts.DejaVuSans, fonts.DejaVuSansBold)
+	// Создаём репозиторий для экспорта
+	exportRepo := export.NewGormExportRepo(db)
+	svc := export.NewExportService(exportRepo, fonts.DejaVuSans, fonts.DejaVuSansBold)
 	return svc, db, &g
 }
 
 func TestExportGameToCSV(t *testing.T) {
-	svc, _, g := setupExportTest(t)
+	svc, db, g := setupExportTest(t)
 
 	lvl := level.Level{GameID: g.ID, Name: "Level 1", Position: 1}
-	require.NoError(t, svc.DB.Create(&lvl).Error)
+	require.NoError(t, db.Create(&lvl).Error)
 
 	q := level.Question{LevelID: lvl.ID, Text: "Question 1", Hint: "Hint 1"}
-	require.NoError(t, svc.DB.Create(&q).Error)
+	require.NoError(t, db.Create(&q).Error)
 
 	a1 := level.Answer{QuestionID: q.ID, Code: "answer1"}
 	a2 := level.Answer{QuestionID: q.ID, Code: "answer2"}
-	require.NoError(t, svc.DB.Create(&a1).Error)
-	require.NoError(t, svc.DB.Create(&a2).Error)
+	require.NoError(t, db.Create(&a1).Error)
+	require.NoError(t, db.Create(&a2).Error)
 
 	var buf bytes.Buffer
-	err := svc.ExportGameToCSV(g.ID, &buf)
+	err := svc.ExportGameToCSV(context.Background(), g.ID, &buf)
 	require.NoError(t, err)
 
 	result := buf.String()
@@ -67,24 +70,24 @@ func TestExportGameToCSV_EmptyGame(t *testing.T) {
 	svc, _, g := setupExportTest(t)
 
 	var buf bytes.Buffer
-	err := svc.ExportGameToCSV(g.ID, &buf)
+	err := svc.ExportGameToCSV(context.Background(), g.ID, &buf)
 	require.NoError(t, err)
 	assert.Equal(t, "level_position,level_name,question_text,hint,answers\n", buf.String())
 }
 
 func TestImportGameFromCSV(t *testing.T) {
-	svc, _, g := setupExportTest(t)
+	svc, db, g := setupExportTest(t)
 
 	csvData := `level_position,level_name,question_text,hint,answers
 1,Level One,Question A,Hint A,code1|code2
 1,Level One,Question B,,code3
 2,Level Two,Q2,,`
 
-	err := svc.ImportGameFromCSV(g.ID, strings.NewReader(csvData))
+	err := svc.ImportGameFromCSV(db, g.ID, strings.NewReader(csvData))
 	require.NoError(t, err)
 
 	var levels []level.Level
-	err = svc.DB.Where("game_id = ?", g.ID).Order("position ASC").Preload("Questions.Answers").Find(&levels).Error
+	err = db.Where("game_id = ?", g.ID).Order("position ASC").Preload("Questions.Answers").Find(&levels).Error
 	require.NoError(t, err)
 
 	assert.Equal(t, 2, len(levels))
@@ -99,11 +102,11 @@ func TestImportGameFromCSV(t *testing.T) {
 }
 
 func TestImportGameFromCSV_InvalidHeader(t *testing.T) {
-	svc, _, g := setupExportTest(t)
+	svc, db, g := setupExportTest(t)
 
 	csvData := `wrong,header,columns`
 
-	err := svc.ImportGameFromCSV(g.ID, strings.NewReader(csvData))
+	err := svc.ImportGameFromCSV(db, g.ID, strings.NewReader(csvData))
 	require.NoError(t, err) // пустой файл без данных — не ошибка
 }
 
@@ -111,7 +114,7 @@ func TestExportResultsToCSV_NoPassings(t *testing.T) {
 	svc, _, g := setupExportTest(t)
 
 	var buf bytes.Buffer
-	err := svc.ExportResultsToCSV(g.ID, &buf)
+	err := svc.ExportResultsToCSV(context.Background(), g.ID, &buf)
 	require.NoError(t, err)
 
 	result := buf.String()
@@ -123,7 +126,7 @@ func TestExportResultsToCSV_Empty(t *testing.T) {
 	svc, _, g := setupExportTest(t)
 
 	var buf bytes.Buffer
-	err := svc.ExportResultsToCSV(g.ID, &buf)
+	err := svc.ExportResultsToCSV(context.Background(), g.ID, &buf)
 	require.NoError(t, err)
 	assert.Equal(t, "Место,Команда,Общее время,Попыток\n", buf.String())
 }

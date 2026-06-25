@@ -55,7 +55,7 @@ type ChangePasswordInput struct {
 type AuthHandler struct {
 	cfg                  *config.Config
 	authSvc              *AuthService
-	userService          *UserService // добавлено для поиска пользователя
+	userService          *UserService
 	passwordResetSvc     *PasswordResetService
 	emailVerificationSvc *EmailVerificationService
 	oauthSvc             *OAuthService
@@ -83,6 +83,13 @@ func NewAuthHandler(
 }
 
 // ShowLoginForm отображает страницу входа.
+// @Summary Показать форму входа
+// @Description Возвращает HTML-страницу с формой входа
+// @Tags auth
+// @Accept html
+// @Produce html
+// @Success 200 {string} html "Страница входа"
+// @Router /auth/login [get]
 func (h *AuthHandler) ShowLoginForm(c *gin.Context) {
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "auth-login.html",
@@ -91,6 +98,17 @@ func (h *AuthHandler) ShowLoginForm(c *gin.Context) {
 }
 
 // Login обрабатывает вход пользователя.
+// @Summary Аутентификация пользователя
+// @Description Вход в систему с получением JWT-токена (устанавливается в cookie)
+// @Tags auth
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param email formData string true "Email пользователя"
+// @Param password formData string true "Пароль"
+// @Success 302 {string} string "Перенаправление на /dashboard"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Неверный email или пароль"
+// @Router /auth/login [post]
 func (h *AuthHandler) Login(c *gin.Context) {
 	var input LoginInput
 	if err := c.ShouldBind(&input); err != nil {
@@ -120,12 +138,25 @@ func (h *AuthHandler) Login(c *gin.Context) {
 }
 
 // Logout выполняет выход из системы, удаляя JWT-куку.
+// @Summary Выход из системы
+// @Description Удаляет JWT-куку и перенаправляет на главную
+// @Tags auth
+// @Produce html
+// @Success 302 {string} string "Перенаправление на /"
+// @Router /auth/logout [get]
 func (h *AuthHandler) Logout(c *gin.Context) {
 	c.SetCookie("jwt", "", -1, "/", "", false, true)
 	c.Redirect(http.StatusFound, "/")
 }
 
 // ShowRegisterForm отображает страницу регистрации.
+// @Summary Показать форму регистрации
+// @Description Возвращает HTML-страницу с формой регистрации
+// @Tags auth
+// @Accept html
+// @Produce html
+// @Success 200 {string} html "Страница регистрации"
+// @Router /auth/register [get]
 func (h *AuthHandler) ShowRegisterForm(c *gin.Context) {
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "auth-register.html",
@@ -134,6 +165,18 @@ func (h *AuthHandler) ShowRegisterForm(c *gin.Context) {
 }
 
 // Register обрабатывает регистрацию нового пользователя.
+// @Summary Регистрация пользователя
+// @Description Создаёт нового пользователя, отправляет письмо подтверждения и авторизует
+// @Tags auth
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param email formData string true "Email пользователя"
+// @Param password formData string true "Пароль (минимум 8 символов)"
+// @Param name formData string true "Имя пользователя"
+// @Success 302 {string} string "Перенаправление на /auth/login"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 409 {object} map[string]interface{} "Email уже зарегистрирован"
+// @Router /auth/register [post]
 func (h *AuthHandler) Register(c *gin.Context) {
 	var input RegisterInput
 	if err := c.ShouldBind(&input); err != nil {
@@ -161,6 +204,13 @@ func (h *AuthHandler) Register(c *gin.Context) {
 }
 
 // ShowForgotForm отображает форму восстановления пароля.
+// @Summary Показать форму восстановления пароля
+// @Description Возвращает HTML-страницу для запроса сброса пароля
+// @Tags auth
+// @Accept html
+// @Produce html
+// @Success 200 {string} html "Страница восстановления"
+// @Router /auth/forgot [get]
 func (h *AuthHandler) ShowForgotForm(c *gin.Context) {
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "auth-forgot.html",
@@ -169,6 +219,15 @@ func (h *AuthHandler) ShowForgotForm(c *gin.Context) {
 }
 
 // ForgotPassword отправляет ссылку для сброса пароля.
+// @Summary Запрос на сброс пароля
+// @Description Отправляет на email ссылку для установки нового пароля
+// @Tags auth
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param email formData string true "Email пользователя"
+// @Success 200 {object} map[string]interface{} "Инструкция отправлена"
+// @Failure 400 {object} map[string]interface{} "Некорректный email"
+// @Router /auth/forgot [post]
 func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	var input ForgotInput
 	if err := c.ShouldBind(&input); err != nil {
@@ -180,15 +239,12 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 		return
 	}
 
-	// Используем userService для поиска пользователя
 	user, err := h.userService.GetByEmail(c.Request.Context(), input.Email)
 	if err == nil {
-		// Пользователь найден — генерируем токен
 		if _, err := h.passwordResetSvc.GenerateToken(c.Request.Context(), *user); err != nil {
 			log.Error().Err(err).Str("email", input.Email).Msg("failed to generate password reset token")
 		}
 	}
-	// В любом случае показываем сообщение об успехе (безопасность)
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "auth-forgot.html",
 		"Message":      "Инструкции отправлены на почту",
@@ -197,6 +253,14 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 }
 
 // ShowResetForm отображает форму установки нового пароля.
+// @Summary Показать форму сброса пароля
+// @Description Возвращает HTML-страницу для ввода нового пароля по токену
+// @Tags auth
+// @Accept html
+// @Produce html
+// @Param token query string true "Токен сброса пароля"
+// @Success 200 {string} html "Страница сброса пароля"
+// @Router /auth/reset [get]
 func (h *AuthHandler) ShowResetForm(c *gin.Context) {
 	token := sanitize.StripHTML(c.Query("token"))
 	c.HTML(http.StatusOK, "layout.html", gin.H{
@@ -207,6 +271,16 @@ func (h *AuthHandler) ShowResetForm(c *gin.Context) {
 }
 
 // ResetPassword устанавливает новый пароль по токену.
+// @Summary Сброс пароля
+// @Description Устанавливает новый пароль по токену, полученному по email
+// @Tags auth
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param token formData string true "Токен сброса пароля"
+// @Param password formData string true "Новый пароль (минимум 8 символов)"
+// @Success 302 {string} string "Перенаправление на /auth/login"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации или неверный токен"
+// @Router /auth/reset [post]
 func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	var input ResetInput
 	if err := c.ShouldBind(&input); err != nil {
@@ -232,6 +306,15 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 }
 
 // VerifyEmail подтверждает email пользователя.
+// @Summary Подтверждение email
+// @Description Активирует email пользователя по токену
+// @Tags auth
+// @Accept json
+// @Produce html
+// @Param token query string true "Токен подтверждения"
+// @Success 200 {object} map[string]interface{} "Email подтверждён"
+// @Failure 400 {object} map[string]interface{} "Неверный или истёкший токен"
+// @Router /auth/verify [get]
 func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 	token := c.Query("token")
 	if _, err := h.emailVerificationSvc.VerifyToken(c.Request.Context(), token); err != nil {
@@ -247,6 +330,13 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 }
 
 // OAuthLogin начинает процесс OAuth-авторизации.
+// @Summary Начало OAuth-авторизации
+// @Description Перенаправляет на страницу авторизации провайдера (Google, GitHub, Yandex)
+// @Tags auth
+// @Param provider path string true "Провайдер OAuth (google, github, yandex)"
+// @Success 302 {string} string "Перенаправление на провайдера"
+// @Failure 400 {object} map[string]interface{} "Неподдерживаемый провайдер"
+// @Router /auth/oauth/{provider} [get]
 func (h *AuthHandler) OAuthLogin(c *gin.Context) {
 	provider := c.Param("provider")
 	url, err := h.oauthSvc.GetAuthURL(provider)
@@ -258,6 +348,15 @@ func (h *AuthHandler) OAuthLogin(c *gin.Context) {
 }
 
 // OAuthCallback обрабатывает обратный вызов OAuth-провайдера.
+// @Summary Обработка callback OAuth
+// @Description Завершает OAuth-авторизацию, создаёт/входит пользователя
+// @Tags auth
+// @Param provider path string true "Провайдер OAuth"
+// @Param code query string true "Код авторизации"
+// @Param state query string true "Состояние (state)"
+// @Success 302 {string} string "Перенаправление на /dashboard"
+// @Failure 400 {object} map[string]interface{} "Ошибка авторизации"
+// @Router /auth/oauth/{provider}/callback [get]
 func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 	provider := c.Param("provider")
 	code := c.Query("code")
@@ -298,6 +397,14 @@ func NewProfileHandler(db *gorm.DB, st storage.FileStorage) *ProfileHandler {
 }
 
 // Show отображает личную страницу профиля.
+// @Summary Личный профиль
+// @Description Отображает страницу профиля текущего пользователя
+// @Tags profile
+// @Produce html
+// @Success 200 {string} html "Страница профиля"
+// @Failure 404 {object} map[string]interface{} "Пользователь не найден"
+// @Router /profile [get]
+// @Security JWT
 func (h *ProfileHandler) Show(c *gin.Context) {
 	userID := c.GetUint("userID")
 	var user User
@@ -315,6 +422,15 @@ func (h *ProfileHandler) Show(c *gin.Context) {
 }
 
 // PublicProfile отображает публичную страницу профиля.
+// @Summary Публичный профиль
+// @Description Отображает публичный профиль пользователя по ID
+// @Tags profile
+// @Produce html
+// @Param id path int true "ID пользователя"
+// @Success 200 {string} html "Публичная страница профиля"
+// @Failure 404 {object} map[string]interface{} "Пользователь не найден"
+// @Failure 403 {object} map[string]interface{} "Профиль скрыт"
+// @Router /profile/{id} [get]
 func (h *ProfileHandler) PublicProfile(c *gin.Context) {
 	userID, _ := strconv.Atoi(c.Param("id"))
 	var user User
@@ -335,6 +451,16 @@ func (h *ProfileHandler) PublicProfile(c *gin.Context) {
 }
 
 // UploadAvatar загружает аватар пользователя.
+// @Summary Загрузка аватара
+// @Description Загружает новый аватар текущего пользователя
+// @Tags profile
+// @Accept multipart/form-data
+// @Produce html
+// @Param avatar formData file true "Файл изображения (jpeg, png, webp)"
+// @Success 302 {string} string "Перенаправление на /profile"
+// @Failure 400 {object} map[string]interface{} "Ошибка загрузки"
+// @Router /profile/avatar [post]
+// @Security JWT
 func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 	userID := c.GetUint("userID")
 	file, header, err := c.Request.FormFile("avatar")
@@ -362,6 +488,17 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 }
 
 // UpdateProfile обновляет имя и email.
+// @Summary Обновление профиля
+// @Description Изменяет имя и email текущего пользователя
+// @Tags profile
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param name formData string true "Новое имя"
+// @Param email formData string true "Новый email"
+// @Success 302 {string} string "Перенаправление на /profile"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Router /profile/update [post]
+// @Security JWT
 func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 	userID := c.GetUint("userID")
 
@@ -391,6 +528,17 @@ func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 }
 
 // ChangePassword меняет пароль пользователя.
+// @Summary Смена пароля
+// @Description Изменяет пароль текущего пользователя
+// @Tags profile
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param old_password formData string true "Текущий пароль"
+// @Param new_password formData string true "Новый пароль (минимум 8 символов)"
+// @Success 302 {string} string "Перенаправление на /profile"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации или неверный пароль"
+// @Router /profile/change-password [post]
+// @Security JWT
 func (h *ProfileHandler) ChangePassword(c *gin.Context) {
 	userID := c.GetUint("userID")
 
@@ -455,6 +603,13 @@ func NewAchievementHandler(db *gorm.DB) *AchievementHandler {
 }
 
 // List отображает все достижения пользователя.
+// @Summary Список достижений
+// @Description Отображает все достижения текущего пользователя
+// @Tags achievements
+// @Produce html
+// @Success 200 {string} html "Страница достижений"
+// @Router /achievements [get]
+// @Security JWT
 func (h *AchievementHandler) List(c *gin.Context) {
 	userID := c.GetUint("userID")
 	var achievements []Achievement
@@ -480,6 +635,14 @@ func NewDashboardHandler(dashboardService *UserDashboardService, db *gorm.DB) *D
 }
 
 // Index отображает личный кабинет.
+// @Summary Личный кабинет
+// @Description Отображает дашборд текущего пользователя
+// @Tags dashboard
+// @Produce html
+// @Success 200 {string} html "Страница дашборда"
+// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+// @Router /dashboard [get]
+// @Security JWT
 func (h *DashboardHandler) Index(c *gin.Context) {
 	userID := c.GetUint("userID")
 	dash, err := h.dashboardService.GetDashboard(userID)

@@ -2,6 +2,7 @@
 package main_test
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -284,8 +285,8 @@ func TestFullGameFlow(t *testing.T) {
 	a := &level.Answer{QuestionID: q.ID, Code: "secret"}
 	require.NoError(t, db.Create(a).Error)
 
-	// Шаг 10: инициализируем первый уровень
-	require.NoError(t, game.NewLevelProgressService(db).InitFirstLevel(passingID))
+	// Шаг 10: инициализируем первый уровень (с контекстом)
+	require.NoError(t, game.NewLevelProgressService(db).InitFirstLevel(context.Background(), passingID))
 
 	// Шаг 11: ввод правильного кода
 	gameURL := fmt.Sprintf("/game/%d", passingID)
