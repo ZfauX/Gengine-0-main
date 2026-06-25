@@ -2,6 +2,7 @@
 package monitor
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -17,50 +18,64 @@ import (
 // ---------- BlackboxVoteService ----------
 
 type BlackboxVoteService struct {
-	DB  *gorm.DB
-	cfg *config.Config
+	blackboxRepo BlackboxRepository
+	gameRepo     game.GameRepository
+	cfg          *config.Config
 }
 
-func NewBlackboxVoteService(db *gorm.DB, cfg *config.Config) *BlackboxVoteService {
-	return &BlackboxVoteService{DB: db, cfg: cfg}
+func NewBlackboxVoteService(
+	blackboxRepo BlackboxRepository,
+	gameRepo game.GameRepository,
+	cfg *config.Config,
+) *BlackboxVoteService {
+	return &BlackboxVoteService{
+		blackboxRepo: blackboxRepo,
+		gameRepo:     gameRepo,
+		cfg:          cfg,
+	}
 }
 
 // StartVoting открывает новую сессию голосования и оповещает участников.
-func (s *BlackboxVoteService) StartVoting(gamePassingID, levelID, userID uint) error {
+func (s *BlackboxVoteService) StartVoting(ctx context.Context, gamePassingID, levelID, userID uint) error {
+	// Получаем прохождение через репозиторий, используя метод DB()
 	var passing game.GamePassing
-	if err := s.DB.First(&passing, gamePassingID).Error; err != nil {
+	if err := s.gameRepo.DB(ctx).First(&passing, gamePassingID).Error; err != nil {
 		return err
 	}
-	var g game.Game
-	if err := s.DB.First(&g, passing.GameID).Error; err != nil {
+	g, err := s.gameRepo.GetByID(ctx, passing.GameID)
+	if err != nil {
 		return err
 	}
 	if g.AuthorID != userID {
 		return errors.New("только автор может запустить голосование")
 	}
 
-	var existing BlackboxVotingSession
-	if err := s.DB.Where("game_passing_id = ? AND level_id = ?", gamePassingID, levelID).First(&existing).Error; err == nil {
-		if existing.IsOpen {
+	// Проверяем, существует ли уже сессия голосования для этого прохождения и уровня
+	session, err := s.blackboxRepo.GetSessionByPassingAndLevel(ctx, gamePassingID, levelID)
+	if err == nil {
+		if session.IsOpen {
 			return errors.New("голосование уже активно")
 		}
 		return errors.New("голосование уже было проведено")
 	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
 
-	session := BlackboxVotingSession{
+	session = &BlackboxVotingSession{
 		GamePassingID: gamePassingID,
 		LevelID:       levelID,
 		IsOpen:        true,
 	}
-	if err := s.DB.Create(&session).Error; err != nil {
+	if err := s.blackboxRepo.CreateSession(ctx, session); err != nil {
 		return err
 	}
 
-	if s.cfg != nil {
+	if s.cfg != nil && s.cfg.SMTP.Enabled {
 		emailService := email.NewEmailService(s.cfg)
 
 		var captains []string
-		s.DB.Model(&user.User{}).
+		s.gameRepo.DB(ctx).Model(&user.User{}).
 			Select("users.email").
 			Joins("JOIN teams ON teams.captain_id = users.id").
 			Joins("JOIN game_passings ON game_passings.team_id = teams.id").
@@ -78,18 +93,21 @@ func (s *BlackboxVoteService) StartVoting(gamePassingID, levelID, userID uint) e
 }
 
 // Vote регистрирует голос команды за выбранный вариант.
-func (s *BlackboxVoteService) Vote(sessionID, voterTeamID uint, option string) error {
-	var session BlackboxVotingSession
-	if err := s.DB.First(&session, sessionID).Error; err != nil {
+func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID uint, option string) error {
+	session, err := s.blackboxRepo.GetSessionByID(ctx, sessionID)
+	if err != nil {
 		return err
 	}
 	if !session.IsOpen {
 		return errors.New("голосование закрыто")
 	}
 
+	// Проверка, что вариант существует в попытках
 	var attempts []game.Attempt
-	s.DB.Where("level_progress_id IN (SELECT id FROM level_progresses WHERE game_passing_id = ? AND level_id = ?)",
-		session.GamePassingID, session.LevelID).Find(&attempts)
+	s.gameRepo.DB(ctx).
+		Where("level_progress_id IN (SELECT id FROM level_progresses WHERE game_passing_id = ? AND level_id = ?)",
+			session.GamePassingID, session.LevelID).
+		Find(&attempts)
 	valid := false
 	for _, a := range attempts {
 		if (a.IsFile && a.FilePath == option) || (!a.IsFile && a.Code == option) {
@@ -101,24 +119,27 @@ func (s *BlackboxVoteService) Vote(sessionID, voterTeamID uint, option string) e
 		return errors.New("недопустимый вариант ответа")
 	}
 
-	var existing BlackboxVote
-	err := s.DB.Where("session_id = ? AND voter_id = ?", sessionID, voterTeamID).First(&existing).Error
+	// Проверяем, не голосовала ли уже эта команда
+	vote, err := s.blackboxRepo.GetVoteBySessionAndVoter(ctx, sessionID, voterTeamID)
 	if err == nil {
 		return errors.New("ваш голос уже учтён")
 	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
 
-	vote := BlackboxVote{
+	vote = &BlackboxVote{
 		SessionID: sessionID,
 		VoterID:   voterTeamID,
 		Option:    option,
 	}
-	return s.DB.Create(&vote).Error
+	return s.blackboxRepo.CreateVote(ctx, vote)
 }
 
 // GetVotingResults возвращает пары «вариант — количество голосов».
-func (s *BlackboxVoteService) GetVotingResults(sessionID uint) (map[string]int, error) {
-	var votes []BlackboxVote
-	if err := s.DB.Where("session_id = ?", sessionID).Find(&votes).Error; err != nil {
+func (s *BlackboxVoteService) GetVotingResults(ctx context.Context, sessionID uint) (map[string]int, error) {
+	votes, err := s.blackboxRepo.GetVotesBySession(ctx, sessionID)
+	if err != nil {
 		return nil, err
 	}
 	results := make(map[string]int)
@@ -129,25 +150,25 @@ func (s *BlackboxVoteService) GetVotingResults(sessionID uint) (map[string]int, 
 }
 
 // CloseVoting закрывает голосование и определяет победителя.
-func (s *BlackboxVoteService) CloseVoting(sessionID, userID uint) (string, error) {
-	var session BlackboxVotingSession
-	if err := s.DB.First(&session, sessionID).Error; err != nil {
+func (s *BlackboxVoteService) CloseVoting(ctx context.Context, sessionID, userID uint) (string, error) {
+	session, err := s.blackboxRepo.GetSessionByID(ctx, sessionID)
+	if err != nil {
 		return "", err
 	}
 
 	var passing game.GamePassing
-	if err := s.DB.First(&passing, session.GamePassingID).Error; err != nil {
+	if err := s.gameRepo.DB(ctx).First(&passing, session.GamePassingID).Error; err != nil {
 		return "", err
 	}
-	var g game.Game
-	if err := s.DB.First(&g, passing.GameID).Error; err != nil {
+	g, err := s.gameRepo.GetByID(ctx, passing.GameID)
+	if err != nil {
 		return "", err
 	}
 	if g.AuthorID != userID {
 		return "", errors.New("только автор может завершить голосование")
 	}
 
-	results, err := s.GetVotingResults(sessionID)
+	results, err := s.GetVotingResults(ctx, sessionID)
 	if err != nil {
 		return "", err
 	}
@@ -163,13 +184,15 @@ func (s *BlackboxVoteService) CloseVoting(sessionID, userID uint) (string, error
 
 	session.IsOpen = false
 	session.WinnerOption = winner
-	s.DB.Save(&session)
+	if err := s.blackboxRepo.UpdateSession(ctx, session); err != nil {
+		return "", err
+	}
 
-	if s.cfg != nil {
+	if s.cfg != nil && s.cfg.SMTP.Enabled {
 		emailService := email.NewEmailService(s.cfg)
 
 		var captains []string
-		s.DB.Model(&user.User{}).
+		s.gameRepo.DB(ctx).Model(&user.User{}).
 			Select("users.email").
 			Joins("JOIN teams ON teams.captain_id = users.id").
 			Joins("JOIN game_passings ON game_passings.team_id = teams.id").
@@ -189,79 +212,25 @@ func (s *BlackboxVoteService) CloseVoting(sessionID, userID uint) (string, error
 // ---------- ChatService ----------
 
 type ChatService struct {
-	DB *gorm.DB
+	chatRepo ChatRepository
 }
 
-func NewChatService(db *gorm.DB) *ChatService {
-	return &ChatService{DB: db}
+func NewChatService(chatRepo ChatRepository) *ChatService {
+	return &ChatService{chatRepo: chatRepo}
 }
 
-// GetOrCreateGameRoom возвращает общую комнату чата игры.
-func (s *ChatService) GetOrCreateGameRoom(gameID uint) (*ChatRoom, error) {
-	var room ChatRoom
-	err := s.DB.Where("game_id = ? AND team_id IS NULL", gameID).First(&room).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		room = ChatRoom{
-			GameID: &gameID,
-			Name:   "Общий чат игры",
-		}
-		if createErr := s.DB.Create(&room).Error; createErr != nil {
-			return nil, createErr
-		}
-		return &room, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &room, nil
+func (s *ChatService) GetOrCreateGameRoom(ctx context.Context, gameID uint) (*ChatRoom, error) {
+	return s.chatRepo.GetOrCreateGameRoom(ctx, gameID)
 }
 
-// GetOrCreateTeamRoom возвращает приватную командную комнату для конкретного прохождения.
-func (s *ChatService) GetOrCreateTeamRoom(gameID, teamID, passingID uint) (*ChatRoom, error) {
-	var room ChatRoom
-	err := s.DB.Where("game_id = ? AND team_id = ? AND passing_id = ?", gameID, teamID, passingID).First(&room).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		room = ChatRoom{
-			GameID:    &gameID,
-			TeamID:    &teamID,
-			PassingID: &passingID,
-			Name:      "Командный чат",
-		}
-		if createErr := s.DB.Create(&room).Error; createErr != nil {
-			return nil, createErr
-		}
-		return &room, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &room, nil
+func (s *ChatService) GetOrCreateTeamRoom(ctx context.Context, gameID, teamID, passingID uint) (*ChatRoom, error) {
+	return s.chatRepo.GetOrCreateTeamRoom(ctx, gameID, teamID, passingID)
 }
 
-// SaveMessage сохраняет новое сообщение в БД.
-func (s *ChatService) SaveMessage(roomID, userID uint, content string) (*ChatMessage, error) {
-	msg := ChatMessage{
-		RoomID:  roomID,
-		UserID:  userID,
-		Content: content,
-	}
-	if err := s.DB.Create(&msg).Error; err != nil {
-		return nil, err
-	}
-	s.DB.Preload("User").First(&msg, msg.ID)
-	return &msg, nil
+func (s *ChatService) SaveMessage(ctx context.Context, roomID, userID uint, content string) (*ChatMessage, error) {
+	return s.chatRepo.SaveMessage(ctx, roomID, userID, content)
 }
 
-// GetMessages возвращает последние сообщения комнаты (лимит).
-func (s *ChatService) GetMessages(roomID uint, limit int) ([]ChatMessage, error) {
-	var msgs []ChatMessage
-	err := s.DB.Preload("User").Where("room_id = ?", roomID).Order("created_at DESC").Limit(limit).Find(&msgs).Error
-	reverseSlice(msgs)
-	return msgs, err
-}
-
-func reverseSlice(msgs []ChatMessage) {
-	for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
-		msgs[i], msgs[j] = msgs[j], msgs[i]
-	}
+func (s *ChatService) GetMessages(ctx context.Context, roomID uint, limit int) ([]ChatMessage, error) {
+	return s.chatRepo.GetMessages(ctx, roomID, limit)
 }

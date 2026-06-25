@@ -45,6 +45,13 @@ func NewTeamHandler(teamService *TeamService, st storage.FileStorage) *TeamHandl
 }
 
 // MyTeams отображает список команд текущего пользователя (капитанство + участие).
+// @Summary Список моих команд
+// @Description Возвращает список команд, где пользователь является капитаном или участником
+// @Tags teams
+// @Produce html
+// @Success 200 {string} html "Страница со списком команд"
+// @Router /teams [get]
+// @Security JWT
 func (h *TeamHandler) MyTeams(c *gin.Context) {
 	userID := c.GetUint("userID")
 	teams, err := h.teamService.GetMyTeams(c.Request.Context(), userID)
@@ -60,6 +67,13 @@ func (h *TeamHandler) MyTeams(c *gin.Context) {
 }
 
 // NewTeamForm показывает форму создания команды.
+// @Summary Форма создания команды
+// @Description Возвращает HTML-страницу с формой для создания новой команды
+// @Tags teams
+// @Produce html
+// @Success 200 {string} html "Форма создания команды"
+// @Router /teams/new [get]
+// @Security JWT
 func (h *TeamHandler) NewTeamForm(c *gin.Context) {
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "teams-new.html",
@@ -68,6 +82,16 @@ func (h *TeamHandler) NewTeamForm(c *gin.Context) {
 }
 
 // CreateTeam создаёт новую команду и делает текущего пользователя капитаном.
+// @Summary Создание команды
+// @Description Создаёт новую команду, текущий пользователь становится капитаном
+// @Tags teams
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param name formData string true "Название команды (2-100 символов)"
+// @Success 302 {string} string "Перенаправление на /teams"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Router /teams [post]
+// @Security JWT
 func (h *TeamHandler) CreateTeam(c *gin.Context) {
 	var input CreateTeamInput
 	if err := c.ShouldBind(&input); err != nil {
@@ -94,6 +118,15 @@ func (h *TeamHandler) CreateTeam(c *gin.Context) {
 }
 
 // ViewTeam отображает состав команды вне контекста игры (по прямой ссылке /teams/:team_id).
+// @Summary Просмотр команды
+// @Description Отображает информацию о команде и её составе
+// @Tags teams
+// @Produce html
+// @Param team_id path int true "ID команды"
+// @Success 200 {string} html "Страница команды"
+// @Failure 404 {object} map[string]interface{} "Команда не найдена"
+// @Router /teams/{team_id} [get]
+// @Security JWT
 func (h *TeamHandler) ViewTeam(c *gin.Context) {
 	teamID, _ := strconv.Atoi(c.Param("team_id"))
 	userID := c.GetUint("userID")
@@ -117,6 +150,16 @@ func (h *TeamHandler) ViewTeam(c *gin.Context) {
 }
 
 // Members отображает состав конкретной команды в контексте игры.
+// @Summary Состав команды (в контексте игры)
+// @Description Отображает состав команды с возможностью управления (если есть права)
+// @Tags teams
+// @Produce html
+// @Param game_id path int true "ID игры"
+// @Param team_id path int true "ID команды"
+// @Success 200 {string} html "Страница состава команды"
+// @Failure 404 {object} map[string]interface{} "Команда не найдена"
+// @Router /games/{game_id}/teams/{team_id}/members [get]
+// @Security JWT
 func (h *TeamHandler) Members(c *gin.Context) {
 	teamID, _ := strconv.Atoi(c.Param("team_id"))
 	userID := c.GetUint("userID")
@@ -142,6 +185,15 @@ func (h *TeamHandler) Members(c *gin.Context) {
 }
 
 // AddMemberForm показывает форму добавления участника.
+// @Summary Форма добавления участника
+// @Description Возвращает HTML-страницу с формой для добавления участника в команду
+// @Tags teams
+// @Produce html
+// @Param game_id path int true "ID игры"
+// @Param team_id path int true "ID команды"
+// @Success 200 {string} html "Форма добавления участника"
+// @Router /games/{game_id}/teams/{team_id}/members/add [get]
+// @Security JWT
 func (h *TeamHandler) AddMemberForm(c *gin.Context) {
 	teamID, _ := strconv.Atoi(c.Param("team_id"))
 	availableUsers, err := h.teamService.GetAvailableUsers(c.Request.Context(), uint(teamID))
@@ -159,6 +211,18 @@ func (h *TeamHandler) AddMemberForm(c *gin.Context) {
 }
 
 // AddMember добавляет нового участника.
+// @Summary Добавление участника
+// @Description Добавляет нового участника в команду (доступно капитану или автору игры)
+// @Tags teams
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param game_id path int true "ID игры"
+// @Param team_id path int true "ID команды"
+// @Param user_id formData uint true "ID пользователя"
+// @Success 302 {string} string "Перенаправление на /games/{game_id}/teams/{team_id}/members"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /games/{game_id}/teams/{team_id}/members [post]
+// @Security JWT
 func (h *TeamHandler) AddMember(c *gin.Context) {
 	teamID, _ := strconv.Atoi(c.Param("team_id"))
 	actorID := c.GetUint("userID")
@@ -181,6 +245,18 @@ func (h *TeamHandler) AddMember(c *gin.Context) {
 }
 
 // RemoveMember удаляет участника из команды.
+// @Summary Удаление участника
+// @Description Удаляет участника из команды (доступно капитану или автору игры)
+// @Tags teams
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param game_id path int true "ID игры"
+// @Param team_id path int true "ID команды"
+// @Param member_id path int true "ID участника"
+// @Success 302 {string} string "Перенаправление на /games/{game_id}/teams/{team_id}/members"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /games/{game_id}/teams/{team_id}/members/{member_id} [delete]
+// @Security JWT
 func (h *TeamHandler) RemoveMember(c *gin.Context) {
 	teamID, _ := strconv.Atoi(c.Param("team_id"))
 	memberID, _ := strconv.Atoi(c.Param("member_id"))
@@ -194,6 +270,15 @@ func (h *TeamHandler) RemoveMember(c *gin.Context) {
 }
 
 // ChangeCaptainForm показывает форму смены капитана.
+// @Summary Форма смены капитана
+// @Description Возвращает HTML-страницу с формой для смены капитана команды
+// @Tags teams
+// @Produce html
+// @Param game_id path int true "ID игры"
+// @Param team_id path int true "ID команды"
+// @Success 200 {string} html "Форма смены капитана"
+// @Router /games/{game_id}/teams/{team_id}/captain [get]
+// @Security JWT
 func (h *TeamHandler) ChangeCaptainForm(c *gin.Context) {
 	teamID, _ := strconv.Atoi(c.Param("team_id"))
 	_, members, err := h.teamService.GetTeamWithMembers(c.Request.Context(), uint(teamID))
@@ -211,6 +296,18 @@ func (h *TeamHandler) ChangeCaptainForm(c *gin.Context) {
 }
 
 // ChangeCaptain производит смену капитана.
+// @Summary Смена капитана
+// @Description Меняет капитана команды (доступно текущему капитану)
+// @Tags teams
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param game_id path int true "ID игры"
+// @Param team_id path int true "ID команды"
+// @Param captain_id formData uint true "ID нового капитана"
+// @Success 302 {string} string "Перенаправление на /games/{game_id}/teams/{team_id}/members"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /games/{game_id}/teams/{team_id}/captain [post]
+// @Security JWT
 func (h *TeamHandler) ChangeCaptain(c *gin.Context) {
 	teamID, _ := strconv.Atoi(c.Param("team_id"))
 	actorID := c.GetUint("userID")
@@ -244,6 +341,15 @@ func NewInvitationHandler(invitationService *InvitationService) *InvitationHandl
 }
 
 // Index отображает список приглашений команды (для автора/капитана).
+// @Summary Список приглашений
+// @Description Отображает список приглашений в команду
+// @Tags invitations
+// @Produce html
+// @Param game_id path int true "ID игры"
+// @Param team_id path int true "ID команды"
+// @Success 200 {string} html "Страница со списком приглашений"
+// @Router /games/{game_id}/teams/{team_id}/invitations [get]
+// @Security JWT
 func (h *InvitationHandler) Index(c *gin.Context) {
 	teamID, _ := strconv.Atoi(c.Param("team_id"))
 	invitations, err := h.invitationService.ListByTeam(c.Request.Context(), uint(teamID))
@@ -260,6 +366,15 @@ func (h *InvitationHandler) Index(c *gin.Context) {
 }
 
 // NewForm показывает форму создания приглашения.
+// @Summary Форма создания приглашения
+// @Description Возвращает HTML-страницу с формой для создания приглашения
+// @Tags invitations
+// @Produce html
+// @Param game_id path int true "ID игры"
+// @Param team_id path int true "ID команды"
+// @Success 200 {string} html "Форма создания приглашения"
+// @Router /games/{game_id}/teams/{team_id}/invitations/new [get]
+// @Security JWT
 func (h *InvitationHandler) NewForm(c *gin.Context) {
 	teamID, _ := strconv.Atoi(c.Param("team_id"))
 	c.HTML(http.StatusOK, "layout.html", gin.H{
@@ -271,6 +386,18 @@ func (h *InvitationHandler) NewForm(c *gin.Context) {
 }
 
 // Create создаёт новое приглашение.
+// @Summary Создание приглашения
+// @Description Создаёт приглашение пользователя в команду (доступно капитану или автору игры)
+// @Tags invitations
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param game_id path int true "ID игры"
+// @Param team_id path int true "ID команды"
+// @Param user_id formData uint true "ID приглашаемого пользователя"
+// @Success 302 {string} string "Перенаправление на /games/{game_id}/teams/{team_id}/invitations"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Router /games/{game_id}/teams/{team_id}/invitations [post]
+// @Security JWT
 func (h *InvitationHandler) Create(c *gin.Context) {
 	teamID, _ := strconv.Atoi(c.Param("team_id"))
 	userID := c.GetUint("userID")
@@ -298,6 +425,13 @@ func (h *InvitationHandler) Create(c *gin.Context) {
 }
 
 // MyInvitations отображает мои приглашения.
+// @Summary Мои приглашения
+// @Description Отображает список приглашений текущего пользователя
+// @Tags invitations
+// @Produce html
+// @Success 200 {string} html "Страница с моими приглашениями"
+// @Router /invitations/my [get]
+// @Security JWT
 func (h *InvitationHandler) MyInvitations(c *gin.Context) {
 	userID := c.GetUint("userID")
 	invitations, err := h.invitationService.GetPendingForUser(c.Request.Context(), userID)
@@ -313,6 +447,16 @@ func (h *InvitationHandler) MyInvitations(c *gin.Context) {
 }
 
 // Accept принимает приглашение.
+// @Summary Принять приглашение
+// @Description Принимает приглашение в команду
+// @Tags invitations
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID приглашения"
+// @Success 302 {string} string "Перенаправление на /invitations/my"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /invitations/{id}/accept [post]
+// @Security JWT
 func (h *InvitationHandler) Accept(c *gin.Context) {
 	invitationID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
@@ -324,6 +468,16 @@ func (h *InvitationHandler) Accept(c *gin.Context) {
 }
 
 // Decline отклоняет приглашение.
+// @Summary Отклонить приглашение
+// @Description Отклоняет приглашение в команду
+// @Tags invitations
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID приглашения"
+// @Success 302 {string} string "Перенаправление на /invitations/my"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /invitations/{id}/decline [post]
+// @Security JWT
 func (h *InvitationHandler) Decline(c *gin.Context) {
 	invitationID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")

@@ -1,3 +1,4 @@
+// internal/domain/calendar/handler.go
 package calendar
 
 import (
@@ -8,23 +9,39 @@ import (
 	"gengine-0/internal/domain/game"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 type CalendarHandler struct {
-	db *gorm.DB
+	gameRepo game.GameRepository
 }
 
-func NewCalendarHandler(db *gorm.DB) *CalendarHandler {
-	return &CalendarHandler{db: db}
+func NewCalendarHandler(gameRepo game.GameRepository) *CalendarHandler {
+	return &CalendarHandler{gameRepo: gameRepo}
 }
 
+// CalendarPage отображает HTML-страницу календаря.
+// @Summary Страница календаря
+// @Description Возвращает HTML-страницу с календарём игр
+// @Tags calendar
+// @Produce html
+// @Success 200 {string} html "Страница календаря"
+// @Router /calendar [get]
 func (h *CalendarHandler) CalendarPage(c *gin.Context) {
 	c.HTML(http.StatusOK, "layout.html", gin.H{
-        "ContentBlock": "calendar-page.html",  
-    })
+		"ContentBlock": "calendar-page.html",
+	})
 }
 
+// CalendarData возвращает события календаря в JSON-формате.
+// @Summary Данные календаря
+// @Description Возвращает список игр за указанный месяц в формате JSON
+// @Tags calendar
+// @Produce json
+// @Param year query int false "Год" default(текущий)
+// @Param month query int false "Месяц (1-12)" default(текущий)
+// @Success 200 {object} map[string]interface{} "События календаря"
+// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+// @Router /api/v1/calendar [get]
 func (h *CalendarHandler) CalendarData(c *gin.Context) {
 	year, _ := strconv.Atoi(c.DefaultQuery("year", "0"))
 	month, _ := strconv.Atoi(c.DefaultQuery("month", "0"))
@@ -38,11 +55,12 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 	startOfMonth := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
 	endOfMonth := startOfMonth.AddDate(0, 1, -1)
 
-	var games []game.Game
-	h.db.Preload("Author").
-		Where("is_draft = false AND visibility = 'public' AND starts_at BETWEEN ? AND ?", startOfMonth, endOfMonth).
-		Order("starts_at ASC").
-		Find(&games)
+	ctx := c.Request.Context()
+	games, err := h.gameRepo.ListByDateRange(ctx, startOfMonth, endOfMonth)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	events := make(map[string][]gin.H)
 	for _, g := range games {

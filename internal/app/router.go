@@ -22,6 +22,8 @@ import (
 	"gengine-0/internal/pkg/storage"
 	ws "gengine-0/internal/pkg/websocket"
 
+	_ "gengine-0/docs" // автоматически генерируется Swagger-документация
+
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
@@ -79,6 +81,7 @@ func SetupRouter(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub,
 	r.Static("/static", filepath.Join(baseDir, "static"))
 	r.Static("/uploads", filepath.Join(baseDir, "uploads"))
 
+	// Swagger UI
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// ================== СОЗДАНИЕ РЕПОЗИТОРИЕВ ==================
@@ -159,9 +162,9 @@ func SetupRouter(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub,
 	// ================== РЕГИСТРАЦИЯ МАРШРУТОВ ==================
 
 	// Admin
-	auditSvc := admin.RegisterRoutes(r, db, cfg, authService)
+	auditSvc := admin.RegisterRoutes(r, db, cfg, authService, userRepo, gameRepo)
 
-	// User — передаём db для AdminRequired
+	// User
 	user.RegisterRoutes(r, authService, userService, achievService, oauthService, passwordResetService, emailVerifService, cfg, auditSvc, db)
 
 	// Хендлеры user
@@ -174,7 +177,8 @@ func SetupRouter(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub,
 	authGroup := r.Group("/auth")
 	{
 		authGroup.GET("/login", authHandler.ShowLoginForm)
-		authGroup.POST("/login", authHandler.Login)
+		// Добавлен rate limit для логина: 5 попыток за 5 минут
+		authGroup.POST("/login", middleware.LoginRateLimit(5*time.Minute, 5), authHandler.Login)
 		authGroup.GET("/register", authHandler.ShowRegisterForm)
 		authGroup.POST("/register", authHandler.Register)
 		authGroup.GET("/logout", authHandler.Logout)
@@ -223,10 +227,16 @@ func SetupRouter(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub,
 	// Tournament
 	tournament.RegisterRoutes(r, tournamentSvc, cfg, authService)
 
-	// Monitor, Social, Calendar, Export
-	monitor.RegisterRoutes(r, db, hub, cfg, coAuthorSvc, monitorSvc, attemptSvc, progressSvc, authService)
+	// Calendar
+	calendar.RegisterRoutes(r, gameRepo)
+
+	// Monitor
+	monitor.RegisterRoutes(r, db, hub, cfg, coAuthorSvc, monitorSvc, attemptSvc, progressSvc, authService, gameRepo)
+
+	// Social
 	social.RegisterRoutes(r, db, cfg, authService)
-	calendar.RegisterRoutes(r, db) // calendar пока без authService
+
+	// Export
 	export.RegisterRoutes(r, db, localStorage, cfg, gameSvc, coAuthorSvc, authService)
 
 	// Gameplay

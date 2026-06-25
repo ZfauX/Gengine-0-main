@@ -1,8 +1,9 @@
-// Package game — repository interfaces for game domain.
+// internal/domain/game/repository.go
 package game
 
 import (
 	"context"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -18,6 +19,10 @@ type GameRepository interface {
 	Count(ctx context.Context, query *gorm.DB) (int64, error)
 	ListFiltered(ctx context.Context, query *gorm.DB, offset, limit int) ([]Game, error)
 	Model(ctx context.Context) *gorm.DB
+	// Новый метод для календаря
+	ListByDateRange(ctx context.Context, from, to time.Time) ([]Game, error)
+	// Добавлен метод для получения *gorm.DB с контекстом
+	DB(ctx context.Context) *gorm.DB
 }
 
 // GamePassingRepository — контракт для прохождений.
@@ -35,14 +40,19 @@ type GamePassingRepository interface {
 type gormGameRepo struct{ db *gorm.DB }
 
 func NewGormGameRepo(db *gorm.DB) GameRepository { return &gormGameRepo{db} }
+
 func (r *gormGameRepo) Create(ctx context.Context, game *Game) error {
 	return r.db.WithContext(ctx).Create(game).Error
 }
 func (r *gormGameRepo) GetByID(ctx context.Context, id uint) (*Game, error) {
-	var g Game; err := r.db.WithContext(ctx).First(&g, id).Error; return &g, err
+	var g Game
+	err := r.db.WithContext(ctx).First(&g, id).Error
+	return &g, err
 }
 func (r *gormGameRepo) GetByIDPreloaded(ctx context.Context, id uint) (*Game, error) {
-	var g Game; err := r.db.WithContext(ctx).Preload("Author").Preload("GameSetting").First(&g, id).Error; return &g, err
+	var g Game
+	err := r.db.WithContext(ctx).Preload("Author").Preload("GameSetting").First(&g, id).Error
+	return &g, err
 }
 func (r *gormGameRepo) Update(ctx context.Context, game *Game) error {
 	return r.db.WithContext(ctx).Save(game).Error
@@ -54,23 +64,46 @@ func (r *gormGameRepo) Save(ctx context.Context, game *Game) error {
 	return r.db.WithContext(ctx).Save(game).Error
 }
 func (r *gormGameRepo) Count(ctx context.Context, query *gorm.DB) (int64, error) {
-	var total int64; err := query.WithContext(ctx).Count(&total).Error; return total, err
+	var total int64
+	err := query.WithContext(ctx).Count(&total).Error
+	return total, err
 }
 func (r *gormGameRepo) ListFiltered(ctx context.Context, query *gorm.DB, offset, limit int) ([]Game, error) {
-	var games []Game; err := query.WithContext(ctx).Offset(offset).Limit(limit).Find(&games).Error; return games, err
+	var games []Game
+	err := query.WithContext(ctx).Offset(offset).Limit(limit).Find(&games).Error
+	return games, err
 }
 func (r *gormGameRepo) Model(ctx context.Context) *gorm.DB {
 	return r.db.WithContext(ctx).Model(&Game{})
 }
 
+// ListByDateRange возвращает опубликованные публичные игры за указанный период.
+func (r *gormGameRepo) ListByDateRange(ctx context.Context, from, to time.Time) ([]Game, error) {
+	var games []Game
+	err := r.db.WithContext(ctx).
+		Preload("Author").
+		Where("is_draft = false AND visibility = 'public' AND starts_at BETWEEN ? AND ?", from, to).
+		Order("starts_at ASC").
+		Find(&games).Error
+	return games, err
+}
+
+// DB возвращает *gorm.DB с контекстом.
+func (r *gormGameRepo) DB(ctx context.Context) *gorm.DB {
+	return r.db.WithContext(ctx)
+}
+
 type gormGamePassingRepo struct{ db *gorm.DB }
 
 func NewGormGamePassingRepo(db *gorm.DB) GamePassingRepository { return &gormGamePassingRepo{db} }
+
 func (r *gormGamePassingRepo) Create(ctx context.Context, passing *GamePassing) error {
 	return r.db.WithContext(ctx).Create(passing).Error
 }
 func (r *gormGamePassingRepo) GetByID(ctx context.Context, id uint) (*GamePassing, error) {
-	var p GamePassing; err := r.db.WithContext(ctx).First(&p, id).Error; return &p, err
+	var p GamePassing
+	err := r.db.WithContext(ctx).First(&p, id).Error
+	return &p, err
 }
 func (r *gormGamePassingRepo) FindByGameAndTeam(ctx context.Context, gameID, teamID uint) (*GamePassing, error) {
 	var p GamePassing

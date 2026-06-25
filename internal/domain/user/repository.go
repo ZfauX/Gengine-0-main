@@ -15,6 +15,10 @@ type UserRepository interface {
 	GetPublicProfile(ctx context.Context, id uint) (*User, error)
 	Update(ctx context.Context, id uint, fields map[string]any) error
 	GetByRole(ctx context.Context, role string) (*User, error)
+	// Добавленные методы для админки
+	Count(ctx context.Context) (int64, error)
+	List(ctx context.Context, role string) ([]User, error)
+	Delete(ctx context.Context, id uint) error
 }
 
 // AchievementRepository определяет контракт для работы с достижениями.
@@ -48,29 +52,60 @@ type ExternalLoginRepository interface {
 
 type gormUserRepo struct{ db *gorm.DB }
 
-func NewGormUserRepo(db *gorm.DB) UserRepository               { return &gormUserRepo{db} }
+func NewGormUserRepo(db *gorm.DB) UserRepository { return &gormUserRepo{db} }
+
 func (r *gormUserRepo) Create(ctx context.Context, user *User) error {
 	return r.db.WithContext(ctx).Create(user).Error
 }
 func (r *gormUserRepo) GetByID(ctx context.Context, id uint) (*User, error) {
-	var u User; err := r.db.WithContext(ctx).First(&u, id).Error; return &u, err
+	var u User
+	err := r.db.WithContext(ctx).First(&u, id).Error
+	return &u, err
 }
 func (r *gormUserRepo) GetByEmail(ctx context.Context, email string) (*User, error) {
-	var u User; err := r.db.WithContext(ctx).Where("email = ?", email).First(&u).Error; return &u, err
+	var u User
+	err := r.db.WithContext(ctx).Where("email = ?", email).First(&u).Error
+	return &u, err
 }
 func (r *gormUserRepo) GetPublicProfile(ctx context.Context, id uint) (*User, error) {
-	var u User; err := r.db.WithContext(ctx).Preload("Achievements").First(&u, id).Error; return &u, err
+	var u User
+	err := r.db.WithContext(ctx).Preload("Achievements").First(&u, id).Error
+	return &u, err
 }
 func (r *gormUserRepo) Update(ctx context.Context, id uint, fields map[string]any) error {
 	return r.db.WithContext(ctx).Model(&User{}).Where("id = ?", id).Updates(fields).Error
 }
 func (r *gormUserRepo) GetByRole(ctx context.Context, role string) (*User, error) {
-	var u User; err := r.db.WithContext(ctx).Where("role = ?", role).First(&u).Error; return &u, err
+	var u User
+	err := r.db.WithContext(ctx).Where("role = ?", role).First(&u).Error
+	return &u, err
+}
+
+// --- Новые методы ---
+func (r *gormUserRepo) Count(ctx context.Context) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&User{}).Count(&count).Error
+	return count, err
+}
+
+func (r *gormUserRepo) List(ctx context.Context, role string) ([]User, error) {
+	var users []User
+	query := r.db.WithContext(ctx).Model(&User{})
+	if role != "" {
+		query = query.Where("role = ?", role)
+	}
+	err := query.Find(&users).Error
+	return users, err
+}
+
+func (r *gormUserRepo) Delete(ctx context.Context, id uint) error {
+	return r.db.WithContext(ctx).Delete(&User{}, id).Error
 }
 
 type gormAchievementRepo struct{ db *gorm.DB }
 
 func NewGormAchievementRepo(db *gorm.DB) AchievementRepository { return &gormAchievementRepo{db} }
+
 func (r *gormAchievementRepo) Award(ctx context.Context, userID uint, achievement *Achievement) error {
 	var u User
 	if err := r.db.WithContext(ctx).First(&u, userID).Error; err != nil {
@@ -96,7 +131,9 @@ func (r *gormPasswordResetRepo) CreateToken(ctx context.Context, token *Password
 	return r.db.WithContext(ctx).Create(token).Error
 }
 func (r *gormPasswordResetRepo) GetToken(ctx context.Context, tokenStr string) (*PasswordResetToken, error) {
-	var t PasswordResetToken; err := r.db.WithContext(ctx).Where("token = ?", tokenStr).First(&t).Error; return &t, err
+	var t PasswordResetToken
+	err := r.db.WithContext(ctx).Where("token = ?", tokenStr).First(&t).Error
+	return &t, err
 }
 func (r *gormPasswordResetRepo) DeleteToken(ctx context.Context, token *PasswordResetToken) error {
 	return r.db.WithContext(ctx).Delete(token).Error
@@ -104,12 +141,16 @@ func (r *gormPasswordResetRepo) DeleteToken(ctx context.Context, token *Password
 
 type gormEmailVerificationRepo struct{ db *gorm.DB }
 
-func NewGormEmailVerificationRepo(db *gorm.DB) EmailVerificationRepository { return &gormEmailVerificationRepo{db} }
+func NewGormEmailVerificationRepo(db *gorm.DB) EmailVerificationRepository {
+	return &gormEmailVerificationRepo{db}
+}
 func (r *gormEmailVerificationRepo) CreateToken(ctx context.Context, token *EmailVerificationToken) error {
 	return r.db.WithContext(ctx).Create(token).Error
 }
 func (r *gormEmailVerificationRepo) GetToken(ctx context.Context, tokenStr string) (*EmailVerificationToken, error) {
-	var t EmailVerificationToken; err := r.db.WithContext(ctx).Where("token = ?", tokenStr).First(&t).Error; return &t, err
+	var t EmailVerificationToken
+	err := r.db.WithContext(ctx).Where("token = ?", tokenStr).First(&t).Error
+	return &t, err
 }
 func (r *gormEmailVerificationRepo) DeleteToken(ctx context.Context, token *EmailVerificationToken) error {
 	return r.db.WithContext(ctx).Delete(token).Error

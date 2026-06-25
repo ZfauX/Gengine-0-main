@@ -2,6 +2,7 @@
 package audit
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/rs/zerolog/log"
@@ -59,12 +60,20 @@ func (s *Service) Log(userID uint, action, objectType string, objectID uint, det
 	}
 }
 
+// Count возвращает общее количество записей аудита.
+func (s *Service) Count(ctx context.Context) (int64, error) {
+	var count int64
+	err := s.DB.WithContext(ctx).Model(&Entry{}).Count(&count).Error
+	return count, err
+}
+
 // List возвращает записи аудита с пагинацией и фильтрацией.
-func (s *Service) List(userIDStr, action string, page, perPage int) ([]EntryWithUser, int64, error) {
-	base := s.DB.Table("audit_logs").
+// Добавлен контекст.
+func (s *Service) List(ctx context.Context, userIDStr, action string, page, perPage int) ([]EntryWithUser, int64, error) {
+	base := s.DB.WithContext(ctx).Table("audit_logs").
 		Joins("LEFT JOIN users ON users.id = audit_logs.user_id")
 
-	countQ := s.DB.Table("audit_logs")
+	countQ := s.DB.WithContext(ctx).Table("audit_logs")
 	if userIDStr != "" {
 		if id, err := strconv.Atoi(userIDStr); err == nil {
 			base = base.Where("audit_logs.user_id = ?", id)

@@ -1,19 +1,11 @@
-// Package db предоставляет подключение, миграции и начальное заполнение БД.
+// internal/db/db.go
 package db
 
 import (
 	"fmt"
 
 	"gengine-0/internal/config"
-	"gengine-0/internal/domain/admin"
-	"gengine-0/internal/domain/game"
-	"gengine-0/internal/domain/level"
-	"gengine-0/internal/domain/monitor"
-	"gengine-0/internal/domain/social"
-	"gengine-0/internal/domain/team"
-	"gengine-0/internal/domain/tournament"
 	"gengine-0/internal/domain/user"
-	"gengine-0/internal/pkg/audit"
 	"gengine-0/internal/pkg/logging"
 
 	"github.com/rs/zerolog/log"
@@ -47,23 +39,6 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 	sqlDB.SetConnMaxLifetime(cfg.Database.ConnMaxLifetime)
 
 	return db, nil
-}
-
-// Migrate выполняет автоматические миграции всех моделей.
-func Migrate(db *gorm.DB) error {
-	models := []any{
-		&user.User{}, &user.Achievement{}, &user.ExternalLogin{}, &user.PasswordResetToken{},
-		&game.Game{}, &game.GamePassing{}, &game.GameSetting{}, &game.CoAuthor{}, &game.Note{},
-		&game.LevelProgress{}, &game.Attempt{}, &game.Photo{},
-		&level.Level{}, &level.Question{}, &level.Answer{},
-		&team.Team{}, &team.Invitation{},
-		&monitor.ChatRoom{}, &monitor.ChatMessage{}, &monitor.BlackboxVotingSession{}, &monitor.BlackboxVote{},
-		&social.PlayerRating{}, &social.Follow{},
-		&game.Review{}, &game.PlayerRating{},
-		&admin.AuditLog{}, &admin.Backup{}, &audit.Entry{},
-		&tournament.Tournament{}, &tournament.TournamentGame{}, &tournament.TournamentTeam{}, &tournament.TournamentResult{},
-	}
-	return db.AutoMigrate(models...)
 }
 
 // EnsureAdmin создаёт или обновляет учётную запись администратора.
