@@ -3,6 +3,7 @@ package monitor
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/rs/zerolog/log"
 	csrf "github.com/utrack/gin-csrf"
 	"gorm.io/gorm"
 )
@@ -71,16 +73,12 @@ func NewMonitorHandler(
 }
 
 // MonitorPage отображает HTML-страницу мониторинга.
-// @Summary Страница мониторинга игры
-// @Description Отображает страницу с live-обновлениями прогресса игры
-// @Tags monitor
-// @Produce html
-// @Param id path int true "ID игры"
-// @Success 200 {string} html "Страница мониторинга"
-// @Router /games/{id}/monitor [get]
-// @Security JWT
 func (h *MonitorHandler) MonitorPage(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || gameID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "monitor-page.html",
 		"GameID":       gameID,
@@ -89,17 +87,11 @@ func (h *MonitorHandler) MonitorPage(c *gin.Context) {
 }
 
 // MonitorWS обрабатывает WebSocket-соединение для live-обновлений прогресса.
-// @Summary WebSocket мониторинга
-// @Description Устанавливает WebSocket-соединение для получения обновлений прогресса игры
-// @Tags monitor
-// @Param id path int true "ID игры"
-// @Success 101 {string} string "Switching Protocols"
-// @Router /games/{id}/monitor/ws [get]
-// @Security JWT
 func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 	gameID := c.Param("id")
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
+		log.Error().Err(err).Str("game_id", gameID).Msg("MonitorWS: failed to upgrade connection")
 		return
 	}
 	client := &ws.Client{
@@ -109,11 +101,17 @@ func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 	}
 	h.hub.RegisterClient(gameID, client)
 
-	id, _ := strconv.Atoi(gameID)
-	snapshot, err := h.monitorService.GetOrFetchSnapshot(uint(id))
-	if err == nil {
-		if data, err := json.Marshal(snapshot); err == nil {
-			client.Send <- data
+	id, err := strconv.Atoi(gameID)
+	if err == nil && id > 0 {
+		snapshot, err := h.monitorService.GetOrFetchSnapshot(uint(id))
+		if err != nil {
+			log.Error().Err(err).Int("game_id", id).Msg("MonitorWS: failed to get snapshot")
+		} else {
+			if data, err := json.Marshal(snapshot); err == nil {
+				client.Send <- data
+			} else {
+				log.Error().Err(err).Int("game_id", id).Msg("MonitorWS: failed to marshal snapshot")
+			}
 		}
 	}
 
@@ -127,22 +125,20 @@ func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 }
 
 // ChatPage отображает HTML-страницу чата игры.
-// @Summary Страница чата игры
-// @Description Отображает страницу чата для игры (общий и командный)
-// @Tags monitor
-// @Produce html
-// @Param id path int true "ID игры"
-// @Success 200 {string} html "Страница чата"
-// @Router /games/{id}/chat [get]
-// @Security JWT
 func (h *MonitorHandler) ChatPage(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || gameID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	ctx := c.Request.Context()
 	var currentUser user.User
 	userName := "Вы"
-	if err := h.db.WithContext(ctx).First(&currentUser, userID).Error; err == nil {
+	if err := h.db.WithContext(ctx).First(&currentUser, userID).Error; err != nil {
+		log.Warn().Err(err).Uint("user_id", userID).Msg("ChatPage: failed to get user name")
+	} else {
 		userName = currentUser.Name
 	}
 
@@ -150,7 +146,7 @@ func (h *MonitorHandler) ChatPage(c *gin.Context) {
 	var teamID *uint
 
 	var passing game.GamePassing
-	err := h.db.
+	err = h.db.
 		WithContext(ctx).
 		Joins("JOIN team_members ON team_members.team_id = game_passings.team_id").
 		Where("game_passings.game_id = ? AND game_passings.status IN (?,?) AND team_members.user_id = ?",
@@ -161,6 +157,8 @@ func (h *MonitorHandler) ChatPage(c *gin.Context) {
 		tID := passing.TeamID
 		passingID = &pID
 		teamID = &tID
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		log.Error().Err(err).Int("game_id", gameID).Uint("user_id", userID).Msg("ChatPage: failed to find passing")
 	}
 
 	c.HTML(http.StatusOK, "layout.html", gin.H{
@@ -175,19 +173,13 @@ func (h *MonitorHandler) ChatPage(c *gin.Context) {
 }
 
 // ChatWS обрабатывает WebSocket-соединение чата.
-// @Summary WebSocket чата
-// @Description Устанавливает WebSocket-соединение для обмена сообщениями в чате
-// @Tags monitor
-// @Param room query string true "ID комнаты чата"
-// @Success 101 {string} string "Switching Protocols"
-// @Router /chat/ws [get]
-// @Security JWT
 func (h *MonitorHandler) ChatWS(c *gin.Context) {
 	roomID := c.Query("room")
 	userID := c.GetUint("userID")
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
+		log.Error().Err(err).Str("room_id", roomID).Msg("ChatWS: failed to upgrade connection")
 		return
 	}
 
@@ -198,47 +190,66 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 	}
 	h.hub.RegisterClient(roomID, client)
 
-	roomIDUint, _ := strconv.Atoi(roomID)
-	msgs, err := h.chatService.GetMessages(c.Request.Context(), uint(roomIDUint), 50)
-	if err == nil {
-		data, _ := json.Marshal(gin.H{"type": "history", "messages": msgs})
-		client.Send <- data
+	roomIDUint, err := strconv.Atoi(roomID)
+	if err == nil && roomIDUint > 0 {
+		msgs, err := h.chatService.GetMessages(c.Request.Context(), uint(roomIDUint), 50)
+		if err != nil {
+			log.Error().Err(err).Int("room_id", roomIDUint).Msg("ChatWS: failed to get history")
+		} else {
+			data, err := json.Marshal(gin.H{"type": "history", "messages": msgs})
+			if err == nil {
+				client.Send <- data
+			} else {
+				log.Error().Err(err).Int("room_id", roomIDUint).Msg("ChatWS: failed to marshal history")
+			}
+		}
 	}
 
 	go func() {
-		defer h.hub.UnregisterClient(client)
+		defer func() {
+			h.hub.UnregisterClient(client)
+			client.Close()
+		}()
 		ws.WritePump(client)
 		for {
 			_, message, err := conn.ReadMessage()
 			if err != nil {
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+					log.Error().Err(err).Str("room_id", roomID).Msg("ChatWS: read error")
+				}
 				break
 			}
 			msg, err := h.chatService.SaveMessage(c.Request.Context(), uint(roomIDUint), userID, string(message))
-			if err == nil {
-				h.db.Preload("User").First(&msg, msg.ID)
-				resp, _ := json.Marshal(gin.H{"type": "message", "message": msg})
-				h.hub.BroadcastToRoom(roomID, resp)
+			if err != nil {
+				log.Error().Err(err).Str("room_id", roomID).Uint("user_id", userID).Msg("ChatWS: failed to save message")
+				continue
 			}
+			if err := h.db.Preload("User").First(&msg, msg.ID).Error; err != nil {
+				log.Error().Err(err).Uint("msg_id", msg.ID).Msg("ChatWS: failed to preload user")
+			}
+			resp, err := json.Marshal(gin.H{"type": "message", "message": msg})
+			if err != nil {
+				log.Error().Err(err).Uint("msg_id", msg.ID).Msg("ChatWS: failed to marshal message")
+				continue
+			}
+			h.hub.BroadcastToRoom(roomID, resp)
 		}
 	}()
 }
 
 // ChatRoomIDs возвращает ID комнат чата (общая и командная) для игры.
-// @Summary ID комнат чата
-// @Description Возвращает ID общей и командной комнат чата для игры
-// @Tags monitor
-// @Produce json
-// @Param id path int true "ID игры"
-// @Success 200 {object} map[string]interface{} "ID комнат чата"
-// @Router /games/{id}/chat-rooms [get]
-// @Security JWT
 func (h *MonitorHandler) ChatRoomIDs(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || gameID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID игры"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	ctx := c.Request.Context()
 	generalRoom, err := h.chatService.GetOrCreateGameRoom(ctx, uint(gameID))
 	if err != nil {
+		log.Error().Err(err).Int("game_id", gameID).Msg("ChatRoomIDs: failed to get general room")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -253,9 +264,13 @@ func (h *MonitorHandler) ChatRoomIDs(c *gin.Context) {
 		First(&passing).Error
 	if err == nil {
 		room, err := h.chatService.GetOrCreateTeamRoom(ctx, uint(gameID), passing.TeamID, passing.ID)
-		if err == nil {
+		if err != nil {
+			log.Error().Err(err).Int("game_id", gameID).Uint("team_id", passing.TeamID).Msg("ChatRoomIDs: failed to get team room")
+		} else {
 			teamRoom = room
 		}
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		log.Error().Err(err).Int("game_id", gameID).Uint("user_id", userID).Msg("ChatRoomIDs: failed to find passing")
 	}
 
 	resp := gin.H{
@@ -271,18 +286,18 @@ func (h *MonitorHandler) ChatRoomIDs(c *gin.Context) {
 }
 
 // ListLogs отображает HTML-страницу с историей логов игры.
-// @Summary Логи игры
-// @Description Отображает страницу с историей событий игры
-// @Tags monitor
-// @Produce html
-// @Param id path int true "ID игры"
-// @Success 200 {string} html "Страница логов"
-// @Router /games/{id}/logs [get]
-// @Security JWT
 func (h *MonitorHandler) ListLogs(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || gameID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
 	var logs []game.Log
-	h.db.WithContext(c.Request.Context()).Where("game_id = ?", gameID).Order("created_at ASC").Find(&logs)
+	if err := h.db.WithContext(c.Request.Context()).Where("game_id = ?", gameID).Order("created_at ASC").Find(&logs).Error; err != nil {
+		log.Error().Err(err).Int("game_id", gameID).Msg("ListLogs: failed to fetch logs")
+		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		return
+	}
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "logs-list.html",
 		"GameID":       gameID,
@@ -292,17 +307,11 @@ func (h *MonitorHandler) ListLogs(c *gin.Context) {
 }
 
 // LogsWS предоставляет WebSocket-стрим логов игры.
-// @Summary WebSocket логов
-// @Description Устанавливает WebSocket-соединение для потоковой передачи логов игры
-// @Tags monitor
-// @Param id path int true "ID игры"
-// @Success 101 {string} string "Switching Protocols"
-// @Router /games/{id}/logs/ws [get]
-// @Security JWT
 func (h *MonitorHandler) LogsWS(c *gin.Context) {
 	gameID := c.Param("id")
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
+		log.Error().Err(err).Str("game_id", gameID).Msg("LogsWS: failed to upgrade connection")
 		return
 	}
 	client := &ws.Client{
@@ -321,17 +330,6 @@ func (h *MonitorHandler) LogsWS(c *gin.Context) {
 }
 
 // StartVoting запускает голосование по текущему уровню-чёрному ящику.
-// @Summary Запуск голосования
-// @Description Запускает голосование на уровне-чёрном ящике (доступно автору игры)
-// @Tags monitor
-// @Accept x-www-form-urlencoded
-// @Produce json
-// @Param passing_id formData uint true "ID прохождения"
-// @Param level_id formData uint true "ID уровня"
-// @Success 200 {object} map[string]interface{} "Голосование запущено"
-// @Failure 400 {object} map[string]interface{} "Ошибка"
-// @Router /voting/start [post]
-// @Security JWT
 func (h *MonitorHandler) StartVoting(c *gin.Context) {
 	var input StartVotingInput
 	if err := c.ShouldBind(&input); err != nil {
@@ -341,6 +339,7 @@ func (h *MonitorHandler) StartVoting(c *gin.Context) {
 
 	userID := c.GetUint("userID")
 	if err := h.blackboxVoteService.StartVoting(c.Request.Context(), input.PassingID, input.LevelID, userID); err != nil {
+		log.Error().Err(err).Uint("passing_id", input.PassingID).Uint("level_id", input.LevelID).Uint("user_id", userID).Msg("StartVoting: failed to start voting")
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -348,18 +347,6 @@ func (h *MonitorHandler) StartVoting(c *gin.Context) {
 }
 
 // Vote обрабатывает голос команды за выбранный вариант.
-// @Summary Голосование
-// @Description Команда голосует за вариант ответа на уровне-чёрном ящике
-// @Tags monitor
-// @Accept x-www-form-urlencoded
-// @Produce json
-// @Param session_id formData uint true "ID сессии голосования"
-// @Param team_id formData uint true "ID команды"
-// @Param option formData string true "Выбранный вариант"
-// @Success 200 {object} map[string]interface{} "Голос учтён"
-// @Failure 400 {object} map[string]interface{} "Ошибка"
-// @Router /voting/vote [post]
-// @Security JWT
 func (h *MonitorHandler) Vote(c *gin.Context) {
 	var input VoteInput
 	if err := c.ShouldBind(&input); err != nil {
@@ -368,6 +355,7 @@ func (h *MonitorHandler) Vote(c *gin.Context) {
 	}
 
 	if err := h.blackboxVoteService.Vote(c.Request.Context(), input.SessionID, input.TeamID, input.Option); err != nil {
+		log.Error().Err(err).Uint("session_id", input.SessionID).Uint("team_id", input.TeamID).Str("option", input.Option).Msg("Vote: failed to vote")
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -375,19 +363,15 @@ func (h *MonitorHandler) Vote(c *gin.Context) {
 }
 
 // GetVotingResults возвращает текущие результаты голосования.
-// @Summary Результаты голосования
-// @Description Возвращает текущие результаты голосования по сессии
-// @Tags monitor
-// @Produce json
-// @Param session_id path int true "ID сессии голосования"
-// @Success 200 {object} map[string]interface{} "Результаты голосования"
-// @Failure 500 {object} map[string]interface{} "Ошибка"
-// @Router /voting/{session_id}/results [get]
-// @Security JWT
 func (h *MonitorHandler) GetVotingResults(c *gin.Context) {
-	sessionID, _ := strconv.Atoi(c.Param("session_id"))
+	sessionID, err := strconv.Atoi(c.Param("session_id"))
+	if err != nil || sessionID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID сессии"})
+		return
+	}
 	results, err := h.blackboxVoteService.GetVotingResults(c.Request.Context(), uint(sessionID))
 	if err != nil {
+		log.Error().Err(err).Int("session_id", sessionID).Msg("GetVotingResults: failed to get results")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -395,22 +379,17 @@ func (h *MonitorHandler) GetVotingResults(c *gin.Context) {
 }
 
 // CloseVoting завершает голосование и определяет победителя.
-// @Summary Закрытие голосования
-// @Description Завершает голосование и определяет победителя (доступно автору игры)
-// @Tags monitor
-// @Accept x-www-form-urlencoded
-// @Produce json
-// @Param session_id path int true "ID сессии голосования"
-// @Success 200 {object} map[string]interface{} "Победивший вариант"
-// @Failure 400 {object} map[string]interface{} "Ошибка"
-// @Router /voting/{session_id}/close [post]
-// @Security JWT
 func (h *MonitorHandler) CloseVoting(c *gin.Context) {
-	sessionID, _ := strconv.Atoi(c.Param("session_id"))
+	sessionID, err := strconv.Atoi(c.Param("session_id"))
+	if err != nil || sessionID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID сессии"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	winner, err := h.blackboxVoteService.CloseVoting(c.Request.Context(), uint(sessionID), userID)
 	if err != nil {
+		log.Error().Err(err).Int("session_id", sessionID).Uint("user_id", userID).Msg("CloseVoting: failed to close voting")
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}

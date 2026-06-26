@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
 	csrf "github.com/utrack/gin-csrf"
 )
 
@@ -19,16 +20,6 @@ func NewFollowHandler(followService *FollowService) *FollowHandler {
 }
 
 // Follow подписывает текущего пользователя на автора.
-// @Summary Подписаться на автора
-// @Description Создаёт подписку текущего пользователя на автора игр
-// @Tags social
-// @Accept json
-// @Produce json
-// @Param id path int true "ID автора"
-// @Success 200 {object} map[string]interface{} "Статус followed"
-// @Failure 400 {object} map[string]interface{} "Неверный ID автора"
-// @Router /follow/{id} [post]
-// @Security JWT
 func (h *FollowHandler) Follow(c *gin.Context) {
 	authorID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || authorID <= 0 {
@@ -36,8 +27,13 @@ func (h *FollowHandler) Follow(c *gin.Context) {
 		return
 	}
 	userID := c.GetUint("userID")
+	if userID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "требуется аутентификация"})
+		return
+	}
 
 	if err := h.followService.Follow(c.Request.Context(), userID, uint(authorID)); err != nil {
+		log.Error().Err(err).Uint("user_id", userID).Int("author_id", authorID).Msg("Follow: failed to follow author")
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -45,16 +41,6 @@ func (h *FollowHandler) Follow(c *gin.Context) {
 }
 
 // Unfollow отменяет подписку.
-// @Summary Отписаться от автора
-// @Description Удаляет подписку текущего пользователя на автора
-// @Tags social
-// @Accept json
-// @Produce json
-// @Param id path int true "ID автора"
-// @Success 200 {object} map[string]interface{} "Статус unfollowed"
-// @Failure 400 {object} map[string]interface{} "Неверный ID автора"
-// @Router /follow/{id} [delete]
-// @Security JWT
 func (h *FollowHandler) Unfollow(c *gin.Context) {
 	authorID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || authorID <= 0 {
@@ -62,8 +48,13 @@ func (h *FollowHandler) Unfollow(c *gin.Context) {
 		return
 	}
 	userID := c.GetUint("userID")
+	if userID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "требуется аутентификация"})
+		return
+	}
 
 	if err := h.followService.Unfollow(c.Request.Context(), userID, uint(authorID)); err != nil {
+		log.Error().Err(err).Uint("user_id", userID).Int("author_id", authorID).Msg("Unfollow: failed to unfollow author")
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -71,15 +62,6 @@ func (h *FollowHandler) Unfollow(c *gin.Context) {
 }
 
 // IsFollowing проверяет статус подписки.
-// @Summary Проверить подписку
-// @Description Проверяет, подписан ли текущий пользователь на автора
-// @Tags social
-// @Produce json
-// @Param id path int true "ID автора"
-// @Success 200 {object} map[string]interface{} "Статус подписки"
-// @Failure 400 {object} map[string]interface{} "Неверный ID автора"
-// @Router /follow/{id}/check [get]
-// @Security JWT
 func (h *FollowHandler) IsFollowing(c *gin.Context) {
 	authorID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || authorID <= 0 {
@@ -87,23 +69,26 @@ func (h *FollowHandler) IsFollowing(c *gin.Context) {
 		return
 	}
 	userID := c.GetUint("userID")
+	if userID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "требуется аутентификация"})
+		return
+	}
 
 	following := h.followService.IsFollowing(c.Request.Context(), userID, uint(authorID))
 	c.JSON(http.StatusOK, gin.H{"following": following})
 }
 
 // Subscriptions отображает список подписок текущего пользователя.
-// @Summary Список подписок
-// @Description Отображает HTML-страницу с авторами, на которых подписан текущий пользователь
-// @Tags social
-// @Produce html
-// @Success 200 {string} html "Страница подписок"
-// @Router /subscriptions [get]
-// @Security JWT
 func (h *FollowHandler) Subscriptions(c *gin.Context) {
 	userID := c.GetUint("userID")
+	if userID == 0 {
+		c.Redirect(http.StatusFound, "/auth/login")
+		return
+	}
+
 	authors, err := h.followService.GetSubscriptions(c.Request.Context(), userID)
 	if err != nil {
+		log.Error().Err(err).Uint("user_id", userID).Msg("Subscriptions: failed to get subscriptions")
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}

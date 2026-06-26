@@ -2,6 +2,7 @@
 package admin
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 	csrf "github.com/utrack/gin-csrf"
+	"gorm.io/gorm"
 )
 
 // AdminHandler управляет административной панелью.
@@ -40,19 +42,32 @@ func NewAdminHandler(
 // ---------- Пользователи ----------
 
 // Dashboard отображает главную страницу админ-панели.
-// @Summary Панель управления администратора
-// @Description Отображает главную страницу админ-панели с общей статистикой
-// @Tags admin
-// @Produce html
-// @Success 200 {string} html "Страница админ-панели"
-// @Router /admin [get]
-// @Security JWT
 func (h *AdminHandler) Dashboard(c *gin.Context) {
 	ctx := c.Request.Context()
-	userCount, _ := h.userRepo.Count(ctx)
-	gameCount, _ := h.gameRepo.Count(ctx, h.gameRepo.Model(ctx))
-	auditCount, _ := h.auditService.Count(ctx)
-	backupCount, _ := h.backupService.backupRepo.Count(ctx)
+
+	userCount, err := h.userRepo.Count(ctx)
+	if err != nil {
+		log.Error().Err(err).Msg("Dashboard: failed to count users")
+		userCount = 0
+	}
+
+	gameCount, err := h.gameRepo.Count(ctx, h.gameRepo.Model(ctx))
+	if err != nil {
+		log.Error().Err(err).Msg("Dashboard: failed to count games")
+		gameCount = 0
+	}
+
+	auditCount, err := h.auditService.Count(ctx)
+	if err != nil {
+		log.Error().Err(err).Msg("Dashboard: failed to count audit logs")
+		auditCount = 0
+	}
+
+	backupCount, err := h.backupService.backupRepo.Count(ctx)
+	if err != nil {
+		log.Error().Err(err).Msg("Dashboard: failed to count backups")
+		backupCount = 0
+	}
 
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock":  "admin-dashboard.html",
@@ -67,20 +82,12 @@ func (h *AdminHandler) Dashboard(c *gin.Context) {
 }
 
 // ListUsers отображает список всех пользователей с возможностью фильтрации по роли.
-// @Summary Список пользователей
-// @Description Отображает список всех пользователей с фильтром по роли
-// @Tags admin
-// @Produce html
-// @Param role query string false "Роль пользователя (user, admin)"
-// @Success 200 {string} html "Страница со списком пользователей"
-// @Router /admin/users [get]
-// @Security JWT
 func (h *AdminHandler) ListUsers(c *gin.Context) {
 	ctx := c.Request.Context()
 	role := c.Query("role")
 	users, err := h.userRepo.List(ctx, role)
 	if err != nil {
-		log.Error().Err(err).Msg("ListUsers failed")
+		log.Error().Err(err).Str("role", role).Msg("ListUsers failed")
 		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{"ContentBlock": "errors/500.html", "Error": err.Error()})
 		return
 	}
@@ -96,18 +103,11 @@ func (h *AdminHandler) ListUsers(c *gin.Context) {
 }
 
 // ToggleAdmin переключает роль пользователя между user и admin.
-// @Summary Переключение роли пользователя
-// @Description Делает пользователя администратором или обычным пользователем
-// @Tags admin
-// @Produce html
-// @Param id path int true "ID пользователя"
-// @Success 302 {string} string "Перенаправление на /admin/users"
-// @Router /admin/users/{id}/toggle-admin [get]
-// @Security JWT
 func (h *AdminHandler) ToggleAdmin(c *gin.Context) {
 	idStr := c.Param("id")
 	userID, err := strconv.Atoi(idStr)
 	if err != nil || userID <= 0 {
+		log.Warn().Str("id", idStr).Msg("ToggleAdmin: invalid user ID")
 		c.Redirect(http.StatusFound, "/admin/users")
 		return
 	}
@@ -115,6 +115,11 @@ func (h *AdminHandler) ToggleAdmin(c *gin.Context) {
 	ctx := c.Request.Context()
 	u, err := h.userRepo.GetByID(ctx, uint(userID))
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Warn().Int("user_id", userID).Msg("ToggleAdmin: user not found")
+		} else {
+			log.Error().Err(err).Int("user_id", userID).Msg("ToggleAdmin: failed to get user")
+		}
 		c.Redirect(http.StatusFound, "/admin/users")
 		return
 	}
@@ -125,46 +130,40 @@ func (h *AdminHandler) ToggleAdmin(c *gin.Context) {
 		u.Role = "admin"
 	}
 	if err := h.userRepo.Update(ctx, u.ID, map[string]any{"role": u.Role}); err != nil {
-		log.Error().Err(err).Uint("user", u.ID).Msg("ToggleAdmin: failed to update")
+		log.Error().Err(err).Uint("user", u.ID).Msg("ToggleAdmin: failed to update role")
+		c.Redirect(http.StatusFound, "/admin/users")
+		return
 	}
 
 	c.Redirect(http.StatusFound, "/admin/users")
 }
 
 // DeleteUser удаляет пользователя.
-// @Summary Удаление пользователя
-// @Description Безвозвратно удаляет пользователя (административное действие)
-// @Tags admin
-// @Produce html
-// @Param id path int true "ID пользователя"
-// @Success 302 {string} string "Перенаправление на /admin/users"
-// @Router /admin/users/{id}/delete [get]
-// @Security JWT
 func (h *AdminHandler) DeleteUser(c *gin.Context) {
 	idStr := c.Param("id")
 	userID, err := strconv.Atoi(idStr)
 	if err != nil || userID <= 0 {
+		log.Warn().Str("id", idStr).Msg("DeleteUser: invalid user ID")
 		c.Redirect(http.StatusFound, "/admin/users")
 		return
 	}
 
 	if err := h.userRepo.Delete(c.Request.Context(), uint(userID)); err != nil {
-		log.Error().Err(err).Int("user", userID).Msg("DeleteUser: failed to delete")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Warn().Int("user_id", userID).Msg("DeleteUser: user not found")
+		} else {
+			log.Error().Err(err).Int("user_id", userID).Msg("DeleteUser: failed to delete user")
+		}
+		c.Redirect(http.StatusFound, "/admin/users")
+		return
 	}
+
 	c.Redirect(http.StatusFound, "/admin/users")
 }
 
 // ---------- Игры ----------
 
 // ListGames отображает все игры (включая черновики) с фильтрацией.
-// @Summary Список игр (административный)
-// @Description Отображает все игры с фильтром по статусу (черновик / опубликована)
-// @Tags admin
-// @Produce html
-// @Param status query string false "Статус игры (draft, published)"
-// @Success 200 {string} html "Страница со списком игр"
-// @Router /admin/games [get]
-// @Security JWT
 func (h *AdminHandler) ListGames(c *gin.Context) {
 	ctx := c.Request.Context()
 	status := c.Query("status")
@@ -175,9 +174,9 @@ func (h *AdminHandler) ListGames(c *gin.Context) {
 	case "published":
 		query = query.Where("is_draft = false")
 	}
-	games, err := h.gameRepo.ListFiltered(ctx, query, 0, 1000) // без пагинации
+	games, err := h.gameRepo.ListFiltered(ctx, query, 0, 1000)
 	if err != nil {
-		log.Error().Err(err).Msg("ListGames failed")
+		log.Error().Err(err).Str("status", status).Msg("ListGames failed")
 		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{"ContentBlock": "errors/500.html", "Error": err.Error()})
 		return
 	}
@@ -193,49 +192,38 @@ func (h *AdminHandler) ListGames(c *gin.Context) {
 }
 
 // DeleteGame удаляет любую игру (административное действие).
-// @Summary Удаление игры (административное)
-// @Description Безвозвратно удаляет игру (доступно только администратору)
-// @Tags admin
-// @Produce html
-// @Param id path int true "ID игры"
-// @Success 302 {string} string "Перенаправление на /admin/games"
-// @Router /admin/games/{id}/delete [get]
-// @Security JWT
 func (h *AdminHandler) DeleteGame(c *gin.Context) {
 	idStr := c.Param("id")
 	gameID, err := strconv.Atoi(idStr)
 	if err != nil || gameID <= 0 {
+		log.Warn().Str("id", idStr).Msg("DeleteGame: invalid game ID")
 		c.Redirect(http.StatusFound, "/admin/games")
 		return
 	}
 
 	if err := h.gameRepo.Delete(c.Request.Context(), uint(gameID)); err != nil {
-		log.Error().Err(err).Int("game", gameID).Msg("DeleteGame: failed to delete")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Warn().Int("game_id", gameID).Msg("DeleteGame: game not found")
+		} else {
+			log.Error().Err(err).Int("game_id", gameID).Msg("DeleteGame: failed to delete game")
+		}
+		c.Redirect(http.StatusFound, "/admin/games")
+		return
 	}
+
 	c.Redirect(http.StatusFound, "/admin/games")
 }
 
 // ---------- Аудит ----------
 
 // AuditLog отображает страницу с записями аудита (с пагинацией и фильтрацией).
-// @Summary Журнал аудита
-// @Description Отображает записи аудита с возможностью фильтрации по пользователю и действию
-// @Tags admin
-// @Produce html
-// @Param page query int false "Номер страницы" default(1)
-// @Param per_page query int false "Количество записей на странице" default(20)
-// @Param user_id query string false "ID пользователя"
-// @Param action query string false "Действие (create, update, delete, login и т.д.)"
-// @Success 200 {string} html "Страница аудита"
-// @Router /admin/audit [get]
-// @Security JWT
 func (h *AdminHandler) AuditLog(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	perPage, _ := strconv.Atoi(c.DefaultQuery("per_page", "20"))
-	if page < 1 {
+	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if err != nil || page < 1 {
 		page = 1
 	}
-	if perPage < 1 || perPage > 100 {
+	perPage, err := strconv.Atoi(c.DefaultQuery("per_page", "20"))
+	if err != nil || perPage < 1 || perPage > 100 {
 		perPage = 20
 	}
 
@@ -244,14 +232,23 @@ func (h *AdminHandler) AuditLog(c *gin.Context) {
 
 	logs, total, err := h.auditService.List(c.Request.Context(), userIDStr, action, page, perPage)
 	if err != nil {
-		log.Error().Err(err).Msg("AuditLog list failed")
+		log.Error().Err(err).Str("user_id", userIDStr).Str("action", action).Msg("AuditLog list failed")
 		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{"ContentBlock": "errors/500.html", "Error": err.Error()})
 		return
 	}
 
 	totalPages := int((total + int64(perPage) - 1) / int64(perPage))
-	prevPage := max(page-1, 1)
-	nextPage := min(page+1, totalPages)
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	prevPage := page - 1
+	if prevPage < 1 {
+		prevPage = 1
+	}
+	nextPage := page + 1
+	if nextPage > totalPages {
+		nextPage = totalPages
+	}
 
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock":  "admin-audit.html",
@@ -271,13 +268,6 @@ func (h *AdminHandler) AuditLog(c *gin.Context) {
 // ---------- Бекапы ----------
 
 // ListBackups отображает страницу с историей резервных копий.
-// @Summary Список бекапов
-// @Description Отображает список созданных резервных копий базы данных
-// @Tags admin
-// @Produce html
-// @Success 200 {string} html "Страница бекапов"
-// @Router /admin/backups [get]
-// @Security JWT
 func (h *AdminHandler) ListBackups(c *gin.Context) {
 	backups, err := h.backupService.List(c.Request.Context())
 	if err != nil {
@@ -298,13 +288,6 @@ func (h *AdminHandler) ListBackups(c *gin.Context) {
 }
 
 // CreateBackup запускает ручное создание бекапа.
-// @Summary Создание бекапа
-// @Description Создаёт новую резервную копию базы данных с помощью pg_dump
-// @Tags admin
-// @Produce html
-// @Success 302 {string} string "Перенаправление на /admin/backups"
-// @Router /admin/backups/create [post]
-// @Security JWT
 func (h *AdminHandler) CreateBackup(c *gin.Context) {
 	if err := h.backupService.CreateNow(c.Request.Context()); err != nil {
 		log.Error().Err(err).Msg("CreateBackup failed")
@@ -315,33 +298,30 @@ func (h *AdminHandler) CreateBackup(c *gin.Context) {
 }
 
 // DownloadBackup отдаёт файл бекапа по ID.
-// @Summary Скачать бекап
-// @Description Скачивает файл резервной копии по ID
-// @Tags admin
-// @Produce application/octet-stream
-// @Param id path int true "ID бекапа"
-// @Success 200 {file} file "Файл бекапа"
-// @Failure 404 {object} map[string]interface{} "Бекап не найден"
-// @Router /admin/backups/{id}/download [get]
-// @Security JWT
 func (h *AdminHandler) DownloadBackup(c *gin.Context) {
-	backupID, _ := strconv.Atoi(c.Param("id"))
+	idStr := c.Param("id")
+	backupID, err := strconv.Atoi(idStr)
+	if err != nil || backupID <= 0 {
+		log.Warn().Str("id", idStr).Msg("DownloadBackup: invalid backup ID")
+		c.HTML(http.StatusBadRequest, "errors/400.html", nil)
+		return
+	}
+
 	path, err := h.backupService.Download(c.Request.Context(), uint(backupID))
 	if err != nil {
-		c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Warn().Int("backup_id", backupID).Msg("DownloadBackup: backup not found")
+			c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		} else {
+			log.Error().Err(err).Int("backup_id", backupID).Msg("DownloadBackup: failed to download backup")
+			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		}
 		return
 	}
 	c.File(path)
 }
 
 // RotateBackups запускает принудительную ротацию старых бекапов.
-// @Summary Ротация бекапов
-// @Description Удаляет старые резервные копии, оставляя не более MaxBackups
-// @Tags admin
-// @Produce html
-// @Success 302 {string} string "Перенаправление на /admin/backups"
-// @Router /admin/backups/rotate [post]
-// @Security JWT
 func (h *AdminHandler) RotateBackups(c *gin.Context) {
 	if err := h.backupService.RotateBackups(c.Request.Context()); err != nil {
 		log.Error().Err(err).Msg("RotateBackups failed")

@@ -2,14 +2,18 @@
 package tournament
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
 	"gengine-0/internal/config"
+	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/team"
 
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
 	csrf "github.com/utrack/gin-csrf"
+	"gorm.io/gorm"
 )
 
 // ---------- Входные структуры ----------
@@ -61,15 +65,10 @@ func NewTournamentHandler(
 }
 
 // List отображает список турниров.
-// @Summary Список турниров
-// @Description Возвращает HTML-страницу со списком всех турниров
-// @Tags tournaments
-// @Produce html
-// @Success 200 {string} html "Страница со списком турниров"
-// @Router /tournaments [get]
 func (h *TournamentHandler) List(c *gin.Context) {
 	tournaments, err := h.tournamentService.List(c.Request.Context())
 	if err != nil {
+		log.Error().Err(err).Msg("TournamentHandler.List: failed to list tournaments")
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
@@ -80,27 +79,37 @@ func (h *TournamentHandler) List(c *gin.Context) {
 }
 
 // Show отображает один турнир с таблицей лидеров.
-// @Summary Детали турнира
-// @Description Отображает информацию о турнире, список игр и таблицу лидеров
-// @Tags tournaments
-// @Produce html
-// @Param id path int true "ID турнира"
-// @Success 200 {string} html "Страница турнира"
-// @Failure 404 {object} map[string]interface{} "Турнир не найден"
-// @Router /tournaments/{id} [get]
-// @Security JWT
 func (h *TournamentHandler) Show(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID турнира"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	t, err := h.tournamentService.GetByID(c.Request.Context(), uint(id))
 	if err != nil {
-		c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		} else {
+			log.Error().Err(err).Int("tournament_id", id).Msg("TournamentHandler.Show: failed to get tournament")
+			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		}
 		return
 	}
 
-	games, _ := h.tournamentService.ListGames(c.Request.Context(), uint(id))
-	leaderboard, _ := h.tournamentService.GetLeaderboard(c.Request.Context(), uint(id))
+	games, err := h.tournamentService.ListGames(c.Request.Context(), uint(id))
+	if err != nil {
+		log.Error().Err(err).Int("tournament_id", id).Msg("TournamentHandler.Show: failed to list games")
+		games = []game.Game{} // fallback
+	}
+
+	leaderboard, err := h.tournamentService.GetLeaderboard(c.Request.Context(), uint(id))
+	if err != nil {
+		log.Error().Err(err).Int("tournament_id", id).Msg("TournamentHandler.Show: failed to get leaderboard")
+		leaderboard = []TournamentResult{}
+	}
+
 	canApply := h.tournamentService.CanApply(c.Request.Context(), uint(id), userID)
 
 	c.HTML(http.StatusOK, "layout.html", gin.H{
@@ -115,13 +124,6 @@ func (h *TournamentHandler) Show(c *gin.Context) {
 }
 
 // NewForm отображает форму создания турнира.
-// @Summary Форма создания турнира
-// @Description Возвращает HTML-страницу с формой для создания нового турнира
-// @Tags tournaments
-// @Produce html
-// @Success 200 {string} html "Форма создания турнира"
-// @Router /tournaments/new [get]
-// @Security JWT
 func (h *TournamentHandler) NewForm(c *gin.Context) {
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "tournaments-new.html",
@@ -130,27 +132,12 @@ func (h *TournamentHandler) NewForm(c *gin.Context) {
 }
 
 // Create создаёт новый турнир.
-// @Summary Создание турнира
-// @Description Создаёт новый турнир
-// @Tags tournaments
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param name formData string true "Название турнира"
-// @Param description formData string false "Описание турнира"
-// @Param points_for_first formData int false "Очков за 1 место" default(10)
-// @Param points_for_second formData int false "Очков за 2 место" default(7)
-// @Param points_for_third formData int false "Очков за 3 место" default(5)
-// @Param points_for_participation formData int false "Очков за участие" default(2)
-// @Success 302 {string} string "Перенаправление на /tournaments/{id}"
-// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-// @Router /tournaments [post]
-// @Security JWT
 func (h *TournamentHandler) Create(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	var input CreateTournamentInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 			"ContentBlock": "tournaments-new.html",
 			"Error":        "Неверные данные: " + err.Error(),
 			"csrf":         csrf.GetToken(c),
@@ -169,7 +156,8 @@ func (h *TournamentHandler) Create(c *gin.Context) {
 	}
 
 	if err := h.tournamentService.Create(c.Request.Context(), t); err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		log.Error().Err(err).Uint("author_id", userID).Msg("TournamentHandler.Create: failed to create tournament")
+		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
 			"ContentBlock": "tournaments-new.html",
 			"Error":        err.Error(),
 			"csrf":         csrf.GetToken(c),
@@ -181,22 +169,22 @@ func (h *TournamentHandler) Create(c *gin.Context) {
 }
 
 // EditForm отображает форму редактирования турнира.
-// @Summary Форма редактирования турнира
-// @Description Возвращает HTML-страницу с формой для редактирования турнира
-// @Tags tournaments
-// @Produce html
-// @Param id path int true "ID турнира"
-// @Success 200 {string} html "Форма редактирования турнира"
-// @Failure 404 {object} map[string]interface{} "Турнир не найден"
-// @Router /tournaments/{id}/edit [get]
-// @Security JWT
 func (h *TournamentHandler) EditForm(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID турнира"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	t, err := h.tournamentService.GetByID(c.Request.Context(), uint(id))
 	if err != nil {
-		c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		} else {
+			log.Error().Err(err).Int("tournament_id", id).Msg("TournamentHandler.EditForm: failed to get tournament")
+			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		}
 		return
 	}
 	if t.AuthorID != userID {
@@ -212,29 +200,17 @@ func (h *TournamentHandler) EditForm(c *gin.Context) {
 }
 
 // Update обновляет турнир.
-// @Summary Обновление турнира
-// @Description Обновляет данные турнира (доступно только автору)
-// @Tags tournaments
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param id path int true "ID турнира"
-// @Param name formData string false "Название турнира"
-// @Param description formData string false "Описание турнира"
-// @Param points_for_first formData int false "Очков за 1 место"
-// @Param points_for_second formData int false "Очков за 2 место"
-// @Param points_for_third formData int false "Очков за 3 место"
-// @Param points_for_participation formData int false "Очков за участие"
-// @Success 302 {string} string "Перенаправление на /tournaments/{id}"
-// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Router /tournaments/{id} [put]
-// @Security JWT
 func (h *TournamentHandler) Update(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID турнира"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	var input UpdateTournamentInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 			"ContentBlock": "tournaments-edit.html",
 			"Error":        "Неверные данные: " + err.Error(),
 			"csrf":         csrf.GetToken(c),
@@ -252,7 +228,8 @@ func (h *TournamentHandler) Update(c *gin.Context) {
 	}
 
 	if err := h.tournamentService.Update(c.Request.Context(), uint(id), updated, userID); err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		log.Error().Err(err).Int("tournament_id", id).Uint("user_id", userID).Msg("TournamentHandler.Update: failed to update tournament")
+		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
 			"ContentBlock": "tournaments-edit.html",
 			"Error":        err.Error(),
 			"csrf":         csrf.GetToken(c),
@@ -264,25 +241,26 @@ func (h *TournamentHandler) Update(c *gin.Context) {
 }
 
 // Games отображает список игр турнира.
-// @Summary Список игр турнира
-// @Description Отображает список игр, включённых в турнир, и доступные для добавления
-// @Tags tournaments
-// @Produce html
-// @Param id path int true "ID турнира"
-// @Success 200 {string} html "Страница управления играми турнира"
-// @Router /tournaments/{id}/games [get]
-// @Security JWT
 func (h *TournamentHandler) Games(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID турнира"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	games, err := h.tournamentService.ListGames(c.Request.Context(), uint(id))
 	if err != nil {
+		log.Error().Err(err).Int("tournament_id", id).Msg("TournamentHandler.Games: failed to list games")
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
 
-	availableGames, _ := h.tournamentService.GetAvailableGames(c.Request.Context(), uint(id), userID)
+	availableGames, err := h.tournamentService.GetAvailableGames(c.Request.Context(), uint(id), userID)
+	if err != nil {
+		log.Error().Err(err).Int("tournament_id", id).Uint("user_id", userID).Msg("TournamentHandler.Games: failed to get available games")
+		availableGames = []game.Game{}
+	}
 
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock":   "tournaments-games.html",
@@ -294,28 +272,22 @@ func (h *TournamentHandler) Games(c *gin.Context) {
 }
 
 // AddGame добавляет игру в турнир.
-// @Summary Добавление игры в турнир
-// @Description Добавляет существующую игру в турнир (доступно автору турнира)
-// @Tags tournaments
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param id path int true "ID турнира"
-// @Param game_id formData uint true "ID игры"
-// @Success 302 {string} string "Перенаправление на /tournaments/{id}/games"
-// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Router /tournaments/{id}/games [post]
-// @Security JWT
 func (h *TournamentHandler) AddGame(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID турнира"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	var input AddGameInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": "Неверные данные: " + err.Error()})
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверные данные: " + err.Error()})
 		return
 	}
 
 	if err := h.tournamentService.AddGame(c.Request.Context(), uint(id), input.GameID, userID); err != nil {
+		log.Error().Err(err).Int("tournament_id", id).Uint("game_id", input.GameID).Uint("user_id", userID).Msg("TournamentHandler.AddGame: failed to add game")
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
@@ -324,23 +296,21 @@ func (h *TournamentHandler) AddGame(c *gin.Context) {
 }
 
 // RemoveGame удаляет игру из турнира.
-// @Summary Удаление игры из турнира
-// @Description Удаляет игру из турнира (доступно автору турнира)
-// @Tags tournaments
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param id path int true "ID турнира"
-// @Param game_id path int true "ID игры"
-// @Success 302 {string} string "Перенаправление на /tournaments/{id}/games"
-// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Router /tournaments/{id}/games/{game_id} [delete]
-// @Security JWT
 func (h *TournamentHandler) RemoveGame(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
-	gameID, _ := strconv.Atoi(c.Param("game_id"))
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID турнира"})
+		return
+	}
+	gameID, err := strconv.Atoi(c.Param("game_id"))
+	if err != nil || gameID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	if err := h.tournamentService.RemoveGame(c.Request.Context(), uint(id), uint(gameID), userID); err != nil {
+		log.Error().Err(err).Int("tournament_id", id).Int("game_id", gameID).Uint("user_id", userID).Msg("TournamentHandler.RemoveGame: failed to remove game")
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
@@ -349,19 +319,19 @@ func (h *TournamentHandler) RemoveGame(c *gin.Context) {
 }
 
 // ApplyForm отображает форму подачи заявки на турнир.
-// @Summary Форма подачи заявки
-// @Description Возвращает HTML-страницу с формой для подачи заявки команды на турнир
-// @Tags tournaments
-// @Produce html
-// @Param id path int true "ID турнира"
-// @Success 200 {string} html "Форма подачи заявки"
-// @Router /tournaments/{id}/apply [get]
-// @Security JWT
 func (h *TournamentHandler) ApplyForm(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID турнира"})
+		return
+	}
 	userID := c.GetUint("userID")
 
-	teams, _ := h.teamService.GetMyTeams(c.Request.Context(), userID)
+	teams, err := h.teamService.GetMyTeams(c.Request.Context(), userID)
+	if err != nil {
+		log.Error().Err(err).Uint("user_id", userID).Msg("TournamentHandler.ApplyForm: failed to get teams")
+		teams = []team.Team{}
+	}
 
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "tournaments-apply.html",
@@ -372,28 +342,22 @@ func (h *TournamentHandler) ApplyForm(c *gin.Context) {
 }
 
 // Apply подаёт заявку на турнир.
-// @Summary Подача заявки на турнир
-// @Description Команда подаёт заявку на участие в турнире (доступно капитану)
-// @Tags tournaments
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param id path int true "ID турнира"
-// @Param team_id formData uint true "ID команды"
-// @Success 302 {string} string "Перенаправление на /tournaments/{id}"
-// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Router /tournaments/{id}/apply [post]
-// @Security JWT
 func (h *TournamentHandler) Apply(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID турнира"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	var input ApplyInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": "Неверные данные: " + err.Error()})
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверные данные: " + err.Error()})
 		return
 	}
 
 	if err := h.tournamentService.Apply(c.Request.Context(), uint(id), input.TeamID, userID); err != nil {
+		log.Error().Err(err).Int("tournament_id", id).Uint("team_id", input.TeamID).Uint("user_id", userID).Msg("TournamentHandler.Apply: failed to apply")
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}

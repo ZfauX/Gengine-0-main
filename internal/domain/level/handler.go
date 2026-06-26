@@ -2,6 +2,7 @@
 package level
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -11,6 +12,7 @@ import (
 	ws "gengine-0/internal/pkg/websocket"
 
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
 	csrf "github.com/utrack/gin-csrf"
 	"gorm.io/gorm"
 )
@@ -95,27 +97,28 @@ func NewLevelHandler(
 // ----- Уровни -----
 
 // ListByGame отображает список уровней игры.
-// @Summary Список уровней игры
-// @Description Возвращает HTML-страницу со списком всех уровней игры
-// @Tags levels
-// @Produce html
-// @Param game_id path int true "ID игры"
-// @Success 200 {string} html "Страница со списком уровней"
-// @Failure 403 {object} map[string]interface{} "Нет прав доступа"
-// @Router /games/{game_id}/levels [get]
-// @Security JWT
 func (h *LevelHandler) ListByGame(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("game_id"))
+	gameID, err := strconv.Atoi(c.Param("game_id"))
+	if err != nil || gameID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	ok, err := h.authorizer.IsUserManager(uint(gameID), userID)
-	if err != nil || !ok {
+	if err != nil {
+		log.Error().Err(err).Int("game_id", gameID).Uint("user", userID).Msg("ListByGame: failed to check manager")
+		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		return
+	}
+	if !ok {
 		c.HTML(http.StatusForbidden, "errors/403.html", nil)
 		return
 	}
 
 	levels, err := h.levelService.ListByGame(c.Request.Context(), uint(gameID))
 	if err != nil {
+		log.Error().Err(err).Int("game_id", gameID).Msg("ListByGame: failed to list levels")
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
@@ -129,16 +132,12 @@ func (h *LevelHandler) ListByGame(c *gin.Context) {
 }
 
 // NewForm отображает форму создания уровня.
-// @Summary Форма создания уровня
-// @Description Возвращает HTML-страницу с формой для создания нового уровня
-// @Tags levels
-// @Produce html
-// @Param game_id path int true "ID игры"
-// @Success 200 {string} html "Форма создания уровня"
-// @Router /games/{game_id}/levels/new [get]
-// @Security JWT
 func (h *LevelHandler) NewForm(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("game_id"))
+	gameID, err := strconv.Atoi(c.Param("game_id"))
+	if err != nil || gameID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "levels-new.html",
 		"GameID":       gameID,
@@ -147,33 +146,17 @@ func (h *LevelHandler) NewForm(c *gin.Context) {
 }
 
 // Create создаёт новый уровень.
-// @Summary Создание уровня
-// @Description Создаёт новый уровень в игре
-// @Tags levels
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param game_id path int true "ID игры"
-// @Param name formData string true "Название уровня"
-// @Param description formData string false "Описание"
-// @Param position formData int false "Позиция"
-// @Param type formData string false "Тип уровня"
-// @Param parent_id formData int false "ID родительского уровня"
-// @Param group_id formData int false "ID группы"
-// @Param min_children formData int false "Минимальное количество детей"
-// @Param requires_confirmation formData bool false "Требуется подтверждение"
-// @Param latitude formData number false "Широта"
-// @Param longitude formData number false "Долгота"
-// @Success 302 {string} string "Перенаправление на /games/{game_id}/levels"
-// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-// @Router /games/{game_id}/levels [post]
-// @Security JWT
 func (h *LevelHandler) Create(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("game_id"))
+	gameID, err := strconv.Atoi(c.Param("game_id"))
+	if err != nil || gameID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	var input CreateLevelInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 			"ContentBlock": "levels-new.html",
 			"GameID":       gameID,
 			"Error":        "Неверные данные: " + err.Error(),
@@ -196,7 +179,8 @@ func (h *LevelHandler) Create(c *gin.Context) {
 	}
 
 	if err := h.levelService.Create(c.Request.Context(), uint(gameID), level, userID); err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		log.Error().Err(err).Int("game_id", gameID).Uint("user", userID).Msg("Create: failed to create level")
+		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
 			"ContentBlock": "levels-new.html",
 			"GameID":       gameID,
 			"Error":        err.Error(),
@@ -209,28 +193,32 @@ func (h *LevelHandler) Create(c *gin.Context) {
 }
 
 // EditForm отображает форму редактирования уровня.
-// @Summary Форма редактирования уровня
-// @Description Возвращает HTML-страницу с формой для редактирования уровня
-// @Tags levels
-// @Produce html
-// @Param game_id path int true "ID игры"
-// @Param level_id path int true "ID уровня"
-// @Success 200 {string} html "Форма редактирования уровня"
-// @Failure 404 {object} map[string]interface{} "Уровень не найден"
-// @Router /games/{game_id}/levels/{level_id}/edit [get]
-// @Security JWT
 func (h *LevelHandler) EditForm(c *gin.Context) {
-	levelID, _ := strconv.Atoi(c.Param("level_id"))
+	levelID, err := strconv.Atoi(c.Param("level_id"))
+	if err != nil || levelID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID уровня"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	level, err := h.levelService.GetByID(c.Request.Context(), uint(levelID))
 	if err != nil {
-		c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		} else {
+			log.Error().Err(err).Int("level_id", levelID).Msg("EditForm: failed to get level")
+			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		}
 		return
 	}
 
 	ok, err := h.authorizer.IsUserManager(level.GameID, userID)
-	if err != nil || !ok {
+	if err != nil {
+		log.Error().Err(err).Uint("game_id", level.GameID).Uint("user", userID).Msg("EditForm: failed to check manager")
+		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		return
+	}
+	if !ok {
 		c.HTML(http.StatusForbidden, "errors/403.html", nil)
 		return
 	}
@@ -243,34 +231,17 @@ func (h *LevelHandler) EditForm(c *gin.Context) {
 }
 
 // Update обновляет уровень.
-// @Summary Обновление уровня
-// @Description Обновляет данные уровня
-// @Tags levels
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param game_id path int true "ID игры"
-// @Param level_id path int true "ID уровня"
-// @Param name formData string false "Название уровня"
-// @Param description formData string false "Описание"
-// @Param position formData int false "Позиция"
-// @Param type formData string false "Тип уровня"
-// @Param parent_id formData int false "ID родительского уровня"
-// @Param group_id formData int false "ID группы"
-// @Param min_children formData int false "Минимальное количество детей"
-// @Param requires_confirmation formData bool false "Требуется подтверждение"
-// @Param latitude formData number false "Широта"
-// @Param longitude formData number false "Долгота"
-// @Success 302 {string} string "Перенаправление на /games/{game_id}/levels/{level_id}"
-// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-// @Router /games/{game_id}/levels/{level_id} [put]
-// @Security JWT
 func (h *LevelHandler) Update(c *gin.Context) {
-	levelID, _ := strconv.Atoi(c.Param("level_id"))
+	levelID, err := strconv.Atoi(c.Param("level_id"))
+	if err != nil || levelID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID уровня"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	var input UpdateLevelInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 			"ContentBlock": "levels-edit.html",
 			"Error":        "Неверные данные: " + err.Error(),
 			"csrf":         csrf.GetToken(c),
@@ -292,7 +263,8 @@ func (h *LevelHandler) Update(c *gin.Context) {
 	}
 
 	if err := h.levelService.Update(c.Request.Context(), uint(levelID), updated, userID); err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		log.Error().Err(err).Int("level_id", levelID).Uint("user", userID).Msg("Update: failed to update level")
+		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
 			"ContentBlock": "levels-edit.html",
 			"Level":        updated,
 			"Error":        err.Error(),
@@ -305,20 +277,17 @@ func (h *LevelHandler) Update(c *gin.Context) {
 }
 
 // Delete удаляет уровень (вызов через ActiveGameManager).
-// @Summary Удаление уровня
-// @Description Удаляет уровень из игры (доступно автору или контент-менеджеру)
-// @Tags levels
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param game_id path int true "ID игры"
-// @Param level_id path int true "ID уровня"
-// @Success 302 {string} string "Перенаправление на /games/{game_id}/levels"
-// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Router /games/{game_id}/levels/{level_id} [delete]
-// @Security JWT
 func (h *LevelHandler) Delete(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("game_id"))
-	levelID, _ := strconv.Atoi(c.Param("level_id"))
+	gameID, err := strconv.Atoi(c.Param("game_id"))
+	if err != nil || gameID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
+	levelID, err := strconv.Atoi(c.Param("level_id"))
+	if err != nil || levelID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID уровня"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	if err := h.levelService.DeleteFromActiveGame(c.Request.Context(), uint(gameID), uint(levelID), userID); err != nil {
@@ -330,23 +299,17 @@ func (h *LevelHandler) Delete(c *gin.Context) {
 }
 
 // Duplicate дублирует уровень.
-// @Summary Дублирование уровня
-// @Description Создаёт копию уровня
-// @Tags levels
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param game_id path int true "ID игры"
-// @Param level_id path int true "ID уровня"
-// @Success 302 {string} string "Перенаправление на /games/{game_id}/levels/{new_level_id}"
-// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Router /games/{game_id}/levels/{level_id}/duplicate [post]
-// @Security JWT
 func (h *LevelHandler) Duplicate(c *gin.Context) {
-	levelID, _ := strconv.Atoi(c.Param("level_id"))
+	levelID, err := strconv.Atoi(c.Param("level_id"))
+	if err != nil || levelID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID уровня"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	newLevel, err := h.levelService.Duplicate(c.Request.Context(), uint(levelID), userID)
 	if err != nil {
+		log.Error().Err(err).Int("level_id", levelID).Uint("user", userID).Msg("Duplicate: failed to duplicate level")
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
@@ -355,24 +318,17 @@ func (h *LevelHandler) Duplicate(c *gin.Context) {
 }
 
 // Move перемещает уровень.
-// @Summary Перемещение уровня
-// @Description Изменяет позицию уровня (вверх/вниз)
-// @Tags levels
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param game_id path int true "ID игры"
-// @Param level_id path int true "ID уровня"
-// @Param direction formData string true "Направление (up/down)"
-// @Success 302 {string} string "Перенаправление на /games/{game_id}/levels"
-// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Router /games/{game_id}/levels/{level_id}/move [post]
-// @Security JWT
 func (h *LevelHandler) Move(c *gin.Context) {
-	levelID, _ := strconv.Atoi(c.Param("level_id"))
+	levelID, err := strconv.Atoi(c.Param("level_id"))
+	if err != nil || levelID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID уровня"})
+		return
+	}
 	userID := c.GetUint("userID")
 	direction := c.PostForm("direction")
 
 	if err := h.levelService.Move(c.Request.Context(), uint(levelID), direction, userID); err != nil {
+		log.Error().Err(err).Int("level_id", levelID).Msg("Move: failed to move level")
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
@@ -383,34 +339,39 @@ func (h *LevelHandler) Move(c *gin.Context) {
 // ----- Вопросы -----
 
 // ListQuestions отображает список вопросов уровня.
-// @Summary Список вопросов уровня
-// @Description Возвращает HTML-страницу со списком всех вопросов уровня
-// @Tags questions
-// @Produce html
-// @Param game_id path int true "ID игры"
-// @Param level_id path int true "ID уровня"
-// @Success 200 {string} html "Страница со списком вопросов"
-// @Failure 403 {object} map[string]interface{} "Нет прав доступа"
-// @Router /games/{game_id}/levels/{level_id}/questions [get]
-// @Security JWT
 func (h *LevelHandler) ListQuestions(c *gin.Context) {
-	levelID, _ := strconv.Atoi(c.Param("level_id"))
+	levelID, err := strconv.Atoi(c.Param("level_id"))
+	if err != nil || levelID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID уровня"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	level, err := h.levelService.GetByID(c.Request.Context(), uint(levelID))
 	if err != nil {
-		c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		} else {
+			log.Error().Err(err).Int("level_id", levelID).Msg("ListQuestions: failed to get level")
+			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		}
 		return
 	}
 
 	ok, err := h.authorizer.IsUserManager(level.GameID, userID)
-	if err != nil || !ok {
+	if err != nil {
+		log.Error().Err(err).Uint("game_id", level.GameID).Uint("user", userID).Msg("ListQuestions: failed to check manager")
+		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		return
+	}
+	if !ok {
 		c.HTML(http.StatusForbidden, "errors/403.html", nil)
 		return
 	}
 
 	questions, err := h.questionService.ListByLevel(c.Request.Context(), uint(levelID))
 	if err != nil {
+		log.Error().Err(err).Int("level_id", levelID).Msg("ListQuestions: failed to list questions")
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
@@ -424,17 +385,12 @@ func (h *LevelHandler) ListQuestions(c *gin.Context) {
 }
 
 // NewQuestionForm отображает форму создания вопроса.
-// @Summary Форма создания вопроса
-// @Description Возвращает HTML-страницу с формой для создания нового вопроса
-// @Tags questions
-// @Produce html
-// @Param game_id path int true "ID игры"
-// @Param level_id path int true "ID уровня"
-// @Success 200 {string} html "Форма создания вопроса"
-// @Router /games/{game_id}/levels/{level_id}/questions/new [get]
-// @Security JWT
 func (h *LevelHandler) NewQuestionForm(c *gin.Context) {
-	levelID, _ := strconv.Atoi(c.Param("level_id"))
+	levelID, err := strconv.Atoi(c.Param("level_id"))
+	if err != nil || levelID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID уровня"})
+		return
+	}
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "questions-new.html",
 		"LevelID":      levelID,
@@ -443,26 +399,17 @@ func (h *LevelHandler) NewQuestionForm(c *gin.Context) {
 }
 
 // CreateQuestion создаёт новый вопрос.
-// @Summary Создание вопроса
-// @Description Создаёт новый вопрос в уровне
-// @Tags questions
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param game_id path int true "ID игры"
-// @Param level_id path int true "ID уровня"
-// @Param text formData string true "Текст вопроса"
-// @Param hint formData string false "Подсказка"
-// @Success 302 {string} string "Перенаправление на /games/{game_id}/levels/{level_id}/questions"
-// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-// @Router /games/{game_id}/levels/{level_id}/questions [post]
-// @Security JWT
 func (h *LevelHandler) CreateQuestion(c *gin.Context) {
-	levelID, _ := strconv.Atoi(c.Param("level_id"))
+	levelID, err := strconv.Atoi(c.Param("level_id"))
+	if err != nil || levelID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID уровня"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	var input CreateQuestionInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 			"ContentBlock": "questions-new.html",
 			"LevelID":      levelID,
 			"Error":        "Неверные данные: " + err.Error(),
@@ -477,7 +424,8 @@ func (h *LevelHandler) CreateQuestion(c *gin.Context) {
 	}
 
 	if err := h.questionService.Create(c.Request.Context(), uint(levelID), question, userID); err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		log.Error().Err(err).Int("level_id", levelID).Uint("user", userID).Msg("CreateQuestion: failed to create question")
+		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
 			"ContentBlock": "questions-new.html",
 			"LevelID":      levelID,
 			"Error":        err.Error(),
@@ -490,35 +438,43 @@ func (h *LevelHandler) CreateQuestion(c *gin.Context) {
 }
 
 // EditQuestionForm отображает форму редактирования вопроса.
-// @Summary Форма редактирования вопроса
-// @Description Возвращает HTML-страницу с формой для редактирования вопроса
-// @Tags questions
-// @Produce html
-// @Param game_id path int true "ID игры"
-// @Param level_id path int true "ID уровня"
-// @Param question_id path int true "ID вопроса"
-// @Success 200 {string} html "Форма редактирования вопроса"
-// @Failure 404 {object} map[string]interface{} "Вопрос не найден"
-// @Router /games/{game_id}/levels/{level_id}/questions/{question_id}/edit [get]
-// @Security JWT
 func (h *LevelHandler) EditQuestionForm(c *gin.Context) {
-	questionID, _ := strconv.Atoi(c.Param("question_id"))
+	questionID, err := strconv.Atoi(c.Param("question_id"))
+	if err != nil || questionID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID вопроса"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	question, err := h.questionService.GetByID(c.Request.Context(), uint(questionID))
 	if err != nil {
-		c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		} else {
+			log.Error().Err(err).Int("question_id", questionID).Msg("EditQuestionForm: failed to get question")
+			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		}
 		return
 	}
 
 	level, err := h.levelService.GetByID(c.Request.Context(), question.LevelID)
 	if err != nil {
-		c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		} else {
+			log.Error().Err(err).Uint("level_id", question.LevelID).Msg("EditQuestionForm: failed to get level")
+			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		}
 		return
 	}
 
 	ok, err := h.authorizer.IsUserManager(level.GameID, userID)
-	if err != nil || !ok {
+	if err != nil {
+		log.Error().Err(err).Uint("game_id", level.GameID).Uint("user", userID).Msg("EditQuestionForm: failed to check manager")
+		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		return
+	}
+	if !ok {
 		c.HTML(http.StatusForbidden, "errors/403.html", nil)
 		return
 	}
@@ -531,27 +487,17 @@ func (h *LevelHandler) EditQuestionForm(c *gin.Context) {
 }
 
 // UpdateQuestion обновляет вопрос.
-// @Summary Обновление вопроса
-// @Description Обновляет данные вопроса
-// @Tags questions
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param game_id path int true "ID игры"
-// @Param level_id path int true "ID уровня"
-// @Param question_id path int true "ID вопроса"
-// @Param text formData string true "Текст вопроса"
-// @Param hint formData string false "Подсказка"
-// @Success 302 {string} string "Перенаправление на /games/{game_id}/levels/{level_id}/questions"
-// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-// @Router /games/{game_id}/levels/{level_id}/questions/{question_id} [put]
-// @Security JWT
 func (h *LevelHandler) UpdateQuestion(c *gin.Context) {
-	questionID, _ := strconv.Atoi(c.Param("question_id"))
+	questionID, err := strconv.Atoi(c.Param("question_id"))
+	if err != nil || questionID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID вопроса"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	var input UpdateQuestionInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 			"ContentBlock": "questions-edit.html",
 			"Error":        "Неверные данные: " + err.Error(),
 			"csrf":         csrf.GetToken(c),
@@ -565,7 +511,8 @@ func (h *LevelHandler) UpdateQuestion(c *gin.Context) {
 	}
 
 	if err := h.questionService.Update(c.Request.Context(), uint(questionID), updated, userID); err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		log.Error().Err(err).Int("question_id", questionID).Uint("user", userID).Msg("UpdateQuestion: failed to update question")
+		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
 			"ContentBlock": "questions-edit.html",
 			"Question":     updated,
 			"Error":        err.Error(),
@@ -578,23 +525,16 @@ func (h *LevelHandler) UpdateQuestion(c *gin.Context) {
 }
 
 // DeleteQuestion удаляет вопрос.
-// @Summary Удаление вопроса
-// @Description Удаляет вопрос из уровня
-// @Tags questions
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param game_id path int true "ID игры"
-// @Param level_id path int true "ID уровня"
-// @Param question_id path int true "ID вопроса"
-// @Success 302 {string} string "Перенаправление на /games/{game_id}/levels/{level_id}/questions"
-// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Router /games/{game_id}/levels/{level_id}/questions/{question_id} [delete]
-// @Security JWT
 func (h *LevelHandler) DeleteQuestion(c *gin.Context) {
-	questionID, _ := strconv.Atoi(c.Param("question_id"))
+	questionID, err := strconv.Atoi(c.Param("question_id"))
+	if err != nil || questionID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID вопроса"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	if err := h.questionService.Delete(c.Request.Context(), uint(questionID), userID); err != nil {
+		log.Error().Err(err).Int("question_id", questionID).Uint("user", userID).Msg("DeleteQuestion: failed to delete question")
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
@@ -605,41 +545,50 @@ func (h *LevelHandler) DeleteQuestion(c *gin.Context) {
 // ----- Ответы -----
 
 // ListAnswers отображает список ответов вопроса.
-// @Summary Список ответов
-// @Description Возвращает HTML-страницу со списком всех ответов на вопрос
-// @Tags answers
-// @Produce html
-// @Param game_id path int true "ID игры"
-// @Param level_id path int true "ID уровня"
-// @Param question_id path int true "ID вопроса"
-// @Success 200 {string} html "Страница со списком ответов"
-// @Failure 403 {object} map[string]interface{} "Нет прав доступа"
-// @Router /games/{game_id}/levels/{level_id}/questions/{question_id}/answers [get]
-// @Security JWT
 func (h *LevelHandler) ListAnswers(c *gin.Context) {
-	questionID, _ := strconv.Atoi(c.Param("question_id"))
+	questionID, err := strconv.Atoi(c.Param("question_id"))
+	if err != nil || questionID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID вопроса"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	question, err := h.questionService.GetByID(c.Request.Context(), uint(questionID))
 	if err != nil {
-		c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		} else {
+			log.Error().Err(err).Int("question_id", questionID).Msg("ListAnswers: failed to get question")
+			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		}
 		return
 	}
 
 	level, err := h.levelService.GetByID(c.Request.Context(), question.LevelID)
 	if err != nil {
-		c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		} else {
+			log.Error().Err(err).Uint("level_id", question.LevelID).Msg("ListAnswers: failed to get level")
+			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		}
 		return
 	}
 
 	ok, err := h.authorizer.IsUserManager(level.GameID, userID)
-	if err != nil || !ok {
+	if err != nil {
+		log.Error().Err(err).Uint("game_id", level.GameID).Uint("user", userID).Msg("ListAnswers: failed to check manager")
+		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		return
+	}
+	if !ok {
 		c.HTML(http.StatusForbidden, "errors/403.html", nil)
 		return
 	}
 
 	answers, err := h.answerService.ListByQuestion(c.Request.Context(), uint(questionID))
 	if err != nil {
+		log.Error().Err(err).Int("question_id", questionID).Msg("ListAnswers: failed to list answers")
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
@@ -653,26 +602,17 @@ func (h *LevelHandler) ListAnswers(c *gin.Context) {
 }
 
 // CreateAnswer создаёт новый ответ.
-// @Summary Создание ответа
-// @Description Создаёт новый вариант ответа для вопроса
-// @Tags answers
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param game_id path int true "ID игры"
-// @Param level_id path int true "ID уровня"
-// @Param question_id path int true "ID вопроса"
-// @Param code formData string true "Код ответа"
-// @Success 302 {string} string "Перенаправление на /games/{game_id}/levels/{level_id}/questions/{question_id}/answers"
-// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-// @Router /games/{game_id}/levels/{level_id}/questions/{question_id}/answers [post]
-// @Security JWT
 func (h *LevelHandler) CreateAnswer(c *gin.Context) {
-	questionID, _ := strconv.Atoi(c.Param("question_id"))
+	questionID, err := strconv.Atoi(c.Param("question_id"))
+	if err != nil || questionID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID вопроса"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	var input CreateAnswerInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 			"ContentBlock": "answers-list.html",
 			"QuestionID":   questionID,
 			"Error":        "Неверные данные: " + err.Error(),
@@ -686,7 +626,8 @@ func (h *LevelHandler) CreateAnswer(c *gin.Context) {
 	}
 
 	if err := h.answerService.Create(c.Request.Context(), uint(questionID), answer, userID); err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		log.Error().Err(err).Int("question_id", questionID).Uint("user", userID).Msg("CreateAnswer: failed to create answer")
+		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
 			"ContentBlock": "answers-list.html",
 			"QuestionID":   questionID,
 			"Error":        err.Error(),
@@ -699,24 +640,16 @@ func (h *LevelHandler) CreateAnswer(c *gin.Context) {
 }
 
 // DeleteAnswer удаляет ответ.
-// @Summary Удаление ответа
-// @Description Удаляет вариант ответа (должен остаться хотя бы один)
-// @Tags answers
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param game_id path int true "ID игры"
-// @Param level_id path int true "ID уровня"
-// @Param question_id path int true "ID вопроса"
-// @Param answer_id path int true "ID ответа"
-// @Success 302 {string} string "Перенаправление на /games/{game_id}/levels/{level_id}/questions/{question_id}/answers"
-// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Router /games/{game_id}/levels/{level_id}/questions/{question_id}/answers/{answer_id} [delete]
-// @Security JWT
 func (h *LevelHandler) DeleteAnswer(c *gin.Context) {
-	answerID, _ := strconv.Atoi(c.Param("answer_id"))
+	answerID, err := strconv.Atoi(c.Param("answer_id"))
+	if err != nil || answerID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID ответа"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	if err := h.answerService.Delete(c.Request.Context(), uint(answerID), userID); err != nil {
+		log.Error().Err(err).Int("answer_id", answerID).Uint("user", userID).Msg("DeleteAnswer: failed to delete answer")
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
