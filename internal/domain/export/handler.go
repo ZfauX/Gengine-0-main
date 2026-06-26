@@ -21,7 +21,7 @@ type ExportHandler struct {
 	exportService *ExportService
 	gameService   *game.GameService
 	storage       storage.FileStorage
-	db            *gorm.DB // для импорта
+	db            *gorm.DB
 }
 
 // NewExportHandler создаёт новый экземпляр ExportHandler.
@@ -52,16 +52,6 @@ func parseGameID(c *gin.Context) (uint, error) {
 }
 
 // ExportGameCSV отдаёт CSV-файл со всеми уровнями, вопросами и ответами игры.
-// @Summary Экспорт игры в CSV
-// @Description Выгружает уровни, вопросы и ответы игры в CSV-формат
-// @Tags export
-// @Produce text/csv
-// @Param id path int true "ID игры"
-// @Success 200 {file} file "CSV-файл"
-// @Failure 400 {object} map[string]interface{} "Неверный ID"
-// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
-// @Router /games/{id}/export [get]
-// @Security JWT
 func (h *ExportHandler) ExportGameCSV(c *gin.Context) {
 	gameID, err := parseGameID(c)
 	if err != nil {
@@ -71,7 +61,7 @@ func (h *ExportHandler) ExportGameCSV(c *gin.Context) {
 
 	var buf bytes.Buffer
 	if err := h.exportService.ExportGameToCSV(c.Request.Context(), gameID, &buf); err != nil {
-		log.Error().Err(err).Uint("game_id", gameID).Msg("Ошибка экспорта игры в CSV")
+		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportGameCSV: failed to export game to CSV")
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
@@ -82,14 +72,6 @@ func (h *ExportHandler) ExportGameCSV(c *gin.Context) {
 }
 
 // ImportGameForm отображает форму загрузки CSV-файла для импорта.
-// @Summary Форма импорта игры
-// @Description Возвращает HTML-страницу с формой для загрузки CSV-файла
-// @Tags export
-// @Produce html
-// @Param id path int true "ID игры"
-// @Success 200 {string} html "Форма импорта"
-// @Router /games/{id}/import [get]
-// @Security JWT
 func (h *ExportHandler) ImportGameForm(c *gin.Context) {
 	gameID, err := parseGameID(c)
 	if err != nil {
@@ -105,17 +87,6 @@ func (h *ExportHandler) ImportGameForm(c *gin.Context) {
 }
 
 // ImportGame обрабатывает загруженный CSV и импортирует данные в игру.
-// @Summary Импорт игры из CSV
-// @Description Загружает CSV-файл и импортирует уровни, вопросы и ответы в игру
-// @Tags export
-// @Accept multipart/form-data
-// @Produce html
-// @Param id path int true "ID игры"
-// @Param csvfile formData file true "CSV-файл"
-// @Success 302 {string} string "Перенаправление на /games/{id}/levels"
-// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-// @Router /games/{id}/import [post]
-// @Security JWT
 func (h *ExportHandler) ImportGame(c *gin.Context) {
 	gameID, err := parseGameID(c)
 	if err != nil {
@@ -125,7 +96,7 @@ func (h *ExportHandler) ImportGame(c *gin.Context) {
 
 	file, header, err := c.Request.FormFile("csvfile")
 	if err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 			"ContentBlock": "export_import-import.html",
 			"GameID":       gameID,
 			"Error":        "Файл не выбран",
@@ -136,7 +107,7 @@ func (h *ExportHandler) ImportGame(c *gin.Context) {
 	defer func() { _ = file.Close() }()
 
 	if header.Size > 10*1024*1024 {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 			"ContentBlock": "export_import-import.html",
 			"GameID":       gameID,
 			"Error":        "Размер файла не должен превышать 10 МБ",
@@ -147,7 +118,7 @@ func (h *ExportHandler) ImportGame(c *gin.Context) {
 
 	contentType := header.Header.Get("Content-Type")
 	if contentType != "text/csv" && contentType != "application/csv" {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 			"ContentBlock": "export_import-import.html",
 			"GameID":       gameID,
 			"Error":        "Допустимы только CSV-файлы",
@@ -157,8 +128,8 @@ func (h *ExportHandler) ImportGame(c *gin.Context) {
 	}
 
 	if err := h.exportService.ImportGameFromCSV(h.db, gameID, file); err != nil {
-		log.Error().Err(err).Uint("game_id", gameID).Msg("Ошибка импорта игры из CSV")
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		log.Error().Err(err).Uint("game_id", gameID).Msg("ImportGame: failed to import game from CSV")
+		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
 			"ContentBlock": "export_import-import.html",
 			"GameID":       gameID,
 			"Error":        "Ошибка импорта: " + err.Error(),
@@ -171,16 +142,6 @@ func (h *ExportHandler) ImportGame(c *gin.Context) {
 }
 
 // ExportResultsCSV отдаёт CSV-файл с итоговой таблицей результатов игры.
-// @Summary Экспорт результатов в CSV
-// @Description Выгружает итоговую таблицу результатов игры в CSV-формат
-// @Tags export
-// @Produce text/csv
-// @Param id path int true "ID игры"
-// @Success 200 {file} file "CSV-файл"
-// @Failure 400 {object} map[string]interface{} "Неверный ID"
-// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
-// @Router /games/{id}/export-results [get]
-// @Security JWT
 func (h *ExportHandler) ExportResultsCSV(c *gin.Context) {
 	gameID, err := parseGameID(c)
 	if err != nil {
@@ -190,7 +151,7 @@ func (h *ExportHandler) ExportResultsCSV(c *gin.Context) {
 
 	var buf bytes.Buffer
 	if err := h.exportService.ExportResultsToCSV(c.Request.Context(), gameID, &buf); err != nil {
-		log.Error().Err(err).Uint("game_id", gameID).Msg("Ошибка экспорта результатов в CSV")
+		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportResultsCSV: failed to export results to CSV")
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
@@ -201,16 +162,6 @@ func (h *ExportHandler) ExportResultsCSV(c *gin.Context) {
 }
 
 // ExportGamePDF генерирует и отдаёт PDF-файл со всей структурой игры для печати.
-// @Summary Экспорт игры в PDF
-// @Description Генерирует PDF-файл со всеми уровнями, вопросами и ответами игры
-// @Tags export
-// @Produce application/pdf
-// @Param id path int true "ID игры"
-// @Success 200 {file} file "PDF-файл"
-// @Failure 400 {object} map[string]interface{} "Неверный ID"
-// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
-// @Router /games/{id}/export-pdf [get]
-// @Security JWT
 func (h *ExportHandler) ExportGamePDF(c *gin.Context) {
 	gameID, err := parseGameID(c)
 	if err != nil {
@@ -220,7 +171,7 @@ func (h *ExportHandler) ExportGamePDF(c *gin.Context) {
 
 	var buf bytes.Buffer
 	if err := h.exportService.ExportGameToPDF(c.Request.Context(), gameID, &buf); err != nil {
-		log.Error().Err(err).Uint("game_id", gameID).Msg("Ошибка генерации PDF игры")
+		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportGamePDF: failed to generate PDF")
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
@@ -231,16 +182,6 @@ func (h *ExportHandler) ExportGamePDF(c *gin.Context) {
 }
 
 // ExportStatisticsPDF генерирует и отдаёт PDF-отчёт с расширенной статистикой игры.
-// @Summary Экспорт статистики в PDF
-// @Description Генерирует PDF-отчёт с расширенной статистикой игры (результаты команд по уровням)
-// @Tags export
-// @Produce application/pdf
-// @Param id path int true "ID игры"
-// @Success 200 {file} file "PDF-файл"
-// @Failure 400 {object} map[string]interface{} "Неверный ID"
-// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
-// @Router /games/{id}/export-statistics-pdf [get]
-// @Security JWT
 func (h *ExportHandler) ExportStatisticsPDF(c *gin.Context) {
 	gameID, err := parseGameID(c)
 	if err != nil {
@@ -250,7 +191,7 @@ func (h *ExportHandler) ExportStatisticsPDF(c *gin.Context) {
 
 	var buf bytes.Buffer
 	if err := h.exportService.ExportStatisticsToPDF(c.Request.Context(), gameID, &buf); err != nil {
-		log.Error().Err(err).Uint("game_id", gameID).Msg("Ошибка генерации PDF статистики")
+		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportStatisticsPDF: failed to generate statistics PDF")
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}

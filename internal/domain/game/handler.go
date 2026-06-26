@@ -2,22 +2,22 @@
 package game
 
 import (
+	"errors"
 	"net/http"
 	"slices"
-
 	"strconv"
 	"time"
-
-	"github.com/gin-gonic/gin"
-	"github.com/rs/zerolog/log"
-	csrf "github.com/utrack/gin-csrf"
-	"gorm.io/gorm"
 
 	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/pkg/audit"
 	"gengine-0/internal/pkg/storage"
 	ws "gengine-0/internal/pkg/websocket"
+
+	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
+	csrf "github.com/utrack/gin-csrf"
+	"gorm.io/gorm"
 )
 
 // ---------- Входные структуры для валидации ----------
@@ -42,7 +42,7 @@ type SubmitTestCodeInput struct {
 	Code string `form:"code" binding:"required"`
 }
 
-// ---------- Вспомогательные типы для FullPreview ----------.
+// ---------- Вспомогательные типы для FullPreview ----------
 type levelPreview struct {
 	ID          uint              `json:"id"`
 	Position    int               `json:"position"`
@@ -99,27 +99,15 @@ func NewGameHandler(
 }
 
 // List отображает список игр с фильтрацией и пагинацией.
-// @Summary Список игр
-// @Description Возвращает список игр с фильтрацией и пагинацией
-// @Tags games
-// @Produce html
-// @Param status query string false "Статус игры (draft, published)"
-// @Param search query string false "Поиск по названию"
-// @Param sort query string false "Поле сортировки (created_at, name, starts_at, rating, participants)"
-// @Param order query string false "Порядок сортировки (asc, desc)"
-// @Param page query int false "Номер страницы" default(1)
-// @Param per_page query int false "Количество на странице" default(20)
-// @Param author_id query int false "ID автора"
-// @Success 200 {string} html "Страница со списком игр"
-// @Router /games [get]
 func (h *GameHandler) List(c *gin.Context) {
 	userID := c.GetUint("userID")
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	perPage, _ := strconv.Atoi(c.DefaultQuery("per_page", "20"))
-	if page < 1 {
+
+	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if err != nil || page < 1 {
 		page = 1
 	}
-	if perPage < 1 || perPage > 100 {
+	perPage, err := strconv.Atoi(c.DefaultQuery("per_page", "20"))
+	if err != nil || perPage < 1 || perPage > 100 {
 		perPage = 20
 	}
 
@@ -144,6 +132,7 @@ func (h *GameHandler) List(c *gin.Context) {
 
 	games, total, err := h.gameService.ListFilteredPaginated(c.Request.Context(), filter, sort, page, perPage)
 	if err != nil {
+		log.Error().Err(err).Msg("GameHandler.List: failed to list games")
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
@@ -162,31 +151,40 @@ func (h *GameHandler) List(c *gin.Context) {
 }
 
 // Show отображает одну игру.
-// @Summary Детали игры
-// @Description Показывает полную информацию об игре
-// @Tags games
-// @Produce html
-// @Param id path int true "ID игры"
-// @Success 200 {string} html "Страница игры"
-// @Failure 404 {object} map[string]interface{} "Игра не найдена"
-// @Router /games/{id} [get]
 func (h *GameHandler) Show(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	g, err := h.gameService.GetByID(c.Request.Context(), uint(id), userID)
 	if err != nil {
-		c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		} else {
+			log.Error().Err(err).Int("game_id", id).Msg("GameHandler.Show: failed to get game")
+			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		}
 		return
 	}
 
-	isManager, _ := h.coAuthorService.IsUserManager(uint(id), userID)
+	isManager, err := h.coAuthorService.IsUserManager(uint(id), userID)
+	if err != nil {
+		log.Error().Err(err).Int("game_id", id).Msg("GameHandler.Show: failed to check manager")
+		isManager = false
+	}
 	var reviews []Review
 	var avgRating float64
 	var reviewsCount int64
 	if h.gameService.reviewService != nil {
-		reviews, _ = h.gameService.reviewService.ListByGame(uint(id))
-		avgRating, reviewsCount, _ = h.gameService.reviewService.GetAverageRating(uint(id))
+		if reviews, err = h.gameService.reviewService.ListByGame(uint(id)); err != nil {
+			log.Error().Err(err).Int("game_id", id).Msg("GameHandler.Show: failed to list reviews")
+		}
+		if avgRating, reviewsCount, err = h.gameService.reviewService.GetAverageRating(uint(id)); err != nil {
+			log.Error().Err(err).Int("game_id", id).Msg("GameHandler.Show: failed to get average rating")
+		}
 	}
 
 	canApply := !g.IsDraft && (g.StartsAt == nil || g.StartsAt.After(time.Now()))
@@ -205,13 +203,6 @@ func (h *GameHandler) Show(c *gin.Context) {
 }
 
 // NewForm отображает форму создания игры.
-// @Summary Форма создания игры
-// @Description Возвращает HTML-страницу с формой для создания новой игры
-// @Tags games
-// @Produce html
-// @Success 200 {string} html "Форма создания игры"
-// @Router /games/new [get]
-// @Security JWT
 func (h *GameHandler) NewForm(c *gin.Context) {
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "games-new.html",
@@ -220,23 +211,11 @@ func (h *GameHandler) NewForm(c *gin.Context) {
 }
 
 // Create создаёт новую игру.
-// @Summary Создание игры
-// @Description Создаёт новую игру как черновик
-// @Tags games
-// @Accept multipart/form-data
-// @Produce html
-// @Param name formData string true "Название игры"
-// @Param description formData string false "Описание игры"
-// @Param cover formData file false "Обложка игры (jpeg, png, webp)"
-// @Success 302 {string} string "Перенаправление на /games"
-// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-// @Router /games [post]
-// @Security JWT
 func (h *GameHandler) Create(c *gin.Context) {
 	userID := c.GetUint("userID")
 	var g Game
 	if err := c.ShouldBind(&g); err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 			"ContentBlock": "games-new.html",
 			"Error":        "Неверные данные: " + err.Error(),
 			"csrf":         csrf.GetToken(c),
@@ -248,7 +227,7 @@ func (h *GameHandler) Create(c *gin.Context) {
 	if err == nil {
 		defer func() { _ = file.Close() }()
 		if header.Size > 5*1024*1024 {
-			c.HTML(http.StatusOK, "layout.html", gin.H{
+			c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 				"ContentBlock": "games-new.html",
 				"Error":        "Размер файла не должен превышать 5 МБ",
 				"csrf":         csrf.GetToken(c),
@@ -259,7 +238,7 @@ func (h *GameHandler) Create(c *gin.Context) {
 		allowedTypes := []string{"image/jpeg", "image/png", "image/webp"}
 		contentType := header.Header.Get("Content-Type")
 		if !slices.Contains(allowedTypes, contentType) {
-			c.HTML(http.StatusOK, "layout.html", gin.H{
+			c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 				"ContentBlock": "games-new.html",
 				"Error":        "Допустимы только JPEG, PNG и WebP",
 				"csrf":         csrf.GetToken(c),
@@ -270,7 +249,7 @@ func (h *GameHandler) Create(c *gin.Context) {
 		webPath, err := h.storage.Save("uploads/covers", file, header.Filename, userID, 5*1024*1024, allowedTypes)
 		if err != nil {
 			log.Error().Err(err).Str("filename", header.Filename).Msg("Create game: failed to save cover")
-			c.HTML(http.StatusOK, "layout.html", gin.H{
+			c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 				"ContentBlock": "games-new.html",
 				"Error":        "Ошибка сохранения обложки",
 				"csrf":         csrf.GetToken(c),
@@ -286,7 +265,7 @@ func (h *GameHandler) Create(c *gin.Context) {
 				log.Error().Err(delErr).Str("path", g.CoverPath).Msg("Create game: failed to delete orphaned cover")
 			}
 		}
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
 			"ContentBlock": "games-new.html",
 			"Error":        err.Error(),
 			"csrf":         csrf.GetToken(c),
@@ -300,26 +279,31 @@ func (h *GameHandler) Create(c *gin.Context) {
 }
 
 // EditForm отображает форму редактирования игры.
-// @Summary Форма редактирования игры
-// @Description Возвращает HTML-страницу с формой для редактирования игры
-// @Tags games
-// @Produce html
-// @Param id path int true "ID игры"
-// @Success 200 {string} html "Форма редактирования игры"
-// @Failure 404 {object} map[string]interface{} "Игра не найдена"
-// @Router /games/{id}/edit [get]
-// @Security JWT
 func (h *GameHandler) EditForm(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	g, err := h.gameService.GetByID(c.Request.Context(), uint(id), userID)
 	if err != nil {
-		c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		} else {
+			log.Error().Err(err).Int("game_id", id).Msg("GameHandler.EditForm: failed to get game")
+			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		}
 		return
 	}
 
-	isManager, _ := h.coAuthorService.IsUserManager(uint(id), userID)
+	isManager, err := h.coAuthorService.IsUserManager(uint(id), userID)
+	if err != nil {
+		log.Error().Err(err).Int("game_id", id).Msg("GameHandler.EditForm: failed to check manager")
+		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		return
+	}
 	if !isManager {
 		c.HTML(http.StatusForbidden, "errors/403.html", nil)
 		return
@@ -333,27 +317,17 @@ func (h *GameHandler) EditForm(c *gin.Context) {
 }
 
 // Update обновляет игру.
-// @Summary Обновление игры
-// @Description Обновляет данные игры
-// @Tags games
-// @Accept multipart/form-data
-// @Produce html
-// @Param id path int true "ID игры"
-// @Param name formData string false "Название игры"
-// @Param description formData string false "Описание игры"
-// @Param cover formData file false "Обложка игры"
-// @Param delete_cover formData string false "Удалить обложку (1)"
-// @Success 302 {string} string "Перенаправление на /games/{id}"
-// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-// @Router /games/{id}/edit [post]
-// @Security JWT
 func (h *GameHandler) Update(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	var updated Game
 	if err := c.ShouldBind(&updated); err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 			"ContentBlock": "games-edit.html",
 			"Error":        "Неверные данные: " + err.Error(),
 			"csrf":         csrf.GetToken(c),
@@ -364,7 +338,12 @@ func (h *GameHandler) Update(c *gin.Context) {
 
 	oldGame, err := h.gameService.GetByID(c.Request.Context(), uint(id), userID)
 	if err != nil {
-		c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		} else {
+			log.Error().Err(err).Int("game_id", id).Msg("GameHandler.Update: failed to get game")
+			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		}
 		return
 	}
 
@@ -380,7 +359,7 @@ func (h *GameHandler) Update(c *gin.Context) {
 		if err == nil {
 			defer func() { _ = file.Close() }()
 			if header.Size > 5*1024*1024 {
-				c.HTML(http.StatusOK, "layout.html", gin.H{
+				c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 					"ContentBlock": "games-edit.html",
 					"Error":        "Размер файла не должен превышать 5 МБ",
 					"csrf":         csrf.GetToken(c),
@@ -391,7 +370,7 @@ func (h *GameHandler) Update(c *gin.Context) {
 			allowedTypes := []string{"image/jpeg", "image/png", "image/webp"}
 			contentType := header.Header.Get("Content-Type")
 			if !slices.Contains(allowedTypes, contentType) {
-				c.HTML(http.StatusOK, "layout.html", gin.H{
+				c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 					"ContentBlock": "games-edit.html",
 					"Error":        "Допустимы только JPEG, PNG и WebP",
 					"csrf":         csrf.GetToken(c),
@@ -402,7 +381,7 @@ func (h *GameHandler) Update(c *gin.Context) {
 			webPath, err := h.storage.Save("uploads/covers", file, header.Filename, userID, 5*1024*1024, allowedTypes)
 			if err != nil {
 				log.Error().Err(err).Str("filename", header.Filename).Msg("Update game: failed to save new cover")
-				c.HTML(http.StatusOK, "layout.html", gin.H{
+				c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 					"ContentBlock": "games-edit.html",
 					"Error":        "Ошибка сохранения обложки",
 					"csrf":         csrf.GetToken(c),
@@ -431,18 +410,12 @@ func (h *GameHandler) Update(c *gin.Context) {
 }
 
 // Delete удаляет игру (только владелец).
-// @Summary Удаление игры
-// @Description Удаляет игру (доступно только владельцу)
-// @Tags games
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param id path int true "ID игры"
-// @Success 302 {string} string "Перенаправление на /games"
-// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Router /games/{id}/delete [post]
-// @Security JWT
 func (h *GameHandler) Delete(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	if err := h.gameService.Delete(c.Request.Context(), uint(id), userID); err != nil {
@@ -451,23 +424,16 @@ func (h *GameHandler) Delete(c *gin.Context) {
 	}
 
 	h.auditService.Log(userID, "delete", "game", uint(id), "")
-
 	c.Redirect(http.StatusFound, "/games")
 }
 
 // Publish публикует черновик игры.
-// @Summary Публикация игры
-// @Description Публикует черновик игры (доступно автору или контент-менеджеру)
-// @Tags games
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param id path int true "ID игры"
-// @Success 302 {string} string "Перенаправление на /games/{id}"
-// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Router /games/{id}/publish [post]
-// @Security JWT
 func (h *GameHandler) Publish(c *gin.Context) {
-	id, _ := strconv.Atoi(c.Param("id"))
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	if err := h.gameService.Publish(c.Request.Context(), uint(id), userID); err != nil {
@@ -476,27 +442,23 @@ func (h *GameHandler) Publish(c *gin.Context) {
 	}
 
 	h.auditService.Log(userID, "publish", "game", uint(id), "")
-
 	c.Redirect(http.StatusFound, "/games/"+c.Param("id"))
 }
 
 // ----- Прохождения и заявки -----
 
 // ListPassings отображает все заявки и прохождения игры.
-// @Summary Список заявок и прохождений
-// @Description Отображает все заявки и прохождения для игры
-// @Tags passings
-// @Produce html
-// @Param id path int true "ID игры"
-// @Success 200 {string} html "Страница со списком прохождений"
-// @Router /games/{id}/passings [get]
-// @Security JWT
 func (h *GameHandler) ListPassings(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || gameID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	passings, err := h.passingService.ListByGame(c.Request.Context(), uint(gameID))
 	if err != nil {
+		log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.ListPassings: failed to list passings")
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
@@ -511,19 +473,19 @@ func (h *GameHandler) ListPassings(c *gin.Context) {
 }
 
 // ApplyForm отображает форму подачи заявки.
-// @Summary Форма подачи заявки
-// @Description Возвращает HTML-страницу с формой для подачи заявки на игру
-// @Tags passings
-// @Produce html
-// @Param id path int true "ID игры"
-// @Success 200 {string} html "Форма подачи заявки"
-// @Router /games/{id}/apply [get]
-// @Security JWT
 func (h *GameHandler) ApplyForm(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || gameID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
 	userID := c.GetUint("userID")
 
-	teams, _ := h.passingService.teamService.GetTeamsByCaptain(c.Request.Context(), userID)
+	teams, err := h.passingService.teamService.GetTeamsByCaptain(c.Request.Context(), userID)
+	if err != nil {
+		log.Error().Err(err).Uint("user", userID).Msg("GameHandler.ApplyForm: failed to get teams")
+		teams = []team.Team{}
+	}
 
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "game_passings-apply.html",
@@ -534,25 +496,18 @@ func (h *GameHandler) ApplyForm(c *gin.Context) {
 }
 
 // Apply подаёт заявку на игру.
-// @Summary Подача заявки
-// @Description Капитан команды подаёт заявку на участие в игре
-// @Tags passings
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param id path int true "ID игры"
-// @Param team_id formData uint true "ID команды"
-// @Success 302 {string} string "Перенаправление на /games/{id}"
-// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-// @Router /games/{id}/apply [post]
-// @Security JWT
 func (h *GameHandler) Apply(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || gameID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	var input ApplyInput
 	if err := c.ShouldBind(&input); err != nil {
 		teams, _ := h.passingService.teamService.GetTeamsByCaptain(c.Request.Context(), userID)
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 			"ContentBlock": "game_passings-apply.html",
 			"GameID":       gameID,
 			"Teams":        teams,
@@ -564,7 +519,7 @@ func (h *GameHandler) Apply(c *gin.Context) {
 
 	if err := h.passingService.Apply(c.Request.Context(), uint(gameID), input.TeamID, userID); err != nil {
 		teams, _ := h.passingService.teamService.GetTeamsByCaptain(c.Request.Context(), userID)
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 			"ContentBlock": "game_passings-apply.html",
 			"GameID":       gameID,
 			"Teams":        teams,
@@ -578,20 +533,12 @@ func (h *GameHandler) Apply(c *gin.Context) {
 }
 
 // UpdatePassingStatus изменяет статус заявки (принять/отклонить).
-// @Summary Изменение статуса заявки
-// @Description Автор или модератор может принять или отклонить заявку
-// @Tags passings
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param id path int true "ID игры"
-// @Param passing_id path int true "ID прохождения"
-// @Param status formData string true "Новый статус (accepted, rejected)"
-// @Success 302 {string} string "Перенаправление на /games/{id}/passings"
-// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Router /games/{id}/passings/{passing_id}/status [post]
-// @Security JWT
 func (h *GameHandler) UpdatePassingStatus(c *gin.Context) {
-	passingID, _ := strconv.Atoi(c.Param("passing_id"))
+	passingID, err := strconv.Atoi(c.Param("passing_id"))
+	if err != nil || passingID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID прохождения"})
+		return
+	}
 	status := GamePassingStatus(c.PostForm("status"))
 
 	if err := h.passingService.UpdateStatus(c.Request.Context(), uint(passingID), status, c.GetUint("userID")); err != nil {
@@ -603,19 +550,12 @@ func (h *GameHandler) UpdatePassingStatus(c *gin.Context) {
 }
 
 // StartGame запускает игру для конкретного прохождения.
-// @Summary Запуск игры
-// @Description Запускает игру для команды (доступно капитану или автору/модератору)
-// @Tags passings
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param id path int true "ID игры"
-// @Param passing_id path int true "ID прохождения"
-// @Success 302 {string} string "Перенаправление на /games/{id}/monitor"
-// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Router /games/{id}/passings/{passing_id}/start [post]
-// @Security JWT
 func (h *GameHandler) StartGame(c *gin.Context) {
-	passingID, _ := strconv.Atoi(c.Param("passing_id"))
+	passingID, err := strconv.Atoi(c.Param("passing_id"))
+	if err != nil || passingID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID прохождения"})
+		return
+	}
 
 	if err := h.passingService.StartGame(c.Request.Context(), uint(passingID), c.GetUint("userID")); err != nil {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
@@ -626,18 +566,12 @@ func (h *GameHandler) StartGame(c *gin.Context) {
 }
 
 // ForceFinish принудительно завершает игру.
-// @Summary Принудительное завершение игры
-// @Description Автор игры принудительно завершает игру
-// @Tags games
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param id path int true "ID игры"
-// @Success 302 {string} string "Перенаправление на /games/{id}/results"
-// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Router /games/{id}/finish [post]
-// @Security JWT
 func (h *GameHandler) ForceFinish(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || gameID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
 
 	if err := h.gameService.ForceFinishGame(c.Request.Context(), uint(gameID)); err != nil {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
@@ -648,23 +582,16 @@ func (h *GameHandler) ForceFinish(c *gin.Context) {
 }
 
 // DisqualifyTeam дисквалифицирует команду.
-// @Summary Дисквалификация команды
-// @Description Автор игры дисквалифицирует команду
-// @Tags games
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param id path int true "ID игры"
-// @Param team_id formData uint true "ID команды"
-// @Success 302 {string} string "Перенаправление на /games/{id}/monitor"
-// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Router /games/{id}/disqualify [post]
-// @Security JWT
 func (h *GameHandler) DisqualifyTeam(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || gameID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
 
 	var input DisqualifyInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": "Неверные данные: " + err.Error()})
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверные данные: " + err.Error()})
 		return
 	}
 
@@ -679,18 +606,16 @@ func (h *GameHandler) DisqualifyTeam(c *gin.Context) {
 // ----- Соавторы -----
 
 // ManageCoAuthors отображает страницу управления соавторами.
-// @Summary Управление соавторами
-// @Description Отображает страницу управления соавторами игры
-// @Tags coauthors
-// @Produce html
-// @Param id path int true "ID игры"
-// @Success 200 {string} html "Страница управления соавторами"
-// @Router /games/{id}/coauthors [get]
-// @Security JWT
 func (h *GameHandler) ManageCoAuthors(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || gameID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
+
 	coAuthors, err := h.coAuthorService.List(uint(gameID))
 	if err != nil {
+		log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.ManageCoAuthors: failed to list coauthors")
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
@@ -703,24 +628,17 @@ func (h *GameHandler) ManageCoAuthors(c *gin.Context) {
 }
 
 // AddCoAuthor добавляет соавтора.
-// @Summary Добавление соавтора
-// @Description Добавляет нового соавтора к игре (доступно владельцу)
-// @Tags coauthors
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param id path int true "ID игры"
-// @Param user_id formData uint true "ID пользователя"
-// @Success 302 {string} string "Перенаправление на /games/{id}/coauthors"
-// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Router /games/{id}/coauthors [post]
-// @Security JWT
 func (h *GameHandler) AddCoAuthor(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || gameID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
 	ownerID := c.GetUint("userID")
 
 	var input AddCoAuthorInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": "Неверные данные: " + err.Error()})
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверные данные: " + err.Error()})
 		return
 	}
 
@@ -732,20 +650,17 @@ func (h *GameHandler) AddCoAuthor(c *gin.Context) {
 }
 
 // RemoveCoAuthor удаляет соавтора.
-// @Summary Удаление соавтора
-// @Description Удаляет соавтора из игры (доступно владельцу)
-// @Tags coauthors
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param id path int true "ID игры"
-// @Param user_id path int true "ID пользователя"
-// @Success 302 {string} string "Перенаправление на /games/{id}/coauthors"
-// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Router /games/{id}/coauthors/{user_id} [delete]
-// @Security JWT
 func (h *GameHandler) RemoveCoAuthor(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
-	userID, _ := strconv.Atoi(c.Param("user_id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || gameID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
+	userID, err := strconv.Atoi(c.Param("user_id"))
+	if err != nil || userID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID пользователя"})
+		return
+	}
 	ownerID := c.GetUint("userID")
 
 	if err := h.coAuthorService.Remove(uint(gameID), uint(userID), ownerID); err != nil {
@@ -758,16 +673,12 @@ func (h *GameHandler) RemoveCoAuthor(c *gin.Context) {
 // ----- Заметки автора -----
 
 // Notes отображает заметки к игре (JSON API).
-// @Summary Получить заметки к игре
-// @Description Возвращает JSON-список заметок автора к игре
-// @Tags notes
-// @Produce json
-// @Param id path int true "ID игры"
-// @Success 200 {object} map[string]interface{} "Список заметок"
-// @Router /games/{id}/notes [get]
-// @Security JWT
 func (h *GameHandler) Notes(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || gameID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID игры"})
+		return
+	}
 	userID := c.GetUint("userID")
 	notes, err := h.noteService.ListByGame(uint(gameID), userID)
 	if err != nil {
@@ -778,18 +689,12 @@ func (h *GameHandler) Notes(c *gin.Context) {
 }
 
 // CreateNote создаёт новую заметку.
-// @Summary Создание заметки
-// @Description Создаёт новую заметку для игры
-// @Tags notes
-// @Accept json
-// @Produce json
-// @Param id path int true "ID игры"
-// @Param request body object true "Данные заметки" example({"level_id":1,"text":"Заметка"})
-// @Success 201 {object} map[string]interface{} "Созданная заметка"
-// @Router /games/{id}/notes [post]
-// @Security JWT
 func (h *GameHandler) CreateNote(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || gameID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID игры"})
+		return
+	}
 	userID := c.GetUint("userID")
 	var input struct {
 		LevelID *uint  `json:"level_id"`
@@ -808,17 +713,12 @@ func (h *GameHandler) CreateNote(c *gin.Context) {
 }
 
 // DeleteNote удаляет заметку.
-// @Summary Удаление заметки
-// @Description Удаляет заметку по ID
-// @Tags notes
-// @Produce json
-// @Param id path int true "ID игры"
-// @Param note_id path int true "ID заметки"
-// @Success 200 {object} map[string]interface{} "Статус OK"
-// @Router /games/{id}/notes/{note_id} [delete]
-// @Security JWT
 func (h *GameHandler) DeleteNote(c *gin.Context) {
-	noteID, _ := strconv.Atoi(c.Param("note_id"))
+	noteID, err := strconv.Atoi(c.Param("note_id"))
+	if err != nil || noteID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID заметки"})
+		return
+	}
 	userID := c.GetUint("userID")
 	if err := h.noteService.Delete(uint(noteID), userID); err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
@@ -830,16 +730,12 @@ func (h *GameHandler) DeleteNote(c *gin.Context) {
 // ----- Симуляция -----
 
 // Simulate запускает симуляцию прохождения игры.
-// @Summary Симуляция прохождения игры
-// @Description Запускает симуляцию прохождения игры для проверки
-// @Tags games
-// @Produce html
-// @Param id path int true "ID игры"
-// @Success 200 {string} html "Результаты симуляции"
-// @Router /games/{id}/simulate [get]
-// @Security JWT
 func (h *GameHandler) Simulate(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || gameID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
 	userID := c.GetUint("userID")
 	result, err := h.simulateService.Simulate(uint(gameID), userID)
 	if err != nil {
@@ -856,34 +752,41 @@ func (h *GameHandler) Simulate(c *gin.Context) {
 // ---------- Новые страницы ----------
 
 // SettingsPage отображает страницу настроек игры.
-// @Summary Настройки игры
-// @Description Отображает страницу настроек игры
-// @Tags games
-// @Produce html
-// @Param id path int true "ID игры"
-// @Success 200 {string} html "Страница настроек"
-// @Router /games/{id}/settings [get]
-// @Security JWT
 func (h *GameHandler) SettingsPage(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || gameID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	g, err := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID)
 	if err != nil {
-		c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		} else {
+			log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.SettingsPage: failed to get game")
+			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		}
 		return
 	}
 
 	var settings GameSetting
 	if err := h.db.Where("game_id = ?", g.ID).First(&settings).Error; err != nil {
-		settings = GameSetting{
-			GameID:                   g.ID,
-			AllowHints:               true,
-			HintPenaltySeconds:       300,
-			MaxHints:                 3,
-			PerLevelTimeLimit:        0,
-			HideAnswersUntilFinished: false,
-			AutoStart:                false,
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			settings = GameSetting{
+				GameID:                   g.ID,
+				AllowHints:               true,
+				HintPenaltySeconds:       300,
+				MaxHints:                 3,
+				PerLevelTimeLimit:        0,
+				HideAnswersUntilFinished: false,
+				AutoStart:                false,
+			}
+		} else {
+			log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.SettingsPage: failed to get settings")
+			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+			return
 		}
 	}
 
@@ -896,29 +799,18 @@ func (h *GameHandler) SettingsPage(c *gin.Context) {
 }
 
 // SaveSettings сохраняет настройки игры.
-// @Summary Сохранение настроек игры
-// @Description Сохраняет настройки игры (доступно автору или контент-менеджеру)
-// @Tags games
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param id path int true "ID игры"
-// @Param allow_hints formData bool false "Разрешить подсказки"
-// @Param hint_penalty_seconds formData int false "Штраф за подсказку (сек)"
-// @Param max_hints formData int false "Максимальное количество подсказок"
-// @Param per_level_time_limit formData int false "Лимит времени на уровень (мин)"
-// @Param hide_answers_until_finished formData bool false "Скрывать ответы до завершения"
-// @Param auto_start formData bool false "Автоматический старт"
-// @Success 302 {string} string "Перенаправление на /games/{id}/settings"
-// @Router /games/{id}/settings [post]
-// @Security JWT
 func (h *GameHandler) SaveSettings(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || gameID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	var settings GameSetting
 	if err := c.ShouldBind(&settings); err != nil {
 		g, _ := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID)
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 			"ContentBlock": "games-settings.html",
 			"Game":         g,
 			"Settings":     settings,
@@ -933,7 +825,12 @@ func (h *GameHandler) SaveSettings(c *gin.Context) {
 		c.HTML(http.StatusNotFound, "errors/404.html", nil)
 		return
 	}
-	isManager, _ := h.coAuthorService.IsUserManager(g.ID, userID)
+	isManager, err := h.coAuthorService.IsUserManager(g.ID, userID)
+	if err != nil {
+		log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.SaveSettings: failed to check manager")
+		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		return
+	}
 	if !isManager {
 		c.HTML(http.StatusForbidden, "errors/403.html", nil)
 		return
@@ -941,7 +838,8 @@ func (h *GameHandler) SaveSettings(c *gin.Context) {
 
 	settings.GameID = g.ID
 	if err := h.db.Save(&settings).Error; err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.SaveSettings: failed to save settings")
+		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
 			"ContentBlock": "games-settings.html",
 			"Game":         g,
 			"Settings":     settings,
@@ -955,26 +853,29 @@ func (h *GameHandler) SaveSettings(c *gin.Context) {
 }
 
 // TestPage отображает страницу управления тестовыми прохождениями.
-// @Summary Тестовые прохождения
-// @Description Отображает страницу управления тестовыми прохождениями игры
-// @Tags games
-// @Produce html
-// @Param id path int true "ID игры"
-// @Success 200 {string} html "Страница тестовых прохождений"
-// @Router /games/{id}/test [get]
-// @Security JWT
 func (h *GameHandler) TestPage(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || gameID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	g, err := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID)
 	if err != nil {
-		c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		} else {
+			log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.TestPage: failed to get game")
+			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		}
 		return
 	}
 
 	var testPassings []GamePassing
-	h.db.Where("game_id = ? AND status = ?", g.ID, StatusTesting).Find(&testPassings)
+	if err := h.db.Where("game_id = ? AND status = ?", g.ID, StatusTesting).Find(&testPassings).Error; err != nil {
+		log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.TestPage: failed to list test passings")
+	}
 
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock": "games-test.html",
@@ -985,23 +886,26 @@ func (h *GameHandler) TestPage(c *gin.Context) {
 }
 
 // PhotosPage отображает страницу фотогалереи.
-// @Summary Фотогалерея игры
-// @Description Отображает страницу с фотографиями игры
-// @Tags games
-// @Produce html
-// @Param id path int true "ID игры"
-// @Success 200 {string} html "Страница фотогалереи"
-// @Router /games/{id}/photos [get]
-// @Security JWT
 func (h *GameHandler) PhotosPage(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || gameID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	var photos []Photo
 	if h.photoService != nil {
-		photos, _ = h.photoService.List(uint(gameID))
+		photos, err = h.photoService.List(uint(gameID))
+		if err != nil {
+			log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.PhotosPage: failed to list photos")
+		}
 	}
-	isManager, _ := h.coAuthorService.IsUserManager(uint(gameID), userID)
+	isManager, err := h.coAuthorService.IsUserManager(uint(gameID), userID)
+	if err != nil {
+		log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.PhotosPage: failed to check manager")
+		isManager = false
+	}
 
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock":  "games-photos.html",
@@ -1014,18 +918,12 @@ func (h *GameHandler) PhotosPage(c *gin.Context) {
 }
 
 // UploadPhoto загружает новое фото в галерею игры.
-// @Summary Загрузка фото
-// @Description Загружает новое фото в галерею игры (доступно автору или контент-менеджеру)
-// @Tags games
-// @Accept multipart/form-data
-// @Produce json
-// @Param id path int true "ID игры"
-// @Param photo formData file true "Файл изображения (jpeg, png, webp)"
-// @Success 200 {object} map[string]interface{} "Статус OK и данные фото"
-// @Router /games/{id}/photos [post]
-// @Security JWT
 func (h *GameHandler) UploadPhoto(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || gameID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID игры"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	file, header, err := c.Request.FormFile("photo")
@@ -1049,7 +947,8 @@ func (h *GameHandler) UploadPhoto(c *gin.Context) {
 		Path:   webPath,
 	}
 	if err := h.photoService.Create(photo); err != nil {
-		log.Error().Err(err).Msg("UploadPhoto: failed to create photo record")
+		log.Error().Err(err).Int("game_id", gameID).Msg("UploadPhoto: failed to create photo record")
+		_ = h.storage.Delete(webPath) // удаляем уже загруженный файл
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось сохранить фото"})
 		return
 	}
@@ -1058,41 +957,44 @@ func (h *GameHandler) UploadPhoto(c *gin.Context) {
 }
 
 // DeletePhoto удаляет фото из галереи.
-// @Summary Удаление фото
-// @Description Удаляет фото из галереи игры (доступно автору или владельцу фото)
-// @Tags games
-// @Produce json
-// @Param id path int true "ID игры"
-// @Param photo_id path int true "ID фото"
-// @Success 200 {object} map[string]interface{} "Статус OK"
-// @Router /games/{id}/photos/{photo_id} [delete]
-// @Security JWT
 func (h *GameHandler) DeletePhoto(c *gin.Context) {
-	photoID, _ := strconv.Atoi(c.Param("photo_id"))
+	photoID, err := strconv.Atoi(c.Param("photo_id"))
+	if err != nil || photoID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID фото"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	var photo Photo
 	if err := h.db.First(&photo, photoID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Фото не найдено"})
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Фото не найдено"})
+		} else {
+			log.Error().Err(err).Int("photo_id", photoID).Msg("DeletePhoto: failed to get photo")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка"})
+		}
 		return
 	}
 
 	isOwner := photo.UserID == userID
-	isManager, _ := h.coAuthorService.IsUserManager(photo.GameID, userID)
+	isManager, err := h.coAuthorService.IsUserManager(photo.GameID, userID)
+	if err != nil {
+		log.Error().Err(err).Int("photo_id", photoID).Msg("DeletePhoto: failed to check manager")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка"})
+		return
+	}
 
 	if !isOwner && !isManager {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Нет прав на удаление"})
 		return
 	}
 
-	// Удаляем запись из БД
 	if err := h.photoService.Delete(photo.ID, userID); err != nil {
 		log.Error().Err(err).Uint("photo_id", photo.ID).Msg("DeletePhoto: failed to delete record")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось удалить фото"})
 		return
 	}
 
-	// Удаляем файл
 	if err := h.storage.Delete(photo.Path); err != nil {
 		log.Error().Err(err).Str("path", photo.Path).Msg("DeletePhoto: failed to delete file")
 	}
@@ -1101,26 +1003,26 @@ func (h *GameHandler) DeletePhoto(c *gin.Context) {
 }
 
 // FullPreview возвращает структуру игры для быстрого просмотра.
-// @Summary Полный превью игры
-// @Description Возвращает JSON-структуру игры с уровнями, вопросами и ответами
-// @Tags games
-// @Produce json
-// @Param id path int true "ID игры"
-// @Success 200 {object} map[string]interface{} "Данные игры"
-// @Router /games/{id}/full-preview [get]
-// @Security JWT
 func (h *GameHandler) FullPreview(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || gameID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID игры"})
+		return
+	}
 	userID := c.GetUint("userID")
 
-	_, err := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID)
+	_, err = h.gameService.GetByID(c.Request.Context(), uint(gameID), userID)
 	if err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Нет доступа"})
 		return
 	}
 
 	var levels []level.Level
-	h.db.Preload("Questions.Answers").Where("game_id = ?", gameID).Order("position ASC").Find(&levels)
+	if err := h.db.Preload("Questions.Answers").Where("game_id = ?", gameID).Order("position ASC").Find(&levels).Error; err != nil {
+		log.Error().Err(err).Int("game_id", gameID).Msg("FullPreview: failed to load levels")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось загрузить уровни"})
+		return
+	}
 
 	var result []levelPreview
 	for _, lvl := range levels {
@@ -1176,26 +1078,28 @@ func NewGameplayHandler(
 }
 
 // ShowGame отображает страницу прохождения уровня для команды.
-// @Summary Страница прохождения уровня
-// @Description Отображает страницу прохождения текущего уровня для команды
-// @Tags gameplay
-// @Produce html
-// @Param passing_id path int true "ID прохождения"
-// @Success 200 {string} html "Страница прохождения уровня"
-// @Router /game/{passing_id} [get]
-// @Security JWT
 func (h *GameplayHandler) ShowGame(c *gin.Context) {
-	passingID, _ := strconv.Atoi(c.Param("passing_id"))
+	passingID, err := strconv.Atoi(c.Param("passing_id"))
+	if err != nil || passingID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID прохождения"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	progress, err := GetCurrentProgress(h.db, uint(passingID))
 	if err != nil {
-		c.HTML(http.StatusNotFound, "errors/404.html", gin.H{"Error": "Нет активного уровня"})
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.HTML(http.StatusNotFound, "errors/404.html", gin.H{"Error": "Нет активного уровня"})
+		} else {
+			log.Error().Err(err).Int("passing_id", passingID).Msg("ShowGame: failed to get current progress")
+			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		}
 		return
 	}
 
 	var passing GamePassing
 	if err := h.db.Preload("Team").First(&passing, passingID).Error; err != nil {
+		log.Error().Err(err).Int("passing_id", passingID).Msg("ShowGame: failed to get passing")
 		c.HTML(http.StatusForbidden, "errors/403.html", nil)
 		return
 	}
@@ -1211,13 +1115,17 @@ func (h *GameplayHandler) ShowGame(c *gin.Context) {
 			elapsed := time.Since(progress.StartedAt)
 			limit := time.Duration(settings.PerLevelTimeLimit) * time.Minute
 			remaining := limit - elapsed
-			remaining = max(remaining, 0)
+			if remaining < 0 {
+				remaining = 0
+			}
 			timeLimitSec = int(remaining.Seconds())
 		}
 	}
 
 	var attempts []Attempt
-	h.db.Where("level_progress_id = ?", progress.ID).Order("created_at DESC").Find(&attempts)
+	if err := h.db.Where("level_progress_id = ?", progress.ID).Order("created_at DESC").Find(&attempts).Error; err != nil {
+		log.Error().Err(err).Int("passing_id", passingID).Msg("ShowGame: failed to get attempts")
+	}
 
 	hideAnswers := settings.HideAnswersUntilFinished && passing.Status != StatusFinished
 
@@ -1237,18 +1145,12 @@ func (h *GameplayHandler) ShowGame(c *gin.Context) {
 }
 
 // SubmitCode обрабатывает ввод текстового кода.
-// @Summary Отправка кода
-// @Description Отправляет текстовый код для проверки на текущем уровне
-// @Tags gameplay
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param passing_id path int true "ID прохождения"
-// @Param code formData string true "Код"
-// @Success 302 {string} string "Перенаправление на /game/{passing_id}"
-// @Router /game/{passing_id}/submit [post]
-// @Security JWT
 func (h *GameplayHandler) SubmitCode(c *gin.Context) {
-	passingID, _ := strconv.Atoi(c.Param("passing_id"))
+	passingID, err := strconv.Atoi(c.Param("passing_id"))
+	if err != nil || passingID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID прохождения"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	if !h.isUserInPassing(uint(passingID), userID) {
@@ -1258,7 +1160,7 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 
 	var input SubmitCodeInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 			"ContentBlock": "gameplay-show.html",
 			"Error":        "Неверные данные: " + err.Error(),
 			"csrf":         csrf.GetToken(c),
@@ -1268,7 +1170,7 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 
 	attempt, err := h.gameService.SubmitCode(c.Request.Context(), uint(passingID), userID, input.Code)
 	if err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 			"ContentBlock": "gameplay-show.html",
 			"Error":        err.Error(),
 			"csrf":         csrf.GetToken(c),
@@ -1284,19 +1186,14 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 }
 
 // UseHint использует подсказку для текущего уровня.
-// @Summary Использование подсказки
-// @Description Использует подсказку для текущего уровня
-// @Tags gameplay
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param passing_id path int true "ID прохождения"
-// @Success 302 {string} string "Перенаправление на /game/{passing_id}"
-// @Router /game/{passing_id}/hint [post]
-// @Security JWT
 func (h *GameplayHandler) UseHint(c *gin.Context) {
-	passingID, _ := strconv.Atoi(c.Param("passing_id"))
+	passingID, err := strconv.Atoi(c.Param("passing_id"))
+	if err != nil || passingID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID прохождения"})
+		return
+	}
 	if err := h.gameService.UseHint(c.Request.Context(), uint(passingID), c.GetUint("userID")); err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 			"ContentBlock": "gameplay-show.html",
 			"Error":        err.Error(),
 			"csrf":         csrf.GetToken(c),
@@ -1307,18 +1204,12 @@ func (h *GameplayHandler) UseHint(c *gin.Context) {
 }
 
 // SubmitFile обрабатывает файловый ответ.
-// @Summary Отправка файлового ответа
-// @Description Отправляет файл в качестве ответа на текущем уровне
-// @Tags gameplay
-// @Accept multipart/form-data
-// @Produce html
-// @Param passing_id path int true "ID прохождения"
-// @Param answer_file formData file true "Файл (jpeg, png, gif, pdf, txt)"
-// @Success 302 {string} string "Перенаправление на /game/{passing_id}"
-// @Router /game/{passing_id}/file [post]
-// @Security JWT
 func (h *GameplayHandler) SubmitFile(c *gin.Context) {
-	passingID, _ := strconv.Atoi(c.Param("passing_id"))
+	passingID, err := strconv.Atoi(c.Param("passing_id"))
+	if err != nil || passingID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID прохождения"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	if !h.isUserInPassing(uint(passingID), userID) {
@@ -1328,7 +1219,7 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 
 	file, header, err := c.Request.FormFile("answer_file")
 	if err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 			"ContentBlock": "gameplay-show.html",
 			"Error":        "Файл не выбран",
 			"csrf":         csrf.GetToken(c),
@@ -1338,7 +1229,7 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 	defer func() { _ = file.Close() }()
 
 	if header.Size > 10*1024*1024 {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 			"ContentBlock": "gameplay-show.html",
 			"Error":        "Размер файла не должен превышать 10 МБ",
 			"csrf":         csrf.GetToken(c),
@@ -1350,7 +1241,7 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 	webPath, err := h.storage.Save("uploads/answers", file, header.Filename, userID, 10*1024*1024, allowedTypes)
 	if err != nil {
 		log.Error().Err(err).Str("filename", header.Filename).Msg("SubmitFile: failed to save file")
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 			"ContentBlock": "gameplay-show.html",
 			"Error":        "Ошибка сохранения файла",
 			"csrf":         csrf.GetToken(c),
@@ -1361,7 +1252,8 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 	_, err = h.gameService.SubmitFile(c.Request.Context(), uint(passingID), userID, webPath)
 	if err != nil {
 		log.Error().Err(err).Uint("passing", uint(passingID)).Msg("SubmitFile: service error")
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		_ = h.storage.Delete(webPath) // удаляем загруженный файл
+		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
 			"ContentBlock": "gameplay-show.html",
 			"Error":        "Не удалось сохранить попытку",
 			"csrf":         csrf.GetToken(c),
@@ -1374,17 +1266,12 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 // ---------- Тестовое прохождение ----------
 
 // StartTesting инициирует тестовое прохождение.
-// @Summary Запуск тестового прохождения
-// @Description Запускает тестовое прохождение игры (доступно автору или контент-менеджеру)
-// @Tags testing
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param id path int true "ID игры"
-// @Success 302 {string} string "Перенаправление на /testing/{passing_id}"
-// @Router /games/{id}/test-start [post]
-// @Security JWT
 func (h *GameplayHandler) StartTesting(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || gameID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		return
+	}
 	userID := c.GetUint("userID")
 
 	passing, err := h.gameService.StartTesting(c.Request.Context(), uint(gameID), userID)
@@ -1396,19 +1283,20 @@ func (h *GameplayHandler) StartTesting(c *gin.Context) {
 }
 
 // ShowTestGame отображает страницу тестового прохождения.
-// @Summary Страница тестового прохождения
-// @Description Отображает страницу тестового прохождения уровня
-// @Tags testing
-// @Produce html
-// @Param passing_id path int true "ID прохождения"
-// @Success 200 {string} html "Страница тестового прохождения"
-// @Router /testing/{passing_id} [get]
-// @Security JWT
 func (h *GameplayHandler) ShowTestGame(c *gin.Context) {
-	passingID, _ := strconv.Atoi(c.Param("passing_id"))
+	passingID, err := strconv.Atoi(c.Param("passing_id"))
+	if err != nil || passingID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID прохождения"})
+		return
+	}
 	progress, err := GetCurrentProgress(h.db, uint(passingID))
 	if err != nil {
-		c.HTML(http.StatusNotFound, "errors/404.html", gin.H{"Error": "Уровень не найден"})
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.HTML(http.StatusNotFound, "errors/404.html", gin.H{"Error": "Уровень не найден"})
+		} else {
+			log.Error().Err(err).Int("passing_id", passingID).Msg("ShowTestGame: failed to get current progress")
+			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		}
 		return
 	}
 	c.HTML(http.StatusOK, "layout.html", gin.H{
@@ -1420,22 +1308,16 @@ func (h *GameplayHandler) ShowTestGame(c *gin.Context) {
 }
 
 // SubmitTestCode обрабатывает ввод кода в тестовом режиме.
-// @Summary Отправка кода (тестовый режим)
-// @Description Отправляет код в тестовом режиме (всегда считается правильным)
-// @Tags testing
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param passing_id path int true "ID прохождения"
-// @Param code formData string true "Код"
-// @Success 302 {string} string "Перенаправление на /testing/{passing_id}"
-// @Router /testing/{passing_id}/submit [post]
-// @Security JWT
 func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
-	passingID, _ := strconv.Atoi(c.Param("passing_id"))
+	passingID, err := strconv.Atoi(c.Param("passing_id"))
+	if err != nil || passingID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID прохождения"})
+		return
+	}
 
 	var input SubmitTestCodeInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusOK, "layout.html", gin.H{
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 			"ContentBlock": "gameplay-test.html",
 			"Error":        "Неверные данные: " + err.Error(),
 			"csrf":         csrf.GetToken(c),
@@ -1444,6 +1326,7 @@ func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
 	}
 
 	if _, err := h.gameService.SubmitTestCode(c.Request.Context(), uint(passingID), c.GetUint("userID"), input.Code); err != nil {
+		log.Error().Err(err).Int("passing_id", passingID).Msg("SubmitTestCode: service error")
 		c.HTML(http.StatusInternalServerError, "errors/500.html", gin.H{"Error": err.Error()})
 		return
 	}
@@ -1451,17 +1334,12 @@ func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
 }
 
 // SkipTestLevel пропускает уровень в тестовом режиме.
-// @Summary Пропуск уровня (тестовый режим)
-// @Description Пропускает текущий уровень в тестовом прохождении
-// @Tags testing
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param passing_id path int true "ID прохождения"
-// @Success 302 {string} string "Перенаправление на /testing/{passing_id}"
-// @Router /testing/{passing_id}/skip [post]
-// @Security JWT
 func (h *GameplayHandler) SkipTestLevel(c *gin.Context) {
-	passingID, _ := strconv.Atoi(c.Param("passing_id"))
+	passingID, err := strconv.Atoi(c.Param("passing_id"))
+	if err != nil || passingID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID прохождения"})
+		return
+	}
 	if err := h.gameService.SkipLevelTest(c.Request.Context(), uint(passingID), c.GetUint("userID")); err != nil {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
@@ -1472,18 +1350,12 @@ func (h *GameplayHandler) SkipTestLevel(c *gin.Context) {
 // ---------- Ручное подтверждение автором ----------
 
 // AcceptAnswer принимает ответ.
-// @Summary Принятие ответа автором
-// @Description Автор принимает ответ команды (для Blackbox-уровня)
-// @Tags gameplay
-// @Accept x-www-form-urlencoded
-// @Produce html
-// @Param passing_id path int true "ID прохождения"
-// @Param game_id query int true "ID игры"
-// @Success 302 {string} string "Перенаправление на /games/{game_id}/monitor"
-// @Router /game/{passing_id}/accept [post]
-// @Security JWT
 func (h *GameplayHandler) AcceptAnswer(c *gin.Context) {
-	passingID, _ := strconv.Atoi(c.Param("passing_id"))
+	passingID, err := strconv.Atoi(c.Param("passing_id"))
+	if err != nil || passingID <= 0 {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID прохождения"})
+		return
+	}
 	if err := h.gameService.AcceptBlackboxAnswer(c.Request.Context(), uint(passingID), c.GetUint("userID")); err != nil {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
