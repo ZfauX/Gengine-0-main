@@ -15,7 +15,12 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Connect открывает и настраивает соединение с PostgreSQL.
+// Connect устанавливает соединение с PostgreSQL на основе переданной конфигурации.
+// Параметры подключения формируются из полей cfg.Database (Host, Port, User, Password, Name, SSLMode).
+// После подключения настраиваются параметры пула соединений: MaxOpenConns, MaxIdleConns, ConnMaxLifetime
+// в соответствии со значениями из cfg.Database.
+// Возвращает указатель на gorm.DB и ошибку, если соединение не удалось установить.
+// Для логирования используется кастомный GormLogger из пакета logging.
 func Connect(cfg *config.Config) (*gorm.DB, error) {
 	dsn := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
@@ -41,12 +46,24 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 	return db, nil
 }
 
-// EnsureAdmin создаёт или обновляет учётную запись администратора.
+// EnsureAdmin создаёт или обновляет учётную запись администратора в базе данных.
+// Использует учетные данные из cfg.Admin (Email и Password).
+// Алгоритм:
+//  1. Хеширует пароль с помощью bcrypt.DefaultCost.
+//  2. Ищет пользователя с role = 'admin'.
+//     - Если найден, обновляет его Email и Password, сохраняет изменения.
+//     - Если не найден, создаёт нового пользователя с ролью admin, установленным Email,
+//     хешированным паролем, именем "Администратор" и флагом EmailVerified = true.
+//  3. В случае любой ошибки (хеширование, поиск, сохранение, создание) завершает работу приложения
+//     с fatal-логированием, так как наличие рабочей учётной записи администратора критично
+//     для корректной работы приложения.
+//
+// Важно: функция не возвращает ошибку, а при сбое вызывает log.Fatal().
+// Рекомендуется вызывать эту функцию после применения миграций.
 func EnsureAdmin(db *gorm.DB, cfg *config.Config) {
 	hashed, err := bcrypt.GenerateFromPassword([]byte(cfg.Admin.Password), bcrypt.DefaultCost)
 	if err != nil {
-		log.Error().Err(err).Msg("ensureAdmin: не удалось захешировать пароль")
-		return
+		log.Fatal().Err(err).Msg("ensureAdmin: не удалось захешировать пароль администратора")
 	}
 
 	var adminUser user.User
@@ -55,13 +72,13 @@ func EnsureAdmin(db *gorm.DB, cfg *config.Config) {
 		adminUser.Password = string(hashed)
 		adminUser.Email = cfg.Admin.Email
 		if err := db.Save(&adminUser).Error; err != nil {
-			log.Error().Err(err).Msg("ensureAdmin: не удалось обновить администратора")
-			return
+			log.Fatal().Err(err).Msg("ensureAdmin: не удалось обновить администратора")
 		}
 		log.Info().Str("email", adminUser.Email).Msg("Администратор обновлён")
 		return
 	}
 
+	// Если администратор не найден, создаём нового
 	adminUser = user.User{
 		Email:         cfg.Admin.Email,
 		Password:      string(hashed),
@@ -70,8 +87,7 @@ func EnsureAdmin(db *gorm.DB, cfg *config.Config) {
 		EmailVerified: true,
 	}
 	if err := db.Create(&adminUser).Error; err != nil {
-		log.Error().Err(err).Msg("ensureAdmin: не удалось создать администратора")
-		return
+		log.Fatal().Err(err).Msg("ensureAdmin: не удалось создать администратора")
 	}
 
 	log.Info().Str("email", adminUser.Email).Msg("Создан администратор")

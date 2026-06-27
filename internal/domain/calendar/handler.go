@@ -55,13 +55,13 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 	}
 
 	startOfMonth := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
-	endOfMonth := startOfMonth.AddDate(0, 1, -1)
+	endOfMonth := time.Date(year, time.Month(month)+1, 1, 0, 0, 0, 0, time.UTC).Add(-time.Second)
 
 	ctx := c.Request.Context()
 	games, err := h.gameRepo.ListByDateRange(ctx, startOfMonth, endOfMonth)
 	if err != nil {
 		log.Error().Err(err).Int("year", year).Int("month", month).Msg("CalendarData: failed to list games")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "не удалось загрузить данные календаря"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 

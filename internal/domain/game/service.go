@@ -67,7 +67,10 @@ func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint) (*Gam
 		return nil, err
 	}
 	if game.IsDraft {
-		isManager, _ := s.coAuthor.IsUserManager(id, viewerID)
+		isManager, err := s.coAuthor.IsUserManager(id, viewerID)
+		if err != nil {
+			return nil, fmt.Errorf("ошибка проверки прав: %w", err)
+		}
 		if !isManager {
 			var role string
 			s.gameRepo.Model(ctx).Select("role").Where("id = ?", viewerID).Scan(&role)
@@ -77,7 +80,10 @@ func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint) (*Gam
 		}
 	}
 	if game.Visibility == "private" {
-		isManager, _ := s.coAuthor.IsUserManager(id, viewerID)
+		isManager, err := s.coAuthor.IsUserManager(id, viewerID)
+		if err != nil {
+			return nil, fmt.Errorf("ошибка проверки прав: %w", err)
+		}
 		if !isManager {
 			var role string
 			s.gameRepo.Model(ctx).Select("role").Where("id = ?", viewerID).Scan(&role)
@@ -156,7 +162,10 @@ func (s *GameService) Update(ctx context.Context, id uint, updated *Game, userID
 	if err != nil {
 		return err
 	}
-	isManager, _ := s.coAuthor.HasPermission(id, userID, "content")
+	isManager, err := s.coAuthor.HasPermission(id, userID, "content")
+	if err != nil {
+		return fmt.Errorf("ошибка проверки прав: %w", err)
+	}
 	if !isManager {
 		return errors.New("только автор или контент-менеджер может редактировать игру")
 	}
@@ -175,7 +184,10 @@ func (s *GameService) Publish(ctx context.Context, id uint, userID uint) error {
 	if err != nil {
 		return err
 	}
-	isManager, _ := s.coAuthor.HasPermission(id, userID, "content")
+	isManager, err := s.coAuthor.HasPermission(id, userID, "content")
+	if err != nil {
+		return fmt.Errorf("ошибка проверки прав: %w", err)
+	}
 	if !isManager {
 		return errors.New("только автор или контент-менеджер может опубликовать игру")
 	}
@@ -430,7 +442,10 @@ func (s *GameService) SkipLevelTest(ctx context.Context, passingID, userID uint)
 func (s *GameService) DeleteLevelFromActiveGame(ctx context.Context, gameID, levelID, userID uint) error {
 	db := s.gameRepo.DB(ctx)
 	ok, err := s.coAuthor.HasPermission(gameID, userID, "content")
-	if err != nil || !ok {
+	if err != nil {
+		return fmt.Errorf("ошибка проверки прав: %w", err)
+	}
+	if !ok {
 		return errors.New("только автор или контент-менеджер может удалять уровни")
 	}
 
@@ -464,13 +479,19 @@ func (s *GameService) DeleteLevelFromActiveGame(ctx context.Context, gameID, lev
 		}
 	}
 
+	// Удаляем уровень с проверкой ошибки
 	if err := db.Unscoped().Delete(&lvl).Error; err != nil {
-		return err
+		return fmt.Errorf("ошибка удаления уровня: %w", err)
 	}
 
+	// Обновляем монитор и хаб только если они инициализированы
 	if s.monitorService != nil && s.hub != nil {
-		snapshot, _ := s.monitorService.GameSnapshot(gameID)
-		s.hub.BroadcastToRoom(strconv.Itoa(int(gameID)), snapshot)
+		snapshot, err := s.monitorService.GameSnapshot(gameID)
+		if err != nil {
+			log.Error().Err(err).Uint("game", gameID).Msg("DeleteLevelFromActiveGame: GameSnapshot error")
+		} else {
+			s.hub.BroadcastToRoom(strconv.Itoa(int(gameID)), snapshot)
+		}
 	}
 	return nil
 }
@@ -493,21 +514,24 @@ func finishPassingProgress(tx *gorm.DB, passing *GamePassing, now time.Time) err
 }
 
 func (s *GameService) notifyCaptainAboutFinish(ctx context.Context, tx *gorm.DB, teamID, gameID uint) {
-	_ = ctx // подавляем предупреждение о неиспользуемом параметре
+	_ = ctx // контекст не используется, но сохранён для совместимости сигнатуры
 	if s.cfg == nil {
 		return
 	}
 	emailService := email.NewEmailService(s.cfg)
 	var t team.Team
 	if err := tx.First(&t, teamID).Error; err != nil {
+		log.Error().Err(err).Uint("team", teamID).Msg("notifyCaptainAboutFinish: failed to get team")
 		return
 	}
 	var captain user.User
 	if err := tx.First(&captain, t.CaptainID).Error; err != nil {
+		log.Error().Err(err).Uint("captain", t.CaptainID).Msg("notifyCaptainAboutFinish: failed to get captain")
 		return
 	}
 	var g Game
 	if err := tx.First(&g, gameID).Error; err != nil {
+		log.Error().Err(err).Uint("game", gameID).Msg("notifyCaptainAboutFinish: failed to get game")
 		return
 	}
 	if err := emailService.Send(captain.Email, "Игра завершена",
@@ -517,21 +541,24 @@ func (s *GameService) notifyCaptainAboutFinish(ctx context.Context, tx *gorm.DB,
 }
 
 func (s *GameService) notifyCaptainAboutDisqualification(ctx context.Context, tx *gorm.DB, teamID, gameID uint) {
-	_ = ctx // подавляем предупреждение о неиспользуемом параметре
+	_ = ctx // контекст не используется, но сохранён для совместимости сигнатуры
 	if s.cfg == nil {
 		return
 	}
 	emailService := email.NewEmailService(s.cfg)
 	var t team.Team
 	if err := tx.First(&t, teamID).Error; err != nil {
+		log.Error().Err(err).Uint("team", teamID).Msg("notifyCaptainAboutDisqualification: failed to get team")
 		return
 	}
 	var captain user.User
 	if err := tx.First(&captain, t.CaptainID).Error; err != nil {
+		log.Error().Err(err).Uint("captain", t.CaptainID).Msg("notifyCaptainAboutDisqualification: failed to get captain")
 		return
 	}
 	var g Game
 	if err := tx.First(&g, gameID).Error; err != nil {
+		log.Error().Err(err).Uint("game", gameID).Msg("notifyCaptainAboutDisqualification: failed to get game")
 		return
 	}
 	if err := emailService.Send(captain.Email, "Дисквалификация",
@@ -541,25 +568,26 @@ func (s *GameService) notifyCaptainAboutDisqualification(ctx context.Context, tx
 }
 
 func (s *GameService) updateMonitorAndResults(ctx context.Context, gameID uint) {
-	_ = ctx // подавляем предупреждение о неиспользуемом параметре
-	if s.monitorService != nil {
-		s.monitorService.InvalidateCache(gameID)
-		if err := s.monitorService.CalculateResults(gameID); err != nil {
-			log.Error().Err(err).Uint("game", gameID).Msg("updateMonitorAndResults: CalculateResults error")
-		}
-		if s.hub != nil {
-			snapshot, err := s.monitorService.GetOrFetchSnapshot(gameID)
-			if err != nil {
-				log.Error().Err(err).Uint("game", gameID).Msg("updateMonitorAndResults: GetOrFetchSnapshot error")
-			} else {
-				s.hub.BroadcastToRoom(strconv.Itoa(int(gameID)), snapshot)
-			}
+	_ = ctx // контекст не используется, но сохранён для совместимости сигнатуры
+	if s.monitorService == nil {
+		return
+	}
+	s.monitorService.InvalidateCache(gameID)
+	if err := s.monitorService.CalculateResults(gameID); err != nil {
+		log.Error().Err(err).Uint("game", gameID).Msg("updateMonitorAndResults: CalculateResults error")
+	}
+	if s.hub != nil {
+		snapshot, err := s.monitorService.GetOrFetchSnapshot(gameID)
+		if err != nil {
+			log.Error().Err(err).Uint("game", gameID).Msg("updateMonitorAndResults: GetOrFetchSnapshot error")
+		} else {
+			s.hub.BroadcastToRoom(strconv.Itoa(int(gameID)), snapshot)
 		}
 	}
 }
 
 func (s *GameService) logAndNotify(ctx context.Context, tx *gorm.DB, progress *LevelProgress, message string, _ uint) {
-	_ = ctx // подавляем предупреждение о неиспользуемом параметре
+	_ = ctx // контекст не используется, но сохранён для совместимости сигнатуры
 	logEntry := Log{
 		GamePassingID: progress.GamePassingID,
 		LevelID:       progress.LevelID,
@@ -571,7 +599,6 @@ func (s *GameService) logAndNotify(ctx context.Context, tx *gorm.DB, progress *L
 }
 
 func (s *GameService) broadcastSnapshot(ctx context.Context, passingID uint) {
-	_ = ctx // подавляем предупреждение о неиспользуемом параметре
 	if s.monitorService == nil || s.hub == nil {
 		return
 	}

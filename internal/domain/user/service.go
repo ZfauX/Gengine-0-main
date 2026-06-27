@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -252,6 +253,32 @@ func (s *OAuthService) GetAuthURL(provider string) (string, error) {
 	return cfg.AuthCodeURL(state, oauth2.AccessTypeOffline), nil
 }
 
+// ---------- Вспомогательные структуры для ответов OAuth ----------
+
+type googleUserInfo struct {
+	ID            string `json:"id"`
+	Email         string `json:"email"`
+	VerifiedEmail bool   `json:"verified_email"`
+	Name          string `json:"name"`
+}
+
+type githubEmail struct {
+	Email    string `json:"email"`
+	Primary  bool   `json:"primary"`
+	Verified bool   `json:"verified"`
+}
+
+type yandexUserInfo struct {
+	ID         string `json:"id"`
+	Email      string `json:"email"`
+	IsVerified bool   `json:"is_verified"` // Yandex возвращает поле is_verified
+	FirstName  string `json:"first_name"`
+	LastName   string `json:"last_name"`
+}
+
+// Authenticate выполняет аутентификацию через OAuth-провайдера.
+// Получает токен по коду, запрашивает информацию о пользователе и проверяет,
+// что email верифицирован. Если email не подтверждён, возвращает ошибку.
 func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state string) (*User, error) {
 	if len(state) != 32 {
 		return nil, errors.New("неверный state-параметр")
@@ -260,40 +287,147 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 	if !ok {
 		return nil, errors.New("неподдерживаемый провайдер")
 	}
-	_, err := cfg.Exchange(ctx, code)
+	token, err := cfg.Exchange(ctx, code)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("обмен кода на токен: %w", err)
 	}
-	// В реальном проекте здесь должен быть запрос к API провайдера за email
-	var emailStr string
+
+	// Создаём HTTP-клиент с полученным токеном
+	client := cfg.Client(ctx, token)
+
+	var emailStr, name string
+	var emailVerified bool
+
 	switch provider {
 	case "google":
-		emailStr = "user@gmail.com"
+		resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
+		if err != nil {
+			return nil, fmt.Errorf("запрос к Google API: %w", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		var info googleUserInfo
+		if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+			return nil, fmt.Errorf("декодирование ответа Google: %w", err)
+		}
+		emailStr = info.Email
+		emailVerified = info.VerifiedEmail
+		name = info.Name
+		if emailStr == "" {
+			return nil, errors.New("не удалось получить email от Google")
+		}
+		if !emailVerified {
+			return nil, errors.New("email от Google не подтверждён")
+		}
+
 	case "github":
-		emailStr = "user@github.com"
+		// GitHub требует отдельного запроса к /user/emails для получения верифицированных email
+		resp, err := client.Get("https://api.github.com/user/emails")
+		if err != nil {
+			return nil, fmt.Errorf("запрос к GitHub API: %w", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		var emails []githubEmail
+		if err := json.NewDecoder(resp.Body).Decode(&emails); err != nil {
+			return nil, fmt.Errorf("декодирование ответа GitHub: %w", err)
+		}
+		// Ищем primary и verified email
+		var found bool
+		for _, e := range emails {
+			if e.Primary && e.Verified {
+				emailStr = e.Email
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, errors.New("не найден верифицированный primary email от GitHub")
+		}
+		// Также запрашиваем имя пользователя (логин) из /user
+		respUser, err := client.Get("https://api.github.com/user")
+		if err != nil {
+			log.Warn().Err(err).Msg("не удалось получить имя пользователя GitHub")
+		} else {
+			defer func() { _ = respUser.Body.Close() }()
+			var userInfo struct {
+				Login string `json:"login"`
+			}
+			if err := json.NewDecoder(respUser.Body).Decode(&userInfo); err == nil {
+				name = userInfo.Login
+			}
+		}
+		// Для GitHub мы уже нашли primary verified email, поэтому считаем email подтверждённым.
+		// Переменная emailVerified не используется для GitHub, поэтому не присваиваем её.
+
 	case "yandex":
-		emailStr = "user@yandex.ru"
+		resp, err := client.Get("https://login.yandex.ru/info?format=json")
+		if err != nil {
+			return nil, fmt.Errorf("запрос к Yandex API: %w", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		var info yandexUserInfo
+		if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+			return nil, fmt.Errorf("декодирование ответа Yandex: %w", err)
+		}
+		emailStr = info.Email
+		emailVerified = info.IsVerified
+		if emailStr == "" {
+			return nil, errors.New("не удалось получить email от Yandex")
+		}
+		if !emailVerified {
+			return nil, errors.New("email от Yandex не подтверждён")
+		}
+		name = info.FirstName
+		if name == "" {
+			name = info.LastName
+		}
+
+	default:
+		return nil, errors.New("неподдерживаемый провайдер для получения информации")
 	}
+
+	// Если имя не было получено, используем email как имя
+	if name == "" {
+		name = emailStr
+	}
+
+	// Ищем пользователя в БД
 	user, err := s.userRepo.GetByEmail(ctx, emailStr)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// Создаём нового пользователя с подтверждённым email
 		user = &User{
 			Email:         emailStr,
-			Name:          emailStr,
-			EmailVerified: true,
-			Password:      "",
+			Name:          name,
+			EmailVerified: true, // так как мы проверили верификацию
+			Password:      "",   // пароль не нужен для OAuth
 		}
 		if err := s.userRepo.Create(ctx, user); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("создание пользователя: %w", err)
 		}
 	} else if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("поиск пользователя: %w", err)
+	} else {
+		// Пользователь уже существует — обновим имя, если оно изменилось
+		if user.Name != name {
+			if err := s.userRepo.Update(ctx, user.ID, map[string]any{"name": name}); err != nil {
+				log.Warn().Err(err).Uint("user_id", user.ID).Msg("не удалось обновить имя пользователя")
+			}
+		}
+		// Убедимся, что email_verified = true (на случай, если пользователь создан иначе)
+		if !user.EmailVerified {
+			if err := s.userRepo.Update(ctx, user.ID, map[string]any{"email_verified": true}); err != nil {
+				log.Warn().Err(err).Uint("user_id", user.ID).Msg("не удалось установить email_verified")
+			}
+		}
 	}
+
+	// Сохраняем внешний логин
 	extLogin := &ExternalLogin{
 		UserID:     user.ID,
 		Provider:   provider,
-		ExternalID: emailStr,
+		ExternalID: emailStr, // используем email как внешний ID (можно заменить на ID от провайдера, если есть)
 	}
 	_ = s.extLoginRepo.FindOrCreate(ctx, extLogin)
+
 	return user, nil
 }
 

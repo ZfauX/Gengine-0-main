@@ -73,12 +73,16 @@ func main() {
 	hub := ws.NewRoomHub()
 	go hub.Run()
 
-	r := app.SetupRouter(database, localStorage, hub, cfg, ".")
+	// Создаём экземпляр App и настраиваем роутер (новый подход)
+	appInstance := app.NewApp(database, localStorage, hub, cfg, ".")
+	r := appInstance.SetupRouter()
 
+	// Запускаем фоновые задачи
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go game.CheckTimeouts(database, ctx)
 	go game.CheckAutoStartGames(database, ctx)
 
+	// Запускаем HTTP-сервер
 	app.RunServer(r, database, cfg, cancel)
 }
