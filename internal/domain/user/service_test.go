@@ -68,6 +68,7 @@ func createTestUser(t *testing.T, db *gorm.DB, email, password, name string) *Us
 		Password:      string(hashed),
 		Name:          name,
 		EmailVerified: false,
+		// Роль по умолчанию будет "user" (это задаётся в GORM-модели)
 	}
 	require.NoError(t, db.Create(user).Error)
 	return user
@@ -143,13 +144,15 @@ func TestAuthService_ParseToken(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("валидный токен", func(t *testing.T) {
-		id, err := service.ParseToken(tokenStr)
+		id, role, err := service.ParseToken(tokenStr)
 		require.NoError(t, err)
 		assert.Equal(t, user.ID, id)
+		// +++ Исправлено: ожидаем роль "user" (по умолчанию из БД)
+		assert.Equal(t, "user", role)
 	})
 
 	t.Run("невалидный токен", func(t *testing.T) {
-		_, err := service.ParseToken("invalid.token.string")
+		_, _, err := service.ParseToken("invalid.token.string")
 		assert.Error(t, err)
 	})
 
@@ -159,7 +162,7 @@ func TestAuthService_ParseToken(t *testing.T) {
 		oldCfg.JWT.AccessExpiry = -time.Hour
 		expiredService := NewAuthService(userRepo, achievRepo, emailVerifRepo, &oldCfg)
 		token, _ := expiredService.GenerateJWT(*user)
-		_, err := expiredService.ParseToken(token)
+		_, _, err := expiredService.ParseToken(token)
 		assert.Error(t, err)
 	})
 }

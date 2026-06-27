@@ -11,25 +11,25 @@ import (
 	"time"
 
 	"gengine-0/internal/pkg/middleware"
-	"gengine-0/internal/testutil"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gorm.io/gorm"
 )
 
 // =============================================================================
 // Моки для тестов
 // =============================================================================
 
+// +++ Изменяем stubTokenParser: ParseToken теперь возвращает (uint, string, error)
 type stubTokenParser struct {
 	parseResult uint
 	parseError  error
+	role        string // опционально, для тестов
 }
 
-func (s *stubTokenParser) ParseToken(token string) (uint, error) {
-	return s.parseResult, s.parseError
+func (s *stubTokenParser) ParseToken(token string) (uint, string, error) {
+	return s.parseResult, s.role, s.parseError
 }
 
 type stubGameAuthorizer struct {
@@ -50,23 +50,11 @@ func (s *stubTeamAccessChecker) CanManageTeam(teamID, userID uint) bool {
 }
 
 // =============================================================================
-// Вспомогательная функция для тестов AdminRequired (использует PostgreSQL)
+// Вспомогательная функция для тестов AdminRequired (больше не нужна, удаляем)
 // =============================================================================
 
-// setupAdminTestDB создаёт тестовую БД с таблицей users и возвращает *gorm.DB.
-// Модель пользователя определяется только для миграции, чтобы не зависеть от реальной модели.
-type testUser struct {
-	ID   uint   `gorm:"primaryKey"`
-	Role string `gorm:"column:role"`
-}
-
-func (testUser) TableName() string { return "users" }
-
-func setupAdminTestDB(t *testing.T) *gorm.DB {
-	t.Helper()
-	db := testutil.SetupPostgresDB(t, &testUser{})
-	return db
-}
+// setupAdminTestDB больше не нужна, так как AdminRequired не обращается к БД.
+// Удаляем эту функцию и все тесты, которые её используют, или переписываем их.
 
 // =============================================================================
 // Тесты для AuthRequired (дополняем уже существующие)
@@ -115,6 +103,9 @@ func TestAuthRequired_ValidToken(t *testing.T) {
 		userID, exists := c.Get("userID")
 		require.True(t, exists)
 		assert.Equal(t, uint(42), userID)
+		// Проверяем, что роль тоже установлена (пустая)
+		role, _ := c.Get("role")
+		assert.Equal(t, "", role)
 		c.String(http.StatusOK, "ok")
 	})
 
@@ -222,21 +213,19 @@ func TestOptionalAuth_InvalidToken(t *testing.T) {
 }
 
 // =============================================================================
-// Тесты для AdminRequired (используем реальную PostgreSQL)
+// Тесты для AdminRequired (больше не используем БД, только контекст)
 // =============================================================================
 
 func TestAdminRequired_UserNotAdmin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	db := setupAdminTestDB(t)
-	// Создаём пользователя с ролью "user"
-	require.NoError(t, db.Exec("INSERT INTO users (id, role) VALUES (1, 'user')").Error)
-
 	router := gin.New()
+	// Устанавливаем userID и роль "user" в контексте
 	router.Use(func(c *gin.Context) {
 		c.Set("userID", uint(1))
+		c.Set("role", "user")
 		c.Next()
 	})
-	router.Use(middleware.AdminRequired(db))
+	router.Use(middleware.AdminRequired())
 	router.GET("/admin", func(c *gin.Context) {
 		c.String(http.StatusOK, "ok")
 	})
@@ -251,15 +240,13 @@ func TestAdminRequired_UserNotAdmin(t *testing.T) {
 
 func TestAdminRequired_AdminUser(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	db := setupAdminTestDB(t)
-	require.NoError(t, db.Exec("INSERT INTO users (id, role) VALUES (1, 'admin')").Error)
-
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set("userID", uint(1))
+		c.Set("role", "admin")
 		c.Next()
 	})
-	router.Use(middleware.AdminRequired(db))
+	router.Use(middleware.AdminRequired())
 	router.GET("/admin", func(c *gin.Context) {
 		isAdmin, exists := c.Get("IsAdmin")
 		require.True(t, exists)
@@ -276,10 +263,8 @@ func TestAdminRequired_AdminUser(t *testing.T) {
 
 func TestAdminRequired_NoUserID(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	db := setupAdminTestDB(t)
-
 	router := gin.New()
-	router.Use(middleware.AdminRequired(db))
+	router.Use(middleware.AdminRequired())
 	router.GET("/admin", func(c *gin.Context) {
 		c.String(http.StatusOK, "ok")
 	})
@@ -514,7 +499,6 @@ func TestTeamCaptainOrGameAuthor_NoUserID(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	// userID=0, checker.CanManageTeam вернёт false, поэтому 403
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
@@ -607,7 +591,7 @@ func TestGzipMiddleware_WithAcceptEncoding(t *testing.T) {
 
 	reader, err := gzip.NewReader(w.Body)
 	require.NoError(t, err)
-	defer func() { _ = reader.Close() }() // исправлено: добавлена проверка ошибки
+	defer func() { _ = reader.Close() }()
 	decompressed, err := io.ReadAll(reader)
 	require.NoError(t, err)
 	assert.Equal(t, "hello world", string(decompressed))

@@ -54,16 +54,14 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 //     - Если найден, обновляет его Email и Password, сохраняет изменения.
 //     - Если не найден, создаёт нового пользователя с ролью admin, установленным Email,
 //     хешированным паролем, именем "Администратор" и флагом EmailVerified = true.
-//  3. В случае любой ошибки (хеширование, поиск, сохранение, создание) завершает работу приложения
-//     с fatal-логированием, так как наличие рабочей учётной записи администратора критично
-//     для корректной работы приложения.
+//  3. В случае любой ошибки возвращает её, чтобы вызывающий код мог обработать.
 //
-// Важно: функция не возвращает ошибку, а при сбое вызывает log.Fatal().
-// Рекомендуется вызывать эту функцию после применения миграций.
-func EnsureAdmin(db *gorm.DB, cfg *config.Config) {
+// Возвращает ошибку, если не удалось выполнить операцию.
+// Вызывающий код должен проверить ошибку и завершить приложение, если это критично.
+func EnsureAdmin(db *gorm.DB, cfg *config.Config) error {
 	hashed, err := bcrypt.GenerateFromPassword([]byte(cfg.Admin.Password), bcrypt.DefaultCost)
 	if err != nil {
-		log.Fatal().Err(err).Msg("ensureAdmin: не удалось захешировать пароль администратора")
+		return fmt.Errorf("ensureAdmin: не удалось захешировать пароль администратора: %w", err)
 	}
 
 	var adminUser user.User
@@ -72,10 +70,10 @@ func EnsureAdmin(db *gorm.DB, cfg *config.Config) {
 		adminUser.Password = string(hashed)
 		adminUser.Email = cfg.Admin.Email
 		if err := db.Save(&adminUser).Error; err != nil {
-			log.Fatal().Err(err).Msg("ensureAdmin: не удалось обновить администратора")
+			return fmt.Errorf("ensureAdmin: не удалось обновить администратора: %w", err)
 		}
 		log.Info().Str("email", adminUser.Email).Msg("Администратор обновлён")
-		return
+		return nil
 	}
 
 	// Если администратор не найден, создаём нового
@@ -87,8 +85,9 @@ func EnsureAdmin(db *gorm.DB, cfg *config.Config) {
 		EmailVerified: true,
 	}
 	if err := db.Create(&adminUser).Error; err != nil {
-		log.Fatal().Err(err).Msg("ensureAdmin: не удалось создать администратора")
+		return fmt.Errorf("ensureAdmin: не удалось создать администратора: %w", err)
 	}
 
 	log.Info().Str("email", adminUser.Email).Msg("Создан администратор")
+	return nil
 }

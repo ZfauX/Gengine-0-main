@@ -23,9 +23,12 @@ func RegisterRoutes(
 	gameService *game.GameService,
 	coAuthorSvc *game.CoAuthorService,
 	authService *user.AuthService,
-) {
+) error {
 	exportRepo := NewGormExportRepo(db)
-	exportService := NewExportService(exportRepo, fonts.DejaVuSans, fonts.DejaVuSansBold)
+	exportService, err := NewExportService(exportRepo, fonts.DejaVuSans, fonts.DejaVuSansBold)
+	if err != nil {
+		return err
+	}
 	exportHandler := NewExportHandler(exportService, gameService, store, db)
 
 	authRequired := middleware.AuthRequired(authService)
@@ -116,4 +119,6 @@ func RegisterRoutes(
 		// @Security JWT
 		importGroup.POST("/import", exportHandler.ImportGame)
 	}
+
+	return nil
 }

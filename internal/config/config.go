@@ -1,14 +1,14 @@
 // Package config загружает и валидирует конфигурацию приложения из переменных окружения.
 // Выполняет строгую проверку обязательных параметров, требует надёжные секреты и пароли,
-// при обнаружении проблем завершает работу с логированием fatal-ошибки.
+// при обнаружении проблем возвращает ошибку.
 package config
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"time"
-
-	"github.com/rs/zerolog/log"
 )
 
 // Config содержит все настройки приложения, сгруппированные по функциональным областям.
@@ -119,14 +119,8 @@ type TLSConfig struct {
 }
 
 // LoadConfig загружает конфигурацию из переменных окружения с жёсткой проверкой обязательных секретов.
-// Выполняет следующие проверки:
-// - наличие всех обязательных переменных (DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME, ADMIN_EMAIL, ADMIN_PASSWORD);
-// - длина и надёжность JWT_SECRET и SESSION_SECRET (минимум 32 символа, не содержат слабых значений);
-// - сложность ADMIN_PASSWORD (минимум 12 символов);
-// - корректность формата длительностей;
-// - если OAuth, Stripe, SMTP или reCAPTCHA включены, проверяет наличие необходимых ключей.
-// При обнаружении ошибок завершает работу приложения с fatal-логированием.
-func LoadConfig() *Config {
+// Выполняет проверки и возвращает конфигурацию или ошибку.
+func LoadConfig() (*Config, error) {
 	cfg := &Config{}
 
 	// Сервер
@@ -136,15 +130,28 @@ func LoadConfig() *Config {
 	cfg.Server.MaxBackups = getEnvAsInt("BACKUP_MAX_BACKUPS", 10)
 
 	// База данных (обязательные параметры)
-	cfg.Database.Host = requireEnv("DB_HOST")
-	cfg.Database.Port = requireEnv("DB_PORT")
-	cfg.Database.User = requireEnv("DB_USER")
-	cfg.Database.Password = requireEnv("DB_PASSWORD")
-	cfg.Database.Name = requireEnv("DB_NAME")
+	var err error
+	if cfg.Database.Host, err = requireEnv("DB_HOST"); err != nil {
+		return nil, err
+	}
+	if cfg.Database.Port, err = requireEnv("DB_PORT"); err != nil {
+		return nil, err
+	}
+	if cfg.Database.User, err = requireEnv("DB_USER"); err != nil {
+		return nil, err
+	}
+	if cfg.Database.Password, err = requireEnv("DB_PASSWORD"); err != nil {
+		return nil, err
+	}
+	if cfg.Database.Name, err = requireEnv("DB_NAME"); err != nil {
+		return nil, err
+	}
 	cfg.Database.SSLMode = getEnvOrDefault("DB_SSLMODE", "disable")
 	cfg.Database.MaxOpenConns = getEnvAsInt("DB_MAX_OPEN_CONNS", 25)
 	cfg.Database.MaxIdleConns = getEnvAsInt("DB_MAX_IDLE_CONNS", 10)
-	cfg.Database.ConnMaxLifetime = parseDuration("DB_CONN_MAX_LIFETIME", "5m")
+	if cfg.Database.ConnMaxLifetime, err = parseDuration("DB_CONN_MAX_LIFETIME", "5m"); err != nil {
+		return nil, err
+	}
 
 	// Redis (опционально)
 	cfg.Redis.Host = os.Getenv("REDIS_HOST")
@@ -152,36 +159,60 @@ func LoadConfig() *Config {
 	cfg.Redis.Password = os.Getenv("REDIS_PASSWORD")
 
 	// JWT – критично, без дефолтов
-	cfg.JWT.Secret = requireStrongSecret("JWT_SECRET", 32)
-	cfg.JWT.AccessExpiry = parseDuration("JWT_ACCESS_EXPIRY", "15m")
-	cfg.JWT.RefreshExpiry = parseDuration("JWT_REFRESH_EXPIRY", "168h")
+	if cfg.JWT.Secret, err = requireStrongSecret("JWT_SECRET", 32); err != nil {
+		return nil, err
+	}
+	if cfg.JWT.AccessExpiry, err = parseDuration("JWT_ACCESS_EXPIRY", "15m"); err != nil {
+		return nil, err
+	}
+	if cfg.JWT.RefreshExpiry, err = parseDuration("JWT_REFRESH_EXPIRY", "168h"); err != nil {
+		return nil, err
+	}
 
 	// Сессионный ключ – критично
-	cfg.Session.Secret = requireStrongSecret("SESSION_SECRET", 32)
+	if cfg.Session.Secret, err = requireStrongSecret("SESSION_SECRET", 32); err != nil {
+		return nil, err
+	}
 
 	// Администратор – обязателен
-	cfg.Admin.Email = requireEnv("ADMIN_EMAIL")
-	cfg.Admin.Password = requireStrongPassword("ADMIN_PASSWORD", 12)
+	if cfg.Admin.Email, err = requireEnv("ADMIN_EMAIL"); err != nil {
+		return nil, err
+	}
+	if cfg.Admin.Password, err = requireStrongPassword("ADMIN_PASSWORD", 12); err != nil {
+		return nil, err
+	}
 
 	// OAuth провайдеры – каждый со своим флагом включения
-	cfg.OAuth.Google = loadOAuthProvider("GOOGLE")
-	cfg.OAuth.GitHub = loadOAuthProvider("GITHUB")
-	cfg.OAuth.Yandex = loadOAuthProvider("YANDEX")
+	if cfg.OAuth.Google, err = loadOAuthProvider("GOOGLE"); err != nil {
+		return nil, err
+	}
+	if cfg.OAuth.GitHub, err = loadOAuthProvider("GITHUB"); err != nil {
+		return nil, err
+	}
+	if cfg.OAuth.Yandex, err = loadOAuthProvider("YANDEX"); err != nil {
+		return nil, err
+	}
 
 	// Stripe
-	cfg.Stripe = loadStripeConfig()
+	if cfg.Stripe, err = loadStripeConfig(); err != nil {
+		return nil, err
+	}
 
 	// SMTP
-	cfg.SMTP = loadSMTPConfig()
+	if cfg.SMTP, err = loadSMTPConfig(); err != nil {
+		return nil, err
+	}
 
 	// reCAPTCHA
-	cfg.ReCAPTCHA = loadReCAPTCHAConfig()
+	if cfg.ReCAPTCHA, err = loadReCAPTCHAConfig(); err != nil {
+		return nil, err
+	}
 
 	// TLS
 	cfg.TLS.CertFile = os.Getenv("TLS_CERT_FILE")
 	cfg.TLS.KeyFile = os.Getenv("TLS_KEY_FILE")
 
-	return cfg
+	return cfg, nil
 }
 
 // =============================================================================
@@ -196,117 +227,117 @@ func getEnvOrDefault(key, fallback string) string {
 	return fallback
 }
 
-// requireEnv требует наличия переменной окружения, иначе завершает работу с fatal-логированием.
-func requireEnv(key string) string {
+// requireEnv требует наличия переменной окружения, иначе возвращает ошибку.
+func requireEnv(key string) (string, error) {
 	value, ok := os.LookupEnv(key)
 	if !ok || value == "" {
-		log.Fatal().Str("variable", key).Msg("required environment variable is not set")
+		return "", fmt.Errorf("required environment variable %s is not set", key)
 	}
-	return value
+	return value, nil
 }
 
 // requireStrongSecret проверяет, что переменная окружения установлена, имеет длину не менее minLen
-// и не содержит типичных слабых значений. При нарушении условий завершает работу.
-func requireStrongSecret(key string, minLen int) string {
+// и не содержит типичных слабых значений. При нарушении условий возвращает ошибку.
+func requireStrongSecret(key string, minLen int) (string, error) {
 	value, ok := os.LookupEnv(key)
 	if !ok || value == "" {
-		log.Fatal().Str("variable", key).Msg("must be set to a strong random string")
+		return "", fmt.Errorf("environment variable %s must be set to a strong random string", key)
 	}
 	if len(value) < minLen {
-		log.Fatal().Str("variable", key).Int("min_length", minLen).Int("actual_length", len(value)).Msg("too short")
+		return "", fmt.Errorf("environment variable %s must be at least %d characters long (current: %d)", key, minLen, len(value))
 	}
 	commonWeak := []string{"change-me", "secret", "password", "admin", "123456", "your-"}
 	for _, w := range commonWeak {
 		if len(value) >= len(w) && value[:len(w)] == w {
-			log.Fatal().Str("variable", key).Msg("appears to be a weak/default value, please change it")
+			return "", fmt.Errorf("environment variable %s appears to be a weak/default value, please change it", key)
 		}
 	}
-	return value
+	return value, nil
 }
 
 // requireStrongPassword проверяет, что пароль администратора имеет длину не менее minLen.
-func requireStrongPassword(key string, minLen int) string {
+func requireStrongPassword(key string, minLen int) (string, error) {
 	value, ok := os.LookupEnv(key)
 	if !ok || value == "" {
-		log.Fatal().Str("variable", key).Msg("is required (admin password)")
+		return "", fmt.Errorf("environment variable %s is required (admin password)", key)
 	}
 	if len(value) < minLen {
-		log.Fatal().Str("variable", key).Int("min_length", minLen).Int("actual_length", len(value)).Msg("must be at least min_length characters long")
+		return "", fmt.Errorf("environment variable %s must be at least %d characters long (current: %d)", key, minLen, len(value))
 	}
-	return value
+	return value, nil
 }
 
 // parseDuration преобразует строку в time.Duration, используя значение по умолчанию при отсутствии переменной.
-// При ошибке парсинга завершает работу.
-func parseDuration(key, defaultVal string) time.Duration {
+// При ошибке парсинга возвращает ошибку.
+func parseDuration(key, defaultVal string) (time.Duration, error) {
 	val := getEnvOrDefault(key, defaultVal)
 	d, err := time.ParseDuration(val)
 	if err != nil {
-		log.Fatal().Str("variable", key).Err(err).Msg("invalid duration")
+		return 0, fmt.Errorf("invalid duration for %s: %w", key, err)
 	}
-	return d
+	return d, nil
 }
 
 // loadOAuthProvider загружает настройки OAuth-провайдера по префиксу.
 // Если провайдер включён, требует наличия CLIENT_ID и CLIENT_SECRET.
-func loadOAuthProvider(prefix string) OAuthProvider {
+func loadOAuthProvider(prefix string) (OAuthProvider, error) {
 	enabledEnv := prefix + "_ENABLED"
 	enabled, _ := strconv.ParseBool(os.Getenv(enabledEnv))
 	if !enabled {
-		return OAuthProvider{Enabled: false}
+		return OAuthProvider{Enabled: false}, nil
 	}
 	clientID := os.Getenv(prefix + "_CLIENT_ID")
 	clientSecret := os.Getenv(prefix + "_CLIENT_SECRET")
 	if clientID == "" || clientSecret == "" {
-		log.Fatal().Str("provider", prefix).Msg("OAuth is enabled but CLIENT_ID or CLIENT_SECRET is missing")
+		return OAuthProvider{}, fmt.Errorf("OAuth provider %s is enabled but CLIENT_ID or CLIENT_SECRET is missing", prefix)
 	}
 	return OAuthProvider{
 		Enabled:      true,
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
-	}
+	}, nil
 }
 
 // loadStripeConfig загружает настройки Stripe, если они включены.
 // При включении требует наличия STRIPE_SECRET_KEY.
-func loadStripeConfig() StripeConfig {
+func loadStripeConfig() (StripeConfig, error) {
 	enabled, _ := strconv.ParseBool(os.Getenv("STRIPE_ENABLED"))
 	if !enabled {
-		return StripeConfig{Enabled: false}
+		return StripeConfig{Enabled: false}, nil
 	}
 	secretKey := os.Getenv("STRIPE_SECRET_KEY")
 	if secretKey == "" {
-		log.Fatal().Msg("STRIPE_ENABLED is true but STRIPE_SECRET_KEY is not set")
+		return StripeConfig{}, errors.New("STRIPE_ENABLED is true but STRIPE_SECRET_KEY is not set")
 	}
 	webhookSecret := os.Getenv("STRIPE_WEBHOOK_SECRET")
 	return StripeConfig{
 		Enabled:       true,
 		SecretKey:     secretKey,
 		WebhookSecret: webhookSecret,
-	}
+	}, nil
 }
 
 // loadSMTPConfig загружает настройки SMTP, если они включены.
 // При включении требует наличия SMTP_HOST и SMTP_FROM.
-func loadSMTPConfig() SMTPConfig {
+func loadSMTPConfig() (SMTPConfig, error) {
 	enabled, _ := strconv.ParseBool(os.Getenv("SMTP_ENABLED"))
 	if !enabled {
-		return SMTPConfig{Enabled: false}
+		return SMTPConfig{Enabled: false}, nil
 	}
 	host := os.Getenv("SMTP_HOST")
 	if host == "" {
-		log.Fatal().Msg("SMTP_ENABLED is true but SMTP_HOST is missing")
+		return SMTPConfig{}, errors.New("SMTP_ENABLED is true but SMTP_HOST is missing")
 	}
 	portStr := getEnvOrDefault("SMTP_PORT", "587")
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
-		log.Fatal().Err(err).Msg("invalid SMTP_PORT")
+		return SMTPConfig{}, fmt.Errorf("invalid SMTP_PORT: %w", err)
 	}
 	user := os.Getenv("SMTP_USER")
 	password := os.Getenv("SMTP_PASSWORD")
 	from := os.Getenv("SMTP_FROM")
 	if from == "" {
-		log.Fatal().Msg("SMTP_ENABLED is true but SMTP_FROM is missing")
+		return SMTPConfig{}, errors.New("SMTP_ENABLED is true but SMTP_FROM is missing")
 	}
 	return SMTPConfig{
 		Enabled:  true,
@@ -315,26 +346,26 @@ func loadSMTPConfig() SMTPConfig {
 		User:     user,
 		Password: password,
 		From:     from,
-	}
+	}, nil
 }
 
 // loadReCAPTCHAConfig загружает настройки reCAPTCHA, если они включены.
 // При включении требует наличия RECAPTCHA_SITE_KEY и RECAPTCHA_SECRET_KEY.
-func loadReCAPTCHAConfig() ReCAPTCHAConfig {
+func loadReCAPTCHAConfig() (ReCAPTCHAConfig, error) {
 	enabled, _ := strconv.ParseBool(os.Getenv("RECAPTCHA_ENABLED"))
 	if !enabled {
-		return ReCAPTCHAConfig{Enabled: false}
+		return ReCAPTCHAConfig{Enabled: false}, nil
 	}
 	siteKey := os.Getenv("RECAPTCHA_SITE_KEY")
 	secretKey := os.Getenv("RECAPTCHA_SECRET_KEY")
 	if siteKey == "" || secretKey == "" {
-		log.Fatal().Msg("RECAPTCHA_ENABLED is true but RECAPTCHA_SITE_KEY or RECAPTCHA_SECRET_KEY is missing")
+		return ReCAPTCHAConfig{}, errors.New("RECAPTCHA_ENABLED is true but RECAPTCHA_SITE_KEY or RECAPTCHA_SECRET_KEY is missing")
 	}
 	return ReCAPTCHAConfig{
 		Enabled:   true,
 		SiteKey:   siteKey,
 		SecretKey: secretKey,
-	}
+	}, nil
 }
 
 // getEnvAsInt возвращает значение переменной окружения как целое число или fallback при ошибке.
@@ -343,7 +374,7 @@ func getEnvAsInt(key string, fallback int) int {
 		if intValue, err := strconv.Atoi(value); err == nil {
 			return intValue
 		}
-		log.Warn().Str("variable", key).Int("default", fallback).Msg("invalid integer, using default")
+		// вместо log.Warn() просто используем fallback — ошибка не критична
 	}
 	return fallback
 }

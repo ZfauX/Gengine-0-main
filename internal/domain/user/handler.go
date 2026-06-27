@@ -113,8 +113,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	// Обработка ошибки парсинга токена для аудита — если ошибка, логируем, но не прерываем
-	userID, parseErr := h.authSvc.ParseToken(token)
+	// +++ Исправлено: ParseToken теперь возвращает (uint, string, error), игнорируем роль
+	userID, _, parseErr := h.authSvc.ParseToken(token)
 	if parseErr != nil {
 		log.Error().Err(parseErr).Msg("Login: failed to parse token for audit")
 	} else {
@@ -518,15 +518,19 @@ func (h *DashboardHandler) Index(c *gin.Context) {
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
-	var role string
-	if err := h.db.Table("users").Select("role").Where("id = ?", userID).Scan(&role).Error; err != nil {
-		log.Error().Err(err).Uint("user", userID).Msg("DashboardHandler.Index: failed to get role")
+	// +++ Исправлено: получаем роль из контекста, установленного AuthRequired
+	role, exists := c.Get("role")
+	if !exists {
 		role = "user" // fallback
+	}
+	isAdmin := false
+	if roleStr, ok := role.(string); ok && roleStr == "admin" {
+		isAdmin = true
 	}
 	c.HTML(http.StatusOK, "layout.html", gin.H{
 		"ContentBlock":  "dashboard-index.html",
 		"Dashboard":     dash,
 		"CurrentUserID": userID,
-		"IsAdmin":       role == "admin",
+		"IsAdmin":       isAdmin,
 	})
 }

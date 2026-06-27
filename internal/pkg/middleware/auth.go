@@ -6,15 +6,14 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
-// TokenParser – интерфейс для сервиса, умеющего проверять JWT и возвращать ID пользователя.
+// TokenParser – интерфейс для сервиса, умеющего проверять JWT и возвращать ID пользователя и его роль.
 type TokenParser interface {
-	ParseToken(tokenStr string) (uint, error)
+	ParseToken(tokenStr string) (uint, string, error) // возвращает userID, role, error
 }
 
-// AuthRequired возвращает middleware, который проверяет JWT‑токен и сохраняет userID в контексте.
+// AuthRequired возвращает middleware, который проверяет JWT‑токен и сохраняет userID и role в контексте.
 // Если токена нет или он невалиден – перенаправляет на /auth/login.
 func AuthRequired(parser TokenParser) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -29,7 +28,7 @@ func AuthRequired(parser TokenParser) gin.HandlerFunc {
 			return
 		}
 
-		userID, err := parser.ParseToken(token)
+		userID, role, err := parser.ParseToken(token)
 		if err != nil {
 			if strings.HasPrefix(c.Request.URL.Path, "/api/") {
 				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "невалидный токен"})
@@ -41,19 +40,21 @@ func AuthRequired(parser TokenParser) gin.HandlerFunc {
 		}
 
 		c.Set("userID", userID)
+		c.Set("role", role) // сохраняем роль
 		c.Next()
 	}
 }
 
-// OptionalAuth пытается извлечь userID из JWT-куки, но не прерывает запрос при её отсутствии.
-// Если кука есть и токен валиден, userID сохраняется в контексте.
-// Если куки нет или токен невалиден – просто передаём управление дальше без userID.
+// OptionalAuth пытается извлечь userID и role из JWT-куки, но не прерывает запрос при её отсутствии.
+// Если кука есть и токен валиден, userID и role сохраняются в контексте.
+// Если куки нет или токен невалиден – просто передаём управление дальше без userID/role.
 func OptionalAuth(parser TokenParser) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token, err := c.Cookie("jwt")
 		if err == nil {
-			if userID, err := parser.ParseToken(token); err == nil {
+			if userID, role, err := parser.ParseToken(token); err == nil {
 				c.Set("userID", userID)
+				c.Set("role", role)
 			}
 		}
 		c.Next()
@@ -61,18 +62,18 @@ func OptionalAuth(parser TokenParser) gin.HandlerFunc {
 }
 
 // AdminRequired возвращает middleware, который проверяет, что текущий пользователь является администратором.
-// Требует, чтобы перед ним был использован AuthRequired (т.е. userID уже установлен в контексте).
-func AdminRequired(db *gorm.DB) gin.HandlerFunc {
+// Требует, чтобы перед ним был использован AuthRequired (т.е. userID и role уже установлены в контексте).
+// Теперь не требует передачи *gorm.DB, так как роль извлекается из JWT.
+func AdminRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID, exists := c.Get("userID")
+		role, exists := c.Get("role")
 		if !exists {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "требуется аутентификация"})
 			return
 		}
 
-		var role string
-		err := db.Table("users").Select("role").Where("id = ?", userID).Scan(&role).Error
-		if err != nil || role != "admin" {
+		roleStr, ok := role.(string)
+		if !ok || roleStr != "admin" {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "доступ запрещён"})
 			return
 		}

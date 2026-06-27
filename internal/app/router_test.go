@@ -21,6 +21,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
 
@@ -73,7 +74,8 @@ func setupRouterTest(t *testing.T) (*gin.Engine, *gorm.DB, func()) {
 	hub := ws.NewRoomHub()
 
 	baseDir := projectRoot()
-	router := SetupRouter(db, localStorage, hub, cfg, baseDir)
+	router, err := SetupRouter(db, localStorage, hub, cfg, baseDir)
+	require.NoError(t, err)
 
 	cleanup := func() {}
 
