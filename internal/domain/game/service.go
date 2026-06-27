@@ -73,7 +73,7 @@ func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint) (*Gam
 		}
 		if !isManager {
 			var role string
-			s.gameRepo.Model(ctx).Select("role").Where("id = ?", viewerID).Scan(&role)
+			s.gameRepo.DB(ctx).Table("users").Select("role").Where("id = ?", viewerID).Scan(&role)
 			if role != "admin" {
 				return nil, errors.New("игра не найдена")
 			}
@@ -86,7 +86,7 @@ func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint) (*Gam
 		}
 		if !isManager {
 			var role string
-			s.gameRepo.Model(ctx).Select("role").Where("id = ?", viewerID).Scan(&role)
+			s.gameRepo.DB(ctx).Table("users").Select("role").Where("id = ?", viewerID).Scan(&role)
 			if role != "admin" {
 				return nil, errors.New("игра не найдена")
 			}
@@ -479,7 +479,12 @@ func (s *GameService) DeleteLevelFromActiveGame(ctx context.Context, gameID, lev
 		}
 	}
 
-	// Удаляем уровень с проверкой ошибки
+	// Физически удаляем все LevelProgress, связанные с удаляемым уровнем
+	if err := db.Unscoped().Where("level_id = ?", levelID).Delete(&LevelProgress{}).Error; err != nil {
+		return fmt.Errorf("ошибка удаления прогресса уровней: %w", err)
+	}
+
+	// Удаляем уровень
 	if err := db.Unscoped().Delete(&lvl).Error; err != nil {
 		return fmt.Errorf("ошибка удаления уровня: %w", err)
 	}
@@ -514,7 +519,7 @@ func finishPassingProgress(tx *gorm.DB, passing *GamePassing, now time.Time) err
 }
 
 func (s *GameService) notifyCaptainAboutFinish(ctx context.Context, tx *gorm.DB, teamID, gameID uint) {
-	_ = ctx // контекст не используется, но сохранён для совместимости сигнатуры
+	_ = ctx
 	if s.cfg == nil {
 		return
 	}
@@ -541,7 +546,7 @@ func (s *GameService) notifyCaptainAboutFinish(ctx context.Context, tx *gorm.DB,
 }
 
 func (s *GameService) notifyCaptainAboutDisqualification(ctx context.Context, tx *gorm.DB, teamID, gameID uint) {
-	_ = ctx // контекст не используется, но сохранён для совместимости сигнатуры
+	_ = ctx
 	if s.cfg == nil {
 		return
 	}
@@ -568,7 +573,7 @@ func (s *GameService) notifyCaptainAboutDisqualification(ctx context.Context, tx
 }
 
 func (s *GameService) updateMonitorAndResults(ctx context.Context, gameID uint) {
-	_ = ctx // контекст не используется, но сохранён для совместимости сигнатуры
+	_ = ctx
 	if s.monitorService == nil {
 		return
 	}
@@ -587,7 +592,7 @@ func (s *GameService) updateMonitorAndResults(ctx context.Context, gameID uint) 
 }
 
 func (s *GameService) logAndNotify(ctx context.Context, tx *gorm.DB, progress *LevelProgress, message string, _ uint) {
-	_ = ctx // контекст не используется, но сохранён для совместимости сигнатуры
+	_ = ctx
 	logEntry := Log{
 		GamePassingID: progress.GamePassingID,
 		LevelID:       progress.LevelID,

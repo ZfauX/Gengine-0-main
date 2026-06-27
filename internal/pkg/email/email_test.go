@@ -43,6 +43,7 @@ type testSMTPServer struct {
 	failQuit     bool
 	started      bool
 	shutdown     chan struct{}
+	wg           sync.WaitGroup
 }
 
 // newTestSMTPServer создаёт и запускает тестовый SMTP-сервер на случайном порту.
@@ -58,12 +59,14 @@ func newTestSMTPServer(t *testing.T) *testSMTPServer {
 	s.addr = s.listener.Addr().String()
 	s.started = true
 
-	go s.serve(t)
+	s.wg.Add(1)
+	go s.serve()
 	time.Sleep(50 * time.Millisecond)
 	return s
 }
 
-func (s *testSMTPServer) serve(t *testing.T) {
+func (s *testSMTPServer) serve() {
+	defer s.wg.Done()
 	for {
 		conn, err := s.listener.Accept()
 		if err != nil {
@@ -71,31 +74,26 @@ func (s *testSMTPServer) serve(t *testing.T) {
 			case <-s.shutdown:
 				return
 			default:
-				t.Logf("accept error: %v", err)
+				// После остановки сервера просто выходим, не логируя
 				continue
 			}
 		}
-		go s.handleConn(t, conn)
+		go s.handleConn(conn)
 	}
 }
 
-func (s *testSMTPServer) handleConn(t *testing.T, conn net.Conn) {
+func (s *testSMTPServer) handleConn(conn net.Conn) {
 	defer func() {
-		if err := conn.Close(); err != nil {
-			t.Logf("error closing connection: %v", err)
-		}
+		_ = conn.Close()
 	}()
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
 
-	// Используем fmt.Fprintf с проверкой ошибки
+	// Отправляем приветствие
 	if err := s.writeResponse(writer, 220, "localhost test SMTP"); err != nil {
-		t.Logf("write response error: %v", err)
 		return
 	}
-	if err := writer.Flush(); err != nil {
-		return
-	}
+	_ = writer.Flush()
 
 	var from, to string
 
@@ -119,64 +117,36 @@ func (s *testSMTPServer) handleConn(t *testing.T, conn net.Conn) {
 
 		switch cmd {
 		case "HELO", "EHLO":
-			if err := s.writeResponse(writer, 250, "localhost"); err != nil {
-				return
-			}
-			if err := writer.Flush(); err != nil {
-				return
-			}
+			_ = s.writeResponse(writer, 250, "localhost")
+			_ = writer.Flush()
 		case "MAIL":
 			if s.failMailFrom {
-				if err := s.writeResponse(writer, 550, "mail from failed"); err != nil {
-					return
-				}
-				if err := writer.Flush(); err != nil {
-					return
-				}
+				_ = s.writeResponse(writer, 550, "mail from failed")
+				_ = writer.Flush()
 				continue
 			}
 			from = strings.TrimPrefix(arg, "FROM:")
 			from = strings.Trim(from, "<>")
-			if err := s.writeResponse(writer, 250, "OK"); err != nil {
-				return
-			}
-			if err := writer.Flush(); err != nil {
-				return
-			}
+			_ = s.writeResponse(writer, 250, "OK")
+			_ = writer.Flush()
 		case "RCPT":
 			if s.failRcptTo {
-				if err := s.writeResponse(writer, 550, "rcpt to failed"); err != nil {
-					return
-				}
-				if err := writer.Flush(); err != nil {
-					return
-				}
+				_ = s.writeResponse(writer, 550, "rcpt to failed")
+				_ = writer.Flush()
 				continue
 			}
 			to = strings.TrimPrefix(arg, "TO:")
 			to = strings.Trim(to, "<>")
-			if err := s.writeResponse(writer, 250, "OK"); err != nil {
-				return
-			}
-			if err := writer.Flush(); err != nil {
-				return
-			}
+			_ = s.writeResponse(writer, 250, "OK")
+			_ = writer.Flush()
 		case "DATA":
 			if s.failData {
-				if err := s.writeResponse(writer, 550, "data failed"); err != nil {
-					return
-				}
-				if err := writer.Flush(); err != nil {
-					return
-				}
+				_ = s.writeResponse(writer, 550, "data failed")
+				_ = writer.Flush()
 				continue
 			}
-			if err := s.writeResponse(writer, 354, "Start mail input; end with <CRLF>.<CRLF>"); err != nil {
-				return
-			}
-			if err := writer.Flush(); err != nil {
-				return
-			}
+			_ = s.writeResponse(writer, 354, "Start mail input; end with <CRLF>.<CRLF>")
+			_ = writer.Flush()
 			var mailData strings.Builder
 			for {
 				line, err := reader.ReadString('\n')
@@ -224,57 +194,33 @@ func (s *testSMTPServer) handleConn(t *testing.T, conn net.Conn) {
 			default:
 			}
 
-			if err := s.writeResponse(writer, 250, "OK"); err != nil {
-				return
-			}
-			if err := writer.Flush(); err != nil {
-				return
-			}
+			_ = s.writeResponse(writer, 250, "OK")
+			_ = writer.Flush()
 		case "QUIT":
 			if s.failQuit {
-				if err := s.writeResponse(writer, 500, "quit failed"); err != nil {
-					return
-				}
-				if err := writer.Flush(); err != nil {
-					return
-				}
+				_ = s.writeResponse(writer, 500, "quit failed")
+				_ = writer.Flush()
 				continue
 			}
-			if err := s.writeResponse(writer, 221, "Bye"); err != nil {
-				return
-			}
-			if err := writer.Flush(); err != nil {
-				return
-			}
+			_ = s.writeResponse(writer, 221, "Bye")
+			_ = writer.Flush()
 			return
 		case "AUTH":
 			if s.failAuth {
-				if err := s.writeResponse(writer, 535, "auth failed"); err != nil {
-					return
-				}
-				if err := writer.Flush(); err != nil {
-					return
-				}
+				_ = s.writeResponse(writer, 535, "auth failed")
+				_ = writer.Flush()
 				continue
 			}
-			if err := s.writeResponse(writer, 235, "Authentication successful"); err != nil {
-				return
-			}
-			if err := writer.Flush(); err != nil {
-				return
-			}
+			_ = s.writeResponse(writer, 235, "Authentication successful")
+			_ = writer.Flush()
 		default:
-			if err := s.writeResponse(writer, 502, "Command not implemented"); err != nil {
-				return
-			}
-			if err := writer.Flush(); err != nil {
-				return
-			}
+			_ = s.writeResponse(writer, 502, "Command not implemented")
+			_ = writer.Flush()
 		}
 	}
 }
 
-// writeResponse теперь возвращает ошибку, чтобы её можно было проверить.
+// writeResponse возвращает ошибку, но в handleConn мы игнорируем её для простоты.
 func (s *testSMTPServer) writeResponse(w *bufio.Writer, code int, text string) error {
 	if text == "" {
 		_, err := fmt.Fprintf(w, "%d \r\n", code)
@@ -289,6 +235,7 @@ func (s *testSMTPServer) Close() {
 		_ = s.listener.Close()
 	}
 	close(s.shutdown)
+	s.wg.Wait()
 	s.started = false
 }
 
@@ -563,13 +510,27 @@ func TestEmailService_Send(t *testing.T) {
 
 // Бенчмарк для отправки письма (с тестовым сервером)
 func BenchmarkSendEmail(b *testing.B) {
-	server := newTestSMTPServer(&testing.T{})
+	// Используем отдельный сервер без t
+	server := &testSMTPServer{
+		mailReceived: make(chan struct{}, 1),
+		shutdown:     make(chan struct{}),
+	}
+	var err error
+	server.listener, err = net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		b.Fatal(err)
+	}
+	server.addr = server.listener.Addr().String()
+	server.started = true
+	server.wg.Add(1)
+	go server.serve()
+	time.Sleep(50 * time.Millisecond)
 	defer server.Close()
 
 	hostParts := strings.Split(server.addr, ":")
 	host := hostParts[0]
 	var port int
-	_, _ = fmt.Sscanf(hostParts[1], "%d", &port) // в бенчмарке игнорируем ошибку
+	_, _ = fmt.Sscanf(hostParts[1], "%d", &port)
 
 	cfg := &config.Config{
 		SMTP: config.SMTPConfig{

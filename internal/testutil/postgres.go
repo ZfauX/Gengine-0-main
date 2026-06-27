@@ -14,6 +14,7 @@ import (
 // SetupPostgresDB создаёт изолированную схему в тестовой PostgreSQL,
 // выполняет миграцию моделей и возвращает подключение к ней.
 // После завершения теста схема автоматически удаляется.
+// В случае ошибки вызывает t.Fatalf.
 func SetupPostgresDB(t *testing.T, models ...any) *gorm.DB {
 	t.Helper()
 
@@ -70,4 +71,17 @@ func SetupPostgresDB(t *testing.T, models ...any) *gorm.DB {
 	})
 
 	return db
+}
+
+// SetupPostgresDBOrSkip вызывает SetupPostgresDB, но если та завершается с паникой
+// (например, из-за недоступности PostgreSQL), то перехватывает панику и пропускает тест.
+// Это удобно для интеграционных тестов, которые не должны падать при отсутствии БД.
+func SetupPostgresDBOrSkip(t *testing.T, models ...any) *gorm.DB {
+	t.Helper()
+	defer func() {
+		if r := recover(); r != nil {
+			t.Skipf("Skipping integration test: PostgreSQL setup failed: %v", r)
+		}
+	}()
+	return SetupPostgresDB(t, models...)
 }

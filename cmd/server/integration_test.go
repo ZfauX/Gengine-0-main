@@ -1,3 +1,5 @@
+//go:build integration
+
 // cmd/server/integration_test.go
 package main_test
 
@@ -89,7 +91,6 @@ func mergeCookies(old, new []*http.Cookie) []*http.Cookie {
 }
 
 func TestFullGameFlow(t *testing.T) {
-	// Используем секрет сессии длиной 32 символа, чтобы избежать проблем с CSRF
 	cfg := &config.Config{
 		JWT: config.JWTConfig{
 			Secret:       "integration-secret-32chars!!",
@@ -103,7 +104,8 @@ func TestFullGameFlow(t *testing.T) {
 		},
 	}
 
-	db := testutil.SetupPostgresDB(t,
+	// Используем SetupPostgresDBOrSkip — если PostgreSQL недоступна, тест пропускается
+	db := testutil.SetupPostgresDBOrSkip(t,
 		&user.User{}, &user.Achievement{}, &user.PasswordResetToken{}, &user.EmailVerificationToken{},
 		&game.Game{}, &game.GamePassing{}, &game.GameSetting{}, &game.CoAuthor{}, &game.Note{},
 		&game.LevelProgress{}, &game.Attempt{},
