@@ -48,7 +48,10 @@ func setupTestRouter(t *testing.T, db *gorm.DB, cfg *config.Config) *gin.Engine 
 	hub := ws.NewRoomHub()
 	go hub.Run()
 
-	router := app.SetupRouter(db, localStorage, hub, cfg, "../..")
+	router, err := app.SetupRouter(db, localStorage, hub, cfg, "../..")
+	if err != nil {
+		t.Fatalf("failed to setup router: %v", err)
+	}
 	router.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok"}) })
 
 	return router

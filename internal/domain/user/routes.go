@@ -373,8 +373,9 @@ func RegisterRoutes(
 		})
 	}
 
+	// +++ Исправлено: убрана передача db в AdminRequired
 	adminGroup := r.Group("/admin/users")
-	adminGroup.Use(middleware.AuthRequired(authService), middleware.AdminRequired(db))
+	adminGroup.Use(middleware.AuthRequired(authService), middleware.AdminRequired())
 	{
 		// @Summary Список пользователей (административный)
 		// @Description Возвращает список всех пользователей (доступно только администратору)

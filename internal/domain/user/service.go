@@ -83,7 +83,8 @@ func (s *AuthService) GenerateJWT(user User) (string, error) {
 	return s.generateJWT(user)
 }
 
-func (s *AuthService) ParseToken(tokenStr string) (uint, error) {
+// +++ Изменяем сигнатуру: возвращаем (userID, role, error)
+func (s *AuthService) ParseToken(tokenStr string) (uint, string, error) {
 	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("неверный метод подписи")
@@ -91,23 +92,26 @@ func (s *AuthService) ParseToken(tokenStr string) (uint, error) {
 		return []byte(s.cfg.JWT.Secret), nil
 	})
 	if err != nil || !token.Valid {
-		return 0, errors.New("невалидный токен")
+		return 0, "", errors.New("невалидный токен")
 	}
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
-		return 0, errors.New("неверные данные токена")
+		return 0, "", errors.New("неверные данные токена")
 	}
 	userIDFloat, ok := claims["user_id"].(float64)
 	if !ok {
-		return 0, errors.New("неверный ID пользователя в токене")
+		return 0, "", errors.New("неверный ID пользователя в токене")
 	}
-	return uint(userIDFloat), nil
+	// +++ Извлекаем роль
+	role, _ := claims["role"].(string) // если роль отсутствует, возвращаем пустую строку
+	return uint(userIDFloat), role, nil
 }
 
 func (s *AuthService) generateJWT(user User) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id": user.ID,
 		"email":   user.Email,
+		"role":    user.Role, // +++ Добавляем роль
 		"exp":     time.Now().Add(s.cfg.JWT.AccessExpiry).Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

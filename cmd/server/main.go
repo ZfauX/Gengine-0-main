@@ -55,7 +55,10 @@ func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	log.Info().Str("version", version).Str("build", buildDate).Msg("Запуск сервера")
 
-	cfg := config.LoadConfig()
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatal().Err(err).Msg("Не удалось загрузить конфигурацию")
+	}
 	gin.SetMode(cfg.Server.GinMode)
 
 	database, err := db.Connect(cfg)
@@ -67,7 +70,9 @@ func main() {
 		log.Fatal().Err(err).Msg("Ошибка применения миграций")
 	}
 
-	db.EnsureAdmin(database, cfg)
+	if err := db.EnsureAdmin(database, cfg); err != nil {
+		log.Fatal().Err(err).Msg("Не удалось создать/обновить администратора")
+	}
 
 	localStorage := storage.NewLocalStorage()
 	hub := ws.NewRoomHub()
@@ -75,7 +80,11 @@ func main() {
 
 	// Создаём экземпляр App и настраиваем роутер (новый подход)
 	appInstance := app.NewApp(database, localStorage, hub, cfg, ".")
-	r := appInstance.SetupRouter()
+	// +++ Обработка ошибки от SetupRouter
+	r, err := appInstance.SetupRouter()
+	if err != nil {
+		log.Fatal().Err(err).Msg("Не удалось настроить маршруты")
+	}
 
 	// Запускаем фоновые задачи
 	ctx, cancel := context.WithCancel(context.Background())

@@ -32,7 +32,7 @@ func RegisterRoutes(
 	adminHandler := NewAdminHandler(userRepo, gameRepo, backupService, auditService)
 
 	authRequired := middleware.AuthRequired(authService)
-	adminOnly := adminOnlyMiddleware(db)
+	adminOnly := adminOnlyMiddleware() // убрали аргумент db
 
 	protected := router.Group("/admin")
 	protected.Use(authRequired, adminOnly)
@@ -151,16 +151,17 @@ func RegisterRoutes(
 	return auditService
 }
 
-func adminOnlyMiddleware(db *gorm.DB) gin.HandlerFunc {
+// adminOnlyMiddleware проверяет, что пользователь является администратором, используя роль из контекста (из JWT).
+// Не требует передачи *gorm.DB, так как роль уже сохранена в контексте middleware.AuthRequired.
+func adminOnlyMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID := c.GetUint("userID")
-		if userID == 0 {
+		role, exists := c.Get("role")
+		if !exists {
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
-		var role string
-		err := db.Table("users").Select("role").Where("id = ?", userID).Scan(&role).Error
-		if err != nil || role != "admin" {
+		roleStr, ok := role.(string)
+		if !ok || roleStr != "admin" {
 			c.AbortWithStatus(http.StatusForbidden)
 			return
 		}

@@ -70,14 +70,16 @@ func NewApp(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub, cfg 
 }
 
 // SetupRouter — главная точка сборки роутера.
-// Теперь использует метод App.SetupRouter для удобства, но можно оставить и функцию.
-func (app *App) SetupRouter() *gin.Engine {
+// Теперь возвращает ошибку, если не удалось инициализировать какие-либо маршруты.
+func (app *App) SetupRouter() (*gin.Engine, error) {
 	r := gin.New()
 
 	app.setupEngine(r)
-	app.registerAllRoutes(r)
+	if err := app.registerAllRoutes(r); err != nil {
+		return nil, err
+	}
 
-	return r
+	return r, nil
 }
 
 // =============================================================================
@@ -140,7 +142,7 @@ func (app *App) setupEngine(r *gin.Engine) {
 // РЕГИСТРАЦИЯ ВСЕХ МАРШРУТОВ (использует поля App)
 // =============================================================================
 
-func (app *App) registerAllRoutes(r *gin.Engine) {
+func (app *App) registerAllRoutes(r *gin.Engine) error {
 	// Раздаём маршруты по доменам, передавая только нужные зависимости.
 	app.registerAdminRoutes(r)
 	app.registerUserRoutes(r)
@@ -151,8 +153,12 @@ func (app *App) registerAllRoutes(r *gin.Engine) {
 	app.registerCalendarRoutes(r)
 	app.registerMonitorRoutes(r)
 	app.registerSocialRoutes(r)
-	app.registerExportRoutes(r)
+	if err := app.registerExportRoutes(r); err != nil {
+		return fmt.Errorf("регистрация маршрутов экспорта: %w", err)
+	}
 	app.registerGameplayRoutes(r)
+
+	return nil
 }
 
 // =============================================================================
@@ -293,7 +299,6 @@ func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.
 // =============================================================================
 
 func (app *App) registerAdminRoutes(r *gin.Engine) {
-	// admin.RegisterRoutes теперь принимает только необходимые зависимости.
 	admin.RegisterRoutes(r, app.DB, app.Config, app.Services.Auth, app.Repos.User, app.Repos.Game)
 }
 
@@ -424,8 +429,9 @@ func (app *App) registerSocialRoutes(r *gin.Engine) {
 	social.RegisterRoutes(r, app.DB, app.Config, app.Services.Auth)
 }
 
-func (app *App) registerExportRoutes(r *gin.Engine) {
-	export.RegisterRoutes(
+// +++ Изменяем сигнатуру на возврат ошибки
+func (app *App) registerExportRoutes(r *gin.Engine) error {
+	return export.RegisterRoutes(
 		r,
 		app.DB,
 		app.LocalStorage,
@@ -455,9 +461,9 @@ func (app *App) registerGameplayRoutes(r *gin.Engine) {
 // ОБРАТНАЯ СОВМЕСТИМОСТЬ: оставляем старую функцию SetupRouter для упрощения перехода
 // =============================================================================
 
-// SetupRouter — сохранена для обратной совместимости.
+// SetupRouter — сохранена для обратной совместимости, но теперь возвращает ошибку.
 // Рекомендуется использовать App.SetupRouter().
-func SetupRouter(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub, cfg *config.Config, baseDir string) *gin.Engine {
+func SetupRouter(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub, cfg *config.Config, baseDir string) (*gin.Engine, error) {
 	app := NewApp(db, localStorage, hub, cfg, baseDir)
 	return app.SetupRouter()
 }

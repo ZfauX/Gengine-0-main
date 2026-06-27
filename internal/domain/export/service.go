@@ -15,7 +15,6 @@ import (
 	"gengine-0/internal/pkg/util"
 
 	"github.com/jung-kurt/gofpdf"
-	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
 
@@ -29,20 +28,21 @@ type ExportService struct {
 // NewExportService создаёт новый экземпляр ExportService.
 // normalFont — байты обычного Unicode-шрифта,
 // boldFont — байты жирного Unicode-шрифта.
+// Возвращает ошибку, если не удалось загрузить один из шрифтов.
 func NewExportService(
 	exportRepo ExportRepository,
 	normalFont, boldFont []byte,
-) *ExportService {
+) (*ExportService, error) {
 	if len(normalFont) == 0 || len(boldFont) == 0 {
-		log.Fatal().Msg("ExportService: не удалось загрузить один или оба встроенных шрифта DejaVuSans. " +
+		return nil, fmt.Errorf("не удалось загрузить один или оба встроенных шрифта DejaVuSans. " +
 			"Проверьте, что файлы DejaVuSans.ttf и DejaVuSans-Bold.ttf существуют " +
-			"и правильно добавлены в embed.go.")
+			"и правильно добавлены в embed.go")
 	}
 	return &ExportService{
 		exportRepo:         exportRepo,
 		dejaVuSansFont:     normalFont,
 		dejaVuSansBoldFont: boldFont,
-	}
+	}, nil
 }
 
 // ExportGameToCSV записывает все уровни, вопросы и ответы игры в CSV-формате.

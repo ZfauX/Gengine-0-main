@@ -1,4 +1,4 @@
-// Package app содержит управление жизненным циклом HTTP-сервера.
+// internal/app/server.go
 package app
 
 import (
@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"net/http"
 	"os"
@@ -45,7 +46,9 @@ func RunServer(r *gin.Engine, db *gorm.DB, cfg *config.Config, cancel context.Ca
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	if cfg.TLS.CertFile != "" && cfg.TLS.KeyFile != "" {
-		ensureTLSCert(cfg.TLS.CertFile, cfg.TLS.KeyFile)
+		if err := ensureTLSCert(cfg.TLS.CertFile, cfg.TLS.KeyFile); err != nil {
+			log.Fatal().Err(err).Msg("Не удалось подготовить TLS-сертификат")
+		}
 	}
 
 	port := cfg.Server.Port
@@ -56,7 +59,11 @@ func RunServer(r *gin.Engine, db *gorm.DB, cfg *config.Config, cancel context.Ca
 
 	go func() {
 		if cfg.TLS.CertFile != "" && cfg.TLS.KeyFile != "" {
-			go startHTTPRedirect(port)
+			go func() {
+				if err := startHTTPRedirect(port); err != nil {
+					log.Error().Err(err).Msg("HTTP redirect server failed")
+				}
+			}()
 			log.Info().Str("port", port).Msg("Starting HTTPS server")
 			if err := srv.ListenAndServeTLS(cfg.TLS.CertFile, cfg.TLS.KeyFile); err != nil && err != http.ErrServerClosed {
 				log.Fatal().Err(err).Msg("TLS listen")
@@ -89,25 +96,32 @@ func RunServer(r *gin.Engine, db *gorm.DB, cfg *config.Config, cancel context.Ca
 	log.Info().Msg("Server exited")
 }
 
-func ensureTLSCert(certFile, keyFile string) {
+// ensureTLSCert проверяет существование сертификата, при необходимости генерирует самоподписанный.
+// Возвращает ошибку, если не удалось создать директории или сгенерировать сертификат.
+func ensureTLSCert(certFile, keyFile string) error {
 	certDir := filepath.Dir(certFile)
 	keyDir := filepath.Dir(keyFile)
 	if _, err := os.Stat(certFile); os.IsNotExist(err) {
 		log.Info().Msg("Сертификат не найден, генерирую самоподписанный...")
 		if err := os.MkdirAll(certDir, 0755); err != nil {
-			log.Fatal().Err(err).Msg("Не удалось создать директорию для сертификата")
+			return fmt.Errorf("не удалось создать директорию для сертификата: %w", err)
 		}
 		if err := os.MkdirAll(keyDir, 0755); err != nil {
-			log.Fatal().Err(err).Msg("Не удалось создать директорию для ключа")
+			return fmt.Errorf("не удалось создать директорию для ключа: %w", err)
 		}
-		generateSelfSignedCert(certFile, keyFile)
+		if err := generateSelfSignedCert(certFile, keyFile); err != nil {
+			return fmt.Errorf("не удалось сгенерировать самоподписанный сертификат: %w", err)
+		}
 		log.Info().Msg("Самоподписанный сертификат сгенерирован")
 	} else {
 		log.Info().Msg("Использую существующий сертификат")
 	}
+	return nil
 }
 
-func startHTTPRedirect(httpsPort string) {
+// startHTTPRedirect запускает HTTP-сервер, который перенаправляет все запросы на HTTPS.
+// Возвращает ошибку, если не удалось запустить сервер.
+func startHTTPRedirect(httpsPort string) error {
 	httpPort := "80"
 	if httpsPort == "443" {
 		httpPort = "80"
@@ -118,14 +132,17 @@ func startHTTPRedirect(httpsPort string) {
 		http.Redirect(w, r, target, http.StatusMovedPermanently)
 	}))
 	if err != nil && err != http.ErrServerClosed {
-		log.Fatal().Err(err).Msg("HTTP redirect server failed")
+		return fmt.Errorf("HTTP redirect server failed: %w", err)
 	}
+	return nil
 }
 
-func generateSelfSignedCert(certFile, keyFile string) {
+// generateSelfSignedCert генерирует самоподписанный сертификат и сохраняет его в файлы.
+// Возвращает ошибку при сбое генерации или записи.
+func generateSelfSignedCert(certFile, keyFile string) error {
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Не удалось сгенерировать приватный ключ")
+		return fmt.Errorf("не удалось сгенерировать приватный ключ: %w", err)
 	}
 
 	template := x509.Certificate{
@@ -133,9 +150,8 @@ func generateSelfSignedCert(certFile, keyFile string) {
 		Subject: pkix.Name{
 			Organization: []string{"Encounter Engine Self-Signed"},
 		},
-		NotBefore: time.Now(),
-		NotAfter:  time.Now().Add(365 * 24 * time.Hour),
-
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
@@ -143,26 +159,31 @@ func generateSelfSignedCert(certFile, keyFile string) {
 
 	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Не удалось создать сертификат")
+		return fmt.Errorf("не удалось создать сертификат: %w", err)
 	}
 
 	certOut, err := os.Create(certFile)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Не удалось создать файл сертификата")
+		return fmt.Errorf("не удалось создать файл сертификата: %w", err)
 	}
-	defer func() { _ = certOut.Close() }()
+	defer func() {
+		_ = certOut.Close()
+	}()
 
 	if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certDER}); err != nil {
-		log.Fatal().Err(err).Msg("Не удалось записать сертификат в PEM")
+		return fmt.Errorf("не удалось записать сертификат в PEM: %w", err)
 	}
 
 	keyOut, err := os.OpenFile(keyFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Не удалось создать файл ключа")
+		return fmt.Errorf("не удалось создать файл ключа: %w", err)
 	}
-	defer func() { _ = keyOut.Close() }()
+	defer func() {
+		_ = keyOut.Close()
+	}()
 
 	if err := pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)}); err != nil {
-		log.Fatal().Err(err).Msg("Не удалось записать ключ в PEM")
+		return fmt.Errorf("не удалось записать ключ в PEM: %w", err)
 	}
+	return nil
 }

@@ -3,8 +3,6 @@ package config
 
 import (
 	"os"
-	"os/exec"
-	"strings"
 	"testing"
 	"time"
 
@@ -13,7 +11,7 @@ import (
 )
 
 // TestMain устанавливает обязательные переменные окружения перед запуском любого теста,
-// чтобы избежать фатального завершения LoadConfig при её неявном вызове.
+// чтобы избежать ошибок при вызове LoadConfig в тестах.
 func TestMain(m *testing.M) {
 	_ = os.Setenv("DB_HOST", "localhost")
 	_ = os.Setenv("DB_PORT", "5432")
@@ -48,101 +46,6 @@ func setEnv(t *testing.T, key, value string) func() {
 }
 
 // =============================================================================
-// Вспомогательный механизм для тестирования фатальных ошибок (log.Fatal)
-// =============================================================================
-
-const (
-	testCaseMissingRequired = "MISSING_REQUIRED"
-	testCaseJWTShort        = "JWT_SHORT"
-	testCaseJWTWeak         = "JWT_WEAK"
-	testCaseOAuthMissing    = "OAUTH_MISSING"
-	testCaseSMTPMissingFrom = "SMTP_MISSING_FROM"
-	testCaseInvalidDuration = "INVALID_DURATION"
-)
-
-// TestFatalHelper – тест, вызываемый только в подпроцессе для проверки фатальных ситуаций.
-// Окружение настраивается через переменную CONFIG_TEST_CASE.
-func TestFatalHelper(t *testing.T) {
-	testCase := os.Getenv("CONFIG_TEST_CASE")
-	if testCase == "" {
-		t.Skip("helper test, only runs in subprocess")
-	}
-
-	switch testCase {
-	case testCaseMissingRequired:
-		_ = os.Unsetenv("DB_HOST")
-	case testCaseJWTShort:
-		_ = os.Setenv("JWT_SECRET", "short")
-	case testCaseJWTWeak:
-		_ = os.Setenv("JWT_SECRET", "change-me")
-	case testCaseOAuthMissing:
-		_ = os.Setenv("GITHUB_ENABLED", "true")
-		_ = os.Unsetenv("GITHUB_CLIENT_ID")
-		_ = os.Unsetenv("GITHUB_CLIENT_SECRET")
-	case testCaseSMTPMissingFrom:
-		_ = os.Setenv("SMTP_ENABLED", "true")
-		_ = os.Setenv("SMTP_HOST", "smtp.example.com")
-		_ = os.Setenv("SMTP_PORT", "587")
-		_ = os.Setenv("SMTP_USER", "user")
-		_ = os.Setenv("SMTP_PASSWORD", "pass")
-		_ = os.Unsetenv("SMTP_FROM")
-	case testCaseInvalidDuration:
-		_ = os.Setenv("JWT_ACCESS_EXPIRY", "invalid")
-	default:
-		t.Fatalf("unknown test case: %s", testCase)
-	}
-
-	// Этот вызов должен привести к log.Fatal -> os.Exit(1)
-	LoadConfig()
-	t.Fatal("expected fatal exit, but LoadConfig returned normally")
-}
-
-// runFatalSubtest запускает текущий тестовый бинарник в подпроцессе
-// и ожидает, что процесс завершится с кодом 1.
-// Вывод подпроцесса подавляется, чтобы не засорять логи тестов.
-func runFatalSubtest(t *testing.T, testCase string, removeKeys []string, extraEnv map[string]string) {
-	t.Helper()
-
-	// Копируем окружение, исключая указанные ключи
-	env := os.Environ()
-	var filtered []string
-	for _, e := range env {
-		keep := true
-		key := strings.SplitN(e, "=", 2)[0]
-		for _, rm := range removeKeys {
-			if key == rm {
-				keep = false
-				break
-			}
-		}
-		if keep {
-			filtered = append(filtered, e)
-		}
-	}
-	filtered = append(filtered, "CONFIG_TEST_CASE="+testCase)
-	for k, v := range extraEnv {
-		filtered = append(filtered, k+"="+v)
-	}
-
-	cmd := exec.Command(os.Args[0], "-test.run=TestFatalHelper", "-test.v=false")
-	cmd.Env = filtered
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-
-	err := cmd.Run()
-	if err == nil {
-		t.Fatal("expected process to exit with error, but it succeeded")
-	}
-	exitErr, ok := err.(*exec.ExitError)
-	if !ok {
-		t.Fatalf("unexpected error type: %v", err)
-	}
-	if exitErr.ExitCode() != 1 {
-		t.Fatalf("expected exit code 1, got %d", exitErr.ExitCode())
-	}
-}
-
-// =============================================================================
 // Тесты для LoadConfig (успешные сценарии)
 // =============================================================================
 
@@ -167,7 +70,8 @@ func TestLoadConfig_Success(t *testing.T) {
 	cleanup9 := setEnv(t, "ADMIN_PASSWORD", "securepassword12345")
 	defer cleanup9()
 
-	cfg := LoadConfig()
+	cfg, err := LoadConfig()
+	require.NoError(t, err)
 
 	assert.Equal(t, "localhost", cfg.Database.Host)
 	assert.Equal(t, "5432", cfg.Database.Port)
@@ -212,7 +116,8 @@ func TestLoadConfig_WithOptionalEnv(t *testing.T) {
 	cleanup14 := setEnv(t, "JWT_ACCESS_EXPIRY", "30m")
 	defer cleanup14()
 
-	cfg := LoadConfig()
+	cfg, err := LoadConfig()
+	require.NoError(t, err)
 
 	assert.Equal(t, "9090", cfg.Server.Port)
 	assert.Equal(t, "release", cfg.Server.GinMode)
@@ -248,7 +153,8 @@ func TestLoadConfig_OAuthEnabled(t *testing.T) {
 	cleanup12 := setEnv(t, "GOOGLE_CLIENT_SECRET", "google_secret")
 	defer cleanup12()
 
-	cfg := LoadConfig()
+	cfg, err := LoadConfig()
+	require.NoError(t, err)
 	assert.True(t, cfg.OAuth.Google.Enabled)
 	assert.Equal(t, "google_id", cfg.OAuth.Google.ClientID)
 	assert.Equal(t, "google_secret", cfg.OAuth.Google.ClientSecret)
@@ -287,7 +193,8 @@ func TestLoadConfig_SMTPEnabled(t *testing.T) {
 	cleanup15 := setEnv(t, "SMTP_FROM", "from@test.com")
 	defer cleanup15()
 
-	cfg := LoadConfig()
+	cfg, err := LoadConfig()
+	require.NoError(t, err)
 	assert.True(t, cfg.SMTP.Enabled)
 	assert.Equal(t, "smtp.test.com", cfg.SMTP.Host)
 	assert.Equal(t, 587, cfg.SMTP.Port)
@@ -323,7 +230,8 @@ func TestLoadConfig_StripeEnabled(t *testing.T) {
 	cleanup12 := setEnv(t, "STRIPE_WEBHOOK_SECRET", "wh_sec_123")
 	defer cleanup12()
 
-	cfg := LoadConfig()
+	cfg, err := LoadConfig()
+	require.NoError(t, err)
 	assert.True(t, cfg.Stripe.Enabled)
 	assert.Equal(t, "sk_test_123", cfg.Stripe.SecretKey)
 	assert.Equal(t, "wh_sec_123", cfg.Stripe.WebhookSecret)
@@ -356,56 +264,75 @@ func TestLoadConfig_ReCAPTCHAEnabled(t *testing.T) {
 	cleanup12 := setEnv(t, "RECAPTCHA_SECRET_KEY", "secretkey")
 	defer cleanup12()
 
-	cfg := LoadConfig()
+	cfg, err := LoadConfig()
+	require.NoError(t, err)
 	assert.True(t, cfg.ReCAPTCHA.Enabled)
 	assert.Equal(t, "sitekey", cfg.ReCAPTCHA.SiteKey)
 	assert.Equal(t, "secretkey", cfg.ReCAPTCHA.SecretKey)
 }
 
 // =============================================================================
-// Тесты фатальных ошибок (через подпроцесс)
+// Тесты ошибочных ситуаций (прямая проверка ошибок)
 // =============================================================================
 
 func TestLoadConfig_MissingRequired(t *testing.T) {
-	runFatalSubtest(t, testCaseMissingRequired,
-		[]string{"DB_HOST"},
-		nil,
-	)
+	// Удаляем обязательную переменную и проверяем ошибку
+	cleanup := setEnv(t, "DB_HOST", "") // пустое значение
+	defer cleanup()
+	// Также нужно убедиться, что другие переменные установлены (уже есть в TestMain)
+	// Но DB_HOST должен быть пустым
+	_, err := LoadConfig()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "DB_HOST")
 }
 
 func TestLoadConfig_JWTSecretTooShort(t *testing.T) {
-	runFatalSubtest(t, testCaseJWTShort,
-		nil,
-		nil,
-	)
+	cleanup := setEnv(t, "JWT_SECRET", "short")
+	defer cleanup()
+	_, err := LoadConfig()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "JWT_SECRET")
+	assert.Contains(t, err.Error(), "at least 32 characters")
 }
 
 func TestLoadConfig_JWTSecretWeak(t *testing.T) {
-	runFatalSubtest(t, testCaseJWTWeak,
-		nil,
-		nil,
-	)
+	cleanup := setEnv(t, "JWT_SECRET", "change-me-12345678901234567890ab")
+	defer cleanup()
+	_, err := LoadConfig()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "weak/default value")
 }
 
 func TestLoadConfig_OAuthEnabledMissingClientID(t *testing.T) {
-	runFatalSubtest(t, testCaseOAuthMissing,
-		nil,
-		nil,
-	)
+	cleanup1 := setEnv(t, "GITHUB_ENABLED", "true")
+	defer cleanup1()
+	cleanup2 := setEnv(t, "GITHUB_CLIENT_ID", "") // пусто
+	defer cleanup2()
+	cleanup3 := setEnv(t, "GITHUB_CLIENT_SECRET", "") // пусто
+	defer cleanup3()
+	_, err := LoadConfig()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "GITHUB")
 }
 
 func TestLoadConfig_SMTPEnabledMissingFrom(t *testing.T) {
-	runFatalSubtest(t, testCaseSMTPMissingFrom,
-		nil,
-		nil,
-	)
+	cleanup1 := setEnv(t, "SMTP_ENABLED", "true")
+	defer cleanup1()
+	cleanup2 := setEnv(t, "SMTP_HOST", "smtp.example.com")
+	defer cleanup2()
+	cleanup3 := setEnv(t, "SMTP_FROM", "") // пусто
+	defer cleanup3()
+	_, err := LoadConfig()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "SMTP_FROM")
 }
 
 func TestLoadConfig_InvalidDuration(t *testing.T) {
-	runFatalSubtest(t, testCaseInvalidDuration,
-		nil,
-		nil,
-	)
+	cleanup := setEnv(t, "JWT_ACCESS_EXPIRY", "invalid")
+	defer cleanup()
+	_, err := LoadConfig()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid duration")
 }
 
 // =============================================================================
@@ -425,6 +352,6 @@ func BenchmarkLoadConfig(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		LoadConfig()
+		_, _ = LoadConfig()
 	}
 }

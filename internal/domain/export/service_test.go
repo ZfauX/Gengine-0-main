@@ -37,7 +37,8 @@ func setupExportTest(t *testing.T) (*export.ExportService, *gorm.DB, *game.Game)
 
 	// Создаём репозиторий для экспорта
 	exportRepo := export.NewGormExportRepo(db)
-	svc := export.NewExportService(exportRepo, fonts.DejaVuSans, fonts.DejaVuSansBold)
+	svc, err := export.NewExportService(exportRepo, fonts.DejaVuSans, fonts.DejaVuSansBold)
+	require.NoError(t, err)
 	return svc, db, &g
 }
 
