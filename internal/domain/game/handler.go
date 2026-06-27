@@ -6,11 +6,13 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/pkg/audit"
+	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/storage"
 	ws "gengine-0/internal/pkg/websocket"
 
@@ -40,6 +42,57 @@ type SubmitCodeInput struct {
 
 type SubmitTestCodeInput struct {
 	Code string `form:"code" binding:"required"`
+}
+
+// ---------- Вспомогательные валидаторы ----------
+
+func validateString(field, value string, minLen, maxLen int) error {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return errors.New(field + " не может быть пустым")
+	}
+	if len(trimmed) < minLen {
+		return errors.New(field + " должен содержать не менее " + strconv.Itoa(minLen) + " символов")
+	}
+	if len(trimmed) > maxLen {
+		return errors.New(field + " не может превышать " + strconv.Itoa(maxLen) + " символов")
+	}
+	return nil
+}
+
+func validatePositiveUint(field string, value uint) error {
+	if value == 0 {
+		return errors.New(field + " должен быть положительным числом")
+	}
+	return nil
+}
+
+func validateGame(g *Game) error {
+	if err := validateString("Название игры", g.Name, 3, 100); err != nil {
+		return err
+	}
+	if err := validateString("Описание", g.Description, 10, 2000); err != nil {
+		return err
+	}
+	if g.MaxTeamNumber == 0 {
+		return errors.New("максимальное количество команд должно быть больше 0")
+	}
+	if g.MaxTeamNumber > 100 {
+		return errors.New("максимальное количество команд не может превышать 100")
+	}
+	if g.Visibility != "public" && g.Visibility != "private" {
+		return errors.New("недопустимое значение видимости (допустимы: public, private)")
+	}
+	if g.StartsAt != nil && g.StartsAt.Before(time.Now()) {
+		return errors.New("дата начала не может быть в прошлом")
+	}
+	if g.RegistrationDeadline != nil && g.RegistrationDeadline.Before(time.Now()) {
+		return errors.New("крайний срок регистрации не может быть в прошлом")
+	}
+	if g.RegistrationDeadline != nil && g.StartsAt != nil && g.RegistrationDeadline.After(*g.StartsAt) {
+		return errors.New("крайний срок регистрации не может быть позже даты начала")
+	}
+	return nil
 }
 
 // ---------- Вспомогательные типы для FullPreview ----------
@@ -223,6 +276,18 @@ func (h *GameHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// Валидация полей игры
+	g.Name = sanitize.StripHTML(g.Name)
+	g.Description = sanitize.StripHTML(g.Description)
+	if err := validateGame(&g); err != nil {
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
+			"ContentBlock": "games-new.html",
+			"Error":        err.Error(),
+			"csrf":         csrf.GetToken(c),
+		})
+		return
+	}
+
 	file, header, err := c.Request.FormFile("cover")
 	if err == nil {
 		defer func() { _ = file.Close() }()
@@ -335,6 +400,18 @@ func (h *GameHandler) Update(c *gin.Context) {
 		return
 	}
 	updated.ID = uint(id)
+
+	// Валидация
+	updated.Name = sanitize.StripHTML(updated.Name)
+	updated.Description = sanitize.StripHTML(updated.Description)
+	if err := validateGame(&updated); err != nil {
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
+			"ContentBlock": "games-edit.html",
+			"Error":        err.Error(),
+			"csrf":         csrf.GetToken(c),
+		})
+		return
+	}
 
 	oldGame, err := h.gameService.GetByID(c.Request.Context(), uint(id), userID)
 	if err != nil {
@@ -517,6 +594,19 @@ func (h *GameHandler) Apply(c *gin.Context) {
 		return
 	}
 
+	// Дополнительная валидация
+	if err := validatePositiveUint("ID команды", input.TeamID); err != nil {
+		teams, _ := h.passingService.teamService.GetTeamsByCaptain(c.Request.Context(), userID)
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
+			"ContentBlock": "game_passings-apply.html",
+			"GameID":       gameID,
+			"Teams":        teams,
+			"Error":        err.Error(),
+			"csrf":         csrf.GetToken(c),
+		})
+		return
+	}
+
 	if err := h.passingService.Apply(c.Request.Context(), uint(gameID), input.TeamID, userID); err != nil {
 		teams, _ := h.passingService.teamService.GetTeamsByCaptain(c.Request.Context(), userID)
 		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
@@ -540,6 +630,10 @@ func (h *GameHandler) UpdatePassingStatus(c *gin.Context) {
 		return
 	}
 	status := GamePassingStatus(c.PostForm("status"))
+	if status != StatusAccepted && status != StatusRejected {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Недопустимый статус"})
+		return
+	}
 
 	if err := h.passingService.UpdateStatus(c.Request.Context(), uint(passingID), status, c.GetUint("userID")); err != nil {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
@@ -594,6 +688,10 @@ func (h *GameHandler) DisqualifyTeam(c *gin.Context) {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверные данные: " + err.Error()})
 		return
 	}
+	if err := validatePositiveUint("ID команды", input.TeamID); err != nil {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": err.Error()})
+		return
+	}
 
 	if err := h.gameService.DisqualifyTeam(c.Request.Context(), uint(gameID), input.TeamID); err != nil {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
@@ -639,6 +737,10 @@ func (h *GameHandler) AddCoAuthor(c *gin.Context) {
 	var input AddCoAuthorInput
 	if err := c.ShouldBind(&input); err != nil {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверные данные: " + err.Error()})
+		return
+	}
+	if err := validatePositiveUint("ID пользователя", input.UserID); err != nil {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": err.Error()})
 		return
 	}
 
@@ -704,6 +806,13 @@ func (h *GameHandler) CreateNote(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	// Валидация текста заметки
+	if err := validateString("Текст заметки", input.Text, 1, 1000); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	input.Text = sanitize.StripHTML(input.Text)
+
 	note, err := h.noteService.Create(uint(gameID), input.LevelID, userID, input.Text)
 	if err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
@@ -815,6 +924,27 @@ func (h *GameHandler) SaveSettings(c *gin.Context) {
 			"Game":         g,
 			"Settings":     settings,
 			"Error":        "Неверные данные: " + err.Error(),
+			"csrf":         csrf.GetToken(c),
+		})
+		return
+	}
+
+	// Валидация настроек
+	if settings.HintPenaltySeconds < 0 {
+		settings.HintPenaltySeconds = 0
+	}
+	if settings.MaxHints < 0 {
+		settings.MaxHints = 0
+	}
+	if settings.PerLevelTimeLimit < 0 {
+		settings.PerLevelTimeLimit = 0
+	}
+	if settings.PerLevelTimeLimit > 3600 {
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
+			"ContentBlock": "games-settings.html",
+			"Game":         nil,
+			"Settings":     settings,
+			"Error":        "Лимит времени на уровень не может превышать 3600 минут",
 			"csrf":         csrf.GetToken(c),
 		})
 		return
@@ -933,7 +1063,18 @@ func (h *GameHandler) UploadPhoto(c *gin.Context) {
 	}
 	defer func() { _ = file.Close() }()
 
+	if header.Size > 10*1024*1024 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Размер файла не должен превышать 10 МБ"})
+		return
+	}
+
 	allowedTypes := []string{"image/jpeg", "image/png", "image/webp"}
+	contentType := header.Header.Get("Content-Type")
+	if !slices.Contains(allowedTypes, contentType) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Допустимы только JPEG, PNG и WebP"})
+		return
+	}
+
 	webPath, err := h.storage.Save("uploads/photos", file, header.Filename, userID, 10*1024*1024, allowedTypes)
 	if err != nil {
 		log.Error().Err(err).Str("filename", header.Filename).Msg("UploadPhoto: failed to save file")
@@ -948,7 +1089,7 @@ func (h *GameHandler) UploadPhoto(c *gin.Context) {
 	}
 	if err := h.photoService.Create(photo); err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Msg("UploadPhoto: failed to create photo record")
-		_ = h.storage.Delete(webPath) // удаляем уже загруженный файл
+		_ = h.storage.Delete(webPath)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось сохранить фото"})
 		return
 	}
@@ -1168,7 +1309,19 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 		return
 	}
 
-	attempt, err := h.gameService.SubmitCode(c.Request.Context(), uint(passingID), userID, input.Code)
+	// Валидация кода
+	code := strings.TrimSpace(input.Code)
+	if err := validateString("Код", code, 1, 10000); err != nil {
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
+			"ContentBlock": "gameplay-show.html",
+			"Error":        err.Error(),
+			"csrf":         csrf.GetToken(c),
+		})
+		return
+	}
+	// Дополнительно можно проверить на опасные символы, но оставим на усмотрение
+
+	attempt, err := h.gameService.SubmitCode(c.Request.Context(), uint(passingID), userID, code)
 	if err != nil {
 		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
 			"ContentBlock": "gameplay-show.html",
@@ -1238,6 +1391,16 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 	}
 
 	allowedTypes := []string{"image/jpeg", "image/png", "image/gif", "application/pdf", "text/plain"}
+	contentType := header.Header.Get("Content-Type")
+	if !slices.Contains(allowedTypes, contentType) {
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
+			"ContentBlock": "gameplay-show.html",
+			"Error":        "Недопустимый тип файла",
+			"csrf":         csrf.GetToken(c),
+		})
+		return
+	}
+
 	webPath, err := h.storage.Save("uploads/answers", file, header.Filename, userID, 10*1024*1024, allowedTypes)
 	if err != nil {
 		log.Error().Err(err).Str("filename", header.Filename).Msg("SubmitFile: failed to save file")
@@ -1252,7 +1415,7 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 	_, err = h.gameService.SubmitFile(c.Request.Context(), uint(passingID), userID, webPath)
 	if err != nil {
 		log.Error().Err(err).Uint("passing", uint(passingID)).Msg("SubmitFile: service error")
-		_ = h.storage.Delete(webPath) // удаляем загруженный файл
+		_ = h.storage.Delete(webPath)
 		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
 			"ContentBlock": "gameplay-show.html",
 			"Error":        "Не удалось сохранить попытку",
@@ -1325,7 +1488,17 @@ func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
 		return
 	}
 
-	if _, err := h.gameService.SubmitTestCode(c.Request.Context(), uint(passingID), c.GetUint("userID"), input.Code); err != nil {
+	code := strings.TrimSpace(input.Code)
+	if err := validateString("Код", code, 1, 10000); err != nil {
+		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
+			"ContentBlock": "gameplay-test.html",
+			"Error":        err.Error(),
+			"csrf":         csrf.GetToken(c),
+		})
+		return
+	}
+
+	if _, err := h.gameService.SubmitTestCode(c.Request.Context(), uint(passingID), c.GetUint("userID"), code); err != nil {
 		log.Error().Err(err).Int("passing_id", passingID).Msg("SubmitTestCode: service error")
 		c.HTML(http.StatusInternalServerError, "errors/500.html", gin.H{"Error": err.Error()})
 		return

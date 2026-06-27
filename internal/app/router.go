@@ -34,40 +34,63 @@ import (
 	"gorm.io/gorm"
 )
 
+// =============================================================================
+// СТРУКТУРА APP — ВСЕ ЗАВИСИМОСТИ В ОДНОМ МЕСТЕ
+// =============================================================================
+
+// App инкапсулирует все зависимости приложения.
+type App struct {
+	Config       *config.Config
+	DB           *gorm.DB
+	LocalStorage storage.FileStorage
+	Hub          *ws.RoomHub
+	BaseDir      string
+
+	Repos    *repositories
+	Services *services
+	AuditSvc *audit.Service
+}
+
+// NewApp создаёт экземпляр App с инициализированными репозиториями и сервисами.
+func NewApp(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub, cfg *config.Config, baseDir string) *App {
+	repos := initRepositories(db)
+	services := initServices(db, repos, cfg, hub)
+	auditSvc := audit.NewService(db)
+
+	return &App{
+		Config:       cfg,
+		DB:           db,
+		LocalStorage: localStorage,
+		Hub:          hub,
+		BaseDir:      baseDir,
+		Repos:        repos,
+		Services:     services,
+		AuditSvc:     auditSvc,
+	}
+}
+
 // SetupRouter — главная точка сборки роутера.
-func SetupRouter(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub, cfg *config.Config, baseDir string) *gin.Engine {
+// Теперь использует метод App.SetupRouter для удобства, но можно оставить и функцию.
+func (app *App) SetupRouter() *gin.Engine {
 	r := gin.New()
 
-	setupEngine(r, cfg, baseDir)
-	repos := initRepositories(db)
-	services := initServices(db, repos, cfg, hub) // убрали localStorage
-
-	auditSvc := registerAdminRoutes(r, db, cfg, services.Auth, repos.User, repos.Game)
-	registerUserRoutes(r, cfg, services, auditSvc, db, localStorage)
-	registerGameRoutes(r, cfg, services, localStorage, hub, auditSvc)
-	registerLevelRoutes(r, cfg, services, localStorage, hub)
-	registerTeamRoutes(r, cfg, services, localStorage)
-	registerTournamentRoutes(r, cfg, services)
-	registerCalendarRoutes(r, repos.Game)
-	registerMonitorRoutes(r, db, cfg, services, hub, repos.Game)
-	registerSocialRoutes(r, db, cfg, services.Auth)
-	registerExportRoutes(r, db, localStorage, cfg, services)
-	registerGameplayRoutes(r, services, localStorage, hub, db)
+	app.setupEngine(r)
+	app.registerAllRoutes(r)
 
 	return r
 }
 
 // =============================================================================
-// НАСТРОЙКА ДВИЖКА
+// НАСТРОЙКА ДВИЖКА (использует поля App)
 // =============================================================================
 
-func setupEngine(r *gin.Engine, cfg *config.Config, baseDir string) {
-	store := cookie.NewStore([]byte(cfg.Session.Secret))
+func (app *App) setupEngine(r *gin.Engine) {
+	store := cookie.NewStore([]byte(app.Config.Session.Secret))
 	r.Use(gin.Recovery())
 	r.Use(sessions.Sessions("gengine_session", store))
 
 	r.Use(csrf.Middleware(csrf.Options{
-		Secret: cfg.Session.Secret,
+		Secret: app.Config.Session.Secret,
 		ErrorFunc: func(c *gin.Context) {
 			c.String(403, "CSRF token mismatch")
 			c.Abort()
@@ -100,21 +123,40 @@ func setupEngine(r *gin.Engine, cfg *config.Config, baseDir string) {
 	r.FuncMap["csrfToken"] = func() string { return "{{ .csrf }}" }
 
 	r.SetFuncMap(template.FuncMap(r.FuncMap))
-	r.LoadHTMLGlob(filepath.Join(baseDir, "internal", "domain", "*", "templates", "*.html"))
+	r.LoadHTMLGlob(filepath.Join(app.BaseDir, "internal", "domain", "*", "templates", "*.html"))
 
 	r.Use(middleware.ContextTimeout(30 * time.Second))
 	r.Use(middleware.SecurityHeadersMiddleware())
 	r.Use(middleware.GzipMiddleware())
 	r.Use(middleware.StaticCacheMiddleware())
 
-	r.Static("/static", filepath.Join(baseDir, "static"))
-	r.Static("/uploads", filepath.Join(baseDir, "uploads"))
+	r.Static("/static", filepath.Join(app.BaseDir, "static"))
+	r.Static("/uploads", filepath.Join(app.BaseDir, "uploads"))
 
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 }
 
 // =============================================================================
-// ИНИЦИАЛИЗАЦИЯ РЕПОЗИТОРИЕВ (ВСЕ — ИНТЕРФЕЙСЫ)
+// РЕГИСТРАЦИЯ ВСЕХ МАРШРУТОВ (использует поля App)
+// =============================================================================
+
+func (app *App) registerAllRoutes(r *gin.Engine) {
+	// Раздаём маршруты по доменам, передавая только нужные зависимости.
+	app.registerAdminRoutes(r)
+	app.registerUserRoutes(r)
+	app.registerGameRoutes(r)
+	app.registerLevelRoutes(r)
+	app.registerTeamRoutes(r)
+	app.registerTournamentRoutes(r)
+	app.registerCalendarRoutes(r)
+	app.registerMonitorRoutes(r)
+	app.registerSocialRoutes(r)
+	app.registerExportRoutes(r)
+	app.registerGameplayRoutes(r)
+}
+
+// =============================================================================
+// ИНИЦИАЛИЗАЦИЯ РЕПОЗИТОРИЕВ (без изменений)
 // =============================================================================
 
 type repositories struct {
@@ -158,7 +200,7 @@ func initRepositories(db *gorm.DB) *repositories {
 }
 
 // =============================================================================
-// ИНИЦИАЛИЗАЦИЯ СЕРВИСОВ
+// ИНИЦИАЛИЗАЦИЯ СЕРВИСОВ (без изменений)
 // =============================================================================
 
 type services struct {
@@ -247,18 +289,32 @@ func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.
 }
 
 // =============================================================================
-// РЕГИСТРАЦИЯ МАРШРУТОВ (ФУНКЦИИ ПРИНИМАЮТ ИНТЕРФЕЙСЫ)
+// РЕГИСТРАЦИЯ МАРШРУТОВ (каждая функция принимает только то, что нужно)
 // =============================================================================
 
-func registerAdminRoutes(r *gin.Engine, db *gorm.DB, cfg *config.Config, authSvc *user.AuthService, userRepo user.UserRepository, gameRepo game.GameRepository) *audit.Service {
-	return admin.RegisterRoutes(r, db, cfg, authSvc, userRepo, gameRepo)
+func (app *App) registerAdminRoutes(r *gin.Engine) {
+	// admin.RegisterRoutes теперь принимает только необходимые зависимости.
+	admin.RegisterRoutes(r, app.DB, app.Config, app.Services.Auth, app.Repos.User, app.Repos.Game)
 }
 
-func registerUserRoutes(r *gin.Engine, cfg *config.Config, svc *services, auditSvc *audit.Service, db *gorm.DB, localStorage storage.FileStorage) {
-	authHandler := user.NewAuthHandler(cfg, svc.Auth, svc.User, svc.PasswordReset, svc.EmailVerif, svc.OAuth, auditSvc)
-	profileHandler := user.NewProfileHandler(db, localStorage)
-	achievementHandler := user.NewAchievementHandler(db)
-	dashboardHandler := user.NewDashboardHandler(user.NewUserDashboardService(db), db)
+func (app *App) registerUserRoutes(r *gin.Engine) {
+	// Создаём обработчики только для user-домена.
+	authHandler := user.NewAuthHandler(
+		app.Config,
+		app.Services.Auth,
+		app.Services.User,
+		app.Services.PasswordReset,
+		app.Services.EmailVerif,
+		app.Services.OAuth,
+		app.AuditSvc,
+	)
+	profileHandler := user.NewProfileHandler(app.DB, app.LocalStorage)
+	achievementHandler := user.NewAchievementHandler(app.DB)
+	dashboardHandler := user.NewDashboardHandler(user.NewUserDashboardService(app.DB), app.DB)
+
+	// Для OAuth эндпоинтов используем тот же лимитер, что и для обычного входа,
+	// чтобы защититься от брутфорса через внешние провайдеры.
+	oauthRateLimit := middleware.LoginRateLimit(5*time.Minute, 5)
 
 	authGroup := r.Group("/auth")
 	{
@@ -272,12 +328,12 @@ func registerUserRoutes(r *gin.Engine, cfg *config.Config, svc *services, auditS
 		authGroup.GET("/reset", authHandler.ShowResetForm)
 		authGroup.POST("/reset", authHandler.ResetPassword)
 		authGroup.GET("/verify", authHandler.VerifyEmail)
-		authGroup.GET("/oauth/:provider", authHandler.OAuthLogin)
-		authGroup.GET("/oauth/:provider/callback", authHandler.OAuthCallback)
+		authGroup.GET("/oauth/:provider", oauthRateLimit, authHandler.OAuthLogin)
+		authGroup.GET("/oauth/:provider/callback", oauthRateLimit, authHandler.OAuthCallback)
 	}
 
 	profileGroup := r.Group("/profile")
-	profileGroup.Use(middleware.AuthRequired(svc.Auth))
+	profileGroup.Use(middleware.AuthRequired(app.Services.Auth))
 	{
 		profileGroup.GET("/", profileHandler.Show)
 		profileGroup.POST("/avatar", profileHandler.UploadAvatar)
@@ -286,53 +342,122 @@ func registerUserRoutes(r *gin.Engine, cfg *config.Config, svc *services, auditS
 	}
 
 	achievementGroup := r.Group("/achievements")
-	achievementGroup.Use(middleware.AuthRequired(svc.Auth))
+	achievementGroup.Use(middleware.AuthRequired(app.Services.Auth))
 	{
 		achievementGroup.GET("/", achievementHandler.List)
 	}
 
 	dashboardGroup := r.Group("/dashboard")
-	dashboardGroup.Use(middleware.AuthRequired(svc.Auth))
+	dashboardGroup.Use(middleware.AuthRequired(app.Services.Auth))
 	{
 		dashboardGroup.GET("/", dashboardHandler.Index)
 	}
 }
 
-func registerGameRoutes(r *gin.Engine, cfg *config.Config, svc *services, localStorage storage.FileStorage, hub *ws.RoomHub, auditSvc *audit.Service) {
-	game.RegisterRoutes(r, svc.Game, svc.CoAuthor, svc.Attempt, svc.Progress, svc.Monitor, localStorage, hub, cfg, auditSvc, svc.Auth)
+func (app *App) registerGameRoutes(r *gin.Engine) {
+	game.RegisterRoutes(
+		r,
+		app.Services.Game,
+		app.Services.CoAuthor,
+		app.Services.Attempt,
+		app.Services.Progress,
+		app.Services.Monitor,
+		app.LocalStorage,
+		app.Hub,
+		app.Config,
+		app.AuditSvc,
+		app.Services.Auth,
+	)
 }
 
-func registerLevelRoutes(r *gin.Engine, cfg *config.Config, svc *services, localStorage storage.FileStorage, hub *ws.RoomHub) {
-	level.RegisterRoutes(r, svc.Level, svc.Question, svc.Answer, localStorage, hub, cfg, svc.CoAuthor, svc.Game, svc.Auth)
+func (app *App) registerLevelRoutes(r *gin.Engine) {
+	level.RegisterRoutes(
+		r,
+		app.Services.Level,
+		app.Services.Question,
+		app.Services.Answer,
+		app.LocalStorage,
+		app.Hub,
+		app.Config,
+		app.Services.CoAuthor,
+		app.Services.Game,
+		app.Services.Auth,
+	)
 }
 
-func registerTeamRoutes(r *gin.Engine, cfg *config.Config, svc *services, localStorage storage.FileStorage) {
-	team.RegisterRoutes(r, svc.Team, svc.Invitation, cfg, localStorage, svc.CoAuthor, svc.Auth)
+func (app *App) registerTeamRoutes(r *gin.Engine) {
+	team.RegisterRoutes(
+		r,
+		app.Services.Team,
+		app.Services.Invitation,
+		app.Config,
+		app.LocalStorage,
+		app.Services.CoAuthor,
+		app.Services.Auth,
+	)
 }
 
-func registerTournamentRoutes(r *gin.Engine, cfg *config.Config, svc *services) {
-	tournament.RegisterRoutes(r, svc.Tournament, cfg, svc.Auth)
+func (app *App) registerTournamentRoutes(r *gin.Engine) {
+	tournament.RegisterRoutes(r, app.Services.Tournament, app.Config, app.Services.Auth)
 }
 
-func registerCalendarRoutes(r *gin.Engine, gameRepo game.GameRepository) {
-	calendar.RegisterRoutes(r, gameRepo)
+func (app *App) registerCalendarRoutes(r *gin.Engine) {
+	calendar.RegisterRoutes(r, app.Repos.Game)
 }
 
-func registerMonitorRoutes(r *gin.Engine, db *gorm.DB, cfg *config.Config, svc *services, hub *ws.RoomHub, gameRepo game.GameRepository) {
-	monitor.RegisterRoutes(r, db, hub, cfg, svc.CoAuthor, svc.Monitor, svc.Attempt, svc.Progress, svc.Auth, gameRepo)
+func (app *App) registerMonitorRoutes(r *gin.Engine) {
+	monitor.RegisterRoutes(
+		r,
+		app.DB,
+		app.Hub,
+		app.Config,
+		app.Services.CoAuthor,
+		app.Services.Monitor,
+		app.Services.Attempt,
+		app.Services.Progress,
+		app.Services.Auth,
+		app.Repos.Game,
+	)
 }
 
-func registerSocialRoutes(r *gin.Engine, db *gorm.DB, cfg *config.Config, authSvc *user.AuthService) {
-	social.RegisterRoutes(r, db, cfg, authSvc)
+func (app *App) registerSocialRoutes(r *gin.Engine) {
+	social.RegisterRoutes(r, app.DB, app.Config, app.Services.Auth)
 }
 
-func registerExportRoutes(r *gin.Engine, db *gorm.DB, localStorage storage.FileStorage, cfg *config.Config, svc *services) {
-	export.RegisterRoutes(r, db, localStorage, cfg, svc.Game, svc.CoAuthor, svc.Auth)
+func (app *App) registerExportRoutes(r *gin.Engine) {
+	export.RegisterRoutes(
+		r,
+		app.DB,
+		app.LocalStorage,
+		app.Config,
+		app.Services.Game,
+		app.Services.CoAuthor,
+		app.Services.Auth,
+	)
 }
 
-func registerGameplayRoutes(r *gin.Engine, svc *services, localStorage storage.FileStorage, hub *ws.RoomHub, db *gorm.DB) {
-	gameplayHandler := game.NewGameplayHandler(svc.Game, svc.Attempt, svc.Progress, svc.Monitor, hub, localStorage, db)
+func (app *App) registerGameplayRoutes(r *gin.Engine) {
+	gameplayHandler := game.NewGameplayHandler(
+		app.Services.Game,
+		app.Services.Attempt,
+		app.Services.Progress,
+		app.Services.Monitor,
+		app.Hub,
+		app.LocalStorage,
+		app.DB,
+	)
 	protected := r.Group("/")
-	protected.Use(middleware.AuthRequired(svc.Auth))
-	game.RegisterGameplayRoutes(protected, gameplayHandler, svc.CoAuthor)
+	protected.Use(middleware.AuthRequired(app.Services.Auth))
+	game.RegisterGameplayRoutes(protected, gameplayHandler, app.Services.CoAuthor)
+}
+
+// =============================================================================
+// ОБРАТНАЯ СОВМЕСТИМОСТЬ: оставляем старую функцию SetupRouter для упрощения перехода
+// =============================================================================
+
+// SetupRouter — сохранена для обратной совместимости.
+// Рекомендуется использовать App.SetupRouter().
+func SetupRouter(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub, cfg *config.Config, baseDir string) *gin.Engine {
+	app := NewApp(db, localStorage, hub, cfg, baseDir)
+	return app.SetupRouter()
 }

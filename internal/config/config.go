@@ -1,5 +1,6 @@
 // Package config загружает и валидирует конфигурацию приложения из переменных окружения.
-// Package config загружает и валидирует конфигурацию приложения из переменных окружения.
+// Выполняет строгую проверку обязательных параметров, требует надёжные секреты и пароли,
+// при обнаружении проблем завершает работу с логированием fatal-ошибки.
 package config
 
 import (
@@ -10,112 +11,121 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// Config содержит все настройки приложения.
+// Config содержит все настройки приложения, сгруппированные по функциональным областям.
 type Config struct {
-	Server   ServerConfig
-	Database DatabaseConfig
-	Redis    RedisConfig
-	JWT      JWTConfig
-	Session  SessionConfig
-	Admin    AdminConfig
-	OAuth    OAuthConfig
-	Stripe   StripeConfig
-	SMTP     SMTPConfig
-	ReCAPTCHA ReCAPTCHAConfig
-	TLS      TLSConfig
+	Server    ServerConfig    // настройки HTTP-сервера
+	Database  DatabaseConfig  // параметры подключения к PostgreSQL
+	Redis     RedisConfig     // опциональные настройки Redis
+	JWT       JWTConfig       // параметры JWT-токенов
+	Session   SessionConfig   // настройки сессий (подпись cookie)
+	Admin     AdminConfig     // учётные данные администратора по умолчанию
+	OAuth     OAuthConfig     // конфигурация OAuth-провайдеров
+	Stripe    StripeConfig    // настройки Stripe (опционально)
+	SMTP      SMTPConfig      // настройки SMTP-сервера (опционально)
+	ReCAPTCHA ReCAPTCHAConfig // настройки reCAPTCHA (опционально)
+	TLS       TLSConfig       // пути к TLS-сертификатам (опционально)
 }
 
 // ServerConfig содержит параметры HTTP-сервера.
 type ServerConfig struct {
-	Port       string
-	GinMode    string
-	BaseURL    string
-	MaxBackups int
+	Port       string // порт, на котором слушает сервер (по умолчанию 8080)
+	GinMode    string // режим работы Gin (debug, release, test)
+	BaseURL    string // базовый URL приложения для формирования ссылок
+	MaxBackups int    // максимальное количество сохраняемых архивов логов (используется при ротации)
 }
 
 // DatabaseConfig содержит параметры подключения к PostgreSQL.
 type DatabaseConfig struct {
-	Host            string
-	Port            string
-	User            string
-	Password        string
-	Name            string
-	SSLMode         string
-	MaxOpenConns    int
-	MaxIdleConns    int
-	ConnMaxLifetime time.Duration
+	Host            string        // хост БД
+	Port            string        // порт БД
+	User            string        // имя пользователя
+	Password        string        // пароль
+	Name            string        // имя базы данных
+	SSLMode         string        // режим SSL (disable, require, verify-full и т.д.)
+	MaxOpenConns    int           // максимальное количество открытых соединений
+	MaxIdleConns    int           // максимальное количество простаивающих соединений
+	ConnMaxLifetime time.Duration // максимальное время жизни соединения
 }
 
 // RedisConfig содержит параметры подключения к Redis (опционально).
+// Если Redis не используется, поля могут быть пустыми.
 type RedisConfig struct {
-	Host     string
-	Port     string
-	Password string
+	Host     string // хост Redis
+	Port     string // порт Redis
+	Password string // пароль (если требуется)
 }
 
 // JWTConfig содержит параметры JWT-аутентификации.
 type JWTConfig struct {
-	Secret        string
-	AccessExpiry  time.Duration
-	RefreshExpiry time.Duration
+	Secret        string        // секретный ключ для подписи токенов (минимум 32 символа)
+	AccessExpiry  time.Duration // срок действия access-токена (по умолчанию 15 минут)
+	RefreshExpiry time.Duration // срок действия refresh-токена (по умолчанию 7 дней)
 }
 
 // SessionConfig содержит параметры сессий.
 type SessionConfig struct {
-	Secret string
+	Secret string // секретный ключ для подписи cookie сессии (минимум 32 символа)
 }
 
-// AdminConfig содержит учётные данные администратора.
+// AdminConfig содержит учётные данные администратора, создаваемого при инициализации.
 type AdminConfig struct {
-	Email    string
-	Password string
+	Email    string // email администратора
+	Password string // пароль администратора (должен быть не менее 12 символов)
 }
 
 // OAuthConfig содержит конфигурацию OAuth-провайдеров.
 type OAuthConfig struct {
-	Google OAuthProvider
-	GitHub OAuthProvider
-	Yandex OAuthProvider
+	Google OAuthProvider // настройки Google OAuth
+	GitHub OAuthProvider // настройки GitHub OAuth
+	Yandex OAuthProvider // настройки Yandex OAuth
 }
 
 // OAuthProvider содержит параметры одного OAuth-провайдера.
 type OAuthProvider struct {
-	Enabled      bool
-	ClientID     string
-	ClientSecret string
+	Enabled      bool   // включён ли провайдер
+	ClientID     string // Client ID приложения
+	ClientSecret string // Client Secret приложения
 }
 
-// StripeConfig содержит параметры Stripe.
+// StripeConfig содержит параметры Stripe (опционально).
 type StripeConfig struct {
-	Enabled       bool
-	SecretKey     string
-	WebhookSecret string
+	Enabled       bool   // включена ли интеграция со Stripe
+	SecretKey     string // секретный ключ Stripe API
+	WebhookSecret string // секрет для проверки подписи вебхуков
 }
 
-// SMTPConfig содержит параметры SMTP-сервера.
+// SMTPConfig содержит параметры SMTP-сервера (опционально).
 type SMTPConfig struct {
-	Enabled  bool
-	Host     string
-	Port     int
-	User     string
-	Password string
-	From     string
+	Enabled  bool   // включена ли отправка email
+	Host     string // хост SMTP-сервера
+	Port     int    // порт SMTP-сервера (обычно 587)
+	User     string // имя пользователя для аутентификации
+	Password string // пароль для аутентификации
+	From     string // адрес отправителя (обязателен, если SMTP включён)
 }
 
-// ReCAPTCHAConfig содержит параметры reCAPTCHA.
+// ReCAPTCHAConfig содержит параметры reCAPTCHA (опционально).
 type ReCAPTCHAConfig struct {
-	Enabled   bool
-	SiteKey   string
-	SecretKey string
+	Enabled   bool   // включена ли проверка reCAPTCHA
+	SiteKey   string // публичный ключ для отображения виджета
+	SecretKey string // секретный ключ для проверки ответа
 }
 
-// TLSConfig содержит пути к TLS-сертификатам.
+// TLSConfig содержит пути к TLS-сертификатам (опционально).
+// Если заполнены, сервер будет запущен с HTTPS.
 type TLSConfig struct {
-	CertFile string
-	KeyFile  string
+	CertFile string // путь к файлу сертификата (.crt или .pem)
+	KeyFile  string // путь к файлу приватного ключа (.key)
 }
 
 // LoadConfig загружает конфигурацию из переменных окружения с жёсткой проверкой обязательных секретов.
+// Выполняет следующие проверки:
+// - наличие всех обязательных переменных (DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME, ADMIN_EMAIL, ADMIN_PASSWORD);
+// - длина и надёжность JWT_SECRET и SESSION_SECRET (минимум 32 символа, не содержат слабых значений);
+// - сложность ADMIN_PASSWORD (минимум 12 символов);
+// - корректность формата длительностей;
+// - если OAuth, Stripe, SMTP или reCAPTCHA включены, проверяет наличие необходимых ключей.
+// При обнаружении ошибок завершает работу приложения с fatal-логированием.
 func LoadConfig() *Config {
 	cfg := &Config{}
 
@@ -174,8 +184,11 @@ func LoadConfig() *Config {
 	return cfg
 }
 
-// Вспомогательные функции
+// =============================================================================
+// Вспомогательные функции (не экспортируются)
+// =============================================================================
 
+// getEnvOrDefault возвращает значение переменной окружения или fallback, если переменная не установлена.
 func getEnvOrDefault(key, fallback string) string {
 	if value, ok := os.LookupEnv(key); ok {
 		return value
@@ -183,6 +196,7 @@ func getEnvOrDefault(key, fallback string) string {
 	return fallback
 }
 
+// requireEnv требует наличия переменной окружения, иначе завершает работу с fatal-логированием.
 func requireEnv(key string) string {
 	value, ok := os.LookupEnv(key)
 	if !ok || value == "" {
@@ -191,6 +205,8 @@ func requireEnv(key string) string {
 	return value
 }
 
+// requireStrongSecret проверяет, что переменная окружения установлена, имеет длину не менее minLen
+// и не содержит типичных слабых значений. При нарушении условий завершает работу.
 func requireStrongSecret(key string, minLen int) string {
 	value, ok := os.LookupEnv(key)
 	if !ok || value == "" {
@@ -208,6 +224,7 @@ func requireStrongSecret(key string, minLen int) string {
 	return value
 }
 
+// requireStrongPassword проверяет, что пароль администратора имеет длину не менее minLen.
 func requireStrongPassword(key string, minLen int) string {
 	value, ok := os.LookupEnv(key)
 	if !ok || value == "" {
@@ -219,6 +236,8 @@ func requireStrongPassword(key string, minLen int) string {
 	return value
 }
 
+// parseDuration преобразует строку в time.Duration, используя значение по умолчанию при отсутствии переменной.
+// При ошибке парсинга завершает работу.
 func parseDuration(key, defaultVal string) time.Duration {
 	val := getEnvOrDefault(key, defaultVal)
 	d, err := time.ParseDuration(val)
@@ -228,6 +247,8 @@ func parseDuration(key, defaultVal string) time.Duration {
 	return d
 }
 
+// loadOAuthProvider загружает настройки OAuth-провайдера по префиксу.
+// Если провайдер включён, требует наличия CLIENT_ID и CLIENT_SECRET.
 func loadOAuthProvider(prefix string) OAuthProvider {
 	enabledEnv := prefix + "_ENABLED"
 	enabled, _ := strconv.ParseBool(os.Getenv(enabledEnv))
@@ -246,6 +267,8 @@ func loadOAuthProvider(prefix string) OAuthProvider {
 	}
 }
 
+// loadStripeConfig загружает настройки Stripe, если они включены.
+// При включении требует наличия STRIPE_SECRET_KEY.
 func loadStripeConfig() StripeConfig {
 	enabled, _ := strconv.ParseBool(os.Getenv("STRIPE_ENABLED"))
 	if !enabled {
@@ -263,6 +286,8 @@ func loadStripeConfig() StripeConfig {
 	}
 }
 
+// loadSMTPConfig загружает настройки SMTP, если они включены.
+// При включении требует наличия SMTP_HOST и SMTP_FROM.
 func loadSMTPConfig() SMTPConfig {
 	enabled, _ := strconv.ParseBool(os.Getenv("SMTP_ENABLED"))
 	if !enabled {
@@ -293,6 +318,8 @@ func loadSMTPConfig() SMTPConfig {
 	}
 }
 
+// loadReCAPTCHAConfig загружает настройки reCAPTCHA, если они включены.
+// При включении требует наличия RECAPTCHA_SITE_KEY и RECAPTCHA_SECRET_KEY.
 func loadReCAPTCHAConfig() ReCAPTCHAConfig {
 	enabled, _ := strconv.ParseBool(os.Getenv("RECAPTCHA_ENABLED"))
 	if !enabled {
@@ -310,6 +337,7 @@ func loadReCAPTCHAConfig() ReCAPTCHAConfig {
 	}
 }
 
+// getEnvAsInt возвращает значение переменной окружения как целое число или fallback при ошибке.
 func getEnvAsInt(key string, fallback int) int {
 	if value, ok := os.LookupEnv(key); ok {
 		if intValue, err := strconv.Atoi(value); err == nil {
