@@ -50,10 +50,9 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 // Использует учетные данные из cfg.Admin (Email и Password).
 // Алгоритм:
 //  1. Хеширует пароль с помощью bcrypt.DefaultCost.
-//  2. Ищет пользователя с role = 'admin'.
-//     - Если найден, обновляет его Email и Password, сохраняет изменения.
-//     - Если не найден, создаёт нового пользователя с ролью admin, установленным Email,
-//     хешированным паролем, именем "Администратор" и флагом EmailVerified = true.
+//  2. Ищет пользователя с email = cfg.Admin.Email.
+//     - Если найден, обновляет его пароль и устанавливает роль admin (если ещё не admin).
+//     - Если не найден, создаёт нового пользователя с ролью admin.
 //  3. В случае любой ошибки возвращает её, чтобы вызывающий код мог обработать.
 //
 // Возвращает ошибку, если не удалось выполнить операцию.
@@ -65,10 +64,13 @@ func EnsureAdmin(db *gorm.DB, cfg *config.Config) error {
 	}
 
 	var adminUser user.User
-	result := db.Where("role = ?", "admin").First(&adminUser)
+	// Ищем по email (это гарантирует, что мы не создадим дубликат)
+	result := db.Where("email = ?", cfg.Admin.Email).First(&adminUser)
 	if result.Error == nil {
+		// Пользователь с таким email уже существует — обновляем пароль и роль
 		adminUser.Password = string(hashed)
-		adminUser.Email = cfg.Admin.Email
+		adminUser.Role = "admin"
+		adminUser.EmailVerified = true
 		if err := db.Save(&adminUser).Error; err != nil {
 			return fmt.Errorf("ensureAdmin: не удалось обновить администратора: %w", err)
 		}
