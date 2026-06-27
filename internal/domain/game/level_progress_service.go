@@ -8,6 +8,8 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
+
+	"gengine-0/internal/domain/level"
 )
 
 type LevelProgressService struct {
@@ -19,7 +21,6 @@ func NewLevelProgressService(db *gorm.DB) *LevelProgressService {
 }
 
 // InitFirstLevel инициализирует прогресс первого уровня при старте игры.
-// Принимает контекст.
 func (s *LevelProgressService) InitFirstLevel(ctx context.Context, gamePassingID uint) error {
 	var count int64
 	s.DB.WithContext(ctx).Model(&LevelProgress{}).Where("game_passing_id = ?", gamePassingID).Count(&count)
@@ -73,19 +74,21 @@ func CompleteLevel(db *gorm.DB, progress *LevelProgress) error {
 
 // AdvanceToNextLevel находит следующий уровень и создаёт для него прогресс.
 func AdvanceToNextLevel(db *gorm.DB, gamePassingID, completedLevelID uint) error {
+	// Загружаем прохождение только для получения GameID и Status
 	var passing GamePassing
-	if err := db.Preload("Game.Levels", func(db *gorm.DB) *gorm.DB {
-		return db.Order("position ASC")
-	}).First(&passing, gamePassingID).Error; err != nil {
+	if err := db.First(&passing, gamePassingID).Error; err != nil {
 		return err
 	}
 
-	levels := passing.Game.Levels
+	// Загружаем все неудалённые уровни игры напрямую, без зависимости от Preload
+	var levels []level.Level
+	if err := db.Where("game_id = ? AND deleted_at IS NULL", passing.GameID).
+		Order("position ASC").Find(&levels).Error; err != nil {
+		return err
+	}
+
 	foundCurrent := false
 	for _, lvl := range levels {
-		if lvl.DeletedAt.Valid {
-			continue
-		}
 		if foundCurrent {
 			newProgress := &LevelProgress{
 				GamePassingID: gamePassingID,
@@ -99,6 +102,7 @@ func AdvanceToNextLevel(db *gorm.DB, gamePassingID, completedLevelID uint) error
 		}
 	}
 
+	// Если нет следующего уровня, завершаем игру (кроме тестирования)
 	if passing.Status != StatusTesting {
 		passing.Status = StatusFinished
 		return db.Save(&passing).Error
@@ -174,7 +178,6 @@ func CheckAutoStartGames(db *gorm.DB, ctx context.Context) {
 				for _, p := range passings {
 					p.Status = StatusStarted
 					db.WithContext(ctx).Save(&p)
-					// Исправлено: передаём контекст
 					_ = NewLevelProgressService(db).InitFirstLevel(ctx, p.ID)
 				}
 			}
