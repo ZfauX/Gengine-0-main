@@ -2,8 +2,10 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"html/template"
+	"net/http"
 	"path/filepath"
 	"time"
 
@@ -19,15 +21,20 @@ import (
 	"gengine-0/internal/domain/tournament"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/audit"
+	"gengine-0/internal/pkg/health"
 	"gengine-0/internal/pkg/middleware"
+	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/storage"
+	"gengine-0/internal/pkg/templatefuncs"
 	ws "gengine-0/internal/pkg/websocket"
 
-	_ "gengine-0/docs" // Swagger-документация (генерируется автоматически)
+	_ "gengine-0/docs"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/rs/zerolog/log"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 	csrf "github.com/utrack/gin-csrf"
@@ -38,7 +45,6 @@ import (
 // СТРУКТУРА APP — ВСЕ ЗАВИСИМОСТИ В ОДНОМ МЕСТЕ
 // =============================================================================
 
-// App инкапсулирует все зависимости приложения.
 type App struct {
 	Config       *config.Config
 	DB           *gorm.DB
@@ -51,7 +57,6 @@ type App struct {
 	AuditSvc *audit.Service
 }
 
-// NewApp создаёт экземпляр App с инициализированными репозиториями и сервисами.
 func NewApp(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub, cfg *config.Config, baseDir string) *App {
 	repos := initRepositories(db)
 	services := initServices(db, repos, cfg, hub)
@@ -69,8 +74,6 @@ func NewApp(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub, cfg 
 	}
 }
 
-// SetupRouter — главная точка сборки роутера.
-// Теперь возвращает ошибку, если не удалось инициализировать какие-либо маршруты.
 func (app *App) SetupRouter() (*gin.Engine, error) {
 	r := gin.New()
 
@@ -83,12 +86,20 @@ func (app *App) SetupRouter() (*gin.Engine, error) {
 }
 
 // =============================================================================
-// НАСТРОЙКА ДВИЖКА (использует поля App)
+// НАСТРОЙКА ДВИЖКА
 // =============================================================================
 
+// setupEngine настраивает общие middleware, статику, шаблоны и системные маршруты.
+// @Summary Системные эндпоинты
+// @Description Swagger UI, метрики и health-чек
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Успешный ответ"
+// @Router / [get]
 func (app *App) setupEngine(r *gin.Engine) {
 	store := cookie.NewStore([]byte(app.Config.Session.Secret))
 	r.Use(gin.Recovery())
+	r.Use(middleware.LoggerMiddleware())
 	r.Use(sessions.Sessions("gengine_session", store))
 
 	r.Use(csrf.Middleware(csrf.Options{
@@ -99,33 +110,15 @@ func (app *App) setupEngine(r *gin.Engine) {
 		},
 	}))
 
-	// Функции для шаблонов
-	r.FuncMap["add1"] = func(i int) int { return i + 1 }
-	r.FuncMap["sub"] = func(a, b int) int { return a - b }
-	r.FuncMap["add"] = func(a, b int) int { return a + b }
-	r.FuncMap["loop"] = func(start, end int) []int {
-		s := make([]int, end-start+1)
-		for i := range s {
-			s[i] = start + i
-		}
-		return s
+	// --- Загрузка шаблонов с использованием вынесенных хелперов ---
+	tmpl := template.New("")
+	tmpl.Funcs(templatefuncs.FuncMap())
+	_, err := tmpl.ParseGlob(filepath.Join(app.BaseDir, "internal", "domain", "*", "templates", "*.html"))
+	if err != nil {
+		log.Fatal().Err(err).Msg("Не удалось загрузить шаблоны")
 	}
-	r.FuncMap["formatBytes"] = func(b int64) string {
-		const unit = 1024
-		if b < unit {
-			return fmt.Sprintf("%d B", b)
-		}
-		div, exp := int64(unit), 0
-		for n := b / unit; n >= unit; n /= unit {
-			div *= unit
-			exp++
-		}
-		return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
-	}
-	r.FuncMap["csrfToken"] = func() string { return "{{ .csrf }}" }
-
-	r.SetFuncMap(template.FuncMap(r.FuncMap))
-	r.LoadHTMLGlob(filepath.Join(app.BaseDir, "internal", "domain", "*", "templates", "*.html"))
+	r.SetHTMLTemplate(tmpl)
+	render.SetTemplate(tmpl)
 
 	r.Use(middleware.ContextTimeout(30 * time.Second))
 	r.Use(middleware.SecurityHeadersMiddleware())
@@ -135,15 +128,80 @@ func (app *App) setupEngine(r *gin.Engine) {
 	r.Static("/static", filepath.Join(app.BaseDir, "static"))
 	r.Static("/uploads", filepath.Join(app.BaseDir, "uploads"))
 
+	// --- Swagger ---
+	// @Summary Swagger UI
+	// @Description Интерактивная документация API
+	// @Tags system
+	// @Produce html
+	// @Success 200 {string} html "Страница Swagger UI"
+	// @Router /swagger/{any} [get]
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
+	// --- Prometheus метрики ---
+	// @Summary Метрики Prometheus
+	// @Description Эндпоинт для сбора метрик в формате, понятном Prometheus
+	// @Tags system
+	// @Produce text/plain
+	// @Success 200 {string} string "Метрики в формате Prometheus"
+	// @Router /metrics [get]
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+
+	// --- Health check ---
+	// @Summary Проверка состояния сервиса
+	// @Description Возвращает статус всех критических компонентов (БД, WebSocket-хаб)
+	// @Tags system
+	// @Produce json
+	// @Success 200 {object} health.HealthResponse "Все компоненты работают"
+	// @Success 207 {object} health.HealthResponse "Некоторые компоненты работают с ошибками (degraded)"
+	// @Failure 503 {object} health.HealthResponse "Критические ошибки"
+	// @Router /healthz [get]
+	healthChecker := health.NewChecker(app.DB, app.Hub)
+	r.GET("/healthz", func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
+		defer cancel()
+		resp := healthChecker.Check(ctx)
+
+		// Используем switch для определения HTTP-статуса (исправление staticcheck QF1003)
+		var statusCode int
+		switch resp.Status {
+		case "error":
+			statusCode = http.StatusServiceUnavailable
+		case "degraded":
+			statusCode = http.StatusMultiStatus // 207
+		default:
+			statusCode = http.StatusOK
+		}
+		c.JSON(statusCode, resp)
+	})
+
+	// --- Главная страница: редирект в зависимости от аутентификации ---
+	// @Summary Главная страница
+	// @Description Перенаправляет на дашборд, если пользователь авторизован, иначе на страницу входа
+	// @Tags system
+	// @Produce html
+	// @Success 302 {string} string "Перенаправление на /dashboard или /auth/login"
+	// @Router / [get]
+	r.GET("/", func(c *gin.Context) {
+		token, err := c.Cookie("jwt")
+		if err != nil || token == "" {
+			c.Redirect(http.StatusFound, "/auth/login")
+			return
+		}
+		// Проверяем, что токен валиден (не истёк, не подделан)
+		_, _, err = app.Services.Auth.ParseToken(token)
+		if err != nil {
+			c.Redirect(http.StatusFound, "/auth/login")
+			return
+		}
+		c.Redirect(http.StatusFound, "/dashboard/")
+	})
 }
 
 // =============================================================================
-// РЕГИСТРАЦИЯ ВСЕХ МАРШРУТОВ (использует поля App)
+// РЕГИСТРАЦИЯ ВСЕХ МАРШРУТОВ
 // =============================================================================
 
 func (app *App) registerAllRoutes(r *gin.Engine) error {
-	// Раздаём маршруты по доменам, передавая только нужные зависимости.
 	app.registerAdminRoutes(r)
 	app.registerUserRoutes(r)
 	app.registerGameRoutes(r)
@@ -162,7 +220,7 @@ func (app *App) registerAllRoutes(r *gin.Engine) error {
 }
 
 // =============================================================================
-// ИНИЦИАЛИЗАЦИЯ РЕПОЗИТОРИЕВ (без изменений)
+// ИНИЦИАЛИЗАЦИЯ РЕПОЗИТОРИЕВ
 // =============================================================================
 
 type repositories struct {
@@ -206,7 +264,7 @@ func initRepositories(db *gorm.DB) *repositories {
 }
 
 // =============================================================================
-// ИНИЦИАЛИЗАЦИЯ СЕРВИСОВ (без изменений)
+// ИНИЦИАЛИЗАЦИЯ СЕРВИСОВ (Passing исключён)
 // =============================================================================
 
 type services struct {
@@ -299,12 +357,12 @@ func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.
 // =============================================================================
 
 func (app *App) registerAdminRoutes(r *gin.Engine) {
-	admin.RegisterRoutes(r, app.DB, app.Config, app.Services.Auth, app.Repos.User, app.Repos.Game)
+	_ = admin.RegisterRoutes(r, app.DB, app.Config, app.Services.Auth, app.Repos.User, app.Repos.Game)
 }
 
 func (app *App) registerUserRoutes(r *gin.Engine) {
-	// Создаём обработчики только для user-домена.
-	authHandler := user.NewAuthHandler(
+	user.RegisterRoutes(
+		r,
 		app.Config,
 		app.Services.Auth,
 		app.Services.User,
@@ -312,57 +370,18 @@ func (app *App) registerUserRoutes(r *gin.Engine) {
 		app.Services.EmailVerif,
 		app.Services.OAuth,
 		app.AuditSvc,
+		app.DB,
+		app.LocalStorage,
 	)
-	profileHandler := user.NewProfileHandler(app.DB, app.LocalStorage)
-	achievementHandler := user.NewAchievementHandler(app.DB)
-	dashboardHandler := user.NewDashboardHandler(user.NewUserDashboardService(app.DB), app.DB)
-
-	// Для OAuth эндпоинтов используем тот же лимитер, что и для обычного входа,
-	// чтобы защититься от брутфорса через внешние провайдеры.
-	oauthRateLimit := middleware.LoginRateLimit(5*time.Minute, 5)
-
-	authGroup := r.Group("/auth")
-	{
-		authGroup.GET("/login", authHandler.ShowLoginForm)
-		authGroup.POST("/login", middleware.LoginRateLimit(5*time.Minute, 5), authHandler.Login)
-		authGroup.GET("/register", authHandler.ShowRegisterForm)
-		authGroup.POST("/register", authHandler.Register)
-		authGroup.GET("/logout", authHandler.Logout)
-		authGroup.GET("/forgot", authHandler.ShowForgotForm)
-		authGroup.POST("/forgot", authHandler.ForgotPassword)
-		authGroup.GET("/reset", authHandler.ShowResetForm)
-		authGroup.POST("/reset", authHandler.ResetPassword)
-		authGroup.GET("/verify", authHandler.VerifyEmail)
-		authGroup.GET("/oauth/:provider", oauthRateLimit, authHandler.OAuthLogin)
-		authGroup.GET("/oauth/:provider/callback", oauthRateLimit, authHandler.OAuthCallback)
-	}
-
-	profileGroup := r.Group("/profile")
-	profileGroup.Use(middleware.AuthRequired(app.Services.Auth))
-	{
-		profileGroup.GET("/", profileHandler.Show)
-		profileGroup.POST("/avatar", profileHandler.UploadAvatar)
-		profileGroup.POST("/update", profileHandler.UpdateProfile)
-		profileGroup.POST("/change-password", profileHandler.ChangePassword)
-	}
-
-	achievementGroup := r.Group("/achievements")
-	achievementGroup.Use(middleware.AuthRequired(app.Services.Auth))
-	{
-		achievementGroup.GET("/", achievementHandler.List)
-	}
-
-	dashboardGroup := r.Group("/dashboard")
-	dashboardGroup.Use(middleware.AuthRequired(app.Services.Auth))
-	{
-		dashboardGroup.GET("/", dashboardHandler.Index)
-	}
 }
 
 func (app *App) registerGameRoutes(r *gin.Engine) {
+	// Создаём GamePassingService локально, используя доступные зависимости
+	passingSvc := game.NewGamePassingService(app.DB, app.Services.Team, app.Services.CoAuthor)
 	game.RegisterRoutes(
 		r,
 		app.Services.Game,
+		passingSvc,
 		app.Services.CoAuthor,
 		app.Services.Attempt,
 		app.Services.Progress,
@@ -385,7 +404,6 @@ func (app *App) registerLevelRoutes(r *gin.Engine) {
 		app.Hub,
 		app.Config,
 		app.Services.CoAuthor,
-		app.Services.Game,
 		app.Services.Auth,
 	)
 }
@@ -403,7 +421,7 @@ func (app *App) registerTeamRoutes(r *gin.Engine) {
 }
 
 func (app *App) registerTournamentRoutes(r *gin.Engine) {
-	tournament.RegisterRoutes(r, app.Services.Tournament, app.Config, app.Services.Auth)
+	tournament.RegisterRoutes(r, app.Services.Tournament, app.Services.Team, app.Config, app.Services.Auth)
 }
 
 func (app *App) registerCalendarRoutes(r *gin.Engine) {
@@ -429,7 +447,6 @@ func (app *App) registerSocialRoutes(r *gin.Engine) {
 	social.RegisterRoutes(r, app.DB, app.Config, app.Services.Auth)
 }
 
-// +++ Изменяем сигнатуру на возврат ошибки
 func (app *App) registerExportRoutes(r *gin.Engine) error {
 	return export.RegisterRoutes(
 		r,
@@ -457,12 +474,7 @@ func (app *App) registerGameplayRoutes(r *gin.Engine) {
 	game.RegisterGameplayRoutes(protected, gameplayHandler, app.Services.CoAuthor)
 }
 
-// =============================================================================
-// ОБРАТНАЯ СОВМЕСТИМОСТЬ: оставляем старую функцию SetupRouter для упрощения перехода
-// =============================================================================
-
 // SetupRouter — сохранена для обратной совместимости, но теперь возвращает ошибку.
-// Рекомендуется использовать App.SetupRouter().
 func SetupRouter(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub, cfg *config.Config, baseDir string) (*gin.Engine, error) {
 	app := NewApp(db, localStorage, hub, cfg, baseDir)
 	return app.SetupRouter()

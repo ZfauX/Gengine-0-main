@@ -134,6 +134,7 @@ func TestWebSocket_Integration_ClientDisconnect(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
+	// Проверяем, что клиент зарегистрирован
 	hub.mu.RLock()
 	clients, ok := hub.rooms["testroom"]
 	hub.mu.RUnlock()
@@ -143,11 +144,11 @@ func TestWebSocket_Integration_ClientDisconnect(t *testing.T) {
 	_ = conn.Close()
 	time.Sleep(100 * time.Millisecond)
 
+	// После закрытия соединения клиент должен быть удалён, и комната должна быть удалена (так как пуста)
 	hub.mu.RLock()
-	clients, ok = hub.rooms["testroom"]
+	_, ok = hub.rooms["testroom"]
 	hub.mu.RUnlock()
-	assert.True(t, ok)
-	assert.Empty(t, clients)
+	assert.False(t, ok, "room should be removed when empty")
 }
 
 func TestWebSocket_Integration_MultipleMessages(t *testing.T) {

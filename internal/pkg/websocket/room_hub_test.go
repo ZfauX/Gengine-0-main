@@ -50,12 +50,11 @@ func TestRoomHub_UnregisterClient(t *testing.T) {
 
 	hub.UnregisterClient(client)
 
+	// После удаления клиента комната должна быть удалена, так как она пуста
 	hub.mu.RLock()
-	clients, ok := hub.rooms["room1"]
+	_, ok := hub.rooms["room1"]
 	hub.mu.RUnlock()
-	assert.True(t, ok)
-	assert.NotContains(t, clients, client)
-	assert.Empty(t, clients)
+	assert.False(t, ok, "room should be removed when empty")
 }
 
 func TestRoomHub_UnregisterClient_NotExists(t *testing.T) {
@@ -143,7 +142,11 @@ func TestRoomHub_BroadcastToRoom_FullChannel(t *testing.T) {
 	msg := map[string]string{"event": "test"}
 	hub.BroadcastToRoom(roomID, msg)
 
-	assert.True(t, c1.closed)
+	// Проверяем, что клиент закрыт (с защитой мьютекса)
+	c1.mu.Lock()
+	isClosed := c1.closed
+	c1.mu.Unlock()
+	assert.True(t, isClosed)
 }
 
 func TestRoomHub_BroadcastToRoom_MarshalError(t *testing.T) {
@@ -152,7 +155,7 @@ func TestRoomHub_BroadcastToRoom_MarshalError(t *testing.T) {
 	c1 := &Client{Send: make(chan []byte, 10), RoomID: roomID}
 	hub.RegisterClient(roomID, c1)
 
-	msg := make(chan int)
+	msg := make(chan int) // несериализуемый тип
 	hub.BroadcastToRoom(roomID, msg)
 
 	select {

@@ -8,6 +8,7 @@ import (
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/pkg/audit"
+	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/storage"
 
@@ -85,9 +86,8 @@ func NewAuthHandler(
 
 // ShowLoginForm отображает страницу входа.
 func (h *AuthHandler) ShowLoginForm(c *gin.Context) {
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "auth-login.html",
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "auth-login.html", gin.H{
+		"csrf": csrf.GetToken(c),
 	})
 }
 
@@ -95,20 +95,18 @@ func (h *AuthHandler) ShowLoginForm(c *gin.Context) {
 func (h *AuthHandler) Login(c *gin.Context) {
 	var input LoginInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "auth-login.html",
-			"Error":        "Некорректные данные: " + err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "auth-login.html", gin.H{
+			"Error": "Некорректные данные: " + err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
 
 	token, err := h.authSvc.Login(c.Request.Context(), input.Email, input.Password)
 	if err != nil {
-		c.HTML(http.StatusUnauthorized, "layout.html", gin.H{
-			"ContentBlock": "auth-login.html",
-			"Error":        "Неверный email или пароль",
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusUnauthorized, "auth-login.html", gin.H{
+			"Error": "Неверный email или пароль",
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -133,9 +131,8 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 
 // ShowRegisterForm отображает страницу регистрации.
 func (h *AuthHandler) ShowRegisterForm(c *gin.Context) {
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "auth-register.html",
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "auth-register.html", gin.H{
+		"csrf": csrf.GetToken(c),
 	})
 }
 
@@ -143,20 +140,18 @@ func (h *AuthHandler) ShowRegisterForm(c *gin.Context) {
 func (h *AuthHandler) Register(c *gin.Context) {
 	var input RegisterInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "auth-register.html",
-			"Error":        "Некорректные данные: " + err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "auth-register.html", gin.H{
+			"Error": "Некорректные данные: " + err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
 
 	user, err := h.authSvc.Register(c.Request.Context(), input.Email, input.Password, input.Name)
 	if err != nil {
-		c.HTML(http.StatusConflict, "layout.html", gin.H{
-			"ContentBlock": "auth-register.html",
-			"Error":        "Email уже зарегистрирован",
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusConflict, "auth-register.html", gin.H{
+			"Error": "Email уже зарегистрирован",
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -167,9 +162,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 // ShowForgotForm отображает форму восстановления пароля.
 func (h *AuthHandler) ShowForgotForm(c *gin.Context) {
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "auth-forgot.html",
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "auth-forgot.html", gin.H{
+		"csrf": csrf.GetToken(c),
 	})
 }
 
@@ -177,10 +171,9 @@ func (h *AuthHandler) ShowForgotForm(c *gin.Context) {
 func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	var input ForgotInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "auth-forgot.html",
-			"Error":        "Некорректный email",
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "auth-forgot.html", gin.H{
+			"Error": "Некорректный email",
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -196,20 +189,18 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 		}
 	}
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "auth-forgot.html",
-		"Message":      "Инструкции отправлены на почту",
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "auth-forgot.html", gin.H{
+		"Message": "Инструкции отправлены на почту",
+		"csrf":    csrf.GetToken(c),
 	})
 }
 
 // ShowResetForm отображает форму установки нового пароля.
 func (h *AuthHandler) ShowResetForm(c *gin.Context) {
 	token := sanitize.StripHTML(c.Query("token"))
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "auth-reset.html",
-		"Token":        token,
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "auth-reset.html", gin.H{
+		"Token": token,
+		"csrf":  csrf.GetToken(c),
 	})
 }
 
@@ -217,21 +208,19 @@ func (h *AuthHandler) ShowResetForm(c *gin.Context) {
 func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	var input ResetInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "auth-reset.html",
-			"Token":        c.PostForm("token"),
-			"Error":        "Некорректные данные: " + err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "auth-reset.html", gin.H{
+			"Token": c.PostForm("token"),
+			"Error": "Некорректные данные: " + err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
 
 	if err := h.passwordResetSvc.ResetPassword(c.Request.Context(), input.Token, input.Password); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "auth-reset.html",
-			"Token":        input.Token,
-			"Error":        err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "auth-reset.html", gin.H{
+			"Token": input.Token,
+			"Error": err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -242,15 +231,12 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 	token := c.Query("token")
 	if _, err := h.emailVerificationSvc.VerifyToken(c.Request.Context(), token); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "auth-verify_error.html",
-			"Error":        err.Error(),
+		render.Page(c, http.StatusBadRequest, "auth-verify_error.html", gin.H{
+			"Error": err.Error(),
 		})
 		return
 	}
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "auth-verify_success.html",
-	})
+	render.Page(c, http.StatusOK, "auth-verify_success.html", gin.H{})
 }
 
 // OAuthLogin начинает процесс OAuth-авторизации.
@@ -272,20 +258,18 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 
 	user, err := h.oauthSvc.Authenticate(c.Request.Context(), provider, code, state)
 	if err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "auth-login.html",
-			"Error":        "Ошибка входа через " + provider,
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "auth-login.html", gin.H{
+			"Error": "Ошибка входа через " + provider,
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
 
 	token, err := h.authSvc.GenerateJWT(*user)
 	if err != nil {
-		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
-			"ContentBlock": "auth-login.html",
-			"Error":        "Внутренняя ошибка",
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusInternalServerError, "auth-login.html", gin.H{
+			"Error": "Внутренняя ошибка",
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -312,8 +296,7 @@ func (h *ProfileHandler) Show(c *gin.Context) {
 		c.HTML(http.StatusNotFound, "errors/404.html", nil)
 		return
 	}
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock":  "profile-show.html",
+	render.Page(c, http.StatusOK, "profile-show.html", gin.H{
 		"User":          user,
 		"Achievements":  user.Achievements,
 		"CurrentUserID": userID,
@@ -343,8 +326,7 @@ func (h *ProfileHandler) PublicProfile(c *gin.Context) {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": "Профиль скрыт"})
 		return
 	}
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock":  "profile-public.html",
+	render.Page(c, http.StatusOK, "profile-public.html", gin.H{
 		"ProfileUser":   user,
 		"Achievements":  user.Achievements,
 		"CurrentUserID": c.GetUint("userID"),
@@ -366,20 +348,18 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 	webPath, err := h.storage.Save("uploads/avatars", file, header.Filename, userID, 2*1024*1024, allowedTypes)
 	if err != nil {
 		log.Error().Err(err).Uint("user", userID).Msg("UploadAvatar: storage save failed")
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "profile-show.html",
-			"Error":        "Ошибка загрузки аватара: " + err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "profile-show.html", gin.H{
+			"Error": "Ошибка загрузки аватара: " + err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
 
 	if err := h.db.Model(&User{}).Where("id = ?", userID).Update("avatar_path", webPath).Error; err != nil {
 		log.Error().Err(err).Uint("user", userID).Msg("UploadAvatar: failed to update avatar_path")
-		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
-			"ContentBlock": "profile-show.html",
-			"Error":        "Не удалось сохранить путь к аватару",
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusInternalServerError, "profile-show.html", gin.H{
+			"Error": "Не удалось сохранить путь к аватару",
+			"csrf":  csrf.GetToken(c),
 		})
 		_ = h.storage.Delete(webPath) // пытаемся удалить уже загруженный файл
 		return
@@ -393,10 +373,9 @@ func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 
 	var input UpdateProfileInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "profile-show.html",
-			"Error":        "Некорректные данные: " + err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "profile-show.html", gin.H{
+			"Error": "Некорректные данные: " + err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -406,10 +385,9 @@ func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 		"email": input.Email,
 	}).Error; err != nil {
 		log.Error().Err(err).Uint("user", userID).Msg("UpdateProfile: failed to update")
-		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
-			"ContentBlock": "profile-show.html",
-			"Error":        "Ошибка обновления профиля",
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusInternalServerError, "profile-show.html", gin.H{
+			"Error": "Ошибка обновления профиля",
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -422,48 +400,43 @@ func (h *ProfileHandler) ChangePassword(c *gin.Context) {
 
 	var input ChangePasswordInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "profile-show.html",
-			"Error":        "Некорректные данные: " + err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "profile-show.html", gin.H{
+			"Error": "Некорректные данные: " + err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
 
 	var user User
 	if err := h.db.First(&user, userID).Error; err != nil {
-		c.HTML(http.StatusNotFound, "layout.html", gin.H{
-			"ContentBlock": "profile-show.html",
-			"Error":        "Пользователь не найден",
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusNotFound, "profile-show.html", gin.H{
+			"Error": "Пользователь не найден",
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.OldPassword)); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "profile-show.html",
-			"Error":        "Неверный текущий пароль",
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "profile-show.html", gin.H{
+			"Error": "Неверный текущий пароль",
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
 
 	hashed, err := bcrypt.GenerateFromPassword([]byte(input.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
-		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
-			"ContentBlock": "profile-show.html",
-			"Error":        "Ошибка смены пароля",
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusInternalServerError, "profile-show.html", gin.H{
+			"Error": "Ошибка смены пароля",
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
 	if err := h.db.Model(&user).Update("password", string(hashed)).Error; err != nil {
 		log.Error().Err(err).Uint("user", userID).Msg("ChangePassword: failed to update")
-		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
-			"ContentBlock": "profile-show.html",
-			"Error":        "Ошибка смены пароля",
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusInternalServerError, "profile-show.html", gin.H{
+			"Error": "Ошибка смены пароля",
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -491,8 +464,7 @@ func (h *AchievementHandler) List(c *gin.Context) {
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock":  "achievements-list.html",
+	render.Page(c, http.StatusOK, "achievements-list.html", gin.H{
 		"Achievements":  achievements,
 		"CurrentUserID": userID,
 	})
@@ -527,8 +499,7 @@ func (h *DashboardHandler) Index(c *gin.Context) {
 	if roleStr, ok := role.(string); ok && roleStr == "admin" {
 		isAdmin = true
 	}
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock":  "dashboard-index.html",
+	render.Page(c, http.StatusOK, "dashboard-index.html", gin.H{
 		"Dashboard":     dash,
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,

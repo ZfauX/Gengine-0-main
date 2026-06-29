@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/storage"
 
 	"github.com/gin-gonic/gin"
@@ -56,8 +57,7 @@ func (h *TeamHandler) MyTeams(c *gin.Context) {
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock":  "teams-my.html",
+	render.Page(c, http.StatusOK, "teams-my.html", gin.H{
 		"Teams":         teams,
 		"CurrentUserID": userID,
 	})
@@ -65,9 +65,8 @@ func (h *TeamHandler) MyTeams(c *gin.Context) {
 
 // NewTeamForm показывает форму создания команды.
 func (h *TeamHandler) NewTeamForm(c *gin.Context) {
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "teams-new.html",
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "teams-new.html", gin.H{
+		"csrf": csrf.GetToken(c),
 	})
 }
 
@@ -75,10 +74,9 @@ func (h *TeamHandler) NewTeamForm(c *gin.Context) {
 func (h *TeamHandler) CreateTeam(c *gin.Context) {
 	var input CreateTeamInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "teams-new.html",
-			"Error":        "Название должно быть от 2 до 100 символов",
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "teams-new.html", gin.H{
+			"Error": "Название должно быть от 2 до 100 символов",
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -87,10 +85,9 @@ func (h *TeamHandler) CreateTeam(c *gin.Context) {
 	_, err := h.teamService.CreateTeam(c.Request.Context(), input.Name, userID)
 	if err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Str("name", input.Name).Msg("CreateTeam: failed to create team")
-		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
-			"ContentBlock": "teams-new.html",
-			"Error":        err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusInternalServerError, "teams-new.html", gin.H{
+			"Error": err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -120,8 +117,7 @@ func (h *TeamHandler) ViewTeam(c *gin.Context) {
 
 	canManage := h.teamService.CanManageTeam(c.Request.Context(), uint(teamID), userID)
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock":  "teams-members.html",
+	render.Page(c, http.StatusOK, "teams-members.html", gin.H{
 		"Team":          team,
 		"Members":       members,
 		"CanManage":     canManage,
@@ -152,8 +148,7 @@ func (h *TeamHandler) Members(c *gin.Context) {
 
 	canManage := h.teamService.CanManageTeam(c.Request.Context(), uint(teamID), userID)
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock":  "teams-members.html",
+	render.Page(c, http.StatusOK, "teams-members.html", gin.H{
 		"GameID":        c.Param("game_id"),
 		"TeamID":        teamID,
 		"Team":          team,
@@ -178,12 +173,11 @@ func (h *TeamHandler) AddMemberForm(c *gin.Context) {
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "teams-add_member.html",
-		"GameID":       c.Param("game_id"),
-		"TeamID":       teamID,
-		"Users":        availableUsers,
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "teams-add_member.html", gin.H{
+		"GameID": c.Param("game_id"),
+		"TeamID": teamID,
+		"Users":  availableUsers,
+		"csrf":   csrf.GetToken(c),
 	})
 }
 
@@ -198,10 +192,9 @@ func (h *TeamHandler) AddMember(c *gin.Context) {
 
 	var input AddMemberInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "teams-add_member.html",
-			"Error":        "Неверные данные: " + err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "teams-add_member.html", gin.H{
+			"Error": "Неверные данные: " + err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -254,12 +247,11 @@ func (h *TeamHandler) ChangeCaptainForm(c *gin.Context) {
 		}
 		return
 	}
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "teams-change_captain.html",
-		"GameID":       c.Param("game_id"),
-		"TeamID":       teamID,
-		"Members":      members,
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "teams-change_captain.html", gin.H{
+		"GameID":  c.Param("game_id"),
+		"TeamID":  teamID,
+		"Members": members,
+		"csrf":    csrf.GetToken(c),
 	})
 }
 
@@ -274,10 +266,9 @@ func (h *TeamHandler) ChangeCaptain(c *gin.Context) {
 
 	var input ChangeCaptainInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "teams-change_captain.html",
-			"Error":        "Неверные данные: " + err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "teams-change_captain.html", gin.H{
+			"Error": "Неверные данные: " + err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -315,11 +306,10 @@ func (h *InvitationHandler) Index(c *gin.Context) {
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "invitations-index.html",
-		"GameID":       c.Param("game_id"),
-		"TeamID":       teamID,
-		"Invitations":  invitations,
+	render.Page(c, http.StatusOK, "invitations-index.html", gin.H{
+		"GameID":      c.Param("game_id"),
+		"TeamID":      teamID,
+		"Invitations": invitations,
 	})
 }
 
@@ -330,11 +320,10 @@ func (h *InvitationHandler) NewForm(c *gin.Context) {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID команды"})
 		return
 	}
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "invitations-new.html",
-		"GameID":       c.Param("game_id"),
-		"TeamID":       teamID,
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "invitations-new.html", gin.H{
+		"GameID": c.Param("game_id"),
+		"TeamID": teamID,
+		"csrf":   csrf.GetToken(c),
 	})
 }
 
@@ -349,10 +338,9 @@ func (h *InvitationHandler) Create(c *gin.Context) {
 
 	var input CreateInvitationInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "invitations-new.html",
-			"Error":        "Неверный ID пользователя",
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "invitations-new.html", gin.H{
+			"Error": "Неверный ID пользователя",
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -360,10 +348,9 @@ func (h *InvitationHandler) Create(c *gin.Context) {
 	_, err = h.invitationService.CreateInvitation(c.Request.Context(), uint(teamID), input.UserID, userID)
 	if err != nil {
 		log.Error().Err(err).Int("team_id", teamID).Uint("invited_user", input.UserID).Uint("inviter", userID).Msg("InvitationHandler.Create: failed to create invitation")
-		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
-			"ContentBlock": "invitations-new.html",
-			"Error":        err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusInternalServerError, "invitations-new.html", gin.H{
+			"Error": err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -379,8 +366,7 @@ func (h *InvitationHandler) MyInvitations(c *gin.Context) {
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock":  "invitations-my.html",
+	render.Page(c, http.StatusOK, "invitations-my.html", gin.H{
 		"Invitations":   invitations,
 		"CurrentUserID": userID,
 	})

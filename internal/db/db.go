@@ -49,7 +49,7 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 // EnsureAdmin создаёт или обновляет учётную запись администратора в базе данных.
 // Использует учетные данные из cfg.Admin (Email и Password).
 // Алгоритм:
-//  1. Хеширует пароль с помощью bcrypt.DefaultCost.
+//  1. Хеширует пароль с помощью bcrypt со стоимостью 12 (рекомендовано для продакшена).
 //  2. Ищет пользователя с email = cfg.Admin.Email.
 //     - Если найден, обновляет его пароль и устанавливает роль admin (если ещё не admin).
 //     - Если не найден, создаёт нового пользователя с ролью admin.
@@ -58,7 +58,10 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 // Возвращает ошибку, если не удалось выполнить операцию.
 // Вызывающий код должен проверить ошибку и завершить приложение, если это критично.
 func EnsureAdmin(db *gorm.DB, cfg *config.Config) error {
-	hashed, err := bcrypt.GenerateFromPassword([]byte(cfg.Admin.Password), bcrypt.DefaultCost)
+	// Используем стоимость 12 вместо bcrypt.DefaultCost (10) для повышения стойкости.
+	// При необходимости можно вынести этот параметр в конфиг (cfg.Admin.Cost).
+	const bcryptCost = 12
+	hashed, err := bcrypt.GenerateFromPassword([]byte(cfg.Admin.Password), bcryptCost)
 	if err != nil {
 		return fmt.Errorf("ensureAdmin: не удалось захешировать пароль администратора: %w", err)
 	}

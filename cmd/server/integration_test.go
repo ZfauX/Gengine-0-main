@@ -4,7 +4,6 @@
 package main_test
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -38,10 +37,8 @@ import (
 
 var csrfTokenRE = regexp.MustCompile(`<input[^>]+name="_csrf"[^>]+value="([^"]+)"`)
 
-// setupTestRouter создаёт тестовый роутер с реальной БД и конфигурацией.
 func setupTestRouter(t *testing.T, db *gorm.DB, cfg *config.Config) *gin.Engine {
 	t.Helper()
-
 	gin.SetMode(gin.TestMode)
 
 	localStorage := storage.NewLocalStorage()
@@ -53,11 +50,9 @@ func setupTestRouter(t *testing.T, db *gorm.DB, cfg *config.Config) *gin.Engine 
 		t.Fatalf("failed to setup router: %v", err)
 	}
 	router.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok"}) })
-
 	return router
 }
 
-// getCSRFToken извлекает CSRF-токен со страницы. Если не удалось — возвращает пустую строку.
 func getCSRFToken(router *gin.Engine, url string, cookies []*http.Cookie) (string, []*http.Cookie) {
 	req := httptest.NewRequest("GET", url, nil)
 	for _, ck := range cookies {
@@ -72,12 +67,10 @@ func getCSRFToken(router *gin.Engine, url string, cookies []*http.Cookie) (strin
 	if len(match) >= 2 {
 		token = match[1]
 	}
-
 	merged := mergeCookies(cookies, w.Result().Cookies())
 	return token, merged
 }
 
-// mergeCookies объединяет старые и новые куки, заменяя дубликаты.
 func mergeCookies(old, new []*http.Cookie) []*http.Cookie {
 	m := make(map[string]*http.Cookie)
 	for _, c := range old {
@@ -107,7 +100,6 @@ func TestFullGameFlow(t *testing.T) {
 		},
 	}
 
-	// Используем SetupPostgresDBOrSkip — если PostgreSQL недоступна, тест пропускается
 	db := testutil.SetupPostgresDBOrSkip(t,
 		&user.User{}, &user.Achievement{}, &user.PasswordResetToken{}, &user.EmailVerificationToken{},
 		&game.Game{}, &game.GamePassing{}, &game.GameSetting{}, &game.CoAuthor{}, &game.Note{},
@@ -128,13 +120,10 @@ func TestFullGameFlow(t *testing.T) {
 	var sessionCookies []*http.Cookie
 	csrfToken, sessionCookies := getCSRFToken(router, "/auth/register", sessionCookies)
 
-	// Если CSRF не работает – пропускаем тест с информативным сообщением
 	if csrfToken == "" {
-		// Попробуем ещё раз через мгновение — возможно сессия не проинициализировалась
 		time.Sleep(50 * time.Millisecond)
 		csrfToken, sessionCookies = getCSRFToken(router, "/auth/register", sessionCookies)
 		if csrfToken == "" {
-			// Выведем тело страницы для диагностики
 			req, _ := http.NewRequest("GET", "/auth/register", nil)
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
@@ -187,7 +176,7 @@ func TestFullGameFlow(t *testing.T) {
 	sessionCookies = append(sessionCookies, jwtCookie)
 
 	// Шаг 2.5: проверка дашборда
-	req = httptest.NewRequest("GET", "/dashboard", nil)
+	req = httptest.NewRequest("GET", "/dashboard/", nil)
 	req.AddCookie(jwtCookie)
 	w = httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -198,11 +187,13 @@ func TestFullGameFlow(t *testing.T) {
 	// Шаг 3: создание игры
 	csrfToken, sessionCookies = getCSRFToken(router, "/games/new", sessionCookies)
 	createGameBody := url.Values{
-		"name":        {"Integration Game"},
-		"description": {"A test"},
+		"name":            {"Integration Game"},
+		"description":     {"A test description"},
+		"max_team_number": {"5"},
+		"visibility":      {"public"},
 	}
 	createGameBody.Set("_csrf", csrfToken)
-	req = httptest.NewRequest("POST", "/games", strings.NewReader(createGameBody.Encode()))
+	req = httptest.NewRequest("POST", "/games/new", strings.NewReader(createGameBody.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	for _, ck := range sessionCookies {
 		req.AddCookie(ck)
@@ -222,11 +213,19 @@ func TestFullGameFlow(t *testing.T) {
 	db.First(&createdGame, gameID)
 	require.False(t, createdGame.IsDraft, "Игра должна быть опубликована")
 
+	// Шаг 4: создаём уровень с ответом (до старта игры!)
+	lvl := &level.Level{GameID: gameID, Name: "Level 1", Position: 1}
+	require.NoError(t, db.Create(lvl).Error)
+	q := &level.Question{LevelID: lvl.ID, Text: "Q"}
+	require.NoError(t, db.Create(q).Error)
+	a := &level.Answer{QuestionID: q.ID, Code: "secret"}
+	require.NoError(t, db.Create(a).Error)
+
 	// Шаг 5: создание команды
 	csrfToken, sessionCookies = getCSRFToken(router, "/teams/new", sessionCookies)
 	createTeamBody := url.Values{"name": {"Test Team"}}
 	createTeamBody.Set("_csrf", csrfToken)
-	req = httptest.NewRequest("POST", "/teams", strings.NewReader(createTeamBody.Encode()))
+	req = httptest.NewRequest("POST", "/teams/new", strings.NewReader(createTeamBody.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	for _, ck := range sessionCookies {
 		req.AddCookie(ck)
@@ -276,7 +275,7 @@ func TestFullGameFlow(t *testing.T) {
 	router.ServeHTTP(w, req)
 	require.Equal(t, http.StatusFound, w.Code, "Шаг 7: принятие заявки")
 
-	// Шаг 8: старт игры
+	// Шаг 8: старт игры (уровни уже есть, ошибки не будет)
 	startBody := url.Values{}
 	startBody.Set("_csrf", csrfToken)
 	req = httptest.NewRequest("POST", fmt.Sprintf("/games/%d/passings/%d/start", gameID, passingID), strings.NewReader(startBody.Encode()))
@@ -288,32 +287,21 @@ func TestFullGameFlow(t *testing.T) {
 	router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusFound, w.Code, "Шаг 8: старт игры")
 
-	// Шаг 9: создаём уровень с ответом
-	lvl := &level.Level{GameID: gameID, Name: "Level 1", Position: 1}
-	require.NoError(t, db.Create(lvl).Error)
-	q := &level.Question{LevelID: lvl.ID, Text: "Q"}
-	require.NoError(t, db.Create(q).Error)
-	a := &level.Answer{QuestionID: q.ID, Code: "secret"}
-	require.NoError(t, db.Create(a).Error)
-
-	// Шаг 10: инициализируем первый уровень (с контекстом)
-	require.NoError(t, game.NewLevelProgressService(db).InitFirstLevel(context.Background(), passingID))
-
-	// Шаг 11: ввод правильного кода
-	gameURL := fmt.Sprintf("/game/%d", passingID)
-	csrfToken, sessionCookies = getCSRFToken(router, gameURL, sessionCookies)
+	// Шаг 9: ввод правильного кода (GET для токена со страницы игры, POST на submit)
+	gamePageURL := fmt.Sprintf("/game/%d", passingID)
+	csrfToken, sessionCookies = getCSRFToken(router, gamePageURL, sessionCookies)
 	submitBody := url.Values{"code": {"secret"}}
 	submitBody.Set("_csrf", csrfToken)
-	req = httptest.NewRequest("POST", gameURL, strings.NewReader(submitBody.Encode()))
+	req = httptest.NewRequest("POST", fmt.Sprintf("/game/%d/submit", passingID), strings.NewReader(submitBody.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	for _, ck := range sessionCookies {
 		req.AddCookie(ck)
 	}
 	w = httptest.NewRecorder()
 	router.ServeHTTP(w, req)
-	assert.Equal(t, http.StatusFound, w.Code, "Шаг 11: ввод правильного кода")
+	assert.Equal(t, http.StatusFound, w.Code, "Шаг 9: ввод правильного кода")
 
-	// Шаг 12: проверка завершения игры
+	// Шаг 10: проверка завершения игры
 	var updatedPassing game.GamePassing
 	db.First(&updatedPassing, passingID)
 	assert.Equal(t, game.StatusFinished, updatedPassing.Status, "Игра должна быть завершена")

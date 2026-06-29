@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"gengine-0/internal/domain/game"
+	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/storage"
 
 	"github.com/gin-gonic/gin"
@@ -79,10 +80,9 @@ func (h *ExportHandler) ImportGameForm(c *gin.Context) {
 		return
 	}
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "export_import-import.html",
-		"GameID":       gameID,
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "export_import-import.html", gin.H{
+		"GameID": gameID,
+		"csrf":   csrf.GetToken(c),
 	})
 }
 
@@ -96,44 +96,40 @@ func (h *ExportHandler) ImportGame(c *gin.Context) {
 
 	file, header, err := c.Request.FormFile("csvfile")
 	if err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "export_import-import.html",
-			"GameID":       gameID,
-			"Error":        "Файл не выбран",
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "export_import-import.html", gin.H{
+			"GameID": gameID,
+			"Error":  "Файл не выбран",
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
 	defer func() { _ = file.Close() }()
 
 	if header.Size > 10*1024*1024 {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "export_import-import.html",
-			"GameID":       gameID,
-			"Error":        "Размер файла не должен превышать 10 МБ",
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "export_import-import.html", gin.H{
+			"GameID": gameID,
+			"Error":  "Размер файла не должен превышать 10 МБ",
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
 
 	contentType := header.Header.Get("Content-Type")
 	if contentType != "text/csv" && contentType != "application/csv" {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "export_import-import.html",
-			"GameID":       gameID,
-			"Error":        "Допустимы только CSV-файлы",
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "export_import-import.html", gin.H{
+			"GameID": gameID,
+			"Error":  "Допустимы только CSV-файлы",
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
 
 	if err := h.exportService.ImportGameFromCSV(h.db, gameID, file); err != nil {
 		log.Error().Err(err).Uint("game_id", gameID).Msg("ImportGame: failed to import game from CSV")
-		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
-			"ContentBlock": "export_import-import.html",
-			"GameID":       gameID,
-			"Error":        "Ошибка импорта: " + err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusInternalServerError, "export_import-import.html", gin.H{
+			"GameID": gameID,
+			"Error":  "Ошибка импорта: " + err.Error(),
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}

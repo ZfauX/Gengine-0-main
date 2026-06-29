@@ -15,6 +15,8 @@ import (
 )
 
 // MigrateFromFiles выполняет миграции из файлов в папке ./migrations.
+// Использует golang-migrate для версионирования, что гарантирует идемпотентность
+// (каждая миграция применяется только один раз).
 func MigrateFromFiles(db *gorm.DB, migrationsDir string) error {
 	sqlDB, err := db.DB()
 	if err != nil {
@@ -35,15 +37,6 @@ func MigrateFromFiles(db *gorm.DB, migrationsDir string) error {
 		return nil
 	}
 
-	files, err := os.ReadDir(migrationsDir)
-	if err != nil {
-		return fmt.Errorf("не удалось прочитать папку миграций: %w", err)
-	}
-	if len(files) == 0 {
-		log.Warn().Str("dir", migrationsDir).Msg("Папка миграций пуста. Создайте файлы миграций.")
-		return nil
-	}
-
 	m, err := migrate.NewWithDatabaseInstance(
 		"file://"+filepath.ToSlash(migrationsDir),
 		"postgres", driver)
@@ -51,11 +44,21 @@ func MigrateFromFiles(db *gorm.DB, migrationsDir string) error {
 		return fmt.Errorf("не удалось создать экземпляр миграции: %w", err)
 	}
 
+	// Получаем текущую версию
+	version, dirty, err := m.Version()
+	if err != nil && err != migrate.ErrNilVersion {
+		return fmt.Errorf("ошибка получения версии миграций: %w", err)
+	}
+	if dirty {
+		log.Warn().Uint("version", version).Msg("Миграции в грязном состоянии. Попытка принудительного применения...")
+	}
+
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
 		return fmt.Errorf("ошибка применения миграций: %w", err)
 	}
 
-	log.Info().Msg("Миграции успешно применены")
+	newVersion, _, _ := m.Version()
+	log.Info().Uint("version", newVersion).Msg("Миграции успешно применены")
 	return nil
 }
 

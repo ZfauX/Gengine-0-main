@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gengine-0/internal/domain/game"
+	"gengine-0/internal/pkg/render"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -22,9 +23,7 @@ func NewCalendarHandler(gameRepo game.GameRepository) *CalendarHandler {
 
 // CalendarPage отображает HTML-страницу календаря.
 func (h *CalendarHandler) CalendarPage(c *gin.Context) {
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "calendar-page.html",
-	})
+	render.Page(c, http.StatusOK, "calendar-page.html", gin.H{})
 }
 
 // CalendarData возвращает события календаря в JSON-формате.

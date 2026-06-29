@@ -9,6 +9,7 @@ import (
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/team"
+	"gengine-0/internal/pkg/render"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -72,9 +73,8 @@ func (h *TournamentHandler) List(c *gin.Context) {
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "tournaments-list.html",
-		"Tournaments":  tournaments,
+	render.Page(c, http.StatusOK, "tournaments-list.html", gin.H{
+		"Tournaments": tournaments,
 	})
 }
 
@@ -112,8 +112,7 @@ func (h *TournamentHandler) Show(c *gin.Context) {
 
 	canApply := h.tournamentService.CanApply(c.Request.Context(), uint(id), userID)
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock":  "tournaments-show.html",
+	render.Page(c, http.StatusOK, "tournaments-show.html", gin.H{
 		"Tournament":    t,
 		"Games":         games,
 		"Leaderboard":   leaderboard,
@@ -125,9 +124,8 @@ func (h *TournamentHandler) Show(c *gin.Context) {
 
 // NewForm отображает форму создания турнира.
 func (h *TournamentHandler) NewForm(c *gin.Context) {
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "tournaments-new.html",
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "tournaments-new.html", gin.H{
+		"csrf": csrf.GetToken(c),
 	})
 }
 
@@ -137,10 +135,9 @@ func (h *TournamentHandler) Create(c *gin.Context) {
 
 	var input CreateTournamentInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "tournaments-new.html",
-			"Error":        "Неверные данные: " + err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "tournaments-new.html", gin.H{
+			"Error": "Неверные данные: " + err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -157,10 +154,9 @@ func (h *TournamentHandler) Create(c *gin.Context) {
 
 	if err := h.tournamentService.Create(c.Request.Context(), t); err != nil {
 		log.Error().Err(err).Uint("author_id", userID).Msg("TournamentHandler.Create: failed to create tournament")
-		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
-			"ContentBlock": "tournaments-new.html",
-			"Error":        err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusInternalServerError, "tournaments-new.html", gin.H{
+			"Error": err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -192,10 +188,9 @@ func (h *TournamentHandler) EditForm(c *gin.Context) {
 		return
 	}
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "tournaments-edit.html",
-		"Tournament":   t,
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "tournaments-edit.html", gin.H{
+		"Tournament": t,
+		"csrf":       csrf.GetToken(c),
 	})
 }
 
@@ -210,10 +205,9 @@ func (h *TournamentHandler) Update(c *gin.Context) {
 
 	var input UpdateTournamentInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "tournaments-edit.html",
-			"Error":        "Неверные данные: " + err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "tournaments-edit.html", gin.H{
+			"Error": "Неверные данные: " + err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -229,10 +223,9 @@ func (h *TournamentHandler) Update(c *gin.Context) {
 
 	if err := h.tournamentService.Update(c.Request.Context(), uint(id), updated, userID); err != nil {
 		log.Error().Err(err).Int("tournament_id", id).Uint("user_id", userID).Msg("TournamentHandler.Update: failed to update tournament")
-		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
-			"ContentBlock": "tournaments-edit.html",
-			"Error":        err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusInternalServerError, "tournaments-edit.html", gin.H{
+			"Error": err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -262,8 +255,7 @@ func (h *TournamentHandler) Games(c *gin.Context) {
 		availableGames = []game.Game{}
 	}
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock":   "tournaments-games.html",
+	render.Page(c, http.StatusOK, "tournaments-games.html", gin.H{
 		"TournamentID":   id,
 		"Games":          games,
 		"AvailableGames": availableGames,
@@ -333,8 +325,7 @@ func (h *TournamentHandler) ApplyForm(c *gin.Context) {
 		teams = []team.Team{}
 	}
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "tournaments-apply.html",
+	render.Page(c, http.StatusOK, "tournaments-apply.html", gin.H{
 		"TournamentID": id,
 		"Teams":        teams,
 		"csrf":         csrf.GetToken(c),
