@@ -42,7 +42,33 @@ import (
 )
 
 // =============================================================================
-// СТРУКТУРА APP — ВСЕ ЗАВИСИМОСТИ В ОДНОМ МЕСТЕ
+// ЗАВИСИМОСТИ — ВСЕ КОМПОНЕНТЫ ВЫНЕСЕНЫ В ОТДЕЛЬНУЮ СТРУКТУРУ
+// =============================================================================
+
+// Dependencies содержит все репозитории, сервисы и вспомогательные компоненты.
+// Это позволяет легко заменять реализации для тестирования.
+type Dependencies struct {
+	Repos    *repositories
+	Services *services
+	AuditSvc *audit.Service
+}
+
+// NewDependencies создаёт все зависимости на основе переданных аргументов.
+// Функция инициализации вынесена из App, чтобы уменьшить связанность.
+func NewDependencies(db *gorm.DB, cfg *config.Config, hub *ws.RoomHub) *Dependencies {
+	repos := initRepositories(db)
+	services := initServices(db, repos, cfg, hub)
+	auditSvc := audit.NewService(db)
+
+	return &Dependencies{
+		Repos:    repos,
+		Services: services,
+		AuditSvc: auditSvc,
+	}
+}
+
+// =============================================================================
+// СТРУКТУРА APP — ТОЛЬКО КОМПОНЕНТЫ, НЕОБХОДИМЫЕ ДЛЯ НАСТРОЙКИ
 // =============================================================================
 
 type App struct {
@@ -52,25 +78,28 @@ type App struct {
 	Hub          *ws.RoomHub
 	BaseDir      string
 
-	Repos    *repositories
-	Services *services
-	AuditSvc *audit.Service
+	// Зависимости внедряются через интерфейсы (пока что конкретные типы,
+	// но в будущем их можно заменить на интерфейсы для улучшения тестируемости)
+	Deps *Dependencies
 }
 
-func NewApp(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub, cfg *config.Config, baseDir string) *App {
-	repos := initRepositories(db)
-	services := initServices(db, repos, cfg, hub)
-	auditSvc := audit.NewService(db)
-
+// NewApp создаёт новый экземпляр App с переданными зависимостями.
+// Теперь App не создаёт зависимости самостоятельно, а получает их извне.
+func NewApp(
+	db *gorm.DB,
+	localStorage storage.FileStorage,
+	hub *ws.RoomHub,
+	cfg *config.Config,
+	baseDir string,
+	deps *Dependencies,
+) *App {
 	return &App{
 		Config:       cfg,
 		DB:           db,
 		LocalStorage: localStorage,
 		Hub:          hub,
 		BaseDir:      baseDir,
-		Repos:        repos,
-		Services:     services,
-		AuditSvc:     auditSvc,
+		Deps:         deps,
 	}
 }
 
@@ -89,13 +118,6 @@ func (app *App) SetupRouter() (*gin.Engine, error) {
 // НАСТРОЙКА ДВИЖКА
 // =============================================================================
 
-// setupEngine настраивает общие middleware, статику, шаблоны и системные маршруты.
-// @Summary Системные эндпоинты
-// @Description Swagger UI, метрики и health-чек
-// @Accept json
-// @Produce json
-// @Success 200 {object} map[string]interface{} "Успешный ответ"
-// @Router / [get]
 func (app *App) setupEngine(r *gin.Engine) {
 	store := cookie.NewStore([]byte(app.Config.Session.Secret))
 	r.Use(gin.Recovery())
@@ -110,7 +132,6 @@ func (app *App) setupEngine(r *gin.Engine) {
 		},
 	}))
 
-	// --- Загрузка шаблонов с использованием вынесенных хелперов ---
 	tmpl := template.New("")
 	tmpl.Funcs(templatefuncs.FuncMap())
 	_, err := tmpl.ParseGlob(filepath.Join(app.BaseDir, "internal", "domain", "*", "templates", "*.html"))
@@ -128,67 +149,34 @@ func (app *App) setupEngine(r *gin.Engine) {
 	r.Static("/static", filepath.Join(app.BaseDir, "static"))
 	r.Static("/uploads", filepath.Join(app.BaseDir, "uploads"))
 
-	// --- Swagger ---
-	// @Summary Swagger UI
-	// @Description Интерактивная документация API
-	// @Tags system
-	// @Produce html
-	// @Success 200 {string} html "Страница Swagger UI"
-	// @Router /swagger/{any} [get]
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-
-	// --- Prometheus метрики ---
-	// @Summary Метрики Prometheus
-	// @Description Эндпоинт для сбора метрик в формате, понятном Prometheus
-	// @Tags system
-	// @Produce text/plain
-	// @Success 200 {string} string "Метрики в формате Prometheus"
-	// @Router /metrics [get]
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
-	// --- Health check ---
-	// @Summary Проверка состояния сервиса
-	// @Description Возвращает статус всех критических компонентов (БД, WebSocket-хаб)
-	// @Tags system
-	// @Produce json
-	// @Success 200 {object} health.HealthResponse "Все компоненты работают"
-	// @Success 207 {object} health.HealthResponse "Некоторые компоненты работают с ошибками (degraded)"
-	// @Failure 503 {object} health.HealthResponse "Критические ошибки"
-	// @Router /healthz [get]
 	healthChecker := health.NewChecker(app.DB, app.Hub)
 	r.GET("/healthz", func(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
 		defer cancel()
 		resp := healthChecker.Check(ctx)
 
-		// Используем switch для определения HTTP-статуса (исправление staticcheck QF1003)
 		var statusCode int
 		switch resp.Status {
 		case "error":
 			statusCode = http.StatusServiceUnavailable
 		case "degraded":
-			statusCode = http.StatusMultiStatus // 207
+			statusCode = http.StatusMultiStatus
 		default:
 			statusCode = http.StatusOK
 		}
 		c.JSON(statusCode, resp)
 	})
 
-	// --- Главная страница: редирект в зависимости от аутентификации ---
-	// @Summary Главная страница
-	// @Description Перенаправляет на дашборд, если пользователь авторизован, иначе на страницу входа
-	// @Tags system
-	// @Produce html
-	// @Success 302 {string} string "Перенаправление на /dashboard или /auth/login"
-	// @Router / [get]
 	r.GET("/", func(c *gin.Context) {
 		token, err := c.Cookie("jwt")
 		if err != nil || token == "" {
 			c.Redirect(http.StatusFound, "/auth/login")
 			return
 		}
-		// Проверяем, что токен валиден (не истёк, не подделан)
-		_, _, err = app.Services.Auth.ParseToken(token)
+		_, _, err = app.Deps.Services.Auth.ParseToken(token)
 		if err != nil {
 			c.Redirect(http.StatusFound, "/auth/login")
 			return
@@ -215,12 +203,11 @@ func (app *App) registerAllRoutes(r *gin.Engine) error {
 		return fmt.Errorf("регистрация маршрутов экспорта: %w", err)
 	}
 	app.registerGameplayRoutes(r)
-
 	return nil
 }
 
 // =============================================================================
-// ИНИЦИАЛИЗАЦИЯ РЕПОЗИТОРИЕВ
+// ИНИЦИАЛИЗАЦИЯ РЕПОЗИТОРИЕВ (вынесена из App)
 // =============================================================================
 
 type repositories struct {
@@ -264,7 +251,7 @@ func initRepositories(db *gorm.DB) *repositories {
 }
 
 // =============================================================================
-// ИНИЦИАЛИЗАЦИЯ СЕРВИСОВ (Passing исключён)
+// ИНИЦИАЛИЗАЦИЯ СЕРВИСОВ (вынесена из App)
 // =============================================================================
 
 type services struct {
@@ -353,79 +340,78 @@ func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.
 }
 
 // =============================================================================
-// РЕГИСТРАЦИЯ МАРШРУТОВ (каждая функция принимает только то, что нужно)
+// РЕГИСТРАЦИЯ МАРШРУТОВ — ИСПОЛЬЗУЮТ ЗАВИСИМОСТИ ИЗ App.Deps
 // =============================================================================
 
 func (app *App) registerAdminRoutes(r *gin.Engine) {
-	_ = admin.RegisterRoutes(r, app.DB, app.Config, app.Services.Auth, app.Repos.User, app.Repos.Game)
+	_ = admin.RegisterRoutes(r, app.DB, app.Config, app.Deps.Services.Auth, app.Deps.Repos.User, app.Deps.Repos.Game)
 }
 
 func (app *App) registerUserRoutes(r *gin.Engine) {
 	user.RegisterRoutes(
 		r,
 		app.Config,
-		app.Services.Auth,
-		app.Services.User,
-		app.Services.PasswordReset,
-		app.Services.EmailVerif,
-		app.Services.OAuth,
-		app.AuditSvc,
+		app.Deps.Services.Auth,
+		app.Deps.Services.User,
+		app.Deps.Services.PasswordReset,
+		app.Deps.Services.EmailVerif,
+		app.Deps.Services.OAuth,
+		app.Deps.AuditSvc,
 		app.DB,
 		app.LocalStorage,
 	)
 }
 
 func (app *App) registerGameRoutes(r *gin.Engine) {
-	// Создаём GamePassingService локально, используя доступные зависимости
-	passingSvc := game.NewGamePassingService(app.DB, app.Services.Team, app.Services.CoAuthor)
+	passingSvc := game.NewGamePassingService(app.DB, app.Deps.Services.Team, app.Deps.Services.CoAuthor)
 	game.RegisterRoutes(
 		r,
-		app.Services.Game,
+		app.Deps.Services.Game,
 		passingSvc,
-		app.Services.CoAuthor,
-		app.Services.Attempt,
-		app.Services.Progress,
-		app.Services.Monitor,
+		app.Deps.Services.CoAuthor,
+		app.Deps.Services.Attempt,
+		app.Deps.Services.Progress,
+		app.Deps.Services.Monitor,
 		app.LocalStorage,
 		app.Hub,
 		app.Config,
-		app.AuditSvc,
-		app.Services.Auth,
+		app.Deps.AuditSvc,
+		app.Deps.Services.Auth,
 	)
 }
 
 func (app *App) registerLevelRoutes(r *gin.Engine) {
 	level.RegisterRoutes(
 		r,
-		app.Services.Level,
-		app.Services.Question,
-		app.Services.Answer,
+		app.Deps.Services.Level,
+		app.Deps.Services.Question,
+		app.Deps.Services.Answer,
 		app.LocalStorage,
 		app.Hub,
 		app.Config,
-		app.Services.CoAuthor,
-		app.Services.Auth,
+		app.Deps.Services.CoAuthor,
+		app.Deps.Services.Auth,
 	)
 }
 
 func (app *App) registerTeamRoutes(r *gin.Engine) {
 	team.RegisterRoutes(
 		r,
-		app.Services.Team,
-		app.Services.Invitation,
+		app.Deps.Services.Team,
+		app.Deps.Services.Invitation,
 		app.Config,
 		app.LocalStorage,
-		app.Services.CoAuthor,
-		app.Services.Auth,
+		app.Deps.Services.CoAuthor,
+		app.Deps.Services.Auth,
 	)
 }
 
 func (app *App) registerTournamentRoutes(r *gin.Engine) {
-	tournament.RegisterRoutes(r, app.Services.Tournament, app.Services.Team, app.Config, app.Services.Auth)
+	tournament.RegisterRoutes(r, app.Deps.Services.Tournament, app.Deps.Services.Team, app.Config, app.Deps.Services.Auth)
 }
 
 func (app *App) registerCalendarRoutes(r *gin.Engine) {
-	calendar.RegisterRoutes(r, app.Repos.Game)
+	calendar.RegisterRoutes(r, app.Deps.Repos.Game)
 }
 
 func (app *App) registerMonitorRoutes(r *gin.Engine) {
@@ -434,17 +420,17 @@ func (app *App) registerMonitorRoutes(r *gin.Engine) {
 		app.DB,
 		app.Hub,
 		app.Config,
-		app.Services.CoAuthor,
-		app.Services.Monitor,
-		app.Services.Attempt,
-		app.Services.Progress,
-		app.Services.Auth,
-		app.Repos.Game,
+		app.Deps.Services.CoAuthor,
+		app.Deps.Services.Monitor,
+		app.Deps.Services.Attempt,
+		app.Deps.Services.Progress,
+		app.Deps.Services.Auth,
+		app.Deps.Repos.Game,
 	)
 }
 
 func (app *App) registerSocialRoutes(r *gin.Engine) {
-	social.RegisterRoutes(r, app.DB, app.Config, app.Services.Auth)
+	social.RegisterRoutes(r, app.DB, app.Config, app.Deps.Services.Auth)
 }
 
 func (app *App) registerExportRoutes(r *gin.Engine) error {
@@ -453,29 +439,35 @@ func (app *App) registerExportRoutes(r *gin.Engine) error {
 		app.DB,
 		app.LocalStorage,
 		app.Config,
-		app.Services.Game,
-		app.Services.CoAuthor,
-		app.Services.Auth,
+		app.Deps.Services.Game,
+		app.Deps.Services.CoAuthor,
+		app.Deps.Services.Auth,
 	)
 }
 
 func (app *App) registerGameplayRoutes(r *gin.Engine) {
 	gameplayHandler := game.NewGameplayHandler(
-		app.Services.Game,
-		app.Services.Attempt,
-		app.Services.Progress,
-		app.Services.Monitor,
+		app.Deps.Services.Game,
+		app.Deps.Services.Attempt,
+		app.Deps.Services.Progress,
+		app.Deps.Services.Monitor,
 		app.Hub,
 		app.LocalStorage,
 		app.DB,
 	)
 	protected := r.Group("/")
-	protected.Use(middleware.AuthRequired(app.Services.Auth))
-	game.RegisterGameplayRoutes(protected, gameplayHandler, app.Services.CoAuthor)
+	protected.Use(middleware.AuthRequired(app.Deps.Services.Auth))
+	game.RegisterGameplayRoutes(protected, gameplayHandler, app.Deps.Services.CoAuthor)
 }
 
-// SetupRouter — сохранена для обратной совместимости, но теперь возвращает ошибку.
+// =============================================================================
+// ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ОБРАТНОЙ СОВМЕСТИМОСТИ
+// =============================================================================
+
+// SetupRouter — сохранена для обратной совместимости.
+// Теперь она создаёт зависимости через NewDependencies и передаёт их в App.
 func SetupRouter(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub, cfg *config.Config, baseDir string) (*gin.Engine, error) {
-	app := NewApp(db, localStorage, hub, cfg, baseDir)
+	deps := NewDependencies(db, cfg, hub)
+	app := NewApp(db, localStorage, hub, cfg, baseDir, deps)
 	return app.SetupRouter()
 }

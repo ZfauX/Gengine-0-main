@@ -4,7 +4,6 @@ package admin
 import (
 	"errors"
 	"net/http"
-	"strconv"
 
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/user"
@@ -16,6 +15,31 @@ import (
 	csrf "github.com/utrack/gin-csrf"
 	"gorm.io/gorm"
 )
+
+// ---------- Входные структуры для валидации ----------
+
+// IDRequest используется для валидации ID в URL.
+type IDRequest struct {
+	ID uint `uri:"id" binding:"required,gt=0"`
+}
+
+// ListUsersRequest используется для фильтрации списка пользователей.
+type ListUsersRequest struct {
+	Role string `form:"role" binding:"omitempty,oneof=user admin"`
+}
+
+// ListGamesRequest используется для фильтрации списка игр.
+type ListGamesRequest struct {
+	Status string `form:"status" binding:"omitempty,oneof=draft published"`
+}
+
+// AuditLogRequest используется для фильтрации и пагинации аудита.
+type AuditLogRequest struct {
+	Page    int    `form:"page" binding:"omitempty,min=1"`
+	PerPage int    `form:"per_page" binding:"omitempty,min=1,max=100"`
+	UserID  string `form:"user_id"`
+	Action  string `form:"action"`
+}
 
 // AdminHandler управляет административной панелью.
 type AdminHandler struct {
@@ -83,18 +107,23 @@ func (h *AdminHandler) Dashboard(c *gin.Context) {
 
 // ListUsers отображает список всех пользователей с возможностью фильтрации по роли.
 func (h *AdminHandler) ListUsers(c *gin.Context) {
+	var req ListUsersRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		// Если ошибка валидации, просто устанавливаем пустую роль
+		req.Role = ""
+	}
+
 	ctx := c.Request.Context()
-	role := c.Query("role")
-	users, err := h.userRepo.List(ctx, role)
+	users, err := h.userRepo.List(ctx, req.Role)
 	if err != nil {
-		log.Error().Err(err).Str("role", role).Msg("ListUsers failed")
+		log.Error().Err(err).Str("role", req.Role).Msg("ListUsers failed")
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
 
 	render.Page(c, http.StatusOK, "admin-users.html", gin.H{
 		"Users":         users,
-		"Role":          role,
+		"Role":          req.Role,
 		"CurrentUserID": c.GetUint("userID"),
 		"IsAdmin":       true,
 		"csrf":          csrf.GetToken(c),
@@ -103,21 +132,20 @@ func (h *AdminHandler) ListUsers(c *gin.Context) {
 
 // ToggleAdmin переключает роль пользователя между user и admin.
 func (h *AdminHandler) ToggleAdmin(c *gin.Context) {
-	idStr := c.Param("id")
-	userID, err := strconv.Atoi(idStr)
-	if err != nil || userID <= 0 {
-		log.Warn().Str("id", idStr).Msg("ToggleAdmin: invalid user ID")
+	var req IDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
+		log.Warn().Err(err).Msg("ToggleAdmin: invalid user ID")
 		c.Redirect(http.StatusFound, "/admin/users")
 		return
 	}
 
 	ctx := c.Request.Context()
-	u, err := h.userRepo.GetByID(ctx, uint(userID))
+	u, err := h.userRepo.GetByID(ctx, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Warn().Int("user_id", userID).Msg("ToggleAdmin: user not found")
+			log.Warn().Uint("user_id", req.ID).Msg("ToggleAdmin: user not found")
 		} else {
-			log.Error().Err(err).Int("user_id", userID).Msg("ToggleAdmin: failed to get user")
+			log.Error().Err(err).Uint("user_id", req.ID).Msg("ToggleAdmin: failed to get user")
 		}
 		c.Redirect(http.StatusFound, "/admin/users")
 		return
@@ -139,19 +167,18 @@ func (h *AdminHandler) ToggleAdmin(c *gin.Context) {
 
 // DeleteUser удаляет пользователя.
 func (h *AdminHandler) DeleteUser(c *gin.Context) {
-	idStr := c.Param("id")
-	userID, err := strconv.Atoi(idStr)
-	if err != nil || userID <= 0 {
-		log.Warn().Str("id", idStr).Msg("DeleteUser: invalid user ID")
+	var req IDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
+		log.Warn().Err(err).Msg("DeleteUser: invalid user ID")
 		c.Redirect(http.StatusFound, "/admin/users")
 		return
 	}
 
-	if err := h.userRepo.Delete(c.Request.Context(), uint(userID)); err != nil {
+	if err := h.userRepo.Delete(c.Request.Context(), req.ID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Warn().Int("user_id", userID).Msg("DeleteUser: user not found")
+			log.Warn().Uint("user_id", req.ID).Msg("DeleteUser: user not found")
 		} else {
-			log.Error().Err(err).Int("user_id", userID).Msg("DeleteUser: failed to delete user")
+			log.Error().Err(err).Uint("user_id", req.ID).Msg("DeleteUser: failed to delete user")
 		}
 		c.Redirect(http.StatusFound, "/admin/users")
 		return
@@ -164,10 +191,14 @@ func (h *AdminHandler) DeleteUser(c *gin.Context) {
 
 // ListGames отображает все игры (включая черновики) с фильтрацией.
 func (h *AdminHandler) ListGames(c *gin.Context) {
+	var req ListGamesRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		req.Status = ""
+	}
+
 	ctx := c.Request.Context()
-	status := c.Query("status")
 	query := h.gameRepo.Model(ctx).Preload("Author")
-	switch status {
+	switch req.Status {
 	case "draft":
 		query = query.Where("is_draft = true")
 	case "published":
@@ -175,14 +206,14 @@ func (h *AdminHandler) ListGames(c *gin.Context) {
 	}
 	games, err := h.gameRepo.ListFiltered(ctx, query, 0, 1000)
 	if err != nil {
-		log.Error().Err(err).Str("status", status).Msg("ListGames failed")
+		log.Error().Err(err).Str("status", req.Status).Msg("ListGames failed")
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
 
 	render.Page(c, http.StatusOK, "admin-games.html", gin.H{
 		"Games":         games,
-		"Status":        status,
+		"Status":        req.Status,
 		"CurrentUserID": c.GetUint("userID"),
 		"IsAdmin":       true,
 		"csrf":          csrf.GetToken(c),
@@ -191,19 +222,18 @@ func (h *AdminHandler) ListGames(c *gin.Context) {
 
 // DeleteGame удаляет любую игру (административное действие).
 func (h *AdminHandler) DeleteGame(c *gin.Context) {
-	idStr := c.Param("id")
-	gameID, err := strconv.Atoi(idStr)
-	if err != nil || gameID <= 0 {
-		log.Warn().Str("id", idStr).Msg("DeleteGame: invalid game ID")
+	var req IDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
+		log.Warn().Err(err).Msg("DeleteGame: invalid game ID")
 		c.Redirect(http.StatusFound, "/admin/games")
 		return
 	}
 
-	if err := h.gameRepo.Delete(c.Request.Context(), uint(gameID)); err != nil {
+	if err := h.gameRepo.Delete(c.Request.Context(), req.ID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Warn().Int("game_id", gameID).Msg("DeleteGame: game not found")
+			log.Warn().Uint("game_id", req.ID).Msg("DeleteGame: game not found")
 		} else {
-			log.Error().Err(err).Int("game_id", gameID).Msg("DeleteGame: failed to delete game")
+			log.Error().Err(err).Uint("game_id", req.ID).Msg("DeleteGame: failed to delete game")
 		}
 		c.Redirect(http.StatusFound, "/admin/games")
 		return
@@ -216,46 +246,47 @@ func (h *AdminHandler) DeleteGame(c *gin.Context) {
 
 // AuditLog отображает страницу с записями аудита (с пагинацией и фильтрацией).
 func (h *AdminHandler) AuditLog(c *gin.Context) {
-	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
-	if err != nil || page < 1 {
-		page = 1
+	var req AuditLogRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		// Устанавливаем значения по умолчанию при ошибке валидации
+		req.Page = 1
+		req.PerPage = 20
 	}
-	perPage, err := strconv.Atoi(c.DefaultQuery("per_page", "20"))
-	if err != nil || perPage < 1 || perPage > 100 {
-		perPage = 20
+	if req.Page < 1 {
+		req.Page = 1
+	}
+	if req.PerPage < 1 || req.PerPage > 100 {
+		req.PerPage = 20
 	}
 
-	userIDStr := c.Query("user_id")
-	action := c.Query("action")
-
-	logs, total, err := h.auditService.List(c.Request.Context(), userIDStr, action, page, perPage)
+	logs, total, err := h.auditService.List(c.Request.Context(), req.UserID, req.Action, req.Page, req.PerPage)
 	if err != nil {
-		log.Error().Err(err).Str("user_id", userIDStr).Str("action", action).Msg("AuditLog list failed")
+		log.Error().Err(err).Str("user_id", req.UserID).Str("action", req.Action).Msg("AuditLog list failed")
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
 
-	totalPages := int((total + int64(perPage) - 1) / int64(perPage))
+	totalPages := int((total + int64(req.PerPage) - 1) / int64(req.PerPage))
 	if totalPages < 1 {
 		totalPages = 1
 	}
-	prevPage := page - 1
+	prevPage := req.Page - 1
 	if prevPage < 1 {
 		prevPage = 1
 	}
-	nextPage := page + 1
+	nextPage := req.Page + 1
 	if nextPage > totalPages {
 		nextPage = totalPages
 	}
 
 	render.Page(c, http.StatusOK, "admin-audit.html", gin.H{
 		"Logs":          logs,
-		"Page":          page,
+		"Page":          req.Page,
 		"TotalPages":    totalPages,
 		"PrevPage":      prevPage,
 		"NextPage":      nextPage,
-		"UserID":        userIDStr,
-		"Action":        action,
+		"UserID":        req.UserID,
+		"Action":        req.Action,
 		"CurrentUserID": c.GetUint("userID"),
 		"IsAdmin":       true,
 		"csrf":          csrf.GetToken(c),
@@ -295,21 +326,20 @@ func (h *AdminHandler) CreateBackup(c *gin.Context) {
 
 // DownloadBackup отдаёт файл бекапа по ID.
 func (h *AdminHandler) DownloadBackup(c *gin.Context) {
-	idStr := c.Param("id")
-	backupID, err := strconv.Atoi(idStr)
-	if err != nil || backupID <= 0 {
-		log.Warn().Str("id", idStr).Msg("DownloadBackup: invalid backup ID")
+	var req IDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
+		log.Warn().Err(err).Msg("DownloadBackup: invalid backup ID")
 		c.HTML(http.StatusBadRequest, "errors/400.html", nil)
 		return
 	}
 
-	path, err := h.backupService.Download(c.Request.Context(), uint(backupID))
+	path, err := h.backupService.Download(c.Request.Context(), req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Warn().Int("backup_id", backupID).Msg("DownloadBackup: backup not found")
+			log.Warn().Uint("backup_id", req.ID).Msg("DownloadBackup: backup not found")
 			c.HTML(http.StatusNotFound, "errors/404.html", nil)
 		} else {
-			log.Error().Err(err).Int("backup_id", backupID).Msg("DownloadBackup: failed to download backup")
+			log.Error().Err(err).Uint("backup_id", req.ID).Msg("DownloadBackup: failed to download backup")
 			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		}
 		return

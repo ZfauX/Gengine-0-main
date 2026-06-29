@@ -22,29 +22,7 @@ const docTemplate = `{
     },
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
-    "paths": {
-        "/": {
-            "get": {
-                "description": "Swagger UI, метрики и health-чек",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "summary": "Системные эндпоинты",
-                "responses": {
-                    "200": {
-                        "description": "Успешный ответ",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        }
-    },
+    "paths": {},
     "securityDefinitions": {
         "JWT": {
             "type": "apiKey",

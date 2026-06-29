@@ -13,10 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// setUpWebsocketServer создаёт тестовый HTTP-сервер с WebSocket-обработчиком.
 func setUpWebsocketServer(t *testing.T) (*httptest.Server, *RoomHub) {
 	t.Helper()
 	hub := NewRoomHub()
+	go hub.Run()
+
 	upgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool { return true },
 	}
@@ -35,7 +36,7 @@ func setUpWebsocketServer(t *testing.T) (*httptest.Server, *RoomHub) {
 			Send:   make(chan []byte, 10),
 			RoomID: roomID,
 		}
-		hub.RegisterClient(roomID, client)
+		hub.RegisterClient(client)
 		defer hub.UnregisterClient(client)
 
 		go client.writePump()
@@ -67,7 +68,9 @@ func TestWebSocket_Integration_EchoBroadcast(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	msg := map[string]string{"event": "test", "data": "hello"}
-	hub.BroadcastToRoom("testroom", msg)
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+	hub.BroadcastToRoom("testroom", data)
 
 	var received1, received2 map[string]string
 
@@ -106,7 +109,10 @@ func TestWebSocket_Integration_BroadcastToDifferentRooms(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
-	hub.BroadcastToRoom("roomA", map[string]string{"msg": "only A"})
+	msg := map[string]string{"msg": "only A"}
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+	hub.BroadcastToRoom("roomA", data)
 
 	err = connA.SetReadDeadline(time.Now().Add(2 * time.Second))
 	require.NoError(t, err)
@@ -134,20 +140,18 @@ func TestWebSocket_Integration_ClientDisconnect(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
-	// Проверяем, что клиент зарегистрирован
-	hub.mu.RLock()
-	clients, ok := hub.rooms["testroom"]
-	hub.mu.RUnlock()
+	hub.mu.Lock()
+	room, ok := hub.rooms["testroom"]
+	hub.mu.Unlock()
 	assert.True(t, ok)
-	assert.Len(t, clients, 1)
+	assert.Len(t, room, 1)
 
 	_ = conn.Close()
 	time.Sleep(100 * time.Millisecond)
 
-	// После закрытия соединения клиент должен быть удалён, и комната должна быть удалена (так как пуста)
-	hub.mu.RLock()
+	hub.mu.Lock()
 	_, ok = hub.rooms["testroom"]
-	hub.mu.RUnlock()
+	hub.mu.Unlock()
 	assert.False(t, ok, "room should be removed when empty")
 }
 
@@ -164,7 +168,10 @@ func TestWebSocket_Integration_MultipleMessages(t *testing.T) {
 
 	messages := []string{"one", "two", "three"}
 	for _, msg := range messages {
-		hub.BroadcastToRoom("multi", map[string]string{"data": msg})
+		data := map[string]string{"data": msg}
+		b, err := json.Marshal(data)
+		require.NoError(t, err)
+		hub.BroadcastToRoom("multi", b)
 	}
 
 	for i, expected := range messages {
@@ -188,15 +195,12 @@ func TestWebSocket_Integration_InvalidRoom(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = conn.Close() }()
 
-	// Отправляем ping и ожидаем, что соединение не будет разорвано в течение таймаута
 	err = conn.WriteMessage(websocket.PingMessage, nil)
 	require.NoError(t, err)
 
-	// Устанавливаем ReadDeadline, чтобы не висеть долго, и просто проверяем, что соединение живо
 	err = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	require.NoError(t, err)
 	_, _, err = conn.ReadMessage()
-	// Ожидаем либо ошибку таймаута (i/o timeout), либо успешное чтение (если пришёл pong)
 	if err != nil {
 		assert.Contains(t, err.Error(), "timeout", "expected timeout error, got %v", err)
 	}

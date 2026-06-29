@@ -4,7 +4,6 @@ package user
 import (
 	"errors"
 	"net/http"
-	"strconv"
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/pkg/audit"
@@ -21,31 +20,52 @@ import (
 
 // ---------- Входные структуры для валидации ----------
 
+// UserIDRequest используется для валидации ID пользователя в URL.
+type UserIDRequest struct {
+	ID uint `uri:"id" binding:"required,gt=0"`
+}
+
+// OAuthProviderRequest используется для валидации провайдера в URL.
+type OAuthProviderRequest struct {
+	Provider string `uri:"provider" binding:"required,oneof=google github yandex"`
+}
+
+// VerifyEmailRequest используется для валидации токена в query.
+type VerifyEmailRequest struct {
+	Token string `form:"token" binding:"required"`
+}
+
+// RegisterInput – регистрация.
 type RegisterInput struct {
 	Email    string `form:"email" binding:"required,email"`
 	Password string `form:"password" binding:"required,min=8,max=72"`
 	Name     string `form:"name" binding:"required,min=2,max=50"`
 }
 
+// LoginInput – вход.
 type LoginInput struct {
 	Email    string `form:"email" binding:"required,email"`
 	Password string `form:"password" binding:"required"`
 }
 
+// ForgotInput – восстановление пароля.
 type ForgotInput struct {
 	Email string `form:"email" binding:"required,email"`
 }
 
+// ResetInput – сброс пароля.
 type ResetInput struct {
 	Token    string `form:"token" binding:"required"`
 	Password string `form:"password" binding:"required,min=8,max=72"`
 }
 
+// UpdateProfileInput – обновление профиля.
 type UpdateProfileInput struct {
 	Name  string `form:"name" binding:"required,min=2,max=50"`
 	Email string `form:"email" binding:"required,email"`
 }
 
+// ChangePasswordInput – смена пароля.
 type ChangePasswordInput struct {
 	OldPassword string `form:"old_password" binding:"required"`
 	NewPassword string `form:"new_password" binding:"required,min=8,max=72"`
@@ -111,7 +131,6 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	// +++ Исправлено: ParseToken теперь возвращает (uint, string, error), игнорируем роль
 	userID, _, parseErr := h.authSvc.ParseToken(token)
 	if parseErr != nil {
 		log.Error().Err(parseErr).Msg("Login: failed to parse token for audit")
@@ -180,11 +199,9 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 
 	user, err := h.userService.GetByEmail(c.Request.Context(), input.Email)
 	if err != nil {
-		// Если пользователь не найден, не раскрываем информацию, просто показываем сообщение об успехе
 		log.Debug().Str("email", input.Email).Msg("ForgotPassword: user not found")
 	} else {
 		if _, err := h.passwordResetSvc.GenerateToken(c.Request.Context(), *user); err != nil {
-			// Ошибка генерации токена — логируем, но пользователю показываем общее сообщение
 			log.Error().Err(err).Str("email", input.Email).Msg("ForgotPassword: failed to generate token")
 		}
 	}
@@ -229,8 +246,15 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 
 // VerifyEmail подтверждает email пользователя.
 func (h *AuthHandler) VerifyEmail(c *gin.Context) {
-	token := c.Query("token")
-	if _, err := h.emailVerificationSvc.VerifyToken(c.Request.Context(), token); err != nil {
+	var req VerifyEmailRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		render.Page(c, http.StatusBadRequest, "auth-verify_error.html", gin.H{
+			"Error": "Неверный или отсутствующий токен",
+		})
+		return
+	}
+
+	if _, err := h.emailVerificationSvc.VerifyToken(c.Request.Context(), req.Token); err != nil {
 		render.Page(c, http.StatusBadRequest, "auth-verify_error.html", gin.H{
 			"Error": err.Error(),
 		})
@@ -241,8 +265,13 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 
 // OAuthLogin начинает процесс OAuth-авторизации.
 func (h *AuthHandler) OAuthLogin(c *gin.Context) {
-	provider := c.Param("provider")
-	url, err := h.oauthSvc.GetAuthURL(provider)
+	var req OAuthProviderRequest
+	if err := c.ShouldBindUri(&req); err != nil {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный провайдер"})
+		return
+	}
+
+	url, err := h.oauthSvc.GetAuthURL(req.Provider)
 	if err != nil {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": err.Error()})
 		return
@@ -252,14 +281,29 @@ func (h *AuthHandler) OAuthLogin(c *gin.Context) {
 
 // OAuthCallback обрабатывает обратный вызов OAuth-провайдера.
 func (h *AuthHandler) OAuthCallback(c *gin.Context) {
-	provider := c.Param("provider")
+	var req OAuthProviderRequest
+	if err := c.ShouldBindUri(&req); err != nil {
+		render.Page(c, http.StatusBadRequest, "auth-login.html", gin.H{
+			"Error": "Неверный провайдер",
+			"csrf":  csrf.GetToken(c),
+		})
+		return
+	}
+
 	code := c.Query("code")
 	state := c.Query("state")
+	if code == "" {
+		render.Page(c, http.StatusBadRequest, "auth-login.html", gin.H{
+			"Error": "Отсутствует код авторизации",
+			"csrf":  csrf.GetToken(c),
+		})
+		return
+	}
 
-	user, err := h.oauthSvc.Authenticate(c.Request.Context(), provider, code, state)
+	user, err := h.oauthSvc.Authenticate(c.Request.Context(), req.Provider, code, state)
 	if err != nil {
 		render.Page(c, http.StatusBadRequest, "auth-login.html", gin.H{
-			"Error": "Ошибка входа через " + provider,
+			"Error": "Ошибка входа через " + req.Provider,
 			"csrf":  csrf.GetToken(c),
 		})
 		return
@@ -306,15 +350,14 @@ func (h *ProfileHandler) Show(c *gin.Context) {
 
 // PublicProfile отображает публичную страницу профиля.
 func (h *ProfileHandler) PublicProfile(c *gin.Context) {
-	idStr := c.Param("id")
-	userID, err := strconv.Atoi(idStr)
-	if err != nil {
+	var req UserIDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID пользователя"})
 		return
 	}
 
 	var user User
-	if err := h.db.Preload("Achievements").First(&user, userID).Error; err != nil {
+	if err := h.db.Preload("Achievements").First(&user, req.ID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.HTML(http.StatusNotFound, "errors/404.html", nil)
 		} else {
@@ -344,6 +387,15 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 	}
 	defer func() { _ = file.Close() }()
 
+	// Валидация типа файла и размера уже есть в storage.Save, но можно добавить дополнительную проверку
+	if header.Size > 2*1024*1024 {
+		render.Page(c, http.StatusBadRequest, "profile-show.html", gin.H{
+			"Error": "Размер файла не должен превышать 2 МБ",
+			"csrf":  csrf.GetToken(c),
+		})
+		return
+	}
+
 	allowedTypes := []string{"image/jpeg", "image/png", "image/webp"}
 	webPath, err := h.storage.Save("uploads/avatars", file, header.Filename, userID, 2*1024*1024, allowedTypes)
 	if err != nil {
@@ -361,7 +413,7 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 			"Error": "Не удалось сохранить путь к аватару",
 			"csrf":  csrf.GetToken(c),
 		})
-		_ = h.storage.Delete(webPath) // пытаемся удалить уже загруженный файл
+		_ = h.storage.Delete(webPath)
 		return
 	}
 	c.Redirect(http.StatusFound, "/profile")
@@ -490,10 +542,9 @@ func (h *DashboardHandler) Index(c *gin.Context) {
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
-	// +++ Исправлено: получаем роль из контекста, установленного AuthRequired
 	role, exists := c.Get("role")
 	if !exists {
-		role = "user" // fallback
+		role = "user"
 	}
 	isAdmin := false
 	if roleStr, ok := role.(string); ok && roleStr == "admin" {

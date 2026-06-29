@@ -3,7 +3,6 @@ package calendar
 
 import (
 	"net/http"
-	"strconv"
 	"time"
 
 	"gengine-0/internal/domain/game"
@@ -12,6 +11,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 )
+
+// CalendarDataRequest используется для валидации query-параметров.
+type CalendarDataRequest struct {
+	Year  int `form:"year" binding:"omitempty,min=2000,max=2100"`
+	Month int `form:"month" binding:"omitempty,min=1,max=12"`
+}
 
 type CalendarHandler struct {
 	gameRepo game.GameRepository
@@ -28,38 +33,38 @@ func (h *CalendarHandler) CalendarPage(c *gin.Context) {
 
 // CalendarData возвращает события календаря в JSON-формате.
 func (h *CalendarHandler) CalendarData(c *gin.Context) {
-	year, err := strconv.Atoi(c.DefaultQuery("year", "0"))
-	if err != nil {
-		log.Warn().Err(err).Str("year", c.Query("year")).Msg("CalendarData: invalid year, using current")
-		year = 0
-	}
-	month, err := strconv.Atoi(c.DefaultQuery("month", "0"))
-	if err != nil {
-		log.Warn().Err(err).Str("month", c.Query("month")).Msg("CalendarData: invalid month, using current")
-		month = 0
-	}
-
-	if year == 0 || month == 0 {
+	var req CalendarDataRequest
+	// Привязка и валидация query-параметров
+	if err := c.ShouldBindQuery(&req); err != nil {
+		log.Warn().Err(err).Msg("CalendarData: invalid query parameters, using defaults")
+		// Используем значения по умолчанию
 		now := time.Now()
-		year = now.Year()
-		month = int(now.Month())
+		req.Year = now.Year()
+		req.Month = int(now.Month())
 	}
 
-	// Валидация месяца
-	if month < 1 || month > 12 {
-		log.Warn().Int("month", month).Msg("CalendarData: invalid month, using current")
+	// Если параметры не переданы или равны 0, используем текущие
+	if req.Year == 0 {
+		req.Year = time.Now().Year()
+	}
+	if req.Month == 0 {
+		req.Month = int(time.Now().Month())
+	}
+
+	// Дополнительная проверка (хотя валидатор уже это сделал)
+	if req.Month < 1 || req.Month > 12 {
 		now := time.Now()
-		year = now.Year()
-		month = int(now.Month())
+		req.Year = now.Year()
+		req.Month = int(now.Month())
 	}
 
-	startOfMonth := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
-	endOfMonth := time.Date(year, time.Month(month)+1, 1, 0, 0, 0, 0, time.UTC).Add(-time.Second)
+	startOfMonth := time.Date(req.Year, time.Month(req.Month), 1, 0, 0, 0, 0, time.UTC)
+	endOfMonth := time.Date(req.Year, time.Month(req.Month)+1, 1, 0, 0, 0, 0, time.UTC).Add(-time.Second)
 
 	ctx := c.Request.Context()
 	games, err := h.gameRepo.ListByDateRange(ctx, startOfMonth, endOfMonth)
 	if err != nil {
-		log.Error().Err(err).Int("year", year).Int("month", month).Msg("CalendarData: failed to list games")
+		log.Error().Err(err).Int("year", req.Year).Int("month", req.Month).Msg("CalendarData: failed to list games")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -78,8 +83,8 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"year":   year,
-		"month":  month,
+		"year":   req.Year,
+		"month":  req.Month,
 		"events": events,
 	})
 }

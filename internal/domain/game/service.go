@@ -3,6 +3,7 @@ package game
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -366,7 +367,6 @@ func (s *GameService) ForceFinishGame(ctx context.Context, gameID uint) error {
 			}
 			s.notifyCaptainAboutFinish(ctx, tx, p.TeamID, gameID)
 			metrics.IncGamePassings("finished")
-			// Используем CreatedAt как время начала прохождения
 			if !p.CreatedAt.IsZero() {
 				duration := now.Sub(p.CreatedAt).Seconds()
 				metrics.ObserveGameDuration(duration)
@@ -523,7 +523,8 @@ func (s *GameService) DeleteLevelFromActiveGame(ctx context.Context, gameID, lev
 		if err != nil {
 			log.Error().Err(err).Uint("game", gameID).Msg("DeleteLevelFromActiveGame: GameSnapshot error")
 		} else {
-			s.hub.BroadcastToRoom(strconv.Itoa(int(gameID)), snapshot)
+			data, _ := json.Marshal(snapshot)
+			s.hub.BroadcastToRoom(strconv.Itoa(int(gameID)), data)
 		}
 	}
 	return nil
@@ -546,9 +547,8 @@ func finishPassingProgress(tx *gorm.DB, passing *GamePassing, now time.Time) err
 	return tx.Save(passing).Error
 }
 
-func (s *GameService) notifyCaptainAboutFinish(ctx context.Context, tx *gorm.DB, teamID, gameID uint) {
-	_ = ctx
-	if s.cfg == nil {
+func (s *GameService) notifyCaptainAboutFinish(_ context.Context, tx *gorm.DB, teamID, gameID uint) {
+	if s.cfg == nil || !s.cfg.SMTP.Enabled {
 		return
 	}
 	emailService := email.NewEmailService(s.cfg)
@@ -573,9 +573,8 @@ func (s *GameService) notifyCaptainAboutFinish(ctx context.Context, tx *gorm.DB,
 	}
 }
 
-func (s *GameService) notifyCaptainAboutDisqualification(ctx context.Context, tx *gorm.DB, teamID, gameID uint) {
-	_ = ctx
-	if s.cfg == nil {
+func (s *GameService) notifyCaptainAboutDisqualification(_ context.Context, tx *gorm.DB, teamID, gameID uint) {
+	if s.cfg == nil || !s.cfg.SMTP.Enabled {
 		return
 	}
 	emailService := email.NewEmailService(s.cfg)
@@ -614,7 +613,8 @@ func (s *GameService) updateMonitorAndResults(ctx context.Context, gameID uint) 
 		if err != nil {
 			log.Error().Err(err).Uint("game", gameID).Msg("updateMonitorAndResults: GetOrFetchSnapshot error")
 		} else {
-			s.hub.BroadcastToRoom(strconv.Itoa(int(gameID)), snapshot)
+			data, _ := json.Marshal(snapshot)
+			s.hub.BroadcastToRoom(strconv.Itoa(int(gameID)), data)
 		}
 	}
 }
@@ -647,5 +647,6 @@ func (s *GameService) broadcastSnapshot(ctx context.Context, passingID uint) {
 		log.Error().Err(err).Uint("game", gameID).Msg("GameService.broadcastSnapshot: GetOrFetchSnapshot error")
 		return
 	}
-	s.hub.BroadcastToRoom(strconv.Itoa(int(gameID)), snapshot)
+	data, _ := json.Marshal(snapshot)
+	s.hub.BroadcastToRoom(strconv.Itoa(int(gameID)), data)
 }

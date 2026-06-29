@@ -26,8 +26,13 @@ func SecurityHeadersMiddleware() gin.HandlerFunc {
 		// Управляем передачей Referer
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
 
-		// Принудительное использование HTTPS в production (можно активировать по условию)
-		// c.Header("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
+		// Принудительное использование HTTPS (HSTS)
+		c.Header("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
+
+		// Ограничиваем доступ к некоторым браузерным API
+		c.Header("Permissions-Policy",
+			"geolocation=(), microphone=(), camera=(), payment=(), usb=(), "+
+				"fullscreen=(self), sync-xhr=(self), accelerometer=(), gyroscope=(), magnetometer=()")
 
 		c.Next()
 	}
