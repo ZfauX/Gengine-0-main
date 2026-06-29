@@ -3,6 +3,7 @@ package game
 
 import (
 	"errors"
+	"mime/multipart"
 	"net/http"
 	"slices"
 	"strconv"
@@ -18,6 +19,8 @@ import (
 	ws "gengine-0/internal/pkg/websocket"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
+	"github.com/go-playground/validator/v10"
 	"github.com/rs/zerolog/log"
 	csrf "github.com/utrack/gin-csrf"
 	"gorm.io/gorm"
@@ -25,24 +28,72 @@ import (
 
 // ---------- Входные структуры для валидации ----------
 
+// CreateGameInput используется для создания игры.
+type CreateGameInput struct {
+	Name                 string                `form:"name" binding:"required,min=3,max=100"`
+	Description          string                `form:"description" binding:"required,min=10,max=2000"`
+	MaxTeamNumber        int                   `form:"max_team_number" binding:"required,min=1,max=100"`
+	Visibility           string                `form:"visibility" binding:"required,oneof=public private"`
+	StartsAt             *time.Time            `form:"starts_at" binding:"omitempty,start_date_valid"`
+	RegistrationDeadline *time.Time            `form:"registration_deadline" binding:"omitempty"` // убрали deadline_valid
+	IsDraft              bool                  `form:"is_draft"`
+	CoverFile            *multipart.FileHeader `form:"cover"`
+}
+
+// UpdateGameInput используется для обновления игры.
+type UpdateGameInput struct {
+	Name                 string                `form:"name" binding:"required,min=3,max=100"`
+	Description          string                `form:"description" binding:"required,min=10,max=2000"`
+	MaxTeamNumber        int                   `form:"max_team_number" binding:"required,min=1,max=100"`
+	Visibility           string                `form:"visibility" binding:"required,oneof=public private"`
+	StartsAt             *time.Time            `form:"starts_at" binding:"omitempty,start_date_valid"`
+	RegistrationDeadline *time.Time            `form:"registration_deadline" binding:"omitempty"` // убрали deadline_valid
+	IsDraft              bool                  `form:"is_draft"`
+	CoverFile            *multipart.FileHeader `form:"cover"`
+	DeleteCover          bool                  `form:"delete_cover"`
+}
+
+// ApplyInput – заявка на игру.
 type ApplyInput struct {
 	TeamID uint `form:"team_id" binding:"required,gt=0"`
 }
 
+// DisqualifyInput – дисквалификация команды.
 type DisqualifyInput struct {
 	TeamID uint `form:"team_id" binding:"required,gt=0"`
 }
 
+// AddCoAuthorInput – добавление соавтора.
 type AddCoAuthorInput struct {
 	UserID uint `form:"user_id" binding:"required,gt=0"`
 }
 
+// SubmitCodeInput – ввод кода.
 type SubmitCodeInput struct {
 	Code string `form:"code" binding:"required"`
 }
 
+// SubmitTestCodeInput – ввод кода в тестовом режиме.
 type SubmitTestCodeInput struct {
 	Code string `form:"code" binding:"required"`
+}
+
+// ---------- Кастомные валидаторы ----------
+
+// validateStartDate проверяет, что дата начала не в прошлом.
+func validateStartDate(fl validator.FieldLevel) bool {
+	t, ok := fl.Field().Interface().(*time.Time)
+	if !ok || t == nil {
+		return true // omitempty
+	}
+	return !t.Before(time.Now())
+}
+
+// Регистрация кастомного валидатора при инициализации пакета.
+func init() {
+	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
+		_ = v.RegisterValidation("start_date_valid", validateStartDate)
+	}
 }
 
 // ---------- Вспомогательные валидаторы ----------
@@ -68,29 +119,15 @@ func validatePositiveUint(field string, value uint) error {
 	return nil
 }
 
-func validateGame(g *Game) error {
-	if err := validateString("Название игры", g.Name, 3, 100); err != nil {
-		return err
-	}
-	if err := validateString("Описание", g.Description, 10, 2000); err != nil {
-		return err
-	}
-	if g.MaxTeamNumber == 0 {
-		return errors.New("максимальное количество команд должно быть больше 0")
-	}
-	if g.MaxTeamNumber > 100 {
-		return errors.New("максимальное количество команд не может превышать 100")
-	}
-	if g.Visibility != "public" && g.Visibility != "private" {
-		return errors.New("недопустимое значение видимости (допустимы: public, private)")
-	}
-	if g.StartsAt != nil && g.StartsAt.Before(time.Now()) {
-		return errors.New("дата начала не может быть в прошлом")
-	}
-	if g.RegistrationDeadline != nil && g.RegistrationDeadline.Before(time.Now()) {
+// validateGameDates проверяет корректность дат (дедлайн не позже старта).
+func validateGameDates(startsAt, registrationDeadline *time.Time) error {
+	if registrationDeadline != nil && registrationDeadline.Before(time.Now()) {
 		return errors.New("крайний срок регистрации не может быть в прошлом")
 	}
-	if g.RegistrationDeadline != nil && g.StartsAt != nil && g.RegistrationDeadline.After(*g.StartsAt) {
+	if startsAt != nil && startsAt.Before(time.Now()) {
+		return errors.New("дата начала не может быть в прошлом")
+	}
+	if registrationDeadline != nil && startsAt != nil && registrationDeadline.After(*startsAt) {
 		return errors.New("крайний срок регистрации не может быть позже даты начала")
 	}
 	return nil
@@ -261,11 +298,12 @@ func (h *GameHandler) NewForm(c *gin.Context) {
 	})
 }
 
-// Create создаёт новую игру.
+// Create создаёт новую игру с использованием входной структуры.
 func (h *GameHandler) Create(c *gin.Context) {
 	userID := c.GetUint("userID")
-	var g Game
-	if err := c.ShouldBind(&g); err != nil {
+
+	var input CreateGameInput
+	if err := c.ShouldBind(&input); err != nil {
 		render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
 			"Error": "Неверные данные: " + err.Error(),
 			"csrf":  csrf.GetToken(c),
@@ -273,10 +311,8 @@ func (h *GameHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// Валидация полей игры
-	g.Name = sanitize.StripHTML(g.Name)
-	g.Description = sanitize.StripHTML(g.Description)
-	if err := validateGame(&g); err != nil {
+	// Дополнительная проверка дат
+	if err := validateGameDates(input.StartsAt, input.RegistrationDeadline); err != nil {
 		render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
 			"Error": err.Error(),
 			"csrf":  csrf.GetToken(c),
@@ -284,6 +320,18 @@ func (h *GameHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// Создаём модель Game из входных данных
+	g := &Game{
+		Name:                 sanitize.StripHTML(input.Name),
+		Description:          sanitize.StripHTML(input.Description),
+		MaxTeamNumber:        input.MaxTeamNumber,
+		Visibility:           input.Visibility,
+		StartsAt:             input.StartsAt,
+		RegistrationDeadline: input.RegistrationDeadline,
+		IsDraft:              input.IsDraft,
+	}
+
+	// Обработка обложки
 	file, header, err := c.Request.FormFile("cover")
 	if err == nil {
 		defer func() { _ = file.Close() }()
@@ -317,7 +365,7 @@ func (h *GameHandler) Create(c *gin.Context) {
 		g.CoverPath = webPath
 	}
 
-	if err := h.gameService.Create(c.Request.Context(), &g, userID); err != nil {
+	if err := h.gameService.Create(c.Request.Context(), g, userID); err != nil {
 		if g.CoverPath != "" {
 			if delErr := h.storage.Delete(g.CoverPath); delErr != nil {
 				log.Error().Err(delErr).Str("path", g.CoverPath).Msg("Create game: failed to delete orphaned cover")
@@ -331,7 +379,6 @@ func (h *GameHandler) Create(c *gin.Context) {
 	}
 
 	h.auditService.Log(userID, "create", "game", g.ID, g.Name)
-
 	c.Redirect(http.StatusFound, "/games")
 }
 
@@ -372,7 +419,7 @@ func (h *GameHandler) EditForm(c *gin.Context) {
 	})
 }
 
-// Update обновляет игру.
+// Update обновляет игру с использованием входной структуры.
 func (h *GameHandler) Update(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {
@@ -381,20 +428,17 @@ func (h *GameHandler) Update(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 
-	var updated Game
-	if err := c.ShouldBind(&updated); err != nil {
+	var input UpdateGameInput
+	if err := c.ShouldBind(&input); err != nil {
 		render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
 			"Error": "Неверные данные: " + err.Error(),
 			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
-	updated.ID = uint(id)
 
-	// Валидация
-	updated.Name = sanitize.StripHTML(updated.Name)
-	updated.Description = sanitize.StripHTML(updated.Description)
-	if err := validateGame(&updated); err != nil {
+	// Дополнительная проверка дат
+	if err := validateGameDates(input.StartsAt, input.RegistrationDeadline); err != nil {
 		render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
 			"Error": err.Error(),
 			"csrf":  csrf.GetToken(c),
@@ -413,7 +457,18 @@ func (h *GameHandler) Update(c *gin.Context) {
 		return
 	}
 
-	if deleteCover := c.PostForm("delete_cover"); deleteCover == "1" {
+	// Формируем обновлённую модель (поле ID не заполняем, т.к. передаём отдельно)
+	updated := &Game{
+		Name:                 sanitize.StripHTML(input.Name),
+		Description:          sanitize.StripHTML(input.Description),
+		MaxTeamNumber:        input.MaxTeamNumber,
+		Visibility:           input.Visibility,
+		StartsAt:             input.StartsAt,
+		RegistrationDeadline: input.RegistrationDeadline,
+		IsDraft:              input.IsDraft,
+	}
+
+	if input.DeleteCover {
 		if oldGame.CoverPath != "" {
 			if err := h.storage.Delete(oldGame.CoverPath); err != nil {
 				log.Error().Err(err).Str("path", oldGame.CoverPath).Msg("Update game: failed to delete old cover")
@@ -421,6 +476,7 @@ func (h *GameHandler) Update(c *gin.Context) {
 		}
 		updated.CoverPath = ""
 	} else {
+		// Обработка новой обложки
 		file, header, err := c.Request.FormFile("cover")
 		if err == nil {
 			defer func() { _ = file.Close() }()
@@ -462,13 +518,16 @@ func (h *GameHandler) Update(c *gin.Context) {
 		}
 	}
 
-	if err := h.gameService.Update(c.Request.Context(), uint(id), &updated, userID); err != nil {
-		c.HTML(http.StatusForbidden, "games/edit.html", gin.H{"Error": err.Error(), "Game": &updated, "csrf": csrf.GetToken(c)})
+	if err := h.gameService.Update(c.Request.Context(), uint(id), updated, userID); err != nil {
+		render.Page(c, http.StatusForbidden, "games-edit.html", gin.H{
+			"Error": err.Error(),
+			"Game":  oldGame,
+			"csrf":  csrf.GetToken(c),
+		})
 		return
 	}
 
 	h.auditService.Log(userID, "update", "game", uint(id), updated.Name)
-
 	c.Redirect(http.StatusFound, "/games/"+c.Param("id"))
 }
 
@@ -1289,7 +1348,6 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 		})
 		return
 	}
-	// Дополнительно можно проверить на опасные символы, но оставим на усмотрение
 
 	attempt, err := h.gameService.SubmitCode(c.Request.Context(), uint(passingID), userID, code)
 	if err != nil {

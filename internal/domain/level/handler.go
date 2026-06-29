@@ -18,46 +18,56 @@ import (
 	"gorm.io/gorm"
 )
 
-// ---------- Входные структуры ----------
+// ---------- Входные структуры для валидации ----------
 
+// CreateLevelInput используется для создания уровня.
 type CreateLevelInput struct {
 	Name                 string  `form:"name" binding:"required,min=2,max=100"`
 	Description          string  `form:"description" binding:"max=5000"`
 	Position             int     `form:"position" binding:"min=0"`
-	Type                 string  `form:"type"`
+	Type                 string  `form:"type" binding:"omitempty,oneof=standard group"`
 	ParentID             *uint   `form:"parent_id"`
 	GroupID              *uint   `form:"group_id"`
-	MinChildren          int     `form:"min_children" binding:"min=0"`
+	MinChildren          int     `form:"min_children" binding:"min=0,max=100"`
 	RequiresConfirmation bool    `form:"requires_confirmation"`
-	Latitude             float64 `form:"latitude"`
-	Longitude            float64 `form:"longitude"`
+	Latitude             float64 `form:"latitude" binding:"omitempty,min=-90,max=90"`
+	Longitude            float64 `form:"longitude" binding:"omitempty,min=-180,max=180"`
 }
 
+// UpdateLevelInput используется для обновления уровня.
 type UpdateLevelInput struct {
-	Name                 string  `form:"name" binding:"min=2,max=100"`
+	Name                 string  `form:"name" binding:"omitempty,min=2,max=100"`
 	Description          string  `form:"description" binding:"max=5000"`
 	Position             int     `form:"position" binding:"min=0"`
-	Type                 string  `form:"type"`
+	Type                 string  `form:"type" binding:"omitempty,oneof=standard group"`
 	ParentID             *uint   `form:"parent_id"`
 	GroupID              *uint   `form:"group_id"`
-	MinChildren          int     `form:"min_children" binding:"min=0"`
+	MinChildren          int     `form:"min_children" binding:"min=0,max=100"`
 	RequiresConfirmation bool    `form:"requires_confirmation"`
-	Latitude             float64 `form:"latitude"`
-	Longitude            float64 `form:"longitude"`
+	Latitude             float64 `form:"latitude" binding:"omitempty,min=-90,max=90"`
+	Longitude            float64 `form:"longitude" binding:"omitempty,min=-180,max=180"`
 }
 
+// CreateQuestionInput используется для создания вопроса.
 type CreateQuestionInput struct {
-	Text string `form:"text" binding:"required"`
-	Hint string `form:"hint"`
+	Text string `form:"text" binding:"required,min=1,max=5000"`
+	Hint string `form:"hint" binding:"max=500"`
 }
 
+// UpdateQuestionInput используется для обновления вопроса.
 type UpdateQuestionInput struct {
-	Text string `form:"text" binding:"required"`
-	Hint string `form:"hint"`
+	Text string `form:"text" binding:"required,min=1,max=5000"`
+	Hint string `form:"hint" binding:"max=500"`
 }
 
+// CreateAnswerInput используется для создания ответа.
 type CreateAnswerInput struct {
-	Code string `form:"code" binding:"required"`
+	Code string `form:"code" binding:"required,min=1,max=1000"`
+}
+
+// MoveLevelInput используется для перемещения уровня.
+type MoveLevelInput struct {
+	Direction string `form:"direction" binding:"required,oneof=up down"`
 }
 
 // ---------- Обработчики ----------
@@ -321,9 +331,14 @@ func (h *LevelHandler) Move(c *gin.Context) {
 		return
 	}
 	userID := c.GetUint("userID")
-	direction := c.PostForm("direction")
 
-	if err := h.levelService.Move(c.Request.Context(), uint(levelID), direction, userID); err != nil {
+	var input MoveLevelInput
+	if err := c.ShouldBind(&input); err != nil {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверные данные: " + err.Error()})
+		return
+	}
+
+	if err := h.levelService.Move(c.Request.Context(), uint(levelID), input.Direction, userID); err != nil {
 		log.Error().Err(err).Int("level_id", levelID).Msg("Move: failed to move level")
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return

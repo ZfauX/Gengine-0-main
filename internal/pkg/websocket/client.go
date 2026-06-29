@@ -15,17 +15,16 @@ const (
 	pingPeriod = (pongWait * 9) / 10
 )
 
-// Client представляет WebSocket-клиента с уникальным идентификатором.
 type Client struct {
-	ID     string          // уникальный идентификатор клиента (генерируется при создании)
-	Conn   *websocket.Conn // WebSocket-соединение
-	Send   chan []byte     // канал для отправки сообщений
-	RoomID string          // ID комнаты, в которой состоит клиент
-	mu     sync.Mutex      // защита поля closed
-	closed bool            // флаг закрытия
+	ID     string
+	Conn   *websocket.Conn
+	Send   chan []byte
+	RoomID string
+	Hub    *RoomHub
+	mu     sync.Mutex
+	closed bool
 }
 
-// NewClient создаёт нового клиента с уникальным ID и каналом Send.
 func NewClient(conn *websocket.Conn, roomID string) *Client {
 	return &Client{
 		ID:     uuid.New().String(),
@@ -35,7 +34,6 @@ func NewClient(conn *websocket.Conn, roomID string) *Client {
 	}
 }
 
-// Close безопасно закрывает клиента.
 func (c *Client) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -45,7 +43,43 @@ func (c *Client) Close() {
 	}
 }
 
-// HandleWebSocket запускает цикл чтения и writePump в горутине.
+func (c *Client) IsClosed() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closed
+}
+
+func (c *Client) writePump() {
+	ticker := time.NewTicker(pingPeriod)
+	defer func() {
+		ticker.Stop()
+		_ = c.Conn.Close()
+		if c.Hub != nil {
+			c.Hub.UnregisterClient(c)
+		}
+	}()
+	for {
+		select {
+		case message, ok := <-c.Send:
+			if !ok {
+				_ = c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
+			_ = c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := c.Conn.WriteMessage(websocket.TextMessage, message); err != nil {
+				c.Close()
+				return
+			}
+		case <-ticker.C:
+			_ = c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				c.Close()
+				return
+			}
+		}
+	}
+}
+
 func HandleWebSocket(client *Client) {
 	go client.writePump()
 	_ = client.Conn.SetReadDeadline(time.Now().Add(pongWait))
@@ -61,36 +95,6 @@ func HandleWebSocket(client *Client) {
 	}
 }
 
-// WritePump запускает pump записи в горутине от имени клиента.
 func WritePump(client *Client) {
 	go client.writePump()
-}
-
-// writePump обрабатывает отправку сообщений и пинги.
-func (c *Client) writePump() {
-	ticker := time.NewTicker(pingPeriod)
-	defer func() {
-		ticker.Stop()
-		_ = c.Conn.Close()
-	}()
-	for {
-		select {
-		case message, ok := <-c.Send:
-			_ = c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
-			if !ok {
-				_ = c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
-				return
-			}
-			if err := c.Conn.WriteMessage(websocket.TextMessage, message); err != nil {
-				c.Close()
-				return
-			}
-		case <-ticker.C:
-			_ = c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
-			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				c.Close()
-				return
-			}
-		}
-	}
 }

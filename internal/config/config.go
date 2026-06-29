@@ -26,12 +26,16 @@ type Config struct {
 	TLS       TLSConfig       // пути к TLS-сертификатам (опционально)
 }
 
-// ServerConfig содержит параметры HTTP-сервера.
+// ServerConfig содержит параметры HTTP-сервера и логирования.
 type ServerConfig struct {
-	Port       string // порт, на котором слушает сервер (по умолчанию 8080)
-	GinMode    string // режим работы Gin (debug, release, test)
-	BaseURL    string // базовый URL приложения для формирования ссылок
-	MaxBackups int    // максимальное количество сохраняемых архивов логов (используется при ротации)
+	Port        string // порт, на котором слушает сервер (по умолчанию 8080)
+	GinMode     string // режим работы Gin (debug, release, test)
+	BaseURL     string // базовый URL приложения для формирования ссылок
+	MaxBackups  int    // максимальное количество сохраняемых архивов логов
+	LogFilePath string // путь к файлу логов (по умолчанию "logs/app.log")
+	LogMaxSize  int    // максимальный размер файла лога в МБ (по умолчанию 100)
+	LogMaxAge   int    // максимальное количество дней хранения логов (по умолчанию 28)
+	LogCompress bool   // сжимать ли архивы (по умолчанию true)
 }
 
 // DatabaseConfig содержит параметры подключения к PostgreSQL.
@@ -45,6 +49,7 @@ type DatabaseConfig struct {
 	MaxOpenConns    int           // максимальное количество открытых соединений
 	MaxIdleConns    int           // максимальное количество простаивающих соединений
 	ConnMaxLifetime time.Duration // максимальное время жизни соединения
+	ConnMaxIdleTime time.Duration // максимальное время простоя соединения
 }
 
 // RedisConfig содержит параметры подключения к Redis (опционально).
@@ -128,6 +133,10 @@ func LoadConfig() (*Config, error) {
 	cfg.Server.GinMode = getEnvOrDefault("GIN_MODE", "debug")
 	cfg.Server.BaseURL = getEnvOrDefault("BASE_URL", "http://localhost:"+cfg.Server.Port)
 	cfg.Server.MaxBackups = getEnvAsInt("BACKUP_MAX_BACKUPS", 10)
+	cfg.Server.LogFilePath = getEnvOrDefault("LOG_FILE_PATH", "logs/app.log")
+	cfg.Server.LogMaxSize = getEnvAsInt("LOG_MAX_SIZE", 100)
+	cfg.Server.LogMaxAge = getEnvAsInt("LOG_MAX_AGE", 28)
+	cfg.Server.LogCompress = getEnvAsBool("LOG_COMPRESS", true)
 
 	// База данных (обязательные параметры)
 	var err error
@@ -150,6 +159,9 @@ func LoadConfig() (*Config, error) {
 	cfg.Database.MaxOpenConns = getEnvAsInt("DB_MAX_OPEN_CONNS", 25)
 	cfg.Database.MaxIdleConns = getEnvAsInt("DB_MAX_IDLE_CONNS", 10)
 	if cfg.Database.ConnMaxLifetime, err = parseDuration("DB_CONN_MAX_LIFETIME", "5m"); err != nil {
+		return nil, err
+	}
+	if cfg.Database.ConnMaxIdleTime, err = parseDuration("DB_CONN_MAX_IDLE_TIME", "10m"); err != nil {
 		return nil, err
 	}
 
@@ -375,6 +387,16 @@ func getEnvAsInt(key string, fallback int) int {
 			return intValue
 		}
 		// вместо log.Warn() просто используем fallback — ошибка не критична
+	}
+	return fallback
+}
+
+// getEnvAsBool возвращает значение переменной окружения как булево или fallback при ошибке.
+func getEnvAsBool(key string, fallback bool) bool {
+	if value, ok := os.LookupEnv(key); ok {
+		if boolValue, err := strconv.ParseBool(value); err == nil {
+			return boolValue
+		}
 	}
 	return fallback
 }

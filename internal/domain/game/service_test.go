@@ -332,22 +332,18 @@ func TestGameService_UseHint_Disabled(t *testing.T) {
 	author := createUser(t, db, "author@test.com", "pass")
 	g := createPublishedGame(t, db, author.ID, "No Hint Game")
 
-	// Создаём настройки с AllowHints = true (из-за особенностей GORM и default-значений)
-	// и сразу обновляем allow_hints на false, чтобы гарантировать значение в БД
 	setting := &game.GameSetting{
 		GameID:             g.ID,
-		AllowHints:         true, // временно, потом поменяем
+		AllowHints:         true,
 		HintPenaltySeconds: 300,
 		MaxHints:           3,
 	}
 	err := db.Create(setting).Error
 	require.NoError(t, err)
 
-	// Принудительно устанавливаем AllowHints = false через Update
 	err = db.Model(&game.GameSetting{}).Where("game_id = ?", g.ID).Update("allow_hints", false).Error
 	require.NoError(t, err)
 
-	// Проверяем, что настройка действительно сохранилась с AllowHints = false
 	var savedSetting game.GameSetting
 	err = db.Where("game_id = ?", g.ID).First(&savedSetting).Error
 	require.NoError(t, err)
@@ -465,7 +461,6 @@ func TestGameService_SkipLevelTest(t *testing.T) {
 	passing, err := svc.StartTesting(context.Background(), g.ID, author.ID)
 	require.NoError(t, err)
 
-	// Проверяем, что прогресс создан на первом уровне
 	var progress game.LevelProgress
 	err = db.Where("game_passing_id = ? AND finished_at IS NULL", passing.ID).First(&progress).Error
 	require.NoError(t, err)
@@ -474,7 +469,6 @@ func TestGameService_SkipLevelTest(t *testing.T) {
 	err = svc.SkipLevelTest(context.Background(), passing.ID, author.ID)
 	require.NoError(t, err)
 
-	// После пропуска активный прогресс должен быть на втором уровне (новая переменная!)
 	var progressAfter game.LevelProgress
 	err = db.Where("game_passing_id = ? AND finished_at IS NULL", passing.ID).First(&progressAfter).Error
 	require.NoError(t, err)
@@ -495,21 +489,17 @@ func TestGameService_DeleteLevelFromActiveGame(t *testing.T) {
 	passing := createPassing(t, db, g.ID, tm.ID, game.StatusStarted)
 	_ = createLevelProgress(t, db, passing.ID, lvl1.ID, false)
 
-	// Пользователь без прав
 	err := svc.DeleteLevelFromActiveGame(context.Background(), g.ID, lvl1.ID, other.ID)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "только автор или контент-менеджер")
 
-	// Автор удаляет первый уровень (сервис сам разрулит FK)
 	err = svc.DeleteLevelFromActiveGame(context.Background(), g.ID, lvl1.ID, author.ID)
 	require.NoError(t, err)
 
-	// Проверяем, что уровень удалён
 	var deleted level.Level
 	err = db.Unscoped().First(&deleted, lvl1.ID).Error
 	assert.Error(t, err)
 
-	// Проверяем, что прогресс переключился на L2 (новый прогресс должен быть создан)
 	var updatedProgress game.LevelProgress
 	err = db.Where("game_passing_id = ?", passing.ID).First(&updatedProgress).Error
 	require.NoError(t, err)
@@ -752,6 +742,7 @@ func TestCoAuthorService_AddAndRemove(t *testing.T) {
 func newGameService(db *gorm.DB) *game.GameService {
 	cfg := &config.Config{}
 	hub := websocket.NewRoomHub()
+	go hub.Run() // <-- запускаем хаб, чтобы broadcast не блокировался
 	monitorSvc := game.NewMonitorService(db)
 	gameRepo := game.NewGormGameRepo(db)
 	passingRepo := game.NewGormGamePassingRepo(db)

@@ -3,6 +3,7 @@ package db
 
 import (
 	"fmt"
+	"time"
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/user"
@@ -17,8 +18,13 @@ import (
 
 // Connect устанавливает соединение с PostgreSQL на основе переданной конфигурации.
 // Параметры подключения формируются из полей cfg.Database (Host, Port, User, Password, Name, SSLMode).
-// После подключения настраиваются параметры пула соединений: MaxOpenConns, MaxIdleConns, ConnMaxLifetime
-// в соответствии со значениями из cfg.Database.
+// После подключения настраиваются параметры пула соединений:
+//   - MaxOpenConns
+//   - MaxIdleConns
+//   - ConnMaxLifetime
+//   - ConnMaxIdleTime (добавлено)
+//
+// Значения берутся из cfg.Database.
 // Возвращает указатель на gorm.DB и ошибку, если соединение не удалось установить.
 // Для логирования используется кастомный GormLogger из пакета logging.
 func Connect(cfg *config.Config) (*gorm.DB, error) {
@@ -39,9 +45,26 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Настройка пула соединений
 	sqlDB.SetMaxOpenConns(cfg.Database.MaxOpenConns)
 	sqlDB.SetMaxIdleConns(cfg.Database.MaxIdleConns)
 	sqlDB.SetConnMaxLifetime(cfg.Database.ConnMaxLifetime)
+
+	// Добавляем ConnMaxIdleTime (если поддерживается GORM v2)
+	// Значение по умолчанию — 10 минут, можно переопределить через DB_CONN_MAX_IDLE_TIME в .env
+	if cfg.Database.ConnMaxIdleTime == 0 {
+		cfg.Database.ConnMaxIdleTime = 10 * time.Minute
+	}
+	sqlDB.SetConnMaxIdleTime(cfg.Database.ConnMaxIdleTime)
+
+	// Логируем настройки пула для диагностики
+	log.Info().
+		Int("max_open_conns", cfg.Database.MaxOpenConns).
+		Int("max_idle_conns", cfg.Database.MaxIdleConns).
+		Dur("conn_max_lifetime", cfg.Database.ConnMaxLifetime).
+		Dur("conn_max_idle_time", cfg.Database.ConnMaxIdleTime).
+		Msg("Настройки пула соединений БД")
 
 	return db, nil
 }

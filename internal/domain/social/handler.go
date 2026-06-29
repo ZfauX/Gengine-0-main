@@ -3,7 +3,6 @@ package social
 
 import (
 	"net/http"
-	"strconv"
 
 	"gengine-0/internal/pkg/render"
 
@@ -11,6 +10,15 @@ import (
 	"github.com/rs/zerolog/log"
 	csrf "github.com/utrack/gin-csrf"
 )
+
+// ---------- Входные структуры для валидации ----------
+
+// AuthorIDRequest используется для валидации ID автора в URL.
+type AuthorIDRequest struct {
+	ID uint `uri:"id" binding:"required,gt=0"`
+}
+
+// ---------- Обработчики ----------
 
 // FollowHandler обрабатывает запросы подписок.
 type FollowHandler struct {
@@ -23,8 +31,8 @@ func NewFollowHandler(followService *FollowService) *FollowHandler {
 
 // Follow подписывает текущего пользователя на автора.
 func (h *FollowHandler) Follow(c *gin.Context) {
-	authorID, err := strconv.Atoi(c.Param("id"))
-	if err != nil || authorID <= 0 {
+	var req AuthorIDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "некорректный ID автора"})
 		return
 	}
@@ -34,8 +42,8 @@ func (h *FollowHandler) Follow(c *gin.Context) {
 		return
 	}
 
-	if err := h.followService.Follow(c.Request.Context(), userID, uint(authorID)); err != nil {
-		log.Error().Err(err).Uint("user_id", userID).Int("author_id", authorID).Msg("Follow: failed to follow author")
+	if err := h.followService.Follow(c.Request.Context(), userID, req.ID); err != nil {
+		log.Error().Err(err).Uint("user_id", userID).Uint("author_id", req.ID).Msg("Follow: failed to follow author")
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -44,8 +52,8 @@ func (h *FollowHandler) Follow(c *gin.Context) {
 
 // Unfollow отменяет подписку.
 func (h *FollowHandler) Unfollow(c *gin.Context) {
-	authorID, err := strconv.Atoi(c.Param("id"))
-	if err != nil || authorID <= 0 {
+	var req AuthorIDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "некорректный ID автора"})
 		return
 	}
@@ -55,8 +63,8 @@ func (h *FollowHandler) Unfollow(c *gin.Context) {
 		return
 	}
 
-	if err := h.followService.Unfollow(c.Request.Context(), userID, uint(authorID)); err != nil {
-		log.Error().Err(err).Uint("user_id", userID).Int("author_id", authorID).Msg("Unfollow: failed to unfollow author")
+	if err := h.followService.Unfollow(c.Request.Context(), userID, req.ID); err != nil {
+		log.Error().Err(err).Uint("user_id", userID).Uint("author_id", req.ID).Msg("Unfollow: failed to unfollow author")
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -65,8 +73,8 @@ func (h *FollowHandler) Unfollow(c *gin.Context) {
 
 // IsFollowing проверяет статус подписки.
 func (h *FollowHandler) IsFollowing(c *gin.Context) {
-	authorID, err := strconv.Atoi(c.Param("id"))
-	if err != nil || authorID <= 0 {
+	var req AuthorIDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "некорректный ID автора"})
 		return
 	}
@@ -76,7 +84,7 @@ func (h *FollowHandler) IsFollowing(c *gin.Context) {
 		return
 	}
 
-	following := h.followService.IsFollowing(c.Request.Context(), userID, uint(authorID))
+	following := h.followService.IsFollowing(c.Request.Context(), userID, req.ID)
 	c.JSON(http.StatusOK, gin.H{"following": following})
 }
 

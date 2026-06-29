@@ -17,18 +17,38 @@ import (
 
 // ---------- Входные структуры для валидации ----------
 
+// TeamIDRequest используется для валидации ID команды в URL.
+type TeamIDRequest struct {
+	TeamID uint `uri:"team_id" binding:"required,gt=0"`
+}
+
+// TeamIDAndMemberIDRequest используется для валидации ID команды и участника.
+type TeamIDAndMemberIDRequest struct {
+	TeamID   uint `uri:"team_id" binding:"required,gt=0"`
+	MemberID uint `uri:"member_id" binding:"required,gt=0"`
+}
+
+// InvitationIDRequest используется для валидации ID приглашения.
+type InvitationIDRequest struct {
+	ID uint `uri:"id" binding:"required,gt=0"`
+}
+
+// CreateTeamInput используется для создания команды.
 type CreateTeamInput struct {
 	Name string `form:"name" binding:"required,min=2,max=100"`
 }
 
+// AddMemberInput используется для добавления участника.
 type AddMemberInput struct {
 	UserID uint `form:"user_id" binding:"required,gt=0"`
 }
 
+// ChangeCaptainInput используется для смены капитана.
 type ChangeCaptainInput struct {
 	CaptainID uint `form:"captain_id" binding:"required,gt=0"`
 }
 
+// CreateInvitationInput используется для создания приглашения.
 type CreateInvitationInput struct {
 	UserID uint `form:"user_id" binding:"required,gt=0"`
 }
@@ -97,25 +117,25 @@ func (h *TeamHandler) CreateTeam(c *gin.Context) {
 
 // ViewTeam отображает состав команды вне контекста игры (по прямой ссылке /teams/:team_id).
 func (h *TeamHandler) ViewTeam(c *gin.Context) {
-	teamID, err := strconv.Atoi(c.Param("team_id"))
-	if err != nil || teamID <= 0 {
+	var req TeamIDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID команды"})
 		return
 	}
 	userID := c.GetUint("userID")
 
-	team, members, err := h.teamService.GetTeamWithMembers(c.Request.Context(), uint(teamID))
+	team, members, err := h.teamService.GetTeamWithMembers(c.Request.Context(), req.TeamID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.HTML(http.StatusNotFound, "errors/404.html", nil)
 		} else {
-			log.Error().Err(err).Int("team_id", teamID).Msg("ViewTeam: failed to get team")
+			log.Error().Err(err).Uint("team_id", req.TeamID).Msg("ViewTeam: failed to get team")
 			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		}
 		return
 	}
 
-	canManage := h.teamService.CanManageTeam(c.Request.Context(), uint(teamID), userID)
+	canManage := h.teamService.CanManageTeam(c.Request.Context(), req.TeamID, userID)
 
 	render.Page(c, http.StatusOK, "teams-members.html", gin.H{
 		"Team":          team,
@@ -128,29 +148,29 @@ func (h *TeamHandler) ViewTeam(c *gin.Context) {
 
 // Members отображает состав конкретной команды в контексте игры.
 func (h *TeamHandler) Members(c *gin.Context) {
-	teamID, err := strconv.Atoi(c.Param("team_id"))
-	if err != nil || teamID <= 0 {
+	var req TeamIDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID команды"})
 		return
 	}
 	userID := c.GetUint("userID")
 
-	team, members, err := h.teamService.GetTeamWithMembers(c.Request.Context(), uint(teamID))
+	team, members, err := h.teamService.GetTeamWithMembers(c.Request.Context(), req.TeamID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.HTML(http.StatusNotFound, "errors/404.html", nil)
 		} else {
-			log.Error().Err(err).Int("team_id", teamID).Msg("Members: failed to get team")
+			log.Error().Err(err).Uint("team_id", req.TeamID).Msg("Members: failed to get team")
 			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		}
 		return
 	}
 
-	canManage := h.teamService.CanManageTeam(c.Request.Context(), uint(teamID), userID)
+	canManage := h.teamService.CanManageTeam(c.Request.Context(), req.TeamID, userID)
 
 	render.Page(c, http.StatusOK, "teams-members.html", gin.H{
 		"GameID":        c.Param("game_id"),
-		"TeamID":        teamID,
+		"TeamID":        req.TeamID,
 		"Team":          team,
 		"Members":       members,
 		"CanManage":     canManage,
@@ -161,21 +181,21 @@ func (h *TeamHandler) Members(c *gin.Context) {
 
 // AddMemberForm показывает форму добавления участника.
 func (h *TeamHandler) AddMemberForm(c *gin.Context) {
-	teamID, err := strconv.Atoi(c.Param("team_id"))
-	if err != nil || teamID <= 0 {
+	var req TeamIDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID команды"})
 		return
 	}
 
-	availableUsers, err := h.teamService.GetAvailableUsers(c.Request.Context(), uint(teamID))
+	availableUsers, err := h.teamService.GetAvailableUsers(c.Request.Context(), req.TeamID)
 	if err != nil {
-		log.Error().Err(err).Int("team_id", teamID).Msg("AddMemberForm: failed to get available users")
+		log.Error().Err(err).Uint("team_id", req.TeamID).Msg("AddMemberForm: failed to get available users")
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
 	render.Page(c, http.StatusOK, "teams-add_member.html", gin.H{
 		"GameID": c.Param("game_id"),
-		"TeamID": teamID,
+		"TeamID": req.TeamID,
 		"Users":  availableUsers,
 		"csrf":   csrf.GetToken(c),
 	})
@@ -183,8 +203,8 @@ func (h *TeamHandler) AddMemberForm(c *gin.Context) {
 
 // AddMember добавляет нового участника.
 func (h *TeamHandler) AddMember(c *gin.Context) {
-	teamID, err := strconv.Atoi(c.Param("team_id"))
-	if err != nil || teamID <= 0 {
+	var req TeamIDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID команды"})
 		return
 	}
@@ -199,57 +219,52 @@ func (h *TeamHandler) AddMember(c *gin.Context) {
 		return
 	}
 
-	if err := h.teamService.AddMember(c.Request.Context(), uint(teamID), input.UserID, actorID); err != nil {
-		log.Error().Err(err).Int("team_id", teamID).Uint("user_id", input.UserID).Uint("actor_id", actorID).Msg("AddMember: failed to add member")
+	if err := h.teamService.AddMember(c.Request.Context(), req.TeamID, input.UserID, actorID); err != nil {
+		log.Error().Err(err).Uint("team_id", req.TeamID).Uint("user_id", input.UserID).Uint("actor_id", actorID).Msg("AddMember: failed to add member")
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
-	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/teams/"+c.Param("team_id")+"/members")
+	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/teams/"+strconv.Itoa(int(req.TeamID))+"/members")
 }
 
 // RemoveMember удаляет участника из команды.
 func (h *TeamHandler) RemoveMember(c *gin.Context) {
-	teamID, err := strconv.Atoi(c.Param("team_id"))
-	if err != nil || teamID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID команды"})
-		return
-	}
-	memberID, err := strconv.Atoi(c.Param("member_id"))
-	if err != nil || memberID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID участника"})
+	var req TeamIDAndMemberIDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверные ID"})
 		return
 	}
 	actorID := c.GetUint("userID")
 
-	if err := h.teamService.RemoveMember(c.Request.Context(), uint(teamID), uint(memberID), actorID); err != nil {
-		log.Error().Err(err).Int("team_id", teamID).Int("member_id", memberID).Uint("actor_id", actorID).Msg("RemoveMember: failed to remove member")
+	if err := h.teamService.RemoveMember(c.Request.Context(), req.TeamID, req.MemberID, actorID); err != nil {
+		log.Error().Err(err).Uint("team_id", req.TeamID).Uint("member_id", req.MemberID).Uint("actor_id", actorID).Msg("RemoveMember: failed to remove member")
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
-	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/teams/"+c.Param("team_id")+"/members")
+	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/teams/"+strconv.Itoa(int(req.TeamID))+"/members")
 }
 
 // ChangeCaptainForm показывает форму смены капитана.
 func (h *TeamHandler) ChangeCaptainForm(c *gin.Context) {
-	teamID, err := strconv.Atoi(c.Param("team_id"))
-	if err != nil || teamID <= 0 {
+	var req TeamIDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID команды"})
 		return
 	}
 
-	_, members, err := h.teamService.GetTeamWithMembers(c.Request.Context(), uint(teamID))
+	_, members, err := h.teamService.GetTeamWithMembers(c.Request.Context(), req.TeamID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.HTML(http.StatusNotFound, "errors/404.html", nil)
 		} else {
-			log.Error().Err(err).Int("team_id", teamID).Msg("ChangeCaptainForm: failed to get team members")
+			log.Error().Err(err).Uint("team_id", req.TeamID).Msg("ChangeCaptainForm: failed to get team members")
 			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		}
 		return
 	}
 	render.Page(c, http.StatusOK, "teams-change_captain.html", gin.H{
 		"GameID":  c.Param("game_id"),
-		"TeamID":  teamID,
+		"TeamID":  req.TeamID,
 		"Members": members,
 		"csrf":    csrf.GetToken(c),
 	})
@@ -257,8 +272,8 @@ func (h *TeamHandler) ChangeCaptainForm(c *gin.Context) {
 
 // ChangeCaptain производит смену капитана.
 func (h *TeamHandler) ChangeCaptain(c *gin.Context) {
-	teamID, err := strconv.Atoi(c.Param("team_id"))
-	if err != nil || teamID <= 0 {
+	var req TeamIDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID команды"})
 		return
 	}
@@ -273,12 +288,12 @@ func (h *TeamHandler) ChangeCaptain(c *gin.Context) {
 		return
 	}
 
-	if err := h.teamService.ChangeCaptain(c.Request.Context(), uint(teamID), input.CaptainID, actorID); err != nil {
-		log.Error().Err(err).Int("team_id", teamID).Uint("captain_id", input.CaptainID).Uint("actor_id", actorID).Msg("ChangeCaptain: failed to change captain")
+	if err := h.teamService.ChangeCaptain(c.Request.Context(), req.TeamID, input.CaptainID, actorID); err != nil {
+		log.Error().Err(err).Uint("team_id", req.TeamID).Uint("captain_id", input.CaptainID).Uint("actor_id", actorID).Msg("ChangeCaptain: failed to change captain")
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
-	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/teams/"+c.Param("team_id")+"/members")
+	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/teams/"+strconv.Itoa(int(req.TeamID))+"/members")
 }
 
 // ---------- Приглашения ----------
@@ -294,43 +309,43 @@ func NewInvitationHandler(invitationService *InvitationService) *InvitationHandl
 
 // Index отображает список приглашений команды (для автора/капитана).
 func (h *InvitationHandler) Index(c *gin.Context) {
-	teamID, err := strconv.Atoi(c.Param("team_id"))
-	if err != nil || teamID <= 0 {
+	var req TeamIDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID команды"})
 		return
 	}
 
-	invitations, err := h.invitationService.ListByTeam(c.Request.Context(), uint(teamID))
+	invitations, err := h.invitationService.ListByTeam(c.Request.Context(), req.TeamID)
 	if err != nil {
-		log.Error().Err(err).Int("team_id", teamID).Msg("InvitationHandler.Index: failed to list invitations")
+		log.Error().Err(err).Uint("team_id", req.TeamID).Msg("InvitationHandler.Index: failed to list invitations")
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
 	render.Page(c, http.StatusOK, "invitations-index.html", gin.H{
 		"GameID":      c.Param("game_id"),
-		"TeamID":      teamID,
+		"TeamID":      req.TeamID,
 		"Invitations": invitations,
 	})
 }
 
 // NewForm показывает форму создания приглашения.
 func (h *InvitationHandler) NewForm(c *gin.Context) {
-	teamID, err := strconv.Atoi(c.Param("team_id"))
-	if err != nil || teamID <= 0 {
+	var req TeamIDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID команды"})
 		return
 	}
 	render.Page(c, http.StatusOK, "invitations-new.html", gin.H{
 		"GameID": c.Param("game_id"),
-		"TeamID": teamID,
+		"TeamID": req.TeamID,
 		"csrf":   csrf.GetToken(c),
 	})
 }
 
 // Create создаёт новое приглашение.
 func (h *InvitationHandler) Create(c *gin.Context) {
-	teamID, err := strconv.Atoi(c.Param("team_id"))
-	if err != nil || teamID <= 0 {
+	var req TeamIDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID команды"})
 		return
 	}
@@ -345,16 +360,16 @@ func (h *InvitationHandler) Create(c *gin.Context) {
 		return
 	}
 
-	_, err = h.invitationService.CreateInvitation(c.Request.Context(), uint(teamID), input.UserID, userID)
+	_, err := h.invitationService.CreateInvitation(c.Request.Context(), req.TeamID, input.UserID, userID)
 	if err != nil {
-		log.Error().Err(err).Int("team_id", teamID).Uint("invited_user", input.UserID).Uint("inviter", userID).Msg("InvitationHandler.Create: failed to create invitation")
+		log.Error().Err(err).Uint("team_id", req.TeamID).Uint("invited_user", input.UserID).Uint("inviter", userID).Msg("InvitationHandler.Create: failed to create invitation")
 		render.Page(c, http.StatusInternalServerError, "invitations-new.html", gin.H{
 			"Error": err.Error(),
 			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
-	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/teams/"+c.Param("team_id")+"/invitations")
+	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/teams/"+strconv.Itoa(int(req.TeamID))+"/invitations")
 }
 
 // MyInvitations отображает мои приглашения.
@@ -374,15 +389,15 @@ func (h *InvitationHandler) MyInvitations(c *gin.Context) {
 
 // Accept принимает приглашение.
 func (h *InvitationHandler) Accept(c *gin.Context) {
-	invitationID, err := strconv.Atoi(c.Param("id"))
-	if err != nil || invitationID <= 0 {
+	var req InvitationIDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID приглашения"})
 		return
 	}
 	userID := c.GetUint("userID")
 
-	if err := h.invitationService.AcceptInvitation(c.Request.Context(), uint(invitationID), userID); err != nil {
-		log.Error().Err(err).Int("invitation_id", invitationID).Uint("user_id", userID).Msg("Accept: failed to accept invitation")
+	if err := h.invitationService.AcceptInvitation(c.Request.Context(), req.ID, userID); err != nil {
+		log.Error().Err(err).Uint("invitation_id", req.ID).Uint("user_id", userID).Msg("Accept: failed to accept invitation")
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
@@ -391,15 +406,15 @@ func (h *InvitationHandler) Accept(c *gin.Context) {
 
 // Decline отклоняет приглашение.
 func (h *InvitationHandler) Decline(c *gin.Context) {
-	invitationID, err := strconv.Atoi(c.Param("id"))
-	if err != nil || invitationID <= 0 {
+	var req InvitationIDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID приглашения"})
 		return
 	}
 	userID := c.GetUint("userID")
 
-	if err := h.invitationService.DeclineInvitation(c.Request.Context(), uint(invitationID), userID); err != nil {
-		log.Error().Err(err).Int("invitation_id", invitationID).Uint("user_id", userID).Msg("Decline: failed to decline invitation")
+	if err := h.invitationService.DeclineInvitation(c.Request.Context(), req.ID, userID); err != nil {
+		log.Error().Err(err).Uint("invitation_id", req.ID).Uint("user_id", userID).Msg("Decline: failed to decline invitation")
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
