@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strconv"
 
+	"gengine-0/internal/pkg/render"
+
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 	csrf "github.com/utrack/gin-csrf"
@@ -92,9 +94,8 @@ func (h *FollowHandler) Subscriptions(c *gin.Context) {
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "follow-list.html",
-		"Authors":      authors,
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "follow-list.html", gin.H{
+		"Authors": authors,
+		"csrf":    csrf.GetToken(c),
 	})
 }

@@ -9,6 +9,7 @@ import (
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/audit"
+	"gengine-0/internal/pkg/render"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -69,8 +70,7 @@ func (h *AdminHandler) Dashboard(c *gin.Context) {
 		backupCount = 0
 	}
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock":  "admin-dashboard.html",
+	render.Page(c, http.StatusOK, "admin-dashboard.html", gin.H{
 		"UserCount":     userCount,
 		"GameCount":     gameCount,
 		"AuditCount":    auditCount,
@@ -88,12 +88,11 @@ func (h *AdminHandler) ListUsers(c *gin.Context) {
 	users, err := h.userRepo.List(ctx, role)
 	if err != nil {
 		log.Error().Err(err).Str("role", role).Msg("ListUsers failed")
-		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{"ContentBlock": "errors/500.html", "Error": err.Error()})
+		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock":  "admin-users.html",
+	render.Page(c, http.StatusOK, "admin-users.html", gin.H{
 		"Users":         users,
 		"Role":          role,
 		"CurrentUserID": c.GetUint("userID"),
@@ -177,12 +176,11 @@ func (h *AdminHandler) ListGames(c *gin.Context) {
 	games, err := h.gameRepo.ListFiltered(ctx, query, 0, 1000)
 	if err != nil {
 		log.Error().Err(err).Str("status", status).Msg("ListGames failed")
-		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{"ContentBlock": "errors/500.html", "Error": err.Error()})
+		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock":  "admin-games.html",
+	render.Page(c, http.StatusOK, "admin-games.html", gin.H{
 		"Games":         games,
 		"Status":        status,
 		"CurrentUserID": c.GetUint("userID"),
@@ -233,7 +231,7 @@ func (h *AdminHandler) AuditLog(c *gin.Context) {
 	logs, total, err := h.auditService.List(c.Request.Context(), userIDStr, action, page, perPage)
 	if err != nil {
 		log.Error().Err(err).Str("user_id", userIDStr).Str("action", action).Msg("AuditLog list failed")
-		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{"ContentBlock": "errors/500.html", "Error": err.Error()})
+		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
 
@@ -250,8 +248,7 @@ func (h *AdminHandler) AuditLog(c *gin.Context) {
 		nextPage = totalPages
 	}
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock":  "admin-audit.html",
+	render.Page(c, http.StatusOK, "admin-audit.html", gin.H{
 		"Logs":          logs,
 		"Page":          page,
 		"TotalPages":    totalPages,
@@ -272,12 +269,11 @@ func (h *AdminHandler) ListBackups(c *gin.Context) {
 	backups, err := h.backupService.List(c.Request.Context())
 	if err != nil {
 		log.Error().Err(err).Msg("ListBackups failed")
-		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{"ContentBlock": "errors/500.html", "Error": err.Error()})
+		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
 	maxBackups := h.backupService.GetMaxBackups()
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock":  "admin-backups.html",
+	render.Page(c, http.StatusOK, "admin-backups.html", gin.H{
 		"Backups":       backups,
 		"MaxBackups":    maxBackups,
 		"Count":         len(backups),
@@ -291,7 +287,7 @@ func (h *AdminHandler) ListBackups(c *gin.Context) {
 func (h *AdminHandler) CreateBackup(c *gin.Context) {
 	if err := h.backupService.CreateNow(c.Request.Context()); err != nil {
 		log.Error().Err(err).Msg("CreateBackup failed")
-		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{"ContentBlock": "errors/500.html", "Error": err.Error()})
+		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/backups")
@@ -325,7 +321,7 @@ func (h *AdminHandler) DownloadBackup(c *gin.Context) {
 func (h *AdminHandler) RotateBackups(c *gin.Context) {
 	if err := h.backupService.RotateBackups(c.Request.Context()); err != nil {
 		log.Error().Err(err).Msg("RotateBackups failed")
-		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{"ContentBlock": "errors/500.html", "Error": err.Error()})
+		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/backups")

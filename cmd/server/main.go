@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"os"
+	"path/filepath"
 
 	"gengine-0/internal/app"
 	"gengine-0/internal/config"
@@ -12,10 +13,13 @@ import (
 	"gengine-0/internal/pkg/storage"
 	ws "gengine-0/internal/pkg/websocket"
 
+	_ "gengine-0/internal/pkg/metrics" // +++ инициализация метрик
+
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 // @title Gengine API
@@ -52,13 +56,46 @@ func main() {
 	}
 
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
-	log.Info().Str("version", version).Str("build", buildDate).Msg("Запуск сервера")
 
+	// --- Настройка логгера с ротацией ---
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatal().Err(err).Msg("Не удалось загрузить конфигурацию")
 	}
+
+	// Путь к файлу логов (можно переопределить через переменную окружения LOG_FILE_PATH)
+	logFilePath := os.Getenv("LOG_FILE_PATH")
+	if logFilePath == "" {
+		logFilePath = "logs/app.log"
+	}
+	// Создаём директорию для логов, если её нет
+	if err := os.MkdirAll(filepath.Dir(logFilePath), 0755); err != nil {
+		log.Fatal().Err(err).Msg("Не удалось создать директорию для логов")
+	}
+
+	// Настройка ротации через lumberjack
+	// MaxSize: 100 МБ (можно вынести в конфиг при необходимости)
+	// MaxAge: 28 дней (можно вынести в конфиг)
+	// MaxBackups: берём из конфига (cfg.Server.MaxBackups)
+	// Compress: включим сжатие архивов для экономии места
+	logFile := &lumberjack.Logger{
+		Filename:   logFilePath,
+		MaxSize:    100, // мегабайт
+		MaxBackups: cfg.Server.MaxBackups,
+		MaxAge:     28, // дней
+		Compress:   true,
+	}
+
+	// Пишем логи одновременно в консоль и в файл
+	multi := zerolog.MultiLevelWriter(
+		zerolog.ConsoleWriter{Out: os.Stderr},
+		logFile,
+	)
+	log.Logger = log.Output(multi)
+
+	log.Info().Str("version", version).Str("build", buildDate).Msg("Запуск сервера")
+	log.Info().Str("log_file", logFilePath).Int("max_backups", cfg.Server.MaxBackups).Msg("Ротация логов включена")
+
 	gin.SetMode(cfg.Server.GinMode)
 
 	database, err := db.Connect(cfg)
@@ -80,7 +117,6 @@ func main() {
 
 	// Создаём экземпляр App и настраиваем роутер (новый подход)
 	appInstance := app.NewApp(database, localStorage, hub, cfg, ".")
-	// +++ Обработка ошибки от SetupRouter
 	r, err := appInstance.SetupRouter()
 	if err != nil {
 		log.Fatal().Err(err).Msg("Не удалось настроить маршруты")

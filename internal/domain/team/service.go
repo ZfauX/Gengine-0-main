@@ -9,6 +9,7 @@ import (
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/email"
+	"gengine-0/internal/pkg/metrics"
 	"gengine-0/internal/pkg/middleware"
 )
 
@@ -38,10 +39,10 @@ func (s *TeamService) CreateTeam(ctx context.Context, name string, captainID uin
 		CaptainID: captainID,
 	}
 	err := s.teamRepo.Create(ctx, team)
-	if err != nil {
-		return nil, err
+	if err == nil {
+		metrics.IncTeamsTotal()
 	}
-	return team, nil
+	return team, err
 }
 
 func (s *TeamService) GetTeamWithMembers(ctx context.Context, teamID uint) (*Team, []user.User, error) {
@@ -99,7 +100,11 @@ func (s *TeamService) AddMember(ctx context.Context, teamID, newMemberID, actorI
 	if isMember {
 		return errors.New("пользователь уже в команде")
 	}
-	return s.teamRepo.AddMember(ctx, teamID, newMemberID)
+	if err := s.teamRepo.AddMember(ctx, teamID, newMemberID); err != nil {
+		return err
+	}
+	s.updateTeamMembersTotal()
+	return nil
 }
 
 func (s *TeamService) RemoveMember(ctx context.Context, teamID, memberID, actorID uint) error {
@@ -113,7 +118,11 @@ func (s *TeamService) RemoveMember(ctx context.Context, teamID, memberID, actorI
 	if team.CaptainID == memberID {
 		return errors.New("невозможно удалить капитана")
 	}
-	return s.teamRepo.RemoveMember(ctx, teamID, memberID)
+	if err := s.teamRepo.RemoveMember(ctx, teamID, memberID); err != nil {
+		return err
+	}
+	s.updateTeamMembersTotal()
+	return nil
 }
 
 func (s *TeamService) ChangeCaptain(ctx context.Context, teamID, newCaptainID, actorID uint) error {
@@ -128,6 +137,13 @@ func (s *TeamService) ChangeCaptain(ctx context.Context, teamID, newCaptainID, a
 		return errors.New("новый капитан должен состоять в команде")
 	}
 	return s.teamRepo.ChangeCaptain(ctx, teamID, newCaptainID)
+}
+
+// updateTeamMembersTotal обновляет gauge с общим количеством участников команд.
+func (s *TeamService) updateTeamMembersTotal() {
+	var count int64
+	s.teamRepo.(*gormTeamRepo).db.Table("team_members").Count(&count)
+	metrics.SetTeamMembersTotal(float64(count))
 }
 
 // ---------- локальные модели ----------
@@ -244,7 +260,16 @@ func (s *InvitationService) AcceptInvitation(ctx context.Context, invitationID, 
 	if err := s.invRepo.UpdateStatus(ctx, invitationID, InvitationAccepted); err != nil {
 		return err
 	}
-	return s.teamRepo.AddMember(ctx, inv.TeamID, userID)
+	if err := s.teamRepo.AddMember(ctx, inv.TeamID, userID); err != nil {
+		return err
+	}
+	// обновляем gauge
+	if ts, ok := s.teamRepo.(*gormTeamRepo); ok {
+		var count int64
+		ts.db.Table("team_members").Count(&count)
+		metrics.SetTeamMembersTotal(float64(count))
+	}
+	return nil
 }
 
 func (s *InvitationService) DeclineInvitation(ctx context.Context, invitationID, userID uint) error {

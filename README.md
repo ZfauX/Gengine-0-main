@@ -156,4 +156,5 @@ GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o gengine-arm64 ./cmd/server
 
 CGO_ENABLED=0 go build -o gengine -ldflags="-s -w" ./cmd/server
 go build -o gengine.exe ./cmd/server
-go test ./internal/domain/level -run "Postgres"
+
+swag init -g cmd/server/main.go -o docs

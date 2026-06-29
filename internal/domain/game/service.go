@@ -16,6 +16,7 @@ import (
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/email"
+	"gengine-0/internal/pkg/metrics"
 	ws "gengine-0/internal/pkg/websocket"
 )
 
@@ -58,7 +59,11 @@ func NewGameService(
 func (s *GameService) Create(ctx context.Context, game *Game, authorID uint) error {
 	game.AuthorID = authorID
 	game.IsDraft = true
-	return s.gameRepo.Create(ctx, game)
+	err := s.gameRepo.Create(ctx, game)
+	if err == nil {
+		metrics.IncGamesCreated()
+	}
+	return err
 }
 
 func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint) (*Game, error) {
@@ -202,7 +207,18 @@ func (s *GameService) Publish(ctx context.Context, id uint, userID uint) error {
 		return errors.New("нельзя опубликовать игру без уровней")
 	}
 	game.IsDraft = false
-	return s.gameRepo.Update(ctx, game)
+	if err := s.gameRepo.Update(ctx, game); err != nil {
+		return err
+	}
+	metrics.IncGamesPublished()
+	metrics.SetActiveGames(float64(len(s.getActiveGames(ctx))))
+	return nil
+}
+
+func (s *GameService) getActiveGames(ctx context.Context) []Game {
+	var games []Game
+	s.gameRepo.Model(ctx).Where("is_draft = false").Find(&games)
+	return games
 }
 
 func (s *GameService) Delete(ctx context.Context, id uint, userID uint) error {
@@ -213,7 +229,14 @@ func (s *GameService) Delete(ctx context.Context, id uint, userID uint) error {
 	if game.AuthorID != userID {
 		return errors.New("только владелец может удалить игру")
 	}
-	return s.gameRepo.Delete(ctx, id)
+	if err := s.gameRepo.Delete(ctx, id); err != nil {
+		return err
+	}
+	metrics.IncGamesDeleted()
+	if !game.IsDraft {
+		metrics.SetActiveGames(float64(len(s.getActiveGames(ctx))))
+	}
+	return nil
 }
 
 func (s *GameService) SubmitCode(ctx context.Context, passingID, userID uint, code string) (*Attempt, error) {
@@ -342,6 +365,12 @@ func (s *GameService) ForceFinishGame(ctx context.Context, gameID uint) error {
 				return err
 			}
 			s.notifyCaptainAboutFinish(ctx, tx, p.TeamID, gameID)
+			metrics.IncGamePassings("finished")
+			// Используем CreatedAt как время начала прохождения
+			if !p.CreatedAt.IsZero() {
+				duration := now.Sub(p.CreatedAt).Seconds()
+				metrics.ObserveGameDuration(duration)
+			}
 		}
 		return nil
 	}); err != nil {
@@ -369,6 +398,7 @@ func (s *GameService) DisqualifyTeam(ctx context.Context, gameID, teamID uint) e
 		if err := tx.Save(&passing).Error; err != nil {
 			return err
 		}
+		metrics.IncGamePassings("disqualified")
 
 		s.notifyCaptainAboutDisqualification(ctx, tx, teamID, gameID)
 		s.updateMonitorAndResults(ctx, gameID)
@@ -394,6 +424,7 @@ func (s *GameService) StartTesting(ctx context.Context, gameID, userID uint) (*G
 	if err := s.passingRepo.Create(ctx, &passing); err != nil {
 		return nil, err
 	}
+	metrics.IncGamePassings("testing")
 
 	if err := s.progressService.InitFirstLevel(ctx, passing.ID); err != nil {
 		return nil, err
@@ -479,17 +510,14 @@ func (s *GameService) DeleteLevelFromActiveGame(ctx context.Context, gameID, lev
 		}
 	}
 
-	// Физически удаляем все LevelProgress, связанные с удаляемым уровнем
 	if err := db.Unscoped().Where("level_id = ?", levelID).Delete(&LevelProgress{}).Error; err != nil {
 		return fmt.Errorf("ошибка удаления прогресса уровней: %w", err)
 	}
 
-	// Удаляем уровень
 	if err := db.Unscoped().Delete(&lvl).Error; err != nil {
 		return fmt.Errorf("ошибка удаления уровня: %w", err)
 	}
 
-	// Обновляем монитор и хаб только если они инициализированы
 	if s.monitorService != nil && s.hub != nil {
 		snapshot, err := s.monitorService.GameSnapshot(gameID)
 		if err != nil {

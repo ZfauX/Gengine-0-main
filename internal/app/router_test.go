@@ -152,8 +152,7 @@ func TestRouter_ProtectedRoutesRedirect(t *testing.T) {
 	defer cleanup()
 
 	// Маршруты защищены AuthRequired. Без куки JWT должен быть редирект на /auth/login.
-	// Некоторые маршруты зарегистрированы с завершающим слешем (например, `/dashboard/`),
-	// поэтому запрашиваем их с `/`, чтобы не получить 301.
+	// Используем новые пути: /teams/new и /games/new вместо /teams/create и /games/create.
 	tests := []struct {
 		name string
 		path string
@@ -161,8 +160,8 @@ func TestRouter_ProtectedRoutesRedirect(t *testing.T) {
 		{name: "dashboard", path: "/dashboard/"},
 		{name: "profile", path: "/profile/"},
 		{name: "achievements", path: "/achievements/"},
-		{name: "team creation", path: "/teams/create"},
-		{name: "game creation", path: "/games/create"},
+		{name: "team creation", path: "/teams/new"},
+		{name: "game creation", path: "/games/new"},
 	}
 
 	for _, tt := range tests {

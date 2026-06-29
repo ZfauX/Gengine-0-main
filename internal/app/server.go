@@ -20,7 +20,6 @@ import (
 	"gengine-0/internal/config"
 
 	"github.com/gin-gonic/gin"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
@@ -32,18 +31,6 @@ func RunServer(r *gin.Engine, db *gorm.DB, cfg *config.Config, cancel context.Ca
 	if err != nil {
 		log.Fatal().Err(err).Msg("Не удалось получить sql.DB")
 	}
-
-	r.Use(LoggerMiddleware())
-
-	r.GET("/healthz", func(c *gin.Context) {
-		if err := sqlDB.Ping(); err != nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "error"})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
-	})
-
-	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	if cfg.TLS.CertFile != "" && cfg.TLS.KeyFile != "" {
 		if err := ensureTLSCert(cfg.TLS.CertFile, cfg.TLS.KeyFile); err != nil {

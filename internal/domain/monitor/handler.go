@@ -4,12 +4,15 @@ package monitor
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/user"
+	"gengine-0/internal/pkg/render"
 	ws "gengine-0/internal/pkg/websocket"
 
 	"github.com/gin-gonic/gin"
@@ -79,14 +82,80 @@ func (h *MonitorHandler) MonitorPage(c *gin.Context) {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "monitor-page.html",
-		"GameID":       gameID,
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "monitor-page.html", gin.H{
+		"GameID": gameID,
+		"csrf":   csrf.GetToken(c),
 	})
 }
 
+// MonitorStreamSSE предоставляет Server-Sent Events для обновлений прогресса игры.
+// Это более лёгкая альтернатива WebSocket для однонаправленного мониторинга.
+func (h *MonitorHandler) MonitorStreamSSE(c *gin.Context) {
+	gameIDParam := c.Param("id")
+	gameID, err := strconv.Atoi(gameIDParam)
+	if err != nil || gameID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid game ID"})
+		return
+	}
+
+	// Настройка SSE-заголовков
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no") // отключить буферизацию nginx
+
+	// Таймер для периодических пингов (чтобы соединение не разрывалось)
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	// Получаем контекст запроса для отслеживания закрытия
+	ctx := c.Request.Context()
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Debug().Int("game_id", gameID).Msg("SSE connection closed by client")
+			return
+		case <-ticker.C:
+			// Пинг (комментарий) для поддержания соединения
+			if _, err := fmt.Fprintf(c.Writer, ": ping\n\n"); err != nil {
+				log.Debug().Err(err).Int("game_id", gameID).Msg("SSE ping write error")
+				return
+			}
+			c.Writer.Flush()
+		default:
+			// Получаем текущий снимок
+			snapshot, err := h.monitorService.GetOrFetchSnapshot(uint(gameID))
+			if err != nil {
+				log.Error().Err(err).Int("game_id", gameID).Msg("SSE: failed to get snapshot")
+				// Отправляем событие ошибки
+				_, _ = fmt.Fprintf(c.Writer, "event: error\ndata: {\"error\": \"%s\"}\n\n", err.Error())
+				c.Writer.Flush()
+				time.Sleep(2 * time.Second)
+				continue
+			}
+
+			data, err := json.Marshal(snapshot)
+			if err != nil {
+				log.Error().Err(err).Int("game_id", gameID).Msg("SSE: failed to marshal snapshot")
+				time.Sleep(2 * time.Second)
+				continue
+			}
+
+			// Отправляем событие update
+			if _, err := fmt.Fprintf(c.Writer, "event: update\ndata: %s\n\n", data); err != nil {
+				log.Debug().Err(err).Int("game_id", gameID).Msg("SSE write error")
+				return
+			}
+			c.Writer.Flush()
+
+			time.Sleep(1 * time.Second)
+		}
+	}
+}
+
 // MonitorWS обрабатывает WebSocket-соединение для live-обновлений прогресса.
+// Оставлен для обратной совместимости, но рекомендуется использовать SSE.
 func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 	gameID := c.Param("id")
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
@@ -94,11 +163,7 @@ func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 		log.Error().Err(err).Str("game_id", gameID).Msg("MonitorWS: failed to upgrade connection")
 		return
 	}
-	client := &ws.Client{
-		Conn:   conn,
-		Send:   make(chan []byte, 256),
-		RoomID: gameID,
-	}
+	client := ws.NewClient(conn, gameID)
 	h.hub.RegisterClient(gameID, client)
 
 	id, err := strconv.Atoi(gameID)
@@ -161,14 +226,13 @@ func (h *MonitorHandler) ChatPage(c *gin.Context) {
 		log.Error().Err(err).Int("game_id", gameID).Uint("user_id", userID).Msg("ChatPage: failed to find passing")
 	}
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "chat-page.html",
-		"GameID":       gameID,
-		"PassingID":    passingID,
-		"TeamID":       teamID,
-		"UserID":       userID,
-		"UserName":     userName,
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "chat-page.html", gin.H{
+		"GameID":    gameID,
+		"PassingID": passingID,
+		"TeamID":    teamID,
+		"UserID":    userID,
+		"UserName":  userName,
+		"csrf":      csrf.GetToken(c),
 	})
 }
 
@@ -183,11 +247,7 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 		return
 	}
 
-	client := &ws.Client{
-		Conn:   conn,
-		Send:   make(chan []byte, 256),
-		RoomID: roomID,
-	}
+	client := ws.NewClient(conn, roomID)
 	h.hub.RegisterClient(roomID, client)
 
 	roomIDUint, err := strconv.Atoi(roomID)
@@ -298,15 +358,15 @@ func (h *MonitorHandler) ListLogs(c *gin.Context) {
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "logs-list.html",
-		"GameID":       gameID,
-		"Logs":         logs,
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "logs-list.html", gin.H{
+		"GameID": gameID,
+		"Logs":   logs,
+		"csrf":   csrf.GetToken(c),
 	})
 }
 
 // LogsWS предоставляет WebSocket-стрим логов игры.
+// Можно также перевести на SSE, но оставляем WebSocket для обратной совместимости.
 func (h *MonitorHandler) LogsWS(c *gin.Context) {
 	gameID := c.Param("id")
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
@@ -314,11 +374,7 @@ func (h *MonitorHandler) LogsWS(c *gin.Context) {
 		log.Error().Err(err).Str("game_id", gameID).Msg("LogsWS: failed to upgrade connection")
 		return
 	}
-	client := &ws.Client{
-		Conn:   conn,
-		Send:   make(chan []byte, 256),
-		RoomID: "logs_" + gameID,
-	}
+	client := ws.NewClient(conn, "logs_"+gameID)
 	h.hub.RegisterClient("logs_"+gameID, client)
 	go func() {
 		defer func() {

@@ -8,6 +8,7 @@ import (
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/pkg/middleware"
+	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/storage"
 	ws "gengine-0/internal/pkg/websocket"
 
@@ -98,7 +99,7 @@ func NewLevelHandler(
 
 // ListByGame отображает список уровней игры.
 func (h *LevelHandler) ListByGame(c *gin.Context) {
-	gameID, err := strconv.Atoi(c.Param("game_id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
 		return
@@ -123,31 +124,29 @@ func (h *LevelHandler) ListByGame(c *gin.Context) {
 		return
 	}
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "levels-list.html",
-		"GameID":       gameID,
-		"Levels":       levels,
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "levels-list.html", gin.H{
+		"GameID": gameID,
+		"Levels": levels,
+		"csrf":   csrf.GetToken(c),
 	})
 }
 
 // NewForm отображает форму создания уровня.
 func (h *LevelHandler) NewForm(c *gin.Context) {
-	gameID, err := strconv.Atoi(c.Param("game_id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "levels-new.html",
-		"GameID":       gameID,
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "levels-new.html", gin.H{
+		"GameID": gameID,
+		"csrf":   csrf.GetToken(c),
 	})
 }
 
 // Create создаёт новый уровень.
 func (h *LevelHandler) Create(c *gin.Context) {
-	gameID, err := strconv.Atoi(c.Param("game_id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
 		return
@@ -156,11 +155,10 @@ func (h *LevelHandler) Create(c *gin.Context) {
 
 	var input CreateLevelInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "levels-new.html",
-			"GameID":       gameID,
-			"Error":        "Неверные данные: " + err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "levels-new.html", gin.H{
+			"GameID": gameID,
+			"Error":  "Неверные данные: " + err.Error(),
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
@@ -180,11 +178,10 @@ func (h *LevelHandler) Create(c *gin.Context) {
 
 	if err := h.levelService.Create(c.Request.Context(), uint(gameID), level, userID); err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Uint("user", userID).Msg("Create: failed to create level")
-		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
-			"ContentBlock": "levels-new.html",
-			"GameID":       gameID,
-			"Error":        err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusInternalServerError, "levels-new.html", gin.H{
+			"GameID": gameID,
+			"Error":  err.Error(),
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
@@ -223,10 +220,9 @@ func (h *LevelHandler) EditForm(c *gin.Context) {
 		return
 	}
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "levels-edit.html",
-		"Level":        level,
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "levels-edit.html", gin.H{
+		"Level": level,
+		"csrf":  csrf.GetToken(c),
 	})
 }
 
@@ -241,10 +237,9 @@ func (h *LevelHandler) Update(c *gin.Context) {
 
 	var input UpdateLevelInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "levels-edit.html",
-			"Error":        "Неверные данные: " + err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "levels-edit.html", gin.H{
+			"Error": "Неверные данные: " + err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -264,21 +259,21 @@ func (h *LevelHandler) Update(c *gin.Context) {
 
 	if err := h.levelService.Update(c.Request.Context(), uint(levelID), updated, userID); err != nil {
 		log.Error().Err(err).Int("level_id", levelID).Uint("user", userID).Msg("Update: failed to update level")
-		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
-			"ContentBlock": "levels-edit.html",
-			"Level":        updated,
-			"Error":        err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusInternalServerError, "levels-edit.html", gin.H{
+			"Level": updated,
+			"Error": err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels")
+	gameID, _ := strconv.Atoi(c.Param("id"))
+	c.Redirect(http.StatusFound, "/games/"+strconv.Itoa(gameID)+"/levels")
 }
 
 // Delete удаляет уровень (вызов через ActiveGameManager).
 func (h *LevelHandler) Delete(c *gin.Context) {
-	gameID, err := strconv.Atoi(c.Param("game_id"))
+	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
 		return
@@ -314,7 +309,8 @@ func (h *LevelHandler) Duplicate(c *gin.Context) {
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+strconv.Itoa(int(newLevel.ID)))
+	gameID, _ := strconv.Atoi(c.Param("id"))
+	c.Redirect(http.StatusFound, "/games/"+strconv.Itoa(gameID)+"/levels/"+strconv.Itoa(int(newLevel.ID)))
 }
 
 // Move перемещает уровень.
@@ -333,7 +329,8 @@ func (h *LevelHandler) Move(c *gin.Context) {
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels")
+	gameID, _ := strconv.Atoi(c.Param("id"))
+	c.Redirect(http.StatusFound, "/games/"+strconv.Itoa(gameID)+"/levels")
 }
 
 // ----- Вопросы -----
@@ -376,11 +373,10 @@ func (h *LevelHandler) ListQuestions(c *gin.Context) {
 		return
 	}
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "questions-list.html",
-		"LevelID":      levelID,
-		"Questions":    questions,
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "questions-list.html", gin.H{
+		"LevelID":   levelID,
+		"Questions": questions,
+		"csrf":      csrf.GetToken(c),
 	})
 }
 
@@ -391,10 +387,9 @@ func (h *LevelHandler) NewQuestionForm(c *gin.Context) {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID уровня"})
 		return
 	}
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "questions-new.html",
-		"LevelID":      levelID,
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "questions-new.html", gin.H{
+		"LevelID": levelID,
+		"csrf":    csrf.GetToken(c),
 	})
 }
 
@@ -409,11 +404,10 @@ func (h *LevelHandler) CreateQuestion(c *gin.Context) {
 
 	var input CreateQuestionInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "questions-new.html",
-			"LevelID":      levelID,
-			"Error":        "Неверные данные: " + err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "questions-new.html", gin.H{
+			"LevelID": levelID,
+			"Error":   "Неверные данные: " + err.Error(),
+			"csrf":    csrf.GetToken(c),
 		})
 		return
 	}
@@ -425,16 +419,16 @@ func (h *LevelHandler) CreateQuestion(c *gin.Context) {
 
 	if err := h.questionService.Create(c.Request.Context(), uint(levelID), question, userID); err != nil {
 		log.Error().Err(err).Int("level_id", levelID).Uint("user", userID).Msg("CreateQuestion: failed to create question")
-		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
-			"ContentBlock": "questions-new.html",
-			"LevelID":      levelID,
-			"Error":        err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusInternalServerError, "questions-new.html", gin.H{
+			"LevelID": levelID,
+			"Error":   err.Error(),
+			"csrf":    csrf.GetToken(c),
 		})
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+c.Param("level_id")+"/questions")
+	gameID, _ := strconv.Atoi(c.Param("id"))
+	c.Redirect(http.StatusFound, "/games/"+strconv.Itoa(gameID)+"/levels/"+c.Param("level_id")+"/questions")
 }
 
 // EditQuestionForm отображает форму редактирования вопроса.
@@ -479,10 +473,9 @@ func (h *LevelHandler) EditQuestionForm(c *gin.Context) {
 		return
 	}
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "questions-edit.html",
-		"Question":     question,
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "questions-edit.html", gin.H{
+		"Question": question,
+		"csrf":     csrf.GetToken(c),
 	})
 }
 
@@ -497,10 +490,9 @@ func (h *LevelHandler) UpdateQuestion(c *gin.Context) {
 
 	var input UpdateQuestionInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "questions-edit.html",
-			"Error":        "Неверные данные: " + err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "questions-edit.html", gin.H{
+			"Error": "Неверные данные: " + err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -512,16 +504,16 @@ func (h *LevelHandler) UpdateQuestion(c *gin.Context) {
 
 	if err := h.questionService.Update(c.Request.Context(), uint(questionID), updated, userID); err != nil {
 		log.Error().Err(err).Int("question_id", questionID).Uint("user", userID).Msg("UpdateQuestion: failed to update question")
-		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
-			"ContentBlock": "questions-edit.html",
-			"Question":     updated,
-			"Error":        err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusInternalServerError, "questions-edit.html", gin.H{
+			"Question": updated,
+			"Error":    err.Error(),
+			"csrf":     csrf.GetToken(c),
 		})
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+c.Param("level_id")+"/questions")
+	gameID, _ := strconv.Atoi(c.Param("id"))
+	c.Redirect(http.StatusFound, "/games/"+strconv.Itoa(gameID)+"/levels/"+c.Param("level_id")+"/questions")
 }
 
 // DeleteQuestion удаляет вопрос.
@@ -539,7 +531,8 @@ func (h *LevelHandler) DeleteQuestion(c *gin.Context) {
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+c.Param("level_id")+"/questions")
+	gameID, _ := strconv.Atoi(c.Param("id"))
+	c.Redirect(http.StatusFound, "/games/"+strconv.Itoa(gameID)+"/levels/"+c.Param("level_id")+"/questions")
 }
 
 // ----- Ответы -----
@@ -593,11 +586,10 @@ func (h *LevelHandler) ListAnswers(c *gin.Context) {
 		return
 	}
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "answers-list.html",
-		"QuestionID":   questionID,
-		"Answers":      answers,
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "answers-list.html", gin.H{
+		"QuestionID": questionID,
+		"Answers":    answers,
+		"csrf":       csrf.GetToken(c),
 	})
 }
 
@@ -612,11 +604,10 @@ func (h *LevelHandler) CreateAnswer(c *gin.Context) {
 
 	var input CreateAnswerInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "answers-list.html",
-			"QuestionID":   questionID,
-			"Error":        "Неверные данные: " + err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "answers-list.html", gin.H{
+			"QuestionID": questionID,
+			"Error":      "Неверные данные: " + err.Error(),
+			"csrf":       csrf.GetToken(c),
 		})
 		return
 	}
@@ -627,16 +618,16 @@ func (h *LevelHandler) CreateAnswer(c *gin.Context) {
 
 	if err := h.answerService.Create(c.Request.Context(), uint(questionID), answer, userID); err != nil {
 		log.Error().Err(err).Int("question_id", questionID).Uint("user", userID).Msg("CreateAnswer: failed to create answer")
-		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
-			"ContentBlock": "answers-list.html",
-			"QuestionID":   questionID,
-			"Error":        err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusInternalServerError, "answers-list.html", gin.H{
+			"QuestionID": questionID,
+			"Error":      err.Error(),
+			"csrf":       csrf.GetToken(c),
 		})
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+c.Param("level_id")+"/questions/"+c.Param("question_id")+"/answers")
+	gameID, _ := strconv.Atoi(c.Param("id"))
+	c.Redirect(http.StatusFound, "/games/"+strconv.Itoa(gameID)+"/levels/"+c.Param("level_id")+"/questions/"+c.Param("question_id")+"/answers")
 }
 
 // DeleteAnswer удаляет ответ.
@@ -654,5 +645,6 @@ func (h *LevelHandler) DeleteAnswer(c *gin.Context) {
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/levels/"+c.Param("level_id")+"/questions/"+c.Param("question_id")+"/answers")
+	gameID, _ := strconv.Atoi(c.Param("id"))
+	c.Redirect(http.StatusFound, "/games/"+strconv.Itoa(gameID)+"/levels/"+c.Param("level_id")+"/questions/"+c.Param("question_id")+"/answers")
 }

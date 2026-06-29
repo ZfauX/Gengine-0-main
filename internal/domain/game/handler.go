@@ -12,6 +12,7 @@ import (
 	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/pkg/audit"
+	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/storage"
 	ws "gengine-0/internal/pkg/websocket"
@@ -191,8 +192,7 @@ func (h *GameHandler) List(c *gin.Context) {
 	}
 
 	totalPages := (total + int64(perPage) - 1) / int64(perPage)
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock":  "games-list.html",
+	render.Page(c, http.StatusOK, "games-list.html", gin.H{
 		"Games":         games,
 		"CurrentUserID": userID,
 		"Filter":        filter,
@@ -242,8 +242,7 @@ func (h *GameHandler) Show(c *gin.Context) {
 
 	canApply := !g.IsDraft && (g.StartsAt == nil || g.StartsAt.After(time.Now()))
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock":  "games-show.html",
+	render.Page(c, http.StatusOK, "games-show.html", gin.H{
 		"Game":          g,
 		"CurrentUserID": userID,
 		"IsManager":     isManager,
@@ -257,9 +256,8 @@ func (h *GameHandler) Show(c *gin.Context) {
 
 // NewForm отображает форму создания игры.
 func (h *GameHandler) NewForm(c *gin.Context) {
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "games-new.html",
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "games-new.html", gin.H{
+		"csrf": csrf.GetToken(c),
 	})
 }
 
@@ -268,10 +266,9 @@ func (h *GameHandler) Create(c *gin.Context) {
 	userID := c.GetUint("userID")
 	var g Game
 	if err := c.ShouldBind(&g); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "games-new.html",
-			"Error":        "Неверные данные: " + err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
+			"Error": "Неверные данные: " + err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -280,10 +277,9 @@ func (h *GameHandler) Create(c *gin.Context) {
 	g.Name = sanitize.StripHTML(g.Name)
 	g.Description = sanitize.StripHTML(g.Description)
 	if err := validateGame(&g); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "games-new.html",
-			"Error":        err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
+			"Error": err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -292,10 +288,9 @@ func (h *GameHandler) Create(c *gin.Context) {
 	if err == nil {
 		defer func() { _ = file.Close() }()
 		if header.Size > 5*1024*1024 {
-			c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-				"ContentBlock": "games-new.html",
-				"Error":        "Размер файла не должен превышать 5 МБ",
-				"csrf":         csrf.GetToken(c),
+			render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
+				"Error": "Размер файла не должен превышать 5 МБ",
+				"csrf":  csrf.GetToken(c),
 			})
 			return
 		}
@@ -303,10 +298,9 @@ func (h *GameHandler) Create(c *gin.Context) {
 		allowedTypes := []string{"image/jpeg", "image/png", "image/webp"}
 		contentType := header.Header.Get("Content-Type")
 		if !slices.Contains(allowedTypes, contentType) {
-			c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-				"ContentBlock": "games-new.html",
-				"Error":        "Допустимы только JPEG, PNG и WebP",
-				"csrf":         csrf.GetToken(c),
+			render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
+				"Error": "Допустимы только JPEG, PNG и WebP",
+				"csrf":  csrf.GetToken(c),
 			})
 			return
 		}
@@ -314,10 +308,9 @@ func (h *GameHandler) Create(c *gin.Context) {
 		webPath, err := h.storage.Save("uploads/covers", file, header.Filename, userID, 5*1024*1024, allowedTypes)
 		if err != nil {
 			log.Error().Err(err).Str("filename", header.Filename).Msg("Create game: failed to save cover")
-			c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-				"ContentBlock": "games-new.html",
-				"Error":        "Ошибка сохранения обложки",
-				"csrf":         csrf.GetToken(c),
+			render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
+				"Error": "Ошибка сохранения обложки",
+				"csrf":  csrf.GetToken(c),
 			})
 			return
 		}
@@ -330,10 +323,9 @@ func (h *GameHandler) Create(c *gin.Context) {
 				log.Error().Err(delErr).Str("path", g.CoverPath).Msg("Create game: failed to delete orphaned cover")
 			}
 		}
-		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
-			"ContentBlock": "games-new.html",
-			"Error":        err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusInternalServerError, "games-new.html", gin.H{
+			"Error": err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -374,10 +366,9 @@ func (h *GameHandler) EditForm(c *gin.Context) {
 		return
 	}
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "games-edit.html",
-		"Game":         g,
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "games-edit.html", gin.H{
+		"Game": g,
+		"csrf": csrf.GetToken(c),
 	})
 }
 
@@ -392,10 +383,9 @@ func (h *GameHandler) Update(c *gin.Context) {
 
 	var updated Game
 	if err := c.ShouldBind(&updated); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "games-edit.html",
-			"Error":        "Неверные данные: " + err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
+			"Error": "Неверные данные: " + err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -405,10 +395,9 @@ func (h *GameHandler) Update(c *gin.Context) {
 	updated.Name = sanitize.StripHTML(updated.Name)
 	updated.Description = sanitize.StripHTML(updated.Description)
 	if err := validateGame(&updated); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "games-edit.html",
-			"Error":        err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
+			"Error": err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -436,10 +425,9 @@ func (h *GameHandler) Update(c *gin.Context) {
 		if err == nil {
 			defer func() { _ = file.Close() }()
 			if header.Size > 5*1024*1024 {
-				c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-					"ContentBlock": "games-edit.html",
-					"Error":        "Размер файла не должен превышать 5 МБ",
-					"csrf":         csrf.GetToken(c),
+				render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
+					"Error": "Размер файла не должен превышать 5 МБ",
+					"csrf":  csrf.GetToken(c),
 				})
 				return
 			}
@@ -447,10 +435,9 @@ func (h *GameHandler) Update(c *gin.Context) {
 			allowedTypes := []string{"image/jpeg", "image/png", "image/webp"}
 			contentType := header.Header.Get("Content-Type")
 			if !slices.Contains(allowedTypes, contentType) {
-				c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-					"ContentBlock": "games-edit.html",
-					"Error":        "Допустимы только JPEG, PNG и WebP",
-					"csrf":         csrf.GetToken(c),
+				render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
+					"Error": "Допустимы только JPEG, PNG и WebP",
+					"csrf":  csrf.GetToken(c),
 				})
 				return
 			}
@@ -458,10 +445,9 @@ func (h *GameHandler) Update(c *gin.Context) {
 			webPath, err := h.storage.Save("uploads/covers", file, header.Filename, userID, 5*1024*1024, allowedTypes)
 			if err != nil {
 				log.Error().Err(err).Str("filename", header.Filename).Msg("Update game: failed to save new cover")
-				c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-					"ContentBlock": "games-edit.html",
-					"Error":        "Ошибка сохранения обложки",
-					"csrf":         csrf.GetToken(c),
+				render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
+					"Error": "Ошибка сохранения обложки",
+					"csrf":  csrf.GetToken(c),
 				})
 				return
 			}
@@ -540,12 +526,11 @@ func (h *GameHandler) ListPassings(c *gin.Context) {
 		return
 	}
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "game_passings-list.html",
-		"GameID":       gameID,
-		"Passings":     passings,
-		"UserID":       userID,
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "game_passings-list.html", gin.H{
+		"GameID":   gameID,
+		"Passings": passings,
+		"UserID":   userID,
+		"csrf":     csrf.GetToken(c),
 	})
 }
 
@@ -564,11 +549,10 @@ func (h *GameHandler) ApplyForm(c *gin.Context) {
 		teams = []team.Team{}
 	}
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "game_passings-apply.html",
-		"GameID":       gameID,
-		"Teams":        teams,
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "game_passings-apply.html", gin.H{
+		"GameID": gameID,
+		"Teams":  teams,
+		"csrf":   csrf.GetToken(c),
 	})
 }
 
@@ -584,12 +568,11 @@ func (h *GameHandler) Apply(c *gin.Context) {
 	var input ApplyInput
 	if err := c.ShouldBind(&input); err != nil {
 		teams, _ := h.passingService.teamService.GetTeamsByCaptain(c.Request.Context(), userID)
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "game_passings-apply.html",
-			"GameID":       gameID,
-			"Teams":        teams,
-			"Error":        "Неверные данные: " + err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "game_passings-apply.html", gin.H{
+			"GameID": gameID,
+			"Teams":  teams,
+			"Error":  "Неверные данные: " + err.Error(),
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
@@ -597,24 +580,22 @@ func (h *GameHandler) Apply(c *gin.Context) {
 	// Дополнительная валидация
 	if err := validatePositiveUint("ID команды", input.TeamID); err != nil {
 		teams, _ := h.passingService.teamService.GetTeamsByCaptain(c.Request.Context(), userID)
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "game_passings-apply.html",
-			"GameID":       gameID,
-			"Teams":        teams,
-			"Error":        err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "game_passings-apply.html", gin.H{
+			"GameID": gameID,
+			"Teams":  teams,
+			"Error":  err.Error(),
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
 
 	if err := h.passingService.Apply(c.Request.Context(), uint(gameID), input.TeamID, userID); err != nil {
 		teams, _ := h.passingService.teamService.GetTeamsByCaptain(c.Request.Context(), userID)
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "game_passings-apply.html",
-			"GameID":       gameID,
-			"Teams":        teams,
-			"Error":        err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "game_passings-apply.html", gin.H{
+			"GameID": gameID,
+			"Teams":  teams,
+			"Error":  err.Error(),
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
@@ -717,11 +698,10 @@ func (h *GameHandler) ManageCoAuthors(c *gin.Context) {
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
 	}
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "co_authors-manage.html",
-		"GameID":       gameID,
-		"CoAuthors":    coAuthors,
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "co_authors-manage.html", gin.H{
+		"GameID":    gameID,
+		"CoAuthors": coAuthors,
+		"csrf":      csrf.GetToken(c),
 	})
 }
 
@@ -851,10 +831,9 @@ func (h *GameHandler) Simulate(c *gin.Context) {
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
 		return
 	}
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "simulate-results.html",
-		"GameID":       gameID,
-		"Result":       result,
+	render.Page(c, http.StatusOK, "simulate-results.html", gin.H{
+		"GameID": gameID,
+		"Result": result,
 	})
 }
 
@@ -899,11 +878,10 @@ func (h *GameHandler) SettingsPage(c *gin.Context) {
 		}
 	}
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "games-settings.html",
-		"Game":         g,
-		"Settings":     settings,
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "games-settings.html", gin.H{
+		"Game":     g,
+		"Settings": settings,
+		"csrf":     csrf.GetToken(c),
 	})
 }
 
@@ -919,12 +897,11 @@ func (h *GameHandler) SaveSettings(c *gin.Context) {
 	var settings GameSetting
 	if err := c.ShouldBind(&settings); err != nil {
 		g, _ := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID)
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "games-settings.html",
-			"Game":         g,
-			"Settings":     settings,
-			"Error":        "Неверные данные: " + err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "games-settings.html", gin.H{
+			"Game":     g,
+			"Settings": settings,
+			"Error":    "Неверные данные: " + err.Error(),
+			"csrf":     csrf.GetToken(c),
 		})
 		return
 	}
@@ -940,12 +917,11 @@ func (h *GameHandler) SaveSettings(c *gin.Context) {
 		settings.PerLevelTimeLimit = 0
 	}
 	if settings.PerLevelTimeLimit > 3600 {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "games-settings.html",
-			"Game":         nil,
-			"Settings":     settings,
-			"Error":        "Лимит времени на уровень не может превышать 3600 минут",
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "games-settings.html", gin.H{
+			"Game":     nil,
+			"Settings": settings,
+			"Error":    "Лимит времени на уровень не может превышать 3600 минут",
+			"csrf":     csrf.GetToken(c),
 		})
 		return
 	}
@@ -969,12 +945,11 @@ func (h *GameHandler) SaveSettings(c *gin.Context) {
 	settings.GameID = g.ID
 	if err := h.db.Save(&settings).Error; err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.SaveSettings: failed to save settings")
-		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
-			"ContentBlock": "games-settings.html",
-			"Game":         g,
-			"Settings":     settings,
-			"Error":        "Ошибка сохранения: " + err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusInternalServerError, "games-settings.html", gin.H{
+			"Game":     g,
+			"Settings": settings,
+			"Error":    "Ошибка сохранения: " + err.Error(),
+			"csrf":     csrf.GetToken(c),
 		})
 		return
 	}
@@ -1007,8 +982,7 @@ func (h *GameHandler) TestPage(c *gin.Context) {
 		log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.TestPage: failed to list test passings")
 	}
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "games-test.html",
+	render.Page(c, http.StatusOK, "games-test.html", gin.H{
 		"Game":         g,
 		"TestPassings": testPassings,
 		"csrf":         csrf.GetToken(c),
@@ -1037,8 +1011,7 @@ func (h *GameHandler) PhotosPage(c *gin.Context) {
 		isManager = false
 	}
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock":  "games-photos.html",
+	render.Page(c, http.StatusOK, "games-photos.html", gin.H{
 		"GameID":        gameID,
 		"Photos":        photos,
 		"CurrentUserID": userID,
@@ -1272,8 +1245,7 @@ func (h *GameplayHandler) ShowGame(c *gin.Context) {
 
 	votingActive := h.db.Where("game_passing_id = ? AND level_id = ? AND is_open = true", passingID, progress.LevelID).First(&gameBlackboxVotingSession{}).Error == nil
 
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock":     "gameplay-show.html",
+	render.Page(c, http.StatusOK, "gameplay-show.html", gin.H{
 		"PassingID":        passingID,
 		"Level":            progress.Level,
 		"Attempts":         attempts,
@@ -1301,10 +1273,9 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 
 	var input SubmitCodeInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "gameplay-show.html",
-			"Error":        "Неверные данные: " + err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
+			"Error": "Неверные данные: " + err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -1312,10 +1283,9 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 	// Валидация кода
 	code := strings.TrimSpace(input.Code)
 	if err := validateString("Код", code, 1, 10000); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "gameplay-show.html",
-			"Error":        err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
+			"Error": err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -1323,10 +1293,9 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 
 	attempt, err := h.gameService.SubmitCode(c.Request.Context(), uint(passingID), userID, code)
 	if err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "gameplay-show.html",
-			"Error":        err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
+			"Error": err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -1346,10 +1315,9 @@ func (h *GameplayHandler) UseHint(c *gin.Context) {
 		return
 	}
 	if err := h.gameService.UseHint(c.Request.Context(), uint(passingID), c.GetUint("userID")); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "gameplay-show.html",
-			"Error":        err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
+			"Error": err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -1372,20 +1340,18 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 
 	file, header, err := c.Request.FormFile("answer_file")
 	if err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "gameplay-show.html",
-			"Error":        "Файл не выбран",
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
+			"Error": "Файл не выбран",
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
 	defer func() { _ = file.Close() }()
 
 	if header.Size > 10*1024*1024 {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "gameplay-show.html",
-			"Error":        "Размер файла не должен превышать 10 МБ",
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
+			"Error": "Размер файла не должен превышать 10 МБ",
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -1393,10 +1359,9 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 	allowedTypes := []string{"image/jpeg", "image/png", "image/gif", "application/pdf", "text/plain"}
 	contentType := header.Header.Get("Content-Type")
 	if !slices.Contains(allowedTypes, contentType) {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "gameplay-show.html",
-			"Error":        "Недопустимый тип файла",
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
+			"Error": "Недопустимый тип файла",
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -1404,10 +1369,9 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 	webPath, err := h.storage.Save("uploads/answers", file, header.Filename, userID, 10*1024*1024, allowedTypes)
 	if err != nil {
 		log.Error().Err(err).Str("filename", header.Filename).Msg("SubmitFile: failed to save file")
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "gameplay-show.html",
-			"Error":        "Ошибка сохранения файла",
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
+			"Error": "Ошибка сохранения файла",
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -1416,10 +1380,9 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 	if err != nil {
 		log.Error().Err(err).Uint("passing", uint(passingID)).Msg("SubmitFile: service error")
 		_ = h.storage.Delete(webPath)
-		c.HTML(http.StatusInternalServerError, "layout.html", gin.H{
-			"ContentBlock": "gameplay-show.html",
-			"Error":        "Не удалось сохранить попытку",
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusInternalServerError, "gameplay-show.html", gin.H{
+			"Error": "Не удалось сохранить попытку",
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -1462,11 +1425,10 @@ func (h *GameplayHandler) ShowTestGame(c *gin.Context) {
 		}
 		return
 	}
-	c.HTML(http.StatusOK, "layout.html", gin.H{
-		"ContentBlock": "gameplay-test.html",
-		"PassingID":    passingID,
-		"Level":        progress.Level,
-		"csrf":         csrf.GetToken(c),
+	render.Page(c, http.StatusOK, "gameplay-test.html", gin.H{
+		"PassingID": passingID,
+		"Level":     progress.Level,
+		"csrf":      csrf.GetToken(c),
 	})
 }
 
@@ -1480,20 +1442,18 @@ func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
 
 	var input SubmitTestCodeInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "gameplay-test.html",
-			"Error":        "Неверные данные: " + err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "gameplay-test.html", gin.H{
+			"Error": "Неверные данные: " + err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
 
 	code := strings.TrimSpace(input.Code)
 	if err := validateString("Код", code, 1, 10000); err != nil {
-		c.HTML(http.StatusBadRequest, "layout.html", gin.H{
-			"ContentBlock": "gameplay-test.html",
-			"Error":        err.Error(),
-			"csrf":         csrf.GetToken(c),
+		render.Page(c, http.StatusBadRequest, "gameplay-test.html", gin.H{
+			"Error": err.Error(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}

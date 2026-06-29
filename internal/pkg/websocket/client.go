@@ -1,10 +1,11 @@
-// Package websocket предоставляет WebSocket-клиент и хаб для real-time уведомлений.
+// internal/pkg/websocket/client.go
 package websocket
 
 import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
@@ -14,14 +15,27 @@ const (
 	pingPeriod = (pongWait * 9) / 10
 )
 
+// Client представляет WebSocket-клиента с уникальным идентификатором.
 type Client struct {
-	Conn   *websocket.Conn
-	Send   chan []byte
-	RoomID string
-	mu     sync.Mutex
-	closed bool
+	ID     string          // уникальный идентификатор клиента (генерируется при создании)
+	Conn   *websocket.Conn // WebSocket-соединение
+	Send   chan []byte     // канал для отправки сообщений
+	RoomID string          // ID комнаты, в которой состоит клиент
+	mu     sync.Mutex      // защита поля closed
+	closed bool            // флаг закрытия
 }
 
+// NewClient создаёт нового клиента с уникальным ID и каналом Send.
+func NewClient(conn *websocket.Conn, roomID string) *Client {
+	return &Client{
+		ID:     uuid.New().String(),
+		Conn:   conn,
+		Send:   make(chan []byte, 256),
+		RoomID: roomID,
+	}
+}
+
+// Close безопасно закрывает клиента.
 func (c *Client) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -31,6 +45,7 @@ func (c *Client) Close() {
 	}
 }
 
+// HandleWebSocket запускает цикл чтения и writePump в горутине.
 func HandleWebSocket(client *Client) {
 	go client.writePump()
 	_ = client.Conn.SetReadDeadline(time.Now().Add(pongWait))
@@ -51,6 +66,7 @@ func WritePump(client *Client) {
 	go client.writePump()
 }
 
+// writePump обрабатывает отправку сообщений и пинги.
 func (c *Client) writePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
