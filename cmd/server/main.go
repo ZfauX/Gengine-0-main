@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -16,6 +17,8 @@ import (
 	"gengine-0/internal/config"
 	"gengine-0/internal/db"
 	"gengine-0/internal/domain/game"
+	"gengine-0/internal/pkg/cache"
+	"gengine-0/internal/pkg/email"
 	"gengine-0/internal/pkg/storage"
 	ws "gengine-0/internal/pkg/websocket"
 
@@ -53,6 +56,10 @@ var (
 )
 
 func main() {
+	// Определяем флаг для миграций
+	migrateFlag := flag.Bool("migrate", false, "Применить миграции и выйти")
+	flag.Parse()
+
 	// Загрузка .env файла
 	if err := godotenv.Load(); err != nil {
 		if !os.IsNotExist(err) {
@@ -109,11 +116,15 @@ func main() {
 	}
 	log.Info().Msg("Подключение к БД установлено")
 
-	// Применение миграций (критично)
-	if err := db.MigrateFromFiles(database, "migrations"); err != nil {
-		log.Fatal().Err(err).Msg("Ошибка применения миграций")
+	// --- Если указан флаг -migrate, применяем миграции и выходим ---
+	if *migrateFlag {
+		log.Info().Msg("Запуск миграций...")
+		if err := db.RunMigrations(database, "migrations"); err != nil {
+			log.Fatal().Err(err).Msg("Ошибка применения миграций")
+		}
+		log.Info().Msg("Миграции успешно применены")
+		return
 	}
-	log.Info().Msg("Миграции применены")
 
 	// Создание/обновление администратора
 	if err := db.EnsureAdmin(database, cfg); err != nil {
@@ -124,8 +135,14 @@ func main() {
 	hub := ws.NewRoomHub()
 	go hub.Run()
 
-	// --- СОЗДАНИЕ ЗАВИСИМОСТЕЙ И APP (обновлено) ---
-	deps := app.NewDependencies(database, cfg, hub)
+	// --- Инициализация асинхронной очереди email ---
+	email.InitQueue(cfg, 5, 100)
+
+	// --- Инициализация кэша ---
+	appCache := cache.NewCache(10*time.Minute, 5*time.Minute)
+
+	// --- СОЗДАНИЕ ЗАВИСИМОСТЕЙ И APP ---
+	deps := app.NewDependencies(database, cfg, hub, localStorage, appCache)
 	appInstance := app.NewApp(database, localStorage, hub, cfg, ".", deps)
 
 	r, err := appInstance.SetupRouter()
@@ -174,6 +191,9 @@ func main() {
 
 	// Отменяем контекст фоновых задач
 	cancel()
+
+	// Останавливаем очередь email и дожидаемся отправки оставшихся писем
+	email.ShutdownQueue()
 
 	log.Info().Msg("Сервер остановлен")
 }

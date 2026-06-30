@@ -93,7 +93,7 @@ func RegisterRoutes(
 	// @Failure 404 {object} map[string]interface{} "Уровень не найден"
 	// @Router /games/{id}/levels/{level_id} [get]
 	// @Security JWT
-	protected.GET("/:level_id", handler.EditForm) // показывает форму редактирования
+	protected.GET("/:level_id", handler.EditForm)
 
 	// @Summary Обновление уровня
 	// @Description Обновляет данные уровня

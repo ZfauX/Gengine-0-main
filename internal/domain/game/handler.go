@@ -2,6 +2,7 @@
 package game
 
 import (
+	"context"
 	"errors"
 	"mime/multipart"
 	"net/http"
@@ -12,7 +13,6 @@ import (
 
 	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/team"
-	"gengine-0/internal/pkg/audit"
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/storage"
@@ -26,7 +26,60 @@ import (
 	"gorm.io/gorm"
 )
 
-// ---------- Входные структуры для валидации ----------
+// =============================================================================
+// ИНТЕРФЕЙСЫ ДЛЯ ТЕСТИРУЕМОСТИ
+// =============================================================================
+
+// GameServiceInterface определяет методы GameService, используемые в хендлере.
+type GameServiceInterface interface {
+	CreateGameWithCover(ctx context.Context, dto *CreateGameDTO, authorID uint) (*Game, error)
+	UpdateGameWithCover(ctx context.Context, gameID uint, dto *UpdateGameDTO, userID uint) error
+	GetByID(ctx context.Context, id uint, viewerID uint) (*Game, error)
+	ListFilteredPaginated(ctx context.Context, filter GameFilter, sort *GameSort, page, perPage int) ([]Game, int64, error)
+	Delete(ctx context.Context, id uint, userID uint) error
+	Publish(ctx context.Context, id uint, userID uint) error
+	ForceFinishGame(ctx context.Context, gameID uint) error
+	DisqualifyTeam(ctx context.Context, gameID, teamID uint) error
+	SubmitCode(ctx context.Context, passingID, userID uint, code string) (*Attempt, error)
+	SubmitFile(ctx context.Context, passingID, userID uint, filePath string) (*Attempt, error)
+	UseHint(ctx context.Context, passingID, userID uint) error
+	AcceptBlackboxAnswer(ctx context.Context, passingID, userID uint) error
+	StartTesting(ctx context.Context, gameID, userID uint) (*GamePassing, error)
+	SubmitTestCode(ctx context.Context, passingID, userID uint, code string) (*Attempt, error)
+	SkipLevelTest(ctx context.Context, passingID, userID uint) error
+	// Новые методы для работы с отзывами
+	ListReviews(ctx context.Context, gameID uint) ([]Review, error)
+	GetAverageRating(ctx context.Context, gameID uint) (float64, int64, error)
+}
+
+// CoAuthorServiceInterface определяет методы CoAuthorService, используемые в хендлере.
+type CoAuthorServiceInterface interface {
+	IsUserManager(gameID, userID uint) (bool, error)
+	HasPermission(gameID, userID uint, requiredRole string) (bool, error)
+	CanModerateGame(gameID, userID uint) (bool, error)
+	CanEditContent(gameID, userID uint) (bool, error)
+	Add(gameID, newCoAuthorID, ownerID uint) error
+	Remove(gameID, coAuthorUserID, ownerID uint) error
+	List(gameID uint) ([]CoAuthor, error)
+}
+
+// AuditServiceInterface определяет методы audit.Service, используемые в хендлере.
+type AuditServiceInterface interface {
+	Log(userID uint, action, objectType string, objectID uint, details string)
+}
+
+// GamePassingServiceInterface определяет методы GamePassingService, используемые в хендлере.
+type GamePassingServiceInterface interface {
+	Apply(ctx context.Context, gameID, teamID, userID uint) error
+	ListByGame(ctx context.Context, gameID uint) ([]GamePassing, error)
+	UpdateStatus(ctx context.Context, passingID uint, status GamePassingStatus, userID uint) error
+	StartGame(ctx context.Context, passingID, userID uint) error
+	GetTeamsByCaptain(ctx context.Context, userID uint) ([]team.Team, error)
+}
+
+// =============================================================================
+// ВХОДНЫЕ СТРУКТУРЫ
+// =============================================================================
 
 // CreateGameInput используется для создания игры.
 type CreateGameInput struct {
@@ -35,7 +88,7 @@ type CreateGameInput struct {
 	MaxTeamNumber        int                   `form:"max_team_number" binding:"required,min=1,max=100"`
 	Visibility           string                `form:"visibility" binding:"required,oneof=public private"`
 	StartsAt             *time.Time            `form:"starts_at" binding:"omitempty,start_date_valid"`
-	RegistrationDeadline *time.Time            `form:"registration_deadline" binding:"omitempty"` // убрали deadline_valid
+	RegistrationDeadline *time.Time            `form:"registration_deadline" binding:"omitempty"`
 	IsDraft              bool                  `form:"is_draft"`
 	CoverFile            *multipart.FileHeader `form:"cover"`
 }
@@ -47,7 +100,7 @@ type UpdateGameInput struct {
 	MaxTeamNumber        int                   `form:"max_team_number" binding:"required,min=1,max=100"`
 	Visibility           string                `form:"visibility" binding:"required,oneof=public private"`
 	StartsAt             *time.Time            `form:"starts_at" binding:"omitempty,start_date_valid"`
-	RegistrationDeadline *time.Time            `form:"registration_deadline" binding:"omitempty"` // убрали deadline_valid
+	RegistrationDeadline *time.Time            `form:"registration_deadline" binding:"omitempty"`
 	IsDraft              bool                  `form:"is_draft"`
 	CoverFile            *multipart.FileHeader `form:"cover"`
 	DeleteCover          bool                  `form:"delete_cover"`
@@ -84,7 +137,7 @@ type SubmitTestCodeInput struct {
 func validateStartDate(fl validator.FieldLevel) bool {
 	t, ok := fl.Field().Interface().(*time.Time)
 	if !ok || t == nil {
-		return true // omitempty
+		return true
 	}
 	return !t.Before(time.Now())
 }
@@ -148,31 +201,33 @@ type questionPreview struct {
 	Answers []string `json:"answers"`
 }
 
-// ---------- Обработчики ----------
+// =============================================================================
+// ОБРАБОТЧИКИ
+// =============================================================================
 
 type GameHandler struct {
-	gameService     *GameService
-	passingService  *GamePassingService
-	coAuthorService *CoAuthorService
+	gameService     GameServiceInterface
+	passingService  GamePassingServiceInterface
+	coAuthorService CoAuthorServiceInterface
 	noteService     *NoteService
 	simulateService *SimulateService
 	photoService    *PhotoService
-	auditService    *audit.Service
+	auditService    AuditServiceInterface
 	storage         storage.FileStorage
 	hub             *ws.RoomHub
 	db              *gorm.DB
 }
 
 func NewGameHandler(
-	gameService *GameService,
-	passingService *GamePassingService,
-	coAuthorService *CoAuthorService,
+	gameService GameServiceInterface,
+	passingService GamePassingServiceInterface,
+	coAuthorService CoAuthorServiceInterface,
 	noteService *NoteService,
 	simulateService *SimulateService,
 	photoService *PhotoService,
 	storage storage.FileStorage,
 	hub *ws.RoomHub,
-	auditSvc *audit.Service,
+	auditSvc AuditServiceInterface,
 	db *gorm.DB,
 ) *GameHandler {
 	return &GameHandler{
@@ -265,16 +320,18 @@ func (h *GameHandler) Show(c *gin.Context) {
 		log.Error().Err(err).Int("game_id", id).Msg("GameHandler.Show: failed to check manager")
 		isManager = false
 	}
-	var reviews []Review
-	var avgRating float64
-	var reviewsCount int64
-	if h.gameService.reviewService != nil {
-		if reviews, err = h.gameService.reviewService.ListByGame(uint(id)); err != nil {
-			log.Error().Err(err).Int("game_id", id).Msg("GameHandler.Show: failed to list reviews")
-		}
-		if avgRating, reviewsCount, err = h.gameService.reviewService.GetAverageRating(uint(id)); err != nil {
-			log.Error().Err(err).Int("game_id", id).Msg("GameHandler.Show: failed to get average rating")
-		}
+
+	// Получаем отзывы через интерфейс
+	reviews, err := h.gameService.ListReviews(c.Request.Context(), uint(id))
+	if err != nil {
+		log.Error().Err(err).Int("game_id", id).Msg("GameHandler.Show: failed to list reviews")
+		reviews = []Review{}
+	}
+	avgRating, reviewsCount, err := h.gameService.GetAverageRating(c.Request.Context(), uint(id))
+	if err != nil {
+		log.Error().Err(err).Int("game_id", id).Msg("GameHandler.Show: failed to get average rating")
+		avgRating = 0
+		reviewsCount = 0
 	}
 
 	canApply := !g.IsDraft && (g.StartsAt == nil || g.StartsAt.After(time.Now()))
@@ -311,7 +368,6 @@ func (h *GameHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// Дополнительная проверка дат
 	if err := validateGameDates(input.StartsAt, input.RegistrationDeadline); err != nil {
 		render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
 			"Error": err.Error(),
@@ -320,8 +376,7 @@ func (h *GameHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// Создаём модель Game из входных данных
-	g := &Game{
+	createDTO := &CreateGameDTO{
 		Name:                 sanitize.StripHTML(input.Name),
 		Description:          sanitize.StripHTML(input.Description),
 		MaxTeamNumber:        input.MaxTeamNumber,
@@ -331,46 +386,12 @@ func (h *GameHandler) Create(c *gin.Context) {
 		IsDraft:              input.IsDraft,
 	}
 
-	// Обработка обложки
-	file, header, err := c.Request.FormFile("cover")
-	if err == nil {
-		defer func() { _ = file.Close() }()
-		if header.Size > 5*1024*1024 {
-			render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
-				"Error": "Размер файла не должен превышать 5 МБ",
-				"csrf":  csrf.GetToken(c),
-			})
-			return
-		}
-
-		allowedTypes := []string{"image/jpeg", "image/png", "image/webp"}
-		contentType := header.Header.Get("Content-Type")
-		if !slices.Contains(allowedTypes, contentType) {
-			render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
-				"Error": "Допустимы только JPEG, PNG и WebP",
-				"csrf":  csrf.GetToken(c),
-			})
-			return
-		}
-
-		webPath, err := h.storage.Save("uploads/covers", file, header.Filename, userID, 5*1024*1024, allowedTypes)
-		if err != nil {
-			log.Error().Err(err).Str("filename", header.Filename).Msg("Create game: failed to save cover")
-			render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
-				"Error": "Ошибка сохранения обложки",
-				"csrf":  csrf.GetToken(c),
-			})
-			return
-		}
-		g.CoverPath = webPath
+	if input.CoverFile != nil {
+		createDTO.CoverFile = input.CoverFile
 	}
 
-	if err := h.gameService.Create(c.Request.Context(), g, userID); err != nil {
-		if g.CoverPath != "" {
-			if delErr := h.storage.Delete(g.CoverPath); delErr != nil {
-				log.Error().Err(delErr).Str("path", g.CoverPath).Msg("Create game: failed to delete orphaned cover")
-			}
-		}
+	game, err := h.gameService.CreateGameWithCover(c.Request.Context(), createDTO, userID)
+	if err != nil {
 		render.Page(c, http.StatusInternalServerError, "games-new.html", gin.H{
 			"Error": err.Error(),
 			"csrf":  csrf.GetToken(c),
@@ -378,7 +399,7 @@ func (h *GameHandler) Create(c *gin.Context) {
 		return
 	}
 
-	h.auditService.Log(userID, "create", "game", g.ID, g.Name)
+	h.auditService.Log(userID, "create", "game", game.ID, game.Name)
 	c.Redirect(http.StatusFound, "/games")
 }
 
@@ -437,7 +458,6 @@ func (h *GameHandler) Update(c *gin.Context) {
 		return
 	}
 
-	// Дополнительная проверка дат
 	if err := validateGameDates(input.StartsAt, input.RegistrationDeadline); err != nil {
 		render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
 			"Error": err.Error(),
@@ -446,19 +466,7 @@ func (h *GameHandler) Update(c *gin.Context) {
 		return
 	}
 
-	oldGame, err := h.gameService.GetByID(c.Request.Context(), uint(id), userID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.HTML(http.StatusNotFound, "errors/404.html", nil)
-		} else {
-			log.Error().Err(err).Int("game_id", id).Msg("GameHandler.Update: failed to get game")
-			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
-		}
-		return
-	}
-
-	// Формируем обновлённую модель (поле ID не заполняем, т.к. передаём отдельно)
-	updated := &Game{
+	updateDTO := &UpdateGameDTO{
 		Name:                 sanitize.StripHTML(input.Name),
 		Description:          sanitize.StripHTML(input.Description),
 		MaxTeamNumber:        input.MaxTeamNumber,
@@ -466,68 +474,21 @@ func (h *GameHandler) Update(c *gin.Context) {
 		StartsAt:             input.StartsAt,
 		RegistrationDeadline: input.RegistrationDeadline,
 		IsDraft:              input.IsDraft,
+		DeleteCover:          input.DeleteCover,
+	}
+	if input.CoverFile != nil {
+		updateDTO.CoverFile = input.CoverFile
 	}
 
-	if input.DeleteCover {
-		if oldGame.CoverPath != "" {
-			if err := h.storage.Delete(oldGame.CoverPath); err != nil {
-				log.Error().Err(err).Str("path", oldGame.CoverPath).Msg("Update game: failed to delete old cover")
-			}
-		}
-		updated.CoverPath = ""
-	} else {
-		// Обработка новой обложки
-		file, header, err := c.Request.FormFile("cover")
-		if err == nil {
-			defer func() { _ = file.Close() }()
-			if header.Size > 5*1024*1024 {
-				render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
-					"Error": "Размер файла не должен превышать 5 МБ",
-					"csrf":  csrf.GetToken(c),
-				})
-				return
-			}
-
-			allowedTypes := []string{"image/jpeg", "image/png", "image/webp"}
-			contentType := header.Header.Get("Content-Type")
-			if !slices.Contains(allowedTypes, contentType) {
-				render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
-					"Error": "Допустимы только JPEG, PNG и WebP",
-					"csrf":  csrf.GetToken(c),
-				})
-				return
-			}
-
-			webPath, err := h.storage.Save("uploads/covers", file, header.Filename, userID, 5*1024*1024, allowedTypes)
-			if err != nil {
-				log.Error().Err(err).Str("filename", header.Filename).Msg("Update game: failed to save new cover")
-				render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
-					"Error": "Ошибка сохранения обложки",
-					"csrf":  csrf.GetToken(c),
-				})
-				return
-			}
-			if oldGame.CoverPath != "" {
-				if err := h.storage.Delete(oldGame.CoverPath); err != nil {
-					log.Error().Err(err).Str("path", oldGame.CoverPath).Msg("Update game: failed to delete old cover after upload")
-				}
-			}
-			updated.CoverPath = webPath
-		} else {
-			updated.CoverPath = oldGame.CoverPath
-		}
-	}
-
-	if err := h.gameService.Update(c.Request.Context(), uint(id), updated, userID); err != nil {
+	if err := h.gameService.UpdateGameWithCover(c.Request.Context(), uint(id), updateDTO, userID); err != nil {
 		render.Page(c, http.StatusForbidden, "games-edit.html", gin.H{
 			"Error": err.Error(),
-			"Game":  oldGame,
 			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
 
-	h.auditService.Log(userID, "update", "game", uint(id), updated.Name)
+	h.auditService.Log(userID, "update", "game", uint(id), input.Name)
 	c.Redirect(http.StatusFound, "/games/"+c.Param("id"))
 }
 
@@ -602,7 +563,7 @@ func (h *GameHandler) ApplyForm(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 
-	teams, err := h.passingService.teamService.GetTeamsByCaptain(c.Request.Context(), userID)
+	teams, err := h.passingService.GetTeamsByCaptain(c.Request.Context(), userID)
 	if err != nil {
 		log.Error().Err(err).Uint("user", userID).Msg("GameHandler.ApplyForm: failed to get teams")
 		teams = []team.Team{}
@@ -626,7 +587,7 @@ func (h *GameHandler) Apply(c *gin.Context) {
 
 	var input ApplyInput
 	if err := c.ShouldBind(&input); err != nil {
-		teams, _ := h.passingService.teamService.GetTeamsByCaptain(c.Request.Context(), userID)
+		teams, _ := h.passingService.GetTeamsByCaptain(c.Request.Context(), userID)
 		render.Page(c, http.StatusBadRequest, "game_passings-apply.html", gin.H{
 			"GameID": gameID,
 			"Teams":  teams,
@@ -636,9 +597,8 @@ func (h *GameHandler) Apply(c *gin.Context) {
 		return
 	}
 
-	// Дополнительная валидация
 	if err := validatePositiveUint("ID команды", input.TeamID); err != nil {
-		teams, _ := h.passingService.teamService.GetTeamsByCaptain(c.Request.Context(), userID)
+		teams, _ := h.passingService.GetTeamsByCaptain(c.Request.Context(), userID)
 		render.Page(c, http.StatusBadRequest, "game_passings-apply.html", gin.H{
 			"GameID": gameID,
 			"Teams":  teams,
@@ -649,7 +609,7 @@ func (h *GameHandler) Apply(c *gin.Context) {
 	}
 
 	if err := h.passingService.Apply(c.Request.Context(), uint(gameID), input.TeamID, userID); err != nil {
-		teams, _ := h.passingService.teamService.GetTeamsByCaptain(c.Request.Context(), userID)
+		teams, _ := h.passingService.GetTeamsByCaptain(c.Request.Context(), userID)
 		render.Page(c, http.StatusBadRequest, "game_passings-apply.html", gin.H{
 			"GameID": gameID,
 			"Teams":  teams,
@@ -845,7 +805,6 @@ func (h *GameHandler) CreateNote(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	// Валидация текста заметки
 	if err := validateString("Текст заметки", input.Text, 1, 1000); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -965,7 +924,6 @@ func (h *GameHandler) SaveSettings(c *gin.Context) {
 		return
 	}
 
-	// Валидация настроек
 	if settings.HintPenaltySeconds < 0 {
 		settings.HintPenaltySeconds = 0
 	}
@@ -1339,7 +1297,6 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 		return
 	}
 
-	// Валидация кода
 	code := strings.TrimSpace(input.Code)
 	if err := validateString("Код", code, 1, 10000); err != nil {
 		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{

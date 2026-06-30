@@ -2,6 +2,7 @@
 package websocket
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -31,16 +32,16 @@ func setUpWebsocketServer(t *testing.T) (*httptest.Server, *RoomHub) {
 		if roomID == "" {
 			roomID = "default"
 		}
-		client := &Client{
-			Conn:   conn,
-			Send:   make(chan []byte, 10),
-			RoomID: roomID,
-		}
+		client := NewClient(conn, roomID)
 		hub.RegisterClient(client)
 		defer hub.UnregisterClient(client)
 
-		go client.writePump()
+		// Используем WritePumpWithContext с контекстом
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		WritePumpWithContext(ctx, client)
 
+		// Цикл чтения
 		for {
 			_, _, err := conn.ReadMessage()
 			if err != nil {
@@ -51,6 +52,9 @@ func setUpWebsocketServer(t *testing.T) (*httptest.Server, *RoomHub) {
 
 	return server, hub
 }
+
+// Остальные тесты остаются без изменений, так как они используют setUpWebsocketServer
+// и не вызывают writePump напрямую.
 
 func TestWebSocket_Integration_EchoBroadcast(t *testing.T) {
 	server, hub := setUpWebsocketServer(t)

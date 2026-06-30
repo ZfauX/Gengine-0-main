@@ -12,6 +12,7 @@ import (
 	"gengine-0/internal/domain/monitor"
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/user"
+	"gengine-0/internal/pkg/storage"
 	"gengine-0/internal/pkg/websocket"
 	"gengine-0/internal/testutil"
 
@@ -742,7 +743,7 @@ func TestCoAuthorService_AddAndRemove(t *testing.T) {
 func newGameService(db *gorm.DB) *game.GameService {
 	cfg := &config.Config{}
 	hub := websocket.NewRoomHub()
-	go hub.Run() // <-- запускаем хаб, чтобы broadcast не блокировался
+	go hub.Run()
 	monitorSvc := game.NewMonitorService(db)
 	gameRepo := game.NewGormGameRepo(db)
 	passingRepo := game.NewGormGamePassingRepo(db)
@@ -750,16 +751,21 @@ func newGameService(db *gorm.DB) *game.GameService {
 	attemptSvc := game.NewAttemptService(db)
 	progressSvc := game.NewLevelProgressService(db)
 
+	// Создаём локальное хранилище для тестов
+	localStorage := storage.NewLocalStorage()
+
 	return game.NewGameService(
 		gameRepo,
 		passingRepo,
 		coAuthorSvc,
-		nil,
+		nil, // reviewService
 		monitorSvc,
 		hub,
 		attemptSvc,
 		progressSvc,
 		cfg,
+		localStorage,
+		nil, // cache
 	)
 }
 

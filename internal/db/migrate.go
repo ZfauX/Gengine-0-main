@@ -62,6 +62,11 @@ func MigrateFromFiles(db *gorm.DB, migrationsDir string) error {
 	return nil
 }
 
+// RunMigrations — обёртка для MigrateFromFiles с более простым интерфейсом.
+func RunMigrations(db *gorm.DB, migrationsDir string) error {
+	return MigrateFromFiles(db, migrationsDir)
+}
+
 // CreateMigrationFile создаёт новый файл миграции с указанным именем.
 func CreateMigrationFile(migrationsDir, name string) (upPath, downPath string, err error) {
 	if err := os.MkdirAll(migrationsDir, 0755); err != nil {

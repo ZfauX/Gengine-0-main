@@ -32,7 +32,7 @@ func RegisterRoutes(
 	adminHandler := NewAdminHandler(userRepo, gameRepo, backupService, auditService)
 
 	authRequired := middleware.AuthRequired(authService)
-	adminOnly := adminOnlyMiddleware() // убрали аргумент db
+	adminOnly := adminOnlyMiddleware()
 
 	protected := router.Group("/admin")
 	protected.Use(authRequired, adminOnly)
@@ -121,6 +121,7 @@ func RegisterRoutes(
 		// @Summary Создание бекапа
 		// @Description Создаёт новую резервную копию базы данных с помощью pg_dump
 		// @Tags admin
+		// @Accept x-www-form-urlencoded
 		// @Produce html
 		// @Success 302 {string} string "Перенаправление на /admin/backups"
 		// @Router /admin/backups/create [post]
@@ -141,6 +142,7 @@ func RegisterRoutes(
 		// @Summary Ротация бекапов
 		// @Description Удаляет старые резервные копии, оставляя не более MaxBackups
 		// @Tags admin
+		// @Accept x-www-form-urlencoded
 		// @Produce html
 		// @Success 302 {string} string "Перенаправление на /admin/backups"
 		// @Router /admin/backups/rotate [post]

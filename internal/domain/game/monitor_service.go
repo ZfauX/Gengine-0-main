@@ -10,6 +10,7 @@ import (
 	"gengine-0/internal/domain/level"
 	"gengine-0/internal/pkg/util"
 
+	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 )
 
@@ -19,6 +20,7 @@ type MonitorService struct {
 	cache    map[uint]*cachedSnapshot
 	cacheTTL time.Duration
 	mu       sync.RWMutex
+	sfGroup  singleflight.Group // предотвращает множественные одновременные запросы к БД
 }
 
 type cachedSnapshot struct {
@@ -50,7 +52,9 @@ type TeamProgress struct {
 }
 
 // GetOrFetchSnapshot возвращает снимок игры: из кэша, если TTL не истёк, иначе из БД.
+// Использует singleflight для предотвращения множественных одновременных запросов к БД.
 func (s *MonitorService) GetOrFetchSnapshot(gameID uint) ([]TeamProgress, error) {
+	// Быстрая проверка кэша с RLock
 	s.mu.RLock()
 	if cached, ok := s.cache[gameID]; ok && time.Since(cached.timestamp) < s.cacheTTL {
 		s.mu.RUnlock()
@@ -58,26 +62,38 @@ func (s *MonitorService) GetOrFetchSnapshot(gameID uint) ([]TeamProgress, error)
 	}
 	s.mu.RUnlock()
 
-	s.mu.Lock()
-	if cached, ok := s.cache[gameID]; ok && time.Since(cached.timestamp) < s.cacheTTL {
-		s.mu.Unlock()
-		return cached.data, nil
-	}
-	s.mu.Unlock()
+	// Используем singleflight для группировки одновременных запросов
+	key := fmt.Sprintf("snapshot:%d", gameID)
+	result, err, _ := s.sfGroup.Do(key, func() (interface{}, error) {
+		// Повторная проверка кэша уже внутри Lock (защита от гонки)
+		s.mu.RLock()
+		if cached, ok := s.cache[gameID]; ok && time.Since(cached.timestamp) < s.cacheTTL {
+			s.mu.RUnlock()
+			return cached.data, nil
+		}
+		s.mu.RUnlock()
 
-	snapshot, err := s.GameSnapshot(gameID)
+		// Загрузка из БД
+		snapshot, err := s.GameSnapshot(gameID)
+		if err != nil {
+			return nil, err
+		}
+
+		// Сохраняем в кэш
+		s.mu.Lock()
+		s.cache[gameID] = &cachedSnapshot{
+			data:      snapshot,
+			timestamp: time.Now(),
+		}
+		s.mu.Unlock()
+
+		return snapshot, nil
+	})
+
 	if err != nil {
 		return nil, err
 	}
-
-	s.mu.Lock()
-	s.cache[gameID] = &cachedSnapshot{
-		data:      snapshot,
-		timestamp: time.Now(),
-	}
-	s.mu.Unlock()
-
-	return snapshot, nil
+	return result.([]TeamProgress), nil
 }
 
 // InvalidateCache удаляет кэшированный снимок игры (вызывается при изменениях).

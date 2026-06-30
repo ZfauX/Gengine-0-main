@@ -21,6 +21,7 @@ import (
 	"gengine-0/internal/domain/tournament"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/audit"
+	"gengine-0/internal/pkg/cache"
 	"gengine-0/internal/pkg/health"
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
@@ -45,19 +46,15 @@ import (
 // ЗАВИСИМОСТИ — ВСЕ КОМПОНЕНТЫ ВЫНЕСЕНЫ В ОТДЕЛЬНУЮ СТРУКТУРУ
 // =============================================================================
 
-// Dependencies содержит все репозитории, сервисы и вспомогательные компоненты.
-// Это позволяет легко заменять реализации для тестирования.
 type Dependencies struct {
 	Repos    *repositories
 	Services *services
 	AuditSvc *audit.Service
 }
 
-// NewDependencies создаёт все зависимости на основе переданных аргументов.
-// Функция инициализации вынесена из App, чтобы уменьшить связанность.
-func NewDependencies(db *gorm.DB, cfg *config.Config, hub *ws.RoomHub) *Dependencies {
+func NewDependencies(db *gorm.DB, cfg *config.Config, hub *ws.RoomHub, localStorage storage.FileStorage, appCache *cache.Cache) *Dependencies {
 	repos := initRepositories(db)
-	services := initServices(db, repos, cfg, hub)
+	services := initServices(db, repos, cfg, hub, localStorage, appCache)
 	auditSvc := audit.NewService(db)
 
 	return &Dependencies{
@@ -78,13 +75,9 @@ type App struct {
 	Hub          *ws.RoomHub
 	BaseDir      string
 
-	// Зависимости внедряются через интерфейсы (пока что конкретные типы,
-	// но в будущем их можно заменить на интерфейсы для улучшения тестируемости)
 	Deps *Dependencies
 }
 
-// NewApp создаёт новый экземпляр App с переданными зависимостями.
-// Теперь App не создаёт зависимости самостоятельно, а получает их извне.
 func NewApp(
 	db *gorm.DB,
 	localStorage storage.FileStorage,
@@ -207,7 +200,7 @@ func (app *App) registerAllRoutes(r *gin.Engine) error {
 }
 
 // =============================================================================
-// ИНИЦИАЛИЗАЦИЯ РЕПОЗИТОРИЕВ (вынесена из App)
+// ИНИЦИАЛИЗАЦИЯ РЕПОЗИТОРИЕВ
 // =============================================================================
 
 type repositories struct {
@@ -251,7 +244,7 @@ func initRepositories(db *gorm.DB) *repositories {
 }
 
 // =============================================================================
-// ИНИЦИАЛИЗАЦИЯ СЕРВИСОВ (вынесена из App)
+// ИНИЦИАЛИЗАЦИЯ СЕРВИСОВ
 // =============================================================================
 
 type services struct {
@@ -275,7 +268,7 @@ type services struct {
 	Tournament    *tournament.TournamentService
 }
 
-func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.RoomHub) *services {
+func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.RoomHub, localStorage storage.FileStorage, appCache *cache.Cache) *services {
 	coAuthorSvc := game.NewCoAuthorService(db)
 	reviewSvc := game.NewReviewService(db)
 	attemptSvc := game.NewAttemptService(db)
@@ -299,6 +292,8 @@ func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.
 		attemptSvc,
 		progressSvc,
 		cfg,
+		localStorage,
+		appCache,
 	)
 
 	levelSvc := level.NewLevelService(repos.Level, repos.Question, repos.Answer, coAuthorSvc, gameSvc)
@@ -464,10 +459,8 @@ func (app *App) registerGameplayRoutes(r *gin.Engine) {
 // ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ОБРАТНОЙ СОВМЕСТИМОСТИ
 // =============================================================================
 
-// SetupRouter — сохранена для обратной совместимости.
-// Теперь она создаёт зависимости через NewDependencies и передаёт их в App.
-func SetupRouter(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub, cfg *config.Config, baseDir string) (*gin.Engine, error) {
-	deps := NewDependencies(db, cfg, hub)
+func SetupRouter(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub, cfg *config.Config, baseDir string, appCache *cache.Cache) (*gin.Engine, error) {
+	deps := NewDependencies(db, cfg, hub, localStorage, appCache)
 	app := NewApp(db, localStorage, hub, cfg, baseDir, deps)
 	return app.SetupRouter()
 }

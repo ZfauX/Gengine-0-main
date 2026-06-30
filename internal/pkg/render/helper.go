@@ -1,3 +1,4 @@
+// internal/pkg/render/helper.go
 package render
 
 import (
@@ -8,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-var globalTemplate *template.Template // устанавливается при старте из router.go
+var globalTemplate *template.Template
 
 // SetTemplate сохраняет общий *template.Template для использования в хелпере.
 func SetTemplate(t *template.Template) {
@@ -20,6 +21,12 @@ func SetTemplate(t *template.Template) {
 func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 	if data == nil {
 		data = gin.H{}
+	}
+
+	// Если шаблон не инициализирован (например, в тестах), возвращаем заглушку
+	if globalTemplate == nil {
+		c.String(http.StatusInternalServerError, "Template engine not initialized")
+		return
 	}
 
 	// 1. Рендерим контентный шаблон в bytes.Buffer

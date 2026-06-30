@@ -74,7 +74,8 @@ func setupRouterTest(t *testing.T) (*gin.Engine, *gorm.DB, func()) {
 	hub := ws.NewRoomHub()
 
 	baseDir := projectRoot()
-	router, err := SetupRouter(db, localStorage, hub, cfg, baseDir)
+	// В тестах кэш не используется, передаём nil
+	router, err := SetupRouter(db, localStorage, hub, cfg, baseDir, nil)
 	require.NoError(t, err)
 
 	cleanup := func() {}

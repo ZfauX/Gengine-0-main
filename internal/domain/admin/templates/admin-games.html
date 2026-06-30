@@ -7,7 +7,11 @@
     <a href="/admin/backups" class="button">Бэкапы</a>
 </div>
 <h1>Модерация игр</h1>
-<p><a href="?status=draft">Черновики</a> | <a href="?status=published">Опубликованные</a> | <a href="?">Все</a></p>
+<p>
+    <a href="?status=draft">Черновики</a> |
+    <a href="?status=published">Опубликованные</a> |
+    <a href="?">Все</a>
+</p>
 
 <!-- Скрытый CSRF-токен для возможных AJAX-запросов -->
 <input type="hidden" id="csrf_token" value="{{.csrf}}">
@@ -24,4 +28,16 @@
 </tr>
 {{end}}
 </table>
+
+{{if gt .TotalPages 1}}
+<div style="margin-top:20px; text-align:center;">
+    {{if gt .Page 1}}
+        <a href="?page={{.PrevPage}}&status={{$.Status}}&per_page={{$.PerPage}}">← Предыдущая</a>
+    {{end}}
+    Страница {{.Page}} из {{.TotalPages}} (всего {{.Total}} записей)
+    {{if lt .Page .TotalPages}}
+        <a href="?page={{.NextPage}}&status={{$.Status}}&per_page={{$.PerPage}}">Следующая →</a>
+    {{end}}
+</div>
+{{end}}
 {{end}}
