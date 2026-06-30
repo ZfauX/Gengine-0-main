@@ -15,9 +15,12 @@ type UserRepository interface {
 	GetPublicProfile(ctx context.Context, id uint) (*User, error)
 	Update(ctx context.Context, id uint, fields map[string]any) error
 	GetByRole(ctx context.Context, role string) (*User, error)
-	// Добавленные методы для админки
+
+	// Методы для админки с пагинацией
 	Count(ctx context.Context) (int64, error)
+	CountByRole(ctx context.Context, role string) (int64, error)
 	List(ctx context.Context, role string) ([]User, error)
+	ListPaginated(ctx context.Context, role string, offset, limit int) ([]User, error)
 	Delete(ctx context.Context, id uint) error
 }
 
@@ -81,10 +84,20 @@ func (r *gormUserRepo) GetByRole(ctx context.Context, role string) (*User, error
 	return &u, err
 }
 
-// --- Новые методы ---
+// --- Методы для админки ---
 func (r *gormUserRepo) Count(ctx context.Context) (int64, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Model(&User{}).Count(&count).Error
+	return count, err
+}
+
+func (r *gormUserRepo) CountByRole(ctx context.Context, role string) (int64, error) {
+	var count int64
+	query := r.db.WithContext(ctx).Model(&User{})
+	if role != "" {
+		query = query.Where("role = ?", role)
+	}
+	err := query.Count(&count).Error
 	return count, err
 }
 
@@ -95,6 +108,16 @@ func (r *gormUserRepo) List(ctx context.Context, role string) ([]User, error) {
 		query = query.Where("role = ?", role)
 	}
 	err := query.Find(&users).Error
+	return users, err
+}
+
+func (r *gormUserRepo) ListPaginated(ctx context.Context, role string, offset, limit int) ([]User, error) {
+	var users []User
+	query := r.db.WithContext(ctx).Model(&User{})
+	if role != "" {
+		query = query.Where("role = ?", role)
+	}
+	err := query.Offset(offset).Limit(limit).Find(&users).Error
 	return users, err
 }
 

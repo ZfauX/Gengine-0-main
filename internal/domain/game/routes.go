@@ -20,7 +20,7 @@ import (
 func RegisterRoutes(
 	r *gin.Engine,
 	gameService *GameService,
-	passingService *GamePassingService, // теперь нужен для Apply
+	passingService *GamePassingService,
 	coAuthorSvc *CoAuthorService,
 	attemptSvc *AttemptService,
 	progressSvc *LevelProgressService,
@@ -332,14 +332,101 @@ func RegisterGameplayRoutes(
 	handler *GameplayHandler,
 	coAuthorSvc *CoAuthorService,
 ) {
-	// ... (без изменений)
+	// @Summary Страница прохождения уровня
+	// @Description Отображает текущий уровень для команды во время игры
+	// @Tags gameplay
+	// @Produce html
+	// @Param passing_id path int true "ID прохождения"
+	// @Success 200 {string} html "Страница уровня"
+	// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+	// @Failure 404 {object} map[string]interface{} "Уровень не найден"
+	// @Router /game/{passing_id} [get]
+	// @Security JWT
 	r.GET("/game/:passing_id", handler.ShowGame)
+
+	// @Summary Отправка кода
+	// @Description Отправляет текстовый код для проверки на текущем уровне
+	// @Tags gameplay
+	// @Accept x-www-form-urlencoded
+	// @Produce html
+	// @Param passing_id path int true "ID прохождения"
+	// @Param code formData string true "Код для проверки"
+	// @Success 302 {string} string "Перенаправление на /game/{passing_id}"
+	// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+	// @Router /game/{passing_id}/submit [post]
+	// @Security JWT
 	r.POST("/game/:passing_id/submit", handler.SubmitCode)
+
+	// @Summary Использование подсказки
+	// @Description Запрашивает подсказку для текущего уровня (увеличивает штрафное время)
+	// @Tags gameplay
+	// @Accept x-www-form-urlencoded
+	// @Produce html
+	// @Param passing_id path int true "ID прохождения"
+	// @Success 302 {string} string "Перенаправление на /game/{passing_id}"
+	// @Failure 400 {object} map[string]interface{} "Подсказки запрещены или лимит исчерпан"
+	// @Router /game/{passing_id}/hint [post]
+	// @Security JWT
 	r.POST("/game/:passing_id/hint", handler.UseHint)
+
+	// @Summary Загрузка файла ответа
+	// @Description Загружает файл в качестве ответа на текущий уровень
+	// @Tags gameplay
+	// @Accept multipart/form-data
+	// @Produce html
+	// @Param passing_id path int true "ID прохождения"
+	// @Param answer_file formData file true "Файл ответа"
+	// @Success 302 {string} string "Перенаправление на /game/{passing_id}"
+	// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+	// @Router /game/{passing_id}/file [post]
+	// @Security JWT
 	r.POST("/game/:passing_id/file", handler.SubmitFile)
+
+	// @Summary Подтверждение ответа (только для чёрного ящика)
+	// @Description Автор игры подтверждает ответ команды на уровне "чёрный ящик"
+	// @Tags gameplay
+	// @Accept x-www-form-urlencoded
+	// @Produce html
+	// @Param passing_id path int true "ID прохождения"
+	// @Success 302 {string} string "Перенаправление на /games/{game_id}/monitor"
+	// @Failure 403 {object} map[string]interface{} "Только автор может подтвердить"
+	// @Router /game/{passing_id}/accept [post]
+	// @Security JWT
 	r.POST("/game/:passing_id/accept", handler.AcceptAnswer)
 
+	// @Summary Страница тестового прохождения
+	// @Description Отображает текущий уровень в тестовом режиме (виден автору)
+	// @Tags testing
+	// @Produce html
+	// @Param passing_id path int true "ID прохождения"
+	// @Success 200 {string} html "Страница тестового уровня"
+	// @Failure 404 {object} map[string]interface{} "Уровень не найден"
+	// @Router /testing/{passing_id} [get]
+	// @Security JWT
 	r.GET("/testing/:passing_id", handler.ShowTestGame)
+
+	// @Summary Отправка кода в тестовом режиме
+	// @Description Отправляет код для проверки в тестовом режиме (всегда успешно)
+	// @Tags testing
+	// @Accept x-www-form-urlencoded
+	// @Produce html
+	// @Param passing_id path int true "ID прохождения"
+	// @Param code formData string true "Код для проверки"
+	// @Success 302 {string} string "Перенаправление на /testing/{passing_id}"
+	// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+	// @Router /testing/{passing_id}/submit [post]
+	// @Security JWT
 	r.POST("/testing/:passing_id/submit", handler.SubmitTestCode)
+
+	// @Summary Пропуск уровня в тестовом режиме
+	// @Description Пропускает текущий уровень в тестовом режиме
+	// @Tags testing
+	// @Accept x-www-form-urlencoded
+	// @Produce html
+	// @Param passing_id path int true "ID прохождения"
+	// @Success 302 {string} string "Перенаправление на /testing/{passing_id}"
+	// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+	// @Router /testing/{passing_id}/skip [post]
+	// @Security JWT
 	r.POST("/testing/:passing_id/skip", handler.SkipTestLevel)
 }

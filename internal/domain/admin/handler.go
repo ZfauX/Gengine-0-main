@@ -23,14 +23,18 @@ type IDRequest struct {
 	ID uint `uri:"id" binding:"required,gt=0"`
 }
 
-// ListUsersRequest используется для фильтрации списка пользователей.
+// ListUsersRequest используется для фильтрации и пагинации списка пользователей.
 type ListUsersRequest struct {
-	Role string `form:"role" binding:"omitempty,oneof=user admin"`
+	Role    string `form:"role" binding:"omitempty,oneof=user admin"`
+	Page    int    `form:"page" binding:"omitempty,min=1"`
+	PerPage int    `form:"per_page" binding:"omitempty,min=1,max=100"`
 }
 
-// ListGamesRequest используется для фильтрации списка игр.
+// ListGamesRequest используется для фильтрации и пагинации списка игр.
 type ListGamesRequest struct {
-	Status string `form:"status" binding:"omitempty,oneof=draft published"`
+	Status  string `form:"status" binding:"omitempty,oneof=draft published"`
+	Page    int    `form:"page" binding:"omitempty,min=1"`
+	PerPage int    `form:"per_page" binding:"omitempty,min=1,max=100"`
 }
 
 // AuditLogRequest используется для фильтрации и пагинации аудита.
@@ -105,25 +109,61 @@ func (h *AdminHandler) Dashboard(c *gin.Context) {
 	})
 }
 
-// ListUsers отображает список всех пользователей с возможностью фильтрации по роли.
+// ListUsers отображает список всех пользователей с возможностью фильтрации по роли и пагинацией.
 func (h *AdminHandler) ListUsers(c *gin.Context) {
 	var req ListUsersRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
-		// Если ошибка валидации, просто устанавливаем пустую роль
 		req.Role = ""
+		req.Page = 1
+		req.PerPage = 20
+	}
+	if req.Page < 1 {
+		req.Page = 1
+	}
+	if req.PerPage < 1 || req.PerPage > 100 {
+		req.PerPage = 20
 	}
 
 	ctx := c.Request.Context()
-	users, err := h.userRepo.List(ctx, req.Role)
+
+	// Получаем общее количество для пагинации
+	total, err := h.userRepo.CountByRole(ctx, req.Role)
 	if err != nil {
-		log.Error().Err(err).Str("role", req.Role).Msg("ListUsers failed")
+		log.Error().Err(err).Str("role", req.Role).Msg("ListUsers: failed to count users")
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
+	}
+
+	offset := (req.Page - 1) * req.PerPage
+	users, err := h.userRepo.ListPaginated(ctx, req.Role, offset, req.PerPage)
+	if err != nil {
+		log.Error().Err(err).Str("role", req.Role).Msg("ListUsers: failed to list users")
+		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		return
+	}
+
+	totalPages := int((total + int64(req.PerPage) - 1) / int64(req.PerPage))
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	prevPage := req.Page - 1
+	if prevPage < 1 {
+		prevPage = 1
+	}
+	nextPage := req.Page + 1
+	if nextPage > totalPages {
+		nextPage = totalPages
 	}
 
 	render.Page(c, http.StatusOK, "admin-users.html", gin.H{
 		"Users":         users,
 		"Role":          req.Role,
+		"Page":          req.Page,
+		"PerPage":       req.PerPage,
+		"TotalPages":    totalPages,
+		"PrevPage":      prevPage,
+		"NextPage":      nextPage,
+		"Total":         total,
 		"CurrentUserID": c.GetUint("userID"),
 		"IsAdmin":       true,
 		"csrf":          csrf.GetToken(c),
@@ -189,11 +229,19 @@ func (h *AdminHandler) DeleteUser(c *gin.Context) {
 
 // ---------- Игры ----------
 
-// ListGames отображает все игры (включая черновики) с фильтрацией.
+// ListGames отображает все игры (включая черновики) с фильтрацией и пагинацией.
 func (h *AdminHandler) ListGames(c *gin.Context) {
 	var req ListGamesRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
 		req.Status = ""
+		req.Page = 1
+		req.PerPage = 20
+	}
+	if req.Page < 1 {
+		req.Page = 1
+	}
+	if req.PerPage < 1 || req.PerPage > 100 {
+		req.PerPage = 20
 	}
 
 	ctx := c.Request.Context()
@@ -204,16 +252,44 @@ func (h *AdminHandler) ListGames(c *gin.Context) {
 	case "published":
 		query = query.Where("is_draft = false")
 	}
-	games, err := h.gameRepo.ListFiltered(ctx, query, 0, 1000)
+
+	total, err := h.gameRepo.Count(ctx, query)
 	if err != nil {
-		log.Error().Err(err).Str("status", req.Status).Msg("ListGames failed")
+		log.Error().Err(err).Str("status", req.Status).Msg("ListGames: failed to count games")
 		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
 		return
+	}
+
+	offset := (req.Page - 1) * req.PerPage
+	games, err := h.gameRepo.ListFiltered(ctx, query, offset, req.PerPage)
+	if err != nil {
+		log.Error().Err(err).Str("status", req.Status).Msg("ListGames: failed to list games")
+		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		return
+	}
+
+	totalPages := int((total + int64(req.PerPage) - 1) / int64(req.PerPage))
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	prevPage := req.Page - 1
+	if prevPage < 1 {
+		prevPage = 1
+	}
+	nextPage := req.Page + 1
+	if nextPage > totalPages {
+		nextPage = totalPages
 	}
 
 	render.Page(c, http.StatusOK, "admin-games.html", gin.H{
 		"Games":         games,
 		"Status":        req.Status,
+		"Page":          req.Page,
+		"PerPage":       req.PerPage,
+		"TotalPages":    totalPages,
+		"PrevPage":      prevPage,
+		"NextPage":      nextPage,
+		"Total":         total,
 		"CurrentUserID": c.GetUint("userID"),
 		"IsAdmin":       true,
 		"csrf":          csrf.GetToken(c),
@@ -248,7 +324,6 @@ func (h *AdminHandler) DeleteGame(c *gin.Context) {
 func (h *AdminHandler) AuditLog(c *gin.Context) {
 	var req AuditLogRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
-		// Устанавливаем значения по умолчанию при ошибке валидации
 		req.Page = 1
 		req.PerPage = 20
 	}

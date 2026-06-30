@@ -2,7 +2,15 @@ package game
 
 import (
 	"errors"
+
 	"gorm.io/gorm"
+)
+
+// Роли соавторов (константы для защиты от опечаток)
+const (
+	RoleContentEditor = "content_editor"
+	RoleModerator     = "moderator"
+	RoleObserver      = "observer"
 )
 
 type CoAuthorService struct {
@@ -13,6 +21,7 @@ func NewCoAuthorService(db *gorm.DB) *CoAuthorService {
 	return &CoAuthorService{DB: db}
 }
 
+// IsUserManager проверяет, является ли пользователь автором или соавтором игры.
 func (s *CoAuthorService) IsUserManager(gameID, userID uint) (bool, error) {
 	var game Game
 	if err := s.DB.First(&game, gameID).Error; err != nil {
@@ -28,6 +37,8 @@ func (s *CoAuthorService) IsUserManager(gameID, userID uint) (bool, error) {
 	return count > 0, nil
 }
 
+// HasPermission проверяет наличие у пользователя конкретной роли в игре.
+// Если пользователь — автор игры, всегда возвращает true.
 func (s *CoAuthorService) HasPermission(gameID, userID uint, requiredRole string) (bool, error) {
 	var game Game
 	if err := s.DB.First(&game, gameID).Error; err != nil {
@@ -42,14 +53,24 @@ func (s *CoAuthorService) HasPermission(gameID, userID uint, requiredRole string
 		return false, nil
 	}
 	switch requiredRole {
-	case "content":
-		return co.Role == "content_editor" || co.Role == "moderator", nil
-	case "moderator":
-		return co.Role == "moderator", nil
-	case "observer":
+	case RoleContentEditor:
+		return co.Role == RoleContentEditor || co.Role == RoleModerator, nil
+	case RoleModerator:
+		return co.Role == RoleModerator, nil
+	case RoleObserver:
 		return true, nil
 	}
 	return false, nil
+}
+
+// CanModerateGame — удобный метод для проверки права на модерацию игры.
+func (s *CoAuthorService) CanModerateGame(gameID, userID uint) (bool, error) {
+	return s.HasPermission(gameID, userID, RoleModerator)
+}
+
+// CanEditContent — удобный метод для проверки права на редактирование контента.
+func (s *CoAuthorService) CanEditContent(gameID, userID uint) (bool, error) {
+	return s.HasPermission(gameID, userID, RoleContentEditor)
 }
 
 func (s *CoAuthorService) Add(gameID, newCoAuthorID, ownerID uint) error {
@@ -67,7 +88,7 @@ func (s *CoAuthorService) Add(gameID, newCoAuthorID, ownerID uint) error {
 	if err := s.DB.Where("game_id = ? AND user_id = ?", gameID, newCoAuthorID).First(&existing).Error; err == nil {
 		return errors.New("этот пользователь уже соавтор")
 	}
-	co := CoAuthor{GameID: gameID, UserID: newCoAuthorID, Role: "content_editor"}
+	co := CoAuthor{GameID: gameID, UserID: newCoAuthorID, Role: RoleContentEditor}
 	return s.DB.Create(&co).Error
 }
 

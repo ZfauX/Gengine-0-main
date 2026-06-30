@@ -22,7 +22,6 @@ func NewLocalStorage() *LocalStorage {
 }
 
 // sanitizeFilename очищает имя файла, оставляя только безопасные символы.
-// Пустое имя или имя, состоящее только из "." — возвращается как пустая строка.
 func sanitizeFilename(name string) string {
 	if name == "" {
 		return ""
@@ -101,21 +100,24 @@ func (s *LocalStorage) Save(baseDir string, reader io.Reader, originalName strin
 	if err != nil {
 		return "", fmt.Errorf("не удалось создать файл: %w", err)
 	}
-	defer func() { _ = dst.Close() }()
+	// Закрываем файл после записи, но если запись не удалась, удаляем его
+	defer func() {
+		_ = dst.Close()
+		if err != nil {
+			_ = os.Remove(fullPath)
+		}
+	}()
 
 	if _, err := io.Copy(dst, dataReader); err != nil {
-		_ = os.Remove(fullPath)
 		return "", fmt.Errorf("не удалось записать файл: %w", err)
 	}
 
 	if maxSize > 0 {
 		info, err := os.Stat(fullPath)
 		if err != nil {
-			_ = os.Remove(fullPath)
 			return "", fmt.Errorf("не удалось проверить файл: %w", err)
 		}
 		if info.Size() > maxSize {
-			_ = os.Remove(fullPath)
 			return "", fmt.Errorf("размер файла превышает допустимый лимит %d байт", maxSize)
 		}
 	}

@@ -13,6 +13,8 @@ type RoomHub struct {
 	register   chan *Client
 	unregister chan *Client
 	broadcast  chan *Message
+	done       chan struct{} // сигнал остановки хаба
+	wg         sync.WaitGroup
 }
 
 type Message struct {
@@ -26,12 +28,21 @@ func NewRoomHub() *RoomHub {
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		broadcast:  make(chan *Message),
+		done:       make(chan struct{}),
 	}
 }
 
+// Run запускает основной цикл обработки событий хаба.
+// Блокирует выполнение, пока не будет вызван Stop() или каналы не закроются.
 func (h *RoomHub) Run() {
+	h.wg.Add(1)
+	defer h.wg.Done()
+
 	for {
 		select {
+		case <-h.done:
+			log.Info().Msg("RoomHub: stopping")
+			return
 		case client := <-h.register:
 			h.mu.Lock()
 			client.Hub = h
@@ -83,14 +94,36 @@ func (h *RoomHub) Run() {
 	}
 }
 
+// Stop останавливает хаб, дожидаясь завершения всех операций.
+func (h *RoomHub) Stop() {
+	close(h.done)
+	h.wg.Wait()
+	log.Info().Msg("RoomHub: stopped")
+}
+
+// RegisterClient регистрирует клиента в хабе.
 func (h *RoomHub) RegisterClient(client *Client) {
-	h.register <- client
+	select {
+	case h.register <- client:
+	case <-h.done:
+		log.Warn().Msg("RoomHub: register failed, hub is stopped")
+	}
 }
 
+// UnregisterClient удаляет клиента из хаба.
 func (h *RoomHub) UnregisterClient(client *Client) {
-	h.unregister <- client
+	select {
+	case h.unregister <- client:
+	case <-h.done:
+		log.Warn().Msg("RoomHub: unregister failed, hub is stopped")
+	}
 }
 
+// BroadcastToRoom отправляет сообщение всем клиентам в комнате.
 func (h *RoomHub) BroadcastToRoom(roomID string, data []byte) {
-	h.broadcast <- &Message{Room: roomID, Data: data}
+	select {
+	case h.broadcast <- &Message{Room: roomID, Data: data}:
+	case <-h.done:
+		log.Warn().Str("room", roomID).Msg("RoomHub: broadcast failed, hub is stopped")
+	}
 }

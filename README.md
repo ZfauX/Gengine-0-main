@@ -158,3 +158,23 @@ CGO_ENABLED=0 go build -o gengine -ldflags="-s -w" ./cmd/server
 go build -o gengine.exe ./cmd/server
 
 swag init -g cmd/server/main.go -o docs
+
+Swagger UI будет доступен по адресу: http://localhost:8080/swagger/index.html
+
+Документация в формате JSON доступна по адресу: http://localhost:8080/swagger/doc.json
+
+
+# Сервер
+go build -o gengine-server.exe cmd/server/main.go
+
+# Утилита миграций (если создали)
+go build -o gengine-migrate.exe cmd/migrate/main.go
+
+
+Запуск в production:
+
+# Применить миграции перед запуском
+./gengine-migrate
+
+# Запустить сервер
+./gengine-server

@@ -2,6 +2,7 @@
 package monitor
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -111,17 +112,14 @@ func (h *MonitorHandler) MonitorStreamSSE(c *gin.Context) {
 	}
 	gameID := req.ID
 
-	// Настройка SSE-заголовков
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
-	c.Header("X-Accel-Buffering", "no") // отключить буферизацию nginx
+	c.Header("X-Accel-Buffering", "no")
 
-	// Таймер для периодических пингов (чтобы соединение не разрывалось)
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
-	// Получаем контекст запроса для отслеживания закрытия
 	ctx := c.Request.Context()
 
 	for {
@@ -130,18 +128,15 @@ func (h *MonitorHandler) MonitorStreamSSE(c *gin.Context) {
 			log.Debug().Uint("game_id", gameID).Msg("SSE connection closed by client")
 			return
 		case <-ticker.C:
-			// Пинг (комментарий) для поддержания соединения
 			if _, err := fmt.Fprintf(c.Writer, ": ping\n\n"); err != nil {
 				log.Debug().Err(err).Uint("game_id", gameID).Msg("SSE ping write error")
 				return
 			}
 			c.Writer.Flush()
 		default:
-			// Получаем текущий снимок
 			snapshot, err := h.monitorService.GetOrFetchSnapshot(gameID)
 			if err != nil {
 				log.Error().Err(err).Uint("game_id", gameID).Msg("SSE: failed to get snapshot")
-				// Отправляем событие ошибки
 				_, _ = fmt.Fprintf(c.Writer, "event: error\ndata: {\"error\": \"%s\"}\n\n", err.Error())
 				c.Writer.Flush()
 				time.Sleep(2 * time.Second)
@@ -155,13 +150,11 @@ func (h *MonitorHandler) MonitorStreamSSE(c *gin.Context) {
 				continue
 			}
 
-			// Отправляем событие update
 			if _, err := fmt.Fprintf(c.Writer, "event: update\ndata: %s\n\n", data); err != nil {
 				log.Debug().Err(err).Uint("game_id", gameID).Msg("SSE write error")
 				return
 			}
 			c.Writer.Flush()
-
 			time.Sleep(1 * time.Second)
 		}
 	}
@@ -195,12 +188,17 @@ func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 		}
 	}
 
+	// Используем контекст запроса для отмены горутины при закрытии соединения
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+
 	go func() {
 		defer func() {
 			h.hub.UnregisterClient(client)
 			client.Close()
 		}()
-		ws.HandleWebSocket(client)
+		// Запускаем обработку WebSocket с поддержкой отмены
+		ws.HandleWebSocketWithContext(ctx, client)
 	}()
 }
 
@@ -290,34 +288,48 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 		}
 	}
 
+	// Создаём контекст с отменой для управления горутинами
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+
 	go func() {
 		defer func() {
 			h.hub.UnregisterClient(client)
 			client.Close()
 		}()
-		ws.WritePump(client)
+
+		// Запускаем писатель с поддержкой контекста
+		ws.WritePumpWithContext(ctx, client)
+
+		// Цикл чтения с поддержкой отмены
 		for {
-			_, message, err := conn.ReadMessage()
-			if err != nil {
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-					log.Error().Err(err).Str("room_id", roomID).Msg("ChatWS: read error")
+			select {
+			case <-ctx.Done():
+				log.Debug().Str("room_id", roomID).Msg("ChatWS: context cancelled, stopping read loop")
+				return
+			default:
+				_, message, err := conn.ReadMessage()
+				if err != nil {
+					if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+						log.Error().Err(err).Str("room_id", roomID).Msg("ChatWS: read error")
+					}
+					return
 				}
-				break
+				msg, err := h.chatService.SaveMessage(c.Request.Context(), uint(roomIDUint), userID, string(message))
+				if err != nil {
+					log.Error().Err(err).Str("room_id", roomID).Uint("user_id", userID).Msg("ChatWS: failed to save message")
+					continue
+				}
+				if err := h.db.Preload("User").First(&msg, msg.ID).Error; err != nil {
+					log.Error().Err(err).Uint("msg_id", msg.ID).Msg("ChatWS: failed to preload user")
+				}
+				resp, err := json.Marshal(gin.H{"type": "message", "message": msg})
+				if err != nil {
+					log.Error().Err(err).Uint("msg_id", msg.ID).Msg("ChatWS: failed to marshal message")
+					continue
+				}
+				h.hub.BroadcastToRoom(roomID, resp)
 			}
-			msg, err := h.chatService.SaveMessage(c.Request.Context(), uint(roomIDUint), userID, string(message))
-			if err != nil {
-				log.Error().Err(err).Str("room_id", roomID).Uint("user_id", userID).Msg("ChatWS: failed to save message")
-				continue
-			}
-			if err := h.db.Preload("User").First(&msg, msg.ID).Error; err != nil {
-				log.Error().Err(err).Uint("msg_id", msg.ID).Msg("ChatWS: failed to preload user")
-			}
-			resp, err := json.Marshal(gin.H{"type": "message", "message": msg})
-			if err != nil {
-				log.Error().Err(err).Uint("msg_id", msg.ID).Msg("ChatWS: failed to marshal message")
-				continue
-			}
-			h.hub.BroadcastToRoom(roomID, resp)
 		}
 	}()
 }
@@ -394,7 +406,6 @@ func (h *MonitorHandler) ListLogs(c *gin.Context) {
 }
 
 // LogsWS предоставляет WebSocket-стрим логов игры.
-// Можно также перевести на SSE, но оставляем WebSocket для обратной совместимости.
 func (h *MonitorHandler) LogsWS(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -409,12 +420,16 @@ func (h *MonitorHandler) LogsWS(c *gin.Context) {
 	}
 	client := ws.NewClient(conn, "logs_"+gameID)
 	h.hub.RegisterClient(client)
+
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+
 	go func() {
 		defer func() {
 			h.hub.UnregisterClient(client)
 			client.Close()
 		}()
-		ws.HandleWebSocket(client)
+		ws.HandleWebSocketWithContext(ctx, client)
 	}()
 }
 

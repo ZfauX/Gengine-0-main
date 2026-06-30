@@ -15,17 +15,21 @@ import (
 	"gorm.io/gorm"
 )
 
-// Все тесты используют единую тестовую базу PostgreSQL,
-// которая автоматически мигрирует модели и очищает таблицы перед каждым тестом.
+// Все модели, необходимые для корректного создания Foreign Key
+var allModels = []any{
+	&user.User{},
+	&game.Game{},
+	&game.GameSetting{},
+	&game.CoAuthor{},
+	&level.Level{},
+	&level.Question{},
+	&level.Answer{},
+}
 
 // ---------- LevelService ----------
 
 func TestLevelService_Create(t *testing.T) {
-	db := testutil.SetupPostgresDB(t,
-		&level.Level{}, &level.Question{}, &level.Answer{},
-		&game.Game{}, &game.GameSetting{}, &game.CoAuthor{},
-		&user.User{},
-	)
+	db := testutil.SetupPostgresDB(t, allModels...)
 	svc := newLevelService(db)
 
 	author := createUser(t, db, "author@test.com", "pass")
@@ -39,11 +43,7 @@ func TestLevelService_Create(t *testing.T) {
 }
 
 func TestLevelService_Create_NotAuthor(t *testing.T) {
-	db := testutil.SetupPostgresDB(t,
-		&level.Level{}, &level.Question{}, &level.Answer{},
-		&game.Game{}, &game.GameSetting{}, &game.CoAuthor{},
-		&user.User{},
-	)
+	db := testutil.SetupPostgresDB(t, allModels...)
 	svc := newLevelService(db)
 
 	author := createUser(t, db, "author@test.com", "pass")
@@ -56,11 +56,7 @@ func TestLevelService_Create_NotAuthor(t *testing.T) {
 }
 
 func TestLevelService_Update(t *testing.T) {
-	db := testutil.SetupPostgresDB(t,
-		&level.Level{}, &level.Question{}, &level.Answer{},
-		&game.Game{}, &game.GameSetting{}, &game.CoAuthor{},
-		&user.User{},
-	)
+	db := testutil.SetupPostgresDB(t, allModels...)
 	svc := newLevelService(db)
 
 	author := createUser(t, db, "upd@test.com", "pass")
@@ -80,11 +76,7 @@ func TestLevelService_Update(t *testing.T) {
 }
 
 func TestLevelService_Duplicate(t *testing.T) {
-	db := testutil.SetupPostgresDB(t,
-		&level.Level{}, &level.Question{}, &level.Answer{},
-		&game.Game{}, &game.GameSetting{}, &game.CoAuthor{},
-		&user.User{},
-	)
+	db := testutil.SetupPostgresDB(t, allModels...)
 	svc := newLevelService(db)
 
 	author := createUser(t, db, "dup@test.com", "pass")
@@ -113,11 +105,7 @@ func TestLevelService_Duplicate(t *testing.T) {
 }
 
 func TestLevelService_Move(t *testing.T) {
-	db := testutil.SetupPostgresDB(t,
-		&level.Level{}, &level.Question{}, &level.Answer{},
-		&game.Game{}, &game.GameSetting{}, &game.CoAuthor{},
-		&user.User{},
-	)
+	db := testutil.SetupPostgresDB(t, allModels...)
 	svc := newLevelService(db)
 
 	author := createUser(t, db, "move@test.com", "pass")
@@ -138,11 +126,7 @@ func TestLevelService_Move(t *testing.T) {
 }
 
 func TestLevelService_MoveDown(t *testing.T) {
-	db := testutil.SetupPostgresDB(t,
-		&level.Level{}, &level.Question{}, &level.Answer{},
-		&game.Game{}, &game.GameSetting{}, &game.CoAuthor{},
-		&user.User{},
-	)
+	db := testutil.SetupPostgresDB(t, allModels...)
 	svc := newLevelService(db)
 
 	author := createUser(t, db, "movedown@test.com", "pass")
@@ -163,11 +147,7 @@ func TestLevelService_MoveDown(t *testing.T) {
 }
 
 func TestLevelService_Duplicate_NotAuthor(t *testing.T) {
-	db := testutil.SetupPostgresDB(t,
-		&level.Level{}, &level.Question{}, &level.Answer{},
-		&game.Game{}, &game.GameSetting{}, &game.CoAuthor{},
-		&user.User{},
-	)
+	db := testutil.SetupPostgresDB(t, allModels...)
 	svc := newLevelService(db)
 
 	author := createUser(t, db, "auth@test.com", "pass")
@@ -182,11 +162,7 @@ func TestLevelService_Duplicate_NotAuthor(t *testing.T) {
 }
 
 func TestLevelService_ListByGame(t *testing.T) {
-	db := testutil.SetupPostgresDB(t,
-		&level.Level{}, &level.Question{}, &level.Answer{},
-		&game.Game{}, &game.GameSetting{}, &game.CoAuthor{},
-		&user.User{},
-	)
+	db := testutil.SetupPostgresDB(t, allModels...)
 	svc := newLevelService(db)
 
 	author := createUser(t, db, "list@test.com", "pass")
@@ -203,11 +179,7 @@ func TestLevelService_ListByGame(t *testing.T) {
 }
 
 func TestLevelService_GetByID(t *testing.T) {
-	db := testutil.SetupPostgresDB(t,
-		&level.Level{}, &level.Question{}, &level.Answer{},
-		&game.Game{}, &game.GameSetting{}, &game.CoAuthor{},
-		&user.User{},
-	)
+	db := testutil.SetupPostgresDB(t, allModels...)
 	svc := newLevelService(db)
 
 	author := createUser(t, db, "getbyid@test.com", "pass")
@@ -223,11 +195,7 @@ func TestLevelService_GetByID(t *testing.T) {
 // ---------- QuestionService ----------
 
 func TestQuestionService_Create(t *testing.T) {
-	db := testutil.SetupPostgresDB(t,
-		&level.Level{}, &level.Question{}, &level.Answer{},
-		&game.Game{}, &game.GameSetting{}, &game.CoAuthor{},
-		&user.User{},
-	)
+	db := testutil.SetupPostgresDB(t, allModels...)
 	qSvc := newQuestionService(db)
 
 	author := createUser(t, db, "q@test.com", "pass")
@@ -243,11 +211,7 @@ func TestQuestionService_Create(t *testing.T) {
 }
 
 func TestQuestionService_Delete(t *testing.T) {
-	db := testutil.SetupPostgresDB(t,
-		&level.Level{}, &level.Question{}, &level.Answer{},
-		&game.Game{}, &game.GameSetting{}, &game.CoAuthor{},
-		&user.User{},
-	)
+	db := testutil.SetupPostgresDB(t, allModels...)
 	qSvc := newQuestionService(db)
 
 	author := createUser(t, db, "qdel@test.com", "pass")
@@ -267,11 +231,7 @@ func TestQuestionService_Delete(t *testing.T) {
 }
 
 func TestQuestionService_Update(t *testing.T) {
-	db := testutil.SetupPostgresDB(t,
-		&level.Level{}, &level.Question{}, &level.Answer{},
-		&game.Game{}, &game.GameSetting{}, &game.CoAuthor{},
-		&user.User{},
-	)
+	db := testutil.SetupPostgresDB(t, allModels...)
 	qSvc := newQuestionService(db)
 
 	author := createUser(t, db, "qup@test.com", "pass")
@@ -292,11 +252,7 @@ func TestQuestionService_Update(t *testing.T) {
 }
 
 func TestQuestionService_ListByLevel(t *testing.T) {
-	db := testutil.SetupPostgresDB(t,
-		&level.Level{}, &level.Question{}, &level.Answer{},
-		&game.Game{}, &game.GameSetting{}, &game.CoAuthor{},
-		&user.User{},
-	)
+	db := testutil.SetupPostgresDB(t, allModels...)
 	qSvc := newQuestionService(db)
 
 	author := createUser(t, db, "qlist@test.com", "pass")
@@ -315,11 +271,7 @@ func TestQuestionService_ListByLevel(t *testing.T) {
 }
 
 func TestQuestionService_Create_NotAuthor(t *testing.T) {
-	db := testutil.SetupPostgresDB(t,
-		&level.Level{}, &level.Question{}, &level.Answer{},
-		&game.Game{}, &game.GameSetting{}, &game.CoAuthor{},
-		&user.User{},
-	)
+	db := testutil.SetupPostgresDB(t, allModels...)
 	qSvc := newQuestionService(db)
 
 	author := createUser(t, db, "auth@test.com", "pass")
@@ -336,11 +288,7 @@ func TestQuestionService_Create_NotAuthor(t *testing.T) {
 // ---------- AnswerService ----------
 
 func TestAnswerService_Create(t *testing.T) {
-	db := testutil.SetupPostgresDB(t,
-		&level.Level{}, &level.Question{}, &level.Answer{},
-		&game.Game{}, &game.GameSetting{}, &game.CoAuthor{},
-		&user.User{},
-	)
+	db := testutil.SetupPostgresDB(t, allModels...)
 	aSvc := newAnswerService(db)
 
 	author := createUser(t, db, "ans@test.com", "pass")
@@ -358,11 +306,7 @@ func TestAnswerService_Create(t *testing.T) {
 }
 
 func TestAnswerService_DeleteLast(t *testing.T) {
-	db := testutil.SetupPostgresDB(t,
-		&level.Level{}, &level.Question{}, &level.Answer{},
-		&game.Game{}, &game.GameSetting{}, &game.CoAuthor{},
-		&user.User{},
-	)
+	db := testutil.SetupPostgresDB(t, allModels...)
 	aSvc := newAnswerService(db)
 
 	author := createUser(t, db, "last@test.com", "pass")
@@ -381,11 +325,7 @@ func TestAnswerService_DeleteLast(t *testing.T) {
 }
 
 func TestAnswerService_Delete(t *testing.T) {
-	db := testutil.SetupPostgresDB(t,
-		&level.Level{}, &level.Question{}, &level.Answer{},
-		&game.Game{}, &game.GameSetting{}, &game.CoAuthor{},
-		&user.User{},
-	)
+	db := testutil.SetupPostgresDB(t, allModels...)
 	aSvc := newAnswerService(db)
 
 	author := createUser(t, db, "adel@test.com", "pass")
@@ -409,11 +349,7 @@ func TestAnswerService_Delete(t *testing.T) {
 }
 
 func TestAnswerService_ListByQuestion(t *testing.T) {
-	db := testutil.SetupPostgresDB(t,
-		&level.Level{}, &level.Question{}, &level.Answer{},
-		&game.Game{}, &game.GameSetting{}, &game.CoAuthor{},
-		&user.User{},
-	)
+	db := testutil.SetupPostgresDB(t, allModels...)
 	aSvc := newAnswerService(db)
 
 	author := createUser(t, db, "alist@test.com", "pass")
@@ -434,11 +370,7 @@ func TestAnswerService_ListByQuestion(t *testing.T) {
 }
 
 func TestAnswerService_Create_NotAuthor(t *testing.T) {
-	db := testutil.SetupPostgresDB(t,
-		&level.Level{}, &level.Question{}, &level.Answer{},
-		&game.Game{}, &game.GameSetting{}, &game.CoAuthor{},
-		&user.User{},
-	)
+	db := testutil.SetupPostgresDB(t, allModels...)
 	aSvc := newAnswerService(db)
 
 	author := createUser(t, db, "auth@test.com", "pass")

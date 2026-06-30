@@ -6,13 +6,157 @@ import (
 	"fmt"
 	"net/smtp"
 	"strings"
+	"sync"
+	"time"
 
 	"gengine-0/internal/config"
 
 	"github.com/rs/zerolog/log"
 )
 
-// EmailService представляет сервис отправки писем.
+// EmailJob представляет задачу на отправку письма.
+type EmailJob struct {
+	To      string
+	Subject string
+	Body    string
+}
+
+// EmailQueue управляет асинхронной отправкой писем.
+type EmailQueue struct {
+	cfg      *config.Config
+	queue    chan EmailJob
+	workers  int
+	wg       sync.WaitGroup
+	stopChan chan struct{}
+	once     sync.Once
+}
+
+var (
+	globalQueue *EmailQueue
+	queueOnce   sync.Once
+)
+
+// InitQueue инициализирует глобальную очередь отправки писем.
+// workers — количество воркеров (горутин), одновременно отправляющих письма.
+// queueSize — размер буфера канала.
+func InitQueue(cfg *config.Config, workers, queueSize int) {
+	queueOnce.Do(func() {
+		if workers <= 0 {
+			workers = 5 // по умолчанию 5 воркеров
+		}
+		if queueSize <= 0 {
+			queueSize = 100 // по умолчанию 100 задач
+		}
+		globalQueue = &EmailQueue{
+			cfg:      cfg,
+			queue:    make(chan EmailJob, queueSize),
+			workers:  workers,
+			stopChan: make(chan struct{}),
+		}
+		globalQueue.start()
+	})
+}
+
+// ShutdownQueue останавливает очередь и дожидается завершения всех отправляемых писем.
+func ShutdownQueue() {
+	if globalQueue != nil {
+		globalQueue.shutdown()
+	}
+}
+
+// start запускает воркеры.
+func (q *EmailQueue) start() {
+	for i := 0; i < q.workers; i++ {
+		q.wg.Add(1)
+		go q.worker(i)
+	}
+	log.Info().Int("workers", q.workers).Msg("Email queue started")
+}
+
+// worker — горутина, которая обрабатывает задания из очереди.
+func (q *EmailQueue) worker(id int) {
+	defer q.wg.Done()
+	for {
+		select {
+		case job := <-q.queue:
+			// Отправляем письмо с повторными попытками
+			err := q.sendWithRetry(job, 3)
+			if err != nil {
+				log.Error().Err(err).
+					Str("to", job.To).
+					Str("subject", job.Subject).
+					Int("worker", id).
+					Msg("Failed to send email after retries")
+			} else {
+				log.Debug().
+					Str("to", job.To).
+					Str("subject", job.Subject).
+					Int("worker", id).
+					Msg("Email sent successfully")
+			}
+		case <-q.stopChan:
+			log.Debug().Int("worker", id).Msg("Email worker stopped")
+			return
+		}
+	}
+}
+
+// sendWithRetry пытается отправить письмо с указанным количеством попыток.
+func (q *EmailQueue) sendWithRetry(job EmailJob, retries int) error {
+	var lastErr error
+	for attempt := 1; attempt <= retries; attempt++ {
+		err := SendEmail(q.cfg, job.To, job.Subject, job.Body)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if attempt < retries {
+			// Экспоненциальная задержка: 1s, 2s, 4s...
+			delay := time.Duration(1<<(attempt-1)) * time.Second
+			time.Sleep(delay)
+		}
+	}
+	return fmt.Errorf("failed after %d attempts: %w", retries, lastErr)
+}
+
+// shutdown останавливает очередь и дожидается завершения всех воркеров.
+func (q *EmailQueue) shutdown() {
+	q.once.Do(func() {
+		close(q.stopChan)
+		// Закрываем канал, чтобы воркеры получили сигнал о завершении
+		// Но сначала дожидаемся, пока все текущие задачи будут обработаны
+		// Поскольку мы закрыли stopChan, воркеры завершатся после обработки текущей задачи
+		// Но мы также можем подождать, пока очередь опустеет
+		// Для этого можно использовать отдельный механизм, но для простоты просто ждём wg
+		q.wg.Wait()
+		log.Info().Msg("Email queue stopped")
+	})
+}
+
+// Enqueue добавляет задачу в очередь на отправку.
+// Если очередь не инициализирована, отправляет синхронно.
+// Возвращает ошибку, только если очередь переполнена или SMTP отключён.
+func Enqueue(to, subject, body string) error {
+	if globalQueue == nil {
+		// Если очередь не инициализирована, отправляем синхронно (для обратной совместимости)
+		return SendEmail(globalQueue.cfg, to, subject, body)
+	}
+	// Если SMTP отключён, не отправляем
+	if !globalQueue.cfg.SMTP.Enabled {
+		return fmt.Errorf("SMTP is not enabled")
+	}
+	job := EmailJob{To: to, Subject: subject, Body: body}
+	select {
+	case globalQueue.queue <- job:
+		return nil
+	default:
+		// Очередь переполнена — можно либо заблокироваться, либо вернуть ошибку.
+		// Лучше вернуть ошибку, чтобы вызывающий код мог обработать.
+		return fmt.Errorf("email queue is full, job rejected")
+	}
+}
+
+// EmailService представляет сервис отправки писем (синхронный или через очередь).
 type EmailService struct {
 	cfg *config.Config
 }
@@ -22,12 +166,24 @@ func NewEmailService(cfg *config.Config) *EmailService {
 	return &EmailService{cfg: cfg}
 }
 
-// Send отправляет письмо, используя настройки SMTP.
+// Send отправляет письмо. Если глобальная очередь инициализирована — использует её,
+// иначе отправляет синхронно.
 func (s *EmailService) Send(to, subject, body string) error {
+	// Если очередь глобальная инициализирована, используем её
+	if globalQueue != nil {
+		return Enqueue(to, subject, body)
+	}
+	// Иначе синхронная отправка
+	return SendEmail(s.cfg, to, subject, body)
+}
+
+// SendSync — синхронная отправка (для случаев, когда асинхронность нежелательна).
+func (s *EmailService) SendSync(to, subject, body string) error {
 	return SendEmail(s.cfg, to, subject, body)
 }
 
 // SendEmail – низкоуровневая функция отправки письма (может использоваться напрямую).
+// Она не использует очередь, а отправляет сразу.
 func SendEmail(cfg *config.Config, to, subject, body string) error {
 	if !cfg.SMTP.Enabled {
 		return fmt.Errorf("SMTP is not enabled")

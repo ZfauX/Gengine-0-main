@@ -1,7 +1,9 @@
+// internal/domain/game/review_service.go
 package game
 
 import (
 	"errors"
+
 	"gorm.io/gorm"
 )
 
@@ -14,7 +16,6 @@ func NewReviewService(db *gorm.DB) *ReviewService {
 }
 
 func (s *ReviewService) CanReview(gameID, userID uint) (bool, error) {
-	// используем локальные модели, без импорта social
 	var count int64
 	err := s.DB.Model(&GamePassing{}).
 		Joins("JOIN team_members ON team_members.team_id = game_passings.team_id").

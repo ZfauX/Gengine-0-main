@@ -7,6 +7,44 @@ import (
 )
 
 var (
+	// --- HTTP-метрики ---
+	RequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "gengine_http_requests_total",
+			Help: "Total number of HTTP requests",
+		},
+		[]string{"method", "path", "status"},
+	)
+
+	RequestDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "gengine_http_request_duration_seconds",
+			Help:    "HTTP request duration in seconds",
+			Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
+		},
+		[]string{"method", "path"},
+	)
+
+	RequestSize = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "gengine_http_request_size_bytes",
+			Help:    "HTTP request size in bytes",
+			Buckets: []float64{100, 500, 1000, 5000, 10000, 50000, 100000, 500000, 1000000},
+		},
+		[]string{"method", "path"},
+	)
+
+	ResponseSize = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "gengine_http_response_size_bytes",
+			Help:    "HTTP response size in bytes",
+			Buckets: []float64{100, 500, 1000, 5000, 10000, 50000, 100000, 500000, 1000000},
+		},
+		[]string{"method", "path"},
+	)
+
+	// --- Бизнес-метрики ---
+
 	// GamesTotal - общее количество игр (по статусам)
 	GamesTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "gengine_games_total",
@@ -29,6 +67,12 @@ var (
 	UsersTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "gengine_users_total",
 		Help: "Total number of registered users",
+	})
+
+	// ActiveUsers - текущее количество активных пользователей (вошедших за последние 30 мин)
+	ActiveUsers = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "gengine_users_active",
+		Help: "Number of currently active users (logged in within last 30 min)",
 	})
 
 	// GamePassingsTotal - общее количество прохождений по статусам
@@ -55,59 +99,118 @@ var (
 		Name: "gengine_websocket_connections",
 		Help: "Number of currently active WebSocket connections",
 	})
+
+	// LevelProgressTotal - общее количество пройденных уровней
+	LevelProgressTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "gengine_level_progress_total",
+		Help: "Total number of level progresses (completed levels)",
+	})
+
+	// AttemptsTotal - общее количество попыток ввода кодов
+	AttemptsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "gengine_attempts_total",
+		Help: "Total number of attempts (code submissions)",
+	}, []string{"success"}) // success: true/false
+
+	// EmailQueueSize - текущий размер очереди email
+	EmailQueueSize = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "gengine_email_queue_size",
+		Help: "Current size of email queue",
+	})
+
+	// DatabaseConnections - текущее количество открытых соединений с БД
+	DatabaseConnections = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "gengine_database_connections",
+		Help: "Number of currently open database connections",
+	})
+
+	// CacheHitsTotal - общее количество попаданий в кэш
+	CacheHitsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "gengine_cache_hits_total",
+		Help: "Total number of cache hits",
+	}, []string{"cache_name"})
+
+	// CacheMissesTotal - общее количество промахов в кэш
+	CacheMissesTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "gengine_cache_misses_total",
+		Help: "Total number of cache misses",
+	}, []string{"cache_name"})
 )
 
-// IncGamesCreated инкрементирует счетчик созданных игр (draft)
+// --- Хелперы для инкремента ---
+
 func IncGamesCreated() {
 	GamesTotal.WithLabelValues("draft").Inc()
 }
 
-// IncGamesPublished инкрементирует счетчик опубликованных игр
 func IncGamesPublished() {
 	GamesTotal.WithLabelValues("published").Inc()
 }
 
-// IncGamesDeleted инкрементирует счетчик удаленных игр
 func IncGamesDeleted() {
 	GamesTotal.WithLabelValues("deleted").Inc()
 }
 
-// SetActiveGames устанавливает текущее количество активных игр
 func SetActiveGames(count float64) {
 	ActiveGames.Set(count)
 }
 
-// IncTeamsTotal инкрементирует счетчик команд
 func IncTeamsTotal() {
 	TeamsTotal.Inc()
 }
 
-// IncUsersTotal инкрементирует счетчик пользователей
 func IncUsersTotal() {
 	UsersTotal.Inc()
 }
 
-// IncGamePassings инкрементирует счетчик прохождений по статусу
+func SetActiveUsers(count float64) {
+	ActiveUsers.Set(count)
+}
+
 func IncGamePassings(status string) {
 	GamePassingsTotal.WithLabelValues(status).Inc()
 }
 
-// SetTeamMembersTotal устанавливает текущее количество участников команд
 func SetTeamMembersTotal(count float64) {
 	TeamMembersTotal.Set(count)
 }
 
-// ObserveGameDuration записывает длительность прохождения в гистограмму
 func ObserveGameDuration(seconds float64) {
 	GameDurationSeconds.Observe(seconds)
 }
 
-// IncWebSocketConnection увеличивает счетчик активных WebSocket-соединений
 func IncWebSocketConnection() {
 	WebSocketConnections.Inc()
 }
 
-// DecWebSocketConnection уменьшает счетчик активных WebSocket-соединений
 func DecWebSocketConnection() {
 	WebSocketConnections.Dec()
+}
+
+func IncLevelProgress() {
+	LevelProgressTotal.Inc()
+}
+
+func IncAttempt(success bool) {
+	status := "false"
+	if success {
+		status = "true"
+	}
+	AttemptsTotal.WithLabelValues(status).Inc()
+}
+
+func SetEmailQueueSize(size float64) {
+	EmailQueueSize.Set(size)
+}
+
+func SetDatabaseConnections(conns float64) {
+	DatabaseConnections.Set(conns)
+}
+
+func IncCacheHit(cacheName string) {
+	CacheHitsTotal.WithLabelValues(cacheName).Inc()
+}
+
+func IncCacheMiss(cacheName string) {
+	CacheMissesTotal.WithLabelValues(cacheName).Inc()
 }

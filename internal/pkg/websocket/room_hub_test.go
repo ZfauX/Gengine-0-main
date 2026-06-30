@@ -16,6 +16,7 @@ func TestRoomHub_RegisterClient(t *testing.T) {
 	client := &Client{
 		Send:   make(chan []byte, 10),
 		RoomID: "room1",
+		done:   make(chan struct{}),
 	}
 
 	hub.RegisterClient(client)
@@ -32,9 +33,9 @@ func TestRoomHub_RegisterClient(t *testing.T) {
 func TestRoomHub_RegisterClient_Multiple(t *testing.T) {
 	hub := NewRoomHub()
 	go hub.Run()
-	c1 := &Client{Send: make(chan []byte, 10), RoomID: "room1"}
-	c2 := &Client{Send: make(chan []byte, 10), RoomID: "room1"}
-	c3 := &Client{Send: make(chan []byte, 10), RoomID: "room2"}
+	c1 := &Client{Send: make(chan []byte, 10), RoomID: "room1", done: make(chan struct{})}
+	c2 := &Client{Send: make(chan []byte, 10), RoomID: "room1", done: make(chan struct{})}
+	c3 := &Client{Send: make(chan []byte, 10), RoomID: "room2", done: make(chan struct{})}
 
 	hub.RegisterClient(c1)
 	hub.RegisterClient(c2)
@@ -50,7 +51,7 @@ func TestRoomHub_RegisterClient_Multiple(t *testing.T) {
 func TestRoomHub_UnregisterClient(t *testing.T) {
 	hub := NewRoomHub()
 	go hub.Run()
-	client := &Client{Send: make(chan []byte, 10), RoomID: "room1"}
+	client := &Client{Send: make(chan []byte, 10), RoomID: "room1", done: make(chan struct{})}
 	hub.RegisterClient(client)
 	time.Sleep(10 * time.Millisecond)
 
@@ -66,7 +67,7 @@ func TestRoomHub_UnregisterClient(t *testing.T) {
 func TestRoomHub_UnregisterClient_NotExists(t *testing.T) {
 	hub := NewRoomHub()
 	go hub.Run()
-	client := &Client{Send: make(chan []byte, 10), RoomID: "room1"}
+	client := &Client{Send: make(chan []byte, 10), RoomID: "room1", done: make(chan struct{})}
 	hub.UnregisterClient(client)
 }
 
@@ -75,8 +76,8 @@ func TestRoomHub_BroadcastToRoom(t *testing.T) {
 	go hub.Run()
 	roomID := "testroom"
 
-	c1 := &Client{Send: make(chan []byte, 10), RoomID: roomID}
-	c2 := &Client{Send: make(chan []byte, 10), RoomID: roomID}
+	c1 := &Client{Send: make(chan []byte, 10), RoomID: roomID, done: make(chan struct{})}
+	c2 := &Client{Send: make(chan []byte, 10), RoomID: roomID, done: make(chan struct{})}
 	hub.RegisterClient(c1)
 	hub.RegisterClient(c2)
 	time.Sleep(10 * time.Millisecond)
@@ -118,8 +119,16 @@ func TestRoomHub_BroadcastToRoom_WithClosedClient(t *testing.T) {
 	go hub.Run()
 	roomID := "testroom"
 
-	c1 := &Client{Send: make(chan []byte, 10), RoomID: roomID}
-	c2 := &Client{Send: make(chan []byte, 10), RoomID: roomID}
+	c1 := &Client{
+		Send:   make(chan []byte, 10),
+		RoomID: roomID,
+		done:   make(chan struct{}),
+	}
+	c2 := &Client{
+		Send:   make(chan []byte, 10),
+		RoomID: roomID,
+		done:   make(chan struct{}),
+	}
 	hub.RegisterClient(c1)
 	hub.RegisterClient(c2)
 	time.Sleep(10 * time.Millisecond)
@@ -131,7 +140,6 @@ func TestRoomHub_BroadcastToRoom_WithClosedClient(t *testing.T) {
 	require.NoError(t, err)
 	hub.BroadcastToRoom(roomID, data)
 
-	// Даём время на обработку broadcast
 	time.Sleep(20 * time.Millisecond)
 
 	hub.mu.Lock()
@@ -153,7 +161,11 @@ func TestRoomHub_BroadcastToRoom_FullChannel(t *testing.T) {
 	go hub.Run()
 	roomID := "testroom"
 
-	c1 := &Client{Send: make(chan []byte, 1), RoomID: roomID}
+	c1 := &Client{
+		Send:   make(chan []byte, 1),
+		RoomID: roomID,
+		done:   make(chan struct{}),
+	}
 	hub.RegisterClient(c1)
 	time.Sleep(10 * time.Millisecond)
 
@@ -164,7 +176,6 @@ func TestRoomHub_BroadcastToRoom_FullChannel(t *testing.T) {
 	require.NoError(t, err)
 	hub.BroadcastToRoom(roomID, data)
 
-	// Даём время на обработку broadcast
 	time.Sleep(20 * time.Millisecond)
 
 	hub.mu.Lock()
@@ -176,6 +187,7 @@ func TestRoomHub_BroadcastToRoom_FullChannel(t *testing.T) {
 func TestClient_Close(t *testing.T) {
 	c := &Client{
 		Send: make(chan []byte, 10),
+		done: make(chan struct{}),
 	}
 	assert.False(t, c.closed)
 	c.Close()
@@ -187,6 +199,7 @@ func TestClient_Close(t *testing.T) {
 func TestClient_Close_ChannelClosedOnce(t *testing.T) {
 	c := &Client{
 		Send: make(chan []byte, 10),
+		done: make(chan struct{}),
 	}
 	c.Close()
 	assert.Panics(t, func() {
@@ -200,7 +213,7 @@ func BenchmarkRoomHub_BroadcastToRoom(b *testing.B) {
 	roomID := "benchroom"
 	clients := make([]*Client, 100)
 	for i := 0; i < 100; i++ {
-		c := &Client{Send: make(chan []byte, 10), RoomID: roomID}
+		c := &Client{Send: make(chan []byte, 10), RoomID: roomID, done: make(chan struct{})}
 		clients[i] = c
 		hub.RegisterClient(c)
 	}

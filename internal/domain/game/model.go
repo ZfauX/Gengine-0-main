@@ -4,40 +4,14 @@ package game
 import (
 	"time"
 
-	"gengine-0/internal/domain/team" // возвращаем реальный Team
+	"gengine-0/internal/domain/level"
+	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/user"
+
 	"gorm.io/gorm"
 )
 
-// ---------- локальные модели только для уровней / голосований ----------
-
-type gameLevel struct {
-	gorm.Model
-	GameID    uint           `gorm:"index"`
-	Name      string
-	Position  int
-	Questions []gameQuestion `gorm:"foreignKey:LevelID"`
-}
-
-func (gameLevel) TableName() string { return "levels" }
-
-type gameQuestion struct {
-	gorm.Model
-	LevelID uint
-	Text    string
-	Hint    string
-	Answers []gameAnswer `gorm:"foreignKey:QuestionID"`
-}
-
-func (gameQuestion) TableName() string { return "questions" }
-
-type gameAnswer struct {
-	gorm.Model
-	QuestionID uint
-	Code       string
-}
-
-func (gameAnswer) TableName() string { return "answers" }
+// ---------- локальный тип для голосований (чтобы избежать циклического импорта с monitor) ----------
 
 type gameBlackboxVotingSession struct {
 	gorm.Model
@@ -63,23 +37,23 @@ type Game struct {
 	RegistrationDeadline *time.Time `form:"registration_deadline" time_format:"2006-01-02T15:04"`
 	MaxTeamNumber        int        `gorm:"default:10" form:"max_team_number"`
 	CoverPath            string
-	Levels               []gameLevel                 `gorm:"foreignKey:GameID"`
-	GameSetting          GameSetting                 `gorm:"foreignKey:GameID"`
-	Passings             []GamePassing               `gorm:"foreignKey:GameID"`
-	Reviews              []Review                    `gorm:"foreignKey:GameID"`
-	CoAuthors            []CoAuthor                  `gorm:"foreignKey:GameID"`
-	Notes                []Note                      `gorm:"foreignKey:GameID"`
+	Levels               []level.Level `gorm:"foreignKey:GameID"`
+	GameSetting          GameSetting   `gorm:"foreignKey:GameID"`
+	Passings             []GamePassing `gorm:"foreignKey:GameID"`
+	Reviews              []Review      `gorm:"foreignKey:GameID"`
+	CoAuthors            []CoAuthor    `gorm:"foreignKey:GameID"`
+	Notes                []Note        `gorm:"foreignKey:GameID"`
 }
 
 type GameSetting struct {
 	gorm.Model
-	GameID                  uint  `gorm:"uniqueIndex"`
-	AllowHints              bool  `gorm:"default:true"`
-	HintPenaltySeconds      int   `gorm:"default:300"`
-	MaxHints                int   `gorm:"default:3"`
-	PerLevelTimeLimit       int   `gorm:"default:0"`
+	GameID                   uint `gorm:"uniqueIndex"`
+	AllowHints               bool `gorm:"default:true"`
+	HintPenaltySeconds       int  `gorm:"default:300"`
+	MaxHints                 int  `gorm:"default:3"`
+	PerLevelTimeLimit        int  `gorm:"default:0"`
 	HideAnswersUntilFinished bool `gorm:"default:false"`
-	AutoStart               bool  `gorm:"default:false"`
+	AutoStart                bool `gorm:"default:false"`
 }
 
 type GamePassing struct {
@@ -87,31 +61,31 @@ type GamePassing struct {
 	GameID         uint              `gorm:"not null;index"`
 	TeamID         uint              `gorm:"not null;index"`
 	Status         GamePassingStatus `gorm:"default:'pending'"`
-	ResultDuration *time.Duration    `gorm:"type:bigint"`   // <-- добавлен тег
+	ResultDuration *time.Duration    `gorm:"type:bigint"`
 	Place          *int
-	Game           Game                   `gorm:"foreignKey:GameID"`
-	Team           team.Team              `gorm:"foreignKey:TeamID"` // реальный Team из team
-	Progresses     []LevelProgress        `gorm:"foreignKey:GamePassingID"`
-	Logs           []Log                  `gorm:"foreignKey:GamePassingID"`
+	Game           Game                        `gorm:"foreignKey:GameID"`
+	Team           team.Team                   `gorm:"foreignKey:TeamID"`
+	Progresses     []LevelProgress             `gorm:"foreignKey:GamePassingID"`
+	Logs           []Log                       `gorm:"foreignKey:GamePassingID"`
 	VotingSessions []gameBlackboxVotingSession `gorm:"foreignKey:GamePassingID"`
 }
 
 type LevelProgress struct {
 	gorm.Model
-	GamePassingID  uint      `gorm:"not null;index"`
-	LevelID        uint      `gorm:"not null"`
+	GamePassingID  uint `gorm:"not null;index"`
+	LevelID        uint `gorm:"not null"`
 	StartedAt      time.Time
 	FinishedAt     *time.Time
 	HintsUsed      int
 	PenaltySeconds int
 	GamePassing    GamePassing `gorm:"foreignKey:GamePassingID"`
-	Level          gameLevel   `gorm:"foreignKey:LevelID"`
+	Level          level.Level `gorm:"foreignKey:LevelID"`
 	Attempts       []Attempt   `gorm:"foreignKey:LevelProgressID"`
 }
 
 type Attempt struct {
 	gorm.Model
-	LevelProgressID uint          `gorm:"not null;index"`
+	LevelProgressID uint `gorm:"not null;index"`
 	Code            string
 	FilePath        string
 	IsFile          bool
@@ -130,35 +104,34 @@ type CoAuthor struct {
 
 type Note struct {
 	gorm.Model
-	GameID  uint      `gorm:"not null;index"`
-	UserID  uint      `gorm:"not null"`
+	GameID  uint `gorm:"not null;index"`
+	UserID  uint `gorm:"not null"`
 	LevelID *uint
 	Text    string
-	Game    Game      `gorm:"foreignKey:GameID"`
-	User    user.User `gorm:"foreignKey:UserID"`
-	Level   gameLevel `gorm:"foreignKey:LevelID"`
+	Game    Game        `gorm:"foreignKey:GameID"`
+	User    user.User   `gorm:"foreignKey:UserID"`
+	Level   level.Level `gorm:"foreignKey:LevelID"`
 }
 
 type Review struct {
 	gorm.Model
-	GameID  uint      `gorm:"not null;index"`
-	UserID  uint      `gorm:"not null"`
-	Rating  int       `gorm:"not null"`
+	GameID  uint `gorm:"not null;index"`
+	UserID  uint `gorm:"not null"`
+	Rating  int  `gorm:"not null"`
 	Comment string
 	Game    Game      `gorm:"foreignKey:GameID"`
 	User    user.User `gorm:"foreignKey:UserID"`
 }
 
-// Photo – фотография, загруженная в галерею игры.
 type Photo struct {
 	gorm.Model
-	GameID  uint      `gorm:"not null;index"`
-	UserID  uint      `gorm:"not null"`
+	GameID  uint `gorm:"not null;index"`
+	UserID  uint `gorm:"not null"`
 	LevelID *uint
 	Path    string
-	Game    Game      `gorm:"foreignKey:GameID"`
-	User    user.User `gorm:"foreignKey:UserID"`
-	Level   gameLevel `gorm:"foreignKey:LevelID"`
+	Game    Game        `gorm:"foreignKey:GameID"`
+	User    user.User   `gorm:"foreignKey:UserID"`
+	Level   level.Level `gorm:"foreignKey:LevelID"`
 }
 
 type PlayerRating struct {
@@ -170,12 +143,14 @@ type PlayerRating struct {
 
 type Log struct {
 	gorm.Model
-	GamePassingID uint        `gorm:"not null;index"`
+	GamePassingID uint `gorm:"not null;index"`
 	LevelID       uint
 	Message       string
 	GamePassing   GamePassing `gorm:"foreignKey:GamePassingID"`
-	Level         gameLevel   `gorm:"foreignKey:LevelID"`
+	Level         level.Level `gorm:"foreignKey:LevelID"`
 }
+
+// ---------- типы и константы ----------
 
 type GameFilter struct {
 	Status   string
@@ -194,13 +169,13 @@ type GameSort struct {
 type GamePassingStatus string
 
 const (
-	StatusPending       GamePassingStatus = "pending"
-	StatusAccepted      GamePassingStatus = "accepted"
-	StatusRejected      GamePassingStatus = "rejected"
-	StatusStarted       GamePassingStatus = "started"
-	StatusFinished      GamePassingStatus = "finished"
-	StatusDisqualified  GamePassingStatus = "disqualified"
-	StatusTesting       GamePassingStatus = "testing"
+	StatusPending      GamePassingStatus = "pending"
+	StatusAccepted     GamePassingStatus = "accepted"
+	StatusRejected     GamePassingStatus = "rejected"
+	StatusStarted      GamePassingStatus = "started"
+	StatusFinished     GamePassingStatus = "finished"
+	StatusDisqualified GamePassingStatus = "disqualified"
+	StatusTesting      GamePassingStatus = "testing"
 )
 
 type SortOrder string
