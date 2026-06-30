@@ -10,6 +10,7 @@ import (
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/pkg/render"
+	"gengine-0/internal/pkg/sanitize"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -158,8 +159,8 @@ func (h *TournamentHandler) Create(c *gin.Context) {
 	}
 
 	t := &Tournament{
-		Name:                   input.Name,
-		Description:            input.Description,
+		Name:                   sanitize.StripHTML(input.Name),
+		Description:            sanitize.StripHTML(input.Description),
 		AuthorID:               userID,
 		PointsForFirst:         input.PointsForFirst,
 		PointsForSecond:        input.PointsForSecond,
@@ -228,8 +229,8 @@ func (h *TournamentHandler) Update(c *gin.Context) {
 	}
 
 	updated := &Tournament{
-		Name:                   input.Name,
-		Description:            input.Description,
+		Name:                   sanitize.StripHTML(input.Name),
+		Description:            sanitize.StripHTML(input.Description),
 		PointsForFirst:         input.PointsForFirst,
 		PointsForSecond:        input.PointsForSecond,
 		PointsForThird:         input.PointsForThird,

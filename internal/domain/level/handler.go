@@ -9,6 +9,7 @@ import (
 	"gengine-0/internal/config"
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
+	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/storage"
 	ws "gengine-0/internal/pkg/websocket"
 
@@ -174,8 +175,8 @@ func (h *LevelHandler) Create(c *gin.Context) {
 	}
 
 	level := &Level{
-		Name:                 input.Name,
-		Description:          input.Description,
+		Name:                 sanitize.StripHTML(input.Name),
+		Description:          sanitize.StripHTML(input.Description),
 		Position:             input.Position,
 		Type:                 input.Type,
 		ParentID:             input.ParentID,
@@ -255,8 +256,8 @@ func (h *LevelHandler) Update(c *gin.Context) {
 	}
 
 	updated := &Level{
-		Name:                 input.Name,
-		Description:          input.Description,
+		Name:                 sanitize.StripHTML(input.Name),
+		Description:          sanitize.StripHTML(input.Description),
 		Position:             input.Position,
 		Type:                 input.Type,
 		ParentID:             input.ParentID,
@@ -428,8 +429,8 @@ func (h *LevelHandler) CreateQuestion(c *gin.Context) {
 	}
 
 	question := &Question{
-		Text: input.Text,
-		Hint: input.Hint,
+		Text: sanitize.StripHTML(input.Text),
+		Hint: sanitize.StripHTML(input.Hint),
 	}
 
 	if err := h.questionService.Create(c.Request.Context(), uint(levelID), question, userID); err != nil {
@@ -513,8 +514,8 @@ func (h *LevelHandler) UpdateQuestion(c *gin.Context) {
 	}
 
 	updated := &Question{
-		Text: input.Text,
-		Hint: input.Hint,
+		Text: sanitize.StripHTML(input.Text),
+		Hint: sanitize.StripHTML(input.Hint),
 	}
 
 	if err := h.questionService.Update(c.Request.Context(), uint(questionID), updated, userID); err != nil {
@@ -628,7 +629,7 @@ func (h *LevelHandler) CreateAnswer(c *gin.Context) {
 	}
 
 	answer := &Answer{
-		Code: input.Code,
+		Code: sanitize.StripHTML(input.Code),
 	}
 
 	if err := h.answerService.Create(c.Request.Context(), uint(questionID), answer, userID); err != nil {

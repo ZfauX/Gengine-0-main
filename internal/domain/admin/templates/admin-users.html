@@ -22,8 +22,14 @@
 <tr>
     <td>{{.ID}}</td><td>{{.Name}}</td><td>{{.Email}}</td><td>{{.Role}}</td>
     <td>
-        <a href="/admin/users/{{.ID}}/toggle-admin" class="button">{{if eq .Role "admin"}}Разжаловать{{else}}Сделать админом{{end}}</a>
-        <a href="/admin/users/{{.ID}}/delete" class="button danger" onclick="return confirm('Удалить пользователя?')">Удалить</a>
+        <form action="/admin/users/{{.ID}}/toggle-admin" method="POST" style="display:inline;">
+            <input type="hidden" name="_csrf" value="{{$.csrf}}">
+            <button type="submit" class="button">{{if eq .Role "admin"}}Разжаловать{{else}}Сделать админом{{end}}</button>
+        </form>
+        <form action="/admin/users/{{.ID}}/delete" method="POST" style="display:inline;">
+            <input type="hidden" name="_csrf" value="{{$.csrf}}">
+            <button type="submit" class="button danger" onclick="return confirm('Удалить пользователя?')">Удалить</button>
+        </form>
     </td>
 </tr>
 {{end}}

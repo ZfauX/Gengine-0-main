@@ -59,22 +59,24 @@ func RegisterRoutes(
 		// @Summary Переключение роли пользователя
 		// @Description Делает пользователя администратором или обычным пользователем
 		// @Tags admin
+		// @Accept x-www-form-urlencoded
 		// @Produce html
 		// @Param id path int true "ID пользователя"
 		// @Success 302 {string} string "Перенаправление на /admin/users"
-		// @Router /admin/users/{id}/toggle-admin [get]
+		// @Router /admin/users/{id}/toggle-admin [post]
 		// @Security JWT
-		protected.GET("/users/:id/toggle-admin", adminHandler.ToggleAdmin)
+		protected.POST("/users/:id/toggle-admin", adminHandler.ToggleAdmin)
 
 		// @Summary Удаление пользователя
 		// @Description Безвозвратно удаляет пользователя (административное действие)
 		// @Tags admin
+		// @Accept x-www-form-urlencoded
 		// @Produce html
 		// @Param id path int true "ID пользователя"
 		// @Success 302 {string} string "Перенаправление на /admin/users"
-		// @Router /admin/users/{id}/delete [get]
+		// @Router /admin/users/{id}/delete [post]
 		// @Security JWT
-		protected.GET("/users/:id/delete", adminHandler.DeleteUser)
+		protected.POST("/users/:id/delete", adminHandler.DeleteUser)
 
 		// @Summary Список игр (административный)
 		// @Description Отображает все игры с фильтром по статусу (черновик / опубликована)
@@ -89,12 +91,13 @@ func RegisterRoutes(
 		// @Summary Удаление игры (административное)
 		// @Description Безвозвратно удаляет игру (доступно только администратору)
 		// @Tags admin
+		// @Accept x-www-form-urlencoded
 		// @Produce html
 		// @Param id path int true "ID игры"
 		// @Success 302 {string} string "Перенаправление на /admin/games"
-		// @Router /admin/games/{id}/delete [get]
+		// @Router /admin/games/{id}/delete [post]
 		// @Security JWT
-		protected.GET("/games/:id/delete", adminHandler.DeleteGame)
+		protected.POST("/games/:id/delete", adminHandler.DeleteGame)
 
 		// @Summary Журнал аудита
 		// @Description Отображает записи аудита с возможностью фильтрации по пользователю и действию

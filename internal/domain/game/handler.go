@@ -4,6 +4,7 @@ package game
 import (
 	"context"
 	"errors"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"slices"
@@ -244,6 +245,20 @@ func NewGameHandler(
 	}
 }
 
+// ---------- Вспомогательная функция для ограничения размера тела запроса ----------
+
+// limitRequestBody устанавливает максимальный размер тела запроса и возвращает ошибку,
+// если размер превышен. Используется перед вызовом ShouldBind или FormFile.
+func limitRequestBody(c *gin.Context, maxBytes int64) error {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes)
+	// Принудительно проверяем, что тело не превышает лимит.
+	// Для этого читаем хотя бы один байт или используем проверку Content-Length.
+	if c.Request.ContentLength > maxBytes {
+		return fmt.Errorf("размер тела запроса превышает допустимый лимит (%d байт)", maxBytes)
+	}
+	return nil
+}
+
 // List отображает список игр с фильтрацией и пагинацией.
 func (h *GameHandler) List(c *gin.Context) {
 	userID := c.GetUint("userID")
@@ -359,6 +374,15 @@ func (h *GameHandler) NewForm(c *gin.Context) {
 func (h *GameHandler) Create(c *gin.Context) {
 	userID := c.GetUint("userID")
 
+	// Ограничиваем размер тела запроса 5 МБ (для обложки + формы)
+	if err := limitRequestBody(c, 5*1024*1024); err != nil {
+		render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
+			"Error": err.Error(),
+			"csrf":  csrf.GetToken(c),
+		})
+		return
+	}
+
 	var input CreateGameInput
 	if err := c.ShouldBind(&input); err != nil {
 		render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
@@ -448,6 +472,15 @@ func (h *GameHandler) Update(c *gin.Context) {
 		return
 	}
 	userID := c.GetUint("userID")
+
+	// Ограничиваем размер тела запроса 5 МБ (для обложки + формы)
+	if err := limitRequestBody(c, 5*1024*1024); err != nil {
+		render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
+			"Error": err.Error(),
+			"csrf":  csrf.GetToken(c),
+		})
+		return
+	}
 
 	var input UpdateGameInput
 	if err := c.ShouldBind(&input); err != nil {
@@ -585,6 +618,18 @@ func (h *GameHandler) Apply(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 
+	// Ограничиваем размер тела запроса 1 МБ (для формы)
+	if err := limitRequestBody(c, 1*1024*1024); err != nil {
+		teams, _ := h.passingService.GetTeamsByCaptain(c.Request.Context(), userID)
+		render.Page(c, http.StatusBadRequest, "game_passings-apply.html", gin.H{
+			"GameID": gameID,
+			"Teams":  teams,
+			"Error":  err.Error(),
+			"csrf":   csrf.GetToken(c),
+		})
+		return
+	}
+
 	var input ApplyInput
 	if err := c.ShouldBind(&input); err != nil {
 		teams, _ := h.passingService.GetTeamsByCaptain(c.Request.Context(), userID)
@@ -683,6 +728,12 @@ func (h *GameHandler) DisqualifyTeam(c *gin.Context) {
 		return
 	}
 
+	// Ограничиваем размер тела запроса 1 МБ
+	if err := limitRequestBody(c, 1*1024*1024); err != nil {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": err.Error()})
+		return
+	}
+
 	var input DisqualifyInput
 	if err := c.ShouldBind(&input); err != nil {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверные данные: " + err.Error()})
@@ -732,6 +783,12 @@ func (h *GameHandler) AddCoAuthor(c *gin.Context) {
 		return
 	}
 	ownerID := c.GetUint("userID")
+
+	// Ограничиваем размер тела запроса 1 МБ
+	if err := limitRequestBody(c, 1*1024*1024); err != nil {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": err.Error()})
+		return
+	}
 
 	var input AddCoAuthorInput
 	if err := c.ShouldBind(&input); err != nil {
@@ -797,6 +854,13 @@ func (h *GameHandler) CreateNote(c *gin.Context) {
 		return
 	}
 	userID := c.GetUint("userID")
+
+	// Ограничиваем размер тела запроса 1 МБ
+	if err := limitRequestBody(c, 1*1024*1024); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	var input struct {
 		LevelID *uint  `json:"level_id"`
 		Text    string `json:"text" binding:"required"`
@@ -911,6 +975,17 @@ func (h *GameHandler) SaveSettings(c *gin.Context) {
 		return
 	}
 	userID := c.GetUint("userID")
+
+	// Ограничиваем размер тела запроса 1 МБ
+	if err := limitRequestBody(c, 1*1024*1024); err != nil {
+		g, _ := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID)
+		render.Page(c, http.StatusBadRequest, "games-settings.html", gin.H{
+			"Game":  g,
+			"Error": err.Error(),
+			"csrf":  csrf.GetToken(c),
+		})
+		return
+	}
 
 	var settings GameSetting
 	if err := c.ShouldBind(&settings); err != nil {
@@ -1045,6 +1120,12 @@ func (h *GameHandler) UploadPhoto(c *gin.Context) {
 		return
 	}
 	userID := c.GetUint("userID")
+
+	// Ограничиваем размер тела запроса 10 МБ (для фото)
+	if err := limitRequestBody(c, 10*1024*1024); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	file, header, err := c.Request.FormFile("photo")
 	if err != nil {
@@ -1288,6 +1369,15 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 		return
 	}
 
+	// Ограничиваем размер тела запроса 1 МБ (для кода)
+	if err := limitRequestBody(c, 1*1024*1024); err != nil {
+		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
+			"Error": err.Error(),
+			"csrf":  csrf.GetToken(c),
+		})
+		return
+	}
+
 	var input SubmitCodeInput
 	if err := c.ShouldBind(&input); err != nil {
 		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
@@ -1350,6 +1440,15 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 
 	if !h.isUserInPassing(uint(passingID), userID) {
 		c.HTML(http.StatusForbidden, "errors/403.html", nil)
+		return
+	}
+
+	// Ограничиваем размер тела запроса 10 МБ (для файла)
+	if err := limitRequestBody(c, 10*1024*1024); err != nil {
+		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
+			"Error": err.Error(),
+			"csrf":  csrf.GetToken(c),
+		})
 		return
 	}
 
@@ -1452,6 +1551,15 @@ func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
 	passingID, err := strconv.Atoi(c.Param("passing_id"))
 	if err != nil || passingID <= 0 {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID прохождения"})
+		return
+	}
+
+	// Ограничиваем размер тела запроса 1 МБ
+	if err := limitRequestBody(c, 1*1024*1024); err != nil {
+		render.Page(c, http.StatusBadRequest, "gameplay-test.html", gin.H{
+			"Error": err.Error(),
+			"csrf":  csrf.GetToken(c),
+		})
 		return
 	}
 

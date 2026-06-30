@@ -123,36 +123,37 @@ func (q *EmailQueue) sendWithRetry(job EmailJob, retries int) error {
 func (q *EmailQueue) shutdown() {
 	q.once.Do(func() {
 		close(q.stopChan)
-		// Закрываем канал, чтобы воркеры получили сигнал о завершении
-		// Но сначала дожидаемся, пока все текущие задачи будут обработаны
-		// Поскольку мы закрыли stopChan, воркеры завершатся после обработки текущей задачи
-		// Но мы также можем подождать, пока очередь опустеет
-		// Для этого можно использовать отдельный механизм, но для простоты просто ждём wg
+		// Дожидаемся завершения всех воркеров
 		q.wg.Wait()
 		log.Info().Msg("Email queue stopped")
 	})
 }
 
 // Enqueue добавляет задачу в очередь на отправку.
-// Если очередь не инициализирована, отправляет синхронно.
-// Возвращает ошибку, только если очередь переполнена или SMTP отключён.
+// Если очередь не инициализирована, возвращает ошибку (вызывающий код должен обработать).
+// При переполнении очереди выполняет синхронную отправку как fallback.
+// Возвращает ошибку, если SMTP отключён или отправка не удалась.
 func Enqueue(to, subject, body string) error {
 	if globalQueue == nil {
-		// Если очередь не инициализирована, отправляем синхронно (для обратной совместимости)
-		return SendEmail(globalQueue.cfg, to, subject, body)
+		return fmt.Errorf("email queue is not initialized")
 	}
-	// Если SMTP отключён, не отправляем
 	if !globalQueue.cfg.SMTP.Enabled {
 		return fmt.Errorf("SMTP is not enabled")
 	}
+
 	job := EmailJob{To: to, Subject: subject, Body: body}
+
+	// Пытаемся добавить в очередь
 	select {
 	case globalQueue.queue <- job:
 		return nil
 	default:
-		// Очередь переполнена — можно либо заблокироваться, либо вернуть ошибку.
-		// Лучше вернуть ошибку, чтобы вызывающий код мог обработать.
-		return fmt.Errorf("email queue is full, job rejected")
+		// Очередь переполнена — выполняем синхронную отправку как fallback
+		log.Warn().
+			Str("to", to).
+			Str("subject", subject).
+			Msg("Email queue is full, sending synchronously as fallback")
+		return SendEmail(globalQueue.cfg, to, subject, body)
 	}
 }
 
@@ -169,11 +170,10 @@ func NewEmailService(cfg *config.Config) *EmailService {
 // Send отправляет письмо. Если глобальная очередь инициализирована — использует её,
 // иначе отправляет синхронно.
 func (s *EmailService) Send(to, subject, body string) error {
-	// Если очередь глобальная инициализирована, используем её
 	if globalQueue != nil {
 		return Enqueue(to, subject, body)
 	}
-	// Иначе синхронная отправка
+	// Если очередь не инициализирована, отправляем синхронно
 	return SendEmail(s.cfg, to, subject, body)
 }
 
