@@ -32,18 +32,23 @@ func setUpWebsocketServer(t *testing.T) (*httptest.Server, *RoomHub) {
 		if roomID == "" {
 			roomID = "default"
 		}
-		client := NewClient(conn, roomID)
+		client := NewClient(conn, roomID, "127.0.0.1")
 		hub.RegisterClient(client)
 		defer hub.UnregisterClient(client)
 
-		// Используем WritePumpWithContext с контекстом
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		WritePumpWithContext(ctx, client)
 
-		// Цикл чтения
+		go client.writePump(ctx)
+
+		_ = client.Conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		client.Conn.SetPongHandler(func(string) error {
+			_ = client.Conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+			return nil
+		})
+
 		for {
-			_, _, err := conn.ReadMessage()
+			_, _, err := client.Conn.ReadMessage()
 			if err != nil {
 				break
 			}
@@ -52,9 +57,6 @@ func setUpWebsocketServer(t *testing.T) (*httptest.Server, *RoomHub) {
 
 	return server, hub
 }
-
-// Остальные тесты остаются без изменений, так как они используют setUpWebsocketServer
-// и не вызывают writePump напрямую.
 
 func TestWebSocket_Integration_EchoBroadcast(t *testing.T) {
 	server, hub := setUpWebsocketServer(t)
@@ -69,7 +71,7 @@ func TestWebSocket_Integration_EchoBroadcast(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = conn2.Close() }()
 
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	msg := map[string]string{"event": "test", "data": "hello"}
 	data, err := json.Marshal(msg)
@@ -111,7 +113,7 @@ func TestWebSocket_Integration_BroadcastToDifferentRooms(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = connB.Close() }()
 
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	msg := map[string]string{"msg": "only A"}
 	data, err := json.Marshal(msg)
@@ -142,7 +144,7 @@ func TestWebSocket_Integration_ClientDisconnect(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = conn.Close() }()
 
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	hub.mu.Lock()
 	room, ok := hub.rooms["testroom"]
@@ -168,7 +170,7 @@ func TestWebSocket_Integration_MultipleMessages(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = conn.Close() }()
 
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	messages := []string{"one", "two", "three"}
 	for _, msg := range messages {

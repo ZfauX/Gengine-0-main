@@ -11,6 +11,7 @@ import (
 	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/storage"
 
+	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 	csrf "github.com/utrack/gin-csrf"
@@ -166,7 +167,11 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	user, err := h.authSvc.Register(c.Request.Context(), input.Email, input.Password, input.Name)
+	// Санитизация имени и email
+	cleanName := sanitize.StripHTML(input.Name)
+	cleanEmail := sanitize.StripHTML(input.Email)
+
+	user, err := h.authSvc.Register(c.Request.Context(), cleanEmail, input.Password, cleanName)
 	if err != nil {
 		render.Page(c, http.StatusConflict, "auth-register.html", gin.H{
 			"Error": "Email уже зарегистрирован",
@@ -175,7 +180,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	h.auditSvc.Log(user.ID, "register", "user", user.ID, input.Email)
+	h.auditSvc.Log(user.ID, "register", "user", user.ID, cleanEmail)
 	c.Redirect(http.StatusFound, "/auth/login")
 }
 
@@ -271,11 +276,21 @@ func (h *AuthHandler) OAuthLogin(c *gin.Context) {
 		return
 	}
 
-	url, err := h.oauthSvc.GetAuthURL(req.Provider)
+	url, state, err := h.oauthSvc.GetAuthURL(req.Provider)
 	if err != nil {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": err.Error()})
 		return
 	}
+
+	// Сохраняем state в сессии для последующей проверки при callback
+	session := sessions.Default(c)
+	session.Set("oauth_state", state)
+	if err := session.Save(); err != nil {
+		log.Error().Err(err).Msg("OAuthLogin: failed to save session")
+		c.HTML(http.StatusInternalServerError, "errors/500.html", gin.H{"Error": "Внутренняя ошибка"})
+		return
+	}
+
 	c.Redirect(http.StatusFound, url)
 }
 
@@ -300,10 +315,27 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 		return
 	}
 
+	// Проверяем state из сессии
+	session := sessions.Default(c)
+	savedState := session.Get("oauth_state")
+	if savedState == nil || savedState != state {
+		log.Warn().Str("provider", req.Provider).Str("state", state).Msg("OAuthCallback: state mismatch")
+		render.Page(c, http.StatusBadRequest, "auth-login.html", gin.H{
+			"Error": "Ошибка авторизации: неверный параметр state",
+			"csrf":  csrf.GetToken(c),
+		})
+		return
+	}
+	// После успешной проверки удаляем state из сессии
+	session.Delete("oauth_state")
+	if err := session.Save(); err != nil {
+		log.Error().Err(err).Msg("OAuthCallback: failed to clear session")
+	}
+
 	user, err := h.oauthSvc.Authenticate(c.Request.Context(), req.Provider, code, state)
 	if err != nil {
 		render.Page(c, http.StatusBadRequest, "auth-login.html", gin.H{
-			"Error": "Ошибка входа через " + req.Provider,
+			"Error": "Ошибка входа через " + req.Provider + ": " + err.Error(),
 			"csrf":  csrf.GetToken(c),
 		})
 		return
@@ -432,9 +464,13 @@ func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
+	// Санитизация полей
+	cleanName := sanitize.StripHTML(input.Name)
+	cleanEmail := sanitize.StripHTML(input.Email)
+
 	if err := h.db.Model(&User{}).Where("id = ?", userID).Updates(map[string]any{
-		"name":  input.Name,
-		"email": input.Email,
+		"name":  cleanName,
+		"email": cleanEmail,
 	}).Error; err != nil {
 		log.Error().Err(err).Uint("user", userID).Msg("UpdateProfile: failed to update")
 		render.Page(c, http.StatusInternalServerError, "profile-show.html", gin.H{

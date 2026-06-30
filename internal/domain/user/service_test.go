@@ -429,13 +429,15 @@ func TestOAuthService_GetAuthURL(t *testing.T) {
 	service := NewOAuthService(userRepo, extLoginRepo, cfg)
 
 	t.Run("поддерживаемый провайдер", func(t *testing.T) {
-		url, err := service.GetAuthURL("google")
+		url, state, err := service.GetAuthURL("google")
 		require.NoError(t, err)
 		assert.Contains(t, url, "accounts.google.com")
+		assert.NotEmpty(t, state, "state должен быть сгенерирован")
+		assert.Len(t, state, 32, "state должен иметь длину 32 символа")
 	})
 
 	t.Run("неподдерживаемый провайдер", func(t *testing.T) {
-		_, err := service.GetAuthURL("facebook")
+		_, _, err := service.GetAuthURL("facebook")
 		assert.Error(t, err)
 		assert.Equal(t, "неподдерживаемый провайдер", err.Error())
 	})

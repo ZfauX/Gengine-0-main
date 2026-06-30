@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"gengine-0/internal/pkg/render"
+	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/storage"
 
 	"github.com/gin-gonic/gin"
@@ -101,10 +102,13 @@ func (h *TeamHandler) CreateTeam(c *gin.Context) {
 		return
 	}
 
+	// Санитизация названия команды
+	cleanName := sanitize.StripHTML(input.Name)
+
 	userID := c.GetUint("userID")
-	_, err := h.teamService.CreateTeam(c.Request.Context(), input.Name, userID)
+	_, err := h.teamService.CreateTeam(c.Request.Context(), cleanName, userID)
 	if err != nil {
-		log.Error().Err(err).Uint("user_id", userID).Str("name", input.Name).Msg("CreateTeam: failed to create team")
+		log.Error().Err(err).Uint("user_id", userID).Str("name", cleanName).Msg("CreateTeam: failed to create team")
 		render.Page(c, http.StatusInternalServerError, "teams-new.html", gin.H{
 			"Error": err.Error(),
 			"csrf":  csrf.GetToken(c),

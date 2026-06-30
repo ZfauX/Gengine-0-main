@@ -11,6 +11,8 @@ import (
 	"gengine-0/internal/pkg/email"
 	"gengine-0/internal/pkg/metrics"
 	"gengine-0/internal/pkg/middleware"
+
+	"gorm.io/gorm"
 )
 
 type TeamService struct {
@@ -257,13 +259,25 @@ func (s *InvitationService) AcceptInvitation(ctx context.Context, invitationID, 
 	if inv.Status != InvitationPending {
 		return errors.New("приглашение уже обработано")
 	}
-	if err := s.invRepo.UpdateStatus(ctx, invitationID, InvitationAccepted); err != nil {
+
+	db := s.teamRepo.(*gormTeamRepo).db
+
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Обновляем статус приглашения через tx
+		if err := tx.Model(&Invitation{}).Where("id = ?", invitationID).Update("status", InvitationAccepted).Error; err != nil {
+			return err
+		}
+		// Добавляем участника через tx
+		if err := tx.Exec("INSERT INTO team_members (team_id, user_id) VALUES (?, ?)", inv.TeamID, userID).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
 		return err
 	}
-	if err := s.teamRepo.AddMember(ctx, inv.TeamID, userID); err != nil {
-		return err
-	}
-	// обновляем gauge
+
+	// Обновляем метрику после успешной транзакции
 	if ts, ok := s.teamRepo.(*gormTeamRepo); ok {
 		var count int64
 		ts.db.Table("team_members").Count(&count)

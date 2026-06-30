@@ -4,6 +4,8 @@ package game
 import (
 	"errors"
 
+	"gengine-0/internal/pkg/sanitize"
+
 	"gorm.io/gorm"
 )
 
@@ -54,7 +56,9 @@ func (s *ReviewService) Create(gameID, userID uint, rating int, comment string) 
 	if !can {
 		return errors.New("вы не можете оставить отзыв")
 	}
-	review := Review{GameID: gameID, UserID: userID, Rating: rating, Comment: comment}
+	// Санитизация HTML-тегов в комментарии
+	cleanComment := sanitize.StripHTML(comment)
+	review := Review{GameID: gameID, UserID: userID, Rating: rating, Comment: cleanComment}
 	return s.DB.Create(&review).Error
 }
 

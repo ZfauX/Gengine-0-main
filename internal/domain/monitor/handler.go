@@ -14,6 +14,7 @@ import (
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/render"
+	"gengine-0/internal/pkg/sanitize"
 	ws "gengine-0/internal/pkg/websocket"
 
 	"github.com/gin-gonic/gin"
@@ -169,12 +170,22 @@ func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 		return
 	}
 	gameID := strconv.Itoa(int(req.ID))
+	remoteIP := c.ClientIP()
+
+	// Проверяем лимиты подключений
+	if !h.hub.CanAccept(remoteIP) {
+		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+			"error": "слишком много активных WebSocket-соединений",
+		})
+		return
+	}
+
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		log.Error().Err(err).Str("game_id", gameID).Msg("MonitorWS: failed to upgrade connection")
 		return
 	}
-	client := ws.NewClient(conn, gameID)
+	client := ws.NewClient(conn, gameID, remoteIP)
 	h.hub.RegisterClient(client)
 
 	snapshot, err := h.monitorService.GetOrFetchSnapshot(req.ID)
@@ -218,7 +229,7 @@ func (h *MonitorHandler) ChatPage(c *gin.Context) {
 	if err := h.db.WithContext(ctx).First(&currentUser, userID).Error; err != nil {
 		log.Warn().Err(err).Uint("user_id", userID).Msg("ChatPage: failed to get user name")
 	} else {
-		userName = currentUser.Name
+		userName = sanitize.StripHTML(currentUser.Name)
 	}
 
 	var passingID *uint
@@ -259,6 +270,15 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 		return
 	}
 	userID := c.GetUint("userID")
+	remoteIP := c.ClientIP()
+
+	// Проверяем лимиты подключений
+	if !h.hub.CanAccept(remoteIP) {
+		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+			"error": "слишком много активных WebSocket-соединений",
+		})
+		return
+	}
 
 	roomIDUint, err := strconv.Atoi(roomID)
 	if err != nil || roomIDUint <= 0 {
@@ -273,13 +293,20 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 		return
 	}
 
-	client := ws.NewClient(conn, roomID)
+	client := ws.NewClient(conn, roomID, remoteIP)
 	h.hub.RegisterClient(client)
 
 	msgs, err := h.chatService.GetMessages(c.Request.Context(), uint(roomIDUint), 50)
 	if err != nil {
 		log.Error().Err(err).Int("room_id", roomIDUint).Msg("ChatWS: failed to get history")
 	} else {
+		// Санитизируем содержимое сообщений перед отправкой
+		for i := range msgs {
+			msgs[i].Content = sanitize.StripHTML(msgs[i].Content)
+			if msgs[i].User.Name != "" {
+				msgs[i].User.Name = sanitize.StripHTML(msgs[i].User.Name)
+			}
+		}
 		data, err := json.Marshal(gin.H{"type": "history", "messages": msgs})
 		if err == nil {
 			client.Send <- data
@@ -315,13 +342,23 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 					}
 					return
 				}
-				msg, err := h.chatService.SaveMessage(c.Request.Context(), uint(roomIDUint), userID, string(message))
+				// Санитизируем содержимое сообщения перед сохранением и отправкой
+				cleanContent := sanitize.StripHTML(string(message))
+				if cleanContent == "" {
+					continue // Игнорируем пустые сообщения (после санитизации)
+				}
+				msg, err := h.chatService.SaveMessage(c.Request.Context(), uint(roomIDUint), userID, cleanContent)
 				if err != nil {
 					log.Error().Err(err).Str("room_id", roomID).Uint("user_id", userID).Msg("ChatWS: failed to save message")
 					continue
 				}
 				if err := h.db.Preload("User").First(&msg, msg.ID).Error; err != nil {
 					log.Error().Err(err).Uint("msg_id", msg.ID).Msg("ChatWS: failed to preload user")
+				}
+				// Дополнительная санитизация перед отправкой
+				msg.Content = sanitize.StripHTML(msg.Content)
+				if msg.User.Name != "" {
+					msg.User.Name = sanitize.StripHTML(msg.User.Name)
 				}
 				resp, err := json.Marshal(gin.H{"type": "message", "message": msg})
 				if err != nil {
@@ -413,12 +450,22 @@ func (h *MonitorHandler) LogsWS(c *gin.Context) {
 		return
 	}
 	gameID := strconv.Itoa(int(req.ID))
+	remoteIP := c.ClientIP()
+
+	// Проверяем лимиты подключений
+	if !h.hub.CanAccept(remoteIP) {
+		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+			"error": "слишком много активных WebSocket-соединений",
+		})
+		return
+	}
+
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		log.Error().Err(err).Str("game_id", gameID).Msg("LogsWS: failed to upgrade connection")
 		return
 	}
-	client := ws.NewClient(conn, "logs_"+gameID)
+	client := ws.NewClient(conn, "logs_"+gameID, remoteIP)
 	h.hub.RegisterClient(client)
 
 	ctx, cancel := context.WithCancel(c.Request.Context())
@@ -458,8 +505,15 @@ func (h *MonitorHandler) Vote(c *gin.Context) {
 		return
 	}
 
-	if err := h.blackboxVoteService.Vote(c.Request.Context(), input.SessionID, input.TeamID, input.Option); err != nil {
-		log.Error().Err(err).Uint("session_id", input.SessionID).Uint("team_id", input.TeamID).Str("option", input.Option).Msg("Vote: failed to vote")
+	// Санитизируем вариант ответа
+	cleanOption := sanitize.StripHTML(input.Option)
+	if cleanOption == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Вариант ответа не может быть пустым после очистки"})
+		return
+	}
+
+	if err := h.blackboxVoteService.Vote(c.Request.Context(), input.SessionID, input.TeamID, cleanOption); err != nil {
+		log.Error().Err(err).Uint("session_id", input.SessionID).Uint("team_id", input.TeamID).Str("option", cleanOption).Msg("Vote: failed to vote")
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -498,5 +552,5 @@ func (h *MonitorHandler) CloseVoting(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"winner": winner})
+	c.JSON(http.StatusOK, gin.H{"winner": sanitize.StripHTML(winner)})
 }

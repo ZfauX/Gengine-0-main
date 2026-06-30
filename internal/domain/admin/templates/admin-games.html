@@ -23,7 +23,10 @@
     <td>{{.ID}}</td><td>{{.Name}}</td><td>{{.Author.Name}}</td><td>{{if .IsDraft}}Черновик{{else}}Опубликована{{end}}</td>
     <td>
         <a href="/games/{{.ID}}" class="button">Просмотр</a>
-        <a href="/admin/games/{{.ID}}/delete" class="button danger" onclick="return confirm('Удалить игру?')">Удалить</a>
+        <form action="/admin/games/{{.ID}}/delete" method="POST" style="display:inline;">
+            <input type="hidden" name="_csrf" value="{{$.csrf}}">
+            <button type="submit" class="button danger" onclick="return confirm('Удалить игру?')">Удалить</button>
+        </form>
     </td>
 </tr>
 {{end}}

@@ -181,9 +181,18 @@ func TestInvitationService_Accept(t *testing.T) {
 	invited := createUser(t, db, "inv@test.com", "pass")
 	tm, _ := ts.CreateTeam(context.Background(), "Inv Team", cap.ID)
 
-	inv, _ := invSvc.CreateInvitation(context.Background(), tm.ID, invited.ID, cap.ID)
+	// Проверяем, что invited существует в БД
+	var userExists bool
+	err := db.Raw("SELECT EXISTS(SELECT 1 FROM users WHERE id = ?)", invited.ID).Scan(&userExists).Error
+	require.NoError(t, err)
+	assert.True(t, userExists, "приглашённый пользователь должен существовать")
 
-	err := invSvc.AcceptInvitation(context.Background(), inv.ID, invited.ID)
+	inv, err := invSvc.CreateInvitation(context.Background(), tm.ID, invited.ID, cap.ID)
+	require.NoError(t, err)
+	assert.NotZero(t, inv.ID, "приглашение должно быть создано")
+
+	// Принимаем приглашение
+	err = invSvc.AcceptInvitation(context.Background(), inv.ID, invited.ID)
 	require.NoError(t, err)
 
 	var updated team.Invitation

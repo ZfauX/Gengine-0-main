@@ -18,23 +18,25 @@ const (
 )
 
 type Client struct {
-	ID     string
-	Conn   *websocket.Conn
-	Send   chan []byte
-	RoomID string
-	Hub    *RoomHub
-	mu     sync.Mutex
-	closed bool
-	done   chan struct{} // сигнал о завершении всех горутин
+	ID       string
+	Conn     *websocket.Conn
+	Send     chan []byte
+	RoomID   string
+	RemoteIP string // IP-адрес клиента для лимитов
+	Hub      *RoomHub
+	mu       sync.Mutex
+	closed   bool
+	done     chan struct{} // сигнал о завершении всех горутин
 }
 
-func NewClient(conn *websocket.Conn, roomID string) *Client {
+func NewClient(conn *websocket.Conn, roomID, remoteIP string) *Client {
 	return &Client{
-		ID:     uuid.New().String(),
-		Conn:   conn,
-		Send:   make(chan []byte, 256),
-		RoomID: roomID,
-		done:   make(chan struct{}),
+		ID:       uuid.New().String(),
+		Conn:     conn,
+		Send:     make(chan []byte, 256),
+		RoomID:   roomID,
+		RemoteIP: remoteIP,
+		done:     make(chan struct{}),
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -65,7 +66,46 @@ func createTestGame(t *testing.T, db *gorm.DB, authorID uint, name string, isDra
 // =============================================================================
 
 func TestBackupService_CreateNow(t *testing.T) {
-	t.Skip("Требуется pg_dump, пропускаем в CI. Для локального запуска раскомментируйте код ниже.")
+	// Проверяем наличие pg_dump в системе
+	_, err := exec.LookPath("pg_dump")
+	if err != nil {
+		t.Skip("pg_dump not found in PATH, skipping test")
+	}
+
+	// Создаём временную директорию для бэкапов
+	tmpDir, err := os.MkdirTemp("", "backup_create")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	db := setupAdminTestDB(t)
+	backupRepo := admin.NewGormBackupRepo(db)
+
+	dbCfg := config.DatabaseConfig{
+		Host:     "localhost",
+		Port:     "5432",
+		User:     "test",
+		Password: "test",
+		Name:     "testdb",
+	}
+	svc := admin.NewBackupService(backupRepo, tmpDir, 10, dbCfg)
+
+	err = svc.CreateNow(context.Background())
+	require.NoError(t, err)
+
+	// Проверяем, что файл создан
+	files, err := os.ReadDir(tmpDir)
+	require.NoError(t, err)
+	assert.Len(t, files, 1)
+
+	// Проверяем, что запись в БД создана
+	var count int64
+	db.Model(&admin.Backup{}).Count(&count)
+	assert.Equal(t, int64(1), count)
+
+	// Проверяем, что файл не пустой
+	info, err := os.Stat(filepath.Join(tmpDir, files[0].Name()))
+	require.NoError(t, err)
+	assert.Greater(t, info.Size(), int64(0))
 }
 
 func TestBackupService_RotateBackups(t *testing.T) {
