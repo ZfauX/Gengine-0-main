@@ -1,33 +1,57 @@
 {{define "tournaments-edit.html"}}
-<h1>Редактирование турнира</h1>
-{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
-<form action="/tournaments/{{.Tournament.ID}}/update" method="POST">
-    <input type="hidden" name="_csrf" value="{{.csrf}}">
-    <div>
-        <label>Название:</label>
-        <input type="text" name="name" value="{{.Tournament.Name}}" required>
-    </div>
-    <div>
-        <label>Описание:</label>
-        <textarea name="description" rows="4">{{.Tournament.Description}}</textarea>
-    </div>
-    <div>
-        <label>Очки за 1 место:</label>
-        <input type="number" name="points_for_first" value="{{.Tournament.PointsForFirst}}" min="0">
-    </div>
-    <div>
-        <label>Очки за 2 место:</label>
-        <input type="number" name="points_for_second" value="{{.Tournament.PointsForSecond}}" min="0">
-    </div>
-    <div>
-        <label>Очки за 3 место:</label>
-        <input type="number" name="points_for_third" value="{{.Tournament.PointsForThird}}" min="0">
-    </div>
-    <div>
-        <label>Очки за участие:</label>
-        <input type="number" name="points_for_participation" value="{{.Tournament.PointsForParticipation}}" min="0">
-    </div>
-    <button type="submit" class="button">Сохранить</button>
-</form>
-<a href="/tournaments/{{.Tournament.ID}}">Назад к турниру</a>
+<div class="max-w-3xl mx-auto">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Редактирование турнира</h1>
+
+    {{if .Error}}
+    <div class="flash flash-error">{{.Error}}</div>
+    {{end}}
+
+    <form action="/tournaments/{{.Tournament.ID}}/update" method="POST" class="card space-y-4">
+        <input type="hidden" name="_csrf" value="{{.csrf}}">
+
+        <!-- Название -->
+        <div>
+            <label for="name" class="block text-sm font-medium text-gray-700 mb-1">Название</label>
+            <input type="text" name="name" id="name" value="{{.Tournament.Name}}" required
+                   class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+        </div>
+
+        <!-- Описание -->
+        <div>
+            <label for="description" class="block text-sm font-medium text-gray-700 mb-1">Описание</label>
+            <textarea name="description" id="description" rows="4"
+                      class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">{{.Tournament.Description}}</textarea>
+        </div>
+
+        <!-- Очки за места -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label for="points_for_first" class="block text-sm font-medium text-gray-700 mb-1">Очки за 1 место</label>
+                <input type="number" name="points_for_first" id="points_for_first" value="{{.Tournament.PointsForFirst}}" min="0"
+                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+            </div>
+            <div>
+                <label for="points_for_second" class="block text-sm font-medium text-gray-700 mb-1">Очки за 2 место</label>
+                <input type="number" name="points_for_second" id="points_for_second" value="{{.Tournament.PointsForSecond}}" min="0"
+                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+            </div>
+            <div>
+                <label for="points_for_third" class="block text-sm font-medium text-gray-700 mb-1">Очки за 3 место</label>
+                <input type="number" name="points_for_third" id="points_for_third" value="{{.Tournament.PointsForThird}}" min="0"
+                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+            </div>
+            <div>
+                <label for="points_for_participation" class="block text-sm font-medium text-gray-700 mb-1">Очки за участие</label>
+                <input type="number" name="points_for_participation" id="points_for_participation" value="{{.Tournament.PointsForParticipation}}" min="0"
+                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+            </div>
+        </div>
+
+        <!-- Кнопки -->
+        <div class="flex flex-wrap gap-3 pt-2">
+            <button type="submit" class="btn btn-primary text-sm">Сохранить</button>
+            <a href="/tournaments/{{.Tournament.ID}}" class="btn btn-outline text-sm">Отмена</a>
+        </div>
+    </form>
+</div>
 {{end}}

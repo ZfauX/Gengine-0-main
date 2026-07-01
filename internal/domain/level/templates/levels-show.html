@@ -1,56 +1,82 @@
 {{define "levels-show.html"}}
-<h1>Уровень: {{.Level.Name}}</h1>
+<div class="max-w-4xl mx-auto">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Уровень: {{.Level.Name}}</h1>
 
-{{if .Level.Description}}
-<p><em>{{.Level.Description}}</em></p>
-{{end}}
+    <!-- Информация об уровне -->
+    <div class="card mb-6 space-y-2 text-sm">
+        {{if .Level.Description}}
+        <p class="text-gray-600 italic">{{.Level.Description}}</p>
+        {{end}}
 
-<p>Позиция: {{.Level.Position}}</p>
-<p>Тип: 
-    {{if eq .Level.Type "single"}}Обычный
-    {{else if eq .Level.Type "checkpoint"}}Чекпоинт
-    {{else if eq .Level.Type "parallel_group"}}Параллельная группа
-    {{else if eq .Level.Type "blackbox"}}Чёрный ящик
-    {{else if eq .Level.Type "file_upload"}}Файловый ответ
-    {{else}}{{.Level.Type}}{{end}}
-</p>
-{{if .Level.RequiresConfirmation}}
-<p style="color:orange;">Требует подтверждения автором</p>
-{{end}}
-{{if .Level.Latitude}}
-<p>Координаты: {{.Level.Latitude}}, {{.Level.Longitude}}</p>
-{{end}}
+        <p><span class="font-medium text-gray-600">Позиция:</span> {{.Level.Position}}</p>
+        <p><span class="font-medium text-gray-600">Тип:</span>
+            {{if eq .Level.Type "single"}}Обычный
+            {{else if eq .Level.Type "checkpoint"}}Чекпоинт
+            {{else if eq .Level.Type "parallel_group"}}Параллельная группа
+            {{else if eq .Level.Type "blackbox"}}Чёрный ящик
+            {{else if eq .Level.Type "file_upload"}}Файловый ответ
+            {{else}}{{.Level.Type}}{{end}}
+        </p>
+        {{if .Level.RequiresConfirmation}}
+        <div>
+            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">Требует подтверждения автором</span>
+        </div>
+        {{end}}
+        {{if .Level.Latitude}}
+        <p><span class="font-medium text-gray-600">Координаты:</span> {{.Level.Latitude}}, {{.Level.Longitude}}</p>
+        {{end}}
+    </div>
 
-<h2>Вопросы</h2>
-<a href="/games/{{.GameID}}/levels/{{.Level.ID}}/questions/new">Добавить вопрос</a>
-<ul>
-{{range .Level.Questions}}
-    <li style="margin-bottom:15px;">
-        <strong>{{.Text}}</strong>
-        {{if .Hint}}<br><small>Подсказка: {{.Hint}}</small>{{end}}
-        <br>
-        <a href="/games/{{$.GameID}}/levels/{{$.Level.ID}}/questions/{{.ID}}/edit">✎</a>
-        <a href="/games/{{$.GameID}}/levels/{{$.Level.ID}}/questions/{{.ID}}/answers">Ответы</a>
-        <form action="/games/{{$.GameID}}/levels/{{$.Level.ID}}/questions/{{.ID}}/delete" method="POST" style="display:inline">
-            <input type="hidden" name="_csrf" value="{{$.csrf}}">
-            <button type="submit" class="button danger" onclick="return confirm('Удалить вопрос?')">Удалить</button>
-        </form>
-        {{if .Answers}}
-        <ul style="color:#27ae60; margin-top:5px;">
-            {{range .Answers}}
-            <li>{{.Code}}</li>
+    <!-- Вопросы -->
+    <div class="card mb-6">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-lg font-semibold text-gray-700">Вопросы</h2>
+            <a href="/games/{{.GameID}}/levels/{{.Level.ID}}/questions/new" class="btn btn-primary text-sm">+ Добавить вопрос</a>
+        </div>
+
+        {{if .Level.Questions}}
+        <ul class="space-y-4">
+            {{range .Level.Questions}}
+            <li class="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                <div class="flex flex-wrap items-start justify-between gap-2">
+                    <div class="flex-1">
+                        <p class="font-medium text-gray-800">{{.Text}}</p>
+                        {{if .Hint}}
+                        <p class="text-sm text-gray-500 italic">Подсказка: {{.Hint}}</p>
+                        {{end}}
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2 text-sm">
+                        <a href="/games/{{$.GameID}}/levels/{{$.Level.ID}}/questions/{{.ID}}/edit" class="btn btn-outline text-xs" title="Редактировать">✎</a>
+                        <a href="/games/{{$.GameID}}/levels/{{$.Level.ID}}/questions/{{.ID}}/answers" class="btn btn-outline text-xs">Ответы</a>
+                        <form action="/games/{{$.GameID}}/levels/{{$.Level.ID}}/questions/{{.ID}}/delete" method="POST" class="inline" onsubmit="return confirm('Удалить вопрос?')">
+                            <input type="hidden" name="_csrf" value="{{$.csrf}}">
+                            <button type="submit" class="btn btn-danger text-xs">Удалить</button>
+                        </form>
+                    </div>
+                </div>
+                {{if .Answers}}
+                <div class="mt-3">
+                    <p class="text-sm font-medium text-gray-600">Ответы:</p>
+                    <ul class="flex flex-wrap gap-2 mt-1">
+                        {{range .Answers}}
+                        <li class="px-2 py-1 text-sm font-mono text-green-700 bg-green-50 rounded-md border border-green-200">{{.Code}}</li>
+                        {{end}}
+                    </ul>
+                </div>
+                {{end}}
+            </li>
             {{end}}
         </ul>
+        {{else}}
+        <p class="text-gray-500 text-sm">Вопросов пока нет.</p>
         {{end}}
-    </li>
-{{else}}
-    <li>Вопросов пока нет.</li>
-{{end}}
-</ul>
+    </div>
 
-<div style="margin-top:20px; display:flex; gap:10px; flex-wrap:wrap;">
-    <a href="/games/{{.GameID}}/levels/{{.Level.ID}}/edit" class="button">Редактировать</a>
-    <a href="/games/{{.GameID}}/levels" class="button">Назад к уровням</a>
-    <a href="/games/{{.GameID}}" class="button">Назад к игре</a>
+    <!-- Действия -->
+    <div class="flex flex-wrap gap-3">
+        <a href="/games/{{.GameID}}/levels/{{.Level.ID}}/edit" class="btn btn-outline text-sm">Редактировать</a>
+        <a href="/games/{{.GameID}}/levels" class="btn btn-outline text-sm">← Назад к уровням</a>
+        <a href="/games/{{.GameID}}" class="btn btn-outline text-sm">← Назад к игре</a>
+    </div>
 </div>
 {{end}}

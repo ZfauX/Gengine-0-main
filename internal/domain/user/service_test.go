@@ -21,7 +21,7 @@ import (
 
 func newTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	return testutil.SetupPostgresDB(t, &User{}, &Achievement{}, &PasswordResetToken{}, &EmailVerificationToken{})
+	return testutil.SetupPostgresDB(t, &User{}, &Achievement{}, &PasswordResetToken{}, &EmailVerificationToken{}, &RefreshToken{})
 }
 
 func newTestConfig() *config.Config {
@@ -51,12 +51,14 @@ func newTestRepos(db *gorm.DB) (
 	PasswordResetRepository,
 	EmailVerificationRepository,
 	ExternalLoginRepository,
+	RefreshTokenRepository,
 ) {
 	return NewGormUserRepo(db),
 		NewGormAchievementRepo(db),
 		NewGormPasswordResetRepo(db),
 		NewGormEmailVerificationRepo(db),
-		NewGormExternalLoginRepo(db)
+		NewGormExternalLoginRepo(db),
+		NewGormRefreshTokenRepo(db)
 }
 
 // Создаёт тестового пользователя в БД
@@ -68,7 +70,6 @@ func createTestUser(t *testing.T, db *gorm.DB, email, password, name string) *Us
 		Password:      string(hashed),
 		Name:          name,
 		EmailVerified: false,
-		// Роль по умолчанию будет "user" (это задаётся в GORM-модели)
 	}
 	require.NoError(t, db.Create(user).Error)
 	return user
@@ -81,8 +82,8 @@ func createTestUser(t *testing.T, db *gorm.DB, email, password, name string) *Us
 func TestAuthService_Register(t *testing.T) {
 	db := newTestDB(t)
 	cfg := newTestConfig()
-	userRepo, achievRepo, _, emailVerifRepo, _ := newTestRepos(db)
-	service := NewAuthService(userRepo, achievRepo, emailVerifRepo, cfg)
+	userRepo, achievRepo, _, emailVerifRepo, _, refreshTokenRepo := newTestRepos(db)
+	service := NewAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg)
 
 	t.Run("успешная регистрация", func(t *testing.T) {
 		user, err := service.Register(context.Background(), "test@example.com", "password123", "Test User")
@@ -108,8 +109,8 @@ func TestAuthService_Register(t *testing.T) {
 func TestAuthService_Login(t *testing.T) {
 	db := newTestDB(t)
 	cfg := newTestConfig()
-	userRepo, achievRepo, _, emailVerifRepo, _ := newTestRepos(db)
-	service := NewAuthService(userRepo, achievRepo, emailVerifRepo, cfg)
+	userRepo, achievRepo, _, emailVerifRepo, _, refreshTokenRepo := newTestRepos(db)
+	service := NewAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg)
 
 	// Создаём пользователя
 	createTestUser(t, db, "login@example.com", "correctpass", "Login User")
@@ -136,8 +137,8 @@ func TestAuthService_Login(t *testing.T) {
 func TestAuthService_ParseToken(t *testing.T) {
 	db := newTestDB(t)
 	cfg := newTestConfig()
-	userRepo, achievRepo, _, emailVerifRepo, _ := newTestRepos(db)
-	service := NewAuthService(userRepo, achievRepo, emailVerifRepo, cfg)
+	userRepo, achievRepo, _, emailVerifRepo, _, refreshTokenRepo := newTestRepos(db)
+	service := NewAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg)
 
 	user := createTestUser(t, db, "parse@example.com", "pass", "Parse")
 	tokenStr, err := service.GenerateJWT(*user)
@@ -147,7 +148,6 @@ func TestAuthService_ParseToken(t *testing.T) {
 		id, role, err := service.ParseToken(tokenStr)
 		require.NoError(t, err)
 		assert.Equal(t, user.ID, id)
-		// +++ Исправлено: ожидаем роль "user" (по умолчанию из БД)
 		assert.Equal(t, "user", role)
 	})
 
@@ -160,7 +160,7 @@ func TestAuthService_ParseToken(t *testing.T) {
 		// Создаём просроченный токен вручную
 		oldCfg := *cfg
 		oldCfg.JWT.AccessExpiry = -time.Hour
-		expiredService := NewAuthService(userRepo, achievRepo, emailVerifRepo, &oldCfg)
+		expiredService := NewAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, &oldCfg)
 		token, _ := expiredService.GenerateJWT(*user)
 		_, _, err := expiredService.ParseToken(token)
 		assert.Error(t, err)
@@ -173,7 +173,7 @@ func TestAuthService_ParseToken(t *testing.T) {
 
 func TestUserService_GetByID(t *testing.T) {
 	db := newTestDB(t)
-	userRepo, _, _, _, _ := newTestRepos(db)
+	userRepo, _, _, _, _, _ := newTestRepos(db)
 	service := NewUserService(userRepo)
 
 	user := createTestUser(t, db, "getbyid@example.com", "pass", "GetByID")
@@ -192,7 +192,7 @@ func TestUserService_GetByID(t *testing.T) {
 
 func TestUserService_GetByEmail(t *testing.T) {
 	db := newTestDB(t)
-	userRepo, _, _, _, _ := newTestRepos(db)
+	userRepo, _, _, _, _, _ := newTestRepos(db)
 	service := NewUserService(userRepo)
 
 	user := createTestUser(t, db, "getbyemail@example.com", "pass", "GetByEmail")
@@ -211,7 +211,7 @@ func TestUserService_GetByEmail(t *testing.T) {
 
 func TestUserService_GetPublicProfile(t *testing.T) {
 	db := newTestDB(t)
-	userRepo, _, _, _, _ := newTestRepos(db)
+	userRepo, _, _, _, _, _ := newTestRepos(db)
 	service := NewUserService(userRepo)
 
 	user := createTestUser(t, db, "public@example.com", "pass", "Public")
@@ -232,7 +232,7 @@ func TestUserService_GetPublicProfile(t *testing.T) {
 
 func TestUserService_UpdateProfile(t *testing.T) {
 	db := newTestDB(t)
-	userRepo, _, _, _, _ := newTestRepos(db)
+	userRepo, _, _, _, _, _ := newTestRepos(db)
 	service := NewUserService(userRepo)
 
 	user := createTestUser(t, db, "update@example.com", "pass", "Old Name")
@@ -247,7 +247,7 @@ func TestUserService_UpdateProfile(t *testing.T) {
 
 func TestUserService_ChangePassword(t *testing.T) {
 	db := newTestDB(t)
-	userRepo, _, _, _, _ := newTestRepos(db)
+	userRepo, _, _, _, _, _ := newTestRepos(db)
 	service := NewUserService(userRepo)
 
 	user := createTestUser(t, db, "changepass@example.com", "oldpass", "Change")
@@ -275,7 +275,7 @@ func TestUserService_ChangePassword(t *testing.T) {
 
 func TestAchievementService_AwardAndGet(t *testing.T) {
 	db := newTestDB(t)
-	_, achievRepo, _, _, _ := newTestRepos(db)
+	_, achievRepo, _, _, _, _ := newTestRepos(db)
 	service := NewAchievementService(achievRepo)
 	service.SeedAchievements(context.Background())
 
@@ -308,7 +308,7 @@ func TestAchievementService_AwardAndGet(t *testing.T) {
 func TestPasswordResetService_GenerateToken(t *testing.T) {
 	db := newTestDB(t)
 	cfg := newTestConfig()
-	userRepo, _, passResetRepo, _, _ := newTestRepos(db)
+	userRepo, _, passResetRepo, _, _, _ := newTestRepos(db)
 	service := NewPasswordResetService(userRepo, passResetRepo, cfg)
 
 	user := createTestUser(t, db, "reset@example.com", "pass", "Reset")
@@ -328,7 +328,7 @@ func TestPasswordResetService_GenerateToken(t *testing.T) {
 func TestPasswordResetService_ResetPassword(t *testing.T) {
 	db := newTestDB(t)
 	cfg := newTestConfig()
-	userRepo, _, passResetRepo, _, _ := newTestRepos(db)
+	userRepo, _, passResetRepo, _, _, _ := newTestRepos(db)
 	service := NewPasswordResetService(userRepo, passResetRepo, cfg)
 
 	user := createTestUser(t, db, "reset2@example.com", "oldpass", "Reset2")
@@ -377,7 +377,7 @@ func TestPasswordResetService_ResetPassword(t *testing.T) {
 func TestEmailVerificationService_VerifyToken(t *testing.T) {
 	db := newTestDB(t)
 	cfg := newTestConfig()
-	userRepo, _, _, emailVerifRepo, _ := newTestRepos(db)
+	userRepo, _, _, emailVerifRepo, _, _ := newTestRepos(db)
 	service := NewEmailVerificationService(userRepo, emailVerifRepo, cfg)
 
 	user := createTestUser(t, db, "verify@example.com", "pass", "Verify")
@@ -425,7 +425,7 @@ func TestEmailVerificationService_VerifyToken(t *testing.T) {
 func TestOAuthService_GetAuthURL(t *testing.T) {
 	cfg := newTestConfig()
 	db := newTestDB(t)
-	userRepo, _, _, _, extLoginRepo := newTestRepos(db)
+	userRepo, _, _, _, extLoginRepo, _ := newTestRepos(db)
 	service := NewOAuthService(userRepo, extLoginRepo, cfg)
 
 	t.Run("поддерживаемый провайдер", func(t *testing.T) {

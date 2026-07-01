@@ -1,178 +1,200 @@
 {{define "chat-page.html"}}
-<h1>Чаты игры</h1>
-<div class="card">
-    <div style="margin-bottom:10px">
-        <button onclick="switchRoom('general')">Общий чат</button>
-        {{if .PassingID}}
-            <button onclick="switchRoom('team')">Командный чат</button>
-        {{end}}
+<div class="max-w-4xl mx-auto" data-game-id="{{.GameID}}" data-user-id="{{.UserID}}" data-user-name="{{.UserName}}" data-passing-id="{{.PassingID}}">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Чаты игры</h1>
+
+    <div class="card">
+        <!-- Кнопки переключения комнат -->
+        <div class="flex flex-wrap gap-2 mb-4">
+            <button onclick="switchRoom('general')" id="btn-general" class="btn btn-primary text-sm">Общий чат</button>
+            {{if .PassingID}}
+            <button onclick="switchRoom('team')" id="btn-team" class="btn btn-outline text-sm">Командный чат</button>
+            {{end}}
+        </div>
+
+        <!-- Область сообщений -->
+        <div id="chat-messages" class="h-96 overflow-y-auto border border-gray-200 rounded-lg p-4 bg-gray-50 mb-3"></div>
+
+        <!-- Поле ввода и отправка -->
+        <div class="flex flex-wrap items-center gap-2">
+            <input type="text" id="chat-input" placeholder="Введите сообщение..." 
+                   class="flex-1 min-w-[180px] rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2"
+                   onkeypress="if(event.key === 'Enter') sendMessage()">
+            <button onclick="sendMessage()" class="btn btn-primary text-sm whitespace-nowrap">Отправить</button>
+        </div>
+
+        <!-- Статус подключения -->
+        <div id="connection-status" class="mt-2 text-sm text-gray-500"></div>
     </div>
-    <div id="chat-messages" style="height:400px; overflow-y:auto; border:1px solid #ddd; padding:10px; margin-bottom:10px"></div>
-    <input type="text" id="chat-input" placeholder="Введите сообщение..." style="width:70%; padding:8px" onkeypress="if(event.key === 'Enter') sendMessage()">
-    <button onclick="sendMessage()" class="button">Отправить</button>
-    <div id="connection-status" style="margin-top:10px; font-size:0.9em; color:#888;"></div>
 </div>
 
 <script>
-    let currentRoom = 'general';
-    let socket = null;
-    const gameID = {{.GameID}};
-    const userID = {{.UserID}};
-    const userName = '{{.UserName}}'; // передаётся из Go-обработчика
-    let generalRoomID = null;
-    let teamRoomID = null;
-    let roomsLoaded = false;
-    let reconnectAttempts = 0;
-    let reconnectTimer = null;
-    const MAX_RECONNECT_DELAY = 30000;
-    const BASE_RECONNECT_DELAY = 1000;
-    
-    const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    (function() {
+        // Данные из data-атрибутов
+        const container = document.querySelector('[data-game-id]');
+        if (!container) return;
 
-    function updateConnectionStatus(text, color = '#888') {
-        const el = document.getElementById('connection-status');
-        if (el) {
-            el.textContent = text;
-            el.style.color = color;
-        }
-    }
+        const gameID = parseInt(container.dataset.gameId, 10);
+        const userID = parseInt(container.dataset.userId, 10);
+        const userName = container.dataset.userName || 'Вы';
+        const passingID = container.dataset.passingId ? parseInt(container.dataset.passingId, 10) : null;
 
-    // Загружаем ID комнат и после этого подключаемся
-    fetch('/games/'+gameID+'/chat-rooms')
-        .then(r => r.json())
-        .then(data => {
-            generalRoomID = data.general_room_id;
-            teamRoomID = data.team_room_id;
-            roomsLoaded = true;
-            connect();
-        })
-        .catch(err => {
-            console.error('Ошибка получения комнат чата:', err);
-            updateConnectionStatus('Ошибка загрузки комнат', '#e74c3c');
-        });
+        let currentRoom = 'general';
+        let socket = null;
+        let generalRoomID = null;
+        let teamRoomID = null;
+        let roomsLoaded = false;
+        let reconnectAttempts = 0;
+        let reconnectTimer = null;
+        const MAX_RECONNECT_DELAY = 30000;
+        const BASE_RECONNECT_DELAY = 1000;
+        
+        const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
 
-    function connect() {
-        if (!roomsLoaded) return;
-        const room = currentRoom === 'general' ? generalRoomID : teamRoomID;
-        if (!room) {
-            updateConnectionStatus('Комната не найдена', '#e74c3c');
-            return;
-        }
+        const btnGeneral = document.getElementById('btn-general');
+        const btnTeam = document.getElementById('btn-team');
+        const chatMessages = document.getElementById('chat-messages');
+        const chatInput = document.getElementById('chat-input');
+        const statusEl = document.getElementById('connection-status');
 
-        if (socket) {
-            socket.onclose = null;
-            socket.close();
-        }
-
-        socket = new WebSocket(`${wsProtocol}//${location.host}/chat/ws?room=${room}`);
-        socket.onopen = function() {
-            console.log('Чат: WebSocket подключён, комната ' + currentRoom);
-            updateConnectionStatus('Подключено', '#2ecc71');
-            reconnectAttempts = 0;
-        };
-        socket.onmessage = function(e) {
-            try {
-                const data = JSON.parse(e.data);
-                if (data.type === 'history') {
-                    const container = document.getElementById('chat-messages');
-                    container.innerHTML = '';
-                    if (Array.isArray(data.messages)) {
-                        data.messages.forEach(msg => renderMessage(msg));
-                    }
-                } else if (data.type === 'message') {
-                    // Проверяем, не отображалось ли уже это сообщение (по временной метке и тексту)
-                    const msg = data.message;
-                    const container = document.getElementById('chat-messages');
-                    const lastChild = container.lastElementChild;
-                    if (lastChild && lastChild.dataset.msgId === String(msg.id || msg.ID || '')) {
-                        return; // уже есть, не дублируем
-                    }
-                    renderMessage(msg);
-                }
-            } catch (err) {
-                console.error('Ошибка обработки сообщения:', err);
+        function updateConnectionStatus(text, color = '#888') {
+            if (statusEl) {
+                statusEl.textContent = text;
+                statusEl.style.color = color;
             }
-        };
-        socket.onclose = function(event) {
-            console.log('Чат: WebSocket закрыт, переподключение...');
-            updateConnectionStatus('Переподключение...', '#e67e22');
-            scheduleReconnect();
-        };
-        socket.onerror = function(error) {
-            console.error('Чат: WebSocket ошибка', error);
-            updateConnectionStatus('Ошибка соединения', '#e74c3c');
-        };
-    }
+        }
 
-    function scheduleReconnect() {
-        if (reconnectTimer) clearTimeout(reconnectTimer);
-        const delay = Math.min(MAX_RECONNECT_DELAY, BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts));
-        reconnectAttempts++;
-        console.log(`Чат: переподключение через ${delay}ms (попытка ${reconnectAttempts})`);
-        updateConnectionStatus(`Переподключение через ${Math.round(delay/1000)}с...`, '#e67e22');
-        reconnectTimer = setTimeout(() => {
+        // Загружаем ID комнат
+        fetch('/games/' + gameID + '/chat-rooms')
+            .then(r => r.json())
+            .then(data => {
+                generalRoomID = data.general_room_id;
+                teamRoomID = data.team_room_id;
+                roomsLoaded = true;
+                if (btnGeneral) btnGeneral.className = 'btn btn-primary text-sm';
+                connect();
+            })
+            .catch(err => {
+                console.error('Ошибка получения комнат чата:', err);
+                updateConnectionStatus('Ошибка загрузки комнат', '#e74c3c');
+            });
+
+        function connect() {
+            if (!roomsLoaded) return;
+            const room = currentRoom === 'general' ? generalRoomID : teamRoomID;
+            if (!room) {
+                updateConnectionStatus('Комната не найдена', '#e74c3c');
+                return;
+            }
+
+            if (socket) {
+                socket.onclose = null;
+                socket.close();
+            }
+
+            socket = new WebSocket(`${wsProtocol}//${location.host}/chat/ws?room=${room}`);
+            socket.onopen = function() {
+                console.log('Чат: WebSocket подключён, комната ' + currentRoom);
+                updateConnectionStatus('Подключено', '#2ecc71');
+                reconnectAttempts = 0;
+            };
+            socket.onmessage = function(e) {
+                try {
+                    const data = JSON.parse(e.data);
+                    if (data.type === 'history') {
+                        chatMessages.innerHTML = '';
+                        if (Array.isArray(data.messages)) {
+                            data.messages.forEach(msg => renderMessage(msg));
+                        }
+                    } else if (data.type === 'message') {
+                        const msg = data.message;
+                        const lastChild = chatMessages.lastElementChild;
+                        if (lastChild && lastChild.dataset.msgId === String(msg.id || msg.ID || '')) {
+                            return;
+                        }
+                        renderMessage(msg);
+                    }
+                } catch (err) {
+                    console.error('Ошибка обработки сообщения:', err);
+                }
+            };
+            socket.onclose = function(event) {
+                console.log('Чат: WebSocket закрыт, переподключение...');
+                updateConnectionStatus('Переподключение...', '#e67e22');
+                scheduleReconnect();
+            };
+            socket.onerror = function(error) {
+                console.error('Чат: WebSocket ошибка', error);
+                updateConnectionStatus('Ошибка соединения', '#e74c3c');
+            };
+        }
+
+        function scheduleReconnect() {
+            if (reconnectTimer) clearTimeout(reconnectTimer);
+            const delay = Math.min(MAX_RECONNECT_DELAY, BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts));
+            reconnectAttempts++;
+            console.log(`Чат: переподключение через ${delay}ms (попытка ${reconnectAttempts})`);
+            updateConnectionStatus(`Переподключение через ${Math.round(delay/1000)}с...`, '#e67e22');
+            reconnectTimer = setTimeout(() => {
+                connect();
+            }, delay);
+        }
+
+        function renderMessage(msg) {
+            const div = document.createElement('div');
+            div.className = 'chat-message py-1';
+            const time = msg.created_at || msg.CreatedAt ? new Date(msg.created_at || msg.CreatedAt).toLocaleTimeString() : '';
+            const author = (msg.User && msg.User.Name) || msg.user_name || (msg.user && msg.user.name) || 'Неизвестный';
+            div.innerHTML = `<span class="font-semibold text-gray-800">${escapeHtml(author)}:</span> ${escapeHtml(msg.Content || msg.content || msg.text)} <span class="text-xs text-gray-400">(${time})</span>`;
+            div.dataset.msgId = msg.id || msg.ID || '';
+            chatMessages.appendChild(div);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return String(text).replace(/[&<>"']/g, m => map[m]);
+        }
+
+        window.switchRoom = function(type) {
+            if (currentRoom === type) return;
+            currentRoom = type;
+            if (btnGeneral) btnGeneral.className = type === 'general' ? 'btn btn-primary text-sm' : 'btn btn-outline text-sm';
+            if (btnTeam) btnTeam.className = type === 'team' ? 'btn btn-primary text-sm' : 'btn btn-outline text-sm';
             connect();
-        }, delay);
-    }
-
-    function renderMessage(msg) {
-        const container = document.getElementById('chat-messages');
-        const div = document.createElement('div');
-        div.classList.add('chat-message');
-        const time = msg.created_at || msg.CreatedAt ? new Date(msg.created_at || msg.CreatedAt).toLocaleTimeString() : '';
-        const author = (msg.User && msg.User.Name) || msg.user_name || (msg.user && msg.user.name) || 'Неизвестный';
-        div.innerHTML = `<strong>${escapeHtml(author)}:</strong> ${escapeHtml(msg.Content || msg.content || msg.text)} <small>(${time})</small>`;
-        // Сохраняем идентификатор сообщения для предотвращения дублирования
-        div.dataset.msgId = msg.id || msg.ID || '';
-        container.appendChild(div);
-        container.scrollTop = container.scrollHeight;
-    }
-
-    function escapeHtml(text) {
-        const map = {
-            '&': '&amp;',
-            '<': '&lt;',
-            '>': '&gt;',
-            '"': '&quot;',
-            "'": '&#039;'
         };
-        return String(text).replace(/[&<>"']/g, m => map[m]);
-    }
 
-    function switchRoom(type) {
-        if (currentRoom === type) return;
-        currentRoom = type;
-        connect();
-    }
-
-    function sendMessage() {
-        const input = document.getElementById('chat-input');
-        const text = input.value.trim();
-        if (!text) return;
-        if (!socket || socket.readyState !== WebSocket.OPEN) {
-            updateConnectionStatus('Нет соединения с чатом. Попробуйте позже.', '#e74c3c');
-            return;
-        }
-        
-        // Оптимистично отображаем сообщение немедленно
-        const optimisticMsg = {
-            content: text,          // поле может называться Content или content
-            created_at: new Date().toISOString(),
-            User: { Name: userName || 'Вы' },
-            id: Date.now().toString() // временный ID для дубликатов
+        window.sendMessage = function() {
+            const text = chatInput.value.trim();
+            if (!text) return;
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                updateConnectionStatus('Нет соединения с чатом. Попробуйте позже.', '#e74c3c');
+                return;
+            }
+            // Оптимистичное отображение
+            const optimisticMsg = {
+                content: text,
+                created_at: new Date().toISOString(),
+                User: { Name: userName || 'Вы' },
+                id: Date.now().toString()
+            };
+            renderMessage(optimisticMsg);
+            socket.send(text);
+            chatInput.value = '';
         };
-        renderMessage(optimisticMsg);
-        
-        socket.send(text);
-        input.value = '';
-    }
 
-    window.addEventListener('beforeunload', () => {
-        if (socket) {
-            socket.onclose = null;
-            socket.close();
-        }
-        if (reconnectTimer) clearTimeout(reconnectTimer);
-    });
+        window.addEventListener('beforeunload', function() {
+            if (socket) {
+                socket.onclose = null;
+                socket.close();
+            }
+            if (reconnectTimer) clearTimeout(reconnectTimer);
+        });
+    })();
 </script>
 {{end}}

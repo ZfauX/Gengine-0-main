@@ -1,66 +1,72 @@
 {{define "game_passings-list.html"}}
-<h1>Заявки и прохождения игры</h1>
+<div class="max-w-7xl mx-auto">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Заявки и прохождения игры</h1>
 
-{{if .Passings}}
-<table class="card" style="width:100%; border-collapse:collapse;">
-    <thead>
-        <tr style="background:#eee;">
-            <th>Команда</th>
-            <th>Капитан</th>
-            <th>Статус</th>
-            <th>Действия</th>
-        </tr>
-    </thead>
-    <tbody>
-    {{range .Passings}}
-        <tr>
-            <td>{{.Team.Name}}</td>
-            <td>{{.Team.Captain.Name}} ({{.Team.Captain.Email}})</td>
-            <td>
-                {{if eq .Status "pending"}}
-                    <span style="color:orange;">Ожидает</span>
-                {{else if eq .Status "accepted"}}
-                    <span style="color:blue;">Принята</span>
-                {{else if eq .Status "rejected"}}
-                    <span style="color:red;">Отклонена</span>
-                {{else if eq .Status "started"}}
-                    <span style="color:green;">Идёт игра</span>
-                {{else if eq .Status "finished"}}
-                    <span style="color:purple;">Завершена</span>
-                {{else if eq .Status "disqualified"}}
-                    <span style="color:darkred;">Дисквалифицирована</span>
-                {{else}}
-                    {{.Status}}
+    {{if .Passings}}
+    <div class="overflow-x-auto bg-white rounded-lg shadow-sm border border-gray-200">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Команда</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Капитан</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Статус</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Действия</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+                {{range .Passings}}
+                <tr class="hover:bg-gray-50 transition">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{.Team.Name}}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{.Team.Captain.Name}} ({{.Team.Captain.Email}})</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        {{if eq .Status "pending"}}
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">Ожидает</span>
+                        {{else if eq .Status "accepted"}}
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">Принята</span>
+                        {{else if eq .Status "rejected"}}
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">Отклонена</span>
+                        {{else if eq .Status "started"}}
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">Идёт игра</span>
+                        {{else if eq .Status "finished"}}
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">Завершена</span>
+                        {{else if eq .Status "disqualified"}}
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-800 text-white">Дисквалифицирована</span>
+                        {{else}}
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">{{.Status}}</span>
+                        {{end}}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm space-x-2">
+                        {{if eq .Status "pending"}}
+                        <form action="/games/{{$.GameID}}/passings/{{.ID}}/status" method="POST" class="inline">
+                            <input type="hidden" name="_csrf" value="{{$.csrf}}">
+                            <input type="hidden" name="status" value="accepted">
+                            <button type="submit" class="btn btn-primary text-xs">Принять</button>
+                        </form>
+                        <form action="/games/{{$.GameID}}/passings/{{.ID}}/status" method="POST" class="inline">
+                            <input type="hidden" name="_csrf" value="{{$.csrf}}">
+                            <input type="hidden" name="status" value="rejected">
+                            <button type="submit" class="btn btn-danger text-xs">Отклонить</button>
+                        </form>
+                        {{else if eq .Status "accepted"}}
+                        <form action="/games/{{$.GameID}}/passings/{{.ID}}/start" method="POST" class="inline">
+                            <input type="hidden" name="_csrf" value="{{$.csrf}}">
+                            <button type="submit" class="btn btn-primary text-xs">Начать игру</button>
+                        </form>
+                        {{end}}
+                    </td>
+                </tr>
                 {{end}}
-            </td>
-            <td>
-                {{if eq .Status "pending"}}
-                <form action="/games/{{$.GameID}}/passings/{{.ID}}/status" method="POST" style="display:inline">
-                    <input type="hidden" name="_csrf" value="{{$.csrf}}">
-                    <input type="hidden" name="status" value="accepted">
-                    <button type="submit" class="button">Принять</button>
-                </form>
-                <form action="/games/{{$.GameID}}/passings/{{.ID}}/status" method="POST" style="display:inline">
-                    <input type="hidden" name="_csrf" value="{{$.csrf}}">
-                    <input type="hidden" name="status" value="rejected">
-                    <button type="submit" class="button danger">Отклонить</button>
-                </form>
-                {{else if eq .Status "accepted"}}
-                <form action="/games/{{$.GameID}}/passings/{{.ID}}/start" method="POST" style="display:inline">
-                    <input type="hidden" name="_csrf" value="{{$.csrf}}">
-                    <button type="submit" class="button">Начать игру</button>
-                </form>
-                {{end}}
-            </td>
-        </tr>
+            </tbody>
+        </table>
+    </div>
+    {{else}}
+    <div class="card text-center py-12">
+        <p class="text-gray-500">Заявок пока нет.</p>
+    </div>
     {{end}}
-    </tbody>
-</table>
-{{else}}
-<div class="card">
-    <p>Заявок пока нет.</p>
-</div>
-{{end}}
 
-<a href="/games/{{.GameID}}">Назад к игре</a>
+    <div class="mt-6">
+        <a href="/games/{{.GameID}}" class="btn btn-outline text-sm">← Назад к игре</a>
+    </div>
+</div>
 {{end}}

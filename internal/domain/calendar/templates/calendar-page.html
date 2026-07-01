@@ -1,37 +1,48 @@
 {{define "calendar-page.html"}}
-<h1>Календарь игр</h1>
+<div class="max-w-7xl mx-auto">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Календарь игр</h1>
 
-<!-- Скрытый CSRF-токен для AJAX-запросов -->
-<meta name="csrf-token" content="{{.csrf}}">
+    <!-- Скрытый CSRF-токен для AJAX-запросов -->
+    <meta name="csrf-token" content="{{.csrf}}">
 
-<div class="card">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-        <button id="prev-month" class="button">← Предыдущий месяц</button>
-        <h2 id="month-year" style="margin:0;"></h2>
-        <button id="next-month" class="button">Следующий месяц →</button>
+    <div class="card">
+        <!-- Управление месяцем -->
+        <div class="flex justify-between items-center mb-4">
+            <button id="prev-month" class="btn btn-outline text-sm">← Предыдущий</button>
+            <h2 id="month-year" class="text-xl font-semibold text-gray-800 m-0"></h2>
+            <button id="next-month" class="btn btn-outline text-sm">Следующий →</button>
+        </div>
+
+        <!-- Календарная сетка -->
+        <div id="calendar-container" class="overflow-x-auto">
+            <table class="w-full text-center border-collapse">
+                <thead>
+                    <tr class="bg-gray-100">
+                        <th class="p-2 text-sm font-medium text-gray-500">Пн</th>
+                        <th class="p-2 text-sm font-medium text-gray-500">Вт</th>
+                        <th class="p-2 text-sm font-medium text-gray-500">Ср</th>
+                        <th class="p-2 text-sm font-medium text-gray-500">Чт</th>
+                        <th class="p-2 text-sm font-medium text-gray-500">Пт</th>
+                        <th class="p-2 text-sm font-medium text-gray-500">Сб</th>
+                        <th class="p-2 text-sm font-medium text-gray-500">Вс</th>
+                    </tr>
+                </thead>
+                <tbody id="calendar-body">
+                </tbody>
+            </table>
+        </div>
     </div>
 
-    <div id="calendar-container">
-        <table style="width:100%; border-collapse:collapse; text-align:center;">
-            <thead>
-                <tr style="background:#eee;">
-                    <th>Пн</th><th>Вт</th><th>Ср</th><th>Чт</th><th>Пт</th><th>Сб</th><th>Вс</th>
-                </tr>
-            </thead>
-            <tbody id="calendar-body">
-            </tbody>
-        </table>
+    <!-- Список игр для выбранного дня -->
+    <div id="selected-day-games" class="card mt-6 hidden">
+        <h3 id="selected-date-title" class="text-lg font-semibold text-gray-800"></h3>
+        <ul id="selected-games-list" class="mt-2 space-y-1"></ul>
     </div>
-</div>
-
-<div class="card" id="selected-day-games" style="display:none;">
-    <h3 id="selected-date-title"></h3>
-    <ul id="selected-games-list"></ul>
 </div>
 
 <script>
     let currentYear, currentMonth;
-    // Функция для получения CSRF-токена из meta-тега
+
     function getCsrfToken() {
         return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
     }
@@ -48,9 +59,7 @@
         document.getElementById('month-year').textContent = `${monthNames[month]} ${year}`;
 
         fetch(`/api/v1/calendar?year=${year}&month=${month + 1}`, {
-            headers: {
-                'X-CSRF-TOKEN': getCsrfToken()
-            }
+            headers: { 'X-CSRF-TOKEN': getCsrfToken() }
         })
             .then(r => r.json())
             .then(data => {
@@ -59,7 +68,7 @@
             .catch(err => {
                 console.error('Ошибка загрузки календаря:', err);
                 document.getElementById('calendar-body').innerHTML =
-                    '<tr><td colspan="7">Ошибка загрузки данных</td></tr>';
+                    `<tr><td colspan="7" class="p-4 text-center text-red-500">Ошибка загрузки данных</td></tr>`;
             });
     }
 
@@ -70,12 +79,13 @@
         const firstDay = new Date(year, month - 1, 1);
         const lastDay = new Date(year, month, 0);
         const daysInMonth = lastDay.getDate();
-        const startDayOfWeek = (firstDay.getDay() + 6) % 7; // Пн=0, Вс=6
+        const startDayOfWeek = (firstDay.getDay() + 6) % 7; // Пн=0
 
         let row = document.createElement('tr');
+        // Пустые ячейки до первого дня
         for (let i = 0; i < startDayOfWeek; i++) {
             const cell = document.createElement('td');
-            cell.style.padding = '8px';
+            cell.className = 'p-2';
             row.appendChild(cell);
         }
 
@@ -86,38 +96,27 @@
             }
 
             const cell = document.createElement('td');
-            cell.style.padding = '8px';
-            cell.style.verticalAlign = 'top';
-            cell.style.cursor = 'default';
+            cell.className = 'p-2 align-top cursor-default relative';
 
             const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             const dayGames = events[dateStr] || [];
 
+            // День месяца
             const daySpan = document.createElement('div');
-            daySpan.style.fontWeight = 'bold';
-            daySpan.style.marginBottom = '4px';
+            daySpan.className = 'font-bold text-gray-700 mb-1';
             daySpan.textContent = day;
 
+            // Подсветка сегодняшнего дня
             const today = new Date();
             if (year === today.getFullYear() && month - 1 === today.getMonth() && day === today.getDate()) {
-                cell.style.backgroundColor = '#e3f2fd';
-                cell.style.borderRadius = '4px';
+                cell.classList.add('bg-blue-50', 'rounded');
             }
 
             cell.appendChild(daySpan);
 
             if (dayGames.length > 0) {
                 const indicator = document.createElement('div');
-                indicator.style.backgroundColor = '#3498db';
-                indicator.style.color = 'white';
-                indicator.style.borderRadius = '50%';
-                indicator.style.width = '24px';
-                indicator.style.height = '24px';
-                indicator.style.display = 'inline-flex';
-                indicator.style.alignItems = 'center';
-                indicator.style.justifyContent = 'center';
-                indicator.style.fontSize = '12px';
-                indicator.style.cursor = 'pointer';
+                indicator.className = 'inline-flex items-center justify-center w-6 h-6 bg-blue-500 text-white text-xs font-semibold rounded-full cursor-pointer hover:bg-blue-600 transition';
                 indicator.textContent = dayGames.length;
                 indicator.title = `${dayGames.length} игр(ы)`;
                 indicator.onclick = (e) => {
@@ -130,13 +129,13 @@
             row.appendChild(cell);
         }
 
+        // Заполняем оставшиеся ячейки до конца недели
         const lastDayOfWeek = (lastDay.getDay() + 6) % 7;
         for (let i = lastDayOfWeek; i < 6; i++) {
             const cell = document.createElement('td');
-            cell.style.padding = '8px';
+            cell.className = 'p-2';
             row.appendChild(cell);
         }
-
         tbody.appendChild(row);
     }
 
@@ -150,36 +149,31 @@
         list.innerHTML = '';
 
         if (games.length === 0) {
-            list.innerHTML = '<li>Нет запланированных игр</li>';
+            list.innerHTML = '<li class="text-gray-500">Нет запланированных игр</li>';
         } else {
             games.forEach(game => {
                 const li = document.createElement('li');
-                li.innerHTML = `<a href="/games/${game.id}">${game.name}</a> — начало в ${game.time || 'не указано'}`;
+                li.className = 'text-sm';
+                li.innerHTML = `<a href="/games/${game.id}" class="text-blue-600 hover:underline">${game.name}</a> — начало в ${game.time || 'не указано'}`;
                 list.appendChild(li);
             });
         }
 
-        container.style.display = 'block';
+        container.classList.remove('hidden');
         container.scrollIntoView({ behavior: 'smooth' });
     }
 
     document.getElementById('prev-month').onclick = () => {
         let newMonth = currentMonth - 1;
         let newYear = currentYear;
-        if (newMonth < 0) {
-            newMonth = 11;
-            newYear--;
-        }
+        if (newMonth < 0) { newMonth = 11; newYear--; }
         loadCalendar(newYear, newMonth);
     };
 
     document.getElementById('next-month').onclick = () => {
         let newMonth = currentMonth + 1;
         let newYear = currentYear;
-        if (newMonth > 11) {
-            newMonth = 0;
-            newYear++;
-        }
+        if (newMonth > 11) { newMonth = 0; newYear++; }
         loadCalendar(newYear, newMonth);
     };
 

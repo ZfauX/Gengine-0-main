@@ -31,7 +31,7 @@ func RegisterRoutes(
 	localStorage storage.FileStorage,
 ) {
 	authHandler := NewAuthHandler(cfg, authSvc, userSvc, passwordResetSvc, emailVerifSvc, oauthSvc, auditSvc)
-	profileHandler := NewProfileHandler(db, localStorage)
+	profileHandler := NewProfileHandler(db, localStorage, authSvc)
 	achievementHandler := NewAchievementHandler(db)
 	dashboardHandler := NewDashboardHandler(NewUserDashboardService(db), db)
 
@@ -103,6 +103,16 @@ func RegisterRoutes(
 		// @Success 302 {string} string "Перенаправление на /"
 		// @Router /auth/logout [get]
 		authGroup.GET("/logout", authHandler.Logout)
+
+		// @Summary Выход со всех устройств
+		// @Description Отзывает все refresh-токены пользователя и удаляет куки
+		// @Tags auth
+		// @Produce html
+		// @Success 302 {string} string "Перенаправление на /"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+		// @Router /auth/logout-all [post]
+		// @Security JWT
+		authGroup.POST("/logout-all", middleware.AuthRequired(authSvc), authHandler.LogoutAll)
 
 		// @Summary Показать форму восстановления пароля
 		// @Description Возвращает HTML-страницу для запроса сброса пароля

@@ -114,6 +114,7 @@ func (app *App) SetupRouter() (*gin.Engine, error) {
 func (app *App) setupEngine(r *gin.Engine) {
 	store := cookie.NewStore([]byte(app.Config.Session.Secret))
 	r.Use(gin.Recovery())
+	r.Use(middleware.ErrorHandler()) // Добавлен обработчик структурированных ошибок
 	r.Use(middleware.LoggerMiddleware())
 	r.Use(sessions.Sessions("gengine_session", store))
 
@@ -209,6 +210,7 @@ type repositories struct {
 	PassReset   user.PasswordResetRepository
 	EmailVerif  user.EmailVerificationRepository
 	ExtLogin    user.ExternalLoginRepository
+	RefreshToken user.RefreshTokenRepository
 	Game        game.GameRepository
 	GamePassing game.GamePassingRepository
 	Level       level.LevelRepository
@@ -224,22 +226,23 @@ type repositories struct {
 
 func initRepositories(db *gorm.DB) *repositories {
 	return &repositories{
-		User:        user.NewGormUserRepo(db),
-		Achiev:      user.NewGormAchievementRepo(db),
-		PassReset:   user.NewGormPasswordResetRepo(db),
-		EmailVerif:  user.NewGormEmailVerificationRepo(db),
-		ExtLogin:    user.NewGormExternalLoginRepo(db),
-		Game:        game.NewGormGameRepo(db),
-		GamePassing: game.NewGormGamePassingRepo(db),
-		Level:       level.NewGormLevelRepo(db),
-		Question:    level.NewGormQuestionRepo(db),
-		Answer:      level.NewGormAnswerRepo(db),
-		Team:        team.NewGormTeamRepo(db),
-		Invitation:  team.NewGormInvitationRepo(db),
-		Tournament:  tournament.NewGormTournamentRepo(db),
-		TournGame:   tournament.NewGormTournamentGameRepo(db),
-		TournTeam:   tournament.NewGormTournamentTeamRepo(db),
-		TournResult: tournament.NewGormTournamentResultRepo(db),
+		User:         user.NewGormUserRepo(db),
+		Achiev:       user.NewGormAchievementRepo(db),
+		PassReset:    user.NewGormPasswordResetRepo(db),
+		EmailVerif:   user.NewGormEmailVerificationRepo(db),
+		ExtLogin:     user.NewGormExternalLoginRepo(db),
+		RefreshToken: user.NewGormRefreshTokenRepo(db),
+		Game:         game.NewGormGameRepo(db),
+		GamePassing:  game.NewGormGamePassingRepo(db),
+		Level:        level.NewGormLevelRepo(db),
+		Question:     level.NewGormQuestionRepo(db),
+		Answer:       level.NewGormAnswerRepo(db),
+		Team:         team.NewGormTeamRepo(db),
+		Invitation:   team.NewGormInvitationRepo(db),
+		Tournament:   tournament.NewGormTournamentRepo(db),
+		TournGame:    tournament.NewGormTournamentGameRepo(db),
+		TournTeam:    tournament.NewGormTournamentTeamRepo(db),
+		TournResult:  tournament.NewGormTournamentResultRepo(db),
 	}
 }
 
@@ -255,6 +258,8 @@ type services struct {
 	PasswordReset *user.PasswordResetService
 	EmailVerif    *user.EmailVerificationService
 	Game          *game.GameService
+	GamePlay      *game.GamePlayService
+	GameAdmin     *game.GameAdminService
 	CoAuthor      *game.CoAuthorService
 	Review        *game.ReviewService
 	Attempt       *game.AttemptService
@@ -275,9 +280,15 @@ func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.
 	attemptSvc := game.NewAttemptService(db)
 	progressSvc := game.NewLevelProgressService(db)
 	monitorSvc := game.NewMonitorService(db)
-	ratingSvc := game.NewRatingService(db, appCache) // <-- ИСПРАВЛЕНО: передан appCache
+	ratingSvc := game.NewRatingService(db, appCache)
 
-	authSvc := user.NewAuthService(repos.User, repos.Achiev, repos.EmailVerif, cfg)
+	authSvc := user.NewAuthService(
+		repos.User,
+		repos.Achiev,
+		repos.EmailVerif,
+		repos.RefreshToken,
+		cfg,
+	)
 	userSvc := user.NewUserService(repos.User)
 	achievSvc := user.NewAchievementService(repos.Achiev)
 	oauthSvc := user.NewOAuthService(repos.User, repos.ExtLogin, cfg)
@@ -291,14 +302,28 @@ func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.
 		reviewSvc,
 		monitorSvc,
 		hub,
-		attemptSvc,
-		progressSvc,
 		cfg,
 		localStorage,
 		appCache,
 	)
 
-	levelSvc := level.NewLevelService(repos.Level, repos.Question, repos.Answer, coAuthorSvc, gameSvc)
+	gamePlaySvc := game.NewGamePlayService(
+		db,
+		attemptSvc,
+		progressSvc,
+		monitorSvc,
+		hub,
+		coAuthorSvc,
+		cfg,
+	)
+
+	gameAdminSvc := game.NewGameAdminService(
+		db,
+		coAuthorSvc,
+		cfg,
+	)
+
+	levelSvc := level.NewLevelService(repos.Level, repos.Question, repos.Answer, coAuthorSvc, gameAdminSvc)
 	questionSvc := level.NewQuestionService(repos.Question, repos.Level, coAuthorSvc)
 	answerSvc := level.NewAnswerService(repos.Answer, repos.Question, repos.Level, coAuthorSvc)
 
@@ -322,6 +347,8 @@ func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.
 		PasswordReset: passResetSvc,
 		EmailVerif:    emailVerifSvc,
 		Game:          gameSvc,
+		GamePlay:      gamePlaySvc,
+		GameAdmin:     gameAdminSvc,
 		CoAuthor:      coAuthorSvc,
 		Review:        reviewSvc,
 		Attempt:       attemptSvc,
@@ -364,6 +391,7 @@ func (app *App) registerGameRoutes(r *gin.Engine) {
 	passingSvc := game.NewGamePassingService(app.DB, app.Deps.Services.Team, app.Deps.Services.CoAuthor)
 	game.RegisterRoutes(
 		r,
+		app.DB,
 		app.Deps.Services.Game,
 		passingSvc,
 		app.Deps.Services.CoAuthor,
@@ -375,6 +403,8 @@ func (app *App) registerGameRoutes(r *gin.Engine) {
 		app.Config,
 		app.Deps.AuditSvc,
 		app.Deps.Services.Auth,
+		app.Deps.Services.GamePlay,
+		app.Deps.Services.GameAdmin,
 	)
 }
 
@@ -446,6 +476,7 @@ func (app *App) registerExportRoutes(r *gin.Engine) error {
 func (app *App) registerGameplayRoutes(r *gin.Engine) {
 	gameplayHandler := game.NewGameplayHandler(
 		app.Deps.Services.Game,
+		app.Deps.Services.GamePlay,
 		app.Deps.Services.Attempt,
 		app.Deps.Services.Progress,
 		app.Deps.Services.Monitor,

@@ -1,28 +1,52 @@
 {{define "teams-members.html"}}
-<h1>Состав команды "{{.Team.Name}}"</h1>
-<p>Капитан: {{.Team.Captain.Name}} ({{.Team.Captain.Email}})</p>
+<div class="max-w-4xl mx-auto">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Состав команды «{{.Team.Name}}»</h1>
 
-<h2>Участники ({{len .Members}})</h2>
-<ul>
-{{range .Members}}
-    <li>
-        {{.Name}} ({{.Email}})
-        {{if and $.CanManage $.GameID}}
-            <form action="/games/{{$.GameID}}/teams/{{$.TeamID}}/members/{{.ID}}/remove" method="POST" style="display:inline">
-                <input type="hidden" name="_csrf" value="{{$.csrf}}">
-                <button type="submit">Удалить</button>
-            </form>
+    <!-- Информация о капитане -->
+    <div class="card mb-6">
+        <p class="text-gray-700"><span class="font-medium text-gray-600">Капитан:</span> {{.Team.Captain.Name}} ({{.Team.Captain.Email}})</p>
+    </div>
+
+    <!-- Список участников -->
+    <div class="card mb-6">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-lg font-semibold text-gray-700">Участники ({{len .Members}})</h2>
+        </div>
+
+        {{if .Members}}
+        <ul class="divide-y divide-gray-100">
+            {{range .Members}}
+            <li class="py-3 flex flex-wrap items-center justify-between gap-2">
+                <span class="text-gray-800">{{.Name}} ({{.Email}})</span>
+                {{if and $.CanManage $.GameID}}
+                <form action="/games/{{$.GameID}}/teams/{{$.TeamID}}/members/{{.ID}}/remove" method="POST" class="inline" onsubmit="return confirm('Удалить участника?')">
+                    <input type="hidden" name="_csrf" value="{{$.csrf}}">
+                    <button type="submit" class="btn btn-danger text-xs">Удалить</button>
+                </form>
+                {{end}}
+            </li>
+            {{end}}
+        </ul>
+        {{else}}
+        <p class="text-gray-500 text-sm">В команде пока нет участников.</p>
         {{end}}
-    </li>
-{{end}}
-</ul>
+    </div>
 
-{{if and .CanManage .GameID}}
-<div>
-    <a href="/games/{{.GameID}}/teams/{{.TeamID}}/members/add" class="button">Добавить участника</a>
-    <a href="/games/{{.GameID}}/teams/{{.TeamID}}/change-captain" class="button">Сменить капитана</a>
+    <!-- Действия для управления -->
+    {{if and .CanManage .GameID}}
+    <div class="flex flex-wrap gap-3 mb-6">
+        <a href="/games/{{.GameID}}/teams/{{.TeamID}}/members/add" class="btn btn-primary text-sm">+ Добавить участника</a>
+        <a href="/games/{{.GameID}}/teams/{{.TeamID}}/change-captain" class="btn btn-outline text-sm">Сменить капитана</a>
+    </div>
+    {{else if .CanManage}}
+    <div class="card bg-blue-50 border border-blue-200 text-blue-700 text-sm p-3 mb-6">
+        Для управления командой перейдите к игре, в которой участвует эта команда.
+    </div>
+    {{end}}
+
+    <!-- Навигация назад -->
+    <div class="mt-6">
+        <a href="/games/{{.GameID}}" class="btn btn-outline text-sm">← Назад к игре</a>
+    </div>
 </div>
-{{else if .CanManage}}
-    <p>Для управления командой перейдите к игре, в которой участвует эта команда.</p>
-{{end}}
 {{end}}

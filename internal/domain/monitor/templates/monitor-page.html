@@ -1,115 +1,154 @@
 {{define "monitor-page.html"}}
-<h1>Мониторинг игры <small>(обновляется в реальном времени)</small></h1>
-<div class="card">
-    <div id="teams-container"></div>
+<div class="max-w-7xl mx-auto" data-game-id="{{.GameID}}">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">
+        Мониторинг игры <span class="text-sm font-normal text-gray-500">(обновляется в реальном времени)</span>
+    </h1>
+
+    <div class="card">
+        <div id="teams-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <!-- Карточки команд будут отображаться здесь -->
+        </div>
+        <div id="connection-status" class="mt-4 text-sm text-gray-500"></div>
+    </div>
 </div>
-<div id="connection-status" style="margin-top:10px; font-size:0.9em; color:#888;"></div>
 
 <script>
-    const gameID = "{{.GameID}}";
-    // Автоматическое определение протокола WebSocket
-    const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${location.host}/games/${gameID}/monitor/ws`;
-    let socket;
-    let teamsData = [];
-    let reconnectAttempts = 0;
-    let reconnectTimer = null;
-    const MAX_RECONNECT_DELAY = 30000; // 30 секунд максимум
-    const BASE_RECONNECT_DELAY = 1000;  // начальная задержка 1 секунда
+    (function() {
+        const container = document.querySelector('[data-game-id]');
+        if (!container) return;
 
-    function updateConnectionStatus(text, color = '#888') {
-        const el = document.getElementById('connection-status');
-        if (el) {
-            el.textContent = text;
-            el.style.color = color;
+        const gameID = container.dataset.gameId;
+        const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${location.host}/games/${gameID}/monitor/ws`;
+        let socket;
+        let teamsData = [];
+        let reconnectAttempts = 0;
+        let reconnectTimer = null;
+        const MAX_RECONNECT_DELAY = 30000;
+        const BASE_RECONNECT_DELAY = 1000;
+
+        const teamsContainer = document.getElementById('teams-container');
+        const statusEl = document.getElementById('connection-status');
+
+        function updateConnectionStatus(text, color = '#888') {
+            if (statusEl) {
+                statusEl.textContent = text;
+                statusEl.style.color = color;
+            }
         }
-    }
 
-    function connect() {
-        socket = new WebSocket(wsUrl);
-        socket.onopen = function() {
-            console.log('Мониторинг: WebSocket подключён');
-            updateConnectionStatus('Подключено', '#2ecc71');
-            reconnectAttempts = 0; // сбрасываем счётчик при успешном соединении
-        };
-        socket.onmessage = function(e) {
-            const data = JSON.parse(e.data);
-            teamsData = data;
-            renderTeams();
-        };
-        socket.onclose = function(event) {
-            if (event.wasClean) {
-                console.log('Мониторинг: WebSocket закрыт чисто');
-            } else {
-                console.log('Мониторинг: WebSocket обрыв, будет переподключение...');
+        function connect() {
+            socket = new WebSocket(wsUrl);
+            socket.onopen = function() {
+                console.log('Мониторинг: WebSocket подключён');
+                updateConnectionStatus('Подключено', '#2ecc71');
+                reconnectAttempts = 0;
+            };
+            socket.onmessage = function(e) {
+                try {
+                    const data = JSON.parse(e.data);
+                    teamsData = data;
+                    renderTeams();
+                } catch (err) {
+                    console.error('Мониторинг: ошибка парсинга данных', err);
+                }
+            };
+            socket.onclose = function(event) {
+                if (event.wasClean) {
+                    console.log('Мониторинг: WebSocket закрыт чисто');
+                } else {
+                    console.log('Мониторинг: WebSocket обрыв, переподключение...');
+                }
+                updateConnectionStatus('Переподключение...', '#e67e22');
+                scheduleReconnect();
+            };
+            socket.onerror = function(error) {
+                console.error('Мониторинг: WebSocket ошибка', error);
+                updateConnectionStatus('Ошибка соединения', '#e74c3c');
+            };
+        }
+
+        function scheduleReconnect() {
+            if (reconnectTimer) clearTimeout(reconnectTimer);
+            const delay = Math.min(MAX_RECONNECT_DELAY, BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts));
+            reconnectAttempts++;
+            console.log(`Мониторинг: переподключение через ${delay}ms (попытка ${reconnectAttempts})`);
+            updateConnectionStatus(`Переподключение через ${Math.round(delay/1000)}с...`, '#e67e22');
+            reconnectTimer = setTimeout(() => {
+                connect();
+            }, delay);
+        }
+
+        function formatTime(seconds) {
+            if (seconds <= 0) return "0:00";
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function renderTeams() {
+            teamsContainer.innerHTML = '';
+            if (!teamsData || teamsData.length === 0) {
+                teamsContainer.innerHTML = `<div class="col-span-full text-center text-gray-500 py-8">Нет данных о командах</div>`;
+                return;
             }
-            updateConnectionStatus('Переподключение...', '#e67e22');
-            scheduleReconnect();
-        };
-        socket.onerror = function(error) {
-            console.error('Мониторинг: WebSocket ошибка', error);
-            updateConnectionStatus('Ошибка соединения', '#e74c3c');
-            // Закрытие вызовет onclose, где уже запланировано переподключение
-        };
-    }
 
-    function scheduleReconnect() {
-        if (reconnectTimer) clearTimeout(reconnectTimer);
-        const delay = Math.min(MAX_RECONNECT_DELAY, BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts));
-        reconnectAttempts++;
-        console.log(`Мониторинг: переподключение через ${delay}ms (попытка ${reconnectAttempts})`);
-        updateConnectionStatus(`Переподключение через ${Math.round(delay/1000)}с...`, '#e67e22');
-        reconnectTimer = setTimeout(() => {
-            connect();
-        }, delay);
-    }
+            teamsData.forEach(team => {
+                const progressPercent = team.total_levels > 0 ? (team.completed_levels / team.total_levels * 100) : 0;
+                const card = document.createElement('div');
+                card.className = 'card fade-in hover:shadow-md transition-all duration-200 border-l-4 ' + 
+                    (team.suspicious ? 'border-yellow-500 bg-yellow-50' : 'border-blue-500');
 
-    function formatTime(seconds) {
-        if (seconds <= 0) return "0:00";
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
-    }
+                card.innerHTML = `
+                    <div class="flex justify-between items-start mb-2">
+                        <h3 class="text-lg font-semibold text-gray-800 truncate">${escapeHtml(team.team_name)}</h3>
+                        ${team.finished ? '<span class="inline-flex px-2 py-1 text-xs font-bold rounded-full bg-green-100 text-green-800">Финиш!</span>' : ''}
+                        ${team.place ? `<span class="inline-flex px-2 py-1 text-xs font-bold rounded-full bg-blue-100 text-blue-800">#${team.place}</span>` : ''}
+                    </div>
 
-    function renderTeams() {
-        const container = document.getElementById('teams-container');
-        container.innerHTML = '';
-        teamsData.forEach(team => {
-            const progressPercent = team.total_levels > 0 ? (team.completed_levels / team.total_levels * 100) : 0;
-            const card = document.createElement('div');
-            card.className = 'team-card fade-in';
-            if (team.suspicious) {
-                card.style.borderLeftColor = '#e67e22';
-                card.style.backgroundColor = '#fff3e0';
+                    <div class="w-full bg-gray-200 rounded-full h-2.5 mb-3">
+                        <div class="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style="width: ${progressPercent}%"></div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-1 text-sm">
+                        <div><span class="text-gray-500">Уровней:</span> <span class="font-medium">${team.completed_levels}/${team.total_levels}</span></div>
+                        <div><span class="text-gray-500">Текущий:</span> <span class="font-medium">${team.current_level ? '#' + team.current_level : '—'}</span></div>
+                        <div><span class="text-gray-500">Время:</span> <span class="font-mono">${team.total_time || '—'}</span></div>
+                        <div><span class="text-gray-500">Попыток:</span> <span class="font-medium">${team.attempts || 0}</span></div>
+                    </div>
+
+                    ${team.suspicious ? `
+                        <div class="mt-3 text-xs text-yellow-800 bg-yellow-100 p-2 rounded-md flex items-center gap-1">
+                            <span>⚠️</span> ${escapeHtml(team.suspicious_reason || 'Подозрительная активность')}
+                        </div>
+                    ` : ''}
+                `;
+                teamsContainer.appendChild(card);
+            });
+        }
+
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return String(text).replace(/[&<>"']/g, m => map[m]);
+        }
+
+        // Запуск
+        connect();
+
+        // Очистка при уходе
+        window.addEventListener('beforeunload', function() {
+            if (socket) {
+                socket.onclose = null;
+                socket.close();
             }
-            card.innerHTML = `
-                <h3>${team.team_name}</h3>
-                <div class="progress-bar-bg">
-                    <div class="progress-bar-fill" style="width:${progressPercent}%"></div>
-                </div>
-                <p>Уровней: ${team.completed_levels}/${team.total_levels} 
-                   ${team.current_level ? `(текущий: #${team.current_level})` : ''}
-                </p>
-                <p class="timer">Общее время: ${team.total_time}</p>
-                <p>Попыток: ${team.attempts}</p>
-                ${team.finished ? '<p style="color:green; font-weight:bold;">Финиш!</p>' : ''}
-                ${team.place ? `<p>Место: <strong>${team.place}</strong></p>` : ''}
-                ${team.suspicious ? `<div style="color:#e65100; font-weight:bold; margin-top:5px;">⚠ ${team.suspicious_reason}</div>` : ''}
-            `;
-            container.appendChild(card);
+            if (reconnectTimer) clearTimeout(reconnectTimer);
         });
-    }
-
-    // Первый запуск
-    connect();
-
-    // Очистка при уходе со страницы
-    window.addEventListener('beforeunload', () => {
-        if (socket) {
-            socket.onclose = null; // чтобы не планировать переподключение при уходе
-            socket.close();
-        }
-        if (reconnectTimer) clearTimeout(reconnectTimer);
-    });
+    })();
 </script>
 {{end}}

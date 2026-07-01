@@ -151,7 +151,6 @@ func main() {
 
 	deps := app.NewDependencies(database, cfg, hub, localStorage, appCache)
 	appInstance := app.NewApp(database, localStorage, hub, cfg, ".", deps)
-
 	r, err := appInstance.SetupRouter()
 	if err != nil {
 		log.Fatal().Err(err).Msg("Не удалось настроить маршруты")
@@ -164,6 +163,25 @@ func main() {
 	// Запуск фоновых задач
 	go game.CheckTimeouts(database, ctx)
 	go game.CheckAutoStartGames(database, ctx)
+
+	// Фоновая очистка просроченных refresh-токенов (раз в час)
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				log.Info().Msg("Очистка refresh-токенов: контекст отменён, остановка")
+				return
+			case <-ticker.C:
+				if err := deps.Services.Auth.CleanExpiredRefreshTokens(ctx); err != nil {
+					log.Error().Err(err).Msg("Очистка refresh-токенов: ошибка")
+				} else {
+					log.Debug().Msg("Очистка refresh-токенов: успешно завершена")
+				}
+			}
+		}
+	}()
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Server.Port,

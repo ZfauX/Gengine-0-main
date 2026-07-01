@@ -1,39 +1,46 @@
 {{define "admin-dashboard.html"}}
-<h1>Панель администратора</h1>
+<div class="max-w-7xl mx-auto">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Панель администратора</h1>
 
-{{block "admin-nav" .}}
-<div style="display:flex; gap:10px; flex-wrap:wrap; margin:15px 0; padding:10px; background:#e8e8e8; border-radius:4px;">
-    <a href="/admin" class="button"{{if eq .ContentBlock "admin-dashboard.html"}} style="background:#2c3e50;"{{end}}>Дашборд</a>
-    <a href="/admin/users" class="button">Пользователи</a>
-    <a href="/admin/games" class="button">Игры</a>
-    <a href="/admin/audit" class="button">Аудит</a>
-    <a href="/admin/backups" class="button">Бэкапы</a>
-</div>
-{{end}}
+    {{block "admin-nav" .}}
+    <nav class="flex flex-wrap gap-2 p-3 bg-gray-100 rounded-lg mb-6">
+        <a href="/admin" class="btn {{if eq .ContentBlock "admin-dashboard.html"}}btn-primary{{else}}btn-outline{{end}} text-sm">Дашборд</a>
+        <a href="/admin/users" class="btn btn-outline text-sm">Пользователи</a>
+        <a href="/admin/games" class="btn btn-outline text-sm">Игры</a>
+        <a href="/admin/audit" class="btn btn-outline text-sm">Аудит</a>
+        <a href="/admin/backups" class="btn btn-outline text-sm">Бэкапы</a>
+    </nav>
+    {{end}}
 
-<div style="display:flex; gap:20px; flex-wrap:wrap; margin-top:20px;">
-    <div class="card" style="flex:1; min-width:250px; text-align:center;">
-        <h2>Пользователи</h2>
-        <p style="font-size:2em; color:#3498db;">{{.UserCount}}</p>
-        <a href="/admin/users" class="button">Управление</a>
-    </div>
+    <!-- Статистика -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-4">
+        <!-- Пользователи -->
+        <div class="card text-center p-6 hover-lift">
+            <h2 class="text-sm font-medium text-gray-500 uppercase tracking-wider">Пользователи</h2>
+            <p class="text-4xl font-bold text-blue-600 my-2">{{.UserCount}}</p>
+            <a href="/admin/users" class="btn btn-primary text-sm inline-block mt-2">Управление</a>
+        </div>
 
-    <div class="card" style="flex:1; min-width:250px; text-align:center;">
-        <h2>Игры</h2>
-        <p style="font-size:2em; color:#3498db;">{{.GameCount}}</p>
-        <a href="/admin/games" class="button">Модерация</a>
-    </div>
+        <!-- Игры -->
+        <div class="card text-center p-6 hover-lift">
+            <h2 class="text-sm font-medium text-gray-500 uppercase tracking-wider">Игры</h2>
+            <p class="text-4xl font-bold text-blue-600 my-2">{{.GameCount}}</p>
+            <a href="/admin/games" class="btn btn-primary text-sm inline-block mt-2">Модерация</a>
+        </div>
 
-    <div class="card" style="flex:1; min-width:250px; text-align:center;">
-        <h2>Аудит</h2>
-        <p style="font-size:2em; color:#3498db;">{{.AuditCount}}</p>
-        <a href="/admin/audit" class="button">Журнал</a>
-    </div>
+        <!-- Аудит -->
+        <div class="card text-center p-6 hover-lift">
+            <h2 class="text-sm font-medium text-gray-500 uppercase tracking-wider">Аудит</h2>
+            <p class="text-4xl font-bold text-blue-600 my-2">{{.AuditCount}}</p>
+            <a href="/admin/audit" class="btn btn-primary text-sm inline-block mt-2">Журнал</a>
+        </div>
 
-    <div class="card" style="flex:1; min-width:250px; text-align:center;">
-        <h2>Бэкапы</h2>
-        <p style="font-size:2em; color:#3498db;">{{.BackupCount}}</p>
-        <a href="/admin/backups" class="button">Резервные копии</a>
+        <!-- Бэкапы -->
+        <div class="card text-center p-6 hover-lift">
+            <h2 class="text-sm font-medium text-gray-500 uppercase tracking-wider">Бэкапы</h2>
+            <p class="text-4xl font-bold text-blue-600 my-2">{{.BackupCount}}</p>
+            <a href="/admin/backups" class="btn btn-primary text-sm inline-block mt-2">Резервные копии</a>
+        </div>
     </div>
 </div>
 {{end}}

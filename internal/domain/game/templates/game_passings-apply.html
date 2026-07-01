@@ -1,15 +1,32 @@
 {{define "game_passings-apply.html"}}
-<h1>Подать заявку на игру</h1>
-{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
-<form action="/games/{{.GameID}}/apply" method="POST">
-    <input type="hidden" name="_csrf" value="{{.csrf}}">
-    <select name="team_id" required>
-        <option value="">-- выберите команду --</option>
-        {{range .Teams}}
-            <option value="{{.ID}}">{{.Name}}</option>
-        {{end}}
-    </select>
-    <button type="submit">Подать заявку</button>
-</form>
-<a href="/teams/new">Создать новую команду</a>
+<div class="max-w-7xl mx-auto">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Подать заявку на игру</h1>
+
+    {{if .Error}}
+    <div class="flash flash-error">{{.Error}}</div>
+    {{end}}
+
+    <div class="card mb-6">
+        <form action="/games/{{.GameID}}/apply" method="POST" class="flex flex-wrap items-end gap-3">
+            <input type="hidden" name="_csrf" value="{{.csrf}}">
+
+            <div class="flex-1 min-w-[200px]">
+                <label for="team_id" class="block text-sm font-medium text-gray-700 mb-1">Выберите команду</label>
+                <select name="team_id" id="team_id" required
+                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                    <option value="">-- выберите команду --</option>
+                    {{range .Teams}}
+                        <option value="{{.ID}}">{{.Name}}</option>
+                    {{end}}
+                </select>
+            </div>
+
+            <button type="submit" class="btn btn-primary text-sm whitespace-nowrap">Подать заявку</button>
+        </form>
+    </div>
+
+    <div>
+        <a href="/teams/new" class="btn btn-outline text-sm">+ Создать новую команду</a>
+    </div>
+</div>
 {{end}}

@@ -1,49 +1,57 @@
 {{define "admin-backups.html"}}
-<h1>Резервное копирование</h1>
+<div class="max-w-7xl mx-auto">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Резервное копирование</h1>
 
-<div class="card" style="margin-bottom:20px">
-    <p>Максимальное количество хранимых копий: <strong>{{.MaxBackups}}</strong></p>
-    <p>Сохранено копий: <strong>{{.Count}}</strong></p>
-    <div style="margin-top:10px">
-        <form action="/admin/backups/create" method="POST" style="display:inline">
-            <input type="hidden" name="_csrf" value="{{.csrf}}">
-            <button type="submit" class="button">Создать бекап</button>
-        </form>
-        {{if gt .Count 0}}
-        <form action="/admin/backups/rotate" method="POST" style="display:inline" onsubmit="return confirm('Удалить старые бекапы?')">
-            <input type="hidden" name="_csrf" value="{{.csrf}}">
-            <button type="submit" class="button danger">Очистить старые бекапы</button>
-        </form>
-        {{end}}
+    <!-- Статистика и действия -->
+    <div class="card mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+            <p class="text-gray-600">Максимальное количество хранимых копий: <strong class="text-gray-900">{{.MaxBackups}}</strong></p>
+            <p class="text-gray-600">Сохранено копий: <strong class="text-gray-900">{{.Count}}</strong></p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            <form action="/admin/backups/create" method="POST" class="inline">
+                <input type="hidden" name="_csrf" value="{{.csrf}}">
+                <button type="submit" class="btn btn-primary text-sm">Создать бекап</button>
+            </form>
+            {{if gt .Count 0}}
+            <form action="/admin/backups/rotate" method="POST" class="inline" onsubmit="return confirm('Удалить старые бекапы?')">
+                <input type="hidden" name="_csrf" value="{{.csrf}}">
+                <button type="submit" class="btn btn-danger text-sm">Очистить старые бекапы</button>
+            </form>
+            {{end}}
+        </div>
     </div>
-</div>
 
-{{if .Backups}}
-<table class="card" style="width:100%; border-collapse:collapse;">
-    <thead>
-        <tr style="background:#eee;">
-            <th>Файл</th>
-            <th>Размер</th>
-            <th>Создан</th>
-            <th>Действия</th>
-        </tr>
-    </thead>
-    <tbody>
-    {{range .Backups}}
-        <tr>
-            <td>{{.Filename}}</td>
-            <td>{{.Size}} B</td>
-            <td>{{.CreatedAt.Format "02.01.2006 15:04:05"}}</td>
-            <td>
-                <a href="/admin/backups/{{.ID}}/download" class="button">Скачать</a>
-            </td>
-        </tr>
+    <!-- Список бекапов -->
+    {{if .Backups}}
+    <div class="overflow-x-auto bg-white rounded-lg shadow-sm border border-gray-200">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Файл</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Размер</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Создан</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Действия</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+                {{range .Backups}}
+                <tr class="hover:bg-gray-50 transition">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{.Filename}}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{.Size}} B</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{.CreatedAt.Format "02.01.2006 15:04:05"}}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <a href="/admin/backups/{{.ID}}/download" class="btn btn-primary text-xs">Скачать</a>
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+    {{else}}
+    <div class="card text-center py-12">
+        <p class="text-gray-500">Резервные копии отсутствуют.</p>
+    </div>
     {{end}}
-    </tbody>
-</table>
-{{else}}
-<div class="card">
-    <p>Резервные копии отсутствуют.</p>
 </div>
-{{end}}
 {{end}}

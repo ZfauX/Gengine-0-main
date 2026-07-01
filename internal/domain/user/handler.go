@@ -7,6 +7,7 @@ import (
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/pkg/audit"
+	apperrors "gengine-0/internal/pkg/errors"
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/storage"
@@ -148,7 +149,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	user, err := h.userService.GetByEmail(c.Request.Context(), input.Email)
 	if err == nil {
-		refreshToken, err := h.authSvc.GenerateRefreshToken(*user)
+		deviceID := c.GetHeader("X-Device-ID")
+		refreshToken, err := h.authSvc.GenerateRefreshToken(*user, deviceID)
 		if err == nil {
 			c.SetCookie("refresh_token", refreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/auth/refresh", "", false, true)
 		} else {
@@ -185,8 +187,23 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	})
 }
 
-// Logout выполняет выход из системы.
+// Logout выполняет выход из системы (удаляет куки, но не отзывает refresh-токен).
 func (h *AuthHandler) Logout(c *gin.Context) {
+	c.SetCookie("jwt", "", -1, "/", "", false, true)
+	c.SetCookie("refresh_token", "", -1, "/auth/refresh", "", false, true)
+	c.Redirect(http.StatusFound, "/")
+}
+
+// LogoutAll выполняет выход со всех устройств (отзывает все refresh-токены пользователя).
+func (h *AuthHandler) LogoutAll(c *gin.Context) {
+	userID := c.GetUint("userID")
+	if userID == 0 {
+		c.Redirect(http.StatusFound, "/auth/login")
+		return
+	}
+	if err := h.authSvc.RevokeAllUserTokens(c.Request.Context(), userID); err != nil {
+		log.Error().Err(err).Uint("user_id", userID).Msg("LogoutAll: failed to revoke tokens")
+	}
 	c.SetCookie("jwt", "", -1, "/", "", false, true)
 	c.SetCookie("refresh_token", "", -1, "/auth/refresh", "", false, true)
 	c.Redirect(http.StatusFound, "/")
@@ -268,7 +285,7 @@ func (h *AuthHandler) ShowResetForm(c *gin.Context) {
 	})
 }
 
-// ResetPassword устанавливает новый пароль по токену.
+// ResetPassword устанавливает новый пароль по токену и отзывает все refresh-токены пользователя.
 func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	var input ResetInput
 	if err := c.ShouldBind(&input); err != nil {
@@ -280,6 +297,12 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 		return
 	}
 
+	var userID uint
+	token, err := h.passwordResetSvc.passResetRepo.GetToken(c.Request.Context(), input.Token)
+	if err == nil {
+		userID = token.UserID
+	}
+
 	if err := h.passwordResetSvc.ResetPassword(c.Request.Context(), input.Token, input.Password); err != nil {
 		render.Page(c, http.StatusBadRequest, "auth-reset.html", gin.H{
 			"Token": input.Token,
@@ -288,6 +311,13 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 		})
 		return
 	}
+
+	if userID != 0 {
+		if err := h.authSvc.RevokeAllUserTokens(c.Request.Context(), userID); err != nil {
+			log.Error().Err(err).Uint("user_id", userID).Msg("ResetPassword: failed to revoke refresh tokens")
+		}
+	}
+
 	c.Redirect(http.StatusFound, "/auth/login")
 }
 
@@ -390,7 +420,8 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 	}
 	c.SetCookie("jwt", token, int(h.cfg.JWT.AccessExpiry.Seconds()), "/", "", false, true)
 
-	refreshToken, err := h.authSvc.GenerateRefreshToken(*user)
+	deviceID := c.GetHeader("X-Device-ID")
+	refreshToken, err := h.authSvc.GenerateRefreshToken(*user, deviceID)
 	if err == nil {
 		c.SetCookie("refresh_token", refreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/auth/refresh", "", false, true)
 	} else {
@@ -405,10 +436,15 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 type ProfileHandler struct {
 	db      *gorm.DB
 	storage storage.FileStorage
+	authSvc *AuthService
 }
 
-func NewProfileHandler(db *gorm.DB, st storage.FileStorage) *ProfileHandler {
-	return &ProfileHandler{db: db, storage: st}
+func NewProfileHandler(db *gorm.DB, st storage.FileStorage, authSvc *AuthService) *ProfileHandler {
+	return &ProfileHandler{
+		db:      db,
+		storage: st,
+		authSvc: authSvc,
+	}
 }
 
 // Show отображает личную страницу профиля.
@@ -467,9 +503,10 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 	defer func() { _ = file.Close() }()
 
 	if header.Size > 2*1024*1024 {
-		render.Page(c, http.StatusBadRequest, "profile-show.html", gin.H{
-			"Error": "Размер файла не должен превышать 2 МБ",
-			"csrf":  csrf.GetToken(c),
+		appErr := apperrors.NewBadRequestError("Размер файла не должен превышать 2 МБ")
+		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
+			"error": appErr.Message,
+			"code":  appErr.Code,
 		})
 		return
 	}
@@ -478,20 +515,22 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 	webPath, err := h.storage.Save("uploads/avatars", file, header.Filename, userID, 2*1024*1024, allowedTypes)
 	if err != nil {
 		log.Error().Err(err).Uint("user", userID).Msg("UploadAvatar: storage save failed")
-		render.Page(c, http.StatusBadRequest, "profile-show.html", gin.H{
-			"Error": "Ошибка загрузки аватара: " + err.Error(),
-			"csrf":  csrf.GetToken(c),
+		appErr := apperrors.NewBadRequestError("Ошибка загрузки аватара: " + err.Error())
+		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
+			"error": appErr.Message,
+			"code":  appErr.Code,
 		})
 		return
 	}
 
 	if err := h.db.Model(&User{}).Where("id = ?", userID).Update("avatar_path", webPath).Error; err != nil {
 		log.Error().Err(err).Uint("user", userID).Msg("UploadAvatar: failed to update avatar_path")
-		render.Page(c, http.StatusInternalServerError, "profile-show.html", gin.H{
-			"Error": "Не удалось сохранить путь к аватару",
-			"csrf":  csrf.GetToken(c),
-		})
 		_ = h.storage.Delete(webPath)
+		appErr := apperrors.NewInternalError(err)
+		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
+			"error": appErr.Message,
+			"code":  appErr.Code,
+		})
 		return
 	}
 	c.Redirect(http.StatusFound, "/profile")
@@ -527,7 +566,7 @@ func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/profile")
 }
 
-// ChangePassword меняет пароль пользователя.
+// ChangePassword меняет пароль пользователя и отзывает все refresh-токены.
 func (h *ProfileHandler) ChangePassword(c *gin.Context) {
 	userID := c.GetUint("userID")
 
@@ -573,6 +612,13 @@ func (h *ProfileHandler) ChangePassword(c *gin.Context) {
 		})
 		return
 	}
+
+	if err := h.authSvc.RevokeAllUserTokens(c.Request.Context(), userID); err != nil {
+		log.Error().Err(err).Uint("user_id", userID).Msg("ChangePassword: failed to revoke refresh tokens")
+	}
+
+	c.SetCookie("refresh_token", "", -1, "/auth/refresh", "", false, true)
+
 	c.Redirect(http.StatusFound, "/profile")
 }
 

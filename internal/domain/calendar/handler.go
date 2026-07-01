@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gengine-0/internal/domain/game"
+	apperrors "gengine-0/internal/pkg/errors"
 	"gengine-0/internal/pkg/render"
 
 	"github.com/gin-gonic/gin"
@@ -61,7 +62,11 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 	games, err := h.gameRepo.ListByDateRange(ctx, startOfMonth, endOfMonth)
 	if err != nil {
 		log.Error().Err(err).Int("year", req.Year).Int("month", req.Month).Msg("CalendarData: failed to list games")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		appErr := apperrors.NewInternalError(err)
+		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
+			"error": appErr.Message,
+			"code":  appErr.Code,
+		})
 		return
 	}
 

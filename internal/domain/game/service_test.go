@@ -32,7 +32,7 @@ var allModels = []any{
 	&user.User{}, &user.Achievement{},
 }
 
-// ---------- GameService ----------
+// ---------- GameService CRUD тесты ----------
 
 func TestGameService_Create(t *testing.T) {
 	db := testutil.SetupPostgresDB(t, allModels...)
@@ -63,48 +63,6 @@ func TestGameService_Publish(t *testing.T) {
 	var updated game.Game
 	db.First(&updated, g.ID)
 	assert.False(t, updated.IsDraft)
-}
-
-func TestGameService_ForceFinishGame(t *testing.T) {
-	db := testutil.SetupPostgresDB(t, allModels...)
-	svc := newGameService(db)
-
-	author := createUser(t, db, "finish@test.com", "pass")
-	g := createPublishedGame(t, db, author.ID, "Finish Game")
-
-	tm := createTeam(t, db, author.ID)
-	passing := createPassing(t, db, g.ID, tm.ID, game.StatusStarted)
-
-	lvl := createLevel(t, db, g.ID, "L1", 1)
-	createLevelProgress(t, db, passing.ID, lvl.ID, false)
-
-	err := svc.ForceFinishGame(context.Background(), g.ID)
-	require.NoError(t, err)
-
-	var updated game.GamePassing
-	db.First(&updated, passing.ID)
-	assert.Equal(t, game.StatusFinished, updated.Status)
-}
-
-func TestGameService_DisqualifyTeam(t *testing.T) {
-	db := testutil.SetupPostgresDB(t, allModels...)
-	svc := newGameService(db)
-
-	author := createUser(t, db, "disq@test.com", "pass")
-	g := createPublishedGame(t, db, author.ID, "Disq Game")
-
-	tm := createTeam(t, db, author.ID)
-	passing := createPassing(t, db, g.ID, tm.ID, game.StatusStarted)
-
-	lvl := createLevel(t, db, g.ID, "L1", 1)
-	createLevelProgress(t, db, passing.ID, lvl.ID, false)
-
-	err := svc.DisqualifyTeam(context.Background(), g.ID, tm.ID)
-	require.NoError(t, err)
-
-	var updated game.GamePassing
-	db.First(&updated, passing.ID)
-	assert.Equal(t, game.StatusDisqualified, updated.Status)
 }
 
 func TestGameService_GetByID(t *testing.T) {
@@ -247,267 +205,7 @@ func TestGameService_Delete(t *testing.T) {
 	assert.Equal(t, gorm.ErrRecordNotFound, err)
 }
 
-func TestGameService_SubmitCode(t *testing.T) {
-	db := testutil.SetupPostgresDB(t, allModels...)
-	svc := newGameService(db)
-
-	author := createUser(t, db, "author@test.com", "pass")
-	g := createPublishedGame(t, db, author.ID, "Code Game")
-	lvl := createLevelWithAnswer(t, db, g.ID, "L1", 1, "secret")
-	tm := createTeam(t, db, author.ID)
-	passing := createPassing(t, db, g.ID, tm.ID, game.StatusStarted)
-	_ = createLevelProgress(t, db, passing.ID, lvl.ID, false)
-
-	attempt, err := svc.SubmitCode(context.Background(), passing.ID, author.ID, "secret")
-	require.NoError(t, err)
-	assert.True(t, attempt.Success)
-	assert.Equal(t, "secret", attempt.Code)
-
-	var updated game.LevelProgress
-	db.Where("game_passing_id = ?", passing.ID).First(&updated)
-	assert.NotNil(t, updated.FinishedAt)
-
-	var updatedPassing game.GamePassing
-	db.First(&updatedPassing, passing.ID)
-	assert.Equal(t, game.StatusFinished, updatedPassing.Status)
-}
-
-func TestGameService_SubmitFile(t *testing.T) {
-	db := testutil.SetupPostgresDB(t, allModels...)
-	svc := newGameService(db)
-
-	author := createUser(t, db, "author@test.com", "pass")
-	g := createPublishedGame(t, db, author.ID, "File Game")
-	lvl := createLevel(t, db, g.ID, "L1", 1)
-	tm := createTeam(t, db, author.ID)
-	passing := createPassing(t, db, g.ID, tm.ID, game.StatusStarted)
-	_ = createLevelProgress(t, db, passing.ID, lvl.ID, false)
-
-	attempt, err := svc.SubmitFile(context.Background(), passing.ID, author.ID, "/path/to/file")
-	require.NoError(t, err)
-	assert.False(t, attempt.Success)
-	assert.True(t, attempt.IsFile)
-	assert.Equal(t, "/path/to/file", attempt.FilePath)
-}
-
-func TestGameService_UseHint(t *testing.T) {
-	db := testutil.SetupPostgresDB(t, allModels...)
-	svc := newGameService(db)
-
-	author := createUser(t, db, "author@test.com", "pass")
-	g := createPublishedGame(t, db, author.ID, "Hint Game")
-	lvl := createLevel(t, db, g.ID, "L1", 1)
-	tm := createTeam(t, db, author.ID)
-	passing := createPassing(t, db, g.ID, tm.ID, game.StatusStarted)
-	progress := createLevelProgress(t, db, passing.ID, lvl.ID, false)
-
-	err := svc.UseHint(context.Background(), passing.ID, author.ID)
-	require.NoError(t, err)
-
-	var updated game.LevelProgress
-	db.First(&updated, progress.ID)
-	assert.Equal(t, 1, updated.HintsUsed)
-	assert.Equal(t, 300, updated.PenaltySeconds)
-
-	err = svc.UseHint(context.Background(), passing.ID, author.ID)
-	require.NoError(t, err)
-	db.First(&updated, progress.ID)
-	assert.Equal(t, 2, updated.HintsUsed)
-	assert.Equal(t, 300+600, updated.PenaltySeconds)
-
-	err = svc.UseHint(context.Background(), passing.ID, author.ID)
-	require.NoError(t, err)
-	db.First(&updated, progress.ID)
-	assert.Equal(t, 3, updated.HintsUsed)
-	assert.Equal(t, 300+600+900, updated.PenaltySeconds)
-
-	err = svc.UseHint(context.Background(), passing.ID, author.ID)
-	assert.Error(t, err)
-	assert.Equal(t, "лимит подсказок исчерпан", err.Error())
-}
-
-func TestGameService_UseHint_Disabled(t *testing.T) {
-	db := testutil.SetupPostgresDB(t, allModels...)
-	svc := newGameService(db)
-
-	author := createUser(t, db, "author@test.com", "pass")
-	g := createPublishedGame(t, db, author.ID, "No Hint Game")
-
-	setting := &game.GameSetting{
-		GameID:             g.ID,
-		AllowHints:         true,
-		HintPenaltySeconds: 300,
-		MaxHints:           3,
-	}
-	err := db.Create(setting).Error
-	require.NoError(t, err)
-
-	err = db.Model(&game.GameSetting{}).Where("game_id = ?", g.ID).Update("allow_hints", false).Error
-	require.NoError(t, err)
-
-	var savedSetting game.GameSetting
-	err = db.Where("game_id = ?", g.ID).First(&savedSetting).Error
-	require.NoError(t, err)
-	assert.False(t, savedSetting.AllowHints)
-
-	lvl := createLevel(t, db, g.ID, "L1", 1)
-	tm := createTeam(t, db, author.ID)
-	passing := createPassing(t, db, g.ID, tm.ID, game.StatusStarted)
-	_ = createLevelProgress(t, db, passing.ID, lvl.ID, false)
-
-	err = svc.UseHint(context.Background(), passing.ID, author.ID)
-	assert.Error(t, err)
-	assert.Equal(t, "подсказки запрещены", err.Error())
-}
-
-func TestGameService_AcceptBlackboxAnswer(t *testing.T) {
-	db := testutil.SetupPostgresDB(t, allModels...)
-	svc := newGameService(db)
-
-	author := createUser(t, db, "author@test.com", "pass")
-	other := createUser(t, db, "other@test.com", "pass")
-	g := createPublishedGame(t, db, author.ID, "Blackbox Game")
-	lvl := createBlackboxLevel(t, db, g.ID, "BB", 1)
-	tm := createTeam(t, db, author.ID)
-	passing := createPassing(t, db, g.ID, tm.ID, game.StatusStarted)
-	progress := createLevelProgress(t, db, passing.ID, lvl.ID, false)
-
-	attemptSvc := game.NewAttemptService(db)
-	_, _, err := attemptSvc.SubmitCode(progress, "any")
-	require.NoError(t, err)
-
-	err = svc.AcceptBlackboxAnswer(context.Background(), passing.ID, author.ID)
-	require.NoError(t, err)
-
-	var attempt game.Attempt
-	db.Where("level_progress_id = ?", progress.ID).Order("created_at DESC").First(&attempt)
-	assert.True(t, attempt.Success)
-
-	var updatedProgress game.LevelProgress
-	db.First(&updatedProgress, progress.ID)
-	assert.NotNil(t, updatedProgress.FinishedAt)
-
-	tm2 := createTeam(t, db, other.ID)
-	passing2 := createPassing(t, db, g.ID, tm2.ID, game.StatusStarted)
-	progress2 := createLevelProgress(t, db, passing2.ID, lvl.ID, false)
-	_, _, err = attemptSvc.SubmitCode(progress2, "any")
-	require.NoError(t, err)
-
-	err = svc.AcceptBlackboxAnswer(context.Background(), passing2.ID, other.ID)
-	assert.Error(t, err)
-	assert.Equal(t, "только автор может подтвердить ответ", err.Error())
-}
-
-func TestGameService_StartTesting(t *testing.T) {
-	db := testutil.SetupPostgresDB(t, allModels...)
-	svc := newGameService(db)
-
-	author := createUser(t, db, "author@test.com", "pass")
-	g := createPublishedGame(t, db, author.ID, "Test Game")
-	lvl := createLevel(t, db, g.ID, "L1", 1)
-
-	var gameWithLevels game.Game
-	err := db.Preload("Levels").First(&gameWithLevels, g.ID).Error
-	require.NoError(t, err)
-	require.Len(t, gameWithLevels.Levels, 1)
-
-	passing, err := svc.StartTesting(context.Background(), g.ID, author.ID)
-	require.NoError(t, err)
-
-	db.First(&passing, passing.ID)
-	assert.Equal(t, game.StatusTesting, passing.Status)
-	assert.NotZero(t, passing.ID)
-
-	var progress game.LevelProgress
-	err = db.Where("game_passing_id = ?", passing.ID).First(&progress).Error
-	require.NoError(t, err)
-	assert.Equal(t, lvl.ID, progress.LevelID, "Прогресс должен быть создан на первом уровне")
-}
-
-func TestGameService_SubmitTestCode(t *testing.T) {
-	db := testutil.SetupPostgresDB(t, allModels...)
-	svc := newGameService(db)
-
-	author := createUser(t, db, "author@test.com", "pass")
-	g := createPublishedGame(t, db, author.ID, "Test Code")
-	createLevel(t, db, g.ID, "L1", 1)
-
-	passing, err := svc.StartTesting(context.Background(), g.ID, author.ID)
-	require.NoError(t, err)
-
-	attempt, err := svc.SubmitTestCode(context.Background(), passing.ID, author.ID, "testcode")
-	require.NoError(t, err)
-	assert.True(t, attempt.Success)
-	assert.Equal(t, "testcode", attempt.Code)
-
-	var progress game.LevelProgress
-	db.Where("game_passing_id = ?", passing.ID).First(&progress)
-	assert.NotNil(t, progress.FinishedAt)
-}
-
-func TestGameService_SkipLevelTest(t *testing.T) {
-	db := testutil.SetupPostgresDB(t, allModels...)
-	svc := newGameService(db)
-
-	author := createUser(t, db, "author@test.com", "pass")
-	g := createPublishedGame(t, db, author.ID, "Skip Game")
-	l1 := createLevel(t, db, g.ID, "L1", 1)
-	l2 := createLevel(t, db, g.ID, "L2", 2)
-
-	var gameWithLevels game.Game
-	err := db.Preload("Levels").First(&gameWithLevels, g.ID).Error
-	require.NoError(t, err)
-	require.Len(t, gameWithLevels.Levels, 2)
-
-	passing, err := svc.StartTesting(context.Background(), g.ID, author.ID)
-	require.NoError(t, err)
-
-	var progress game.LevelProgress
-	err = db.Where("game_passing_id = ? AND finished_at IS NULL", passing.ID).First(&progress).Error
-	require.NoError(t, err)
-	assert.Equal(t, l1.ID, progress.LevelID)
-
-	err = svc.SkipLevelTest(context.Background(), passing.ID, author.ID)
-	require.NoError(t, err)
-
-	var progressAfter game.LevelProgress
-	err = db.Where("game_passing_id = ? AND finished_at IS NULL", passing.ID).First(&progressAfter).Error
-	require.NoError(t, err)
-	assert.Equal(t, l2.ID, progressAfter.LevelID, "После пропуска первого уровня прогресс должен быть на втором")
-}
-
-func TestGameService_DeleteLevelFromActiveGame(t *testing.T) {
-	db := testutil.SetupPostgresDB(t, allModels...)
-	svc := newGameService(db)
-
-	author := createUser(t, db, "author@test.com", "pass")
-	other := createUser(t, db, "other@test.com", "pass")
-	g := createPublishedGame(t, db, author.ID, "Delete Level")
-	lvl1 := createLevel(t, db, g.ID, "L1", 1)
-	lvl2 := createLevel(t, db, g.ID, "L2", 2)
-
-	tm := createTeam(t, db, author.ID)
-	passing := createPassing(t, db, g.ID, tm.ID, game.StatusStarted)
-	_ = createLevelProgress(t, db, passing.ID, lvl1.ID, false)
-
-	err := svc.DeleteLevelFromActiveGame(context.Background(), g.ID, lvl1.ID, other.ID)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "только автор или контент-менеджер")
-
-	err = svc.DeleteLevelFromActiveGame(context.Background(), g.ID, lvl1.ID, author.ID)
-	require.NoError(t, err)
-
-	var deleted level.Level
-	err = db.Unscoped().First(&deleted, lvl1.ID).Error
-	assert.Error(t, err)
-
-	var updatedProgress game.LevelProgress
-	err = db.Where("game_passing_id = ?", passing.ID).First(&updatedProgress).Error
-	require.NoError(t, err)
-	assert.Equal(t, lvl2.ID, updatedProgress.LevelID, "Прогресс должен переключиться на следующий уровень")
-}
-
-// ---------- GamePassingService ----------
+// ---------- GamePassingService тесты ----------
 
 func TestGamePassingService_Apply(t *testing.T) {
 	db := testutil.SetupPostgresDB(t, allModels...)
@@ -581,7 +279,7 @@ func TestGamePassingService_StartGame(t *testing.T) {
 	assert.Equal(t, game.StatusStarted, passing.Status)
 }
 
-// ---------- AttemptService ----------
+// ---------- AttemptService тесты ----------
 
 func TestAttemptService_SubmitCode_Correct(t *testing.T) {
 	db := testutil.SetupPostgresDB(t, allModels...)
@@ -643,7 +341,7 @@ func TestAttemptService_Blackbox_Pending(t *testing.T) {
 	assert.True(t, last.Success)
 }
 
-// ---------- LevelProgressService ----------
+// ---------- LevelProgressService тесты ----------
 
 func TestLevelProgressService_InitFirstLevel(t *testing.T) {
 	db := testutil.SetupPostgresDB(t, allModels...)
@@ -717,7 +415,7 @@ func TestLevelProgressService_FinishGame(t *testing.T) {
 	assert.Equal(t, game.StatusFinished, updated.Status)
 }
 
-// ---------- CoAuthorService ----------
+// ---------- CoAuthorService тесты ----------
 
 func TestCoAuthorService_AddAndRemove(t *testing.T) {
 	db := testutil.SetupPostgresDB(t, allModels...)
@@ -748,8 +446,6 @@ func newGameService(db *gorm.DB) *game.GameService {
 	gameRepo := game.NewGormGameRepo(db)
 	passingRepo := game.NewGormGamePassingRepo(db)
 	coAuthorSvc := game.NewCoAuthorService(db)
-	attemptSvc := game.NewAttemptService(db)
-	progressSvc := game.NewLevelProgressService(db)
 
 	// Создаём локальное хранилище для тестов
 	localStorage := storage.NewLocalStorage()
@@ -761,8 +457,6 @@ func newGameService(db *gorm.DB) *game.GameService {
 		nil, // reviewService
 		monitorSvc,
 		hub,
-		attemptSvc,
-		progressSvc,
 		cfg,
 		localStorage,
 		nil, // cache
@@ -863,4 +557,21 @@ func createLevelProgress(t *testing.T, db *gorm.DB, passingID, levelID uint, fin
 	}
 	require.NoError(t, db.Create(p).Error)
 	return p
+}
+
+// internal/domain/game/service_test.go (добавить в конец файла)
+func createPublishedGameWithSettings(t *testing.T, db *gorm.DB, authorID uint, name string) *game.Game {
+	t.Helper()
+	g := createPublishedGame(t, db, authorID, name)
+	settings := &game.GameSetting{
+		GameID:                   g.ID,
+		AllowHints:               true,
+		HintPenaltySeconds:       300,
+		MaxHints:                 3,
+		PerLevelTimeLimit:        0,
+		HideAnswersUntilFinished: false,
+		AutoStart:                false,
+	}
+	require.NoError(t, db.Create(settings).Error)
+	return g
 }

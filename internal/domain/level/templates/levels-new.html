@@ -1,43 +1,74 @@
 {{define "levels-new.html"}}
-<h1>Новый уровень</h1>
-{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
-<form action="/games/{{.GameID}}/levels" method="POST">
-    <input type="hidden" name="_csrf" value="{{.csrf}}">
-    <div>
-        <label>Название:</label>
-        <input type="text" name="name" required>
-    </div>
-    <div>
-        <label>Описание:</label>
-        <textarea name="description" rows="4"></textarea>
-    </div>
-    <div>
-        <label>Позиция:</label>
-        <input type="number" name="position" value="1" min="1">
-    </div>
-    <div>
-        <label>Тип уровня:</label>
-        <select name="type">
-            <option value="single">Обычный</option>
-            <option value="checkpoint">Чекпоинт</option>
-            <option value="parallel_group">Параллельная группа</option>
-            <option value="blackbox">Чёрный ящик</option>
-            <option value="file_upload">Файловый ответ</option>
-        </select>
-    </div>
-    <div>
-        <label>Требует подтверждения автором:</label>
-        <input type="checkbox" name="requires_confirmation" value="true">
-    </div>
-    <div>
-        <label>Широта (Latitude):</label>
-        <input type="text" name="latitude" placeholder="например 55.7558">
-    </div>
-    <div>
-        <label>Долгота (Longitude):</label>
-        <input type="text" name="longitude" placeholder="например 37.6173">
-    </div>
-    <button type="submit" class="button">Создать</button>
-</form>
-<a href="/games/{{.GameID}}/levels">Назад к уровням</a>
+<div class="max-w-3xl mx-auto">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Новый уровень</h1>
+
+    {{if .Error}}
+    <div class="flash flash-error">{{.Error}}</div>
+    {{end}}
+
+    <form action="/games/{{.GameID}}/levels" method="POST" class="card space-y-4">
+        <input type="hidden" name="_csrf" value="{{.csrf}}">
+
+        <!-- Название -->
+        <div>
+            <label for="name" class="block text-sm font-medium text-gray-700 mb-1">Название</label>
+            <input type="text" name="name" id="name" required
+                   class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+        </div>
+
+        <!-- Описание -->
+        <div>
+            <label for="description" class="block text-sm font-medium text-gray-700 mb-1">Описание</label>
+            <textarea name="description" id="description" rows="4"
+                      class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"></textarea>
+        </div>
+
+        <!-- Позиция и тип -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label for="position" class="block text-sm font-medium text-gray-700 mb-1">Позиция</label>
+                <input type="number" name="position" id="position" value="1" min="1"
+                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+            </div>
+            <div>
+                <label for="type" class="block text-sm font-medium text-gray-700 mb-1">Тип уровня</label>
+                <select name="type" id="type"
+                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                    <option value="single">Обычный</option>
+                    <option value="checkpoint">Чекпоинт</option>
+                    <option value="parallel_group">Параллельная группа</option>
+                    <option value="blackbox">Чёрный ящик</option>
+                    <option value="file_upload">Файловый ответ</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Требует подтверждения -->
+        <div class="flex items-center">
+            <input type="checkbox" name="requires_confirmation" id="requires_confirmation" value="true"
+                   class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500">
+            <label for="requires_confirmation" class="ml-2 text-sm text-gray-700">Требует подтверждения автором</label>
+        </div>
+
+        <!-- Координаты -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label for="latitude" class="block text-sm font-medium text-gray-700 mb-1">Широта (Latitude)</label>
+                <input type="text" name="latitude" id="latitude" placeholder="например 55.7558"
+                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+            </div>
+            <div>
+                <label for="longitude" class="block text-sm font-medium text-gray-700 mb-1">Долгота (Longitude)</label>
+                <input type="text" name="longitude" id="longitude" placeholder="например 37.6173"
+                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+            </div>
+        </div>
+
+        <!-- Кнопки -->
+        <div class="flex flex-wrap gap-3 pt-2">
+            <button type="submit" class="btn btn-primary text-sm">Создать</button>
+            <a href="/games/{{.GameID}}/levels" class="btn btn-outline text-sm">Отмена</a>
+        </div>
+    </form>
+</div>
 {{end}}
