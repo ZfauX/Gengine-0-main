@@ -1,36 +1,56 @@
 {{define "simulate-results.html"}}
-<h1>Результаты симуляции</h1>
+<div class="max-w-4xl mx-auto">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Результаты симуляции</h1>
 
-<div class="card">
-    <h3>Общее время: {{.Result.TotalTime}}</h3>
-    <p>Пройдено уровней: {{.Result.LevelsPassed}}</p>
+    <!-- Общая статистика -->
+    <div class="card mb-6">
+        <div class="flex flex-wrap items-center gap-6">
+            <div>
+                <p class="text-sm text-gray-500">Общее время</p>
+                <p class="text-2xl font-bold text-blue-600">{{.Result.TotalTime}}</p>
+            </div>
+            <div>
+                <p class="text-sm text-gray-500">Пройдено уровней</p>
+                <p class="text-2xl font-bold text-green-600">{{.Result.LevelsPassed}}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Хронология -->
+    <div class="card">
+        <h3 class="text-lg font-semibold text-gray-700 mb-4">Хронология прохождения</h3>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Уровень</th>
+                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Код</th>
+                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Время от старта</th>
+                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Статус</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {{range .Result.Log}}
+                    <tr class="hover:bg-gray-50 transition">
+                        <td class="px-4 py-3 text-sm text-gray-900">{{.LevelName}}</td>
+                        <td class="px-4 py-3 text-sm font-mono text-gray-600">{{.Code}}</td>
+                        <td class="px-4 py-3 text-sm text-gray-500">{{.Duration}}</td>
+                        <td class="px-4 py-3 text-sm">
+                            {{if .Success}}
+                            <span class="inline-flex items-center gap-1 text-green-600 font-medium">✅ Успешно</span>
+                            {{else}}
+                            <span class="inline-flex items-center gap-1 text-red-600 font-medium">❌ Ошибка</span>
+                            {{end}}
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="mt-6">
+        <a href="/games/{{.GameID}}" class="btn btn-outline text-sm">← Назад к игре</a>
+    </div>
 </div>
-
-<div class="card">
-    <h3>Хронология прохождения</h3>
-    <table style="width:100%; border-collapse:collapse;">
-        <thead>
-            <tr style="background:#eee;">
-                <th>Уровень</th>
-                <th>Код</th>
-                <th>Время от старта</th>
-                <th>Статус</th>
-            </tr>
-        </thead>
-        <tbody>
-        {{range .Result.Log}}
-            <tr>
-                <td>{{.LevelName}}</td>
-                <td>{{.Code}}</td>
-                <td>{{.Duration}}</td>
-                <td style="color:{{if .Success}}green{{else}}red{{end}};">
-                    {{if .Success}}Успешно{{else}}Ошибка{{end}}
-                </td>
-            </tr>
-        {{end}}
-        </tbody>
-    </table>
-</div>
-
-<a href="/games/{{.GameID}}" class="button">Назад к игре</a>
 {{end}}

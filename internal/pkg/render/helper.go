@@ -6,6 +6,8 @@ import (
 	"html/template"
 	"net/http"
 
+	"gengine-0/internal/pkg/middleware"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -23,21 +25,21 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 		data = gin.H{}
 	}
 
-	// Если шаблон не инициализирован (например, в тестах), возвращаем заглушку
 	if globalTemplate == nil {
 		c.String(http.StatusInternalServerError, "Template engine not initialized")
 		return
 	}
 
-	// 1. Рендерим контентный шаблон в bytes.Buffer
+	// Добавляем nonce в данные шаблона
+	nonce := middleware.GetCSPNonce(c)
+	data["csp_nonce"] = nonce
+
 	var buf bytes.Buffer
 	if err := globalTemplate.ExecuteTemplate(&buf, contentTemplate, data); err != nil {
-		// В случае ошибки возвращаем текст ошибки, чтобы не падать
 		c.String(http.StatusInternalServerError, "Ошибка рендеринга: "+err.Error())
 		return
 	}
 
-	// 2. Вставляем полученный HTML и отправляем в layout.html
 	data["ContentHTML"] = template.HTML(buf.String())
 	c.HTML(status, "layout.html", data)
 }

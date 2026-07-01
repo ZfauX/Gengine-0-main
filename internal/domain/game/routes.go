@@ -12,6 +12,7 @@ import (
 	ws "gengine-0/internal/pkg/websocket"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // RegisterRoutes регистрирует маршруты для игр, используя готовые обработчики.
@@ -19,8 +20,10 @@ import (
 // @tags coauthors
 // @tags passings
 // @tags gameplay
+// @tags admin
 func RegisterRoutes(
 	r *gin.Engine,
+	db *gorm.DB,
 	gameService *GameService,
 	passingService *GamePassingService,
 	coAuthorSvc *CoAuthorService,
@@ -32,18 +35,26 @@ func RegisterRoutes(
 	cfg *config.Config,
 	auditSvc *audit.Service,
 	authService *user.AuthService,
+	gamePlaySvc *GamePlayService,
+	gameAdminSvc *GameAdminService,
 ) {
+	noteService := NewNoteService(db, coAuthorSvc)
+	simulateService := NewSimulateService(db, coAuthorSvc)
+	photoService := NewPhotoService(db)
+
 	gameHandler := NewGameHandler(
 		gameService,
 		passingService,
 		coAuthorSvc,
-		nil, // noteService
-		nil, // simulateService
-		nil, // photoService
+		noteService,
+		simulateService,
+		photoService,
 		localStorage,
 		hub,
 		auditSvc,
-		nil, // db не нужен для базовых операций
+		db,
+		gamePlaySvc,
+		gameAdminSvc,
 	)
 
 	public := r.Group("/games")
@@ -78,6 +89,19 @@ func RegisterRoutes(
 		// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
 		// @Router /games/{id} [get]
 		public.GET("/:id", gameHandler.Show)
+
+		// @Summary Полный просмотр игры (JSON)
+		// @Description Возвращает все уровни с вопросами и ответами для быстрого просмотра (JSON)
+		// @Tags games
+		// @Produce json
+		// @Param id path int true "ID игры"
+		// @Success 200 {object} map[string]interface{} "Структура игры"
+		// @Failure 400 {object} map[string]interface{} "Неверный ID игры"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+		// @Failure 403 {object} map[string]interface{} "Нет доступа"
+		// @Router /games/{id}/full-preview [get]
+		// @Security JWT
+		public.GET("/:id/full-preview", gameHandler.FullPreview)
 	}
 
 	protected := r.Group("/games")
@@ -173,6 +197,35 @@ func RegisterRoutes(
 		// @Router /games/{id}/publish [post]
 		// @Security JWT
 		protected.POST("/:id/publish", gameHandler.Publish)
+
+		// @Summary Принудительное завершение игры
+		// @Description Завершает все активные прохождения игры (доступно автору или модератору)
+		// @Tags admin
+		// @Accept x-www-form-urlencoded
+		// @Produce html
+		// @Param id path int true "ID игры"
+		// @Success 302 {string} string "Перенаправление на /games/{id}/results"
+		// @Failure 400 {object} map[string]interface{} "Нет активных прохождений"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+		// @Router /games/{id}/force-finish [post]
+		// @Security JWT
+		protected.POST("/:id/force-finish", gameHandler.ForceFinish)
+
+		// @Summary Дисквалификация команды
+		// @Description Дисквалифицирует команду в игре (доступно автору или модератору)
+		// @Tags admin
+		// @Accept x-www-form-urlencoded
+		// @Produce html
+		// @Param id path int true "ID игры"
+		// @Param team_id formData uint true "ID команды"
+		// @Success 302 {string} string "Перенаправление на /games/{id}/monitor"
+		// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+		// @Router /games/{id}/disqualify [post]
+		// @Security JWT
+		protected.POST("/:id/disqualify", gameHandler.DisqualifyTeam)
 
 		// @Summary Управление соавторами
 		// @Description Отображает страницу управления соавторами игры (доступно владельцу)

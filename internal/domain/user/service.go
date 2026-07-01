@@ -4,6 +4,7 @@ package user
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -27,23 +28,26 @@ import (
 // ---------- AuthService ----------
 
 type AuthService struct {
-	userRepo       UserRepository
-	achievRepo     AchievementRepository
-	emailVerifRepo EmailVerificationRepository
-	cfg            *config.Config
+	userRepo         UserRepository
+	achievRepo       AchievementRepository
+	emailVerifRepo   EmailVerificationRepository
+	refreshTokenRepo RefreshTokenRepository
+	cfg              *config.Config
 }
 
 func NewAuthService(
 	userRepo UserRepository,
 	achievRepo AchievementRepository,
 	emailVerifRepo EmailVerificationRepository,
+	refreshTokenRepo RefreshTokenRepository,
 	cfg *config.Config,
 ) *AuthService {
 	return &AuthService{
-		userRepo:       userRepo,
-		achievRepo:     achievRepo,
-		emailVerifRepo: emailVerifRepo,
-		cfg:            cfg,
+		userRepo:         userRepo,
+		achievRepo:       achievRepo,
+		emailVerifRepo:   emailVerifRepo,
+		refreshTokenRepo: refreshTokenRepo,
+		cfg:              cfg,
 	}
 }
 
@@ -82,45 +86,56 @@ func (s *AuthService) GenerateJWT(user User) (string, error) {
 	return s.generateJWT(user)
 }
 
-func (s *AuthService) GenerateRefreshToken(user User) (string, error) {
-	claims := jwt.MapClaims{
-		"user_id": user.ID,
-		"email":   user.Email,
-		"role":    user.Role,
-		"exp":     time.Now().Add(s.cfg.JWT.RefreshExpiry).Unix(),
-		"refresh": true,
+// GenerateRefreshToken создаёт случайный refresh-токен, сохраняет его хеш в БД и возвращает сам токен.
+func (s *AuthService) GenerateRefreshToken(user User, deviceID string) (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
 	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(s.cfg.JWT.Secret))
+	token := hex.EncodeToString(b)
+	hash := sha256.Sum256([]byte(token))
+	tokenHash := hex.EncodeToString(hash[:])
+
+	refreshToken := &RefreshToken{
+		UserID:    user.ID,
+		TokenHash: tokenHash,
+		DeviceID:  deviceID,
+		ExpiresAt: time.Now().Add(s.cfg.JWT.RefreshExpiry),
+	}
+	if err := s.refreshTokenRepo.Create(context.Background(), refreshToken); err != nil {
+		return "", err
+	}
+	return token, nil
 }
 
+// RevokeAllUserTokens отзывает все активные refresh-токены пользователя (например, при смене пароля или выходе со всех устройств).
+func (s *AuthService) RevokeAllUserTokens(ctx context.Context, userID uint) error {
+	return s.refreshTokenRepo.RevokeAllForUser(ctx, userID)
+}
+
+// CleanExpiredRefreshTokens удаляет просроченные токены из БД.
+func (s *AuthService) CleanExpiredRefreshTokens(ctx context.Context) error {
+	return s.refreshTokenRepo.DeleteExpired(ctx)
+}
+
+// RefreshAccessToken обновляет access-токен, проверяя валидность refresh-токена по БД.
 func (s *AuthService) RefreshAccessToken(refreshTokenStr string) (string, error) {
-	token, err := jwt.Parse(refreshTokenStr, func(token *jwt.Token) (any, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, errors.New("неверный метод подписи")
-		}
-		return []byte(s.cfg.JWT.Secret), nil
-	})
-	if err != nil || !token.Valid {
-		return "", errors.New("невалидный refresh-токен")
+	hash := sha256.Sum256([]byte(refreshTokenStr))
+	tokenHash := hex.EncodeToString(hash[:])
+
+	stored, err := s.refreshTokenRepo.GetByTokenHash(context.Background(), tokenHash)
+	if err != nil {
+		return "", errors.New("невалидный или отозванный refresh-токен")
 	}
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return "", errors.New("неверные данные токена")
+	if stored.ExpiresAt.Before(time.Now()) {
+		return "", errors.New("refresh-токен истёк")
 	}
-	isRefresh, ok := claims["refresh"].(bool)
-	if !ok || !isRefresh {
-		return "", errors.New("не refresh-токен")
-	}
-	userIDFloat, ok := claims["user_id"].(float64)
-	if !ok {
-		return "", errors.New("неверный ID пользователя")
-	}
-	userID := uint(userIDFloat)
-	user, err := s.userRepo.GetByID(context.Background(), userID)
+
+	user, err := s.userRepo.GetByID(context.Background(), stored.UserID)
 	if err != nil {
 		return "", errors.New("пользователь не найден")
 	}
+
 	return s.generateJWT(*user)
 }
 
@@ -138,6 +153,7 @@ func (s *AuthService) ParseToken(tokenStr string) (uint, string, error) {
 	if !ok {
 		return 0, "", errors.New("неверные данные токена")
 	}
+	// Проверяем, что это не refresh-токен (они не должны использоваться как access)
 	if isRefresh, ok := claims["refresh"].(bool); ok && isRefresh {
 		return 0, "", errors.New("использование refresh-токена как access запрещено")
 	}
@@ -244,7 +260,6 @@ func (s *AchievementService) SeedAchievements(ctx context.Context) {
 
 // ---------- OAuthService ----------
 
-// httpClientWithTimeout создаёт HTTP-клиент с заданным таймаутом.
 func httpClientWithTimeout(timeout time.Duration) *http.Client {
 	return &http.Client{
 		Timeout: timeout,
@@ -256,7 +271,7 @@ type OAuthService struct {
 	extLoginRepo ExternalLoginRepository
 	cfg          *config.Config
 	configs      map[string]*oauth2.Config
-	httpClient   *http.Client // клиент с таймаутом для OAuth-запросов
+	httpClient   *http.Client
 }
 
 func NewOAuthService(
@@ -264,15 +279,7 @@ func NewOAuthService(
 	extLoginRepo ExternalLoginRepository,
 	cfg *config.Config,
 ) *OAuthService {
-	// Создаём HTTP-клиент с таймаутом 15 секунд для OAuth-запросов
 	httpClient := httpClientWithTimeout(15 * time.Second)
-
-	// Для каждого провайдера можно использовать отдельный клиент, но мы используем общий с таймаутом.
-	// OAuth2 Config по умолчанию использует http.DefaultClient, поэтому мы передадим наш клиент через контекст.
-	// Для этого нужно создать контекст с клиентом: context.WithValue(ctx, oauth2.HTTPClient, httpClient)
-	// Но в текущей реализации мы используем cfg.Exchange(ctx, code) без явного указания клиента.
-	// Чтобы использовать наш клиент, нужно передать его в контекст.
-	// Мы сделаем это в методе Authenticate.
 
 	configs := map[string]*oauth2.Config{
 		"google": {
@@ -342,7 +349,6 @@ type yandexUserInfo struct {
 	LastName   string `json:"last_name"`
 }
 
-// ctxWithHTTPClient добавляет HTTP-клиент с таймаутом в контекст для OAuth-запросов.
 func (s *OAuthService) ctxWithHTTPClient(ctx context.Context) context.Context {
 	return context.WithValue(ctx, oauth2.HTTPClient, s.httpClient)
 }
@@ -356,7 +362,6 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 		return nil, errors.New("неподдерживаемый провайдер")
 	}
 
-	// Используем контекст с HTTP-клиентом, имеющим таймаут
 	ctxWithClient := s.ctxWithHTTPClient(ctx)
 
 	token, err := cfg.Exchange(ctxWithClient, code)
@@ -364,7 +369,7 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 		return nil, fmt.Errorf("обмен кода на токен: %w", err)
 	}
 
-	client := cfg.Client(ctxWithClient, token) // этот клиент тоже использует контекст и наш httpClient
+	client := cfg.Client(ctxWithClient, token)
 
 	var emailStr, name string
 	var emailVerified bool
@@ -681,7 +686,6 @@ type DashboardInvitation struct {
 	Status   string
 }
 
-// GetDashboard собирает данные для дашборда с минимальным количеством запросов.
 func (s *UserDashboardService) GetDashboard(userID uint) (*UserDashboard, error) {
 	var dash UserDashboard
 

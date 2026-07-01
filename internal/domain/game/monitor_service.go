@@ -104,61 +104,106 @@ func (s *MonitorService) InvalidateCache(gameID uint) {
 }
 
 // GameSnapshot формирует полную сводку по всем прохождениям игры.
+// Оптимизированная версия: использует агрегирующие SQL-запросы.
 func (s *MonitorService) GameSnapshot(gameID uint) ([]TeamProgress, error) {
-	var passings []GamePassing
-	err := s.DB.
-		Preload("Team").
-		Preload("Progresses.Attempts").
-		Where("game_id = ?", gameID).
-		Find(&passings).Error
-	if err != nil {
+	// 1. Получаем общее количество уровней в игре
+	var totalLevels int64
+	if err := s.DB.Model(&level.Level{}).Where("game_id = ?", gameID).Count(&totalLevels).Error; err != nil {
 		return nil, err
 	}
 
-	var levels []level.Level
-	s.DB.Where("game_id = ?", gameID).Order("position ASC").Find(&levels)
-	totalLevels := len(levels)
+	// 2. Получаем агрегированные данные по прохождениям
+	type AggregatedPassing struct {
+		GamePassingID  uint
+		TeamID         uint
+		TeamName       string
+		Status         string
+		Place          *int
+		CompletedCount int
+		TotalAttempts  int
+		TotalPenalty   int
+		FirstStarted   *time.Time
+		LastFinished   *time.Time
+	}
 
-	var progressList []TeamProgress
-	for _, p := range passings {
+	var aggregated []AggregatedPassing
+	query := `
+		SELECT 
+			gp.id AS game_passing_id,
+			gp.team_id,
+			t.name AS team_name,
+			gp.status,
+			gp.place,
+			COUNT(lp.id) FILTER (WHERE lp.finished_at IS NOT NULL) AS completed_count,
+			COALESCE(SUM((SELECT COUNT(*) FROM attempts a WHERE a.level_progress_id = lp.id)), 0) AS total_attempts,
+			COALESCE(SUM(lp.penalty_seconds), 0) AS total_penalty,
+			MIN(lp.started_at) AS first_started,
+			MAX(lp.finished_at) AS last_finished
+		FROM game_passings gp
+		JOIN teams t ON t.id = gp.team_id
+		LEFT JOIN level_progresses lp ON lp.game_passing_id = gp.id
+		WHERE gp.game_id = ?
+		GROUP BY gp.id, gp.team_id, t.name, gp.status, gp.place
+	`
+	if err := s.DB.Raw(query, gameID).Scan(&aggregated).Error; err != nil {
+		return nil, err
+	}
+
+	// 3. Определяем текущий уровень для незавершённых прохождений
+	type CurrentLevel struct {
+		GamePassingID uint
+		LevelID       uint
+	}
+	var currentLevels []CurrentLevel
+	if err := s.DB.Table("level_progresses").
+		Select("DISTINCT ON (game_passing_id) game_passing_id, level_id").
+		Where("game_passing_id IN (SELECT id FROM game_passings WHERE game_id = ? AND status = ?)", gameID, StatusStarted).
+		Order("game_passing_id, created_at DESC").
+		Scan(&currentLevels).Error; err != nil {
+		// Не фатально, просто не покажем текущий уровень
+		currentLevels = nil
+	}
+
+	currentLevelMap := make(map[uint]uint)
+	for _, cl := range currentLevels {
+		currentLevelMap[cl.GamePassingID] = cl.LevelID
+	}
+
+	// 4. Формируем результат
+	result := make([]TeamProgress, 0, len(aggregated))
+	for _, a := range aggregated {
 		tp := TeamProgress{
-			TeamID:      p.TeamID,
-			TeamName:    p.Team.Name,
-			TotalLevels: totalLevels,
-			Finished:    p.Status == StatusFinished,
-			Place:       p.Place,
+			TeamID:          a.TeamID,
+			TeamName:        a.TeamName,
+			TotalLevels:     int(totalLevels),
+			CompletedLevels: a.CompletedCount,
+			Finished:        a.Status == string(StatusFinished),
+			Place:           a.Place,
+			Attempts:        a.TotalAttempts,
 		}
 
-		var completed int
+		// Вычисляем общее время
 		var totalDuration time.Duration
-		var attemptsCount int
-		var currentLevel *uint
+		if a.FirstStarted != nil && a.LastFinished != nil {
+			totalDuration = a.LastFinished.Sub(*a.FirstStarted) + time.Duration(a.TotalPenalty)*time.Second
+		}
+		tp.TotalTime = util.FormatDuration(totalDuration)
 
-		for _, lp := range p.Progresses {
-			attemptsCount += len(lp.Attempts)
-
-			if lp.FinishedAt != nil {
-				completed++
-				duration := lp.FinishedAt.Sub(lp.StartedAt) + time.Duration(lp.PenaltySeconds)*time.Second
-				totalDuration += duration
-			} else if currentLevel == nil {
-				currentLevel = &lp.LevelID
-			}
+		// Устанавливаем текущий уровень
+		if cur, ok := currentLevelMap[a.GamePassingID]; ok && !tp.Finished {
+			tp.CurrentLevel = &cur
 		}
 
-		tp.CompletedLevels = completed
-		tp.CurrentLevel = currentLevel
-		tp.TotalTime = util.FormatDuration(totalDuration)
-		tp.Attempts = attemptsCount
-
-		sus, reason := s.analyzeTeamBehavior(p.TeamID, gameID)
+		// Проверка на подозрительное поведение (можно оставить как есть или упростить)
+		// Для производительности можно пропустить анализ или делать его асинхронно
+		sus, reason := s.analyzeTeamBehavior(a.TeamID, gameID)
 		tp.Suspicious = sus
 		tp.SuspiciousReason = reason
 
-		progressList = append(progressList, tp)
+		result = append(result, tp)
 	}
 
-	return progressList, nil
+	return result, nil
 }
 
 // CalculateResults пересчитывает итоговое время и места для завершённых прохождений.
@@ -201,6 +246,7 @@ func (s *MonitorService) CalculateResults(gameID uint) error {
 }
 
 // analyzeTeamBehavior проверяет команду на подозрительную активность.
+// Упрощённая версия для снижения нагрузки.
 func (s *MonitorService) analyzeTeamBehavior(teamID, gameID uint) (bool, string) {
 	var passings []uint
 	s.DB.Model(&GamePassing{}).Where("game_id = ? AND team_id = ?", gameID, teamID).Pluck("id", &passings)

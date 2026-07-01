@@ -11,7 +11,338 @@ info:
   termsOfService: http://swagger.io/terms/
   title: Gengine API
   version: "1.0"
-paths: {}
+paths:
+  /games/{id}/export:
+    get:
+      description: Выгружает уровни, вопросы и ответы игры в CSV-формат для редактирования
+        или резервного копирования
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/csv
+      responses:
+        "200":
+          description: CSV-файл с данными игры
+          schema:
+            type: file
+        "400":
+          description: Неверный ID
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Недостаточно прав
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Внутренняя ошибка
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Экспорт игры в CSV
+      tags:
+      - export
+  /games/{id}/export-excel:
+    get:
+      description: Генерирует Excel-файл (.xlsx) со всеми уровнями, вопросами и ответами
+        игры
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      responses:
+        "200":
+          description: Excel-файл с данными игры
+          schema:
+            type: file
+        "400":
+          description: Неверный ID
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Недостаточно прав
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Внутренняя ошибка
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Экспорт игры в Excel
+      tags:
+      - export
+  /games/{id}/export-pdf:
+    get:
+      description: Генерирует PDF-файл со всеми уровнями, вопросами и ответами игры
+        для печати
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/pdf
+      responses:
+        "200":
+          description: PDF-файл с данными игры
+          schema:
+            type: file
+        "400":
+          description: Неверный ID
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Недостаточно прав
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Внутренняя ошибка
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Экспорт игры в PDF
+      tags:
+      - export
+  /games/{id}/export-results:
+    get:
+      description: Выгружает итоговую таблицу результатов игры (места, команды, время,
+        попытки) в CSV-формат
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/csv
+      responses:
+        "200":
+          description: CSV-файл с результатами
+          schema:
+            type: file
+        "400":
+          description: Неверный ID
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Недостаточно прав
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Внутренняя ошибка
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Экспорт результатов в CSV
+      tags:
+      - export
+  /games/{id}/export-results-excel:
+    get:
+      description: Генерирует Excel-файл (.xlsx) с итоговой таблицей результатов игры
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      responses:
+        "200":
+          description: Excel-файл с результатами
+          schema:
+            type: file
+        "400":
+          description: Неверный ID
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Недостаточно прав
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Внутренняя ошибка
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Экспорт результатов в Excel
+      tags:
+      - export
+  /games/{id}/export-statistics-pdf:
+    get:
+      description: 'Генерирует PDF-отчёт с расширенной статистикой игры (результаты
+        команд по уровням: время, количество попыток)'
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/pdf
+      responses:
+        "200":
+          description: PDF-файл со статистикой
+          schema:
+            type: file
+        "400":
+          description: Неверный ID
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Недостаточно прав
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Внутренняя ошибка
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Экспорт статистики в PDF
+      tags:
+      - export
+  /games/{id}/import:
+    get:
+      description: Возвращает HTML-страницу с формой для загрузки CSV-файла для импорта
+        уровней
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Форма импорта
+          schema:
+            type: string
+        "400":
+          description: Неверный ID
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Недостаточно прав
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Форма импорта игры
+      tags:
+      - export
+    post:
+      consumes:
+      - multipart/form-data
+      description: Загружает CSV-файл и импортирует уровни, вопросы и ответы в игру
+        (добавляет или обновляет уровни по позиции)
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: CSV-файл с данными (до 10 МБ)
+        in: formData
+        name: csvfile
+        required: true
+        type: file
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на /games/{id}/levels
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Недостаточно прав
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Импорт игры из CSV
+      tags:
+      - export
 securityDefinitions:
   JWT:
     in: cookie

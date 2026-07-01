@@ -1,18 +1,34 @@
 {{define "questions-edit.html"}}
-<h1>Редактирование вопроса</h1>
-{{if .Error}}<p style="color:red">{{.Error}}</p>{{end}}
-<form action="/games/{{.GameID}}/levels/{{.LevelID}}/questions/{{.Question.ID}}" method="POST">
-    <input type="hidden" name="_method" value="PUT">
-    <input type="hidden" name="_csrf" value="{{.csrf}}">
-    <div>
-        <label>Текст вопроса:</label>
-        <input type="text" name="text" value="{{.Question.Text}}" required>
-    </div>
-    <div>
-        <label>Подсказка:</label>
-        <input type="text" name="hint" value="{{.Question.Hint}}">
-    </div>
-    <button type="submit" class="button">Сохранить</button>
-</form>
-<a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions">Назад к вопросам</a>
+<div class="max-w-3xl mx-auto">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Редактирование вопроса</h1>
+
+    {{if .Error}}
+    <div class="flash flash-error">{{.Error}}</div>
+    {{end}}
+
+    <form action="/games/{{.GameID}}/levels/{{.LevelID}}/questions/{{.Question.ID}}" method="POST" class="card space-y-4">
+        <input type="hidden" name="_method" value="PUT">
+        <input type="hidden" name="_csrf" value="{{.csrf}}">
+
+        <!-- Текст вопроса -->
+        <div>
+            <label for="text" class="block text-sm font-medium text-gray-700 mb-1">Текст вопроса</label>
+            <input type="text" name="text" id="text" value="{{.Question.Text}}" required
+                   class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+        </div>
+
+        <!-- Подсказка -->
+        <div>
+            <label for="hint" class="block text-sm font-medium text-gray-700 mb-1">Подсказка</label>
+            <input type="text" name="hint" id="hint" value="{{.Question.Hint}}"
+                   class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+        </div>
+
+        <!-- Кнопки -->
+        <div class="flex flex-wrap gap-3 pt-2">
+            <button type="submit" class="btn btn-primary text-sm">Сохранить</button>
+            <a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions" class="btn btn-outline text-sm">Отмена</a>
+        </div>
+    </form>
+</div>
 {{end}}

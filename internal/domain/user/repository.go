@@ -3,6 +3,7 @@ package user
 
 import (
 	"context"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -49,6 +50,15 @@ type EmailVerificationRepository interface {
 // ExternalLoginRepository — контракт для OAuth-привязок.
 type ExternalLoginRepository interface {
 	FindOrCreate(ctx context.Context, login *ExternalLogin) error
+}
+
+// RefreshTokenRepository — контракт для работы с refresh-токенами (добавлен).
+type RefreshTokenRepository interface {
+	Create(ctx context.Context, token *RefreshToken) error
+	GetByTokenHash(ctx context.Context, tokenHash string) (*RefreshToken, error)
+	Revoke(ctx context.Context, id uint) error
+	RevokeAllForUser(ctx context.Context, userID uint) error
+	DeleteExpired(ctx context.Context) error
 }
 
 // ---------- GORM implementations ----------
@@ -185,4 +195,44 @@ func NewGormExternalLoginRepo(db *gorm.DB) ExternalLoginRepository { return &gor
 func (r *gormExternalLoginRepo) FindOrCreate(ctx context.Context, login *ExternalLogin) error {
 	return r.db.WithContext(ctx).Where("provider = ? AND external_id = ?", login.Provider, login.ExternalID).
 		FirstOrCreate(login).Error
+}
+
+// ---------- GORM implementation for RefreshTokenRepository (добавлен) ----------
+
+type gormRefreshTokenRepo struct{ db *gorm.DB }
+
+func NewGormRefreshTokenRepo(db *gorm.DB) RefreshTokenRepository {
+	return &gormRefreshTokenRepo{db: db}
+}
+
+func (r *gormRefreshTokenRepo) Create(ctx context.Context, token *RefreshToken) error {
+	return r.db.WithContext(ctx).Create(token).Error
+}
+
+func (r *gormRefreshTokenRepo) GetByTokenHash(ctx context.Context, tokenHash string) (*RefreshToken, error) {
+	var token RefreshToken
+	err := r.db.WithContext(ctx).
+		Where("token_hash = ? AND revoked_at IS NULL", tokenHash).
+		First(&token).Error
+	return &token, err
+}
+
+func (r *gormRefreshTokenRepo) Revoke(ctx context.Context, id uint) error {
+	now := time.Now()
+	return r.db.WithContext(ctx).Model(&RefreshToken{}).
+		Where("id = ?", id).
+		Update("revoked_at", now).Error
+}
+
+func (r *gormRefreshTokenRepo) RevokeAllForUser(ctx context.Context, userID uint) error {
+	now := time.Now()
+	return r.db.WithContext(ctx).Model(&RefreshToken{}).
+		Where("user_id = ? AND revoked_at IS NULL", userID).
+		Update("revoked_at", now).Error
+}
+
+func (r *gormRefreshTokenRepo) DeleteExpired(ctx context.Context) error {
+	return r.db.WithContext(ctx).
+		Where("expires_at < ?", time.Now()).
+		Delete(&RefreshToken{}).Error
 }

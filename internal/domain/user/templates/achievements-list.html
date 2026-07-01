@@ -1,23 +1,27 @@
 {{define "achievements-list.html"}}
-<h1>Мои достижения</h1>
+<div class="max-w-4xl mx-auto">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Мои достижения</h1>
 
-{{if .Achievements}}
-<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(250px, 1fr)); gap:15px; margin-top:20px;">
-    {{range .Achievements}}
-    <div class="card" style="text-align:center; padding:20px;">
-        <div style="font-size:2.5em; margin-bottom:10px;">{{.Icon}}</div>
-        <h3 style="margin:5px 0;">{{.Name}}</h3>
-        <p style="color:#666; font-size:0.9em;">{{.Description}}</p>
+    {{if .Achievements}}
+    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+        {{range .Achievements}}
+        <div class="card text-center p-6 hover:shadow-md transition">
+            <div class="text-4xl mb-3">{{.Icon}}</div>
+            <h3 class="text-lg font-semibold text-gray-800">{{.Name}}</h3>
+            <p class="text-sm text-gray-500 mt-1">{{.Description}}</p>
+        </div>
+        {{end}}
+    </div>
+    {{else}}
+    <div class="card text-center py-16">
+        <div class="text-6xl mb-4">🏆</div>
+        <h2 class="text-xl font-semibold text-gray-700">Пока нет достижений</h2>
+        <p class="text-gray-500 mt-2">Участвуйте в играх, создавайте уровни, побеждайте — и здесь появятся ваши награды.</p>
     </div>
     {{end}}
-</div>
-{{else}}
-<div class="card" style="text-align:center; padding:40px;">
-    <div style="font-size:3em; margin-bottom:15px;">🏆</div>
-    <h2>Пока нет достижений</h2>
-    <p>Участвуйте в играх, создавайте уровни, побеждайте — и здесь появятся ваши награды.</p>
-</div>
-{{end}}
 
-<a href="/profile" class="button" style="margin-top:20px;">Назад в профиль</a>
+    <div class="mt-6">
+        <a href="/profile" class="btn btn-outline text-sm">← Назад в профиль</a>
+    </div>
+</div>
 {{end}}

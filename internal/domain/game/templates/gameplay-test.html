@@ -1,26 +1,53 @@
 {{define "gameplay-test.html"}}
-<h1>Тестовое прохождение</h1>
-<h2>Уровень: {{.Level.Name}}</h2>
-<p>{{.Level.Description}}</p>
-{{range .Level.Questions}}
-    <div style="border:1px solid #ddd; margin:10px; padding:10px">
-        <p><strong>Вопрос:</strong> {{.Text}}</p>
-        {{if .Hint}}<p><em>Подсказка:</em> {{.Hint}}</p>{{end}}
-        <p><strong>Ответы:</strong></p>
-        <ul>
-        {{range .Answers}}
-            <li><span style="color:green">{{.Code}}</span></li>
+<div class="max-w-3xl mx-auto">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Тестовое прохождение</h1>
+
+    <!-- Информация об уровне -->
+    <div class="card mb-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-2">{{.Level.Name}}</h2>
+        {{if .Level.Description}}
+        <p class="text-gray-600 mb-4">{{.Level.Description}}</p>
         {{end}}
-        </ul>
+
+        <!-- Вопросы и ответы -->
+        {{range .Level.Questions}}
+        <div class="border border-gray-200 rounded-lg p-4 mb-4 last:mb-0 bg-gray-50">
+            <p class="font-medium text-gray-800"><span class="font-bold">Вопрос:</span> {{.Text}}</p>
+            {{if .Hint}}
+            <p class="text-sm text-gray-500 italic mt-1">Подсказка: {{.Hint}}</p>
+            {{end}}
+            <p class="font-medium text-gray-700 mt-3">Правильные ответы:</p>
+            <ul class="mt-1 space-y-1">
+                {{range .Answers}}
+                <li class="text-sm text-green-700 font-mono">✓ {{.Code}}</li>
+                {{end}}
+            </ul>
+        </div>
+        {{end}}
     </div>
-{{end}}
-<form action="/testing/{{.PassingID}}" method="POST">
-    <input type="hidden" name="_csrf" value="{{.csrf}}">
-    <input type="text" name="code" placeholder="Введите код (любой)" onkeypress="if(event.key === 'Enter') this.form.submit()">
-    <button type="submit">Отправить код</button>
-</form>
-<form action="/testing/{{.PassingID}}/skip" method="POST" style="margin-top:10px">
-    <input type="hidden" name="_csrf" value="{{.csrf}}">
-    <button type="submit">Пропустить уровень</button>
-</form>
+
+    <!-- Форма отправки кода -->
+    <div class="card mb-4">
+        <form action="/testing/{{.PassingID}}" method="POST" class="flex flex-wrap items-center gap-3">
+            <input type="hidden" name="_csrf" value="{{.csrf}}">
+            <input type="text" name="code" placeholder="Введите код (любой)" required
+                   class="flex-1 min-w-[180px] rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2"
+                   onkeypress="if(event.key === 'Enter') this.form.submit()">
+            <button type="submit" class="btn btn-primary text-sm whitespace-nowrap">Отправить код</button>
+        </form>
+    </div>
+
+    <!-- Форма пропуска уровня -->
+    <div class="card mb-6">
+        <form action="/testing/{{.PassingID}}/skip" method="POST" class="flex items-center gap-3">
+            <input type="hidden" name="_csrf" value="{{.csrf}}">
+            <button type="submit" class="btn btn-outline text-sm">Пропустить уровень →</button>
+        </form>
+    </div>
+
+    <!-- Навигация назад -->
+    <div class="mt-6">
+        <a href="/games/{{.GameID}}" class="btn btn-outline text-sm">← Назад к игре</a>
+    </div>
+</div>
 {{end}}

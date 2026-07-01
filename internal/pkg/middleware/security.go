@@ -2,38 +2,49 @@
 package middleware
 
 import (
+	"crypto/rand"
+	"encoding/base64"
+
 	"github.com/gin-gonic/gin"
 )
 
 // SecurityHeadersMiddleware добавляет базовые защитные заголовки ко всем ответам.
+// Генерирует nonce для инлайн-скриптов и стилей.
 func SecurityHeadersMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Заголовок Content-Security-Policy – разрешаем ресурсы только с собственного домена и CDN
-		c.Header("Content-Security-Policy",
-			"default-src 'self'; "+
-				"script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "+
-				"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; "+
-				"img-src 'self' data: https:; "+
-				"connect-src 'self' ws: wss:; "+
-				"frame-src 'self' https://www.youtube.com https://player.vimeo.com https://rutube.ru;")
+		// Генерируем nonce (16 байт случайных данных, base64)
+		nonceBytes := make([]byte, 16)
+		_, _ = rand.Read(nonceBytes)
+		nonce := base64.StdEncoding.EncodeToString(nonceBytes)
 
-		// Запрещаем открытие сайта во фрейме (защита от clickjacking)
+		// Сохраняем nonce в контексте для использования в шаблонах
+		c.Set("csp_nonce", nonce)
+
+		// Формируем CSP с nonce
+		csp := "default-src 'self'; " +
+			"script-src 'self' 'nonce-" + nonce + "' https://cdn.jsdelivr.net; " +
+			"style-src 'self' 'nonce-" + nonce + "' https://cdn.jsdelivr.net https://unpkg.com; " +
+			"img-src 'self' data: https:; " +
+			"connect-src 'self' ws: wss:; " +
+			"frame-src 'self' https://www.youtube.com https://player.vimeo.com https://rutube.ru;"
+
+		c.Header("Content-Security-Policy", csp)
 		c.Header("X-Frame-Options", "DENY")
-
-		// Запрещаем MIME-type sniffing
 		c.Header("X-Content-Type-Options", "nosniff")
-
-		// Управляем передачей Referer
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
-
-		// Принудительное использование HTTPS (HSTS)
 		c.Header("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
-
-		// Ограничиваем доступ к некоторым браузерным API
-		c.Header("Permissions-Policy",
-			"geolocation=(), microphone=(), camera=(), payment=(), usb=(), "+
-				"fullscreen=(self), sync-xhr=(self), accelerometer=(), gyroscope=(), magnetometer=()")
+		c.Header("Permissions-Policy", "geolocation=(), microphone=(), camera=(), payment=(), usb=(), fullscreen=(self), sync-xhr=(self), accelerometer=(), gyroscope=(), magnetometer=()")
 
 		c.Next()
 	}
+}
+
+// GetCSPNonce возвращает nonce из контекста для использования в шаблонах.
+func GetCSPNonce(c *gin.Context) string {
+	if nonce, exists := c.Get("csp_nonce"); exists {
+		if s, ok := nonce.(string); ok {
+			return s
+		}
+	}
+	return ""
 }

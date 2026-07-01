@@ -1,49 +1,96 @@
 {{define "admin-users.html"}}
-<div style="display:flex; gap:10px; flex-wrap:wrap; margin:15px 0; padding:10px; background:#e8e8e8; border-radius:4px;">
-    <a href="/admin" class="button">Дашборд</a>
-    <a href="/admin/users" class="button" style="background:#2c3e50;">Пользователи</a>
-    <a href="/admin/games" class="button">Игры</a>
-    <a href="/admin/audit" class="button">Аудит</a>
-    <a href="/admin/backups" class="button">Бэкапы</a>
-</div>
-<h1>Управление пользователями</h1>
-<p>
-    <a href="?role=admin">Администраторы</a> |
-    <a href="?role=user">Пользователи</a> |
-    <a href="?">Все</a>
-</p>
+<div class="max-w-7xl mx-auto">
+    <!-- Навигация -->
+    <nav class="flex flex-wrap gap-2 p-3 bg-gray-100 rounded-lg mb-6">
+        <a href="/admin" class="btn btn-outline text-sm">Дашборд</a>
+        <a href="/admin/users" class="btn btn-primary text-sm">Пользователи</a>
+        <a href="/admin/games" class="btn btn-outline text-sm">Игры</a>
+        <a href="/admin/audit" class="btn btn-outline text-sm">Аудит</a>
+        <a href="/admin/backups" class="btn btn-outline text-sm">Бэкапы</a>
+    </nav>
 
-<!-- Скрытый CSRF-токен для единообразия -->
-<input type="hidden" id="csrf_token" value="{{.csrf}}">
+    <h1 class="text-2xl font-bold text-gray-800 mb-4">Управление пользователями</h1>
 
-<table class="card" style="width:100%; border-collapse:collapse;">
-<tr><th>ID</th><th>Имя</th><th>Email</th><th>Роль</th><th>Действия</th></tr>
-{{range .Users}}
-<tr>
-    <td>{{.ID}}</td><td>{{.Name}}</td><td>{{.Email}}</td><td>{{.Role}}</td>
-    <td>
-        <form action="/admin/users/{{.ID}}/toggle-admin" method="POST" style="display:inline;">
-            <input type="hidden" name="_csrf" value="{{$.csrf}}">
-            <button type="submit" class="button">{{if eq .Role "admin"}}Разжаловать{{else}}Сделать админом{{end}}</button>
-        </form>
-        <form action="/admin/users/{{.ID}}/delete" method="POST" style="display:inline;">
-            <input type="hidden" name="_csrf" value="{{$.csrf}}">
-            <button type="submit" class="button danger" onclick="return confirm('Удалить пользователя?')">Удалить</button>
-        </form>
-    </td>
-</tr>
-{{end}}
-</table>
+    <!-- Фильтр по роли -->
+    <div class="flex flex-wrap gap-2 mb-6">
+        <a href="?role=admin" class="btn btn-outline text-sm {{if eq .Role "admin"}}bg-blue-50 border-blue-300 text-blue-700{{end}}">Администраторы</a>
+        <a href="?role=user" class="btn btn-outline text-sm {{if eq .Role "user"}}bg-blue-50 border-blue-300 text-blue-700{{end}}">Пользователи</a>
+        <a href="?" class="btn btn-outline text-sm {{if eq .Role ""}}bg-blue-50 border-blue-300 text-blue-700{{end}}">Все</a>
+    </div>
 
-{{if gt .TotalPages 1}}
-<div style="margin-top:20px; text-align:center;">
-    {{if gt .Page 1}}
-        <a href="?page={{.PrevPage}}&role={{$.Role}}&per_page={{$.PerPage}}">← Предыдущая</a>
+    <!-- Скрытый CSRF-токен для единообразия -->
+    <input type="hidden" id="csrf_token" value="{{.csrf}}">
+
+    <!-- Таблица пользователей -->
+    <div class="overflow-x-auto bg-white rounded-lg shadow-sm border border-gray-200">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Имя</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Роль</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Действия</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+                {{range .Users}}
+                <tr class="hover:bg-gray-50 transition">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{.ID}}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{.Name}}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{.Email}}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        {{if eq .Role "admin"}}
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">Администратор</span>
+                        {{else}}
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">Пользователь</span>
+                        {{end}}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm space-x-2">
+                        <form action="/admin/users/{{.ID}}/toggle-admin" method="POST" class="inline">
+                            <input type="hidden" name="_csrf" value="{{$.csrf}}">
+                            <button type="submit" class="btn {{if eq .Role "admin"}}btn-outline{{else}}btn-primary{{end}} text-xs">
+                                {{if eq .Role "admin"}}Разжаловать{{else}}Сделать админом{{end}}
+                            </button>
+                        </form>
+                        <form action="/admin/users/{{.ID}}/delete" method="POST" class="inline" onsubmit="return confirm('Удалить пользователя?')">
+                            <input type="hidden" name="_csrf" value="{{$.csrf}}">
+                            <button type="submit" class="btn btn-danger text-xs">Удалить</button>
+                        </form>
+                    </td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Пагинация -->
+    {{if gt .TotalPages 1}}
+    <div class="flex items-center justify-between mt-6">
+        <div class="flex-1 flex justify-between sm:hidden">
+            {{if gt .Page 1}}
+                <a href="?page={{.PrevPage}}&role={{$.Role}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm">← Предыдущая</a>
+            {{end}}
+            {{if lt .Page .TotalPages}}
+                <a href="?page={{.NextPage}}&role={{$.Role}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm">Следующая →</a>
+            {{end}}
+        </div>
+        <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+            <p class="text-sm text-gray-700">
+                Страница <span class="font-medium">{{.Page}}</span> из <span class="font-medium">{{.TotalPages}}</span>
+                <span class="text-gray-500">(всего {{.Total}} записей)</span>
+            </p>
+            <nav class="inline-flex gap-1" aria-label="Пагинация">
+                {{if gt .Page 1}}
+                    <a href="?page={{.PrevPage}}&role={{$.Role}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm px-3 py-1">←</a>
+                {{end}}
+                <span class="px-3 py-1 text-sm text-gray-700 bg-gray-100 rounded-md">{{.Page}}</span>
+                {{if lt .Page .TotalPages}}
+                    <a href="?page={{.NextPage}}&role={{$.Role}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm px-3 py-1">→</a>
+                {{end}}
+            </nav>
+        </div>
+    </div>
     {{end}}
-    Страница {{.Page}} из {{.TotalPages}} (всего {{.Total}} записей)
-    {{if lt .Page .TotalPages}}
-        <a href="?page={{.NextPage}}&role={{$.Role}}&per_page={{$.PerPage}}">Следующая →</a>
-    {{end}}
 </div>
-{{end}}
 {{end}}

@@ -1,11 +1,25 @@
 {{define "teams-my.html"}}
-<h1>Мои команды</h1>
-<a href="/teams/new">Создать новую команду</a>
-<ul>
-{{range .Teams}}
-    <li><a href="/teams/{{.ID}}">{{.Name}}</a></li>
-{{else}}
-    <li>У вас пока нет команд. <a href="/teams/new">Создайте первую</a></li>
-{{end}}
-</ul>
+<div class="max-w-4xl mx-auto">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Мои команды</h1>
+
+    <div class="mb-6">
+        <a href="/teams/new" class="btn btn-primary text-sm">+ Создать новую команду</a>
+    </div>
+
+    {{if .Teams}}
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {{range .Teams}}
+        <a href="/teams/{{.ID}}" class="card hover:shadow-md transition p-4 flex items-center justify-between">
+            <span class="font-medium text-gray-800">{{.Name}}</span>
+            <span class="text-sm text-gray-400">→</span>
+        </a>
+        {{end}}
+    </div>
+    {{else}}
+    <div class="card text-center py-12">
+        <p class="text-gray-500">У вас пока нет команд.</p>
+        <p class="mt-2 text-sm text-gray-400"><a href="/teams/new" class="text-blue-600 hover:underline">Создайте первую команду</a></p>
+    </div>
+    {{end}}
+</div>
 {{end}}

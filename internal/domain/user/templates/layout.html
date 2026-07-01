@@ -1,44 +1,160 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Encounter Engine</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; color: #333; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-        .nav { background: #2c3e50; padding: 10px 20px; color: white; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; }
-        .nav a { color: white; text-decoration: none; margin-left: 15px; }
-        .button { display: inline-block; background: #3498db; color: white; padding: 10px 20px; border-radius: 4px; text-decoration: none; margin: 5px; }
-        .button:hover { background: #2980b9; }
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="csrf-token" content="{{.csrf}}" />
+    <title>{{.Title}} · Encounter Engine</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Небольшие кастомные стили поверх Tailwind -->
+    <style nonce="{{.csp_nonce}}">
+        body {
+            background: #f3f4f6;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+        .nav-link {
+            transition: color 0.15s ease;
+        }
+        .card {
+            background: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1);
+            padding: 1.5rem;
+        }
+        .btn {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            text-align: center;
+            transition: all 0.15s ease;
+            cursor: pointer;
+        }
+        .btn-primary {
+            background: #2563eb;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #1d4ed8;
+        }
+        .btn-danger {
+            background: #dc2626;
+            color: white;
+        }
+        .btn-danger:hover {
+            background: #b91c1c;
+        }
+        .btn-outline {
+            border: 1px solid #d1d5db;
+            background: white;
+            color: #374151;
+        }
+        .btn-outline:hover {
+            background: #f9fafb;
+        }
+        .flash {
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        .flash-error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        .flash-success {
+            background: #dcfce7;
+            color: #166534;
+        }
+        /* Микроанимации */
+        .fade-in {
+            animation: fadeIn 0.2s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .hover-lift {
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        .hover-lift:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1);
+        }
     </style>
     {{.ExtraHead}}
 </head>
 <body>
-    <div class="nav">
-        <span><a href="/">Encounter Engine</a></span>
-        <span>
-            {{if .CurrentUserID}}
-                <a href="/dashboard">Личный кабинет</a>
-                {{if .IsAdmin}}<a href="/admin">Админка</a>{{end}}
-                <a href="/games">Игры</a>
-                <a href="/teams">Команды</a>
-                <a href="/profile">Профиль</a>
-                <a href="/auth/logout">Выйти</a>
-            {{else}}
-                <a href="/auth/login">Войти</a>
-                <a href="/auth/register">Регистрация</a>
-            {{end}}
-        </span>
-    </div>
-    <div class="container">
+
+    <!-- Навигация -->
+    <nav class="bg-white border-b border-gray-200 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <!-- Логотип -->
+                <div class="flex items-center space-x-2">
+                    <span class="text-2xl font-bold text-blue-600">🕵️</span>
+                    <a href="/" class="text-xl font-semibold text-gray-800 hover:text-blue-600 transition">
+                        Encounter
+                    </a>
+                </div>
+
+                <!-- Меню -->
+                <div class="flex items-center space-x-4 text-sm font-medium">
+                    {{if .CurrentUserID}}
+                        <a href="/dashboard" class="nav-link text-gray-600 hover:text-blue-600">Личный кабинет</a>
+                        {{if .IsAdmin}}<a href="/admin" class="nav-link text-gray-600 hover:text-blue-600">Админка</a>{{end}}
+                        <a href="/games" class="nav-link text-gray-600 hover:text-blue-600">Игры</a>
+                        <a href="/teams" class="nav-link text-gray-600 hover:text-blue-600">Команды</a>
+                        <a href="/profile" class="nav-link text-gray-600 hover:text-blue-600">Профиль</a>
+                        <a href="/auth/logout" class="nav-link text-red-500 hover:text-red-700">Выйти</a>
+                    {{else}}
+                        <a href="/auth/login" class="nav-link text-gray-600 hover:text-blue-600">Войти</a>
+                        <a href="/auth/register" class="btn btn-primary text-sm">Регистрация</a>
+                    {{end}}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Основной контент -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {{if .ContentHTML}}
             {{.ContentHTML}}
         {{else}}
-            <p>Контент не указан.</p>
+            <p class="text-gray-500">Контент не указан.</p>
         {{end}}
-    </div>
+    </main>
+
+    <!-- Футер (опционально) -->
+    <footer class="border-t border-gray-200 mt-12 py-6 text-center text-sm text-gray-500">
+        &copy; 2026 Encounter Engine · Все права защищены
+    </footer>
+
     {{.ExtraScripts}}
+
+    <!-- Глобальный перехватчик fetch для CSRF -->
+    <script nonce="{{.csp_nonce}}">
+        (function() {
+            function getCsrfToken() {
+                const meta = document.querySelector('meta[name="csrf-token"]');
+                return meta ? meta.getAttribute('content') : '';
+            }
+
+            const originalFetch = window.fetch;
+            window.fetch = function(url, options) {
+                options = options || {};
+                options.headers = options.headers || {};
+                if (!options.headers['X-CSRF-TOKEN'] && !options.headers['x-csrf-token']) {
+                    const method = (options.method || 'GET').toUpperCase();
+                    if (method !== 'GET' && method !== 'HEAD') {
+                        const token = getCsrfToken();
+                        if (token) {
+                            options.headers['X-CSRF-TOKEN'] = token;
+                        }
+                    }
+                }
+                return originalFetch.call(this, url, options);
+            };
+        })();
+    </script>
 </body>
 </html>

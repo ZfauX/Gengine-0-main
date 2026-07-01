@@ -1,62 +1,125 @@
 {{define "gameplay-show.html"}}
-<h1>Прохождение уровня: {{.Level.Name}}</h1>
-<div class="card">
-    <h2>{{.Level.Name}}</h2>
-    {{range .Level.Questions}}
-        <div style="margin-bottom:15px">
-            <p><strong>Вопрос:</strong> {{.Text}}</p>
-            {{if .Hint}}<p><em>Подсказка: {{.Hint}}</em></p>{{end}}
-        </div>
-    {{end}}
+<div class="max-w-3xl mx-auto" data-passing-id="{{.PassingID}}" data-game-id="{{.GameID}}" data-time-limit="{{.TimeLimitSeconds}}">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Прохождение уровня: {{.Level.Name}}</h1>
 
-    <form id="code-form" action="/game/{{.PassingID}}" method="POST" class="fade-in">
-        <input type="hidden" name="_csrf" value="{{.csrf}}">
-        <input type="text" name="code" placeholder="Введите код" required autofocus style="padding:8px; font-size:1.1em; width:200px;" onkeypress="if(event.key === 'Enter') this.form.submit()">
-        <button type="submit" class="button">Отправить</button>
-    </form>
-    <div id="message-area"></div>
-</div>
+    <!-- Карточка уровня -->
+    <div class="card mb-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">{{.Level.Name}}</h2>
 
-<div class="card">
-    <h3>История попыток</h3>
-    <ul id="attempts-list">
-        {{range .Attempts}}
-            <li style="color:{{if .Success}}green{{else}}red{{end}}">
-                {{.Code}} — {{if .Success}}✅ Верно{{else}}❌ Неверно{{end}} <small>({{.CreatedAt.Format "15:04:05"}})</small>
-            </li>
+        {{if .Level.Description}}
+        <p class="text-gray-600 mb-4">{{.Level.Description}}</p>
         {{end}}
-    </ul>
+
+        <!-- Вопросы -->
+        {{range .Level.Questions}}
+        <div class="mb-4 last:mb-0">
+            <p class="font-medium text-gray-800"><span class="font-bold">Вопрос:</span> {{.Text}}</p>
+            {{if .Hint}}
+            <p class="text-sm text-gray-500 italic mt-1">Подсказка: {{.Hint}}</p>
+            {{end}}
+        </div>
+        {{end}}
+
+        <!-- Таймер -->
+        <div id="timer-container" class="mb-4">
+            <p id="timer-display" class="text-xl font-mono font-bold text-gray-700"></p>
+        </div>
+
+        <!-- Форма отправки кода -->
+        <form id="code-form" action="/game/{{.PassingID}}" method="POST" class="flex flex-wrap items-center gap-3 mt-4 fade-in">
+            <input type="hidden" name="_csrf" value="{{.csrf}}">
+            <input type="text" name="code" id="code-input" placeholder="Введите код" required autofocus
+                   class="flex-1 min-w-[180px] rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2">
+            <button type="submit" class="btn btn-primary text-sm whitespace-nowrap">Отправить</button>
+        </form>
+
+        <div id="message-area" class="mt-3"></div>
+    </div>
+
+    <!-- История попыток -->
+    <div class="card">
+        <h3 class="text-lg font-semibold text-gray-700 mb-3">История попыток</h3>
+        {{if .Attempts}}
+        <ul id="attempts-list" class="divide-y divide-gray-100">
+            {{range .Attempts}}
+            <li class="py-2 flex justify-between items-center text-sm">
+                <span class="font-mono">{{.Code}}</span>
+                <span class="flex items-center gap-2">
+                    {{if .Success}}
+                    <span class="inline-flex items-center gap-1 text-green-600 font-medium">✅ Верно</span>
+                    {{else}}
+                    <span class="inline-flex items-center gap-1 text-red-600 font-medium">❌ Неверно</span>
+                    {{end}}
+                    <span class="text-gray-400 text-xs">{{.CreatedAt.Format "15:04:05"}}</span>
+                </span>
+            </li>
+            {{end}}
+        </ul>
+        {{else}}
+        <p class="text-gray-500 text-sm">Пока нет попыток.</p>
+        {{end}}
+    </div>
+
+    <!-- Навигация назад -->
+    <div class="mt-6">
+        <a href="/games/{{.GameID}}" class="btn btn-outline text-sm">← Назад к игре</a>
+    </div>
 </div>
 
 <script>
-    {{if .TimeLimitSeconds}}
-    let timeLimit = {{.TimeLimitSeconds}};
-    let timerDisplay = document.createElement('p');
-    timerDisplay.className = 'timer';
-    timerDisplay.style.fontSize = '1.5em';
-    document.querySelector('.card').prepend(timerDisplay);
+    (function() {
+        // Получаем данные из data-атрибутов контейнера
+        const container = document.querySelector('[data-passing-id]');
+        if (!container) return;
 
-    function updateTimer() {
-        if (timeLimit <= 0) {
-            timerDisplay.textContent = 'Время вышло!';
-            timerDisplay.style.color = 'red';
-            document.getElementById('code-form').style.display = 'none';
-            return;
+        const timeLimitSeconds = parseInt(container.dataset.timeLimit, 10) || 0;
+        const passingId = container.dataset.passingId;
+
+        // Таймер
+        const timerDisplay = document.getElementById('timer-display');
+        const codeForm = document.getElementById('code-form');
+        let timeLeft = timeLimitSeconds;
+
+        function updateTimer() {
+            if (timeLimitSeconds <= 0) {
+                timerDisplay.textContent = '';
+                return;
+            }
+            if (timeLeft <= 0) {
+                timerDisplay.textContent = '⏰ Время вышло!';
+                timerDisplay.className = 'text-red-600 font-bold text-xl';
+                codeForm.style.display = 'none';
+                return;
+            }
+            const mins = Math.floor(timeLeft / 60);
+            const secs = timeLeft % 60;
+            timerDisplay.textContent = `⏱️ Осталось: ${mins}:${secs.toString().padStart(2, '0')}`;
+            timerDisplay.className = 'text-gray-700 font-mono text-xl';
+            timeLeft--;
         }
-        const mins = Math.floor(timeLimit / 60);
-        const secs = timeLimit % 60;
-        timerDisplay.textContent = `Осталось: ${mins}:${secs.toString().padStart(2,'0')}`;
-        timeLimit--;
-    }
-    updateTimer();
-    setInterval(updateTimer, 1000);
-    {{end}}
 
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('error')) {
-        const msg = document.getElementById('message-area');
-        msg.innerHTML = '<div class="error-flash pulse">Неверный код! Попробуйте ещё раз.</div>';
-        setTimeout(() => msg.innerHTML = '', 3000);
-    }
+        if (timeLimitSeconds > 0) {
+            updateTimer();
+            setInterval(updateTimer, 1000);
+        }
+
+        // Обработка ошибки из URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const msgArea = document.getElementById('message-area');
+        if (urlParams.get('error')) {
+            msgArea.innerHTML = '<div class="flash flash-error pulse">Неверный код! Попробуйте ещё раз.</div>';
+            setTimeout(() => msgArea.innerHTML = '', 3000);
+        }
+
+        // Дополнительно: отправка по Enter (уже есть в input, но оставим на всякий случай)
+        const codeInput = document.getElementById('code-input');
+        if (codeInput) {
+            codeInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    this.form.submit();
+                }
+            });
+        }
+    })();
 </script>
 {{end}}

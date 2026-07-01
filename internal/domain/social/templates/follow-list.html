@@ -1,51 +1,66 @@
 {{define "follow-list.html"}}
-<h1>Мои подписки</h1>
+<div class="max-w-4xl mx-auto">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Мои подписки</h1>
 
-<meta name="csrf-token" content="{{.csrf}}">
+    <meta name="csrf-token" content="{{.csrf}}">
 
-{{if .Authors}}
-<ul style="list-style:none; padding:0;">
-{{range .Authors}}
-    <li class="card" style="margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;">
-        <div>
-            <strong>{{.Name}}</strong>
-            {{if .Email}}<span style="color:#888; margin-left:10px;">{{.Email}}</span>{{end}}
+    {{if .Authors}}
+    <div class="space-y-3">
+        {{range .Authors}}
+        <div class="card flex flex-wrap items-center justify-between gap-3 p-4 hover:shadow-md transition">
+            <div>
+                <span class="font-medium text-gray-800">{{.Name}}</span>
+                {{if .Email}}<span class="text-sm text-gray-500 ml-2">{{.Email}}</span>{{end}}
+            </div>
+            <button class="btn btn-danger text-sm unfollow-btn" data-author-id="{{.ID}}" data-author-name="{{.Name}}">Отписаться</button>
         </div>
-        <button class="button danger" onclick="unfollow({{.ID}}, '{{.Name}}')">Отписаться</button>
-    </li>
-{{end}}
-</ul>
-{{else}}
-<div class="card">
-    <p>Вы пока ни на кого не подписаны.</p>
-    <p>Подпишитесь на авторов, чтобы первыми узнавать об их новых играх.</p>
-</div>
-{{end}}
+        {{end}}
+    </div>
+    {{else}}
+    <div class="card text-center py-12">
+        <p class="text-gray-500">Вы пока ни на кого не подписаны.</p>
+        <p class="mt-2 text-sm text-gray-400">Подпишитесь на авторов, чтобы первыми узнавать об их новых играх.</p>
+    </div>
+    {{end}}
 
-<a href="/dashboard" class="button">Назад в личный кабинет</a>
+    <div class="mt-6">
+        <a href="/dashboard" class="btn btn-outline text-sm">← Назад в личный кабинет</a>
+    </div>
+</div>
 
 <script>
-    function getCsrfToken() {
-        return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-    }
+    (function() {
+        function getCsrfToken() {
+            const meta = document.querySelector('meta[name="csrf-token"]');
+            return meta ? meta.getAttribute('content') : '';
+        }
 
-    function unfollow(authorID, authorName) {
-        if (!confirm(`Отписаться от ${authorName}?`)) return;
-        fetch('/follow/' + authorID, {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': getCsrfToken()
-            }
-        })
-        .then(r => r.json())
-        .then(data => {
-            if (data.status === 'unfollowed') {
-                location.reload();
-            } else {
-                alert('Ошибка: ' + (data.error || 'не удалось отписаться'));
-            }
+        document.addEventListener('click', function(e) {
+            const btn = e.target.closest('.unfollow-btn');
+            if (!btn) return;
+            const authorID = btn.dataset.authorId;
+            const authorName = btn.dataset.authorName;
+            if (!authorID) return;
+            if (!confirm(`Отписаться от ${authorName}?`)) return;
+            fetch('/follow/' + authorID, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': getCsrfToken()
+                }
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'unfollowed') {
+                    location.reload();
+                } else {
+                    alert('Ошибка: ' + (data.error || 'не удалось отписаться'));
+                }
+            })
+            .catch(err => {
+                alert('Ошибка: ' + err.message);
+            });
         });
-    }
+    })();
 </script>
 {{end}}

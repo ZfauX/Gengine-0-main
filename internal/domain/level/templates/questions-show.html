@@ -1,29 +1,42 @@
 {{define "questions-show.html"}}
-<h1>Вопрос: {{.Question.Text}}</h1>
+<div class="max-w-4xl mx-auto">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Вопрос: {{.Question.Text}}</h1>
 
-{{if .Question.Hint}}
-<p><em>Подсказка: {{.Question.Hint}}</em></p>
-{{end}}
+    {{if .Question.Hint}}
+    <div class="card mb-6">
+        <p class="text-gray-500 italic">Подсказка: {{.Question.Hint}}</p>
+    </div>
+    {{end}}
 
-<h2>Ответы</h2>
-<a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions/{{.Question.ID}}/answers/new">Добавить ответ</a>
-<ul>
-{{range .Question.Answers}}
-    <li>
-        {{.Code}}
-        <form action="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{$.Question.ID}}/answers/{{.ID}}" method="POST" style="display:inline">
-            <input type="hidden" name="_method" value="DELETE">
-            <input type="hidden" name="_csrf" value="{{$.csrf}}">
-            <button type="submit" class="button danger" onclick="return confirm('Удалить ответ?')">Удалить</button>
-        </form>
-    </li>
-{{else}}
-    <li>Ответов пока нет.</li>
-{{end}}
-</ul>
+    <!-- Ответы -->
+    <div class="card mb-6">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-lg font-semibold text-gray-700">Ответы</h2>
+            <a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions/{{.Question.ID}}/answers/new" class="btn btn-primary text-sm">+ Добавить ответ</a>
+        </div>
 
-<div style="margin-top:20px; display:flex; gap:10px; flex-wrap:wrap;">
-    <a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions/{{.Question.ID}}/edit" class="button">Редактировать</a>
-    <a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions" class="button">Назад к вопросам</a>
+        {{if .Question.Answers}}
+        <ul class="divide-y divide-gray-100">
+            {{range .Question.Answers}}
+            <li class="py-3 flex justify-between items-center">
+                <span class="font-mono text-gray-800">{{.Code}}</span>
+                <form action="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{$.Question.ID}}/answers/{{.ID}}" method="POST" class="inline" onsubmit="return confirm('Удалить ответ?')">
+                    <input type="hidden" name="_method" value="DELETE">
+                    <input type="hidden" name="_csrf" value="{{$.csrf}}">
+                    <button type="submit" class="btn btn-danger text-xs">Удалить</button>
+                </form>
+            </li>
+            {{end}}
+        </ul>
+        {{else}}
+        <p class="text-gray-500 text-sm">Ответов пока нет.</p>
+        {{end}}
+    </div>
+
+    <!-- Действия -->
+    <div class="flex flex-wrap gap-3">
+        <a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions/{{.Question.ID}}/edit" class="btn btn-outline text-sm">Редактировать</a>
+        <a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions" class="btn btn-outline text-sm">← Назад к вопросам</a>
+    </div>
 </div>
 {{end}}

@@ -1,144 +1,197 @@
 {{define "games-show.html"}}
-<h1>{{.Game.Name}}</h1>
+<div class="max-w-7xl mx-auto">
+    <!-- Заголовок -->
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">{{.Game.Name}}</h1>
 
-{{if .Game.CoverPath}}
-    <img src="{{.Game.CoverPath}}" style="max-width:100%; max-height:300px; border-radius:8px; margin-bottom:15px;">
-{{end}}
-
-<p>{{.Game.Description}}</p>
-<p>Автор: {{.Game.Author.Name}}</p>
-{{if .Game.StartsAt}}
-    <p>Дата старта: {{.Game.StartsAt.Format "02.01.2006 15:04"}}</p>
-{{end}}
-{{if .Game.RegistrationDeadline}}
-    <p>Регистрация до: {{.Game.RegistrationDeadline.Format "02.01.2006 15:04"}}</p>
-{{end}}
-<p>Максимум команд: {{.Game.MaxTeamNumber}}</p>
-<p>Видимость: 
-    {{if eq .Game.Visibility "public"}}Публичная
-    {{else if eq .Game.Visibility "private"}}Приватная
-    {{else}}Скрытая{{end}}
-</p>
-{{if .Game.IsDraft}}
-    <p style="color:orange;">Это черновик</p>
-{{end}}
-
-<!-- Рейтинг и отзывы -->
-<div class="card" style="margin-top:20px;">
-    <h3>Рейтинг игры</h3>
-    {{if .ReviewsCount}}
-        <p>Средняя оценка: <strong>{{.AvgRating}}</strong> ({{.ReviewsCount}} отзывов)</p>
-    {{else}}
-        <p>Пока нет отзывов.</p>
-    {{end}}
-    {{if .CurrentUserID}}
-        <a href="/games/{{.Game.ID}}/review" class="button">Оставить отзыв</a>
-    {{end}}
-</div>
-
-{{if .Reviews}}
-<div class="card">
-    <h3>Отзывы</h3>
-    {{range .Reviews}}
-        <div style="border-bottom:1px solid #ccc; margin-bottom:10px; padding-bottom:5px;">
-            <strong>{{.User.Name}}</strong> — оценка: {{.Rating}}/10
-            {{if .Comment}}<p>{{.Comment}}</p>{{end}}
-            <small>{{.CreatedAt.Format "02.01.2006 15:04"}}</small>
+    <!-- Основная карточка -->
+    <div class="card mb-6">
+        {{if .Game.CoverPath}}
+        <div class="mb-4">
+            <img src="{{.Game.CoverPath}}" alt="Обложка игры" class="w-full max-h-64 object-cover rounded-md">
         </div>
-    {{end}}
-</div>
-{{end}}
+        {{end}}
 
-<!-- Действия -->
-<div style="margin-top:20px; display:flex; gap:10px; flex-wrap:wrap;">
-    {{if .IsManager}}
-        {{if .Game.IsDraft}}
-            <form action="/games/{{.Game.ID}}/publish" method="POST">
+        <div class="space-y-2 text-sm">
+            <p class="text-gray-700">{{.Game.Description}}</p>
+            <p><span class="font-medium text-gray-600">Автор:</span> {{.Game.Author.Name}}</p>
+            {{if .Game.StartsAt}}
+            <p><span class="font-medium text-gray-600">Дата старта:</span> {{.Game.StartsAt.Format "02.01.2006 15:04"}}</p>
+            {{end}}
+            {{if .Game.RegistrationDeadline}}
+            <p><span class="font-medium text-gray-600">Регистрация до:</span> {{.Game.RegistrationDeadline.Format "02.01.2006 15:04"}}</p>
+            {{end}}
+            <p><span class="font-medium text-gray-600">Максимум команд:</span> {{.Game.MaxTeamNumber}}</p>
+            <p><span class="font-medium text-gray-600">Видимость:</span>
+                {{if eq .Game.Visibility "public"}}Публичная
+                {{else if eq .Game.Visibility "private"}}Приватная
+                {{else}}Скрытая{{end}}
+            </p>
+            {{if .Game.IsDraft}}
+            <div class="mt-2">
+                <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">Это черновик</span>
+            </div>
+            {{end}}
+        </div>
+    </div>
+
+    <!-- Рейтинг и отзывы -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+        <!-- Рейтинг -->
+        <div class="card">
+            <h3 class="text-lg font-semibold text-gray-700 mb-3">Рейтинг игры</h3>
+            {{if .ReviewsCount}}
+            <p class="text-gray-600">Средняя оценка: <strong class="text-blue-600">{{.AvgRating}}</strong> ({{.ReviewsCount}} отзывов)</p>
+            {{else}}
+            <p class="text-gray-500">Пока нет отзывов.</p>
+            {{end}}
+            {{if .CurrentUserID}}
+            <div class="mt-3">
+                <a href="/games/{{.Game.ID}}/review" class="btn btn-primary text-sm">Оставить отзыв</a>
+            </div>
+            {{end}}
+        </div>
+
+        <!-- Список отзывов (если есть) -->
+        {{if .Reviews}}
+        <div class="card">
+            <h3 class="text-lg font-semibold text-gray-700 mb-3">Отзывы</h3>
+            <div class="space-y-4 max-h-64 overflow-y-auto">
+                {{range .Reviews}}
+                <div class="border-b border-gray-100 pb-3 last:border-0">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <span class="font-medium text-gray-800">{{.User.Name}}</span>
+                            <span class="text-sm text-gray-500 ml-2">оценка: {{.Rating}}/10</span>
+                        </div>
+                        <span class="text-xs text-gray-400">{{.CreatedAt.Format "02.01.2006 15:04"}}</span>
+                    </div>
+                    {{if .Comment}}
+                    <p class="text-sm text-gray-600 mt-1">{{.Comment}}</p>
+                    {{end}}
+                </div>
+                {{end}}
+            </div>
+        </div>
+        {{end}}
+    </div>
+
+    <!-- Действия -->
+    <div class="flex flex-wrap gap-3 mb-6">
+        {{if .IsManager}}
+            {{if .Game.IsDraft}}
+            <form action="/games/{{.Game.ID}}/publish" method="POST" class="inline">
                 <input type="hidden" name="_csrf" value="{{.csrf}}">
-                <button type="submit" class="button">Опубликовать</button>
+                <button type="submit" class="btn btn-primary text-sm">Опубликовать</button>
+            </form>
+            {{end}}
+            <button id="preview-btn" class="btn btn-outline text-sm">👁 Быстрый просмотр</button>
+            <a href="/games/{{.Game.ID}}/edit" class="btn btn-outline text-sm">Редактировать</a>
+            <a href="/games/{{.Game.ID}}/settings" class="btn btn-outline text-sm">Настройки</a>
+            <a href="/games/{{.Game.ID}}/levels" class="btn btn-outline text-sm">Уровни</a>
+            <a href="/games/{{.Game.ID}}/co-authors" class="btn btn-outline text-sm">Соавторы</a>
+            <a href="/games/{{.Game.ID}}/passings" class="btn btn-outline text-sm">Заявки</a>
+            <a href="/games/{{.Game.ID}}/monitor" class="btn btn-outline text-sm">Мониторинг</a>
+            <a href="/games/{{.Game.ID}}/chat" class="btn btn-outline text-sm">Чат</a>
+            <a href="/games/{{.Game.ID}}/photos" class="btn btn-outline text-sm">📷 Галерея</a>
+            <a href="/games/{{.Game.ID}}/export" class="btn btn-outline text-sm">Экспорт CSV</a>
+            <a href="/games/{{.Game.ID}}/export-pdf" class="btn btn-outline text-sm">📄 PDF</a>
+            <a href="/games/{{.Game.ID}}/test" class="btn btn-outline text-sm">Тест</a>
+            <form action="/games/{{.Game.ID}}/delete" method="POST" class="inline" onsubmit="return confirm('Удалить игру?')">
+                <input type="hidden" name="_csrf" value="{{.csrf}}">
+                <button type="submit" class="btn btn-danger text-sm">Удалить</button>
             </form>
         {{end}}
-        <button id="preview-btn" class="button">👁 Быстрый просмотр</button>
-        <a href="/games/{{.Game.ID}}/edit" class="button">Редактировать</a>
-        <a href="/games/{{.Game.ID}}/settings" class="button">Настройки</a>
-        <a href="/games/{{.Game.ID}}/levels" class="button">Уровни</a>
-        <a href="/games/{{.Game.ID}}/co-authors" class="button">Соавторы</a>
-        <a href="/games/{{.Game.ID}}/passings" class="button">Заявки</a>
-        <a href="/games/{{.Game.ID}}/monitor" class="button">Мониторинг</a>
-        <a href="/games/{{.Game.ID}}/chat" class="button">Чат</a>
-        <a href="/games/{{.Game.ID}}/photos" class="button">📷 Галерея</a>
-        <a href="/games/{{.Game.ID}}/export" class="button">Экспорт CSV</a>
-        <a href="/games/{{.Game.ID}}/export-pdf" class="button">📄 PDF</a>
-        <a href="/games/{{.Game.ID}}/test" class="button">Тест</a>
-        <form action="/games/{{.Game.ID}}/delete" method="POST" style="display:inline">
-            <input type="hidden" name="_csrf" value="{{.csrf}}">
-            <button type="submit" class="button danger" onclick="return confirm('Удалить игру?')">Удалить</button>
-        </form>
-    {{end}}
-    {{if .CanApply}}
-        <a href="/games/{{.Game.ID}}/apply" class="button">Подать заявку</a>
-    {{end}}
-    <a href="/games" class="button">Назад к списку</a>
-</div>
+        {{if .CanApply}}
+        <a href="/games/{{.Game.ID}}/apply" class="btn btn-primary text-sm">Подать заявку</a>
+        {{end}}
+        <a href="/games" class="btn btn-outline text-sm">← Назад к списку</a>
+    </div>
 
-<!-- Модальное окно быстрого просмотра -->
-<div id="preview-modal" style="display:none; position:fixed; z-index:1000; left:0; top:0; width:100%; height:100%; overflow:auto; background-color:rgba(0,0,0,0.4);">
-    <div style="background-color:#fefefe; margin:5% auto; padding:20px; border:1px solid #888; width:80%; max-height:80vh; overflow-y:auto; border-radius:8px;">
-        <span id="close-preview" style="color:#aaa; float:right; font-size:28px; font-weight:bold; cursor:pointer;">&times;</span>
-        <h2>Состав игры «{{.Game.Name}}»</h2>
-        <div id="preview-content">Загрузка...</div>
+    <!-- Модальное окно быстрого просмотра -->
+    <div id="preview-modal" class="fixed inset-0 z-50 hidden bg-black/50 flex items-center justify-center">
+        <div class="bg-white w-full max-w-4xl max-h-[90vh] rounded-lg shadow-xl overflow-hidden mx-4">
+            <div class="flex justify-between items-center p-4 border-b border-gray-200">
+                <h2 class="text-xl font-bold text-gray-800">Состав игры «{{.Game.Name}}»</h2>
+                <button id="close-preview" class="text-gray-400 hover:text-gray-600 text-2xl font-bold">&times;</button>
+            </div>
+            <div id="preview-content" class="p-6 overflow-y-auto max-h-[70vh]">
+                <p class="text-gray-500">Загрузка...</p>
+            </div>
+        </div>
     </div>
 </div>
 
 <script>
-    const previewCache = JSON.parse(sessionStorage.getItem('previewCache') || '{}');
-    const CACHE_TIMEOUT = 5 * 60 * 1000;
+    (function() {
+        const previewModal = document.getElementById('preview-modal');
+        const previewContent = document.getElementById('preview-content');
+        const closeBtn = document.getElementById('close-preview');
 
-    document.getElementById('preview-btn').onclick = function() {
+        const previewCache = JSON.parse(sessionStorage.getItem('previewCache') || '{}');
+        const CACHE_TIMEOUT = 5 * 60 * 1000;
         const gameID = '{{.Game.ID}}';
-        const now = Date.now();
-        if (previewCache[gameID] && (now - previewCache[gameID].timestamp) < CACHE_TIMEOUT) {
-            renderPreview(previewCache[gameID].data);
-            openModal();
-            return;
+
+        function openModal() {
+            previewModal.classList.remove('hidden');
+            previewModal.classList.add('flex');
         }
-        fetch('/api/v1/games/' + gameID + '/full-preview', {
-            headers: { 'Accept': 'application/json' },
-            credentials: 'same-origin'
-        })
-        .then(r => r.json())
-        .then(res => {
-            previewCache[gameID] = { data: res.data, timestamp: Date.now() };
-            sessionStorage.setItem('previewCache', JSON.stringify(previewCache));
-            renderPreview(res.data);
-            openModal();
-        })
-        .catch(err => {
-            document.getElementById('preview-content').innerText = 'Ошибка загрузки';
-            openModal();
-        });
-    };
 
-    function openModal() { document.getElementById('preview-modal').style.display = 'block'; }
-    document.getElementById('close-preview').onclick = function() { document.getElementById('preview-modal').style.display = 'none'; }
-    window.onclick = function(event) { if (event.target == document.getElementById('preview-modal')) document.getElementById('preview-modal').style.display = 'none'; }
+        function closeModal() {
+            previewModal.classList.add('hidden');
+            previewModal.classList.remove('flex');
+        }
 
-    function renderPreview(levels) {
-        let html = '';
-        levels.forEach(lvl => {
-            html += `<div style="margin-bottom:1.5em"><h3>${lvl.position}. ${lvl.name}</h3>`;
-            if (lvl.description) html += `<p><em>${lvl.description}</em></p>`;
-            lvl.questions.forEach(q => {
-                html += `<div style="margin-left:20px; margin-bottom:10px; border-left:3px solid #3498db; padding-left:10px;">`;
-                html += `<strong>${q.text}</strong>`;
-                if (q.hint) html += `<br><small>Подсказка: ${q.hint}</small>`;
-                html += `<ul style="color:#27ae60">`;
-                q.answers.forEach(a => html += `<li>${a.code}</li>`);
-                html += `</ul></div>`;
+        document.getElementById('preview-btn').addEventListener('click', function() {
+            const now = Date.now();
+            if (previewCache[gameID] && (now - previewCache[gameID].timestamp) < CACHE_TIMEOUT) {
+                renderPreview(previewCache[gameID].data);
+                openModal();
+                return;
+            }
+            fetch('/api/v1/games/' + gameID + '/full-preview', {
+                headers: { 'Accept': 'application/json' },
+                credentials: 'same-origin'
+            })
+            .then(r => r.json())
+            .then(res => {
+                previewCache[gameID] = { data: res.data, timestamp: Date.now() };
+                sessionStorage.setItem('previewCache', JSON.stringify(previewCache));
+                renderPreview(res.data);
+                openModal();
+            })
+            .catch(() => {
+                previewContent.innerHTML = '<p class="text-red-500">Ошибка загрузки</p>';
+                openModal();
             });
-            html += `</div>`;
         });
-        document.getElementById('preview-content').innerHTML = html || 'Нет данных';
-    }
+
+        closeBtn.addEventListener('click', closeModal);
+        previewModal.addEventListener('click', function(e) {
+            if (e.target === this) closeModal();
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && !previewModal.classList.contains('hidden')) {
+                closeModal();
+            }
+        });
+
+        function renderPreview(levels) {
+            let html = '';
+            levels.forEach(lvl => {
+                html += `<div class="mb-4"><h3 class="font-semibold text-gray-800">${lvl.position}. ${lvl.name}</h3>`;
+                if (lvl.description) html += `<p class="text-sm text-gray-600 italic">${lvl.description}</p>`;
+                lvl.questions.forEach(q => {
+                    html += `<div class="ml-4 mt-2 pl-4 border-l-4 border-blue-400">`;
+                    html += `<p class="font-medium text-gray-700">${q.text}</p>`;
+                    if (q.hint) html += `<p class="text-sm text-gray-500">Подсказка: ${q.hint}</p>`;
+                    html += `<ul class="text-green-700 text-sm list-disc list-inside">`;
+                    q.answers.forEach(a => html += `<li>${a.code}</li>`);
+                    html += `</ul></div>`;
+                });
+                html += `</div>`;
+            });
+            previewContent.innerHTML = html || '<p class="text-gray-500">Нет данных</p>';
+        }
+    })();
 </script>
 {{end}}

@@ -1,20 +1,34 @@
 {{define "games-test.html"}}
-<h1>Тестирование «{{.Game.Name}}»</h1>
+<div class="max-w-3xl mx-auto">
+    <h1 class="text-2xl font-bold text-gray-800 mb-4">Тестирование «{{.Game.Name}}»</h1>
 
-<p>Здесь вы можете запустить тестовое прохождение игры, чтобы проверить уровни и ответы.</p>
+    <div class="card mb-6">
+        <p class="text-gray-600">Здесь вы можете запустить тестовое прохождение игры, чтобы проверить уровни и ответы.</p>
+    </div>
 
-<form action="/games/{{.Game.ID}}/testing/start" method="GET">
-    <button type="submit" class="button">Начать новое тестовое прохождение</button>
-</form>
+    <div class="card mb-6">
+        <form action="/games/{{.Game.ID}}/testing/start" method="GET">
+            <button type="submit" class="btn btn-primary text-sm">Начать новое тестовое прохождение</button>
+        </form>
+    </div>
 
-{{if .TestPassings}}
-<h3>Активные тестовые сессии</h3>
-<ul>
-{{range .TestPassings}}
-    <li><a href="/testing/{{.ID}}">Прохождение #{{.ID}} ({{.Status}})</a></li>
-{{end}}
-</ul>
-{{end}}
+    {{if .TestPassings}}
+    <div class="card">
+        <h3 class="text-lg font-semibold text-gray-700 mb-3">Активные тестовые сессии</h3>
+        <ul class="space-y-2">
+            {{range .TestPassings}}
+            <li>
+                <a href="/testing/{{.ID}}" class="text-blue-600 hover:underline">
+                    Прохождение #{{.ID}} ({{.Status}})
+                </a>
+            </li>
+            {{end}}
+        </ul>
+    </div>
+    {{end}}
 
-<a href="/games/{{.Game.ID}}">Назад к игре</a>
+    <div class="mt-6">
+        <a href="/games/{{.Game.ID}}" class="btn btn-outline text-sm">← Назад к игре</a>
+    </div>
+</div>
 {{end}}

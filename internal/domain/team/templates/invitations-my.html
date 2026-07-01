@@ -1,20 +1,42 @@
 {{define "invitations-my.html"}}
-<h1>Мои приглашения</h1>
-<ul>
-{{range .Invitations}}
-    <li>
-        Команда: {{.Team.Name}} ({{.Status}})
-        {{if eq .Status "pending"}}
-            <form action="/invitations/{{.ID}}/accept" method="POST" style="display:inline">
-                <input type="hidden" name="_csrf" value="{{$.csrf}}">
-                <button type="submit" class="button">Принять</button>
-            </form>
-            <form action="/invitations/{{.ID}}/decline" method="POST" style="display:inline">
-                <input type="hidden" name="_csrf" value="{{$.csrf}}">
-                <button type="submit" class="button danger">Отклонить</button>
-            </form>
+<div class="max-w-4xl mx-auto">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Мои приглашения</h1>
+
+    {{if .Invitations}}
+    <div class="space-y-3">
+        {{range .Invitations}}
+        <div class="card flex flex-wrap items-center justify-between gap-3 p-4 hover:shadow-md transition">
+            <div>
+                <span class="font-medium text-gray-800">Команда: {{.Team.Name}}</span>
+                {{if eq .Status "pending"}}
+                    <span class="inline-flex ml-2 px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">Ожидает</span>
+                {{else if eq .Status "accepted"}}
+                    <span class="inline-flex ml-2 px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">Принято</span>
+                {{else if eq .Status "declined"}}
+                    <span class="inline-flex ml-2 px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">Отклонено</span>
+                {{else}}
+                    <span class="inline-flex ml-2 px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">{{.Status}}</span>
+                {{end}}
+            </div>
+            {{if eq .Status "pending"}}
+            <div class="flex flex-wrap gap-2">
+                <form action="/invitations/{{.ID}}/accept" method="POST" class="inline">
+                    <input type="hidden" name="_csrf" value="{{$.csrf}}">
+                    <button type="submit" class="btn btn-primary text-sm">Принять</button>
+                </form>
+                <form action="/invitations/{{.ID}}/decline" method="POST" class="inline">
+                    <input type="hidden" name="_csrf" value="{{$.csrf}}">
+                    <button type="submit" class="btn btn-danger text-sm">Отклонить</button>
+                </form>
+            </div>
+            {{end}}
+        </div>
         {{end}}
-    </li>
-{{end}}
-</ul>
+    </div>
+    {{else}}
+    <div class="card text-center py-12">
+        <p class="text-gray-500">У вас нет приглашений.</p>
+    </div>
+    {{end}}
+</div>
 {{end}}

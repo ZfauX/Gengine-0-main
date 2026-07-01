@@ -1,77 +1,100 @@
 {{define "notes-manage.html"}}
-<h1>Заметки к игре</h1>
+<div class="max-w-4xl mx-auto">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Заметки к игре</h1>
 
-<meta name="csrf-token" content="{{.csrf}}">
+    <meta name="csrf-token" content="{{.csrf}}">
 
-<div class="card" style="margin-bottom:20px;">
-    <h3>Добавить заметку</h3>
-    <form id="add-note-form">
-        <textarea id="note-text" rows="3" placeholder="Текст заметки..." required style="width:100%; margin-bottom:10px;"></textarea>
-        <button type="submit" class="button">Сохранить</button>
-    </form>
-</div>
+    <!-- Форма добавления заметки -->
+    <div class="card mb-6">
+        <h3 class="text-lg font-semibold text-gray-700 mb-3">Добавить заметку</h3>
+        <form id="add-note-form">
+            <textarea id="note-text" rows="3" placeholder="Текст заметки..." required
+                      class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm mb-3"></textarea>
+            <button type="submit" class="btn btn-primary text-sm">Сохранить</button>
+        </form>
+    </div>
 
-<div id="notes-list">
-    {{range .Notes}}
-    <div class="card" style="margin-bottom:10px;">
-        <div style="display:flex; justify-content:space-between;">
-            <div>
-                <strong>{{.User.Name}}</strong>
-                <small style="color:#888; margin-left:10px;">{{.CreatedAt.Format "02.01.2006 15:04"}}</small>
-                {{if .Level}}
-                    <span style="background:#eee; padding:2px 6px; border-radius:4px; font-size:0.8em; margin-left:10px;">Уровень: {{.Level.Name}}</span>
+    <!-- Список заметок -->
+    <div id="notes-list" class="space-y-3">
+        {{range .Notes}}
+        <div class="card hover:shadow-md transition" data-note-id="{{.ID}}">
+            <div class="flex justify-between items-start">
+                <div>
+                    <span class="font-semibold text-gray-800">{{.User.Name}}</span>
+                    <span class="text-sm text-gray-500 ml-2">{{.CreatedAt.Format "02.01.2006 15:04"}}</span>
+                    {{if .Level}}
+                    <span class="inline-block ml-2 px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 rounded-md">Уровень: {{.Level.Name}}</span>
+                    {{end}}
+                </div>
+                {{if eq .UserID $.CurrentUserID}}
+                <button class="delete-note-btn text-gray-400 hover:text-red-600 transition text-xl leading-none" data-note-id="{{.ID}}" title="Удалить заметку">×</button>
                 {{end}}
             </div>
-            {{if eq .UserID $.CurrentUserID}}
-            <button class="button danger" style="padding:2px 8px; font-size:0.8em;" onclick="deleteNote({{.ID}})">×</button>
-            {{end}}
+            <p class="mt-2 text-gray-700 text-sm">{{.Text}}</p>
         </div>
-        <p style="margin-top:8px;">{{.Text}}</p>
+        {{end}}
     </div>
-    {{end}}
+
+    <div class="mt-6">
+        <a href="/games/{{.GameID}}" class="btn btn-outline text-sm">← Назад к игре</a>
+    </div>
 </div>
 
-<a href="/games/{{.GameID}}" class="button">Назад к игре</a>
-
 <script>
-    const gameID = "{{.GameID}}";
+    (function() {
+        const gameID = parseInt('{{.GameID}}', 10);
+        const currentUserID = parseInt('{{.CurrentUserID}}', 10);
 
-    function getCsrfToken() {
-        return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-    }
+        function getCsrfToken() {
+            const meta = document.querySelector('meta[name="csrf-token"]');
+            return meta ? meta.getAttribute('content') : '';
+        }
 
-    document.getElementById('add-note-form').addEventListener('submit', function(e) {
-        e.preventDefault();
-        const text = document.getElementById('note-text').value.trim();
-        if (!text) return;
-        fetch('/api/games/' + gameID + '/notes', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': getCsrfToken()
-            },
-            body: JSON.stringify({text: text})
-        })
-        .then(r => r.json())
-        .then(data => {
-            if (data.note) location.reload();
-            else alert('Ошибка создания заметки');
+        // Добавление заметки
+        const addForm = document.getElementById('add-note-form');
+        const noteText = document.getElementById('note-text');
+
+        addForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const text = noteText.value.trim();
+            if (!text) return;
+            fetch('/api/games/' + gameID + '/notes', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': getCsrfToken()
+                },
+                body: JSON.stringify({text: text})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.note) location.reload();
+                else alert('Ошибка создания заметки');
+            });
         });
-    });
 
-    function deleteNote(noteID) {
-        if (!confirm('Удалить заметку?')) return;
-        fetch('/api/notes/' + noteID, {
-            method: 'DELETE',
-            headers: {
-                'X-CSRF-TOKEN': getCsrfToken()
-            }
-        })
-        .then(r => r.json())
-        .then(data => {
-            if (data.status === 'ok') location.reload();
-            else alert('Ошибка удаления');
+        // Удаление заметки через делегирование
+        const notesList = document.getElementById('notes-list');
+        notesList.addEventListener('click', function(e) {
+            const btn = e.target.closest('.delete-note-btn');
+            if (!btn) return;
+            const noteID = btn.dataset.noteId;
+            if (!noteID) return;
+            if (!confirm('Удалить заметку?')) return;
+            fetch('/api/notes/' + noteID, {
+                method: 'DELETE',
+                credentials: 'same-origin',
+                headers: {
+                    'X-CSRF-TOKEN': getCsrfToken()
+                }
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'ok') location.reload();
+                else alert('Ошибка удаления');
+            });
         });
-    }
+    })();
 </script>
 {{end}}
