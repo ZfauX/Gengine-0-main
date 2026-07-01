@@ -86,7 +86,6 @@ func (s *AuthService) GenerateJWT(user User) (string, error) {
 	return s.generateJWT(user)
 }
 
-// GenerateRefreshToken создаёт случайный refresh-токен, сохраняет его хеш в БД и возвращает сам токен.
 func (s *AuthService) GenerateRefreshToken(user User, deviceID string) (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -108,17 +107,14 @@ func (s *AuthService) GenerateRefreshToken(user User, deviceID string) (string, 
 	return token, nil
 }
 
-// RevokeAllUserTokens отзывает все активные refresh-токены пользователя (например, при смене пароля или выходе со всех устройств).
 func (s *AuthService) RevokeAllUserTokens(ctx context.Context, userID uint) error {
 	return s.refreshTokenRepo.RevokeAllForUser(ctx, userID)
 }
 
-// CleanExpiredRefreshTokens удаляет просроченные токены из БД.
 func (s *AuthService) CleanExpiredRefreshTokens(ctx context.Context) error {
 	return s.refreshTokenRepo.DeleteExpired(ctx)
 }
 
-// RefreshAccessToken обновляет access-токен, проверяя валидность refresh-токена по БД.
 func (s *AuthService) RefreshAccessToken(refreshTokenStr string) (string, error) {
 	hash := sha256.Sum256([]byte(refreshTokenStr))
 	tokenHash := hex.EncodeToString(hash[:])
@@ -153,7 +149,6 @@ func (s *AuthService) ParseToken(tokenStr string) (uint, string, error) {
 	if !ok {
 		return 0, "", errors.New("неверные данные токена")
 	}
-	// Проверяем, что это не refresh-токен (они не должны использоваться как access)
 	if isRefresh, ok := claims["refresh"].(bool); ok && isRefresh {
 		return 0, "", errors.New("использование refresh-токена как access запрещено")
 	}
@@ -686,43 +681,52 @@ type DashboardInvitation struct {
 	Status   string
 }
 
+// GetDashboard собирает данные для дашборда с использованием реальных таблиц.
 func (s *UserDashboardService) GetDashboard(userID uint) (*UserDashboard, error) {
 	var dash UserDashboard
 
+	// 1. Авторские игры (таблица games)
 	var authoredGames []struct {
 		ID      uint
 		Name    string
 		IsDraft bool
 	}
-	s.DB.Model(&DashboardGame{}).Where("author_id = ?", userID).Find(&authoredGames)
-	for _, g := range authoredGames {
-		dash.AuthoredGames = append(dash.AuthoredGames, DashboardGame{
-			ID:      g.ID,
-			Name:    g.Name,
-			IsDraft: g.IsDraft,
-		})
+	if err := s.DB.Table("games").
+		Select("id, name, is_draft").
+		Where("author_id = ?", userID).
+		Find(&authoredGames).Error; err != nil {
+		log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to get authored games")
+	} else {
+		for _, g := range authoredGames {
+			dash.AuthoredGames = append(dash.AuthoredGames, DashboardGame{
+				ID:      g.ID,
+				Name:    g.Name,
+				IsDraft: g.IsDraft,
+			})
+		}
 	}
 
+	// 2. Все команды пользователя (капитанство + участие)
 	var allTeams []DashboardTeam
-	s.DB.Raw(`
+	if err := s.DB.Raw(`
 		SELECT id, name FROM teams WHERE captain_id = ?
 		UNION
 		SELECT t.id, t.name FROM teams t
 		JOIN team_members tm ON tm.team_id = t.id
 		WHERE tm.user_id = ? AND t.captain_id != ?
-	`, userID, userID, userID).Scan(&allTeams)
-
-	if len(allTeams) == 0 {
-		var invitations []DashboardInvitation
-		s.DB.Table("invitations").
-			Select("invitations.id, invitations.team_id, teams.name as team_name, invitations.status").
-			Joins("JOIN teams ON teams.id = invitations.team_id").
-			Where("invitations.user_id = ? AND invitations.status = ?", userID, "pending").
-			Scan(&invitations)
-		dash.PendingInvitations = invitations
+	`, userID, userID, userID).Scan(&allTeams).Error; err != nil {
+		log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to get teams")
+		// Если ошибка, загружаем только приглашения и возвращаем
+		s.loadInvitations(&dash, userID)
 		return &dash, nil
 	}
 
+	if len(allTeams) == 0 {
+		s.loadInvitations(&dash, userID)
+		return &dash, nil
+	}
+
+	// 3. Прохождения для всех команд пользователя
 	var passings []struct {
 		ID     uint
 		GameID uint
@@ -733,10 +737,16 @@ func (s *UserDashboardService) GetDashboard(userID uint) (*UserDashboard, error)
 	for i, t := range allTeams {
 		teamIDs[i] = t.ID
 	}
-	s.DB.Model(&DashboardPassingWithGame{}).
-		Where("team_id IN ? AND status IN (?, ?, ?)", teamIDs, "accepted", "started", "finished").
-		Find(&passings)
 
+	if err := s.DB.Table("game_passings").
+		Select("id, game_id, team_id, status").
+		Where("team_id IN ? AND status IN (?, ?, ?)", teamIDs, "accepted", "started", "finished").
+		Find(&passings).Error; err != nil {
+		log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to get passings")
+		// Не фатально — продолжаем
+	}
+
+	// 4. Собираем ID игр и команд для подгрузки названий
 	var gameIDs []uint
 	var teamIDsForGames []uint
 	for _, p := range passings {
@@ -746,33 +756,46 @@ func (s *UserDashboardService) GetDashboard(userID uint) (*UserDashboard, error)
 	gameIDs = uniqueUintSlice(gameIDs)
 	teamIDsForGames = uniqueUintSlice(teamIDsForGames)
 
+	// 5. Подгружаем названия игр
 	var gamesMap = make(map[uint]DashboardGame)
 	if len(gameIDs) > 0 {
-		var games []DashboardGame
-		s.DB.Where("id IN ?", gameIDs).Find(&games)
-		for _, g := range games {
-			gamesMap[g.ID] = g
+		var games []struct {
+			ID   uint
+			Name string
+		}
+		if err := s.DB.Table("games").Select("id, name").Where("id IN ?", gameIDs).Find(&games).Error; err == nil {
+			for _, g := range games {
+				gamesMap[g.ID] = DashboardGame{ID: g.ID, Name: g.Name}
+			}
 		}
 	}
 
+	// 6. Подгружаем названия команд
 	var teamsMap = make(map[uint]DashboardTeam)
 	if len(teamIDsForGames) > 0 {
-		var teams []DashboardTeam
-		s.DB.Where("id IN ?", teamIDsForGames).Find(&teams)
-		for _, t := range teams {
-			teamsMap[t.ID] = t
+		var teams []struct {
+			ID   uint
+			Name string
+		}
+		if err := s.DB.Table("teams").Select("id, name").Where("id IN ?", teamIDsForGames).Find(&teams).Error; err == nil {
+			for _, t := range teams {
+				teamsMap[t.ID] = DashboardTeam{ID: t.ID, Name: t.Name}
+			}
 		}
 	}
 
+	// 7. Определяем, в каких командах пользователь — капитан
 	captainTeamIDs := make(map[uint]bool)
 	for _, t := range allTeams {
 		var captainID uint
-		s.DB.Model(&DashboardTeam{}).Select("captain_id").Where("id = ?", t.ID).Scan(&captainID)
-		if captainID == userID {
-			captainTeamIDs[t.ID] = true
+		if err := s.DB.Table("teams").Select("captain_id").Where("id = ?", t.ID).Scan(&captainID).Error; err == nil {
+			if captainID == userID {
+				captainTeamIDs[t.ID] = true
+			}
 		}
 	}
 
+	// 8. Формируем результат
 	for _, p := range passings {
 		game, gameOk := gamesMap[p.GameID]
 		team, teamOk := teamsMap[p.TeamID]
@@ -801,15 +824,24 @@ func (s *UserDashboardService) GetDashboard(userID uint) (*UserDashboard, error)
 		}
 	}
 
+	// 9. Приглашения
+	s.loadInvitations(&dash, userID)
+
+	return &dash, nil
+}
+
+// loadInvitations загружает ожидающие приглашения в структуру дашборда.
+func (s *UserDashboardService) loadInvitations(dash *UserDashboard, userID uint) {
 	var invitations []DashboardInvitation
-	s.DB.Table("invitations").
+	if err := s.DB.Table("invitations").
 		Select("invitations.id, invitations.team_id, teams.name as team_name, invitations.status").
 		Joins("JOIN teams ON teams.id = invitations.team_id").
 		Where("invitations.user_id = ? AND invitations.status = ?", userID, "pending").
-		Scan(&invitations)
-	dash.PendingInvitations = invitations
-
-	return &dash, nil
+		Scan(&invitations).Error; err != nil {
+		log.Error().Err(err).Uint("user_id", userID).Msg("loadInvitations: failed to load invitations")
+	} else {
+		dash.PendingInvitations = invitations
+	}
 }
 
 func uniqueUintSlice(input []uint) []uint {

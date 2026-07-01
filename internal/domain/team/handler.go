@@ -76,7 +76,7 @@ func (h *TeamHandler) MyTeams(c *gin.Context) {
 	teams, err := h.teamService.GetMyTeams(c.Request.Context(), userID)
 	if err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Msg("MyTeams: failed to get teams")
-		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		return
 	}
 	render.Page(c, http.StatusOK, "teams-my.html", gin.H{
@@ -124,7 +124,7 @@ func (h *TeamHandler) CreateTeam(c *gin.Context) {
 func (h *TeamHandler) ViewTeam(c *gin.Context) {
 	var req TeamIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID команды"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID команды"})
 		return
 	}
 	userID := c.GetUint("userID")
@@ -132,10 +132,10 @@ func (h *TeamHandler) ViewTeam(c *gin.Context) {
 	team, members, err := h.teamService.GetTeamWithMembers(c.Request.Context(), req.TeamID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.HTML(http.StatusNotFound, "errors/404.html", nil)
+			c.HTML(http.StatusNotFound, "errors-404.html", nil)
 		} else {
 			log.Error().Err(err).Uint("team_id", req.TeamID).Msg("ViewTeam: failed to get team")
-			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+			c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		}
 		return
 	}
@@ -155,7 +155,7 @@ func (h *TeamHandler) ViewTeam(c *gin.Context) {
 func (h *TeamHandler) Members(c *gin.Context) {
 	var req TeamIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID команды"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID команды"})
 		return
 	}
 	userID := c.GetUint("userID")
@@ -163,10 +163,10 @@ func (h *TeamHandler) Members(c *gin.Context) {
 	team, members, err := h.teamService.GetTeamWithMembers(c.Request.Context(), req.TeamID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.HTML(http.StatusNotFound, "errors/404.html", nil)
+			c.HTML(http.StatusNotFound, "errors-404.html", nil)
 		} else {
 			log.Error().Err(err).Uint("team_id", req.TeamID).Msg("Members: failed to get team")
-			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+			c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		}
 		return
 	}
@@ -188,14 +188,14 @@ func (h *TeamHandler) Members(c *gin.Context) {
 func (h *TeamHandler) AddMemberForm(c *gin.Context) {
 	var req TeamIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID команды"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID команды"})
 		return
 	}
 
 	availableUsers, err := h.teamService.GetAvailableUsers(c.Request.Context(), req.TeamID)
 	if err != nil {
 		log.Error().Err(err).Uint("team_id", req.TeamID).Msg("AddMemberForm: failed to get available users")
-		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		return
 	}
 	render.Page(c, http.StatusOK, "teams-add_member.html", gin.H{
@@ -210,7 +210,7 @@ func (h *TeamHandler) AddMemberForm(c *gin.Context) {
 func (h *TeamHandler) AddMember(c *gin.Context) {
 	var req TeamIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID команды"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID команды"})
 		return
 	}
 	actorID := c.GetUint("userID")
@@ -235,7 +235,7 @@ func (h *TeamHandler) AddMember(c *gin.Context) {
 
 	if err := h.teamService.AddMember(c.Request.Context(), req.TeamID, input.UserID, actorID); err != nil {
 		log.Error().Err(err).Uint("team_id", req.TeamID).Uint("user_id", input.UserID).Uint("actor_id", actorID).Msg("AddMember: failed to add member")
-		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
+		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
 		return
 	}
 	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/teams/"+strconv.Itoa(int(req.TeamID))+"/members")
@@ -245,14 +245,14 @@ func (h *TeamHandler) AddMember(c *gin.Context) {
 func (h *TeamHandler) RemoveMember(c *gin.Context) {
 	var req TeamIDAndMemberIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверные ID"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверные ID"})
 		return
 	}
 	actorID := c.GetUint("userID")
 
 	if err := h.teamService.RemoveMember(c.Request.Context(), req.TeamID, req.MemberID, actorID); err != nil {
 		log.Error().Err(err).Uint("team_id", req.TeamID).Uint("member_id", req.MemberID).Uint("actor_id", actorID).Msg("RemoveMember: failed to remove member")
-		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
+		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
 		return
 	}
 	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/teams/"+strconv.Itoa(int(req.TeamID))+"/members")
@@ -262,17 +262,17 @@ func (h *TeamHandler) RemoveMember(c *gin.Context) {
 func (h *TeamHandler) ChangeCaptainForm(c *gin.Context) {
 	var req TeamIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID команды"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID команды"})
 		return
 	}
 
 	_, members, err := h.teamService.GetTeamWithMembers(c.Request.Context(), req.TeamID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.HTML(http.StatusNotFound, "errors/404.html", nil)
+			c.HTML(http.StatusNotFound, "errors-404.html", nil)
 		} else {
 			log.Error().Err(err).Uint("team_id", req.TeamID).Msg("ChangeCaptainForm: failed to get team members")
-			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+			c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		}
 		return
 	}
@@ -288,7 +288,7 @@ func (h *TeamHandler) ChangeCaptainForm(c *gin.Context) {
 func (h *TeamHandler) ChangeCaptain(c *gin.Context) {
 	var req TeamIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID команды"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID команды"})
 		return
 	}
 	actorID := c.GetUint("userID")
@@ -313,7 +313,7 @@ func (h *TeamHandler) ChangeCaptain(c *gin.Context) {
 
 	if err := h.teamService.ChangeCaptain(c.Request.Context(), req.TeamID, input.CaptainID, actorID); err != nil {
 		log.Error().Err(err).Uint("team_id", req.TeamID).Uint("captain_id", input.CaptainID).Uint("actor_id", actorID).Msg("ChangeCaptain: failed to change captain")
-		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
+		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
 		return
 	}
 	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/teams/"+strconv.Itoa(int(req.TeamID))+"/members")
@@ -334,14 +334,14 @@ func NewInvitationHandler(invitationService *InvitationService) *InvitationHandl
 func (h *InvitationHandler) Index(c *gin.Context) {
 	var req TeamIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID команды"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID команды"})
 		return
 	}
 
 	invitations, err := h.invitationService.ListByTeam(c.Request.Context(), req.TeamID)
 	if err != nil {
 		log.Error().Err(err).Uint("team_id", req.TeamID).Msg("InvitationHandler.Index: failed to list invitations")
-		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		return
 	}
 	render.Page(c, http.StatusOK, "invitations-index.html", gin.H{
@@ -355,7 +355,7 @@ func (h *InvitationHandler) Index(c *gin.Context) {
 func (h *InvitationHandler) NewForm(c *gin.Context) {
 	var req TeamIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID команды"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID команды"})
 		return
 	}
 	render.Page(c, http.StatusOK, "invitations-new.html", gin.H{
@@ -369,7 +369,7 @@ func (h *InvitationHandler) NewForm(c *gin.Context) {
 func (h *InvitationHandler) Create(c *gin.Context) {
 	var req TeamIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID команды"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID команды"})
 		return
 	}
 	userID := c.GetUint("userID")
@@ -410,7 +410,7 @@ func (h *InvitationHandler) MyInvitations(c *gin.Context) {
 	invitations, err := h.invitationService.GetPendingForUser(c.Request.Context(), userID)
 	if err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Msg("MyInvitations: failed to get pending invitations")
-		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		return
 	}
 	render.Page(c, http.StatusOK, "invitations-my.html", gin.H{
@@ -423,14 +423,14 @@ func (h *InvitationHandler) MyInvitations(c *gin.Context) {
 func (h *InvitationHandler) Accept(c *gin.Context) {
 	var req InvitationIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID приглашения"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID приглашения"})
 		return
 	}
 	userID := c.GetUint("userID")
 
 	if err := h.invitationService.AcceptInvitation(c.Request.Context(), req.ID, userID); err != nil {
 		log.Error().Err(err).Uint("invitation_id", req.ID).Uint("user_id", userID).Msg("Accept: failed to accept invitation")
-		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
+		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
 		return
 	}
 	c.Redirect(http.StatusFound, "/invitations/my")
@@ -440,14 +440,14 @@ func (h *InvitationHandler) Accept(c *gin.Context) {
 func (h *InvitationHandler) Decline(c *gin.Context) {
 	var req InvitationIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID приглашения"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID приглашения"})
 		return
 	}
 	userID := c.GetUint("userID")
 
 	if err := h.invitationService.DeclineInvitation(c.Request.Context(), req.ID, userID); err != nil {
 		log.Error().Err(err).Uint("invitation_id", req.ID).Uint("user_id", userID).Msg("Decline: failed to decline invitation")
-		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
+		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
 		return
 	}
 	c.Redirect(http.StatusFound, "/invitations/my")

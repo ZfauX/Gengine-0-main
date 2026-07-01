@@ -92,7 +92,7 @@ func NewMonitorHandler(
 func (h *MonitorHandler) MonitorPage(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
 	render.Page(c, http.StatusOK, "monitor-page.html", gin.H{
@@ -210,7 +210,7 @@ func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 func (h *MonitorHandler) ChatPage(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
 	gameID := req.ID
@@ -410,7 +410,7 @@ func (h *MonitorHandler) ChatRoomIDs(c *gin.Context) {
 func (h *MonitorHandler) ListLogs(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
 	gameID := req.ID
@@ -418,7 +418,7 @@ func (h *MonitorHandler) ListLogs(c *gin.Context) {
 	var logs []game.Log
 	if err := h.db.WithContext(c.Request.Context()).Where("game_id = ?", gameID).Order("created_at ASC").Find(&logs).Error; err != nil {
 		log.Error().Err(err).Uint("game_id", gameID).Msg("ListLogs: failed to fetch logs")
-		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		return
 	}
 	render.Page(c, http.StatusOK, "logs-list.html", gin.H{
