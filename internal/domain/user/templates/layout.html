@@ -5,8 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="csrf-token" content="{{.csrf}}" />
     <title>{{.Title}} · Encounter Engine</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Небольшие кастомные стили поверх Tailwind -->
+    <!-- Подключаем собранный Tailwind CSS (локально) -->
+    <link rel="stylesheet" href="/static/css/output.css">
+
+    <!-- Небольшие кастомные стили поверх Tailwind с nonce -->
     <style nonce="{{.csp_nonce}}">
         body {
             background: #f3f4f6;
@@ -65,7 +67,6 @@
             background: #dcfce7;
             color: #166534;
         }
-        /* Микроанимации */
         .fade-in {
             animation: fadeIn 0.2s ease-in-out;
         }
@@ -131,7 +132,7 @@
 
     {{.ExtraScripts}}
 
-    <!-- Глобальный перехватчик fetch для CSRF -->
+    <!-- Глобальный перехватчик fetch для CSRF (с nonce) -->
     <script nonce="{{.csp_nonce}}">
         (function() {
             function getCsrfToken() {
