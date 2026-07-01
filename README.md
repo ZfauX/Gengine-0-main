@@ -177,6 +177,9 @@ go test -tags=integration ./internal/domain/...
 Сборка
 CGO_ENABLED=0 go build -o gengine -ldflags="-s -w -X main.version=$(git describe --tags --always --dirty) -X main.buildDate=$(date -u '+%Y-%m-%d_%H:%M:%S')" ./cmd/server
 
+Миграция схем бд
+gengine -migrate
+
 Docker
 docker-compose up
 
