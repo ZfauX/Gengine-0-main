@@ -34,16 +34,13 @@ func (h *CalendarHandler) CalendarPage(c *gin.Context) {
 // CalendarData возвращает события календаря в JSON-формате.
 func (h *CalendarHandler) CalendarData(c *gin.Context) {
 	var req CalendarDataRequest
-	// Привязка и валидация query-параметров
 	if err := c.ShouldBindQuery(&req); err != nil {
 		log.Warn().Err(err).Msg("CalendarData: invalid query parameters, using defaults")
-		// Используем значения по умолчанию
 		now := time.Now()
 		req.Year = now.Year()
 		req.Month = int(now.Month())
 	}
 
-	// Если параметры не переданы или равны 0, используем текущие
 	if req.Year == 0 {
 		req.Year = time.Now().Year()
 	}
@@ -51,7 +48,6 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 		req.Month = int(time.Now().Month())
 	}
 
-	// Дополнительная проверка (хотя валидатор уже это сделал)
 	if req.Month < 1 || req.Month > 12 {
 		now := time.Now()
 		req.Year = now.Year()

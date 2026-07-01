@@ -36,16 +36,12 @@ import (
 // @version 1.0
 // @description API для платформы квестов Gengine
 // @termsOfService http://swagger.io/terms/
-
 // @contact.name API Support
 // @contact.email support@gengine.io
-
 // @license.name MIT
 // @license.url https://opensource.org/licenses/MIT
-
 // @host localhost:8080
 // @BasePath /
-
 // @securityDefinitions.apikey JWT
 // @in cookie
 // @name jwt
@@ -56,11 +52,9 @@ var (
 )
 
 func main() {
-	// Определяем флаг для миграций
 	migrateFlag := flag.Bool("migrate", false, "Применить миграции и выйти")
 	flag.Parse()
 
-	// Загрузка .env файла
 	if err := godotenv.Load(); err != nil {
 		if !os.IsNotExist(err) {
 			log.Fatal().Err(err).Msg("Ошибка при загрузке .env файла")
@@ -70,13 +64,14 @@ func main() {
 
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 
-	// --- Загрузка конфигурации ---
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatal().Err(err).Msg("Не удалось загрузить конфигурацию")
 	}
 
-	// --- Настройка логгера с ротацией ---
+	// ============================================================
+	// НАСТРОЙКА ЛОГГЕРА С ПОДДЕРЖКОЙ JSON / CONSOLE
+	// ============================================================
 	logFilePath := cfg.Server.LogFilePath
 	if logFilePath == "" {
 		logFilePath = "logs/app.log"
@@ -85,6 +80,7 @@ func main() {
 		log.Fatal().Err(err).Msg("Не удалось создать директорию для логов")
 	}
 
+	// Настройка ротации логов
 	logFile := &lumberjack.Logger{
 		Filename:   logFilePath,
 		MaxSize:    cfg.Server.LogMaxSize,
@@ -92,13 +88,31 @@ func main() {
 		MaxAge:     cfg.Server.LogMaxAge,
 		Compress:   cfg.Server.LogCompress,
 	}
-	multi := zerolog.MultiLevelWriter(
-		zerolog.ConsoleWriter{Out: os.Stderr},
-		logFile,
-	)
-	log.Logger = log.Output(multi)
 
-	log.Info().Str("version", version).Str("build", buildDate).Msg("Запуск сервера")
+	// Выбор формата вывода
+	var consoleWriter zerolog.ConsoleWriter
+	if cfg.Server.LogFormat == "json" {
+		// JSON-формат — пишем в stdout и в файл без форматирования
+		multi := zerolog.MultiLevelWriter(
+			os.Stderr, // JSON в stderr
+			logFile,
+		)
+		log.Logger = zerolog.New(multi).With().Timestamp().Logger()
+	} else {
+		// Консольный формат (по умолчанию)
+		consoleWriter = zerolog.ConsoleWriter{Out: os.Stderr}
+		multi := zerolog.MultiLevelWriter(
+			consoleWriter,
+			logFile,
+		)
+		log.Logger = log.Output(multi)
+	}
+
+	log.Info().
+		Str("version", version).
+		Str("build", buildDate).
+		Str("log_format", cfg.Server.LogFormat).
+		Msg("Запуск сервера")
 	log.Info().
 		Str("log_file", logFilePath).
 		Int("max_size_mb", cfg.Server.LogMaxSize).
@@ -109,14 +123,13 @@ func main() {
 
 	gin.SetMode(cfg.Server.GinMode)
 
-	// --- Подключение к БД с повторными попытками ---
+	// --- Подключение к БД ---
 	database, err := connectDBWithRetry(cfg, 5, 2*time.Second)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Не удалось подключиться к БД после нескольких попыток")
 	}
 	log.Info().Msg("Подключение к БД установлено")
 
-	// --- Если указан флаг -migrate, применяем миграции и выходим ---
 	if *migrateFlag {
 		log.Info().Msg("Запуск миграций...")
 		if err := db.RunMigrations(database, "migrations"); err != nil {
@@ -126,7 +139,6 @@ func main() {
 		return
 	}
 
-	// Создание/обновление администратора
 	if err := db.EnsureAdmin(database, cfg); err != nil {
 		log.Fatal().Err(err).Msg("Не удалось создать/обновить администратора")
 	}
@@ -135,13 +147,10 @@ func main() {
 	hub := ws.NewRoomHub()
 	go hub.Run()
 
-	// --- Инициализация асинхронной очереди email ---
 	email.InitQueue(cfg, 5, 100)
 
-	// --- Инициализация кэша ---
 	appCache := cache.NewCache(10*time.Minute, 5*time.Minute)
 
-	// --- СОЗДАНИЕ ЗАВИСИМОСТЕЙ И APP ---
 	deps := app.NewDependencies(database, cfg, hub, localStorage, appCache)
 	appInstance := app.NewApp(database, localStorage, hub, cfg, ".", deps)
 
@@ -150,15 +159,12 @@ func main() {
 		log.Fatal().Err(err).Msg("Не удалось настроить маршруты")
 	}
 
-	// Контекст для фоновых задач (отменяется при завершении)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Запуск фоновых задач
 	go game.CheckTimeouts(database, ctx)
 	go game.CheckAutoStartGames(database, ctx)
 
-	// --- Создание HTTP-сервера с таймаутами ---
 	srv := &http.Server{
 		Addr:         ":" + cfg.Server.Port,
 		Handler:      r,
@@ -167,7 +173,6 @@ func main() {
 		IdleTimeout:  120 * time.Second,
 	}
 
-	// Запуск сервера в горутине
 	go func() {
 		log.Info().Str("port", cfg.Server.Port).Msg("Сервер запущен")
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -175,13 +180,11 @@ func main() {
 		}
 	}()
 
-	// Ожидание сигналов завершения
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	log.Info().Msg("Получен сигнал завершения, инициируем graceful shutdown...")
 
-	// Даём 5 секунд на завершение текущих запросов
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 
@@ -189,16 +192,13 @@ func main() {
 		log.Error().Err(err).Msg("Ошибка при завершении сервера")
 	}
 
-	// Отменяем контекст фоновых задач
 	cancel()
 
-	// Останавливаем очередь email и дожидаемся отправки оставшихся писем
 	email.ShutdownQueue()
 
 	log.Info().Msg("Сервер остановлен")
 }
 
-// connectDBWithRetry пытается подключиться к БД с экспоненциальной задержкой.
 func connectDBWithRetry(cfg *config.Config, maxAttempts int, initialDelay time.Duration) (*gorm.DB, error) {
 	var dbConn *gorm.DB
 	var lastErr error

@@ -49,7 +49,7 @@ func RegisterRoutes(
 		authGroup.GET("/login", authHandler.ShowLoginForm)
 
 		// @Summary Аутентификация пользователя
-		// @Description Вход в систему с получением JWT-токена (устанавливается в cookie)
+		// @Description Вход в систему с получением JWT-токена (устанавливается в cookie). При успешном входе также устанавливается refresh-токен.
 		// @Tags auth
 		// @Accept x-www-form-urlencoded
 		// @Produce html
@@ -61,6 +61,17 @@ func RegisterRoutes(
 		// @Router /auth/login [post]
 		authGroup.POST("/login", middleware.LoginRateLimit(5*time.Minute, 5), authHandler.Login)
 
+		// @Summary Обновление access-токена
+		// @Description Получает новый access-токен по refresh-токену (из cookie или тела запроса). Refresh-токен должен быть действительным.
+		// @Tags auth
+		// @Accept json
+		// @Produce json
+		// @Param refresh_token body string true "Refresh-токен"
+		// @Success 200 {object} map[string]interface{} "Новый access-токен и время жизни"
+		// @Failure 401 {object} map[string]interface{} "Невалидный refresh-токен"
+		// @Router /auth/refresh [post]
+		authGroup.POST("/refresh", authHandler.RefreshToken)
+
 		// @Summary Показать форму регистрации
 		// @Description Возвращает HTML-страницу с формой регистрации
 		// @Tags auth
@@ -71,21 +82,22 @@ func RegisterRoutes(
 		authGroup.GET("/register", authHandler.ShowRegisterForm)
 
 		// @Summary Регистрация пользователя
-		// @Description Создаёт нового пользователя
+		// @Description Создаёт нового пользователя с ограничением частоты запросов (3 попытки за 10 минут с одного IP)
 		// @Tags auth
 		// @Accept x-www-form-urlencoded
 		// @Produce html
 		// @Param email formData string true "Email пользователя"
-		// @Param password formData string true "Пароль (минимум 8 символов)"
-		// @Param name formData string true "Имя пользователя"
+		// @Param password formData string true "Пароль (минимум 8 символов, максимум 72)"
+		// @Param name formData string true "Имя пользователя (2-50 символов)"
 		// @Success 302 {string} string "Перенаправление на /auth/login"
 		// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 		// @Failure 409 {object} map[string]interface{} "Email уже зарегистрирован"
+		// @Failure 429 {object} map[string]interface{} "Слишком много попыток регистрации"
 		// @Router /auth/register [post]
-		authGroup.POST("/register", authHandler.Register)
+		authGroup.POST("/register", middleware.RegistrationRateLimit(10*time.Minute, 3), authHandler.Register)
 
 		// @Summary Выход из системы
-		// @Description Удаляет JWT-куку и перенаправляет на главную
+		// @Description Удаляет JWT-куку и refresh-токен, перенаправляет на главную
 		// @Tags auth
 		// @Produce html
 		// @Success 302 {string} string "Перенаправление на /"
@@ -102,7 +114,7 @@ func RegisterRoutes(
 		authGroup.GET("/forgot", authHandler.ShowForgotForm)
 
 		// @Summary Запрос на сброс пароля
-		// @Description Отправляет на email ссылку для установки нового пароля
+		// @Description Отправляет на email ссылку для установки нового пароля (если пользователь с таким email существует)
 		// @Tags auth
 		// @Accept x-www-form-urlencoded
 		// @Produce html
@@ -113,7 +125,7 @@ func RegisterRoutes(
 		authGroup.POST("/forgot", authHandler.ForgotPassword)
 
 		// @Summary Показать форму сброса пароля
-		// @Description Возвращает HTML-страницу для ввода нового пароля по токену
+		// @Description Возвращает HTML-страницу для ввода нового пароля по токену, полученному по email
 		// @Tags auth
 		// @Accept html
 		// @Produce html
@@ -135,7 +147,7 @@ func RegisterRoutes(
 		authGroup.POST("/reset", authHandler.ResetPassword)
 
 		// @Summary Подтверждение email
-		// @Description Активирует email пользователя по токену
+		// @Description Активирует email пользователя по токену, отправленному при регистрации
 		// @Tags auth
 		// @Produce html
 		// @Param token query string true "Токен подтверждения"
@@ -154,11 +166,11 @@ func RegisterRoutes(
 		authGroup.GET("/oauth/:provider", oauthRateLimit, authHandler.OAuthLogin)
 
 		// @Summary Обработка callback OAuth
-		// @Description Завершает OAuth-авторизацию, создаёт/входит пользователя
+		// @Description Завершает OAuth-авторизацию, создаёт или входит пользователя, устанавливает JWT и refresh-токен
 		// @Tags auth
 		// @Param provider path string true "Провайдер OAuth"
 		// @Param code query string true "Код авторизации"
-		// @Param state query string true "Состояние (state)"
+		// @Param state query string true "Состояние (state) для защиты от CSRF"
 		// @Success 302 {string} string "Перенаправление на /dashboard"
 		// @Failure 400 {object} map[string]interface{} "Ошибка авторизации"
 		// @Router /auth/oauth/{provider}/callback [get]
@@ -169,23 +181,25 @@ func RegisterRoutes(
 	profileGroup.Use(middleware.AuthRequired(authSvc))
 	{
 		// @Summary Личный профиль
-		// @Description Отображает страницу профиля текущего пользователя
+		// @Description Отображает страницу профиля текущего пользователя с возможностью редактирования
 		// @Tags profile
 		// @Produce html
 		// @Success 200 {string} html "Страница профиля"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 		// @Failure 404 {object} map[string]interface{} "Пользователь не найден"
 		// @Router /profile [get]
 		// @Security JWT
 		profileGroup.GET("/", profileHandler.Show)
 
 		// @Summary Загрузка аватара
-		// @Description Загружает аватар пользователя
+		// @Description Загружает аватар пользователя (до 2 МБ, поддерживаются JPEG, PNG, WebP)
 		// @Tags profile
 		// @Accept multipart/form-data
 		// @Produce html
 		// @Param avatar formData file true "Файл аватара"
 		// @Success 302 {string} string "Перенаправление на /profile"
 		// @Failure 400 {object} map[string]interface{} "Ошибка загрузки"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 		// @Router /profile/avatar [post]
 		// @Security JWT
 		profileGroup.POST("/avatar", profileHandler.UploadAvatar)
@@ -195,16 +209,17 @@ func RegisterRoutes(
 		// @Tags profile
 		// @Accept x-www-form-urlencoded
 		// @Produce html
-		// @Param name formData string true "Новое имя"
+		// @Param name formData string true "Новое имя (2-50 символов)"
 		// @Param email formData string true "Новый email"
 		// @Success 302 {string} string "Перенаправление на /profile"
 		// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 		// @Router /profile/update [post]
 		// @Security JWT
 		profileGroup.POST("/update", profileHandler.UpdateProfile)
 
 		// @Summary Смена пароля
-		// @Description Изменяет пароль текущего пользователя
+		// @Description Изменяет пароль текущего пользователя (требуется ввод текущего пароля)
 		// @Tags profile
 		// @Accept x-www-form-urlencoded
 		// @Produce html
@@ -212,6 +227,7 @@ func RegisterRoutes(
 		// @Param new_password formData string true "Новый пароль (минимум 8 символов)"
 		// @Success 302 {string} string "Перенаправление на /profile"
 		// @Failure 400 {object} map[string]interface{} "Ошибка валидации или неверный пароль"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 		// @Router /profile/change-password [post]
 		// @Security JWT
 		profileGroup.POST("/change-password", profileHandler.ChangePassword)
@@ -221,10 +237,11 @@ func RegisterRoutes(
 	achievementGroup.Use(middleware.AuthRequired(authSvc))
 	{
 		// @Summary Список достижений
-		// @Description Отображает все достижения текущего пользователя
+		// @Description Отображает все достижения текущего пользователя (полученные награды)
 		// @Tags achievements
 		// @Produce html
 		// @Success 200 {string} html "Страница достижений"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 		// @Router /achievements [get]
 		// @Security JWT
 		achievementGroup.GET("/", achievementHandler.List)
@@ -234,10 +251,11 @@ func RegisterRoutes(
 	dashboardGroup.Use(middleware.AuthRequired(authSvc))
 	{
 		// @Summary Личный кабинет
-		// @Description Отображает главную страницу личного кабинета
+		// @Description Отображает главную страницу личного кабинета с информацией о созданных играх, командах, прохождениях и приглашениях
 		// @Tags dashboard
 		// @Produce html
 		// @Success 200 {string} html "Страница личного кабинета"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 		// @Router /dashboard [get]
 		// @Security JWT
 		dashboardGroup.GET("/", dashboardHandler.Index)

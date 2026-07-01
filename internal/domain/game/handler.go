@@ -17,6 +17,7 @@ import (
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/storage"
+	"gengine-0/internal/pkg/validation"
 	ws "gengine-0/internal/pkg/websocket"
 
 	"github.com/gin-gonic/gin"
@@ -48,7 +49,6 @@ type GameServiceInterface interface {
 	StartTesting(ctx context.Context, gameID, userID uint) (*GamePassing, error)
 	SubmitTestCode(ctx context.Context, passingID, userID uint, code string) (*Attempt, error)
 	SkipLevelTest(ctx context.Context, passingID, userID uint) error
-	// Новые методы для работы с отзывами
 	ListReviews(ctx context.Context, gameID uint) ([]Review, error)
 	GetAverageRating(ctx context.Context, gameID uint) (float64, int64, error)
 }
@@ -150,42 +150,7 @@ func init() {
 	}
 }
 
-// ---------- Вспомогательные валидаторы ----------
-
-func validateString(field, value string, minLen, maxLen int) error {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return errors.New(field + " не может быть пустым")
-	}
-	if len(trimmed) < minLen {
-		return errors.New(field + " должен содержать не менее " + strconv.Itoa(minLen) + " символов")
-	}
-	if len(trimmed) > maxLen {
-		return errors.New(field + " не может превышать " + strconv.Itoa(maxLen) + " символов")
-	}
-	return nil
-}
-
-func validatePositiveUint(field string, value uint) error {
-	if value == 0 {
-		return errors.New(field + " должен быть положительным числом")
-	}
-	return nil
-}
-
-// validateGameDates проверяет корректность дат (дедлайн не позже старта).
-func validateGameDates(startsAt, registrationDeadline *time.Time) error {
-	if registrationDeadline != nil && registrationDeadline.Before(time.Now()) {
-		return errors.New("крайний срок регистрации не может быть в прошлом")
-	}
-	if startsAt != nil && startsAt.Before(time.Now()) {
-		return errors.New("дата начала не может быть в прошлом")
-	}
-	if registrationDeadline != nil && startsAt != nil && registrationDeadline.After(*startsAt) {
-		return errors.New("крайний срок регистрации не может быть позже даты начала")
-	}
-	return nil
-}
+// ---------- Вспомогательные валидаторы (удалены локальные, используем validation) ----------
 
 // ---------- Вспомогательные типы для FullPreview ----------
 type levelPreview struct {
@@ -251,8 +216,6 @@ func NewGameHandler(
 // если размер превышен. Используется перед вызовом ShouldBind или FormFile.
 func limitRequestBody(c *gin.Context, maxBytes int64) error {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes)
-	// Принудительно проверяем, что тело не превышает лимит.
-	// Для этого читаем хотя бы один байт или используем проверку Content-Length.
 	if c.Request.ContentLength > maxBytes {
 		return fmt.Errorf("размер тела запроса превышает допустимый лимит (%d байт)", maxBytes)
 	}
@@ -336,7 +299,6 @@ func (h *GameHandler) Show(c *gin.Context) {
 		isManager = false
 	}
 
-	// Получаем отзывы через интерфейс
 	reviews, err := h.gameService.ListReviews(c.Request.Context(), uint(id))
 	if err != nil {
 		log.Error().Err(err).Int("game_id", id).Msg("GameHandler.Show: failed to list reviews")
@@ -374,7 +336,6 @@ func (h *GameHandler) NewForm(c *gin.Context) {
 func (h *GameHandler) Create(c *gin.Context) {
 	userID := c.GetUint("userID")
 
-	// Ограничиваем размер тела запроса 5 МБ (для обложки + формы)
 	if err := limitRequestBody(c, 5*1024*1024); err != nil {
 		render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
 			"Error": err.Error(),
@@ -392,7 +353,7 @@ func (h *GameHandler) Create(c *gin.Context) {
 		return
 	}
 
-	if err := validateGameDates(input.StartsAt, input.RegistrationDeadline); err != nil {
+	if err := validation.ValidateGameDates(input.StartsAt, input.RegistrationDeadline); err != nil {
 		render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
 			"Error": err.Error(),
 			"csrf":  csrf.GetToken(c),
@@ -473,7 +434,6 @@ func (h *GameHandler) Update(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 
-	// Ограничиваем размер тела запроса 5 МБ (для обложки + формы)
 	if err := limitRequestBody(c, 5*1024*1024); err != nil {
 		render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
 			"Error": err.Error(),
@@ -491,7 +451,7 @@ func (h *GameHandler) Update(c *gin.Context) {
 		return
 	}
 
-	if err := validateGameDates(input.StartsAt, input.RegistrationDeadline); err != nil {
+	if err := validation.ValidateGameDates(input.StartsAt, input.RegistrationDeadline); err != nil {
 		render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
 			"Error": err.Error(),
 			"csrf":  csrf.GetToken(c),
@@ -618,7 +578,6 @@ func (h *GameHandler) Apply(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 
-	// Ограничиваем размер тела запроса 1 МБ (для формы)
 	if err := limitRequestBody(c, 1*1024*1024); err != nil {
 		teams, _ := h.passingService.GetTeamsByCaptain(c.Request.Context(), userID)
 		render.Page(c, http.StatusBadRequest, "game_passings-apply.html", gin.H{
@@ -642,7 +601,7 @@ func (h *GameHandler) Apply(c *gin.Context) {
 		return
 	}
 
-	if err := validatePositiveUint("ID команды", input.TeamID); err != nil {
+	if err := validation.ValidatePositiveUint("ID команды", input.TeamID); err != nil {
 		teams, _ := h.passingService.GetTeamsByCaptain(c.Request.Context(), userID)
 		render.Page(c, http.StatusBadRequest, "game_passings-apply.html", gin.H{
 			"GameID": gameID,
@@ -728,7 +687,6 @@ func (h *GameHandler) DisqualifyTeam(c *gin.Context) {
 		return
 	}
 
-	// Ограничиваем размер тела запроса 1 МБ
 	if err := limitRequestBody(c, 1*1024*1024); err != nil {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": err.Error()})
 		return
@@ -739,7 +697,7 @@ func (h *GameHandler) DisqualifyTeam(c *gin.Context) {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверные данные: " + err.Error()})
 		return
 	}
-	if err := validatePositiveUint("ID команды", input.TeamID); err != nil {
+	if err := validation.ValidatePositiveUint("ID команды", input.TeamID); err != nil {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": err.Error()})
 		return
 	}
@@ -784,7 +742,6 @@ func (h *GameHandler) AddCoAuthor(c *gin.Context) {
 	}
 	ownerID := c.GetUint("userID")
 
-	// Ограничиваем размер тела запроса 1 МБ
 	if err := limitRequestBody(c, 1*1024*1024); err != nil {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": err.Error()})
 		return
@@ -795,7 +752,7 @@ func (h *GameHandler) AddCoAuthor(c *gin.Context) {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверные данные: " + err.Error()})
 		return
 	}
-	if err := validatePositiveUint("ID пользователя", input.UserID); err != nil {
+	if err := validation.ValidatePositiveUint("ID пользователя", input.UserID); err != nil {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": err.Error()})
 		return
 	}
@@ -830,7 +787,18 @@ func (h *GameHandler) RemoveCoAuthor(c *gin.Context) {
 
 // ----- Заметки автора -----
 
-// Notes отображает заметки к игре (JSON API).
+// Notes возвращает заметки к игре в формате JSON.
+// @Summary Заметки игры
+// @Description Возвращает все заметки авторов и соавторов для игры
+// @Tags games
+// @Produce json
+// @Param id path int true "ID игры"
+// @Success 200 {object} map[string]interface{} "Список заметок"
+// @Failure 400 {object} map[string]interface{} "Неверный ID игры"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Нет прав доступа"
+// @Router /games/{id}/notes [get]
+// @Security JWT
 func (h *GameHandler) Notes(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
@@ -847,6 +815,19 @@ func (h *GameHandler) Notes(c *gin.Context) {
 }
 
 // CreateNote создаёт новую заметку.
+// @Summary Создание заметки
+// @Description Создаёт новую заметку для игры (доступно автору или соавтору)
+// @Tags games
+// @Accept json
+// @Produce json
+// @Param id path int true "ID игры"
+// @Param request body struct{LevelID *uint `json:"level_id"`; Text string `json:"text" binding:"required"`} true "Текст заметки и опциональный ID уровня"
+// @Success 201 {object} map[string]interface{} "Созданная заметка"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Нет прав доступа"
+// @Router /games/{id}/notes [post]
+// @Security JWT
 func (h *GameHandler) CreateNote(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
@@ -855,7 +836,6 @@ func (h *GameHandler) CreateNote(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 
-	// Ограничиваем размер тела запроса 1 МБ
 	if err := limitRequestBody(c, 1*1024*1024); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -869,7 +849,7 @@ func (h *GameHandler) CreateNote(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := validateString("Текст заметки", input.Text, 1, 1000); err != nil {
+	if err := validation.ValidateString("Текст заметки", input.Text, 1, 1000); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -884,6 +864,18 @@ func (h *GameHandler) CreateNote(c *gin.Context) {
 }
 
 // DeleteNote удаляет заметку.
+// @Summary Удаление заметки
+// @Description Удаляет заметку (доступно автору заметки или автору/соавтору игры)
+// @Tags games
+// @Produce json
+// @Param id path int true "ID игры"
+// @Param note_id path int true "ID заметки"
+// @Success 200 {object} map[string]interface{} "Статус удаления"
+// @Failure 400 {object} map[string]interface{} "Неверный ID"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Нет прав доступа"
+// @Router /games/{id}/notes/{note_id} [delete]
+// @Security JWT
 func (h *GameHandler) DeleteNote(c *gin.Context) {
 	noteID, err := strconv.Atoi(c.Param("note_id"))
 	if err != nil || noteID <= 0 {
@@ -976,7 +968,6 @@ func (h *GameHandler) SaveSettings(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 
-	// Ограничиваем размер тела запроса 1 МБ
 	if err := limitRequestBody(c, 1*1024*1024); err != nil {
 		g, _ := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID)
 		render.Page(c, http.StatusBadRequest, "games-settings.html", gin.H{
@@ -1121,7 +1112,6 @@ func (h *GameHandler) UploadPhoto(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 
-	// Ограничиваем размер тела запроса 10 МБ (для фото)
 	if err := limitRequestBody(c, 10*1024*1024); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -1214,7 +1204,18 @@ func (h *GameHandler) DeletePhoto(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
-// FullPreview возвращает структуру игры для быстрого просмотра.
+// FullPreview возвращает полную структуру игры для быстрого просмотра.
+// @Summary Полный просмотр игры
+// @Description Возвращает все уровни с вопросами и ответами для быстрого просмотра (JSON)
+// @Tags games
+// @Produce json
+// @Param id path int true "ID игры"
+// @Success 200 {object} map[string]interface{} "Структура игры"
+// @Failure 400 {object} map[string]interface{} "Неверный ID игры"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Нет доступа"
+// @Router /games/{id}/full-preview [get]
+// @Security JWT
 func (h *GameHandler) FullPreview(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
@@ -1341,6 +1342,7 @@ func (h *GameplayHandler) ShowGame(c *gin.Context) {
 
 	hideAnswers := settings.HideAnswersUntilFinished && passing.Status != StatusFinished
 
+	// Используем локальный тип gameBlackboxVotingSession
 	votingActive := h.db.Where("game_passing_id = ? AND level_id = ? AND is_open = true", passingID, progress.LevelID).First(&gameBlackboxVotingSession{}).Error == nil
 
 	render.Page(c, http.StatusOK, "gameplay-show.html", gin.H{
@@ -1369,7 +1371,6 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 		return
 	}
 
-	// Ограничиваем размер тела запроса 1 МБ (для кода)
 	if err := limitRequestBody(c, 1*1024*1024); err != nil {
 		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
 			"Error": err.Error(),
@@ -1388,7 +1389,7 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 	}
 
 	code := strings.TrimSpace(input.Code)
-	if err := validateString("Код", code, 1, 10000); err != nil {
+	if err := validation.ValidateString("Код", code, 1, 10000); err != nil {
 		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
 			"Error": err.Error(),
 			"csrf":  csrf.GetToken(c),
@@ -1443,7 +1444,6 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 		return
 	}
 
-	// Ограничиваем размер тела запроса 10 МБ (для файла)
 	if err := limitRequestBody(c, 10*1024*1024); err != nil {
 		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
 			"Error": err.Error(),
@@ -1554,7 +1554,6 @@ func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
 		return
 	}
 
-	// Ограничиваем размер тела запроса 1 МБ
 	if err := limitRequestBody(c, 1*1024*1024); err != nil {
 		render.Page(c, http.StatusBadRequest, "gameplay-test.html", gin.H{
 			"Error": err.Error(),
@@ -1573,7 +1572,7 @@ func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
 	}
 
 	code := strings.TrimSpace(input.Code)
-	if err := validateString("Код", code, 1, 10000); err != nil {
+	if err := validation.ValidateString("Код", code, 1, 10000); err != nil {
 		render.Page(c, http.StatusBadRequest, "gameplay-test.html", gin.H{
 			"Error": err.Error(),
 			"csrf":  csrf.GetToken(c),

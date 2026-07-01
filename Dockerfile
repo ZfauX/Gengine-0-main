@@ -1,46 +1,48 @@
-# Dockerfile (оптимизированный)
-FROM golang:1.22-alpine AS builder
+# Dockerfile
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
+# Устанавливаем необходимые зависимости для сборки
+RUN apk add --no-cache git ca-certificates tzdata
+
+# Копируем go.mod и go.sum для кэширования зависимостей
 COPY go.mod go.sum ./
 RUN go mod download
 
+# Копируем исходный код
 COPY . .
 
-# Сборка статического бинарника
-RUN CGO_ENABLED=0 GOOS=linux go build -o server ./cmd/server
+# Собираем приложение с флагом -migrate для возможности запуска миграций
+RUN CGO_ENABLED=0 go build -o gengine -ldflags="-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo 'dev') -X main.buildDate=$(date -u '+%Y-%m-%d_%H:%M:%S')" ./cmd/server
 
 # Финальный образ
-FROM alpine:latest
+FROM alpine:3.19
 
-RUN apk --no-cache add ca-certificates tzdata postgresql18-client
+WORKDIR /app
 
-WORKDIR /root/
+# Устанавливаем PostgreSQL client для pg_dump (нужен для бэкапов)
+RUN apk add --no-cache ca-certificates tzdata postgresql16-client
 
 # Копируем бинарник
-COPY --from=builder /app/server .
+COPY --from=builder /app/gengine .
 
-# Копируем статику и загрузки (если нужны во время выполнения)
-COPY --from=builder /app/static ./static
-COPY --from=builder /app/uploads ./uploads
-
-# Копируем только шаблоны (без Go-исходников) — это необходимо для LoadHTMLGlob
-# TODO: в будущем перейти на embed, чтобы избавиться от копирования шаблонов
-COPY --from=builder /app/internal/domain/admin/templates ./internal/domain/admin/templates
-COPY --from=builder /app/internal/domain/calendar/templates ./internal/domain/calendar/templates
-COPY --from=builder /app/internal/domain/export/templates ./internal/domain/export/templates
-COPY --from=builder /app/internal/domain/game/templates ./internal/domain/game/templates
-COPY --from=builder /app/internal/domain/level/templates ./internal/domain/level/templates
-COPY --from=builder /app/internal/domain/monitor/templates ./internal/domain/monitor/templates
-COPY --from=builder /app/internal/domain/social/templates ./internal/domain/social/templates
-COPY --from=builder /app/internal/domain/team/templates ./internal/domain/team/templates
-COPY --from=builder /app/internal/domain/tournament/templates ./internal/domain/tournament/templates
-COPY --from=builder /app/internal/domain/user/templates ./internal/domain/user/templates
-
-# Копируем миграции (если они используются во время выполнения)
+# Копируем папку с миграциями
 COPY --from=builder /app/migrations ./migrations
+
+# Копируем статику
+COPY --from=builder /app/static ./static
+
+# Копируем шаблоны (сохраняем структуру папок)
+COPY --from=builder /app/internal/domain/*/templates ./internal/domain/
+
+# Создаём директории для логов, загрузок и бэкапов
+RUN mkdir -p logs uploads backups
+
+# Копируем entrypoint и делаем его исполняемым
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 EXPOSE 8080
 
-CMD ["./server"]
+ENTRYPOINT ["/entrypoint.sh"]

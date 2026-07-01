@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"time"
 
 	"gengine-0/internal/config"
@@ -61,7 +60,6 @@ func (s *AuthService) Register(ctx context.Context, emailStr, password, name str
 		return nil, err
 	}
 
-	// Отправка письма верификации через emailVerifRepo
 	verificationService := NewEmailVerificationService(s.userRepo, s.emailVerifRepo, s.cfg)
 	verificationService.SendVerificationEmail(ctx, user)
 
@@ -83,6 +81,48 @@ func (s *AuthService) GenerateJWT(user User) (string, error) {
 	return s.generateJWT(user)
 }
 
+func (s *AuthService) GenerateRefreshToken(user User) (string, error) {
+	claims := jwt.MapClaims{
+		"user_id": user.ID,
+		"email":   user.Email,
+		"role":    user.Role,
+		"exp":     time.Now().Add(s.cfg.JWT.RefreshExpiry).Unix(),
+		"refresh": true,
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(s.cfg.JWT.Secret))
+}
+
+func (s *AuthService) RefreshAccessToken(refreshTokenStr string) (string, error) {
+	token, err := jwt.Parse(refreshTokenStr, func(token *jwt.Token) (any, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("неверный метод подписи")
+		}
+		return []byte(s.cfg.JWT.Secret), nil
+	})
+	if err != nil || !token.Valid {
+		return "", errors.New("невалидный refresh-токен")
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return "", errors.New("неверные данные токена")
+	}
+	isRefresh, ok := claims["refresh"].(bool)
+	if !ok || !isRefresh {
+		return "", errors.New("не refresh-токен")
+	}
+	userIDFloat, ok := claims["user_id"].(float64)
+	if !ok {
+		return "", errors.New("неверный ID пользователя")
+	}
+	userID := uint(userIDFloat)
+	user, err := s.userRepo.GetByID(context.Background(), userID)
+	if err != nil {
+		return "", errors.New("пользователь не найден")
+	}
+	return s.generateJWT(*user)
+}
+
 func (s *AuthService) ParseToken(tokenStr string) (uint, string, error) {
 	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -96,6 +136,9 @@ func (s *AuthService) ParseToken(tokenStr string) (uint, string, error) {
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
 		return 0, "", errors.New("неверные данные токена")
+	}
+	if isRefresh, ok := claims["refresh"].(bool); ok && isRefresh {
+		return 0, "", errors.New("использование refresh-токена как access запрещено")
 	}
 	userIDFloat, ok := claims["user_id"].(float64)
 	if !ok {
@@ -289,19 +332,20 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 	if err != nil {
 		return nil, fmt.Errorf("обмен кода на токен: %w", err)
 	}
-
 	client := cfg.Client(ctx, token)
-
 	var emailStr, name string
 	var emailVerified bool
-
 	switch provider {
 	case "google":
 		resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
 		if err != nil {
 			return nil, fmt.Errorf("запрос к Google API: %w", err)
 		}
-		defer func() { _ = resp.Body.Close() }()
+		defer func() {
+			if closeErr := resp.Body.Close(); closeErr != nil {
+				log.Warn().Err(closeErr).Msg("OAuth Google: failed to close response body")
+			}
+		}()
 		var info googleUserInfo
 		if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
 			return nil, fmt.Errorf("декодирование ответа Google: %w", err)
@@ -315,13 +359,16 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 		if !emailVerified {
 			return nil, errors.New("email от Google не подтверждён")
 		}
-
 	case "github":
 		resp, err := client.Get("https://api.github.com/user/emails")
 		if err != nil {
 			return nil, fmt.Errorf("запрос к GitHub API: %w", err)
 		}
-		defer func() { _ = resp.Body.Close() }()
+		defer func() {
+			if closeErr := resp.Body.Close(); closeErr != nil {
+				log.Warn().Err(closeErr).Msg("OAuth GitHub: failed to close response body")
+			}
+		}()
 		var emails []githubEmail
 		if err := json.NewDecoder(resp.Body).Decode(&emails); err != nil {
 			return nil, fmt.Errorf("декодирование ответа GitHub: %w", err)
@@ -341,7 +388,11 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 		if err != nil {
 			log.Warn().Err(err).Msg("не удалось получить имя пользователя GitHub")
 		} else {
-			defer func() { _ = respUser.Body.Close() }()
+			defer func() {
+				if closeErr := respUser.Body.Close(); closeErr != nil {
+					log.Warn().Err(closeErr).Msg("OAuth GitHub user: failed to close response body")
+				}
+			}()
 			var userInfo struct {
 				Login string `json:"login"`
 			}
@@ -349,13 +400,16 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 				name = userInfo.Login
 			}
 		}
-
 	case "yandex":
 		resp, err := client.Get("https://login.yandex.ru/info?format=json")
 		if err != nil {
 			return nil, fmt.Errorf("запрос к Yandex API: %w", err)
 		}
-		defer func() { _ = resp.Body.Close() }()
+		defer func() {
+			if closeErr := resp.Body.Close(); closeErr != nil {
+				log.Warn().Err(closeErr).Msg("OAuth Yandex: failed to close response body")
+			}
+		}()
 		var info yandexUserInfo
 		if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
 			return nil, fmt.Errorf("декодирование ответа Yandex: %w", err)
@@ -372,15 +426,12 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 		if name == "" {
 			name = info.LastName
 		}
-
 	default:
 		return nil, errors.New("неподдерживаемый провайдер для получения информации")
 	}
-
 	if name == "" {
 		name = emailStr
 	}
-
 	user, err := s.userRepo.GetByEmail(ctx, emailStr)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		user = &User{
@@ -406,14 +457,12 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 			}
 		}
 	}
-
 	extLogin := &ExternalLogin{
 		UserID:     user.ID,
 		Provider:   provider,
 		ExternalID: emailStr,
 	}
 	_ = s.extLoginRepo.FindOrCreate(ctx, extLogin)
-
 	return user, nil
 }
 
@@ -579,55 +628,16 @@ type DashboardInvitation struct {
 	Status   string
 }
 
-type dashboardGame struct {
-	ID        uint           `gorm:"primaryKey"`
-	Name      string         `gorm:"column:name"`
-	IsDraft   bool           `gorm:"column:is_draft"`
-	AuthorID  uint           `gorm:"column:author_id"`
-	DeletedAt gorm.DeletedAt `gorm:"index"`
-}
-
-func (dashboardGame) TableName() string { return "games" }
-
-type dashboardGamePassing struct {
-	ID        uint           `gorm:"primaryKey"`
-	GameID    uint           `gorm:"column:game_id"`
-	TeamID    uint           `gorm:"column:team_id"`
-	Status    string         `gorm:"column:status"`
-	DeletedAt gorm.DeletedAt `gorm:"index"`
-}
-
-func (dashboardGamePassing) TableName() string { return "game_passings" }
-
-type dashboardTeam struct {
-	ID        uint           `gorm:"primaryKey"`
-	Name      string         `gorm:"column:name"`
-	CaptainID uint           `gorm:"column:captain_id"`
-	DeletedAt gorm.DeletedAt `gorm:"index"`
-}
-
-func (dashboardTeam) TableName() string { return "teams" }
-
-type dashboardInvitation struct {
-	ID        uint           `gorm:"primaryKey"`
-	TeamID    uint           `gorm:"column:team_id"`
-	UserID    uint           `gorm:"column:user_id"`
-	Status    string         `gorm:"column:status"`
-	DeletedAt gorm.DeletedAt `gorm:"index"`
-	Team      dashboardTeam  `gorm:"foreignKey:TeamID"`
-}
-
-func (dashboardInvitation) TableName() string { return "invitations" }
-
-const statusPending = "pending"
-
-// GetDashboard собирает данные для дашборда пользователя с минимальным количеством запросов.
+// GetDashboard собирает данные для дашборда с минимальным количеством запросов.
 func (s *UserDashboardService) GetDashboard(userID uint) (*UserDashboard, error) {
 	var dash UserDashboard
 
-	// 1. Игры автора — один запрос
-	var authoredGames []dashboardGame
-	s.DB.Where("author_id = ?", userID).Find(&authoredGames)
+	var authoredGames []struct {
+		ID      uint
+		Name    string
+		IsDraft bool
+	}
+	s.DB.Model(&DashboardGame{}).Where("author_id = ?", userID).Find(&authoredGames)
 	for _, g := range authoredGames {
 		dash.AuthoredGames = append(dash.AuthoredGames, DashboardGame{
 			ID:      g.ID,
@@ -636,128 +646,111 @@ func (s *UserDashboardService) GetDashboard(userID uint) (*UserDashboard, error)
 		})
 	}
 
-	// 2. Команды капитана — один запрос
-	var captainTeams []dashboardTeam
-	s.DB.Where("captain_id = ?", userID).Find(&captainTeams)
-	for _, ct := range captainTeams {
-		dash.CaptainTeams = append(dash.CaptainTeams, DashboardTeamWithGame{
-			Team: DashboardTeam{ID: ct.ID, Name: ct.Name},
-			Game: DashboardGame{},
-		})
-	}
+	var allTeams []DashboardTeam
+	s.DB.Raw(`
+		SELECT id, name FROM teams WHERE captain_id = ?
+		UNION
+		SELECT t.id, t.name FROM teams t
+		JOIN team_members tm ON tm.team_id = t.id
+		WHERE tm.user_id = ? AND t.captain_id != ?
+	`, userID, userID, userID).Scan(&allTeams)
 
-	// 3. ID команд, где пользователь участник — один запрос
-	var memberTeamIDs []uint
-	s.DB.Table("team_members").Where("user_id = ?", userID).Pluck("team_id", &memberTeamIDs)
-
-	// Объединяем ID всех команд (капитан + участник)
-	allTeamIDs := make([]uint, 0)
-	for _, t := range captainTeams {
-		allTeamIDs = append(allTeamIDs, t.ID)
-	}
-	allTeamIDs = append(allTeamIDs, memberTeamIDs...)
-	allTeamIDs = uniqueUintSlice(allTeamIDs)
-
-	if len(allTeamIDs) == 0 {
-		// Если нет команд, возвращаем только игры автора и приглашения
-		var invitations []dashboardInvitation
-		s.DB.Preload("Team").Where("user_id = ? AND status = ?", userID, statusPending).Find(&invitations)
-		for _, inv := range invitations {
-			dash.PendingInvitations = append(dash.PendingInvitations, DashboardInvitation{
-				ID:       inv.ID,
-				TeamID:   inv.TeamID,
-				TeamName: inv.Team.Name,
-				Status:   inv.Status,
-			})
-		}
+	if len(allTeams) == 0 {
+		var invitations []DashboardInvitation
+		s.DB.Table("invitations").
+			Select("invitations.id, invitations.team_id, teams.name as team_name, invitations.status").
+			Joins("JOIN teams ON teams.id = invitations.team_id").
+			Where("invitations.user_id = ? AND invitations.status = ?", userID, "pending").
+			Scan(&invitations)
+		dash.PendingInvitations = invitations
 		return &dash, nil
 	}
 
-	// 4. Прохождения для всех команд — один запрос с Preload
-	var passings []dashboardGamePassing
-	s.DB.Where("team_id IN ? AND status IN (?, ?, ?)", allTeamIDs,
-		"accepted", "started", "finished").
+	var passings []struct {
+		ID     uint
+		GameID uint
+		TeamID uint
+		Status string
+	}
+	teamIDs := make([]uint, len(allTeams))
+	for i, t := range allTeams {
+		teamIDs[i] = t.ID
+	}
+	s.DB.Model(&DashboardPassingWithGame{}).
+		Where("team_id IN ? AND status IN (?, ?, ?)", teamIDs, "accepted", "started", "finished").
 		Find(&passings)
 
-	// Если есть прохождения, загружаем связанные игры и команды одним запросом
-	if len(passings) > 0 {
-		// Собираем ID игр и команд
-		gameIDs := make([]uint, 0, len(passings))
-		teamIDs := make([]uint, 0, len(passings))
-		for _, p := range passings {
-			gameIDs = append(gameIDs, p.GameID)
-			teamIDs = append(teamIDs, p.TeamID)
-		}
-		gameIDs = uniqueUintSlice(gameIDs)
-		teamIDs = uniqueUintSlice(teamIDs)
+	var gameIDs []uint
+	var teamIDsForGames []uint
+	for _, p := range passings {
+		gameIDs = append(gameIDs, p.GameID)
+		teamIDsForGames = append(teamIDsForGames, p.TeamID)
+	}
+	gameIDs = uniqueUintSlice(gameIDs)
+	teamIDsForGames = uniqueUintSlice(teamIDsForGames)
 
-		// Загружаем все игры одним запросом
-		var games []dashboardGame
+	var gamesMap = make(map[uint]DashboardGame)
+	if len(gameIDs) > 0 {
+		var games []DashboardGame
 		s.DB.Where("id IN ?", gameIDs).Find(&games)
-		gamesMap := make(map[uint]dashboardGame)
 		for _, g := range games {
 			gamesMap[g.ID] = g
 		}
+	}
 
-		// Загружаем все команды одним запросом
-		var teams []dashboardTeam
-		s.DB.Where("id IN ?", teamIDs).Find(&teams)
-		teamsMap := make(map[uint]dashboardTeam)
+	var teamsMap = make(map[uint]DashboardTeam)
+	if len(teamIDsForGames) > 0 {
+		var teams []DashboardTeam
+		s.DB.Where("id IN ?", teamIDsForGames).Find(&teams)
 		for _, t := range teams {
 			teamsMap[t.ID] = t
 		}
+	}
 
-		// Формируем результаты
-		for _, p := range passings {
-			g, ok := gamesMap[p.GameID]
-			if !ok {
-				continue
-			}
-			t, ok := teamsMap[p.TeamID]
-			if !ok {
-				continue
-			}
-
-			// Обновляем игры для captainTeams
-			for i, ct := range dash.CaptainTeams {
-				if ct.Team.ID == p.TeamID {
-					dash.CaptainTeams[i].Game = DashboardGame{ID: g.ID, Name: g.Name}
-					break
-				}
-			}
-
-			// Добавляем в memberTeams, если пользователь участник (не капитан)
-			if contains(memberTeamIDs, p.TeamID) {
-				dash.MemberTeams = append(dash.MemberTeams, DashboardTeamWithGame{
-					Team: DashboardTeam{ID: t.ID, Name: t.Name},
-					Game: DashboardGame{ID: g.ID, Name: g.Name},
-				})
-			}
-
-			// Добавляем в активные прохождения
-			if p.Status == "started" || p.Status == "accepted" {
-				dash.ActivePassings = append(dash.ActivePassings, DashboardPassingWithGame{
-					PassingStatus: p.Status,
-					TeamName:      t.Name,
-					GameName:      g.Name,
-					GameID:        p.GameID,
-					PassingID:     p.ID,
-				})
-			}
+	captainTeamIDs := make(map[uint]bool)
+	for _, t := range allTeams {
+		var captainID uint
+		s.DB.Model(&DashboardTeam{}).Select("captain_id").Where("id = ?", t.ID).Scan(&captainID)
+		if captainID == userID {
+			captainTeamIDs[t.ID] = true
 		}
 	}
 
-	// 5. Приглашения — один запрос с Preload
-	var invitations []dashboardInvitation
-	s.DB.Preload("Team").Where("user_id = ? AND status = ?", userID, statusPending).Find(&invitations)
-	for _, inv := range invitations {
-		dash.PendingInvitations = append(dash.PendingInvitations, DashboardInvitation{
-			ID:       inv.ID,
-			TeamID:   inv.TeamID,
-			TeamName: inv.Team.Name,
-			Status:   inv.Status,
-		})
+	for _, p := range passings {
+		game, gameOk := gamesMap[p.GameID]
+		team, teamOk := teamsMap[p.TeamID]
+		if !gameOk || !teamOk {
+			continue
+		}
+		if captainTeamIDs[p.TeamID] {
+			dash.CaptainTeams = append(dash.CaptainTeams, DashboardTeamWithGame{
+				Team: team,
+				Game: game,
+			})
+		} else {
+			dash.MemberTeams = append(dash.MemberTeams, DashboardTeamWithGame{
+				Team: team,
+				Game: game,
+			})
+		}
+		if p.Status == "started" || p.Status == "accepted" {
+			dash.ActivePassings = append(dash.ActivePassings, DashboardPassingWithGame{
+				PassingStatus: p.Status,
+				TeamName:      team.Name,
+				GameName:      game.Name,
+				GameID:        p.GameID,
+				PassingID:     p.ID,
+			})
+		}
 	}
+
+	var invitations []DashboardInvitation
+	s.DB.Table("invitations").
+		Select("invitations.id, invitations.team_id, teams.name as team_name, invitations.status").
+		Joins("JOIN teams ON teams.id = invitations.team_id").
+		Where("invitations.user_id = ? AND invitations.status = ?", userID, "pending").
+		Scan(&invitations)
+	dash.PendingInvitations = invitations
 
 	return &dash, nil
 }
@@ -772,8 +765,4 @@ func uniqueUintSlice(input []uint) []uint {
 		}
 	}
 	return u
-}
-
-func contains(slice []uint, item uint) bool {
-	return slices.Contains(slice, item)
 }

@@ -31,7 +31,8 @@ func setupSocialDB(t *testing.T) *gorm.DB {
 
 func TestRatingService_UpdateRatingsForGame(t *testing.T) {
 	db := setupSocialDB(t)
-	rs := game.NewRatingService(db)
+	// Передаём nil вместо кэша (в тестах кэш не нужен)
+	rs := game.NewRatingService(db, nil)
 
 	author := createUser(t, db, "author@test.com", "pass")
 	player := createUser(t, db, "player@test.com", "pass")
@@ -61,7 +62,7 @@ func TestRatingService_UpdateRatingsForGame(t *testing.T) {
 
 func TestRatingService_GetLeaderboard(t *testing.T) {
 	db := setupSocialDB(t)
-	rs := game.NewRatingService(db)
+	rs := game.NewRatingService(db, nil)
 
 	u1 := createUser(t, db, "u1@test.com", "pass")
 	u2 := createUser(t, db, "u2@test.com", "pass")
@@ -77,7 +78,7 @@ func TestRatingService_GetLeaderboard(t *testing.T) {
 
 func TestRatingService_GetLeaderboardEmpty(t *testing.T) {
 	db := setupSocialDB(t)
-	rs := game.NewRatingService(db)
+	rs := game.NewRatingService(db, nil)
 
 	board, err := rs.GetLeaderboard(10)
 	require.NoError(t, err)
@@ -86,7 +87,7 @@ func TestRatingService_GetLeaderboardEmpty(t *testing.T) {
 
 func TestRatingService_UpdateRatingsForGame_NoPassings(t *testing.T) {
 	db := setupSocialDB(t)
-	rs := game.NewRatingService(db)
+	rs := game.NewRatingService(db, nil)
 
 	author := createUser(t, db, "author@test.com", "pass")
 	g := createGame(t, db, author.ID, "No Passings")

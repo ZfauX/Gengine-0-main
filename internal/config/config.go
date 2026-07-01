@@ -36,6 +36,7 @@ type ServerConfig struct {
 	LogMaxSize  int    // максимальный размер файла лога в МБ (по умолчанию 100)
 	LogMaxAge   int    // максимальное количество дней хранения логов (по умолчанию 28)
 	LogCompress bool   // сжимать ли архивы (по умолчанию true)
+	LogFormat   string // формат вывода логов: "console" или "json" (по умолчанию "console")
 }
 
 // DatabaseConfig содержит параметры подключения к PostgreSQL.
@@ -137,6 +138,7 @@ func LoadConfig() (*Config, error) {
 	cfg.Server.LogMaxSize = getEnvAsInt("LOG_MAX_SIZE", 100)
 	cfg.Server.LogMaxAge = getEnvAsInt("LOG_MAX_AGE", 28)
 	cfg.Server.LogCompress = getEnvAsBool("LOG_COMPRESS", true)
+	cfg.Server.LogFormat = getEnvOrDefault("LOG_FORMAT", "console") // console или json
 
 	// База данных (обязательные параметры)
 	var err error
@@ -386,7 +388,6 @@ func getEnvAsInt(key string, fallback int) int {
 		if intValue, err := strconv.Atoi(value); err == nil {
 			return intValue
 		}
-		// вместо log.Warn() просто используем fallback — ошибка не критична
 	}
 	return fallback
 }

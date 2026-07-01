@@ -9,6 +9,7 @@ import (
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/storage"
+	"gengine-0/internal/pkg/validation"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -223,6 +224,15 @@ func (h *TeamHandler) AddMember(c *gin.Context) {
 		return
 	}
 
+	// Валидация ID пользователя
+	if err := validation.ValidatePositiveUint("ID пользователя", input.UserID); err != nil {
+		render.Page(c, http.StatusBadRequest, "teams-add_member.html", gin.H{
+			"Error": err.Error(),
+			"csrf":  csrf.GetToken(c),
+		})
+		return
+	}
+
 	if err := h.teamService.AddMember(c.Request.Context(), req.TeamID, input.UserID, actorID); err != nil {
 		log.Error().Err(err).Uint("team_id", req.TeamID).Uint("user_id", input.UserID).Uint("actor_id", actorID).Msg("AddMember: failed to add member")
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
@@ -287,6 +297,15 @@ func (h *TeamHandler) ChangeCaptain(c *gin.Context) {
 	if err := c.ShouldBind(&input); err != nil {
 		render.Page(c, http.StatusBadRequest, "teams-change_captain.html", gin.H{
 			"Error": "Неверные данные: " + err.Error(),
+			"csrf":  csrf.GetToken(c),
+		})
+		return
+	}
+
+	// Валидация ID нового капитана
+	if err := validation.ValidatePositiveUint("ID капитана", input.CaptainID); err != nil {
+		render.Page(c, http.StatusBadRequest, "teams-change_captain.html", gin.H{
+			"Error": err.Error(),
 			"csrf":  csrf.GetToken(c),
 		})
 		return
@@ -359,6 +378,15 @@ func (h *InvitationHandler) Create(c *gin.Context) {
 	if err := c.ShouldBind(&input); err != nil {
 		render.Page(c, http.StatusBadRequest, "invitations-new.html", gin.H{
 			"Error": "Неверный ID пользователя",
+			"csrf":  csrf.GetToken(c),
+		})
+		return
+	}
+
+	// Валидация ID пользователя
+	if err := validation.ValidatePositiveUint("ID пользователя", input.UserID); err != nil {
+		render.Page(c, http.StatusBadRequest, "invitations-new.html", gin.H{
+			"Error": err.Error(),
 			"csrf":  csrf.GetToken(c),
 		})
 		return

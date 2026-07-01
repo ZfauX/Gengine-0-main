@@ -126,7 +126,6 @@ func (h *AdminHandler) ListUsers(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	// Получаем общее количество для пагинации
 	total, err := h.userRepo.CountByRole(ctx, req.Role)
 	if err != nil {
 		log.Error().Err(err).Str("role", req.Role).Msg("ListUsers: failed to count users")

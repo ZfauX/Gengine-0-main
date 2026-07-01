@@ -11,9 +11,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/rs/zerolog/log"
-	"gorm.io/gorm"
-
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/team"
@@ -23,6 +20,10 @@ import (
 	"gengine-0/internal/pkg/metrics"
 	"gengine-0/internal/pkg/storage"
 	ws "gengine-0/internal/pkg/websocket"
+
+	"github.com/rs/zerolog/log"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Константы для фильтрации статусов игр (чтобы избежать магических строк)
@@ -487,92 +488,199 @@ func (s *GameService) Delete(ctx context.Context, id uint, userID uint) error {
 	return nil
 }
 
-func (s *GameService) SubmitCode(ctx context.Context, passingID, userID uint, code string) (*Attempt, error) {
-	db := s.gameRepo.DB(ctx)
-	progress, err := GetCurrentProgress(db, passingID)
-	if err != nil {
-		return nil, err
-	}
+// =============================================================================
+// ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ПРОВЕРКИ ЧЛЕНСТВА В КОМАНДЕ
+// =============================================================================
 
-	attempt, success, err := s.attemptService.SubmitCode(progress, code)
-	if err != nil {
-		return nil, err
-	}
-
-	if success {
-		if err := CompleteLevel(db, progress); err != nil {
-			return nil, err
-		}
-		s.logAndNotify(ctx, db, progress, "код принят", userID)
-	} else {
-		s.logAndNotify(ctx, db, progress, "неверный код", userID)
-	}
-
-	s.broadcastSnapshot(ctx, passingID)
-	return attempt, nil
-}
-
-func (s *GameService) SubmitFile(ctx context.Context, passingID, userID uint, filePath string) (*Attempt, error) {
-	db := s.gameRepo.DB(ctx)
-	progress, err := GetCurrentProgress(db, passingID)
-	if err != nil {
-		return nil, err
-	}
-
-	attempt, err := s.attemptService.SubmitFile(progress, filePath)
-	if err != nil {
-		return nil, err
-	}
-
-	s.broadcastSnapshot(ctx, passingID)
-	return attempt, nil
-}
-
-func (s *GameService) UseHint(ctx context.Context, passingID, userID uint) error {
-	db := s.gameRepo.DB(ctx)
-	progress, err := GetCurrentProgress(db, passingID)
-	if err != nil {
-		return err
-	}
-
+// checkTeamMembership проверяет, является ли пользователь членом команды,
+// связанной с прохождением. Используется внутри транзакций.
+func checkTeamMembership(tx *gorm.DB, passingID, userID uint) error {
 	var passing GamePassing
-	if err := db.First(&passing, passingID).Error; err != nil {
-		return err
-	}
-	var settings GameSetting
-	if err := db.Where("game_id = ?", passing.GameID).First(&settings).Error; err != nil {
-		settings = GameSetting{AllowHints: true, HintPenaltySeconds: 300, MaxHints: 3}
-	}
-
-	if !settings.AllowHints {
-		return errors.New("подсказки запрещены")
-	}
-	if settings.MaxHints > 0 && progress.HintsUsed >= settings.MaxHints {
-		return errors.New("лимит подсказок исчерпан")
-	}
-
-	progress.HintsUsed++
-	penalty := settings.HintPenaltySeconds * progress.HintsUsed
-	progress.PenaltySeconds += penalty
-	if err := db.Save(&progress).Error; err != nil {
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&passing, passingID).Error; err != nil {
 		return err
 	}
 
-	s.logAndNotify(ctx, db, progress, fmt.Sprintf("использована подсказка (+%d сек)", penalty), userID)
-	s.broadcastSnapshot(ctx, passingID)
-	return nil
+	var count int64
+	if err := tx.Table("team_members").Where("team_id = ? AND user_id = ?", passing.TeamID, userID).Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+
+	// Проверяем капитана (капитан может не быть в team_members)
+	var team team.Team
+	if err := tx.First(&team, passing.TeamID).Error; err != nil {
+		return err
+	}
+	if team.CaptainID == userID {
+		return nil
+	}
+
+	return errors.New("вы не являетесь участником этой команды")
 }
 
-func (s *GameService) AcceptBlackboxAnswer(ctx context.Context, passingID, userID uint) error {
-	db := s.gameRepo.DB(ctx)
-	return db.Transaction(func(tx *gorm.DB) error {
-		progress, err := GetCurrentProgress(tx, passingID)
+// =============================================================================
+// МЕТОДЫ С ТРАНЗАКЦИЯМИ И БЛОКИРОВКАМИ
+// =============================================================================
+
+// SubmitCode обрабатывает отправку текстового кода с транзакцией и блокировкой.
+func (s *GameService) SubmitCode(ctx context.Context, passingID, userID uint, code string) (*Attempt, error) {
+	var attempt *Attempt
+
+	err := s.gameRepo.DB(ctx).Transaction(func(tx *gorm.DB) error {
+		// 1. Блокируем прогресс текущего уровня
+		progress, err := GetCurrentProgressForUpdate(tx, passingID)
 		if err != nil {
 			return err
 		}
 
+		// 2. Проверяем членство в команде
+		if err := checkTeamMembership(tx, passingID, userID); err != nil {
+			return err
+		}
+
+		// 3. Отправляем код через attemptService с передачей tx
+		att, success, err := s.attemptService.SubmitCodeWithTx(tx, progress, code)
+		if err != nil {
+			return err
+		}
+		attempt = att
+
+		if success {
+			// 4. Завершаем уровень
+			if err := CompleteLevel(tx, progress); err != nil {
+				return err
+			}
+		}
+
+		// 5. Сохраняем лог в БД (не критично, но для консистентности внутри транзакции)
+		logEntry := Log{
+			GamePassingID: passingID,
+			LevelID:       progress.LevelID,
+			Message:       fmt.Sprintf("код %s: %s", code, map[bool]string{true: "принят", false: "неверный"}[success]),
+		}
+		return tx.Create(&logEntry).Error
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Отправляем WebSocket-обновления и уведомления после транзакции
+	if attempt != nil {
+		s.broadcastSnapshot(ctx, passingID)
+	}
+
+	return attempt, nil
+}
+
+// SubmitFile обрабатывает файловый ответ с транзакцией и блокировкой.
+func (s *GameService) SubmitFile(ctx context.Context, passingID, userID uint, filePath string) (*Attempt, error) {
+	var attempt *Attempt
+
+	err := s.gameRepo.DB(ctx).Transaction(func(tx *gorm.DB) error {
+		// 1. Блокируем прогресс текущего уровня
+		progress, err := GetCurrentProgressForUpdate(tx, passingID)
+		if err != nil {
+			return err
+		}
+
+		// 2. Проверяем членство в команде
+		if err := checkTeamMembership(tx, passingID, userID); err != nil {
+			return err
+		}
+
+		// 3. Создаём файловую попытку
+		att, err := s.attemptService.SubmitFileWithTx(tx, progress, filePath)
+		if err != nil {
+			return err
+		}
+		attempt = att
+
+		// 4. Для файловых ответов успех не определяется автоматически
+		// (ожидается подтверждение автором или дальнейшая проверка)
+
+		// 5. Логируем
+		logEntry := Log{
+			GamePassingID: passingID,
+			LevelID:       progress.LevelID,
+			Message:       fmt.Sprintf("загружен файл: %s", filePath),
+		}
+		return tx.Create(&logEntry).Error
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	if attempt != nil {
+		s.broadcastSnapshot(ctx, passingID)
+	}
+	return attempt, nil
+}
+
+// UseHint использует подсказку с транзакцией и блокировкой.
+func (s *GameService) UseHint(ctx context.Context, passingID, userID uint) error {
+	return s.gameRepo.DB(ctx).Transaction(func(tx *gorm.DB) error {
+		// 1. Блокируем прогресс текущего уровня
+		progress, err := GetCurrentProgressForUpdate(tx, passingID)
+		if err != nil {
+			return err
+		}
+
+		// 2. Проверяем членство в команде
+		if err := checkTeamMembership(tx, passingID, userID); err != nil {
+			return err
+		}
+
+		// 3. Загружаем прохождение и настройки
 		var passing GamePassing
 		if err := tx.First(&passing, passingID).Error; err != nil {
+			return err
+		}
+		var settings GameSetting
+		if err := tx.Where("game_id = ?", passing.GameID).First(&settings).Error; err != nil {
+			settings = GameSetting{AllowHints: true, HintPenaltySeconds: 300, MaxHints: 3}
+		}
+
+		if !settings.AllowHints {
+			return errors.New("подсказки запрещены")
+		}
+		if settings.MaxHints > 0 && progress.HintsUsed >= settings.MaxHints {
+			return errors.New("лимит подсказок исчерпан")
+		}
+
+		// 4. Применяем подсказку
+		progress.HintsUsed++
+		penalty := settings.HintPenaltySeconds * progress.HintsUsed
+		progress.PenaltySeconds += penalty
+		if err := tx.Save(progress).Error; err != nil {
+			return err
+		}
+
+		// 5. Логируем
+		logEntry := Log{
+			GamePassingID: passingID,
+			LevelID:       progress.LevelID,
+			Message:       fmt.Sprintf("использована подсказка (+%d сек)", penalty),
+		}
+		return tx.Create(&logEntry).Error
+	})
+}
+
+// AcceptBlackboxAnswer подтверждает ответ на уровне "чёрный ящик" с транзакцией и блокировкой.
+func (s *GameService) AcceptBlackboxAnswer(ctx context.Context, passingID, userID uint) error {
+	return s.gameRepo.DB(ctx).Transaction(func(tx *gorm.DB) error {
+		// 1. Блокируем прогресс текущего уровня
+		progress, err := GetCurrentProgressForUpdate(tx, passingID)
+		if err != nil {
+			return err
+		}
+
+		// 2. Проверяем, что пользователь — автор игры
+		var passing GamePassing
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&passing, passingID).Error; err != nil {
 			return err
 		}
 		var g Game
@@ -583,24 +691,34 @@ func (s *GameService) AcceptBlackboxAnswer(ctx context.Context, passingID, userI
 			return errors.New("только автор может подтвердить ответ")
 		}
 
+		// 3. Подтверждаем последнюю попытку
 		if err := s.attemptService.AcceptPendingAttemptWithTx(tx, progress); err != nil {
 			return err
 		}
+
+		// 4. Завершаем уровень
 		if err := CompleteLevel(tx, progress); err != nil {
 			return err
 		}
 
-		s.logAndNotify(ctx, tx, progress, "автор принял ответ", userID)
-		s.broadcastSnapshot(ctx, passingID)
-		return nil
+		// 5. Логируем
+		logEntry := Log{
+			GamePassingID: passingID,
+			LevelID:       progress.LevelID,
+			Message:       "автор принял ответ",
+		}
+		return tx.Create(&logEntry).Error
 	})
 }
 
+// ForceFinishGame принудительно завершает игру с транзакцией и блокировками.
 func (s *GameService) ForceFinishGame(ctx context.Context, gameID uint) error {
-	db := s.gameRepo.DB(ctx)
-	if err := db.Transaction(func(tx *gorm.DB) error {
+	return s.gameRepo.DB(ctx).Transaction(func(tx *gorm.DB) error {
+		// Блокируем все активные прохождения игры
 		var passings []GamePassing
-		if err := tx.Where("game_id = ? AND status = ?", gameID, StatusStarted).Find(&passings).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("game_id = ? AND status = ?", gameID, StatusStarted).
+			Find(&passings).Error; err != nil {
 			return err
 		}
 		if len(passings) == 0 {
@@ -609,9 +727,11 @@ func (s *GameService) ForceFinishGame(ctx context.Context, gameID uint) error {
 
 		now := time.Now()
 		for _, p := range passings {
+			// Завершаем прогресс каждого прохождения
 			if err := finishPassingProgress(tx, &p, now); err != nil {
 				return err
 			}
+			// Отправляем уведомление капитану (может быть вне транзакции, но оставим здесь)
 			s.notifyCaptainAboutFinish(ctx, tx, p.TeamID, gameID)
 			metrics.IncGamePassings(string(StatusFinished))
 			if !p.CreatedAt.IsZero() {
@@ -620,19 +740,17 @@ func (s *GameService) ForceFinishGame(ctx context.Context, gameID uint) error {
 			}
 		}
 		return nil
-	}); err != nil {
-		return err
-	}
-
-	s.updateMonitorAndResults(ctx, gameID)
-	return nil
+	})
 }
 
+// DisqualifyTeam дисквалифицирует команду с транзакцией и блокировкой.
 func (s *GameService) DisqualifyTeam(ctx context.Context, gameID, teamID uint) error {
-	db := s.gameRepo.DB(ctx)
-	return db.Transaction(func(tx *gorm.DB) error {
+	return s.gameRepo.DB(ctx).Transaction(func(tx *gorm.DB) error {
+		// Блокируем прохождение команды
 		var passing GamePassing
-		if err := tx.Where("game_id = ? AND team_id = ? AND status = ?", gameID, teamID, StatusStarted).First(&passing).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("game_id = ? AND team_id = ? AND status = ?", gameID, teamID, StatusStarted).
+			First(&passing).Error; err != nil {
 			return errors.New("команда не в игре или уже завершила")
 		}
 
@@ -648,75 +766,99 @@ func (s *GameService) DisqualifyTeam(ctx context.Context, gameID, teamID uint) e
 		metrics.IncGamePassings(string(StatusDisqualified))
 
 		s.notifyCaptainAboutDisqualification(ctx, tx, teamID, gameID)
-		s.updateMonitorAndResults(ctx, gameID)
 		return nil
 	})
 }
 
+// StartTesting создаёт тестовое прохождение с транзакцией.
 func (s *GameService) StartTesting(ctx context.Context, gameID, userID uint) (*GamePassing, error) {
-	db := s.gameRepo.DB(ctx)
-	testTeam := team.Team{
-		Name:      fmt.Sprintf("_test_%d", userID),
-		CaptainID: userID,
-	}
-	if err := db.Create(&testTeam).Error; err != nil {
-		return nil, err
-	}
+	var passing *GamePassing
 
-	passing := GamePassing{
-		GameID: gameID,
-		TeamID: testTeam.ID,
-		Status: StatusTesting,
-	}
-	if err := s.passingRepo.Create(ctx, &passing); err != nil {
-		return nil, err
-	}
-	metrics.IncGamePassings(string(StatusTesting))
+	err := s.gameRepo.DB(ctx).Transaction(func(tx *gorm.DB) error {
+		// Создаём тестовую команду
+		testTeam := team.Team{
+			Name:      fmt.Sprintf("_test_%d", userID),
+			CaptainID: userID,
+		}
+		if err := tx.Create(&testTeam).Error; err != nil {
+			return err
+		}
 
-	if err := s.progressService.InitFirstLevel(ctx, passing.ID); err != nil {
+		// Создаём прохождение со статусом testing
+		passing = &GamePassing{
+			GameID: gameID,
+			TeamID: testTeam.ID,
+			Status: StatusTesting,
+		}
+		if err := tx.Create(passing).Error; err != nil {
+			return err
+		}
+		metrics.IncGamePassings(string(StatusTesting))
+
+		// Инициализируем первый уровень
+		progressSvc := NewLevelProgressService(tx)
+		return progressSvc.InitFirstLevel(ctx, passing.ID)
+	})
+
+	if err != nil {
 		return nil, err
 	}
-	return &passing, nil
+	return passing, nil
 }
 
+// SubmitTestCode отправляет код в тестовом режиме с транзакцией.
 func (s *GameService) SubmitTestCode(ctx context.Context, passingID, userID uint, code string) (*Attempt, error) {
-	db := s.gameRepo.DB(ctx)
-	progress, err := GetCurrentProgress(db, passingID)
+	var attempt *Attempt
+
+	err := s.gameRepo.DB(ctx).Transaction(func(tx *gorm.DB) error {
+		progress, err := GetCurrentProgressForUpdate(tx, passingID)
+		if err != nil {
+			return err
+		}
+
+		// В тестовом режиме всегда успешно
+		attempt = &Attempt{
+			LevelProgressID: progress.ID,
+			Code:            code,
+			Success:         true,
+		}
+		if err := tx.Create(attempt).Error; err != nil {
+			return err
+		}
+
+		// Завершаем уровень
+		if err := CompleteLevel(tx, progress); err != nil {
+			return err
+		}
+		return nil
+	})
+
 	if err != nil {
 		return nil, err
 	}
 
-	attempt := &Attempt{
-		LevelProgressID: progress.ID,
-		Code:            code,
-		Success:         true,
-	}
-	if err := db.Create(attempt).Error; err != nil {
-		return nil, err
-	}
-
-	if err := CompleteLevel(db, progress); err != nil {
-		return nil, err
-	}
 	s.broadcastSnapshot(ctx, passingID)
 	return attempt, nil
 }
 
+// SkipLevelTest пропускает уровень в тестовом режиме с транзакцией.
 func (s *GameService) SkipLevelTest(ctx context.Context, passingID, userID uint) error {
-	db := s.gameRepo.DB(ctx)
-	progress, err := GetCurrentProgress(db, passingID)
-	if err != nil {
-		return err
-	}
+	return s.gameRepo.DB(ctx).Transaction(func(tx *gorm.DB) error {
+		progress, err := GetCurrentProgressForUpdate(tx, passingID)
+		if err != nil {
+			return err
+		}
 
-	now := time.Now()
-	progress.FinishedAt = &now
-	if err := db.Save(&progress).Error; err != nil {
-		return err
-	}
-	return AdvanceToNextLevel(db, passingID, progress.LevelID)
+		now := time.Now()
+		progress.FinishedAt = &now
+		if err := tx.Save(progress).Error; err != nil {
+			return err
+		}
+		return AdvanceToNextLevel(tx, passingID, progress.LevelID)
+	})
 }
 
+// DeleteLevelFromActiveGame удаляет уровень из активной игры с транзакцией.
 func (s *GameService) DeleteLevelFromActiveGame(ctx context.Context, gameID, levelID, userID uint) error {
 	db := s.gameRepo.DB(ctx)
 	ok, err := s.coAuthor.HasPermission(gameID, userID, "content")
@@ -727,61 +869,58 @@ func (s *GameService) DeleteLevelFromActiveGame(ctx context.Context, gameID, lev
 		return errors.New("только автор или контент-менеджер может удалять уровни")
 	}
 
-	var lvl level.Level
-	if err := db.First(&lvl, levelID).Error; err != nil {
-		return err
-	}
-	if lvl.DeletedAt.Valid {
-		return errors.New("уровень уже удалён")
-	}
-
-	var passings []GamePassing
-	db.Where("game_id = ? AND status = ?", gameID, StatusStarted).Find(&passings)
-
-	now := time.Now()
-	for _, p := range passings {
-		progress, err := GetCurrentProgress(db, p.ID)
-		if err != nil {
-			log.Error().Uint("passing", p.ID).Err(err).Msg("DeleteLevelFromActiveGame: GetCurrentProgress error")
-			continue
+	return db.Transaction(func(tx *gorm.DB) error {
+		var lvl level.Level
+		if err := tx.First(&lvl, levelID).Error; err != nil {
+			return err
 		}
-		if progress.LevelID == levelID {
-			progress.FinishedAt = &now
-			if err := db.Save(progress).Error; err != nil {
-				log.Error().Uint("progress", progress.ID).Err(err).Msg("DeleteLevelFromActiveGame: Save progress error")
+		if lvl.DeletedAt.Valid {
+			return errors.New("уровень уже удалён")
+		}
+
+		// Блокируем активные прохождения
+		var passings []GamePassing
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("game_id = ? AND status = ?", gameID, StatusStarted).
+			Find(&passings).Error; err != nil {
+			return err
+		}
+
+		now := time.Now()
+		for _, p := range passings {
+			progress, err := GetCurrentProgressForUpdate(tx, p.ID)
+			if err != nil {
+				log.Error().Uint("passing", p.ID).Err(err).Msg("DeleteLevelFromActiveGame: GetCurrentProgress error")
 				continue
 			}
-			if err := AdvanceToNextLevel(db, p.ID, levelID); err != nil {
-				log.Error().Uint("passing", p.ID).Err(err).Msg("DeleteLevelFromActiveGame: AdvanceToNextLevel error")
+			if progress.LevelID == levelID {
+				progress.FinishedAt = &now
+				if err := tx.Save(progress).Error; err != nil {
+					log.Error().Uint("progress", progress.ID).Err(err).Msg("DeleteLevelFromActiveGame: Save progress error")
+					continue
+				}
+				if err := AdvanceToNextLevel(tx, p.ID, levelID); err != nil {
+					log.Error().Uint("passing", p.ID).Err(err).Msg("DeleteLevelFromActiveGame: AdvanceToNextLevel error")
+				}
 			}
 		}
-	}
 
-	if err := db.Unscoped().Where("level_id = ?", levelID).Delete(&LevelProgress{}).Error; err != nil {
-		return fmt.Errorf("ошибка удаления прогресса уровней: %w", err)
-	}
-
-	if err := db.Unscoped().Delete(&lvl).Error; err != nil {
-		return fmt.Errorf("ошибка удаления уровня: %w", err)
-	}
-
-	if s.monitorService != nil && s.hub != nil {
-		snapshot, err := s.monitorService.GameSnapshot(gameID)
-		if err != nil {
-			log.Error().Err(err).Uint("game", gameID).Msg("DeleteLevelFromActiveGame: GameSnapshot error")
-		} else {
-			data, err := json.Marshal(snapshot)
-			if err != nil {
-				log.Error().Err(err).Uint("game", gameID).Msg("DeleteLevelFromActiveGame: failed to marshal snapshot")
-			} else {
-				s.hub.BroadcastToRoom(strconv.Itoa(int(gameID)), data)
-			}
+		// Удаляем прогресс для этого уровня
+		if err := tx.Unscoped().Where("level_id = ?", levelID).Delete(&LevelProgress{}).Error; err != nil {
+			return fmt.Errorf("ошибка удаления прогресса уровней: %w", err)
 		}
-	}
-	return nil
+
+		// Удаляем сам уровень
+		if err := tx.Unscoped().Delete(&lvl).Error; err != nil {
+			return fmt.Errorf("ошибка удаления уровня: %w", err)
+		}
+		return nil
+	})
 }
 
-// ---------- Вспомогательные методы ----------
+// =============================================================================
+// ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
+// =============================================================================
 
 func finishPassingProgress(tx *gorm.DB, passing *GamePassing, now time.Time) error {
 	var progress LevelProgress
@@ -850,46 +989,12 @@ func (s *GameService) notifyCaptainAboutDisqualification(_ context.Context, tx *
 	}
 }
 
-func (s *GameService) updateMonitorAndResults(_ context.Context, gameID uint) {
-	if s.monitorService == nil {
-		return
-	}
-	s.monitorService.InvalidateCache(gameID)
-	if err := s.monitorService.CalculateResults(gameID); err != nil {
-		log.Error().Err(err).Uint("game", gameID).Msg("updateMonitorAndResults: CalculateResults error")
-	}
-	if s.hub != nil {
-		snapshot, err := s.monitorService.GetOrFetchSnapshot(gameID)
-		if err != nil {
-			log.Error().Err(err).Uint("game", gameID).Msg("updateMonitorAndResults: GetOrFetchSnapshot error")
-			return
-		}
-		data, err := json.Marshal(snapshot)
-		if err != nil {
-			log.Error().Err(err).Uint("game", gameID).Msg("updateMonitorAndResults: failed to marshal snapshot")
-			return
-		}
-		s.hub.BroadcastToRoom(strconv.Itoa(int(gameID)), data)
-	}
-}
-
-func (s *GameService) logAndNotify(_ context.Context, tx *gorm.DB, progress *LevelProgress, message string, _ uint) {
-	logEntry := Log{
-		GamePassingID: progress.GamePassingID,
-		LevelID:       progress.LevelID,
-		Message:       message,
-	}
-	if err := tx.Create(&logEntry).Error; err != nil {
-		log.Error().Err(err).Uint("passing", progress.GamePassingID).Uint("level", progress.LevelID).Msg("GameService.logAndNotify: failed to save log")
-	}
-}
-
-func (s *GameService) broadcastSnapshot(_ context.Context, passingID uint) {
+func (s *GameService) broadcastSnapshot(ctx context.Context, passingID uint) {
 	if s.monitorService == nil || s.hub == nil {
 		return
 	}
 	var passing GamePassing
-	if err := s.gameRepo.DB(context.Background()).Select("game_id").First(&passing, passingID).Error; err != nil {
+	if err := s.gameRepo.DB(ctx).Select("game_id").First(&passing, passingID).Error; err != nil {
 		log.Error().Err(err).Uint("passing", passingID).Msg("GameService.broadcastSnapshot: failed to find passing")
 		return
 	}
@@ -908,7 +1013,9 @@ func (s *GameService) broadcastSnapshot(_ context.Context, passingID uint) {
 	s.hub.BroadcastToRoom(strconv.Itoa(int(gameID)), data)
 }
 
-// ---------- ДОБАВЛЕННЫЕ МЕТОДЫ ДЛЯ ОТЗЫВОВ С КЭШИРОВАНИЕМ ----------
+// =============================================================================
+// МЕТОДЫ ДЛЯ РАБОТЫ С ОТЗЫВАМИ (С КЭШИРОВАНИЕМ)
+// =============================================================================
 
 // ListReviews возвращает все отзывы для игры.
 func (s *GameService) ListReviews(ctx context.Context, gameID uint) ([]Review, error) {

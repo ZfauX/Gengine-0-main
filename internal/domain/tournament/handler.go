@@ -11,6 +11,7 @@ import (
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/sanitize"
+	"gengine-0/internal/pkg/validation"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -294,6 +295,12 @@ func (h *TournamentHandler) AddGame(c *gin.Context) {
 		return
 	}
 
+	// Валидация ID игры
+	if err := validation.ValidatePositiveUint("ID игры", input.GameID); err != nil {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": err.Error()})
+		return
+	}
+
 	if err := h.tournamentService.AddGame(c.Request.Context(), req.ID, input.GameID, userID); err != nil {
 		log.Error().Err(err).Uint("tournament_id", req.ID).Uint("game_id", input.GameID).Uint("user_id", userID).Msg("TournamentHandler.AddGame: failed to add game")
 		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
@@ -355,6 +362,12 @@ func (h *TournamentHandler) Apply(c *gin.Context) {
 	var input ApplyInput
 	if err := c.ShouldBind(&input); err != nil {
 		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверные данные: " + err.Error()})
+		return
+	}
+
+	// Валидация ID команды
+	if err := validation.ValidatePositiveUint("ID команды", input.TeamID); err != nil {
+		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": err.Error()})
 		return
 	}
 

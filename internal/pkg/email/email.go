@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gengine-0/internal/config"
+	"gengine-0/internal/pkg/metrics"
 
 	"github.com/rs/zerolog/log"
 )
@@ -29,6 +30,7 @@ type EmailQueue struct {
 	wg       sync.WaitGroup
 	stopChan chan struct{}
 	once     sync.Once
+	mu       sync.Mutex // для безопасного обновления метрики
 }
 
 var (
@@ -42,10 +44,10 @@ var (
 func InitQueue(cfg *config.Config, workers, queueSize int) {
 	queueOnce.Do(func() {
 		if workers <= 0 {
-			workers = 5 // по умолчанию 5 воркеров
+			workers = 5
 		}
 		if queueSize <= 0 {
-			queueSize = 100 // по умолчанию 100 задач
+			queueSize = 100
 		}
 		globalQueue = &EmailQueue{
 			cfg:      cfg,
@@ -71,6 +73,8 @@ func (q *EmailQueue) start() {
 		go q.worker(i)
 	}
 	log.Info().Int("workers", q.workers).Msg("Email queue started")
+	// Обновляем метрику начального размера очереди
+	q.updateMetric()
 }
 
 // worker — горутина, которая обрабатывает задания из очереди.
@@ -94,6 +98,8 @@ func (q *EmailQueue) worker(id int) {
 					Int("worker", id).
 					Msg("Email sent successfully")
 			}
+			// Обновляем метрику после обработки задания
+			q.updateMetric()
 		case <-q.stopChan:
 			log.Debug().Int("worker", id).Msg("Email worker stopped")
 			return
@@ -111,7 +117,6 @@ func (q *EmailQueue) sendWithRetry(job EmailJob, retries int) error {
 		}
 		lastErr = err
 		if attempt < retries {
-			// Экспоненциальная задержка: 1s, 2s, 4s...
 			delay := time.Duration(1<<(attempt-1)) * time.Second
 			time.Sleep(delay)
 		}
@@ -123,14 +128,21 @@ func (q *EmailQueue) sendWithRetry(job EmailJob, retries int) error {
 func (q *EmailQueue) shutdown() {
 	q.once.Do(func() {
 		close(q.stopChan)
-		// Дожидаемся завершения всех воркеров
 		q.wg.Wait()
 		log.Info().Msg("Email queue stopped")
 	})
 }
 
+// updateMetric обновляет Prometheus gauge с текущим размером очереди.
+func (q *EmailQueue) updateMetric() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	size := float64(len(q.queue))
+	metrics.SetEmailQueueSize(size)
+}
+
 // Enqueue добавляет задачу в очередь на отправку.
-// Если очередь не инициализирована, возвращает ошибку (вызывающий код должен обработать).
+// Если очередь не инициализирована, возвращает ошибку.
 // При переполнении очереди выполняет синхронную отправку как fallback.
 // Возвращает ошибку, если SMTP отключён или отправка не удалась.
 func Enqueue(to, subject, body string) error {
@@ -146,6 +158,8 @@ func Enqueue(to, subject, body string) error {
 	// Пытаемся добавить в очередь
 	select {
 	case globalQueue.queue <- job:
+		// Обновляем метрику после добавления
+		globalQueue.updateMetric()
 		return nil
 	default:
 		// Очередь переполнена — выполняем синхронную отправку как fallback

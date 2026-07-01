@@ -72,6 +72,11 @@ type ChangePasswordInput struct {
 	NewPassword string `form:"new_password" binding:"required,min=8,max=72"`
 }
 
+// RefreshTokenInput – запрос на обновление access-токена.
+type RefreshTokenInput struct {
+	RefreshToken string `json:"refresh_token" binding:"required"`
+}
+
 // ---------- Обработчики ----------
 
 // AuthHandler обрабатывает аутентификацию и регистрацию.
@@ -140,12 +145,50 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	c.SetCookie("jwt", token, int(h.cfg.JWT.AccessExpiry.Seconds()), "/", "", false, true)
+
+	user, err := h.userService.GetByEmail(c.Request.Context(), input.Email)
+	if err == nil {
+		refreshToken, err := h.authSvc.GenerateRefreshToken(*user)
+		if err == nil {
+			c.SetCookie("refresh_token", refreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/auth/refresh", "", false, true)
+		} else {
+			log.Error().Err(err).Msg("Login: failed to generate refresh token")
+		}
+	}
+
 	c.Redirect(http.StatusFound, "/dashboard")
+}
+
+// RefreshToken обновляет access-токен по refresh-токену.
+func (h *AuthHandler) RefreshToken(c *gin.Context) {
+	refreshToken, err := c.Cookie("refresh_token")
+	if err != nil || refreshToken == "" {
+		var input RefreshTokenInput
+		if bindErr := c.ShouldBindJSON(&input); bindErr != nil || input.RefreshToken == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "refresh token required"})
+			return
+		}
+		refreshToken = input.RefreshToken
+	}
+
+	newAccessToken, err := h.authSvc.RefreshAccessToken(refreshToken)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.SetCookie("jwt", newAccessToken, int(h.cfg.JWT.AccessExpiry.Seconds()), "/", "", false, true)
+
+	c.JSON(http.StatusOK, gin.H{
+		"access_token": newAccessToken,
+		"expires_in":   int(h.cfg.JWT.AccessExpiry.Seconds()),
+	})
 }
 
 // Logout выполняет выход из системы.
 func (h *AuthHandler) Logout(c *gin.Context) {
 	c.SetCookie("jwt", "", -1, "/", "", false, true)
+	c.SetCookie("refresh_token", "", -1, "/auth/refresh", "", false, true)
 	c.Redirect(http.StatusFound, "/")
 }
 
@@ -167,7 +210,6 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	// Санитизация имени и email
 	cleanName := sanitize.StripHTML(input.Name)
 	cleanEmail := sanitize.StripHTML(input.Email)
 
@@ -282,7 +324,6 @@ func (h *AuthHandler) OAuthLogin(c *gin.Context) {
 		return
 	}
 
-	// Сохраняем state в сессии для последующей проверки при callback
 	session := sessions.Default(c)
 	session.Set("oauth_state", state)
 	if err := session.Save(); err != nil {
@@ -315,7 +356,6 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 		return
 	}
 
-	// Проверяем state из сессии
 	session := sessions.Default(c)
 	savedState := session.Get("oauth_state")
 	if savedState == nil || savedState != state {
@@ -326,7 +366,6 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 		})
 		return
 	}
-	// После успешной проверки удаляем state из сессии
 	session.Delete("oauth_state")
 	if err := session.Save(); err != nil {
 		log.Error().Err(err).Msg("OAuthCallback: failed to clear session")
@@ -350,6 +389,14 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 		return
 	}
 	c.SetCookie("jwt", token, int(h.cfg.JWT.AccessExpiry.Seconds()), "/", "", false, true)
+
+	refreshToken, err := h.authSvc.GenerateRefreshToken(*user)
+	if err == nil {
+		c.SetCookie("refresh_token", refreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/auth/refresh", "", false, true)
+	} else {
+		log.Error().Err(err).Msg("OAuthCallback: failed to generate refresh token")
+	}
+
 	c.Redirect(http.StatusFound, "/dashboard")
 }
 
@@ -419,7 +466,6 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 	}
 	defer func() { _ = file.Close() }()
 
-	// Валидация типа файла и размера уже есть в storage.Save, но можно добавить дополнительную проверку
 	if header.Size > 2*1024*1024 {
 		render.Page(c, http.StatusBadRequest, "profile-show.html", gin.H{
 			"Error": "Размер файла не должен превышать 2 МБ",
@@ -464,7 +510,6 @@ func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	// Санитизация полей
 	cleanName := sanitize.StripHTML(input.Name)
 	cleanEmail := sanitize.StripHTML(input.Email)
 
