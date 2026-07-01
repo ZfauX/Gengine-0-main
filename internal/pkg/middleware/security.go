@@ -21,6 +21,8 @@ func SecurityHeadersMiddleware() gin.HandlerFunc {
 		c.Set("csp_nonce", nonce)
 
 		// Формируем CSP с nonce
+		// Tailwind теперь загружается локально, поэтому CDN не требуется.
+		// Оставляем только необходимые CDN для потенциальных внешних скриптов/стилей (например, Swagger UI или библиотеки).
 		csp := "default-src 'self'; " +
 			"script-src 'self' 'nonce-" + nonce + "' https://cdn.jsdelivr.net; " +
 			"style-src 'self' 'nonce-" + nonce + "' https://cdn.jsdelivr.net https://unpkg.com; " +

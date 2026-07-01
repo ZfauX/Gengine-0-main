@@ -143,8 +143,12 @@ func main() {
 	hub := ws.NewRoomHub()
 	go hub.Run()
 
-	// --- Инициализация persistent-очереди email ---
-	email.InitQueue(cfg, database, 5, 10*time.Second, 10)
+	// --- Инициализация persistent-очереди email (только если SMTP включён) ---
+	if cfg.SMTP.Enabled {
+		email.InitQueue(cfg, database, 5, 10*time.Second, 10)
+	} else {
+		log.Info().Msg("SMTP отключён, email-очередь не запущена")
+	}
 
 	// --- Инициализация кэша ---
 	appCache := cache.NewCache(10*time.Minute, 5*time.Minute)
@@ -218,8 +222,10 @@ func main() {
 	// Отменяем контекст фоновых задач
 	cancel()
 
-	// Останавливаем очередь email
-	email.ShutdownQueue()
+	// Останавливаем очередь email (если была запущена)
+	if cfg.SMTP.Enabled {
+		email.ShutdownQueue()
+	}
 
 	log.Info().Msg("Сервер остановлен")
 }
