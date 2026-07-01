@@ -132,5 +132,40 @@ func RegisterRoutes(
 		importGroup.POST("/import", exportHandler.ImportGame)
 	}
 
+	// =========================================================================
+	// ЭКСПОРТ В EXCEL
+	// =========================================================================
+	excelGroup := protected.Group("")
+	excelGroup.Use(gameManager)
+	{
+		// @Summary Экспорт игры в Excel
+		// @Description Генерирует Excel-файл (.xlsx) со всеми уровнями, вопросами и ответами игры
+		// @Tags export
+		// @Produce application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+		// @Param id path int true "ID игры"
+		// @Success 200 {file} file "Excel-файл с данными игры"
+		// @Failure 400 {object} map[string]interface{} "Неверный ID"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+		// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+		// @Router /games/{id}/export-excel [get]
+		// @Security JWT
+		excelGroup.GET("/export-excel", exportHandler.ExportGameExcel)
+
+		// @Summary Экспорт результатов в Excel
+		// @Description Генерирует Excel-файл (.xlsx) с итоговой таблицей результатов игры
+		// @Tags export
+		// @Produce application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+		// @Param id path int true "ID игры"
+		// @Success 200 {file} file "Excel-файл с результатами"
+		// @Failure 400 {object} map[string]interface{} "Неверный ID"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+		// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+		// @Router /games/{id}/export-results-excel [get]
+		// @Security JWT
+		excelGroup.GET("/export-results-excel", exportHandler.ExportResultsExcel)
+	}
+
 	return nil
 }

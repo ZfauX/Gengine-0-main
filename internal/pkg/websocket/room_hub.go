@@ -4,11 +4,11 @@ package websocket
 import (
 	"sync"
 
+	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
 )
 
 // RoomHub управляет WebSocket-комнатами и клиентами.
-// Также отслеживает общее количество соединений и лимиты на IP.
 type RoomHub struct {
 	rooms      map[string]map[*Client]bool
 	mu         sync.Mutex
@@ -17,6 +17,7 @@ type RoomHub struct {
 	broadcast  chan *Message
 	done       chan struct{}
 	wg         sync.WaitGroup
+	stopped    bool
 
 	// Лимиты и счётчики
 	maxTotalConns int
@@ -26,8 +27,6 @@ type RoomHub struct {
 }
 
 // NewRoomHub создаёт новый хаб с лимитами по умолчанию.
-// maxTotalConns — общее максимальное количество соединений (0 = без лимита).
-// maxConnsPerIP — максимальное соединений с одного IP (0 = без лимита).
 func NewRoomHub() *RoomHub {
 	return &RoomHub{
 		rooms:         make(map[string]map[*Client]bool),
@@ -35,13 +34,13 @@ func NewRoomHub() *RoomHub {
 		unregister:    make(chan *Client),
 		broadcast:     make(chan *Message),
 		done:          make(chan struct{}),
-		maxTotalConns: 1000, // разумный лимит по умолчанию
-		maxConnsPerIP: 50,   // защита от DoS с одного IP
+		maxTotalConns: 1000,
+		maxConnsPerIP: 50,
 		connsPerIP:    make(map[string]int),
 	}
 }
 
-// SetLimits устанавливает новые лимиты (можно вызвать до запуска хаба).
+// SetLimits устанавливает новые лимиты.
 func (h *RoomHub) SetLimits(maxTotalConns, maxConnsPerIP int) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -53,12 +52,13 @@ func (h *RoomHub) SetLimits(maxTotalConns, maxConnsPerIP int) {
 	}
 }
 
-// CanAccept проверяет, можно ли принять новое соединение с указанного IP.
-// Возвращает true, если лимиты не превышены.
+// CanAccept проверяет, можно ли принять новое соединение.
 func (h *RoomHub) CanAccept(ip string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-
+	if h.stopped {
+		return false
+	}
 	if h.maxTotalConns > 0 && h.totalConns >= h.maxTotalConns {
 		log.Warn().Int("total", h.totalConns).Int("limit", h.maxTotalConns).Msg("WebSocket: total connections limit reached")
 		return false
@@ -94,7 +94,7 @@ func (h *RoomHub) decConnection(ip string) {
 	}
 }
 
-// GetStats возвращает текущую статистику соединений (для метрик).
+// GetStats возвращает текущую статистику соединений.
 func (h *RoomHub) GetStats() (total int, perIP map[string]int) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -116,7 +116,11 @@ func (h *RoomHub) Run() {
 			log.Info().Msg("RoomHub: stopping")
 			return
 		case client := <-h.register:
-			// Увеличиваем счётчики перед регистрацией (но проверка уже выполнена в CanAccept)
+			if h.isStopped() {
+				log.Warn().Msg("RoomHub: registration rejected, hub is stopping")
+				client.Close()
+				continue
+			}
 			h.incConnection(client.RemoteIP)
 			h.mu.Lock()
 			client.Hub = h
@@ -128,7 +132,6 @@ func (h *RoomHub) Run() {
 			log.Debug().Str("room", client.RoomID).Str("ip", client.RemoteIP).Msg("WebSocket client registered")
 
 		case client := <-h.unregister:
-			// Уменьшаем счётчики при отписке
 			h.decConnection(client.RemoteIP)
 			h.mu.Lock()
 			if room, ok := h.rooms[client.RoomID]; ok {
@@ -142,6 +145,10 @@ func (h *RoomHub) Run() {
 			log.Debug().Str("room", client.RoomID).Str("ip", client.RemoteIP).Msg("WebSocket client unregistered")
 
 		case msg := <-h.broadcast:
+			if h.isStopped() {
+				log.Warn().Str("room", msg.Room).Msg("RoomHub: broadcast skipped, hub is stopping")
+				continue
+			}
 			h.mu.Lock()
 			room, ok := h.rooms[msg.Room]
 			if !ok {
@@ -169,15 +176,48 @@ func (h *RoomHub) Run() {
 	}
 }
 
-// Stop останавливает хаб, дожидаясь завершения всех операций.
+// isStopped проверяет, остановлен ли хаб.
+func (h *RoomHub) isStopped() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.stopped
+}
+
+// Stop останавливает хаб и закрывает все соединения, отправив CloseMessage.
 func (h *RoomHub) Stop() {
+	h.mu.Lock()
+	if h.stopped {
+		h.mu.Unlock()
+		return
+	}
+	h.stopped = true
+	h.mu.Unlock()
+
+	// Отправляем CloseMessage всем клиентам и закрываем соединения
+	h.mu.Lock()
+	for roomID, room := range h.rooms {
+		for client := range room {
+			// Отправляем сообщение о закрытии
+			_ = client.Conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, "сервер завершает работу"))
+			client.Close()
+			delete(room, client)
+		}
+		delete(h.rooms, roomID)
+	}
+	h.mu.Unlock()
+
 	close(h.done)
 	h.wg.Wait()
 	log.Info().Msg("RoomHub: stopped")
 }
 
-// RegisterClient регистрирует клиента в хабе (предварительно вызвав CanAccept).
+// RegisterClient регистрирует клиента в хабе.
 func (h *RoomHub) RegisterClient(client *Client) {
+	if h.isStopped() {
+		log.Warn().Msg("RoomHub: register failed, hub is stopped")
+		client.Close()
+		return
+	}
 	select {
 	case h.register <- client:
 	case <-h.done:
@@ -196,6 +236,10 @@ func (h *RoomHub) UnregisterClient(client *Client) {
 
 // BroadcastToRoom отправляет сообщение всем клиентам в комнате.
 func (h *RoomHub) BroadcastToRoom(roomID string, data []byte) {
+	if h.isStopped() {
+		log.Warn().Str("room", roomID).Msg("RoomHub: broadcast skipped, hub is stopped")
+		return
+	}
 	select {
 	case h.broadcast <- &Message{Room: roomID, Data: data}:
 	case <-h.done:

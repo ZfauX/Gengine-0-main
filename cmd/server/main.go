@@ -70,7 +70,7 @@ func main() {
 	}
 
 	// ============================================================
-	// НАСТРОЙКА ЛОГГЕРА С ПОДДЕРЖКОЙ JSON / CONSOLE
+	// НАСТРОЙКА ЛОГГЕРА
 	// ============================================================
 	logFilePath := cfg.Server.LogFilePath
 	if logFilePath == "" {
@@ -80,7 +80,6 @@ func main() {
 		log.Fatal().Err(err).Msg("Не удалось создать директорию для логов")
 	}
 
-	// Настройка ротации логов
 	logFile := &lumberjack.Logger{
 		Filename:   logFilePath,
 		MaxSize:    cfg.Server.LogMaxSize,
@@ -89,17 +88,14 @@ func main() {
 		Compress:   cfg.Server.LogCompress,
 	}
 
-	// Выбор формата вывода
 	var consoleWriter zerolog.ConsoleWriter
 	if cfg.Server.LogFormat == "json" {
-		// JSON-формат — пишем в stdout и в файл без форматирования
 		multi := zerolog.MultiLevelWriter(
-			os.Stderr, // JSON в stderr
+			os.Stderr,
 			logFile,
 		)
 		log.Logger = zerolog.New(multi).With().Timestamp().Logger()
 	} else {
-		// Консольный формат (по умолчанию)
 		consoleWriter = zerolog.ConsoleWriter{Out: os.Stderr}
 		multi := zerolog.MultiLevelWriter(
 			consoleWriter,
@@ -147,8 +143,10 @@ func main() {
 	hub := ws.NewRoomHub()
 	go hub.Run()
 
-	email.InitQueue(cfg, 5, 100)
+	// --- Инициализация persistent-очереди email ---
+	email.InitQueue(cfg, database, 5, 10*time.Second, 10)
 
+	// --- Инициализация кэша ---
 	appCache := cache.NewCache(10*time.Minute, 5*time.Minute)
 
 	deps := app.NewDependencies(database, cfg, hub, localStorage, appCache)
@@ -159,9 +157,11 @@ func main() {
 		log.Fatal().Err(err).Msg("Не удалось настроить маршруты")
 	}
 
+	// Контекст для фоновых задач
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Запуск фоновых задач
 	go game.CheckTimeouts(database, ctx)
 	go game.CheckAutoStartGames(database, ctx)
 
@@ -180,11 +180,16 @@ func main() {
 		}
 	}()
 
+	// Ожидание сигналов завершения
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	log.Info().Msg("Получен сигнал завершения, инициируем graceful shutdown...")
 
+	// Останавливаем WebSocket-хаб (отправляет CloseMessage всем клиентам)
+	hub.Stop()
+
+	// Даём время на завершение обработки запросов
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 
@@ -192,8 +197,10 @@ func main() {
 		log.Error().Err(err).Msg("Ошибка при завершении сервера")
 	}
 
+	// Отменяем контекст фоновых задач
 	cancel()
 
+	// Останавливаем очередь email
 	email.ShutdownQueue()
 
 	log.Info().Msg("Сервер остановлен")

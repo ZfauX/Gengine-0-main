@@ -937,11 +937,11 @@ func finishPassingProgress(tx *gorm.DB, passing *GamePassing, now time.Time) err
 	return tx.Save(passing).Error
 }
 
+// notifyCaptainAboutFinish отправляет уведомление капитану о принудительном завершении игры.
 func (s *GameService) notifyCaptainAboutFinish(_ context.Context, tx *gorm.DB, teamID, gameID uint) {
 	if s.cfg == nil || !s.cfg.SMTP.Enabled {
 		return
 	}
-	emailService := email.NewEmailService(s.cfg)
 	var t team.Team
 	if err := tx.First(&t, teamID).Error; err != nil {
 		log.Error().Err(err).Uint("team", teamID).Msg("notifyCaptainAboutFinish: failed to get team")
@@ -957,17 +957,20 @@ func (s *GameService) notifyCaptainAboutFinish(_ context.Context, tx *gorm.DB, t
 		log.Error().Err(err).Uint("game", gameID).Msg("notifyCaptainAboutFinish: failed to get game")
 		return
 	}
-	if err := emailService.Send(captain.Email, "Игра завершена",
-		fmt.Sprintf("Игра «%s» была принудительно завершена автором.", g.Name)); err != nil {
-		log.Error().Err(err).Uint("game", gameID).Uint("team", teamID).Msg("notifyCaptainAboutFinish: failed to send email")
+	if err := email.Enqueue(
+		captain.Email,
+		"Игра завершена",
+		fmt.Sprintf("Игра «%s» была принудительно завершена автором.", g.Name),
+	); err != nil {
+		log.Error().Err(err).Uint("game", gameID).Uint("team", teamID).Msg("notifyCaptainAboutFinish: failed to enqueue email")
 	}
 }
 
+// notifyCaptainAboutDisqualification отправляет уведомление капитану о дисквалификации команды.
 func (s *GameService) notifyCaptainAboutDisqualification(_ context.Context, tx *gorm.DB, teamID, gameID uint) {
 	if s.cfg == nil || !s.cfg.SMTP.Enabled {
 		return
 	}
-	emailService := email.NewEmailService(s.cfg)
 	var t team.Team
 	if err := tx.First(&t, teamID).Error; err != nil {
 		log.Error().Err(err).Uint("team", teamID).Msg("notifyCaptainAboutDisqualification: failed to get team")
@@ -983,9 +986,12 @@ func (s *GameService) notifyCaptainAboutDisqualification(_ context.Context, tx *
 		log.Error().Err(err).Uint("game", gameID).Msg("notifyCaptainAboutDisqualification: failed to get game")
 		return
 	}
-	if err := emailService.Send(captain.Email, "Дисквалификация",
-		fmt.Sprintf("Ваша команда была дисквалифицирована в игре «%s».", g.Name)); err != nil {
-		log.Error().Err(err).Uint("game", gameID).Uint("team", teamID).Msg("notifyCaptainAboutDisqualification: failed to send email")
+	if err := email.Enqueue(
+		captain.Email,
+		"Дисквалификация",
+		fmt.Sprintf("Ваша команда была дисквалифицирована в игре «%s».", g.Name),
+	); err != nil {
+		log.Error().Err(err).Uint("game", gameID).Uint("team", teamID).Msg("notifyCaptainAboutDisqualification: failed to enqueue email")
 	}
 }
 

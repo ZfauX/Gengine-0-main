@@ -3,6 +3,7 @@ package email
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net"
 	"strings"
@@ -11,20 +12,20 @@ import (
 	"time"
 
 	"gengine-0/internal/config"
+	"gengine-0/internal/testutil"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 // =============================================================================
-// Вспомогательный тестовый SMTP-сервер
+// Вспомогательный тестовый SMTP-сервер (без изменений)
 // =============================================================================
 
-// testSMTPServer — простой SMTP-сервер для тестов, работает в памяти.
 type testSMTPServer struct {
 	addr     string
 	listener net.Listener
-	// Хранит последнее полученное письмо
 	lastMail struct {
 		from    string
 		to      string
@@ -32,10 +33,8 @@ type testSMTPServer struct {
 		headers map[string]string
 		body    string
 	}
-	mu sync.Mutex
-	// Канал для уведомления о получении письма
+	mu           sync.Mutex
 	mailReceived chan struct{}
-	// Флаги для эмуляции ошибок
 	failAuth     bool
 	failMailFrom bool
 	failRcptTo   bool
@@ -46,7 +45,6 @@ type testSMTPServer struct {
 	wg           sync.WaitGroup
 }
 
-// newTestSMTPServer создаёт и запускает тестовый SMTP-сервер на случайном порту.
 func newTestSMTPServer(t *testing.T) *testSMTPServer {
 	t.Helper()
 	s := &testSMTPServer{
@@ -58,7 +56,6 @@ func newTestSMTPServer(t *testing.T) *testSMTPServer {
 	require.NoError(t, err)
 	s.addr = s.listener.Addr().String()
 	s.started = true
-
 	s.wg.Add(1)
 	go s.serve()
 	time.Sleep(50 * time.Millisecond)
@@ -74,7 +71,6 @@ func (s *testSMTPServer) serve() {
 			case <-s.shutdown:
 				return
 			default:
-				// После остановки сервера просто выходим, не логируя
 				continue
 			}
 		}
@@ -83,13 +79,10 @@ func (s *testSMTPServer) serve() {
 }
 
 func (s *testSMTPServer) handleConn(conn net.Conn) {
-	defer func() {
-		_ = conn.Close()
-	}()
+	defer func() { _ = conn.Close() }()
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
 
-	// Отправляем приветствие
 	if err := s.writeResponse(writer, 220, "localhost test SMTP"); err != nil {
 		return
 	}
@@ -220,7 +213,6 @@ func (s *testSMTPServer) handleConn(conn net.Conn) {
 	}
 }
 
-// writeResponse возвращает ошибку, но в handleConn мы игнорируем её для простоты.
 func (s *testSMTPServer) writeResponse(w *bufio.Writer, code int, text string) error {
 	if text == "" {
 		_, err := fmt.Fprintf(w, "%d \r\n", code)
@@ -253,6 +245,16 @@ func (s *testSMTPServer) WaitForMail(t *testing.T, timeout time.Duration) {
 	case <-time.After(timeout):
 		t.Fatal("timeout waiting for mail")
 	}
+}
+
+// =============================================================================
+// Вспомогательная функция для создания тестовой БД (PostgreSQL через testutil)
+// =============================================================================
+
+func setupTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db := testutil.SetupPostgresDBOrSkip(t, &QueuedEmail{})
+	return db
 }
 
 // =============================================================================
@@ -480,6 +482,7 @@ func TestSendEmail_QuitFailed(t *testing.T) {
 }
 
 func TestEmailService_Send(t *testing.T) {
+	db := setupTestDB(t)
 	server := newTestSMTPServer(t)
 	defer server.Close()
 
@@ -498,19 +501,38 @@ func TestEmailService_Send(t *testing.T) {
 		},
 	}
 
-	svc := NewEmailService(cfg)
+	svc := NewEmailService(cfg, db)
 	err = svc.Send("to@test.com", "Service Subject", "Service Body")
 	require.NoError(t, err)
 
-	server.WaitForMail(t, 2*time.Second)
+	// Проверяем, что письмо сохранено в БД
+	var queued QueuedEmail
+	err = db.Where("recipient = ?", "to@test.com").First(&queued).Error
+	require.NoError(t, err)
+	assert.Equal(t, "pending", queued.Status)
+	assert.Equal(t, "Service Subject", queued.Subject)
+	assert.Equal(t, "Service Body", queued.Body)
+
+	// Теперь запускаем воркер для отправки
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	svc.StartWorker(ctx, 100*time.Millisecond, 10)
+
+	// Ждём, пока письмо отправится
+	server.WaitForMail(t, 3*time.Second)
+
+	// Проверяем, что статус обновился
+	err = db.First(&queued, queued.ID).Error
+	require.NoError(t, err)
+	assert.Equal(t, "sent", queued.Status)
+	assert.NotNil(t, queued.SentAt)
+
 	_, _, body, headers := server.LastMail()
 	assert.Contains(t, body, "Service Body")
 	assert.Equal(t, "Service Subject", headers["Subject"])
 }
 
-// Бенчмарк для отправки письма (с тестовым сервером)
 func BenchmarkSendEmail(b *testing.B) {
-	// Используем отдельный сервер без t
 	server := &testSMTPServer{
 		mailReceived: make(chan struct{}, 1),
 		shutdown:     make(chan struct{}),

@@ -2,202 +2,169 @@
 package email
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net/smtp"
 	"strings"
-	"sync"
 	"time"
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/pkg/metrics"
 
 	"github.com/rs/zerolog/log"
+	"gorm.io/gorm"
 )
 
-// EmailJob представляет задачу на отправку письма.
-type EmailJob struct {
-	To      string
-	Subject string
-	Body    string
+// EmailService представляет сервис отправки писем с использованием persistent-очереди.
+type EmailService struct {
+	cfg  *config.Config
+	db   *gorm.DB
+	stop chan struct{}
 }
 
-// EmailQueue управляет асинхронной отправкой писем.
-type EmailQueue struct {
-	cfg      *config.Config
-	queue    chan EmailJob
-	workers  int
-	wg       sync.WaitGroup
-	stopChan chan struct{}
-	once     sync.Once
-	mu       sync.Mutex // для безопасного обновления метрики
-}
-
-var (
-	globalQueue *EmailQueue
-	queueOnce   sync.Once
-)
-
-// InitQueue инициализирует глобальную очередь отправки писем.
-// workers — количество воркеров (горутин), одновременно отправляющих письма.
-// queueSize — размер буфера канала.
-func InitQueue(cfg *config.Config, workers, queueSize int) {
-	queueOnce.Do(func() {
-		if workers <= 0 {
-			workers = 5
-		}
-		if queueSize <= 0 {
-			queueSize = 100
-		}
-		globalQueue = &EmailQueue{
-			cfg:      cfg,
-			queue:    make(chan EmailJob, queueSize),
-			workers:  workers,
-			stopChan: make(chan struct{}),
-		}
-		globalQueue.start()
-	})
-}
-
-// ShutdownQueue останавливает очередь и дожидается завершения всех отправляемых писем.
-func ShutdownQueue() {
-	if globalQueue != nil {
-		globalQueue.shutdown()
+// NewEmailService создаёт новый EmailService.
+func NewEmailService(cfg *config.Config, db *gorm.DB) *EmailService {
+	return &EmailService{
+		cfg:  cfg,
+		db:   db,
+		stop: make(chan struct{}),
 	}
 }
 
-// start запускает воркеры.
-func (q *EmailQueue) start() {
-	for i := 0; i < q.workers; i++ {
-		q.wg.Add(1)
-		go q.worker(i)
-	}
-	log.Info().Int("workers", q.workers).Msg("Email queue started")
-	// Обновляем метрику начального размера очереди
-	q.updateMetric()
-}
-
-// worker — горутина, которая обрабатывает задания из очереди.
-func (q *EmailQueue) worker(id int) {
-	defer q.wg.Done()
-	for {
-		select {
-		case job := <-q.queue:
-			// Отправляем письмо с повторными попытками
-			err := q.sendWithRetry(job, 3)
-			if err != nil {
-				log.Error().Err(err).
-					Str("to", job.To).
-					Str("subject", job.Subject).
-					Int("worker", id).
-					Msg("Failed to send email after retries")
-			} else {
-				log.Debug().
-					Str("to", job.To).
-					Str("subject", job.Subject).
-					Int("worker", id).
-					Msg("Email sent successfully")
-			}
-			// Обновляем метрику после обработки задания
-			q.updateMetric()
-		case <-q.stopChan:
-			log.Debug().Int("worker", id).Msg("Email worker stopped")
-			return
-		}
-	}
-}
-
-// sendWithRetry пытается отправить письмо с указанным количеством попыток.
-func (q *EmailQueue) sendWithRetry(job EmailJob, retries int) error {
-	var lastErr error
-	for attempt := 1; attempt <= retries; attempt++ {
-		err := SendEmail(q.cfg, job.To, job.Subject, job.Body)
-		if err == nil {
-			return nil
-		}
-		lastErr = err
-		if attempt < retries {
-			delay := time.Duration(1<<(attempt-1)) * time.Second
-			time.Sleep(delay)
-		}
-	}
-	return fmt.Errorf("failed after %d attempts: %w", retries, lastErr)
-}
-
-// shutdown останавливает очередь и дожидается завершения всех воркеров.
-func (q *EmailQueue) shutdown() {
-	q.once.Do(func() {
-		close(q.stopChan)
-		q.wg.Wait()
-		log.Info().Msg("Email queue stopped")
-	})
-}
-
-// updateMetric обновляет Prometheus gauge с текущим размером очереди.
-func (q *EmailQueue) updateMetric() {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	size := float64(len(q.queue))
-	metrics.SetEmailQueueSize(size)
-}
-
-// Enqueue добавляет задачу в очередь на отправку.
-// Если очередь не инициализирована, возвращает ошибку.
-// При переполнении очереди выполняет синхронную отправку как fallback.
-// Возвращает ошибку, если SMTP отключён или отправка не удалась.
-func Enqueue(to, subject, body string) error {
-	if globalQueue == nil {
-		return fmt.Errorf("email queue is not initialized")
-	}
-	if !globalQueue.cfg.SMTP.Enabled {
+// Send отправляет письмо асинхронно — сохраняет в БД для последующей отправки воркером.
+func (s *EmailService) Send(to, subject, body string) error {
+	if !s.cfg.SMTP.Enabled {
 		return fmt.Errorf("SMTP is not enabled")
 	}
 
-	job := EmailJob{To: to, Subject: subject, Body: body}
-
-	// Пытаемся добавить в очередь
-	select {
-	case globalQueue.queue <- job:
-		// Обновляем метрику после добавления
-		globalQueue.updateMetric()
-		return nil
-	default:
-		// Очередь переполнена — выполняем синхронную отправку как fallback
-		log.Warn().
-			Str("to", to).
-			Str("subject", subject).
-			Msg("Email queue is full, sending synchronously as fallback")
-		return SendEmail(globalQueue.cfg, to, subject, body)
+	email := &QueuedEmail{
+		Recipient: to,
+		Subject:   subject,
+		Body:      body,
+		Status:    "pending",
 	}
-}
 
-// EmailService представляет сервис отправки писем (синхронный или через очередь).
-type EmailService struct {
-	cfg *config.Config
-}
-
-// NewEmailService создаёт новый EmailService с настройками из конфигурации.
-func NewEmailService(cfg *config.Config) *EmailService {
-	return &EmailService{cfg: cfg}
-}
-
-// Send отправляет письмо. Если глобальная очередь инициализирована — использует её,
-// иначе отправляет синхронно.
-func (s *EmailService) Send(to, subject, body string) error {
-	if globalQueue != nil {
-		return Enqueue(to, subject, body)
+	if err := s.db.Create(email).Error; err != nil {
+		return fmt.Errorf("failed to queue email: %w", err)
 	}
-	// Если очередь не инициализирована, отправляем синхронно
-	return SendEmail(s.cfg, to, subject, body)
+
+	metrics.SetEmailQueueSize(float64(s.getQueueSize()))
+	return nil
 }
 
 // SendSync — синхронная отправка (для случаев, когда асинхронность нежелательна).
 func (s *EmailService) SendSync(to, subject, body string) error {
+	if !s.cfg.SMTP.Enabled {
+		return fmt.Errorf("SMTP is not enabled")
+	}
 	return SendEmail(s.cfg, to, subject, body)
 }
 
-// SendEmail – низкоуровневая функция отправки письма (может использоваться напрямую).
-// Она не использует очередь, а отправляет сразу.
+// getQueueSize возвращает количество писем со статусом 'pending'.
+func (s *EmailService) getQueueSize() int64 {
+	var count int64
+	s.db.Model(&QueuedEmail{}).Where("status = ?", "pending").Count(&count)
+	return count
+}
+
+// StartWorker запускает воркер, который периодически отправляет письма из очереди.
+func (s *EmailService) StartWorker(ctx context.Context, interval time.Duration, batchSize int) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Info().Msg("Email worker: context cancelled, stopping")
+			return
+		case <-s.stop:
+			log.Info().Msg("Email worker: stopped")
+			return
+		case <-ticker.C:
+			if err := s.processPendingEmails(ctx, batchSize); err != nil {
+				log.Error().Err(err).Msg("Email worker: failed to process pending emails")
+			}
+			metrics.SetEmailQueueSize(float64(s.getQueueSize()))
+		}
+	}
+}
+
+// Stop останавливает воркер.
+func (s *EmailService) Stop() {
+	close(s.stop)
+}
+
+// processPendingEmails обрабатывает письма со статусом 'pending'.
+func (s *EmailService) processPendingEmails(ctx context.Context, batchSize int) error {
+	var emails []QueuedEmail
+
+	if err := s.db.WithContext(ctx).
+		Where("status = ? AND (scheduled_at IS NULL OR scheduled_at <= ?)", "pending", time.Now()).
+		Order("created_at ASC").
+		Limit(batchSize).
+		Find(&emails).Error; err != nil {
+		return err
+	}
+
+	if len(emails) == 0 {
+		return nil
+	}
+
+	for _, email := range emails {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			s.sendEmailWithRetry(&email)
+		}
+	}
+
+	return nil
+}
+
+// sendEmailWithRetry пытается отправить письмо и обновляет статус в БД.
+func (s *EmailService) sendEmailWithRetry(email *QueuedEmail) {
+	const maxAttempts = 3
+
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		err := SendEmail(s.cfg, email.Recipient, email.Subject, email.Body)
+		if err == nil {
+			now := time.Now()
+			email.Status = "sent"
+			email.SentAt = &now
+			if err := s.db.Save(email).Error; err != nil {
+				log.Error().Err(err).Uint("email_id", email.ID).Msg("Failed to update email status to sent")
+			}
+			log.Debug().Uint("email_id", email.ID).Str("to", email.Recipient).Msg("Email sent successfully")
+			return
+		}
+		lastErr = err
+		email.Attempts = attempt
+		email.LastError = err.Error()
+
+		if attempt < maxAttempts {
+			delay := time.Duration(1<<(attempt-1)) * time.Second
+			time.Sleep(delay)
+		}
+	}
+
+	// Все попытки исчерпаны
+	email.Status = "failed"
+	if err := s.db.Save(email).Error; err != nil {
+		log.Error().Err(err).Uint("email_id", email.ID).Msg("Failed to update email status to failed")
+	}
+
+	log.Error().
+		Uint("email_id", email.ID).
+		Str("to", email.Recipient).
+		Str("subject", email.Subject).
+		Err(lastErr).
+		Msg("Failed to send email after all retries")
+}
+
+// SendEmail – экспортируемая функция для синхронной отправки письма (используется в тестах и для обратной совместимости).
 func SendEmail(cfg *config.Config, to, subject, body string) error {
 	if !cfg.SMTP.Enabled {
 		return fmt.Errorf("SMTP is not enabled")

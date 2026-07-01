@@ -268,3 +268,71 @@ func (h *ExportHandler) ExportStatisticsPDF(c *gin.Context) {
 	c.Header("Content-Disposition", "attachment; filename=stats_"+strconv.Itoa(int(gameID))+".pdf")
 	c.Data(http.StatusOK, "application/pdf", buf.Bytes())
 }
+
+// =============================================================================
+// ЭКСПОРТ В EXCEL
+// =============================================================================
+
+// ExportGameExcel экспортирует игру в Excel.
+// @Summary Экспорт игры в Excel
+// @Description Генерирует Excel-файл (.xlsx) со всеми уровнями, вопросами и ответами игры
+// @Tags export
+// @Produce application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+// @Param id path int true "ID игры"
+// @Success 200 {file} file "Excel-файл с данными игры"
+// @Failure 400 {object} map[string]interface{} "Неверный ID"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+// @Router /games/{id}/export-excel [get]
+// @Security JWT
+func (h *ExportHandler) ExportGameExcel(c *gin.Context) {
+	gameID, err := parseGameID(c)
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var buf bytes.Buffer
+	if err := h.exportService.ExportGameToExcel(c.Request.Context(), gameID, &buf); err != nil {
+		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportGameExcel: failed to generate Excel")
+		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		return
+	}
+
+	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Header("Content-Disposition", "attachment; filename=game_"+strconv.Itoa(int(gameID))+".xlsx")
+	c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buf.Bytes())
+}
+
+// ExportResultsExcel экспортирует результаты игры в Excel.
+// @Summary Экспорт результатов в Excel
+// @Description Генерирует Excel-файл (.xlsx) с итоговой таблицей результатов игры
+// @Tags export
+// @Produce application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+// @Param id path int true "ID игры"
+// @Success 200 {file} file "Excel-файл с результатами"
+// @Failure 400 {object} map[string]interface{} "Неверный ID"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+// @Router /games/{id}/export-results-excel [get]
+// @Security JWT
+func (h *ExportHandler) ExportResultsExcel(c *gin.Context) {
+	gameID, err := parseGameID(c)
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var buf bytes.Buffer
+	if err := h.exportService.ExportResultsToExcel(c.Request.Context(), gameID, &buf); err != nil {
+		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportResultsExcel: failed to generate Excel")
+		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		return
+	}
+
+	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	c.Header("Content-Disposition", "attachment; filename=results_"+strconv.Itoa(int(gameID))+".xlsx")
+	c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buf.Bytes())
+}

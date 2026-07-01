@@ -15,6 +15,7 @@ import (
 	"gengine-0/internal/pkg/util"
 
 	"github.com/jung-kurt/gofpdf"
+	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
 )
 
@@ -26,9 +27,6 @@ type ExportService struct {
 }
 
 // NewExportService создаёт новый экземпляр ExportService.
-// normalFont — байты обычного Unicode-шрифта,
-// boldFont — байты жирного Unicode-шрифта.
-// Возвращает ошибку, если не удалось загрузить один из шрифтов.
 func NewExportService(
 	exportRepo ExportRepository,
 	normalFont, boldFont []byte,
@@ -76,7 +74,6 @@ func (s *ExportService) ExportGameToCSV(ctx context.Context, gameID uint, w io.W
 }
 
 // ImportGameFromCSV парсит CSV и создаёт уровни/вопросы/ответы для указанной игры.
-// Этот метод работает напрямую с БД через транзакцию, поэтому требует *gorm.DB.
 func (s *ExportService) ImportGameFromCSV(db *gorm.DB, gameID uint, r io.Reader) error {
 	return db.Transaction(func(tx *gorm.DB) error {
 		reader := csv.NewReader(r)
@@ -309,4 +306,138 @@ func (s *ExportService) ExportStatisticsToPDF(ctx context.Context, gameID uint, 
 	}
 
 	return pdf.Output(w)
+}
+
+// =============================================================================
+// НОВЫЕ МЕТОДЫ ДЛЯ EXCEL
+// =============================================================================
+
+// ExportGameToExcel генерирует Excel-файл (.xlsx) со всеми уровнями, вопросами и ответами игры.
+func (s *ExportService) ExportGameToExcel(ctx context.Context, gameID uint, w io.Writer) error {
+	_, levels, err := s.exportRepo.GetGameWithLevels(ctx, gameID)
+	if err != nil {
+		return fmt.Errorf("игра не найдена: %w", err)
+	}
+
+	f := excelize.NewFile()
+	_ = f.DeleteSheet("Sheet1")
+
+	sheetName := "Уровни"
+	index, err := f.NewSheet(sheetName)
+	if err != nil {
+		return err
+	}
+
+	headers := []string{"Позиция", "Название", "Описание", "Тип", "Вопрос", "Подсказка", "Ответы"}
+	for i, h := range headers {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		_ = f.SetCellValue(sheetName, cell, h)
+	}
+
+	style, err := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Bold: true},
+		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
+	})
+	if err == nil {
+		endCol, _ := excelize.ColumnNumberToName(len(headers))
+		_ = f.SetCellStyle(sheetName, "A1", endCol+"1", style)
+	}
+
+	row := 2
+	for _, lvl := range levels {
+		if len(lvl.Questions) == 0 {
+			_ = f.SetCellValue(sheetName, fmt.Sprintf("A%d", row), lvl.Position)
+			_ = f.SetCellValue(sheetName, fmt.Sprintf("B%d", row), lvl.Name)
+			_ = f.SetCellValue(sheetName, fmt.Sprintf("C%d", row), lvl.Description)
+			_ = f.SetCellValue(sheetName, fmt.Sprintf("D%d", row), lvl.Type)
+			_ = f.SetCellValue(sheetName, fmt.Sprintf("E%d", row), "")
+			_ = f.SetCellValue(sheetName, fmt.Sprintf("F%d", row), "")
+			_ = f.SetCellValue(sheetName, fmt.Sprintf("G%d", row), "")
+			row++
+		} else {
+			for _, q := range lvl.Questions {
+				var answerCodes []string
+				for _, a := range q.Answers {
+					answerCodes = append(answerCodes, a.Code)
+				}
+				answersStr := strings.Join(answerCodes, ", ")
+				_ = f.SetCellValue(sheetName, fmt.Sprintf("A%d", row), lvl.Position)
+				_ = f.SetCellValue(sheetName, fmt.Sprintf("B%d", row), lvl.Name)
+				_ = f.SetCellValue(sheetName, fmt.Sprintf("C%d", row), lvl.Description)
+				_ = f.SetCellValue(sheetName, fmt.Sprintf("D%d", row), lvl.Type)
+				_ = f.SetCellValue(sheetName, fmt.Sprintf("E%d", row), q.Text)
+				_ = f.SetCellValue(sheetName, fmt.Sprintf("F%d", row), q.Hint)
+				_ = f.SetCellValue(sheetName, fmt.Sprintf("G%d", row), answersStr)
+				row++
+			}
+		}
+	}
+
+	for i := 1; i <= len(headers); i++ {
+		col, _ := excelize.ColumnNumberToName(i)
+		_ = f.SetColWidth(sheetName, col, col, 25)
+	}
+
+	f.SetActiveSheet(index)
+	return f.Write(w)
+}
+
+// ExportResultsToExcel генерирует Excel-файл с таблицей результатов игры.
+func (s *ExportService) ExportResultsToExcel(ctx context.Context, gameID uint, w io.Writer) error {
+	passings, err := s.exportRepo.GetFinishedPassingsWithDetails(ctx, gameID)
+	if err != nil {
+		return err
+	}
+
+	f := excelize.NewFile()
+	_ = f.DeleteSheet("Sheet1")
+	sheetName := "Результаты"
+	index, err := f.NewSheet(sheetName)
+	if err != nil {
+		return err
+	}
+
+	headers := []string{"Место", "Команда", "Общее время", "Попыток"}
+	for i, h := range headers {
+		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
+		_ = f.SetCellValue(sheetName, cell, h)
+	}
+
+	style, err := f.NewStyle(&excelize.Style{
+		Font:      &excelize.Font{Bold: true},
+		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
+	})
+	if err == nil {
+		endCol, _ := excelize.ColumnNumberToName(len(headers))
+		_ = f.SetCellStyle(sheetName, "A1", endCol+"1", style)
+	}
+
+	row := 2
+	for i, p := range passings {
+		place := fmt.Sprintf("%d", i+1)
+		if p.Place != nil {
+			place = fmt.Sprintf("%d", *p.Place)
+		}
+		timeStr := ""
+		if p.ResultDuration != nil {
+			timeStr = util.FormatDuration(*p.ResultDuration)
+		}
+		attempts := 0
+		for _, lp := range p.Progresses {
+			attempts += len(lp.Attempts)
+		}
+		_ = f.SetCellValue(sheetName, fmt.Sprintf("A%d", row), place)
+		_ = f.SetCellValue(sheetName, fmt.Sprintf("B%d", row), p.Team.Name)
+		_ = f.SetCellValue(sheetName, fmt.Sprintf("C%d", row), timeStr)
+		_ = f.SetCellValue(sheetName, fmt.Sprintf("D%d", row), attempts)
+		row++
+	}
+
+	for i := 1; i <= len(headers); i++ {
+		col, _ := excelize.ColumnNumberToName(i)
+		_ = f.SetColWidth(sheetName, col, col, 20)
+	}
+
+	f.SetActiveSheet(index)
+	return f.Write(w)
 }
