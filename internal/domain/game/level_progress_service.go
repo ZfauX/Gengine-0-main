@@ -6,10 +6,11 @@ import (
 	"errors"
 	"time"
 
+	"gengine-0/internal/domain/level"
+
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
-
-	"gengine-0/internal/domain/level"
+	"gorm.io/gorm/clause"
 )
 
 type LevelProgressService struct {
@@ -50,6 +51,7 @@ func (s *LevelProgressService) InitFirstLevel(ctx context.Context, gamePassingID
 }
 
 // GetCurrentProgress возвращает текущий незавершённый прогресс уровня.
+// БЕЗ БЛОКИРОВКИ — для чтения.
 func GetCurrentProgress(db *gorm.DB, gamePassingID uint) (*LevelProgress, error) {
 	var progress LevelProgress
 	err := db.
@@ -62,7 +64,22 @@ func GetCurrentProgress(db *gorm.DB, gamePassingID uint) (*LevelProgress, error)
 	return &progress, err
 }
 
+// GetCurrentProgressForUpdate возвращает текущий незавершённый прогресс с блокировкой FOR UPDATE.
+// Используется внутри транзакций для предотвращения гонок.
+func GetCurrentProgressForUpdate(tx *gorm.DB, gamePassingID uint) (*LevelProgress, error) {
+	var progress LevelProgress
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Preload("Level.Questions.Answers").
+		Where("game_passing_id = ? AND finished_at IS NULL", gamePassingID).
+		First(&progress).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, errors.New("нет активного уровня")
+	}
+	return &progress, err
+}
+
 // CompleteLevel завершает прогресс уровня и переходит к следующему.
+// Работает с переданным *gorm.DB (может быть транзакцией).
 func CompleteLevel(db *gorm.DB, progress *LevelProgress) error {
 	now := time.Now()
 	progress.FinishedAt = &now
@@ -73,6 +90,7 @@ func CompleteLevel(db *gorm.DB, progress *LevelProgress) error {
 }
 
 // AdvanceToNextLevel находит следующий уровень и создаёт для него прогресс.
+// Работает с переданным *gorm.DB (может быть транзакцией).
 func AdvanceToNextLevel(db *gorm.DB, gamePassingID, completedLevelID uint) error {
 	// Загружаем прохождение только для получения GameID и Status
 	var passing GamePassing
@@ -116,7 +134,6 @@ func CheckTimeouts(db *gorm.DB, ctx context.Context) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Error().Interface("panic", r).Msg("CheckTimeouts: panic recovered, restarting goroutine")
-			// Перезапускаем горутину через 5 секунд, чтобы не зациклиться при постоянных паниках
 			time.Sleep(5 * time.Second)
 			go CheckTimeouts(db, ctx)
 		}
@@ -196,7 +213,6 @@ func CheckAutoStartGames(db *gorm.DB, ctx context.Context) {
 			}
 
 			for _, g := range games {
-				// Защита от nil-указателей
 				if g.GameSetting.ID == 0 {
 					log.Warn().Uint("game_id", g.ID).Msg("CheckAutoStartGames: game setting not found, skipping")
 					continue

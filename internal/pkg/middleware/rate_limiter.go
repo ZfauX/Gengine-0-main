@@ -1,3 +1,4 @@
+// internal/pkg/middleware/rate_limiter.go
 package middleware
 
 import (
@@ -33,7 +34,6 @@ func NewRateLimiter(window time.Duration, limit int) *RateLimiter {
 		limit:    limit,
 		stopCh:   make(chan struct{}),
 	}
-	// Фоновая очистка устаревших записей каждую минуту
 	go rl.cleanup()
 	return rl
 }
@@ -52,7 +52,6 @@ func (rl *RateLimiter) Allow(key string) bool {
 	now := time.Now()
 
 	if !exists || now.Sub(v.lastSeen) > rl.window {
-		// Первое обращение или новое окно
 		rl.visitors[key] = &visitor{lastSeen: now, count: 1}
 		return true
 	}
@@ -115,6 +114,19 @@ func LoginRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 	}
 }
 
+// RegistrationRateLimit — middleware, ограничивающий количество попыток регистрации с IP.
+func RegistrationRateLimit(window time.Duration, limit int) gin.HandlerFunc {
+	rl := NewRateLimiter(window, limit)
+	return func(c *gin.Context) {
+		ip := c.ClientIP()
+		if !rl.Allow("register:" + ip) {
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "слишком много попыток регистрации, попробуйте позже"})
+			return
+		}
+		c.Next()
+	}
+}
+
 // CodeSubmissionRateLimit — middleware, ограничивающий частоту ввода кодов пользователем.
 func CodeSubmissionRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 	rl := NewRateLimiter(window, limit)
@@ -125,7 +137,7 @@ func CodeSubmissionRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		key := fmt.Sprintf("code:%d", c.GetUint("userID"))
+		key := fmt.Sprintf("code:%d", userID)
 		if !rl.Allow(key) {
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "слишком частый ввод кодов"})
 			return

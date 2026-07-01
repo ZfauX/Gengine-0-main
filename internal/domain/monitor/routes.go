@@ -44,11 +44,13 @@ func RegisterRoutes(
 	gameGroup.Use(gameManager)
 	{
 		// @Summary Страница мониторинга игры
-		// @Description Отображает страницу с live-обновлениями прогресса игры
+		// @Description Отображает страницу с live-обновлениями прогресса игры (WebSocket или SSE)
 		// @Tags monitor
 		// @Produce html
 		// @Param id path int true "ID игры"
 		// @Success 200 {string} html "Страница мониторинга"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+		// @Failure 403 {object} map[string]interface{} "Недостаточно прав (только автор или соавтор)"
 		// @Router /games/{id}/monitor [get]
 		// @Security JWT
 		gameGroup.GET("/monitor", monitorHandler.MonitorPage)
@@ -60,6 +62,8 @@ func RegisterRoutes(
 		// @Produce text/event-stream
 		// @Param id path int true "ID игры"
 		// @Success 200 {string} string "SSE поток обновлений"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
 		// @Router /games/{id}/monitor/stream [get]
 		// @Security JWT
 		gameGroup.GET("/monitor/stream", monitorHandler.MonitorStreamSSE)
@@ -71,16 +75,20 @@ func RegisterRoutes(
 	// @Tags monitor
 	// @Param id path int true "ID игры"
 	// @Success 101 {string} string "Switching Protocols"
+	// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+	// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+	// @Failure 429 {object} map[string]interface{} "Слишком много активных соединений"
 	// @Router /games/{id}/monitor/ws [get]
 	// @Security JWT
 	protected.GET("/games/:id/monitor/ws", gameManager, monitorHandler.MonitorWS)
 
 	// @Summary Страница чата игры
-	// @Description Отображает страницу чата для игры (общий и командный)
+	// @Description Отображает страницу чата для игры (общий и командный чаты)
 	// @Tags monitor
 	// @Produce html
 	// @Param id path int true "ID игры"
 	// @Success 200 {string} html "Страница чата"
+	// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 	// @Router /games/{id}/chat [get]
 	// @Security JWT
 	protected.GET("/games/:id/chat", monitorHandler.ChatPage)
@@ -91,26 +99,31 @@ func RegisterRoutes(
 	// @Tags monitor
 	// @Param room query string true "ID комнаты чата"
 	// @Success 101 {string} string "Switching Protocols"
+	// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+	// @Failure 429 {object} map[string]interface{} "Слишком много активных соединений"
 	// @Router /chat/ws [get]
 	// @Security JWT
 	protected.GET("/chat/ws", monitorHandler.ChatWS)
 
 	// @Summary ID комнат чата
-	// @Description Возвращает ID общей и командной комнат чата для игры
+	// @Description Возвращает ID общей и командной комнат чата для игры (для инициализации WebSocket)
 	// @Tags monitor
 	// @Produce json
 	// @Param id path int true "ID игры"
-	// @Success 200 {object} map[string]interface{} "ID комнат чата"
+	// @Success 200 {object} map[string]interface{} "ID комнат чата (general_room_id, team_room_id)"
+	// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 	// @Router /games/{id}/chat-rooms [get]
 	// @Security JWT
 	protected.GET("/games/:id/chat-rooms", monitorHandler.ChatRoomIDs)
 
 	// @Summary Логи игры
-	// @Description Отображает страницу с историей событий игры
+	// @Description Отображает страницу с историей событий игры (включая попытки ввода кодов, подсказки и т.д.)
 	// @Tags monitor
 	// @Produce html
 	// @Param id path int true "ID игры"
 	// @Success 200 {string} html "Страница логов"
+	// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+	// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
 	// @Router /games/{id}/logs [get]
 	// @Security JWT
 	protected.GET("/games/:id/logs", monitorHandler.ListLogs)
@@ -121,6 +134,9 @@ func RegisterRoutes(
 	// @Tags monitor
 	// @Param id path int true "ID игры"
 	// @Success 101 {string} string "Switching Protocols"
+	// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+	// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+	// @Failure 429 {object} map[string]interface{} "Слишком много активных соединений"
 	// @Router /games/{id}/logs/ws [get]
 	// @Security JWT
 	protected.GET("/games/:id/logs/ws", monitorHandler.LogsWS)
@@ -133,7 +149,9 @@ func RegisterRoutes(
 	// @Param passing_id formData uint true "ID прохождения"
 	// @Param level_id formData uint true "ID уровня"
 	// @Success 200 {object} map[string]interface{} "Голосование запущено"
-	// @Failure 400 {object} map[string]interface{} "Ошибка"
+	// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+	// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+	// @Failure 403 {object} map[string]interface{} "Недостаточно прав (только автор)"
 	// @Router /voting/start [post]
 	// @Security JWT
 	protected.POST("/voting/start", gameManager, monitorHandler.StartVoting)
@@ -147,18 +165,21 @@ func RegisterRoutes(
 	// @Param team_id formData uint true "ID команды"
 	// @Param option formData string true "Выбранный вариант"
 	// @Success 200 {object} map[string]interface{} "Голос учтён"
-	// @Failure 400 {object} map[string]interface{} "Ошибка"
+	// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+	// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+	// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
 	// @Router /voting/vote [post]
 	// @Security JWT
 	protected.POST("/voting/vote", monitorHandler.Vote)
 
 	// @Summary Результаты голосования
-	// @Description Возвращает текущие результаты голосования по сессии
+	// @Description Возвращает текущие результаты голосования по сессии (количество голосов за каждый вариант)
 	// @Tags monitor
 	// @Produce json
 	// @Param session_id path int true "ID сессии голосования"
 	// @Success 200 {object} map[string]interface{} "Результаты голосования"
-	// @Failure 500 {object} map[string]interface{} "Ошибка"
+	// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+	// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
 	// @Router /voting/{session_id}/results [get]
 	// @Security JWT
 	protected.GET("/voting/:session_id/results", monitorHandler.GetVotingResults)
@@ -170,7 +191,9 @@ func RegisterRoutes(
 	// @Produce json
 	// @Param session_id path int true "ID сессии голосования"
 	// @Success 200 {object} map[string]interface{} "Победивший вариант"
-	// @Failure 400 {object} map[string]interface{} "Ошибка"
+	// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+	// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+	// @Failure 403 {object} map[string]interface{} "Недостаточно прав (только автор)"
 	// @Router /voting/{session_id}/close [post]
 	// @Security JWT
 	protected.POST("/voting/:session_id/close", gameManager, monitorHandler.CloseVoting)

@@ -2,7 +2,10 @@
 package game
 
 import (
+	"fmt"
 	"time"
+
+	"gengine-0/internal/pkg/cache"
 
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
@@ -10,11 +13,12 @@ import (
 )
 
 type RatingService struct {
-	DB *gorm.DB
+	DB    *gorm.DB
+	cache *cache.Cache
 }
 
-func NewRatingService(db *gorm.DB) *RatingService {
-	return &RatingService{DB: db}
+func NewRatingService(db *gorm.DB, c *cache.Cache) *RatingService {
+	return &RatingService{DB: db, cache: c}
 }
 
 func (s *RatingService) UpdateRatingsForGame(gameID uint) error {
@@ -75,6 +79,11 @@ func (s *RatingService) UpdateRatingsForGame(gameID uint) error {
 			}
 		}
 	}
+
+	// Инвалидируем кэш рейтинга после обновления
+	if s.cache != nil {
+		s.cache.Delete("leaderboard")
+	}
 	return nil
 }
 
@@ -88,8 +97,28 @@ func (s *RatingService) awardPoints(userID uint, points int, now time.Time) erro
 	}).Create(&PlayerRating{UserID: userID, Score: points}).Error
 }
 
+// GetLeaderboard возвращает топ игроков с кэшированием.
 func (s *RatingService) GetLeaderboard(limit int) ([]PlayerRating, error) {
+	cacheKey := fmt.Sprintf("leaderboard:limit:%d", limit)
+
+	if s.cache != nil {
+		if cached, ok := s.cache.Get(cacheKey); ok {
+			if ratings, ok := cached.([]PlayerRating); ok {
+				log.Debug().Msg("GetLeaderboard: cache hit")
+				return ratings, nil
+			}
+		}
+	}
+
 	var ratings []PlayerRating
 	err := s.DB.Preload("User").Order("score DESC").Limit(limit).Find(&ratings).Error
-	return ratings, err
+	if err != nil {
+		return nil, err
+	}
+
+	if s.cache != nil && len(ratings) > 0 {
+		s.cache.Set(cacheKey, ratings, 5*time.Minute)
+	}
+
+	return ratings, nil
 }

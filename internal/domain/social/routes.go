@@ -28,13 +28,14 @@ func RegisterRoutes(
 	protected.Use(authRequired)
 	{
 		// @Summary Подписаться на автора
-		// @Description Создаёт подписку текущего пользователя на автора игр
+		// @Description Создаёт подписку текущего пользователя на автора игр. Нельзя подписаться на самого себя.
 		// @Tags social
 		// @Accept json
 		// @Produce json
 		// @Param id path int true "ID автора"
 		// @Success 200 {object} map[string]interface{} "Статус followed"
 		// @Failure 400 {object} map[string]interface{} "Неверный ID автора"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 		// @Router /follow/{id} [post]
 		// @Security JWT
 		protected.POST("/follow/:id", followHandler.Follow)
@@ -47,6 +48,7 @@ func RegisterRoutes(
 		// @Param id path int true "ID автора"
 		// @Success 200 {object} map[string]interface{} "Статус unfollowed"
 		// @Failure 400 {object} map[string]interface{} "Неверный ID автора"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 		// @Router /follow/{id} [delete]
 		// @Security JWT
 		protected.DELETE("/follow/:id", followHandler.Unfollow)
@@ -56,8 +58,9 @@ func RegisterRoutes(
 		// @Tags social
 		// @Produce json
 		// @Param id path int true "ID автора"
-		// @Success 200 {object} map[string]interface{} "Статус подписки"
+		// @Success 200 {object} map[string]interface{} "Статус подписки (following: true/false)"
 		// @Failure 400 {object} map[string]interface{} "Неверный ID автора"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 		// @Router /follow/{id}/check [get]
 		// @Security JWT
 		protected.GET("/follow/:id/check", followHandler.IsFollowing)
@@ -67,6 +70,7 @@ func RegisterRoutes(
 		// @Tags social
 		// @Produce html
 		// @Success 200 {string} html "Страница подписок"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 		// @Router /subscriptions [get]
 		// @Security JWT
 		protected.GET("/subscriptions", followHandler.Subscriptions)

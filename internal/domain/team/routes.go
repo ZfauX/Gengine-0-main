@@ -33,6 +33,7 @@ func RegisterRoutes(
 		// @Tags teams
 		// @Produce html
 		// @Success 200 {string} html "Страница со списком команд"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 		// @Router /teams [get]
 		// @Security JWT
 		teamsGroup.GET("/", teamHandler.MyTeams)
@@ -42,28 +43,31 @@ func RegisterRoutes(
 		// @Tags teams
 		// @Produce html
 		// @Success 200 {string} html "Форма создания команды"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 		// @Router /teams/new [get]
 		// @Security JWT
 		teamsGroup.GET("/new", teamHandler.NewTeamForm)
 
 		// @Summary Создание команды
-		// @Description Создаёт новую команду, текущий пользователь становится капитаном
+		// @Description Создаёт новую команду, текущий пользователь становится капитаном. Название должно быть уникальным и длиной от 2 до 100 символов.
 		// @Tags teams
 		// @Accept x-www-form-urlencoded
 		// @Produce html
 		// @Param name formData string true "Название команды (2-100 символов)"
 		// @Success 302 {string} string "Перенаправление на /teams"
 		// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 		// @Router /teams [post]
 		// @Security JWT
 		teamsGroup.POST("/new", teamHandler.CreateTeam)
 
 		// @Summary Просмотр команды
-		// @Description Отображает информацию о команде и её составе
+		// @Description Отображает информацию о команде и её составе (капитан, участники)
 		// @Tags teams
 		// @Produce html
 		// @Param team_id path int true "ID команды"
 		// @Success 200 {string} html "Страница команды"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 		// @Failure 404 {object} map[string]interface{} "Команда не найдена"
 		// @Router /teams/{team_id} [get]
 		// @Security JWT
@@ -74,22 +78,24 @@ func RegisterRoutes(
 	invitationsGroup.Use(middleware.AuthRequired(authService))
 	{
 		// @Summary Мои приглашения
-		// @Description Отображает HTML-страницу со списком приглашений текущего пользователя
+		// @Description Отображает HTML-страницу со списком приглашений текущего пользователя (входящие)
 		// @Tags invitations
 		// @Produce html
 		// @Success 200 {string} html "Страница с моими приглашениями"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 		// @Router /invitations/my [get]
 		// @Security JWT
 		invitationsGroup.GET("/my", invitationHandler.MyInvitations)
 
 		// @Summary Принять приглашение
-		// @Description Принимает приглашение в команду
+		// @Description Принимает приглашение в команду, пользователь становится участником команды
 		// @Tags invitations
 		// @Accept x-www-form-urlencoded
 		// @Produce html
 		// @Param id path int true "ID приглашения"
 		// @Success 302 {string} string "Перенаправление на /invitations/my"
-		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+		// @Failure 403 {object} map[string]interface{} "Недостаточно прав (только приглашённый пользователь)"
 		// @Router /invitations/{id}/accept [post]
 		// @Security JWT
 		invitationsGroup.POST("/:id/accept", invitationHandler.Accept)
@@ -101,7 +107,8 @@ func RegisterRoutes(
 		// @Produce html
 		// @Param id path int true "ID приглашения"
 		// @Success 302 {string} string "Перенаправление на /invitations/my"
-		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+		// @Failure 403 {object} map[string]interface{} "Недостаточно прав (только приглашённый пользователь)"
 		// @Router /invitations/{id}/decline [post]
 		// @Security JWT
 		invitationsGroup.POST("/:id/decline", invitationHandler.Decline)

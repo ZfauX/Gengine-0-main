@@ -15,6 +15,7 @@ import (
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/sanitize"
+	"gengine-0/internal/pkg/validation"
 	ws "gengine-0/internal/pkg/websocket"
 
 	"github.com/gin-gonic/gin"
@@ -91,6 +92,17 @@ func NewMonitorHandler(
 }
 
 // MonitorPage отображает HTML-страницу мониторинга.
+// @Summary Страница мониторинга игры
+// @Description Отображает страницу с live-обновлениями прогресса игры
+// @Tags monitor
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Страница мониторинга"
+// @Failure 400 {object} map[string]interface{} "Неверный ID игры"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /games/{id}/monitor [get]
+// @Security JWT
 func (h *MonitorHandler) MonitorPage(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -104,7 +116,17 @@ func (h *MonitorHandler) MonitorPage(c *gin.Context) {
 }
 
 // MonitorStreamSSE предоставляет Server-Sent Events для обновлений прогресса игры.
-// Это более лёгкая альтернатива WebSocket для однонаправленного мониторинга.
+// @Summary Поток мониторинга (SSE)
+// @Description Устанавливает Server-Sent Events соединение для получения обновлений прогресса игры. Легкая альтернатива WebSocket.
+// @Tags monitor
+// @Produce text/event-stream
+// @Param id path int true "ID игры"
+// @Success 200 {string} string "SSE поток обновлений"
+// @Failure 400 {object} map[string]interface{} "Неверный ID игры"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /games/{id}/monitor/stream [get]
+// @Security JWT
 func (h *MonitorHandler) MonitorStreamSSE(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -162,7 +184,17 @@ func (h *MonitorHandler) MonitorStreamSSE(c *gin.Context) {
 }
 
 // MonitorWS обрабатывает WebSocket-соединение для live-обновлений прогресса.
-// Оставлен для обратной совместимости, но рекомендуется использовать SSE.
+// @Summary WebSocket мониторинга
+// @Description Устанавливает WebSocket-соединение для получения обновлений прогресса игры
+// @Tags monitor
+// @Param id path int true "ID игры"
+// @Success 101 {string} string "Switching Protocols"
+// @Failure 400 {object} map[string]interface{} "Неверный ID игры"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Failure 429 {object} map[string]interface{} "Слишком много активных соединений"
+// @Router /games/{id}/monitor/ws [get]
+// @Security JWT
 func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -172,7 +204,6 @@ func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 	gameID := strconv.Itoa(int(req.ID))
 	remoteIP := c.ClientIP()
 
-	// Проверяем лимиты подключений
 	if !h.hub.CanAccept(remoteIP) {
 		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 			"error": "слишком много активных WebSocket-соединений",
@@ -199,7 +230,6 @@ func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 		}
 	}
 
-	// Используем контекст запроса для отмены горутины при закрытии соединения
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
 
@@ -208,12 +238,21 @@ func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 			h.hub.UnregisterClient(client)
 			client.Close()
 		}()
-		// Запускаем обработку WebSocket с поддержкой отмены
 		ws.HandleWebSocketWithContext(ctx, client)
 	}()
 }
 
 // ChatPage отображает HTML-страницу чата игры.
+// @Summary Страница чата игры
+// @Description Отображает страницу чата для игры (общий и командный чаты)
+// @Tags monitor
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Страница чата"
+// @Failure 400 {object} map[string]interface{} "Неверный ID игры"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /games/{id}/chat [get]
+// @Security JWT
 func (h *MonitorHandler) ChatPage(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -262,6 +301,16 @@ func (h *MonitorHandler) ChatPage(c *gin.Context) {
 }
 
 // ChatWS обрабатывает WebSocket-соединение чата.
+// @Summary WebSocket чата
+// @Description Устанавливает WebSocket-соединение для обмена сообщениями в чате
+// @Tags monitor
+// @Param room query string true "ID комнаты чата"
+// @Success 101 {string} string "Switching Protocols"
+// @Failure 400 {object} map[string]interface{} "Неверный параметр"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 429 {object} map[string]interface{} "Слишком много активных соединений"
+// @Router /chat/ws [get]
+// @Security JWT
 func (h *MonitorHandler) ChatWS(c *gin.Context) {
 	roomID := c.Query("room")
 	if roomID == "" {
@@ -272,7 +321,6 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 	userID := c.GetUint("userID")
 	remoteIP := c.ClientIP()
 
-	// Проверяем лимиты подключений
 	if !h.hub.CanAccept(remoteIP) {
 		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 			"error": "слишком много активных WebSocket-соединений",
@@ -300,7 +348,6 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 	if err != nil {
 		log.Error().Err(err).Int("room_id", roomIDUint).Msg("ChatWS: failed to get history")
 	} else {
-		// Санитизируем содержимое сообщений перед отправкой
 		for i := range msgs {
 			msgs[i].Content = sanitize.StripHTML(msgs[i].Content)
 			if msgs[i].User.Name != "" {
@@ -315,7 +362,6 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 		}
 	}
 
-	// Создаём контекст с отменой для управления горутинами
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
 
@@ -325,10 +371,8 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 			client.Close()
 		}()
 
-		// Запускаем писатель с поддержкой контекста
 		ws.WritePumpWithContext(ctx, client)
 
-		// Цикл чтения с поддержкой отмены
 		for {
 			select {
 			case <-ctx.Done():
@@ -342,10 +386,9 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 					}
 					return
 				}
-				// Санитизируем содержимое сообщения перед сохранением и отправкой
 				cleanContent := sanitize.StripHTML(string(message))
 				if cleanContent == "" {
-					continue // Игнорируем пустые сообщения (после санитизации)
+					continue
 				}
 				msg, err := h.chatService.SaveMessage(c.Request.Context(), uint(roomIDUint), userID, cleanContent)
 				if err != nil {
@@ -355,7 +398,6 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 				if err := h.db.Preload("User").First(&msg, msg.ID).Error; err != nil {
 					log.Error().Err(err).Uint("msg_id", msg.ID).Msg("ChatWS: failed to preload user")
 				}
-				// Дополнительная санитизация перед отправкой
 				msg.Content = sanitize.StripHTML(msg.Content)
 				if msg.User.Name != "" {
 					msg.User.Name = sanitize.StripHTML(msg.User.Name)
@@ -372,6 +414,16 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 }
 
 // ChatRoomIDs возвращает ID комнат чата (общая и командная) для игры.
+// @Summary ID комнат чата
+// @Description Возвращает ID общей и командной комнат чата для игры
+// @Tags monitor
+// @Produce json
+// @Param id path int true "ID игры"
+// @Success 200 {object} map[string]interface{} "ID комнат чата (general_room_id, team_room_id)"
+// @Failure 400 {object} map[string]interface{} "Неверный ID игры"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /games/{id}/chat-rooms [get]
+// @Security JWT
 func (h *MonitorHandler) ChatRoomIDs(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -421,6 +473,17 @@ func (h *MonitorHandler) ChatRoomIDs(c *gin.Context) {
 }
 
 // ListLogs отображает HTML-страницу с историей логов игры.
+// @Summary Логи игры
+// @Description Отображает страницу с историей событий игры
+// @Tags monitor
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Страница логов"
+// @Failure 400 {object} map[string]interface{} "Неверный ID игры"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /games/{id}/logs [get]
+// @Security JWT
 func (h *MonitorHandler) ListLogs(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -443,6 +506,17 @@ func (h *MonitorHandler) ListLogs(c *gin.Context) {
 }
 
 // LogsWS предоставляет WebSocket-стрим логов игры.
+// @Summary WebSocket логов
+// @Description Устанавливает WebSocket-соединение для потоковой передачи логов игры
+// @Tags monitor
+// @Param id path int true "ID игры"
+// @Success 101 {string} string "Switching Protocols"
+// @Failure 400 {object} map[string]interface{} "Неверный ID игры"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Failure 429 {object} map[string]interface{} "Слишком много активных соединений"
+// @Router /games/{id}/logs/ws [get]
+// @Security JWT
 func (h *MonitorHandler) LogsWS(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -452,7 +526,6 @@ func (h *MonitorHandler) LogsWS(c *gin.Context) {
 	gameID := strconv.Itoa(int(req.ID))
 	remoteIP := c.ClientIP()
 
-	// Проверяем лимиты подключений
 	if !h.hub.CanAccept(remoteIP) {
 		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 			"error": "слишком много активных WebSocket-соединений",
@@ -481,10 +554,32 @@ func (h *MonitorHandler) LogsWS(c *gin.Context) {
 }
 
 // StartVoting запускает голосование по текущему уровню-чёрному ящику.
+// @Summary Запуск голосования
+// @Description Запускает голосование на уровне-чёрном ящике (доступно автору игры)
+// @Tags monitor
+// @Accept x-www-form-urlencoded
+// @Produce json
+// @Param passing_id formData uint true "ID прохождения"
+// @Param level_id formData uint true "ID уровня"
+// @Success 200 {object} map[string]interface{} "Голосование запущено"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав (только автор)"
+// @Router /voting/start [post]
+// @Security JWT
 func (h *MonitorHandler) StartVoting(c *gin.Context) {
 	var input StartVotingInput
 	if err := c.ShouldBind(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверные данные: " + err.Error()})
+		return
+	}
+
+	if err := validation.ValidatePositiveUint("ID прохождения", input.PassingID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := validation.ValidatePositiveUint("ID уровня", input.LevelID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -498,6 +593,20 @@ func (h *MonitorHandler) StartVoting(c *gin.Context) {
 }
 
 // Vote обрабатывает голос команды за выбранный вариант.
+// @Summary Голосование
+// @Description Команда голосует за вариант ответа на уровне-чёрном ящике
+// @Tags monitor
+// @Accept x-www-form-urlencoded
+// @Produce json
+// @Param session_id formData uint true "ID сессии голосования"
+// @Param team_id formData uint true "ID команды"
+// @Param option formData string true "Выбранный вариант"
+// @Success 200 {object} map[string]interface{} "Голос учтён"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /voting/vote [post]
+// @Security JWT
 func (h *MonitorHandler) Vote(c *gin.Context) {
 	var input VoteInput
 	if err := c.ShouldBind(&input); err != nil {
@@ -505,12 +614,20 @@ func (h *MonitorHandler) Vote(c *gin.Context) {
 		return
 	}
 
-	// Санитизируем вариант ответа
-	cleanOption := sanitize.StripHTML(input.Option)
-	if cleanOption == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Вариант ответа не может быть пустым после очистки"})
+	if err := validation.ValidatePositiveUint("ID сессии", input.SessionID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if err := validation.ValidatePositiveUint("ID команды", input.TeamID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := validation.ValidateString("Вариант ответа", input.Option, 1, 1000); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	cleanOption := sanitize.StripHTML(input.Option)
 
 	if err := h.blackboxVoteService.Vote(c.Request.Context(), input.SessionID, input.TeamID, cleanOption); err != nil {
 		log.Error().Err(err).Uint("session_id", input.SessionID).Uint("team_id", input.TeamID).Str("option", cleanOption).Msg("Vote: failed to vote")
@@ -521,6 +638,17 @@ func (h *MonitorHandler) Vote(c *gin.Context) {
 }
 
 // GetVotingResults возвращает текущие результаты голосования.
+// @Summary Результаты голосования
+// @Description Возвращает текущие результаты голосования по сессии
+// @Tags monitor
+// @Produce json
+// @Param session_id path int true "ID сессии голосования"
+// @Success 200 {object} map[string]interface{} "Результаты голосования (вариант: количество голосов)"
+// @Failure 400 {object} map[string]interface{} "Неверный ID сессии"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+// @Router /voting/{session_id}/results [get]
+// @Security JWT
 func (h *MonitorHandler) GetVotingResults(c *gin.Context) {
 	var req GameIDAndSessionIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -537,6 +665,18 @@ func (h *MonitorHandler) GetVotingResults(c *gin.Context) {
 }
 
 // CloseVoting завершает голосование и определяет победителя.
+// @Summary Закрытие голосования
+// @Description Завершает голосование и определяет победителя (доступно автору игры)
+// @Tags monitor
+// @Accept x-www-form-urlencoded
+// @Produce json
+// @Param session_id path int true "ID сессии голосования"
+// @Success 200 {object} map[string]interface{} "Победивший вариант"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав (только автор)"
+// @Router /voting/{session_id}/close [post]
+// @Security JWT
 func (h *MonitorHandler) CloseVoting(c *gin.Context) {
 	var req GameIDAndSessionIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {

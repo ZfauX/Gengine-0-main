@@ -13,7 +13,7 @@ func RegisterRoutes(router *gin.Engine, gameRepo game.GameRepository) {
 	calendarHandler := NewCalendarHandler(gameRepo)
 
 	// @Summary Страница календаря
-	// @Description Возвращает HTML-страницу с календарём игр
+	// @Description Возвращает HTML-страницу с календарём игр, где отображаются опубликованные игры по месяцам
 	// @Tags calendar
 	// @Produce html
 	// @Success 200 {string} html "Страница календаря"
@@ -21,12 +21,12 @@ func RegisterRoutes(router *gin.Engine, gameRepo game.GameRepository) {
 	router.GET("/calendar", calendarHandler.CalendarPage)
 
 	// @Summary Данные календаря
-	// @Description Возвращает список игр за указанный месяц в формате JSON
+	// @Description Возвращает список игр за указанный месяц в формате JSON для отображения в календаре
 	// @Tags calendar
 	// @Produce json
 	// @Param year query int false "Год" default(текущий)
 	// @Param month query int false "Месяц (1-12)" default(текущий)
-	// @Success 200 {object} map[string]interface{} "События календаря"
+	// @Success 200 {object} map[string]interface{} "События календаря (ключ — дата, значение — массив игр)"
 	// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
 	// @Router /api/v1/calendar [get]
 	router.GET("/api/v1/calendar", calendarHandler.CalendarData)

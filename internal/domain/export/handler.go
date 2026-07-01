@@ -53,6 +53,18 @@ func parseGameID(c *gin.Context) (uint, error) {
 }
 
 // ExportGameCSV отдаёт CSV-файл со всеми уровнями, вопросами и ответами игры.
+// @Summary Экспорт игры в CSV
+// @Description Выгружает уровни, вопросы и ответы игры в CSV-формат для редактирования или резервного копирования
+// @Tags export
+// @Produce text/csv
+// @Param id path int true "ID игры"
+// @Success 200 {file} file "CSV-файл с данными игры"
+// @Failure 400 {object} map[string]interface{} "Неверный ID"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+// @Router /games/{id}/export [get]
+// @Security JWT
 func (h *ExportHandler) ExportGameCSV(c *gin.Context) {
 	gameID, err := parseGameID(c)
 	if err != nil {
@@ -73,6 +85,17 @@ func (h *ExportHandler) ExportGameCSV(c *gin.Context) {
 }
 
 // ImportGameForm отображает форму загрузки CSV-файла для импорта.
+// @Summary Форма импорта игры
+// @Description Возвращает HTML-страницу с формой для загрузки CSV-файла для импорта уровней
+// @Tags export
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Форма импорта"
+// @Failure 400 {object} map[string]interface{} "Неверный ID"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /games/{id}/import [get]
+// @Security JWT
 func (h *ExportHandler) ImportGameForm(c *gin.Context) {
 	gameID, err := parseGameID(c)
 	if err != nil {
@@ -87,6 +110,19 @@ func (h *ExportHandler) ImportGameForm(c *gin.Context) {
 }
 
 // ImportGame обрабатывает загруженный CSV и импортирует данные в игру.
+// @Summary Импорт игры из CSV
+// @Description Загружает CSV-файл и импортирует уровни, вопросы и ответы в игру (добавляет или обновляет уровни по позиции)
+// @Tags export
+// @Accept multipart/form-data
+// @Produce html
+// @Param id path int true "ID игры"
+// @Param csvfile formData file true "CSV-файл с данными (до 10 МБ)"
+// @Success 302 {string} string "Перенаправление на /games/{id}/levels"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /games/{id}/import [post]
+// @Security JWT
 func (h *ExportHandler) ImportGame(c *gin.Context) {
 	gameID, err := parseGameID(c)
 	if err != nil {
@@ -138,6 +174,18 @@ func (h *ExportHandler) ImportGame(c *gin.Context) {
 }
 
 // ExportResultsCSV отдаёт CSV-файл с итоговой таблицей результатов игры.
+// @Summary Экспорт результатов в CSV
+// @Description Выгружает итоговую таблицу результатов игры (места, команды, время, попытки) в CSV-формат
+// @Tags export
+// @Produce text/csv
+// @Param id path int true "ID игры"
+// @Success 200 {file} file "CSV-файл с результатами"
+// @Failure 400 {object} map[string]interface{} "Неверный ID"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+// @Router /games/{id}/export-results [get]
+// @Security JWT
 func (h *ExportHandler) ExportResultsCSV(c *gin.Context) {
 	gameID, err := parseGameID(c)
 	if err != nil {
@@ -158,6 +206,18 @@ func (h *ExportHandler) ExportResultsCSV(c *gin.Context) {
 }
 
 // ExportGamePDF генерирует и отдаёт PDF-файл со всей структурой игры для печати.
+// @Summary Экспорт игры в PDF
+// @Description Генерирует PDF-файл со всеми уровнями, вопросами и ответами игры для печати
+// @Tags export
+// @Produce application/pdf
+// @Param id path int true "ID игры"
+// @Success 200 {file} file "PDF-файл с данными игры"
+// @Failure 400 {object} map[string]interface{} "Неверный ID"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+// @Router /games/{id}/export-pdf [get]
+// @Security JWT
 func (h *ExportHandler) ExportGamePDF(c *gin.Context) {
 	gameID, err := parseGameID(c)
 	if err != nil {
@@ -178,6 +238,18 @@ func (h *ExportHandler) ExportGamePDF(c *gin.Context) {
 }
 
 // ExportStatisticsPDF генерирует и отдаёт PDF-отчёт с расширенной статистикой игры.
+// @Summary Экспорт статистики в PDF
+// @Description Генерирует PDF-отчёт с расширенной статистикой игры (результаты команд по уровням: время, количество попыток)
+// @Tags export
+// @Produce application/pdf
+// @Param id path int true "ID игры"
+// @Success 200 {file} file "PDF-файл со статистикой"
+// @Failure 400 {object} map[string]interface{} "Неверный ID"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+// @Router /games/{id}/export-statistics-pdf [get]
+// @Security JWT
 func (h *ExportHandler) ExportStatisticsPDF(c *gin.Context) {
 	gameID, err := parseGameID(c)
 	if err != nil {

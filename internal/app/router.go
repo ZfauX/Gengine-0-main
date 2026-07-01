@@ -260,6 +260,7 @@ type services struct {
 	Attempt       *game.AttemptService
 	Progress      *game.LevelProgressService
 	Monitor       *game.MonitorService
+	Rating        *game.RatingService
 	Level         *level.LevelService
 	Question      *level.QuestionService
 	Answer        *level.AnswerService
@@ -274,6 +275,7 @@ func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.
 	attemptSvc := game.NewAttemptService(db)
 	progressSvc := game.NewLevelProgressService(db)
 	monitorSvc := game.NewMonitorService(db)
+	ratingSvc := game.NewRatingService(db, appCache) // <-- ИСПРАВЛЕНО: передан appCache
 
 	authSvc := user.NewAuthService(repos.User, repos.Achiev, repos.EmailVerif, cfg)
 	userSvc := user.NewUserService(repos.User)
@@ -325,6 +327,7 @@ func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.
 		Attempt:       attemptSvc,
 		Progress:      progressSvc,
 		Monitor:       monitorSvc,
+		Rating:        ratingSvc,
 		Level:         levelSvc,
 		Question:      questionSvc,
 		Answer:        answerSvc,
