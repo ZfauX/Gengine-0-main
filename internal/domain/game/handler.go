@@ -821,7 +821,7 @@ func (h *GameHandler) Notes(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param id path int true "ID игры"
-// @Param request body struct{LevelID *uint `json:"level_id"`; Text string `json:"text" binding:"required"`} true "Текст заметки и опциональный ID уровня"
+// @Param request body map[string]interface{} true "Текст заметки (text) и опциональный ID уровня (level_id)"
 // @Success 201 {object} map[string]interface{} "Созданная заметка"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
