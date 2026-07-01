@@ -70,8 +70,6 @@ func (s *BlackboxVoteService) StartVoting(ctx context.Context, gamePassingID, le
 	}
 
 	if s.cfg != nil && s.cfg.SMTP.Enabled {
-		emailService := email.NewEmailService(s.cfg)
-
 		var captains []string
 		s.gameRepo.DB(ctx).Model(&user.User{}).
 			Select("users.email").
@@ -81,9 +79,12 @@ func (s *BlackboxVoteService) StartVoting(ctx context.Context, gamePassingID, le
 			Pluck("email", &captains)
 
 		for _, emailAddr := range captains {
-			if err := emailService.Send(emailAddr, "Запущено голосование",
-				fmt.Sprintf("В игре «%s» запущено голосование за лучший ответ.", g.Name)); err != nil {
-				log.Error().Err(err).Str("game", g.Name).Msg("failed to send voting start email")
+			if err := email.Enqueue(
+				emailAddr,
+				"Запущено голосование",
+				fmt.Sprintf("В игре «%s» запущено голосование за лучший ответ.", g.Name),
+			); err != nil {
+				log.Error().Err(err).Str("email", emailAddr).Str("game", g.Name).Msg("failed to enqueue voting start email")
 			}
 		}
 	}
@@ -116,7 +117,6 @@ func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID u
 		return errors.New("недопустимый вариант ответа")
 	}
 
-	// Исправлено: неиспользуемая переменная vote заменена на _
 	_, err = s.blackboxRepo.GetVoteBySessionAndVoter(ctx, sessionID, voterTeamID)
 	if err == nil {
 		return errors.New("ваш голос уже учтён")
@@ -186,8 +186,6 @@ func (s *BlackboxVoteService) CloseVoting(ctx context.Context, sessionID, userID
 	}
 
 	if s.cfg != nil && s.cfg.SMTP.Enabled {
-		emailService := email.NewEmailService(s.cfg)
-
 		var captains []string
 		s.gameRepo.DB(ctx).Model(&user.User{}).
 			Select("users.email").
@@ -197,9 +195,12 @@ func (s *BlackboxVoteService) CloseVoting(ctx context.Context, sessionID, userID
 			Pluck("email", &captains)
 
 		for _, emailAddr := range captains {
-			if err := emailService.Send(emailAddr, "Голосование завершено",
-				fmt.Sprintf("В игре «%s» завершено голосование. Победивший вариант: %s", g.Name, winner)); err != nil {
-				log.Error().Err(err).Str("game", g.Name).Str("winner", winner).Msg("failed to send voting end email")
+			if err := email.Enqueue(
+				emailAddr,
+				"Голосование завершено",
+				fmt.Sprintf("В игре «%s» завершено голосование. Победивший вариант: %s", g.Name, winner),
+			); err != nil {
+				log.Error().Err(err).Str("email", emailAddr).Str("game", g.Name).Str("winner", winner).Msg("failed to enqueue voting end email")
 			}
 		}
 	}

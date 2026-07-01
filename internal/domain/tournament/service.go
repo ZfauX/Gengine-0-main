@@ -12,6 +12,7 @@ import (
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/email"
 
+	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
 
@@ -147,15 +148,20 @@ func (s *TournamentService) Apply(ctx context.Context, tournamentID, teamID, use
 	}
 
 	if s.cfg != nil && s.cfg.SMTP.Enabled {
-		emailService := email.NewEmailService(s.cfg)
+		// Используем глобальную очередь вместо локального сервиса
 		tournamentPtr, err := s.tournamentRepo.GetByID(ctx, tournamentID)
 		if err == nil {
 			var team team.Team
 			if err := s.tournamentTeamRepo.(*gormTournamentTeamRepo).db.First(&team, teamID).Error; err == nil {
 				var captain user.User
 				if err := s.tournamentTeamRepo.(*gormTournamentTeamRepo).db.First(&captain, team.CaptainID).Error; err == nil {
-					_ = emailService.Send(captain.Email, "Заявка на турнир",
-						fmt.Sprintf("Ваша команда «%s» подала заявку на турнир «%s».", team.Name, tournamentPtr.Name))
+					if err := email.Enqueue(
+						captain.Email,
+						"Заявка на турнир",
+						fmt.Sprintf("Ваша команда «%s» подала заявку на турнир «%s».", team.Name, tournamentPtr.Name),
+					); err != nil {
+						log.Error().Err(err).Str("email", captain.Email).Msg("failed to enqueue tournament application email")
+					}
 				}
 			}
 		}

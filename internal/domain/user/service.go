@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"gengine-0/internal/config"
@@ -243,11 +244,19 @@ func (s *AchievementService) SeedAchievements(ctx context.Context) {
 
 // ---------- OAuthService ----------
 
+// httpClientWithTimeout создаёт HTTP-клиент с заданным таймаутом.
+func httpClientWithTimeout(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: timeout,
+	}
+}
+
 type OAuthService struct {
 	userRepo     UserRepository
 	extLoginRepo ExternalLoginRepository
 	cfg          *config.Config
 	configs      map[string]*oauth2.Config
+	httpClient   *http.Client // клиент с таймаутом для OAuth-запросов
 }
 
 func NewOAuthService(
@@ -255,33 +264,46 @@ func NewOAuthService(
 	extLoginRepo ExternalLoginRepository,
 	cfg *config.Config,
 ) *OAuthService {
+	// Создаём HTTP-клиент с таймаутом 15 секунд для OAuth-запросов
+	httpClient := httpClientWithTimeout(15 * time.Second)
+
+	// Для каждого провайдера можно использовать отдельный клиент, но мы используем общий с таймаутом.
+	// OAuth2 Config по умолчанию использует http.DefaultClient, поэтому мы передадим наш клиент через контекст.
+	// Для этого нужно создать контекст с клиентом: context.WithValue(ctx, oauth2.HTTPClient, httpClient)
+	// Но в текущей реализации мы используем cfg.Exchange(ctx, code) без явного указания клиента.
+	// Чтобы использовать наш клиент, нужно передать его в контекст.
+	// Мы сделаем это в методе Authenticate.
+
+	configs := map[string]*oauth2.Config{
+		"google": {
+			ClientID:     cfg.OAuth.Google.ClientID,
+			ClientSecret: cfg.OAuth.Google.ClientSecret,
+			RedirectURL:  cfg.Server.BaseURL + "/auth/oauth/google/callback",
+			Scopes:       []string{"email", "profile"},
+			Endpoint:     google.Endpoint,
+		},
+		"github": {
+			ClientID:     cfg.OAuth.GitHub.ClientID,
+			ClientSecret: cfg.OAuth.GitHub.ClientSecret,
+			RedirectURL:  cfg.Server.BaseURL + "/auth/oauth/github/callback",
+			Scopes:       []string{"user:email"},
+			Endpoint:     github.Endpoint,
+		},
+		"yandex": {
+			ClientID:     cfg.OAuth.Yandex.ClientID,
+			ClientSecret: cfg.OAuth.Yandex.ClientSecret,
+			RedirectURL:  cfg.Server.BaseURL + "/auth/oauth/yandex/callback",
+			Scopes:       []string{"login:email", "login:info"},
+			Endpoint:     yandex.Endpoint,
+		},
+	}
+
 	return &OAuthService{
 		userRepo:     userRepo,
 		extLoginRepo: extLoginRepo,
 		cfg:          cfg,
-		configs: map[string]*oauth2.Config{
-			"google": {
-				ClientID:     cfg.OAuth.Google.ClientID,
-				ClientSecret: cfg.OAuth.Google.ClientSecret,
-				RedirectURL:  cfg.Server.BaseURL + "/auth/oauth/google/callback",
-				Scopes:       []string{"email", "profile"},
-				Endpoint:     google.Endpoint,
-			},
-			"github": {
-				ClientID:     cfg.OAuth.GitHub.ClientID,
-				ClientSecret: cfg.OAuth.GitHub.ClientSecret,
-				RedirectURL:  cfg.Server.BaseURL + "/auth/oauth/github/callback",
-				Scopes:       []string{"user:email"},
-				Endpoint:     github.Endpoint,
-			},
-			"yandex": {
-				ClientID:     cfg.OAuth.Yandex.ClientID,
-				ClientSecret: cfg.OAuth.Yandex.ClientSecret,
-				RedirectURL:  cfg.Server.BaseURL + "/auth/oauth/yandex/callback",
-				Scopes:       []string{"login:email", "login:info"},
-				Endpoint:     yandex.Endpoint,
-			},
-		},
+		configs:      configs,
+		httpClient:   httpClient,
 	}
 }
 
@@ -320,6 +342,11 @@ type yandexUserInfo struct {
 	LastName   string `json:"last_name"`
 }
 
+// ctxWithHTTPClient добавляет HTTP-клиент с таймаутом в контекст для OAuth-запросов.
+func (s *OAuthService) ctxWithHTTPClient(ctx context.Context) context.Context {
+	return context.WithValue(ctx, oauth2.HTTPClient, s.httpClient)
+}
+
 func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state string) (*User, error) {
 	if len(state) != 32 {
 		return nil, errors.New("неверный state-параметр")
@@ -328,16 +355,26 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 	if !ok {
 		return nil, errors.New("неподдерживаемый провайдер")
 	}
-	token, err := cfg.Exchange(ctx, code)
+
+	// Используем контекст с HTTP-клиентом, имеющим таймаут
+	ctxWithClient := s.ctxWithHTTPClient(ctx)
+
+	token, err := cfg.Exchange(ctxWithClient, code)
 	if err != nil {
 		return nil, fmt.Errorf("обмен кода на токен: %w", err)
 	}
-	client := cfg.Client(ctx, token)
+
+	client := cfg.Client(ctxWithClient, token) // этот клиент тоже использует контекст и наш httpClient
+
 	var emailStr, name string
 	var emailVerified bool
 	switch provider {
 	case "google":
-		resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
+		req, err := http.NewRequestWithContext(ctxWithClient, "GET", "https://www.googleapis.com/oauth2/v2/userinfo", nil)
+		if err != nil {
+			return nil, fmt.Errorf("создание запроса к Google API: %w", err)
+		}
+		resp, err := client.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("запрос к Google API: %w", err)
 		}
@@ -360,7 +397,11 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 			return nil, errors.New("email от Google не подтверждён")
 		}
 	case "github":
-		resp, err := client.Get("https://api.github.com/user/emails")
+		req, err := http.NewRequestWithContext(ctxWithClient, "GET", "https://api.github.com/user/emails", nil)
+		if err != nil {
+			return nil, fmt.Errorf("создание запроса к GitHub API: %w", err)
+		}
+		resp, err := client.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("запрос к GitHub API: %w", err)
 		}
@@ -384,7 +425,11 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 		if !found {
 			return nil, errors.New("не найден верифицированный primary email от GitHub")
 		}
-		respUser, err := client.Get("https://api.github.com/user")
+		reqUser, err := http.NewRequestWithContext(ctxWithClient, "GET", "https://api.github.com/user", nil)
+		if err != nil {
+			return nil, fmt.Errorf("создание запроса к GitHub user: %w", err)
+		}
+		respUser, err := client.Do(reqUser)
 		if err != nil {
 			log.Warn().Err(err).Msg("не удалось получить имя пользователя GitHub")
 		} else {
@@ -401,7 +446,11 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 			}
 		}
 	case "yandex":
-		resp, err := client.Get("https://login.yandex.ru/info?format=json")
+		req, err := http.NewRequestWithContext(ctxWithClient, "GET", "https://login.yandex.ru/info?format=json", nil)
+		if err != nil {
+			return nil, fmt.Errorf("создание запроса к Yandex API: %w", err)
+		}
+		resp, err := client.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("запрос к Yandex API: %w", err)
 		}
@@ -499,10 +548,12 @@ func (s *PasswordResetService) GenerateToken(ctx context.Context, user User) (st
 		return "", err
 	}
 	if s.cfg.SMTP.Enabled {
-		emailService := email.NewEmailService(s.cfg)
-		if err := emailService.Send(user.Email, "Сброс пароля",
-			fmt.Sprintf("Для сброса пароля перейдите по ссылке: %s/auth/reset?token=%s", s.cfg.Server.BaseURL, rawToken)); err != nil {
-			log.Error().Err(err).Str("email", user.Email).Msg("failed to send password reset email")
+		if err := email.Enqueue(
+			user.Email,
+			"Сброс пароля",
+			fmt.Sprintf("Для сброса пароля перейдите по ссылке: %s/auth/reset?token=%s", s.cfg.Server.BaseURL, rawToken),
+		); err != nil {
+			log.Error().Err(err).Str("email", user.Email).Msg("failed to enqueue password reset email")
 		}
 	}
 	return rawToken, nil
@@ -556,10 +607,12 @@ func (s *EmailVerificationService) SendVerificationEmail(ctx context.Context, us
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 	})
 	if s.cfg.SMTP.Enabled {
-		emailService := email.NewEmailService(s.cfg)
-		if err := emailService.Send(user.Email, "Подтверждение email",
-			fmt.Sprintf("Перейдите по ссылке для подтверждения: %s/auth/verify?token=%s", s.cfg.Server.BaseURL, token)); err != nil {
-			log.Error().Err(err).Str("email", user.Email).Msg("failed to send verification email")
+		if err := email.Enqueue(
+			user.Email,
+			"Подтверждение email",
+			fmt.Sprintf("Перейдите по ссылке для подтверждения: %s/auth/verify?token=%s", s.cfg.Server.BaseURL, token),
+		); err != nil {
+			log.Error().Err(err).Str("email", user.Email).Msg("failed to enqueue verification email")
 		}
 	}
 }
