@@ -114,7 +114,7 @@ func (app *App) SetupRouter() (*gin.Engine, error) {
 func (app *App) setupEngine(r *gin.Engine) {
 	store := cookie.NewStore([]byte(app.Config.Session.Secret))
 	r.Use(gin.Recovery())
-	r.Use(middleware.ErrorHandler()) // Добавлен обработчик структурированных ошибок
+	r.Use(middleware.ErrorHandler())
 	r.Use(middleware.LoggerMiddleware())
 	r.Use(sessions.Sessions("gengine_session", store))
 
@@ -164,18 +164,25 @@ func (app *App) setupEngine(r *gin.Engine) {
 		c.JSON(statusCode, resp)
 	})
 
+	// ============================================================
+	// ГЛАВНАЯ СТРАНИЦА — рендерим home.html вместо редиректа
+	// ============================================================
 	r.GET("/", func(c *gin.Context) {
+		var userID uint
+		var isAdmin bool
 		token, err := c.Cookie("jwt")
-		if err != nil || token == "" {
-			c.Redirect(http.StatusFound, "/auth/login")
-			return
+		if err == nil && token != "" {
+			id, role, parseErr := app.Deps.Services.Auth.ParseToken(token)
+			if parseErr == nil {
+				userID = id
+				isAdmin = role == "admin"
+			}
 		}
-		_, _, err = app.Deps.Services.Auth.ParseToken(token)
-		if err != nil {
-			c.Redirect(http.StatusFound, "/auth/login")
-			return
-		}
-		c.Redirect(http.StatusFound, "/dashboard/")
+		render.Page(c, http.StatusOK, "home.html", gin.H{
+			"CurrentUserID": userID,
+			"IsAdmin":       isAdmin,
+			"csrf":          csrf.GetToken(c),
+		})
 	})
 }
 
@@ -205,23 +212,23 @@ func (app *App) registerAllRoutes(r *gin.Engine) error {
 // =============================================================================
 
 type repositories struct {
-	User        user.UserRepository
-	Achiev      user.AchievementRepository
-	PassReset   user.PasswordResetRepository
-	EmailVerif  user.EmailVerificationRepository
-	ExtLogin    user.ExternalLoginRepository
+	User         user.UserRepository
+	Achiev       user.AchievementRepository
+	PassReset    user.PasswordResetRepository
+	EmailVerif   user.EmailVerificationRepository
+	ExtLogin     user.ExternalLoginRepository
 	RefreshToken user.RefreshTokenRepository
-	Game        game.GameRepository
-	GamePassing game.GamePassingRepository
-	Level       level.LevelRepository
-	Question    level.QuestionRepository
-	Answer      level.AnswerRepository
-	Team        team.TeamRepository
-	Invitation  team.InvitationRepository
-	Tournament  tournament.TournamentRepository
-	TournGame   tournament.TournamentGameRepository
-	TournTeam   tournament.TournamentTeamRepository
-	TournResult tournament.TournamentResultRepository
+	Game         game.GameRepository
+	GamePassing  game.GamePassingRepository
+	Level        level.LevelRepository
+	Question     level.QuestionRepository
+	Answer       level.AnswerRepository
+	Team         team.TeamRepository
+	Invitation   team.InvitationRepository
+	Tournament   tournament.TournamentRepository
+	TournGame    tournament.TournamentGameRepository
+	TournTeam    tournament.TournamentTeamRepository
+	TournResult  tournament.TournamentResultRepository
 }
 
 func initRepositories(db *gorm.DB) *repositories {

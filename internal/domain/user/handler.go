@@ -344,13 +344,13 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 func (h *AuthHandler) OAuthLogin(c *gin.Context) {
 	var req OAuthProviderRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный провайдер"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный провайдер"})
 		return
 	}
 
 	url, state, err := h.oauthSvc.GetAuthURL(req.Provider)
 	if err != nil {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": err.Error()})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": err.Error()})
 		return
 	}
 
@@ -358,7 +358,7 @@ func (h *AuthHandler) OAuthLogin(c *gin.Context) {
 	session.Set("oauth_state", state)
 	if err := session.Save(); err != nil {
 		log.Error().Err(err).Msg("OAuthLogin: failed to save session")
-		c.HTML(http.StatusInternalServerError, "errors/500.html", gin.H{"Error": "Внутренняя ошибка"})
+		c.HTML(http.StatusInternalServerError, "errors-500.html", gin.H{"Error": "Внутренняя ошибка"})
 		return
 	}
 
@@ -452,7 +452,7 @@ func (h *ProfileHandler) Show(c *gin.Context) {
 	userID := c.GetUint("userID")
 	var user User
 	if err := h.db.Preload("Achievements").First(&user, userID).Error; err != nil {
-		c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		c.HTML(http.StatusNotFound, "errors-404.html", nil)
 		return
 	}
 	render.Page(c, http.StatusOK, "profile-show.html", gin.H{
@@ -467,21 +467,21 @@ func (h *ProfileHandler) Show(c *gin.Context) {
 func (h *ProfileHandler) PublicProfile(c *gin.Context) {
 	var req UserIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID пользователя"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID пользователя"})
 		return
 	}
 
 	var user User
 	if err := h.db.Preload("Achievements").First(&user, req.ID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.HTML(http.StatusNotFound, "errors/404.html", nil)
+			c.HTML(http.StatusNotFound, "errors-404.html", nil)
 		} else {
-			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+			c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		}
 		return
 	}
 	if user.ProfileVisibility == "hidden" {
-		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": "Профиль скрыт"})
+		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": "Профиль скрыт"})
 		return
 	}
 	render.Page(c, http.StatusOK, "profile-public.html", gin.H{
@@ -640,7 +640,7 @@ func (h *AchievementHandler) List(c *gin.Context) {
 		Where("user_achievements.user_id = ?", userID).
 		Find(&achievements).Error; err != nil {
 		log.Error().Err(err).Uint("user", userID).Msg("AchievementHandler.List: failed to fetch achievements")
-		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		return
 	}
 	render.Page(c, http.StatusOK, "achievements-list.html", gin.H{
@@ -666,7 +666,7 @@ func (h *DashboardHandler) Index(c *gin.Context) {
 	dash, err := h.dashboardService.GetDashboard(userID)
 	if err != nil {
 		log.Error().Err(err).Uint("user", userID).Msg("DashboardHandler.Index: failed to get dashboard")
-		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		return
 	}
 	role, exists := c.Get("role")

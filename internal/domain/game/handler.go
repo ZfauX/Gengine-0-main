@@ -260,7 +260,7 @@ func (h *GameHandler) List(c *gin.Context) {
 	games, total, err := h.gameService.ListFilteredPaginated(c.Request.Context(), filter, sort, page, perPage)
 	if err != nil {
 		log.Error().Err(err).Msg("GameHandler.List: failed to list games")
-		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		return
 	}
 
@@ -280,7 +280,7 @@ func (h *GameHandler) List(c *gin.Context) {
 func (h *GameHandler) Show(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
 	userID := c.GetUint("userID")
@@ -288,10 +288,10 @@ func (h *GameHandler) Show(c *gin.Context) {
 	g, err := h.gameService.GetByID(c.Request.Context(), uint(id), userID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.HTML(http.StatusNotFound, "errors/404.html", nil)
+			c.HTML(http.StatusNotFound, "errors-404.html", nil)
 		} else {
 			log.Error().Err(err).Int("game_id", id).Msg("GameHandler.Show: failed to get game")
-			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+			c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		}
 		return
 	}
@@ -395,7 +395,7 @@ func (h *GameHandler) Create(c *gin.Context) {
 func (h *GameHandler) EditForm(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
 	userID := c.GetUint("userID")
@@ -403,10 +403,10 @@ func (h *GameHandler) EditForm(c *gin.Context) {
 	g, err := h.gameService.GetByID(c.Request.Context(), uint(id), userID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.HTML(http.StatusNotFound, "errors/404.html", nil)
+			c.HTML(http.StatusNotFound, "errors-404.html", nil)
 		} else {
 			log.Error().Err(err).Int("game_id", id).Msg("GameHandler.EditForm: failed to get game")
-			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+			c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		}
 		return
 	}
@@ -414,7 +414,7 @@ func (h *GameHandler) EditForm(c *gin.Context) {
 	isManager, err := h.coAuthorService.IsUserManager(uint(id), userID)
 	if err != nil {
 		log.Error().Err(err).Int("game_id", id).Msg("GameHandler.EditForm: failed to check manager")
-		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		return
 	}
 	if !isManager {
@@ -432,7 +432,7 @@ func (h *GameHandler) EditForm(c *gin.Context) {
 func (h *GameHandler) Update(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
 	userID := c.GetUint("userID")
@@ -492,7 +492,7 @@ func (h *GameHandler) Update(c *gin.Context) {
 func (h *GameHandler) Delete(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
 	userID := c.GetUint("userID")
@@ -510,7 +510,7 @@ func (h *GameHandler) Delete(c *gin.Context) {
 func (h *GameHandler) Publish(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
 	userID := c.GetUint("userID")
@@ -530,7 +530,7 @@ func (h *GameHandler) Publish(c *gin.Context) {
 func (h *GameHandler) ListPassings(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
 	userID := c.GetUint("userID")
@@ -538,7 +538,7 @@ func (h *GameHandler) ListPassings(c *gin.Context) {
 	passings, err := h.passingService.ListByGame(c.Request.Context(), uint(gameID))
 	if err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.ListPassings: failed to list passings")
-		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		return
 	}
 
@@ -554,7 +554,7 @@ func (h *GameHandler) ListPassings(c *gin.Context) {
 func (h *GameHandler) ApplyForm(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
 	userID := c.GetUint("userID")
@@ -576,7 +576,7 @@ func (h *GameHandler) ApplyForm(c *gin.Context) {
 func (h *GameHandler) Apply(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
 	userID := c.GetUint("userID")
@@ -633,12 +633,12 @@ func (h *GameHandler) Apply(c *gin.Context) {
 func (h *GameHandler) UpdatePassingStatus(c *gin.Context) {
 	passingID, err := strconv.Atoi(c.Param("passing_id"))
 	if err != nil || passingID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID прохождения"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID прохождения"})
 		return
 	}
 	status := GamePassingStatus(c.PostForm("status"))
 	if status != StatusAccepted && status != StatusRejected {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Недопустимый статус"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Недопустимый статус"})
 		return
 	}
 
@@ -654,7 +654,7 @@ func (h *GameHandler) UpdatePassingStatus(c *gin.Context) {
 func (h *GameHandler) StartGame(c *gin.Context) {
 	passingID, err := strconv.Atoi(c.Param("passing_id"))
 	if err != nil || passingID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID прохождения"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID прохождения"})
 		return
 	}
 
@@ -670,7 +670,7 @@ func (h *GameHandler) StartGame(c *gin.Context) {
 func (h *GameHandler) ForceFinish(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
 
@@ -686,22 +686,22 @@ func (h *GameHandler) ForceFinish(c *gin.Context) {
 func (h *GameHandler) DisqualifyTeam(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
 
 	if err := limitRequestBody(c, 1*1024*1024); err != nil {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": err.Error()})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": err.Error()})
 		return
 	}
 
 	var input DisqualifyInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверные данные: " + err.Error()})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверные данные: " + err.Error()})
 		return
 	}
 	if err := validation.ValidatePositiveUint("ID команды", input.TeamID); err != nil {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": err.Error()})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": err.Error()})
 		return
 	}
 
@@ -719,14 +719,14 @@ func (h *GameHandler) DisqualifyTeam(c *gin.Context) {
 func (h *GameHandler) ManageCoAuthors(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
 
 	coAuthors, err := h.coAuthorService.List(uint(gameID))
 	if err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.ManageCoAuthors: failed to list coauthors")
-		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		return
 	}
 	render.Page(c, http.StatusOK, "co_authors-manage.html", gin.H{
@@ -740,23 +740,23 @@ func (h *GameHandler) ManageCoAuthors(c *gin.Context) {
 func (h *GameHandler) AddCoAuthor(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
 	ownerID := c.GetUint("userID")
 
 	if err := limitRequestBody(c, 1*1024*1024); err != nil {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": err.Error()})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": err.Error()})
 		return
 	}
 
 	var input AddCoAuthorInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверные данные: " + err.Error()})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверные данные: " + err.Error()})
 		return
 	}
 	if err := validation.ValidatePositiveUint("ID пользователя", input.UserID); err != nil {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": err.Error()})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": err.Error()})
 		return
 	}
 
@@ -771,12 +771,12 @@ func (h *GameHandler) AddCoAuthor(c *gin.Context) {
 func (h *GameHandler) RemoveCoAuthor(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
 	userID, err := strconv.Atoi(c.Param("user_id"))
 	if err != nil || userID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID пользователя"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID пользователя"})
 		return
 	}
 	ownerID := c.GetUint("userID")
@@ -893,7 +893,7 @@ func (h *GameHandler) DeleteNote(c *gin.Context) {
 func (h *GameHandler) Simulate(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
 	userID := c.GetUint("userID")
@@ -914,7 +914,7 @@ func (h *GameHandler) Simulate(c *gin.Context) {
 func (h *GameHandler) SettingsPage(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
 	userID := c.GetUint("userID")
@@ -922,10 +922,10 @@ func (h *GameHandler) SettingsPage(c *gin.Context) {
 	g, err := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.HTML(http.StatusNotFound, "errors/404.html", nil)
+			c.HTML(http.StatusNotFound, "errors-404.html", nil)
 		} else {
 			log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.SettingsPage: failed to get game")
-			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+			c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		}
 		return
 	}
@@ -944,7 +944,7 @@ func (h *GameHandler) SettingsPage(c *gin.Context) {
 			}
 		} else {
 			log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.SettingsPage: failed to get settings")
-			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+			c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 			return
 		}
 	}
@@ -960,7 +960,7 @@ func (h *GameHandler) SettingsPage(c *gin.Context) {
 func (h *GameHandler) SaveSettings(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
 	userID := c.GetUint("userID")
@@ -1008,13 +1008,13 @@ func (h *GameHandler) SaveSettings(c *gin.Context) {
 
 	g, err := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID)
 	if err != nil {
-		c.HTML(http.StatusNotFound, "errors/404.html", nil)
+		c.HTML(http.StatusNotFound, "errors-404.html", nil)
 		return
 	}
 	isManager, err := h.coAuthorService.IsUserManager(g.ID, userID)
 	if err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.SaveSettings: failed to check manager")
-		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		return
 	}
 	if !isManager {
@@ -1041,7 +1041,7 @@ func (h *GameHandler) SaveSettings(c *gin.Context) {
 func (h *GameHandler) TestPage(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
 	userID := c.GetUint("userID")
@@ -1049,10 +1049,10 @@ func (h *GameHandler) TestPage(c *gin.Context) {
 	g, err := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.HTML(http.StatusNotFound, "errors/404.html", nil)
+			c.HTML(http.StatusNotFound, "errors-404.html", nil)
 		} else {
 			log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.TestPage: failed to get game")
-			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+			c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		}
 		return
 	}
@@ -1073,7 +1073,7 @@ func (h *GameHandler) TestPage(c *gin.Context) {
 func (h *GameHandler) PhotosPage(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
 	userID := c.GetUint("userID")
