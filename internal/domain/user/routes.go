@@ -270,4 +270,20 @@ func RegisterRoutes(
 		// @Security JWT
 		dashboardGroup.GET("/", dashboardHandler.Index)
 	}
+
+	// ============================================================
+	// ПУБЛИЧНЫЙ ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ
+	// ============================================================
+	usersGroup := r.Group("/users")
+	{
+		// @Summary Публичный профиль пользователя
+		// @Description Отображает публичный профиль пользователя по ID
+		// @Tags profile
+		// @Produce html
+		// @Param id path int true "ID пользователя"
+		// @Success 200 {string} html "Страница публичного профиля"
+		// @Failure 404 {object} map[string]interface{} "Пользователь не найден"
+		// @Router /users/{id} [get]
+		usersGroup.GET("/:id", profileHandler.PublicProfile)
+	}
 }

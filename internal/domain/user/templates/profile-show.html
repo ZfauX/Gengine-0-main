@@ -14,10 +14,10 @@
                         {{if .User.Name}}{{slice .User.Name 0 1}}{{else}}?{{end}}
                     </div>
                 {{end}}
-                <form action="/profile/upload-avatar" method="POST" enctype="multipart/form-data" class="mt-2">
+                <form id="avatar-form" action="/profile/avatar" method="POST" enctype="multipart/form-data" class="mt-2">
                     <input type="hidden" name="_csrf" value="{{.csrf}}">
-                    <input type="file" name="avatar" accept="image/jpeg,image/png,image/webp" onchange="this.form.submit()" style="display:none;" id="avatar-input">
-                    <button type="button" class="btn btn-outline text-xs" onclick="document.getElementById('avatar-input').click()">Изменить</button>
+                    <input type="file" name="avatar" accept="image/jpeg,image/png,image/webp" class="hidden" id="avatar-input">
+                    <button type="button" id="avatar-btn" class="btn btn-outline text-xs">Изменить</button>
                 </form>
             </div>
 
@@ -81,35 +81,38 @@
         {{end}}
     </div>
 
-    <!-- Настройки уведомлений (заглушка) -->
+    <!-- Настройки уведомлений -->
     <div class="card mb-6">
         <h3 class="text-lg font-semibold text-gray-700 mb-3">Настройки уведомлений</h3>
         <p class="text-sm text-gray-500">Настройте, какие уведомления вы хотите получать и через какие каналы.</p>
         <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm" id="notification-settings">
             <div class="flex flex-wrap items-center gap-2">
                 <span class="w-32 text-gray-600">Новая игра</span>
-                <label><input type="checkbox" class="notif-toggle" data-event="new_game" data-channel="web" checked onchange="updateNotificationSetting()"> Web</label>
-                <label><input type="checkbox" class="notif-toggle" data-event="new_game" data-channel="email" onchange="updateNotificationSetting()"> Email</label>
-                <label><input type="checkbox" class="notif-toggle" data-event="new_game" data-channel="push" onchange="updateNotificationSetting()"> Push</label>
+                <label><input type="checkbox" class="notif-toggle" data-event="new_game" data-channel="web" checked> Web</label>
+                <label><input type="checkbox" class="notif-toggle" data-event="new_game" data-channel="email"> Email</label>
+                <label><input type="checkbox" class="notif-toggle" data-event="new_game" data-channel="push"> Push</label>
             </div>
             <div class="flex flex-wrap items-center gap-2">
                 <span class="w-32 text-gray-600">Старт игры</span>
-                <label><input type="checkbox" class="notif-toggle" data-event="game_start" data-channel="web" checked onchange="updateNotificationSetting()"> Web</label>
-                <label><input type="checkbox" class="notif-toggle" data-event="game_start" data-channel="email" onchange="updateNotificationSetting()"> Email</label>
-                <label><input type="checkbox" class="notif-toggle" data-event="game_start" data-channel="push" checked onchange="updateNotificationSetting()"> Push</label>
+                <label><input type="checkbox" class="notif-toggle" data-event="game_start" data-channel="web" checked> Web</label>
+                <label><input type="checkbox" class="notif-toggle" data-event="game_start" data-channel="email"> Email</label>
+                <label><input type="checkbox" class="notif-toggle" data-event="game_start" data-channel="push" checked> Push</label>
             </div>
             <div class="flex flex-wrap items-center gap-2">
                 <span class="w-32 text-gray-600">Финиш игры</span>
-                <label><input type="checkbox" class="notif-toggle" data-event="game_finish" data-channel="web" checked onchange="updateNotificationSetting()"> Web</label>
-                <label><input type="checkbox" class="notif-toggle" data-event="game_finish" data-channel="email" onchange="updateNotificationSetting()"> Email</label>
-                <label><input type="checkbox" class="notif-toggle" data-event="game_finish" data-channel="push" checked onchange="updateNotificationSetting()"> Push</label>
+                <label><input type="checkbox" class="notif-toggle" data-event="game_finish" data-channel="web" checked> Web</label>
+                <label><input type="checkbox" class="notif-toggle" data-event="game_finish" data-channel="email"> Email</label>
+                <label><input type="checkbox" class="notif-toggle" data-event="game_finish" data-channel="push" checked> Push</label>
             </div>
             <div class="flex flex-wrap items-center gap-2">
                 <span class="w-32 text-gray-600">Приглашение</span>
-                <label><input type="checkbox" class="notif-toggle" data-event="team_invitation" data-channel="web" checked onchange="updateNotificationSetting()"> Web</label>
-                <label><input type="checkbox" class="notif-toggle" data-event="team_invitation" data-channel="email" checked onchange="updateNotificationSetting()"> Email</label>
-                <label><input type="checkbox" class="notif-toggle" data-event="team_invitation" data-channel="push" checked onchange="updateNotificationSetting()"> Push</label>
+                <label><input type="checkbox" class="notif-toggle" data-event="team_invitation" data-channel="web" checked> Web</label>
+                <label><input type="checkbox" class="notif-toggle" data-event="team_invitation" data-channel="email" checked> Email</label>
+                <label><input type="checkbox" class="notif-toggle" data-event="team_invitation" data-channel="push" checked> Push</label>
             </div>
+        </div>
+        <div class="mt-3">
+            <button id="save-notifications-btn" class="btn btn-primary text-sm">Сохранить настройки</button>
         </div>
     </div>
 
@@ -117,35 +120,63 @@
     <div class="flex flex-wrap gap-3">
         <a href="/dashboard" class="btn btn-outline text-sm">← Назад в личный кабинет</a>
         <a href="/users/{{.User.ID}}" class="btn btn-outline text-sm" target="_blank">Публичный профиль</a>
-        <form action="/auth/logout" method="POST" style="display:inline">
+        <form action="/auth/logout" method="POST" class="inline">
             <input type="hidden" name="_csrf" value="{{.csrf}}">
             <button type="submit" class="btn btn-danger text-sm">Выйти</button>
         </form>
     </div>
 </div>
 
-<script>
-    async function updateNotificationSetting() {
-        const toggles = document.querySelectorAll('.notif-toggle');
-        const settings = {};
-        toggles.forEach(toggle => {
-            const event = toggle.dataset.event;
-            const channel = toggle.dataset.channel;
-            if (!settings[event]) settings[event] = {};
-            settings[event][channel] = toggle.checked;
-        });
-        try {
-            await fetch('/api/notifications/settings', {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
-                },
-                body: JSON.stringify(settings)
+<script nonce="{{.csp_nonce}}">
+    (function() {
+        // 1. Кнопка изменения аватара
+        const avatarBtn = document.getElementById('avatar-btn');
+        const avatarInput = document.getElementById('avatar-input');
+        if (avatarBtn && avatarInput) {
+            avatarBtn.addEventListener('click', function() {
+                avatarInput.click();
             });
-        } catch (err) {
-            console.error('Ошибка сохранения настроек уведомлений:', err);
+            // Автоматическая отправка формы при выборе файла
+            avatarInput.addEventListener('change', function() {
+                const form = document.getElementById('avatar-form');
+                if (form) form.submit();
+            });
         }
-    }
+
+        // 2. Сохранение настроек уведомлений
+        const saveBtn = document.getElementById('save-notifications-btn');
+        if (saveBtn) {
+            saveBtn.addEventListener('click', function() {
+                const toggles = document.querySelectorAll('.notif-toggle');
+                const settings = {};
+                toggles.forEach(toggle => {
+                    const event = toggle.dataset.event;
+                    const channel = toggle.dataset.channel;
+                    if (!settings[event]) settings[event] = {};
+                    settings[event][channel] = toggle.checked;
+                });
+                fetch('/api/notifications/settings', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+                    },
+                    body: JSON.stringify(settings)
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === 'ok') {
+                        alert('Настройки сохранены');
+                    } else {
+                        alert('Ошибка сохранения');
+                    }
+                })
+                .catch(err => {
+                    console.error('Ошибка сохранения настроек уведомлений:', err);
+                    alert('Ошибка сохранения');
+                });
+            });
+        }
+    })();
 </script>
 {{end}}

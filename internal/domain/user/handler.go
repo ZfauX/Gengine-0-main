@@ -471,11 +471,15 @@ func (h *ProfileHandler) PublicProfile(c *gin.Context) {
 		return
 	}
 
+	userID := req.ID
+	currentUserID := c.GetUint("userID")
+
 	var user User
-	if err := h.db.Preload("Achievements").First(&user, req.ID).Error; err != nil {
+	if err := h.db.Preload("Achievements").First(&user, userID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.HTML(http.StatusNotFound, "errors-404.html", nil)
 		} else {
+			log.Error().Err(err).Uint("user_id", userID).Msg("PublicProfile: failed to get user")
 			c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		}
 		return
@@ -484,16 +488,73 @@ func (h *ProfileHandler) PublicProfile(c *gin.Context) {
 		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": "Профиль скрыт"})
 		return
 	}
+
+	// Статистика (без импорта game)
+	var gamesCreated int64
+	h.db.Table("games").Where("author_id = ?", userID).Count(&gamesCreated)
+
+	var gamesPlayed int64
+	h.db.Table("game_passings").
+		Joins("JOIN team_members ON team_members.team_id = game_passings.team_id").
+		Where("game_passings.status = ? AND team_members.user_id = ?", "finished", userID).
+		Count(&gamesPlayed)
+
+	var wins int64
+	h.db.Table("game_passings").
+		Joins("JOIN team_members ON team_members.team_id = game_passings.team_id").
+		Where("game_passings.status = ? AND game_passings.place = 1 AND team_members.user_id = ?", "finished", userID).
+		Count(&wins)
+
+	var rating int
+	h.db.Table("player_ratings").Where("user_id = ?", userID).Select("score").Scan(&rating)
+
+	// Проверка подписки
+	isFollowing := false
+	if currentUserID != 0 && currentUserID != userID {
+		var followCount int64
+		h.db.Table("follows").Where("follower_id = ? AND author_id = ?", currentUserID, userID).Count(&followCount)
+		isFollowing = followCount > 0
+	}
+
+	// Последние игры автора (без импорта game)
+	type RecentGame struct {
+		ID        uint
+		Name      string
+		IsDraft   bool
+		CoverPath string
+		CreatedAt string
+	}
+	var recentGames []RecentGame
+	h.db.Table("games").
+		Where("author_id = ? AND is_draft = false", userID).
+		Order("created_at DESC").
+		Limit(6).
+		Find(&recentGames)
+
 	render.Page(c, http.StatusOK, "profile-public.html", gin.H{
 		"ProfileUser":   user,
 		"Achievements":  user.Achievements,
-		"CurrentUserID": c.GetUint("userID"),
+		"CurrentUserID": currentUserID,
+		"IsOwner":       currentUserID == userID,
+		"GamesCreated":  gamesCreated,
+		"GamesPlayed":   gamesPlayed,
+		"Wins":          wins,
+		"Rating":        rating,
+		"IsFollowing":   isFollowing,
+		"RecentGames":   recentGames,
+		"csrf":          csrf.GetToken(c),
 	})
 }
 
 // UploadAvatar загружает аватар пользователя.
 func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 	userID := c.GetUint("userID")
+	if userID == 0 {
+		log.Warn().Msg("UploadAvatar: user not authenticated")
+		c.Redirect(http.StatusFound, "/profile")
+		return
+	}
+
 	file, header, err := c.Request.FormFile("avatar")
 	if err != nil {
 		log.Warn().Err(err).Uint("user", userID).Msg("UploadAvatar: no file provided")
@@ -501,6 +562,13 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 		return
 	}
 	defer func() { _ = file.Close() }()
+
+	log.Info().
+		Uint("user_id", userID).
+		Str("filename", header.Filename).
+		Int64("size", header.Size).
+		Str("content_type", header.Header.Get("Content-Type")).
+		Msg("UploadAvatar: received file")
 
 	if header.Size > 2*1024*1024 {
 		appErr := apperrors.NewBadRequestError("Размер файла не должен превышать 2 МБ")
@@ -512,16 +580,35 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 	}
 
 	allowedTypes := []string{"image/jpeg", "image/png", "image/webp"}
-	webPath, err := h.storage.Save("uploads/avatars", file, header.Filename, userID, 2*1024*1024, allowedTypes)
-	if err != nil {
-		log.Error().Err(err).Uint("user", userID).Msg("UploadAvatar: storage save failed")
-		appErr := apperrors.NewBadRequestError("Ошибка загрузки аватара: " + err.Error())
+	contentType := header.Header.Get("Content-Type")
+	allowed := false
+	for _, t := range allowedTypes {
+		if contentType == t {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		appErr := apperrors.NewBadRequestError("Допустимы только JPEG, PNG и WebP")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
 		})
 		return
 	}
+
+	webPath, err := h.storage.Save("uploads/avatars", file, header.Filename, userID, 2*1024*1024, allowedTypes)
+	if err != nil {
+		log.Error().Err(err).Uint("user", userID).Msg("UploadAvatar: storage save failed")
+		appErr := apperrors.NewInternalError(err)
+		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
+			"error": appErr.Message,
+			"code":  appErr.Code,
+		})
+		return
+	}
+
+	log.Info().Uint("user_id", userID).Str("path", webPath).Msg("UploadAvatar: file saved")
 
 	if err := h.db.Model(&User{}).Where("id = ?", userID).Update("avatar_path", webPath).Error; err != nil {
 		log.Error().Err(err).Uint("user", userID).Msg("UploadAvatar: failed to update avatar_path")
@@ -533,6 +620,8 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 		})
 		return
 	}
+
+	log.Info().Uint("user_id", userID).Str("path", webPath).Msg("UploadAvatar: avatar updated successfully")
 	c.Redirect(http.StatusFound, "/profile")
 }
 
