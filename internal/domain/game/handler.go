@@ -32,7 +32,6 @@ import (
 // ИНТЕРФЕЙСЫ ДЛЯ ТЕСТИРУЕМОСТИ
 // =============================================================================
 
-// GameServiceInterface определяет методы GameService, используемые в хендлере.
 type GameServiceInterface interface {
 	CreateGameWithCover(ctx context.Context, dto *CreateGameDTO, authorID uint) (*Game, error)
 	UpdateGameWithCover(ctx context.Context, gameID uint, dto *UpdateGameDTO, userID uint) error
@@ -44,7 +43,6 @@ type GameServiceInterface interface {
 	GetAverageRating(ctx context.Context, gameID uint) (float64, int64, error)
 }
 
-// CoAuthorServiceInterface определяет методы CoAuthorService, используемые в хендлере.
 type CoAuthorServiceInterface interface {
 	IsUserManager(gameID, userID uint) (bool, error)
 	HasPermission(gameID, userID uint, requiredRole string) (bool, error)
@@ -55,12 +53,10 @@ type CoAuthorServiceInterface interface {
 	List(gameID uint) ([]CoAuthor, error)
 }
 
-// AuditServiceInterface определяет методы audit.Service, используемые в хендлере.
 type AuditServiceInterface interface {
 	Log(userID uint, action, objectType string, objectID uint, details string)
 }
 
-// GamePassingServiceInterface определяет методы GamePassingService, используемые в хендлере.
 type GamePassingServiceInterface interface {
 	Apply(ctx context.Context, gameID, teamID, userID uint) error
 	ListByGame(ctx context.Context, gameID uint) ([]GamePassing, error)
@@ -69,7 +65,6 @@ type GamePassingServiceInterface interface {
 	GetTeamsByCaptain(ctx context.Context, userID uint) ([]team.Team, error)
 }
 
-// GamePlayServiceInterface определяет методы GamePlayService.
 type GamePlayServiceInterface interface {
 	SubmitCode(ctx context.Context, passingID, userID uint, code string) (*Attempt, error)
 	SubmitFile(ctx context.Context, passingID, userID uint, filePath string) (*Attempt, error)
@@ -80,7 +75,6 @@ type GamePlayServiceInterface interface {
 	SkipLevelTest(ctx context.Context, passingID, userID uint) error
 }
 
-// GameAdminServiceInterface определяет методы GameAdminService.
 type GameAdminServiceInterface interface {
 	ForceFinishGame(ctx context.Context, gameID uint) error
 	DisqualifyTeam(ctx context.Context, gameID, teamID uint) error
@@ -92,13 +86,14 @@ type GameAdminServiceInterface interface {
 // =============================================================================
 
 // CreateGameInput используется для создания игры.
+// Description теперь опционально (без required и min).
 type CreateGameInput struct {
 	Name                 string                `form:"name" binding:"required,min=3,max=100"`
-	Description          string                `form:"description" binding:"required,min=10,max=2000"`
+	Description          string                `form:"description" binding:"max=2000"`
 	MaxTeamNumber        int                   `form:"max_team_number" binding:"required,min=1,max=100"`
 	Visibility           string                `form:"visibility" binding:"required,oneof=public private"`
-	StartsAt             *time.Time            `form:"starts_at" binding:"omitempty,start_date_valid"`
-	RegistrationDeadline *time.Time            `form:"registration_deadline" binding:"omitempty"`
+	StartsAt             string                `form:"starts_at"`
+	RegistrationDeadline string                `form:"registration_deadline"`
 	IsDraft              bool                  `form:"is_draft"`
 	CoverFile            *multipart.FileHeader `form:"cover"`
 }
@@ -106,43 +101,42 @@ type CreateGameInput struct {
 // UpdateGameInput используется для обновления игры.
 type UpdateGameInput struct {
 	Name                 string                `form:"name" binding:"required,min=3,max=100"`
-	Description          string                `form:"description" binding:"required,min=10,max=2000"`
+	Description          string                `form:"description" binding:"max=2000"`
 	MaxTeamNumber        int                   `form:"max_team_number" binding:"required,min=1,max=100"`
 	Visibility           string                `form:"visibility" binding:"required,oneof=public private"`
-	StartsAt             *time.Time            `form:"starts_at" binding:"omitempty,start_date_valid"`
-	RegistrationDeadline *time.Time            `form:"registration_deadline" binding:"omitempty"`
+	StartsAt             string                `form:"starts_at"`
+	RegistrationDeadline string                `form:"registration_deadline"`
 	IsDraft              bool                  `form:"is_draft"`
 	CoverFile            *multipart.FileHeader `form:"cover"`
 	DeleteCover          bool                  `form:"delete_cover"`
 }
 
-// ApplyInput – заявка на игру.
 type ApplyInput struct {
 	TeamID uint `form:"team_id" binding:"required,gt=0"`
 }
 
-// DisqualifyInput – дисквалификация команды.
 type DisqualifyInput struct {
 	TeamID uint `form:"team_id" binding:"required,gt=0"`
 }
 
-// AddCoAuthorInput – добавление соавтора.
 type AddCoAuthorInput struct {
 	UserID uint `form:"user_id" binding:"required,gt=0"`
 }
 
 // ---------- Кастомные валидаторы ----------
 
-// validateStartDate проверяет, что дата начала не в прошлом.
 func validateStartDate(fl validator.FieldLevel) bool {
-	t, ok := fl.Field().Interface().(*time.Time)
-	if !ok || t == nil {
+	val, ok := fl.Field().Interface().(string)
+	if !ok || val == "" {
 		return true
+	}
+	t, err := time.Parse("2006-01-02T15:04", val)
+	if err != nil {
+		return false
 	}
 	return !t.Before(time.Now())
 }
 
-// Регистрация кастомного валидатора при инициализации пакета.
 func init() {
 	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
 		_ = v.RegisterValidation("start_date_valid", validateStartDate)
@@ -215,14 +209,24 @@ func NewGameHandler(
 
 // ---------- Вспомогательная функция для ограничения размера тела запроса ----------
 
-// limitRequestBody устанавливает максимальный размер тела запроса и возвращает ошибку,
-// если размер превышен. Используется перед вызовом ShouldBind или FormFile.
 func limitRequestBody(c *gin.Context, maxBytes int64) error {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes)
 	if c.Request.ContentLength > maxBytes {
 		return fmt.Errorf("размер тела запроса превышает допустимый лимит (%d байт)", maxBytes)
 	}
 	return nil
+}
+
+// parseDateTime парсит строку из datetime-local в time.Time.
+func parseDateTime(s string) (*time.Time, error) {
+	if s == "" {
+		return nil, nil
+	}
+	t, err := time.Parse("2006-01-02T15:04", s)
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
 }
 
 // List отображает список игр с фильтрацией и пагинацией.
@@ -335,7 +339,7 @@ func (h *GameHandler) NewForm(c *gin.Context) {
 	})
 }
 
-// Create создаёт новую игру с использованием входной структуры.
+// Create создаёт новую игру.
 func (h *GameHandler) Create(c *gin.Context) {
 	userID := c.GetUint("userID")
 
@@ -356,7 +360,25 @@ func (h *GameHandler) Create(c *gin.Context) {
 		return
 	}
 
-	if err := validation.ValidateGameDates(input.StartsAt, input.RegistrationDeadline); err != nil {
+	// Парсим даты
+	startsAt, err := parseDateTime(input.StartsAt)
+	if err != nil {
+		render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
+			"Error": "Неверный формат даты начала: " + err.Error(),
+			"csrf":  csrf.GetToken(c),
+		})
+		return
+	}
+	registrationDeadline, err := parseDateTime(input.RegistrationDeadline)
+	if err != nil {
+		render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
+			"Error": "Неверный формат крайнего срока регистрации: " + err.Error(),
+			"csrf":  csrf.GetToken(c),
+		})
+		return
+	}
+
+	if err := validation.ValidateGameDates(startsAt, registrationDeadline); err != nil {
 		render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
 			"Error": err.Error(),
 			"csrf":  csrf.GetToken(c),
@@ -369,8 +391,8 @@ func (h *GameHandler) Create(c *gin.Context) {
 		Description:          sanitize.StripHTML(input.Description),
 		MaxTeamNumber:        input.MaxTeamNumber,
 		Visibility:           input.Visibility,
-		StartsAt:             input.StartsAt,
-		RegistrationDeadline: input.RegistrationDeadline,
+		StartsAt:             startsAt,
+		RegistrationDeadline: registrationDeadline,
 		IsDraft:              input.IsDraft,
 	}
 
@@ -418,7 +440,7 @@ func (h *GameHandler) EditForm(c *gin.Context) {
 		return
 	}
 	if !isManager {
-		c.HTML(http.StatusForbidden, "errors/403.html", nil)
+		c.HTML(http.StatusForbidden, "errors-403.html", nil)
 		return
 	}
 
@@ -428,7 +450,7 @@ func (h *GameHandler) EditForm(c *gin.Context) {
 	})
 }
 
-// Update обновляет игру с использованием входной структуры.
+// Update обновляет игру.
 func (h *GameHandler) Update(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {
@@ -454,7 +476,25 @@ func (h *GameHandler) Update(c *gin.Context) {
 		return
 	}
 
-	if err := validation.ValidateGameDates(input.StartsAt, input.RegistrationDeadline); err != nil {
+	// Парсим даты
+	startsAt, err := parseDateTime(input.StartsAt)
+	if err != nil {
+		render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
+			"Error": "Неверный формат даты начала: " + err.Error(),
+			"csrf":  csrf.GetToken(c),
+		})
+		return
+	}
+	registrationDeadline, err := parseDateTime(input.RegistrationDeadline)
+	if err != nil {
+		render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
+			"Error": "Неверный формат крайнего срока регистрации: " + err.Error(),
+			"csrf":  csrf.GetToken(c),
+		})
+		return
+	}
+
+	if err := validation.ValidateGameDates(startsAt, registrationDeadline); err != nil {
 		render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
 			"Error": err.Error(),
 			"csrf":  csrf.GetToken(c),
@@ -467,8 +507,8 @@ func (h *GameHandler) Update(c *gin.Context) {
 		Description:          sanitize.StripHTML(input.Description),
 		MaxTeamNumber:        input.MaxTeamNumber,
 		Visibility:           input.Visibility,
-		StartsAt:             input.StartsAt,
-		RegistrationDeadline: input.RegistrationDeadline,
+		StartsAt:             startsAt,
+		RegistrationDeadline: registrationDeadline,
 		IsDraft:              input.IsDraft,
 		DeleteCover:          input.DeleteCover,
 	}
@@ -498,7 +538,7 @@ func (h *GameHandler) Delete(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	if err := h.gameService.Delete(c.Request.Context(), uint(id), userID); err != nil {
-		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
+		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
 		return
 	}
 
@@ -516,7 +556,7 @@ func (h *GameHandler) Publish(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	if err := h.gameService.Publish(c.Request.Context(), uint(id), userID); err != nil {
-		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
+		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
 		return
 	}
 
@@ -643,7 +683,7 @@ func (h *GameHandler) UpdatePassingStatus(c *gin.Context) {
 	}
 
 	if err := h.passingService.UpdateStatus(c.Request.Context(), uint(passingID), status, c.GetUint("userID")); err != nil {
-		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
+		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
 		return
 	}
 
@@ -659,14 +699,14 @@ func (h *GameHandler) StartGame(c *gin.Context) {
 	}
 
 	if err := h.passingService.StartGame(c.Request.Context(), uint(passingID), c.GetUint("userID")); err != nil {
-		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
+		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
 		return
 	}
 
 	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/monitor")
 }
 
-// ForceFinish принудительно завершает игру (использует GameAdminService).
+// ForceFinish принудительно завершает игру.
 func (h *GameHandler) ForceFinish(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
@@ -675,14 +715,14 @@ func (h *GameHandler) ForceFinish(c *gin.Context) {
 	}
 
 	if err := h.gameAdminSvc.ForceFinishGame(c.Request.Context(), uint(gameID)); err != nil {
-		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
+		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
 		return
 	}
 
 	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/results")
 }
 
-// DisqualifyTeam дисквалифицирует команду (использует GameAdminService).
+// DisqualifyTeam дисквалифицирует команду.
 func (h *GameHandler) DisqualifyTeam(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
@@ -706,7 +746,7 @@ func (h *GameHandler) DisqualifyTeam(c *gin.Context) {
 	}
 
 	if err := h.gameAdminSvc.DisqualifyTeam(c.Request.Context(), uint(gameID), input.TeamID); err != nil {
-		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
+		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
 		return
 	}
 
@@ -761,7 +801,7 @@ func (h *GameHandler) AddCoAuthor(c *gin.Context) {
 	}
 
 	if err := h.coAuthorService.Add(uint(gameID), input.UserID, ownerID); err != nil {
-		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
+		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
 		return
 	}
 	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/co-authors")
@@ -782,7 +822,7 @@ func (h *GameHandler) RemoveCoAuthor(c *gin.Context) {
 	ownerID := c.GetUint("userID")
 
 	if err := h.coAuthorService.Remove(uint(gameID), uint(userID), ownerID); err != nil {
-		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
+		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
 		return
 	}
 	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/co-authors")
@@ -899,7 +939,7 @@ func (h *GameHandler) Simulate(c *gin.Context) {
 	userID := c.GetUint("userID")
 	result, err := h.simulateService.Simulate(uint(gameID), userID)
 	if err != nil {
-		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
+		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
 		return
 	}
 	render.Page(c, http.StatusOK, "simulate-results.html", gin.H{
@@ -1018,7 +1058,7 @@ func (h *GameHandler) SaveSettings(c *gin.Context) {
 		return
 	}
 	if !isManager {
-		c.HTML(http.StatusForbidden, "errors/403.html", nil)
+		c.HTML(http.StatusForbidden, "errors-403.html", nil)
 		return
 	}
 
