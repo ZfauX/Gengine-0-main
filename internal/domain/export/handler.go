@@ -3,7 +3,9 @@ package export
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -52,6 +54,32 @@ func parseGameID(c *gin.Context) (uint, error) {
 	return uint(id), nil
 }
 
+// streamExport выполняет общий сценарий выгрузки файла: парсит ID игры,
+// вызывает функцию экспорта в буфер и отдаёт результат как вложение.
+// filenamePrefix и ext формируют имя файла вида "<prefix>_<id><ext>".
+func (h *ExportHandler) streamExport(
+	c *gin.Context,
+	contentType, filenamePrefix, ext, logMsg string,
+	export func(ctx context.Context, gameID uint, w io.Writer) error,
+) {
+	gameID, err := parseGameID(c)
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var buf bytes.Buffer
+	if err := export(c.Request.Context(), gameID, &buf); err != nil {
+		log.Error().Err(err).Uint("game_id", gameID).Msg(logMsg)
+		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		return
+	}
+
+	c.Header("Content-Type", contentType)
+	c.Header("Content-Disposition", "attachment; filename="+filenamePrefix+"_"+strconv.Itoa(int(gameID))+ext)
+	c.Data(http.StatusOK, contentType, buf.Bytes())
+}
+
 // ExportGameCSV отдаёт CSV-файл со всеми уровнями, вопросами и ответами игры.
 // @Summary Экспорт игры в CSV
 // @Description Выгружает уровни, вопросы и ответы игры в CSV-формат для редактирования или резервного копирования
@@ -66,22 +94,9 @@ func parseGameID(c *gin.Context) (uint, error) {
 // @Router /games/{id}/export [get]
 // @Security JWT
 func (h *ExportHandler) ExportGameCSV(c *gin.Context) {
-	gameID, err := parseGameID(c)
-	if err != nil {
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	var buf bytes.Buffer
-	if err := h.exportService.ExportGameToCSV(c.Request.Context(), gameID, &buf); err != nil {
-		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportGameCSV: failed to export game to CSV")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
-		return
-	}
-
-	c.Header("Content-Type", "text/csv; charset=utf-8")
-	c.Header("Content-Disposition", "attachment; filename=game_"+strconv.Itoa(int(gameID))+".csv")
-	c.Data(http.StatusOK, "text/csv", buf.Bytes())
+	h.streamExport(c, "text/csv", "game", ".csv",
+		"ExportGameCSV: failed to export game to CSV",
+		h.exportService.ExportGameToCSV)
 }
 
 // ImportGameForm отображает форму загрузки CSV-файла для импорта.
@@ -187,22 +202,9 @@ func (h *ExportHandler) ImportGame(c *gin.Context) {
 // @Router /games/{id}/export-results [get]
 // @Security JWT
 func (h *ExportHandler) ExportResultsCSV(c *gin.Context) {
-	gameID, err := parseGameID(c)
-	if err != nil {
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	var buf bytes.Buffer
-	if err := h.exportService.ExportResultsToCSV(c.Request.Context(), gameID, &buf); err != nil {
-		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportResultsCSV: failed to export results to CSV")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
-		return
-	}
-
-	c.Header("Content-Type", "text/csv; charset=utf-8")
-	c.Header("Content-Disposition", "attachment; filename=results_"+strconv.Itoa(int(gameID))+".csv")
-	c.Data(http.StatusOK, "text/csv", buf.Bytes())
+	h.streamExport(c, "text/csv", "results", ".csv",
+		"ExportResultsCSV: failed to export results to CSV",
+		h.exportService.ExportResultsToCSV)
 }
 
 // ExportGamePDF генерирует и отдаёт PDF-файл со всей структурой игры для печати.
@@ -219,22 +221,9 @@ func (h *ExportHandler) ExportResultsCSV(c *gin.Context) {
 // @Router /games/{id}/export-pdf [get]
 // @Security JWT
 func (h *ExportHandler) ExportGamePDF(c *gin.Context) {
-	gameID, err := parseGameID(c)
-	if err != nil {
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	var buf bytes.Buffer
-	if err := h.exportService.ExportGameToPDF(c.Request.Context(), gameID, &buf); err != nil {
-		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportGamePDF: failed to generate PDF")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
-		return
-	}
-
-	c.Header("Content-Type", "application/pdf")
-	c.Header("Content-Disposition", "attachment; filename=game_"+strconv.Itoa(int(gameID))+".pdf")
-	c.Data(http.StatusOK, "application/pdf", buf.Bytes())
+	h.streamExport(c, "application/pdf", "game", ".pdf",
+		"ExportGamePDF: failed to generate PDF",
+		h.exportService.ExportGameToPDF)
 }
 
 // ExportStatisticsPDF генерирует и отдаёт PDF-отчёт с расширенной статистикой игры.
@@ -251,22 +240,9 @@ func (h *ExportHandler) ExportGamePDF(c *gin.Context) {
 // @Router /games/{id}/export-statistics-pdf [get]
 // @Security JWT
 func (h *ExportHandler) ExportStatisticsPDF(c *gin.Context) {
-	gameID, err := parseGameID(c)
-	if err != nil {
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	var buf bytes.Buffer
-	if err := h.exportService.ExportStatisticsToPDF(c.Request.Context(), gameID, &buf); err != nil {
-		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportStatisticsPDF: failed to generate statistics PDF")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
-		return
-	}
-
-	c.Header("Content-Type", "application/pdf")
-	c.Header("Content-Disposition", "attachment; filename=stats_"+strconv.Itoa(int(gameID))+".pdf")
-	c.Data(http.StatusOK, "application/pdf", buf.Bytes())
+	h.streamExport(c, "application/pdf", "stats", ".pdf",
+		"ExportStatisticsPDF: failed to generate statistics PDF",
+		h.exportService.ExportStatisticsToPDF)
 }
 
 // =============================================================================
@@ -287,22 +263,9 @@ func (h *ExportHandler) ExportStatisticsPDF(c *gin.Context) {
 // @Router /games/{id}/export-excel [get]
 // @Security JWT
 func (h *ExportHandler) ExportGameExcel(c *gin.Context) {
-	gameID, err := parseGameID(c)
-	if err != nil {
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	var buf bytes.Buffer
-	if err := h.exportService.ExportGameToExcel(c.Request.Context(), gameID, &buf); err != nil {
-		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportGameExcel: failed to generate Excel")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
-		return
-	}
-
-	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-	c.Header("Content-Disposition", "attachment; filename=game_"+strconv.Itoa(int(gameID))+".xlsx")
-	c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buf.Bytes())
+	h.streamExport(c, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "game", ".xlsx",
+		"ExportGameExcel: failed to generate Excel",
+		h.exportService.ExportGameToExcel)
 }
 
 // ExportResultsExcel экспортирует результаты игры в Excel.
@@ -319,20 +282,7 @@ func (h *ExportHandler) ExportGameExcel(c *gin.Context) {
 // @Router /games/{id}/export-results-excel [get]
 // @Security JWT
 func (h *ExportHandler) ExportResultsExcel(c *gin.Context) {
-	gameID, err := parseGameID(c)
-	if err != nil {
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	var buf bytes.Buffer
-	if err := h.exportService.ExportResultsToExcel(c.Request.Context(), gameID, &buf); err != nil {
-		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportResultsExcel: failed to generate Excel")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
-		return
-	}
-
-	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-	c.Header("Content-Disposition", "attachment; filename=results_"+strconv.Itoa(int(gameID))+".xlsx")
-	c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buf.Bytes())
+	h.streamExport(c, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "results", ".xlsx",
+		"ExportResultsExcel: failed to generate Excel",
+		h.exportService.ExportResultsToExcel)
 }

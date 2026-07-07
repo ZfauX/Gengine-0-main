@@ -843,11 +843,7 @@ func (h *GameHandler) Notes(c *gin.Context) {
 	userID := c.GetUint("userID")
 	notes, err := h.noteService.ListByGame(uint(gameID), userID)
 	if err != nil {
-		appErr := apperrors.NewForbiddenError(err.Error())
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		apperrors.AbortWithError(c, apperrors.NewForbiddenError(err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"notes": notes})
@@ -895,11 +891,7 @@ func (h *GameHandler) CreateNote(c *gin.Context) {
 
 	note, err := h.noteService.Create(uint(gameID), input.LevelID, userID, input.Text)
 	if err != nil {
-		appErr := apperrors.NewForbiddenError(err.Error())
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		apperrors.AbortWithError(c, apperrors.NewForbiddenError(err.Error()))
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"note": note})
@@ -917,11 +909,7 @@ func (h *GameHandler) DeleteNote(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 	if err := h.noteService.Delete(uint(noteID), userID); err != nil {
-		appErr := apperrors.NewForbiddenError(err.Error())
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		apperrors.AbortWithError(c, apperrors.NewForbiddenError(err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
@@ -1191,11 +1179,7 @@ func (h *GameHandler) UploadPhoto(c *gin.Context) {
 	webPath, err := h.storage.Save("uploads/photos", file, header.Filename, userID, 10*1024*1024, allowedTypes)
 	if err != nil {
 		log.Error().Err(err).Str("filename", header.Filename).Msg("UploadPhoto: failed to save file")
-		appErr := apperrors.NewInternalError(err)
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		apperrors.AbortWithError(c, apperrors.NewInternalError(err))
 		return
 	}
 
@@ -1207,11 +1191,7 @@ func (h *GameHandler) UploadPhoto(c *gin.Context) {
 	if err := h.photoService.Create(photo); err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Msg("UploadPhoto: failed to create photo record")
 		_ = h.storage.Delete(webPath)
-		appErr := apperrors.NewInternalError(err)
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		apperrors.AbortWithError(c, apperrors.NewInternalError(err))
 		return
 	}
 
@@ -1239,11 +1219,7 @@ func (h *GameHandler) DeletePhoto(c *gin.Context) {
 			})
 		} else {
 			log.Error().Err(err).Int("photo_id", photoID).Msg("DeletePhoto: failed to get photo")
-			appErr := apperrors.NewInternalError(err)
-			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-				"error": appErr.Message,
-				"code":  appErr.Code,
-			})
+			apperrors.AbortWithError(c, apperrors.NewInternalError(err))
 		}
 		return
 	}
@@ -1252,11 +1228,7 @@ func (h *GameHandler) DeletePhoto(c *gin.Context) {
 	isManager, err := h.coAuthorService.IsUserManager(photo.GameID, userID)
 	if err != nil {
 		log.Error().Err(err).Int("photo_id", photoID).Msg("DeletePhoto: failed to check manager")
-		appErr := apperrors.NewInternalError(err)
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		apperrors.AbortWithError(c, apperrors.NewInternalError(err))
 		return
 	}
 
@@ -1270,11 +1242,7 @@ func (h *GameHandler) DeletePhoto(c *gin.Context) {
 
 	if err := h.photoService.Delete(photo.ID, userID); err != nil {
 		log.Error().Err(err).Uint("photo_id", photo.ID).Msg("DeletePhoto: failed to delete record")
-		appErr := apperrors.NewInternalError(err)
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		apperrors.AbortWithError(c, apperrors.NewInternalError(err))
 		return
 	}
 
@@ -1299,22 +1267,14 @@ func (h *GameHandler) FullPreview(c *gin.Context) {
 
 	_, err = h.gameService.GetByID(c.Request.Context(), uint(gameID), userID)
 	if err != nil {
-		appErr := apperrors.NewForbiddenError("Нет доступа к игре")
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		apperrors.AbortWithError(c, apperrors.NewForbiddenError("Нет доступа к игре"))
 		return
 	}
 
 	var levels []level.Level
 	if err := h.db.Preload("Questions.Answers").Where("game_id = ?", gameID).Order("position ASC").Find(&levels).Error; err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Msg("FullPreview: failed to load levels")
-		appErr := apperrors.NewInternalError(err)
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		apperrors.AbortWithError(c, apperrors.NewInternalError(err))
 		return
 	}
 

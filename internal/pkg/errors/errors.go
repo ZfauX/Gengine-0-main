@@ -3,6 +3,8 @@ package errors
 
 import (
 	"net/http"
+
+	"github.com/gin-gonic/gin"
 )
 
 // AppError представляет структурированную ошибку для API.
@@ -77,4 +79,13 @@ func NewBadRequestError(message string) *AppError {
 		Code:       "bad_request",
 		Message:    message,
 	}
+}
+
+// AbortWithError записывает AppError как стандартный JSON-ответ об ошибке
+// ({"error", "code"}) и прерывает обработку запроса.
+func AbortWithError(c *gin.Context, appErr *AppError) {
+	c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
+		"error": appErr.Message,
+		"code":  appErr.Code,
+	})
 }

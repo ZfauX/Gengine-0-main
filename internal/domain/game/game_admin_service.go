@@ -148,60 +148,49 @@ func (s *GameAdminService) DeleteLevelFromActiveGame(ctx context.Context, gameID
 	})
 }
 
-// notifyCaptainAboutFinish отправляет уведомление капитану о принудительном завершении игры.
-func (s *GameAdminService) notifyCaptainAboutFinish(_ context.Context, tx *gorm.DB, teamID, gameID uint) {
+// notifyCaptain загружает команду, её капитана и игру, после чего ставит в очередь
+// письмо капитану с заданной темой и текстом (%s подставляется как название игры).
+// logPrefix используется в сообщениях лога для идентификации вызывающего сценария.
+func (s *GameAdminService) notifyCaptain(tx *gorm.DB, teamID, gameID uint, subject, bodyFormat, logPrefix string) {
 	if s.cfg == nil || !s.cfg.SMTP.Enabled {
 		return
 	}
 	var t team.Team
 	if err := tx.First(&t, teamID).Error; err != nil {
-		log.Error().Err(err).Uint("team", teamID).Msg("notifyCaptainAboutFinish: failed to get team")
+		log.Error().Err(err).Uint("team", teamID).Msg(logPrefix + ": failed to get team")
 		return
 	}
 	var captain user.User
 	if err := tx.First(&captain, t.CaptainID).Error; err != nil {
-		log.Error().Err(err).Uint("captain", t.CaptainID).Msg("notifyCaptainAboutFinish: failed to get captain")
+		log.Error().Err(err).Uint("captain", t.CaptainID).Msg(logPrefix + ": failed to get captain")
 		return
 	}
 	var g Game
 	if err := tx.First(&g, gameID).Error; err != nil {
-		log.Error().Err(err).Uint("game", gameID).Msg("notifyCaptainAboutFinish: failed to get game")
+		log.Error().Err(err).Uint("game", gameID).Msg(logPrefix + ": failed to get game")
 		return
 	}
 	if err := email.Enqueue(
 		captain.Email,
-		"Игра завершена",
-		fmt.Sprintf("Игра «%s» была принудительно завершена автором.", g.Name),
+		subject,
+		fmt.Sprintf(bodyFormat, g.Name),
 	); err != nil {
-		log.Error().Err(err).Uint("game", gameID).Uint("team", teamID).Msg("notifyCaptainAboutFinish: failed to enqueue email")
+		log.Error().Err(err).Uint("game", gameID).Uint("team", teamID).Msg(logPrefix + ": failed to enqueue email")
 	}
+}
+
+// notifyCaptainAboutFinish отправляет уведомление капитану о принудительном завершении игры.
+func (s *GameAdminService) notifyCaptainAboutFinish(_ context.Context, tx *gorm.DB, teamID, gameID uint) {
+	s.notifyCaptain(tx, teamID, gameID,
+		"Игра завершена",
+		"Игра «%s» была принудительно завершена автором.",
+		"notifyCaptainAboutFinish")
 }
 
 // notifyCaptainAboutDisqualification отправляет уведомление капитану о дисквалификации команды.
 func (s *GameAdminService) notifyCaptainAboutDisqualification(_ context.Context, tx *gorm.DB, teamID, gameID uint) {
-	if s.cfg == nil || !s.cfg.SMTP.Enabled {
-		return
-	}
-	var t team.Team
-	if err := tx.First(&t, teamID).Error; err != nil {
-		log.Error().Err(err).Uint("team", teamID).Msg("notifyCaptainAboutDisqualification: failed to get team")
-		return
-	}
-	var captain user.User
-	if err := tx.First(&captain, t.CaptainID).Error; err != nil {
-		log.Error().Err(err).Uint("captain", t.CaptainID).Msg("notifyCaptainAboutDisqualification: failed to get captain")
-		return
-	}
-	var g Game
-	if err := tx.First(&g, gameID).Error; err != nil {
-		log.Error().Err(err).Uint("game", gameID).Msg("notifyCaptainAboutDisqualification: failed to get game")
-		return
-	}
-	if err := email.Enqueue(
-		captain.Email,
+	s.notifyCaptain(tx, teamID, gameID,
 		"Дисквалификация",
-		fmt.Sprintf("Ваша команда была дисквалифицирована в игре «%s».", g.Name),
-	); err != nil {
-		log.Error().Err(err).Uint("game", gameID).Uint("team", teamID).Msg("notifyCaptainAboutDisqualification: failed to enqueue email")
-	}
+		"Ваша команда была дисквалифицирована в игре «%s».",
+		"notifyCaptainAboutDisqualification")
 }
