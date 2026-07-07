@@ -66,7 +66,9 @@ func (s *AuthService) Register(ctx context.Context, emailStr, password, name str
 	}
 
 	verificationService := NewEmailVerificationService(s.userRepo, s.emailVerifRepo, s.cfg)
-	verificationService.SendVerificationEmail(ctx, user)
+	if err := verificationService.SendVerificationEmail(ctx, user); err != nil {
+		log.Error().Err(err).Str("email", user.Email).Msg("не удалось отправить письмо подтверждения email")
+	}
 
 	return &user, nil
 }
@@ -511,7 +513,9 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 		Provider:   provider,
 		ExternalID: emailStr,
 	}
-	_ = s.extLoginRepo.FindOrCreate(ctx, extLogin)
+	if err := s.extLoginRepo.FindOrCreate(ctx, extLogin); err != nil {
+		return nil, fmt.Errorf("привязка внешнего аккаунта (%s): %w", provider, err)
+	}
 	return user, nil
 }
 
@@ -537,7 +541,9 @@ func NewPasswordResetService(
 
 func (s *PasswordResetService) GenerateToken(ctx context.Context, user User) (string, error) {
 	b := make([]byte, 16)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("генерация токена сброса пароля: %w", err)
+	}
 	rawToken := hex.EncodeToString(b)
 	token := PasswordResetToken{
 		UserID:    user.ID,
@@ -597,15 +603,19 @@ func NewEmailVerificationService(
 	}
 }
 
-func (s *EmailVerificationService) SendVerificationEmail(ctx context.Context, user User) {
+func (s *EmailVerificationService) SendVerificationEmail(ctx context.Context, user User) error {
 	b := make([]byte, 16)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Errorf("генерация токена подтверждения email: %w", err)
+	}
 	token := hex.EncodeToString(b)
-	_ = s.emailVerifRepo.CreateToken(ctx, &EmailVerificationToken{
+	if err := s.emailVerifRepo.CreateToken(ctx, &EmailVerificationToken{
 		UserID:    user.ID,
 		Token:     token,
 		ExpiresAt: time.Now().Add(24 * time.Hour),
-	})
+	}); err != nil {
+		return fmt.Errorf("сохранение токена подтверждения email: %w", err)
+	}
 	if s.cfg.SMTP.Enabled {
 		if err := email.Enqueue(
 			user.Email,
@@ -615,6 +625,7 @@ func (s *EmailVerificationService) SendVerificationEmail(ctx context.Context, us
 			log.Error().Err(err).Str("email", user.Email).Msg("failed to enqueue verification email")
 		}
 	}
+	return nil
 }
 
 func (s *EmailVerificationService) VerifyToken(ctx context.Context, tokenStr string) (*User, error) {
@@ -628,7 +639,9 @@ func (s *EmailVerificationService) VerifyToken(ctx context.Context, tokenStr str
 	if err := s.userRepo.Update(ctx, token.UserID, map[string]any{"email_verified": true}); err != nil {
 		return nil, err
 	}
-	_ = s.emailVerifRepo.DeleteToken(ctx, token)
+	if err := s.emailVerifRepo.DeleteToken(ctx, token); err != nil {
+		log.Warn().Err(err).Uint("user_id", token.UserID).Msg("не удалось удалить использованный токен подтверждения email")
+	}
 	return s.userRepo.GetByID(ctx, token.UserID)
 }
 
