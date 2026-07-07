@@ -121,7 +121,7 @@
     </div>
 </div>
 
-<script>
+<script nonce="{{.csp_nonce}}">
     (function() {
         const previewModal = document.getElementById('preview-modal');
         const previewContent = document.getElementById('preview-content');
@@ -148,19 +148,27 @@
                 openModal();
                 return;
             }
-            fetch('/api/v1/games/' + gameID + '/full-preview', {
+            // Используем правильный URL
+            fetch('/games/' + gameID + '/full-preview', {
                 headers: { 'Accept': 'application/json' },
                 credentials: 'same-origin'
             })
-            .then(r => r.json())
+            .then(r => {
+                if (!r.ok) {
+                    throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+                }
+                return r.json();
+            })
             .then(res => {
+                console.log('Full preview data:', res);
                 previewCache[gameID] = { data: res.data, timestamp: Date.now() };
                 sessionStorage.setItem('previewCache', JSON.stringify(previewCache));
                 renderPreview(res.data);
                 openModal();
             })
-            .catch(() => {
-                previewContent.innerHTML = '<p class="text-red-500">Ошибка загрузки</p>';
+            .catch(err => {
+                console.error('Preview error:', err);
+                previewContent.innerHTML = `<p class="text-red-500">Ошибка загрузки: ${err.message}</p>`;
                 openModal();
             });
         });
@@ -176,6 +184,10 @@
         });
 
         function renderPreview(levels) {
+            if (!levels || levels.length === 0) {
+                previewContent.innerHTML = '<p class="text-gray-500">Нет данных</p>';
+                return;
+            }
             let html = '';
             levels.forEach(lvl => {
                 html += `<div class="mb-4"><h3 class="font-semibold text-gray-800">${lvl.position}. ${lvl.name}</h3>`;
@@ -185,12 +197,12 @@
                     html += `<p class="font-medium text-gray-700">${q.text}</p>`;
                     if (q.hint) html += `<p class="text-sm text-gray-500">Подсказка: ${q.hint}</p>`;
                     html += `<ul class="text-green-700 text-sm list-disc list-inside">`;
-                    q.answers.forEach(a => html += `<li>${a.code}</li>`);
+                    q.answers.forEach(a => html += `<li>${a}</li>`);
                     html += `</ul></div>`;
                 });
                 html += `</div>`;
             });
-            previewContent.innerHTML = html || '<p class="text-gray-500">Нет данных</p>';
+            previewContent.innerHTML = html;
         }
     })();
 </script>

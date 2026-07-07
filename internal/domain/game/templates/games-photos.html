@@ -50,7 +50,7 @@
     </div>
 </div>
 
-<script>
+<script nonce="{{.csp_nonce}}">
     (function() {
         const gameID = parseInt('{{.GameID}}', 10);
         const currentUserID = parseInt('{{.CurrentUserID}}', 10);
@@ -79,7 +79,12 @@
                 headers: { 'X-CSRF-TOKEN': getCsrfToken() },
                 body: formData
             })
-            .then(r => r.json())
+            .then(r => {
+                if (!r.ok) {
+                    throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+                }
+                return r.json();
+            })
             .then(data => {
                 if (data.error) {
                     uploadStatus.innerHTML = `<span class="text-red-600">${data.error}</span>`;
@@ -88,8 +93,9 @@
                     setTimeout(() => location.reload(), 1000);
                 }
             })
-            .catch(() => {
-                uploadStatus.innerHTML = '<span class="text-red-600">Ошибка загрузки</span>';
+            .catch(err => {
+                console.error('Upload error:', err);
+                uploadStatus.innerHTML = '<span class="text-red-600">Ошибка загрузки: ' + err.message + '</span>';
             });
         });
 
@@ -137,13 +143,22 @@
                 credentials: 'same-origin',
                 headers: { 'X-CSRF-TOKEN': getCsrfToken() }
             })
-            .then(r => r.json())
+            .then(r => {
+                if (!r.ok) {
+                    throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+                }
+                return r.json();
+            })
             .then(data => {
                 if (data.status === 'ok') {
                     location.reload();
                 } else {
                     alert('Ошибка удаления');
                 }
+            })
+            .catch(err => {
+                console.error('Delete error:', err);
+                alert('Ошибка удаления: ' + err.message);
             });
         });
 

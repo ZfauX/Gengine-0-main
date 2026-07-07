@@ -41,6 +41,7 @@ func AuthRequired(parser TokenParser) gin.HandlerFunc {
 
 		c.Set("userID", userID)
 		c.Set("role", role) // сохраняем роль
+		SetIsAdmin(c)
 		c.Next()
 	}
 }
@@ -48,6 +49,7 @@ func AuthRequired(parser TokenParser) gin.HandlerFunc {
 // OptionalAuth пытается извлечь userID и role из JWT-куки, но не прерывает запрос при её отсутствии.
 // Если кука есть и токен валиден, userID и role сохраняются в контексте.
 // Если куки нет или токен невалиден – просто передаём управление дальше без userID/role.
+// После этого автоматически устанавливает IsAdmin в контекст.
 func OptionalAuth(parser TokenParser) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token, err := c.Cookie("jwt")
@@ -57,6 +59,7 @@ func OptionalAuth(parser TokenParser) gin.HandlerFunc {
 				c.Set("role", role)
 			}
 		}
+		SetIsAdmin(c)
 		c.Next()
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"gengine-0/internal/config"
+	"gengine-0/internal/pkg/crypto"
 	"gengine-0/internal/pkg/email"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -52,7 +53,7 @@ func NewAuthService(
 }
 
 func (s *AuthService) Register(ctx context.Context, emailStr, password, name string) (*User, error) {
-	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hashed, err := bcrypt.GenerateFromPassword([]byte(password), crypto.BcryptCost)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +67,9 @@ func (s *AuthService) Register(ctx context.Context, emailStr, password, name str
 	}
 
 	verificationService := NewEmailVerificationService(s.userRepo, s.emailVerifRepo, s.cfg)
-	verificationService.SendVerificationEmail(ctx, user)
+	if err := verificationService.SendVerificationEmail(ctx, user); err != nil {
+		log.Warn().Err(err).Str("email", user.Email).Msg("Register: failed to send verification email")
+	}
 
 	return &user, nil
 }
@@ -86,7 +89,7 @@ func (s *AuthService) GenerateJWT(user User) (string, error) {
 	return s.generateJWT(user)
 }
 
-func (s *AuthService) GenerateRefreshToken(user User, deviceID string) (string, error) {
+func (s *AuthService) GenerateRefreshToken(ctx context.Context, user User, deviceID string) (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
@@ -101,7 +104,7 @@ func (s *AuthService) GenerateRefreshToken(user User, deviceID string) (string, 
 		DeviceID:  deviceID,
 		ExpiresAt: time.Now().Add(s.cfg.JWT.RefreshExpiry),
 	}
-	if err := s.refreshTokenRepo.Create(context.Background(), refreshToken); err != nil {
+	if err := s.refreshTokenRepo.Create(ctx, refreshToken); err != nil {
 		return "", err
 	}
 	return token, nil
@@ -115,11 +118,11 @@ func (s *AuthService) CleanExpiredRefreshTokens(ctx context.Context) error {
 	return s.refreshTokenRepo.DeleteExpired(ctx)
 }
 
-func (s *AuthService) RefreshAccessToken(refreshTokenStr string) (string, error) {
+func (s *AuthService) RefreshAccessToken(ctx context.Context, refreshTokenStr string) (string, error) {
 	hash := sha256.Sum256([]byte(refreshTokenStr))
 	tokenHash := hex.EncodeToString(hash[:])
 
-	stored, err := s.refreshTokenRepo.GetByTokenHash(context.Background(), tokenHash)
+	stored, err := s.refreshTokenRepo.GetByTokenHash(ctx, tokenHash)
 	if err != nil {
 		return "", errors.New("невалидный или отозванный refresh-токен")
 	}
@@ -127,7 +130,7 @@ func (s *AuthService) RefreshAccessToken(refreshTokenStr string) (string, error)
 		return "", errors.New("refresh-токен истёк")
 	}
 
-	user, err := s.userRepo.GetByID(context.Background(), stored.UserID)
+	user, err := s.userRepo.GetByID(ctx, stored.UserID)
 	if err != nil {
 		return "", errors.New("пользователь не найден")
 	}
@@ -156,7 +159,10 @@ func (s *AuthService) ParseToken(tokenStr string) (uint, string, error) {
 	if !ok {
 		return 0, "", errors.New("неверный ID пользователя в токене")
 	}
-	role, _ := claims["role"].(string)
+	role := "user"
+	if roleVal, ok := claims["role"].(string); ok && roleVal != "" {
+		role = roleVal
+	}
 	return uint(userIDFloat), role, nil
 }
 
@@ -208,7 +214,7 @@ func (s *UserService) ChangePassword(ctx context.Context, id uint, oldPassword, 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(oldPassword)); err != nil {
 		return errors.New("неверный текущий пароль")
 	}
-	hashed, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	hashed, err := bcrypt.GenerateFromPassword([]byte(newPassword), crypto.BcryptCost)
 	if err != nil {
 		return err
 	}
@@ -537,7 +543,9 @@ func NewPasswordResetService(
 
 func (s *PasswordResetService) GenerateToken(ctx context.Context, user User) (string, error) {
 	b := make([]byte, 16)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("не удалось сгенерировать токен: %w", err)
+	}
 	rawToken := hex.EncodeToString(b)
 	token := PasswordResetToken{
 		UserID:    user.ID,
@@ -567,7 +575,7 @@ func (s *PasswordResetService) ResetPassword(ctx context.Context, tokenStr, newP
 	if token.ExpiresAt.Before(time.Now()) {
 		return errors.New("токен истёк")
 	}
-	hashed, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	hashed, err := bcrypt.GenerateFromPassword([]byte(newPassword), crypto.BcryptCost)
 	if err != nil {
 		return err
 	}
@@ -597,24 +605,35 @@ func NewEmailVerificationService(
 	}
 }
 
-func (s *EmailVerificationService) SendVerificationEmail(ctx context.Context, user User) {
+func (s *EmailVerificationService) SendVerificationEmail(ctx context.Context, user User) error {
+	// Если SMTP отключён, токен не создаём — верификация не работает без почты
+	if !s.cfg.SMTP.Enabled {
+		return nil
+	}
+
 	b := make([]byte, 16)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Errorf("не удалось сгенерировать токен верификации: %w", err)
+	}
 	token := hex.EncodeToString(b)
-	_ = s.emailVerifRepo.CreateToken(ctx, &EmailVerificationToken{
+	if err := s.emailVerifRepo.CreateToken(ctx, &EmailVerificationToken{
 		UserID:    user.ID,
 		Token:     token,
 		ExpiresAt: time.Now().Add(24 * time.Hour),
-	})
-	if s.cfg.SMTP.Enabled {
-		if err := email.Enqueue(
-			user.Email,
-			"Подтверждение email",
-			fmt.Sprintf("Перейдите по ссылке для подтверждения: %s/auth/verify?token=%s", s.cfg.Server.BaseURL, token),
-		); err != nil {
-			log.Error().Err(err).Str("email", user.Email).Msg("failed to enqueue verification email")
-		}
+	}); err != nil {
+		return fmt.Errorf("не удалось сохранить токен верификации: %w", err)
 	}
+	if err := email.Enqueue(
+		user.Email,
+		"Подтверждение email",
+		fmt.Sprintf("Перейдите по ссылке для подтверждения: %s/auth/verify?token=%s", s.cfg.Server.BaseURL, token),
+	); err != nil {
+		log.Error().Err(err).Str("email", user.Email).Msg("SendVerificationEmail: failed to enqueue email")
+		// Удаляем токен, так как письмо не ушло
+		_ = s.emailVerifRepo.DeleteToken(ctx, &EmailVerificationToken{Token: token})
+		return fmt.Errorf("не удалось отправить письмо: %w", err)
+	}
+	return nil
 }
 
 func (s *EmailVerificationService) VerifyToken(ctx context.Context, tokenStr string) (*User, error) {
@@ -685,7 +704,7 @@ type DashboardInvitation struct {
 func (s *UserDashboardService) GetDashboard(userID uint) (*UserDashboard, error) {
 	var dash UserDashboard
 
-	// 1. Авторские игры (таблица games)
+	// 1. Авторские игры (таблица games) — добавляем условие deleted_at IS NULL
 	var authoredGames []struct {
 		ID      uint
 		Name    string
@@ -693,7 +712,7 @@ func (s *UserDashboardService) GetDashboard(userID uint) (*UserDashboard, error)
 	}
 	if err := s.DB.Table("games").
 		Select("id, name, is_draft").
-		Where("author_id = ?", userID).
+		Where("author_id = ? AND deleted_at IS NULL", userID).
 		Find(&authoredGames).Error; err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to get authored games")
 	} else {
@@ -716,7 +735,6 @@ func (s *UserDashboardService) GetDashboard(userID uint) (*UserDashboard, error)
 		WHERE tm.user_id = ? AND t.captain_id != ?
 	`, userID, userID, userID).Scan(&allTeams).Error; err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to get teams")
-		// Если ошибка, загружаем только приглашения и возвращаем
 		s.loadInvitations(&dash, userID)
 		return &dash, nil
 	}
@@ -743,7 +761,6 @@ func (s *UserDashboardService) GetDashboard(userID uint) (*UserDashboard, error)
 		Where("team_id IN ? AND status IN (?, ?, ?)", teamIDs, "accepted", "started", "finished").
 		Find(&passings).Error; err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to get passings")
-		// Не фатально — продолжаем
 	}
 
 	// 4. Собираем ID игр и команд для подгрузки названий
@@ -756,14 +773,17 @@ func (s *UserDashboardService) GetDashboard(userID uint) (*UserDashboard, error)
 	gameIDs = uniqueUintSlice(gameIDs)
 	teamIDsForGames = uniqueUintSlice(teamIDsForGames)
 
-	// 5. Подгружаем названия игр
+	// 5. Подгружаем названия игр (только не удалённые)
 	var gamesMap = make(map[uint]DashboardGame)
 	if len(gameIDs) > 0 {
 		var games []struct {
 			ID   uint
 			Name string
 		}
-		if err := s.DB.Table("games").Select("id, name").Where("id IN ?", gameIDs).Find(&games).Error; err == nil {
+		if err := s.DB.Table("games").
+			Select("id, name").
+			Where("id IN ? AND deleted_at IS NULL", gameIDs).
+			Find(&games).Error; err == nil {
 			for _, g := range games {
 				gamesMap[g.ID] = DashboardGame{ID: g.ID, Name: g.Name}
 			}
@@ -784,13 +804,16 @@ func (s *UserDashboardService) GetDashboard(userID uint) (*UserDashboard, error)
 		}
 	}
 
-	// 7. Определяем, в каких командах пользователь — капитан
+	// 7. Определяем, в каких командах пользователь — капитан (один запрос)
 	captainTeamIDs := make(map[uint]bool)
-	for _, t := range allTeams {
-		var captainID uint
-		if err := s.DB.Table("teams").Select("captain_id").Where("id = ?", t.ID).Scan(&captainID).Error; err == nil {
-			if captainID == userID {
-				captainTeamIDs[t.ID] = true
+	var captainRows []struct {
+		ID        uint
+		CaptainID uint
+	}
+	if err := s.DB.Table("teams").Select("id, captain_id").Where("id IN ?", teamIDs).Find(&captainRows).Error; err == nil {
+		for _, row := range captainRows {
+			if row.CaptainID == userID {
+				captainTeamIDs[row.ID] = true
 			}
 		}
 	}

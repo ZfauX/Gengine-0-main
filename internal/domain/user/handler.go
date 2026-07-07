@@ -7,7 +7,9 @@ import (
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/pkg/audit"
+	"gengine-0/internal/pkg/crypto"
 	apperrors "gengine-0/internal/pkg/errors"
+	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/storage"
@@ -150,7 +152,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	user, err := h.userService.GetByEmail(c.Request.Context(), input.Email)
 	if err == nil {
 		deviceID := c.GetHeader("X-Device-ID")
-		refreshToken, err := h.authSvc.GenerateRefreshToken(*user, deviceID)
+		refreshToken, err := h.authSvc.GenerateRefreshToken(c.Request.Context(), *user, deviceID)
 		if err == nil {
 			c.SetCookie("refresh_token", refreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/auth/refresh", "", false, true)
 		} else {
@@ -173,7 +175,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		refreshToken = input.RefreshToken
 	}
 
-	newAccessToken, err := h.authSvc.RefreshAccessToken(refreshToken)
+	newAccessToken, err := h.authSvc.RefreshAccessToken(c.Request.Context(), refreshToken)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
@@ -421,7 +423,7 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 	c.SetCookie("jwt", token, int(h.cfg.JWT.AccessExpiry.Seconds()), "/", "", false, true)
 
 	deviceID := c.GetHeader("X-Device-ID")
-	refreshToken, err := h.authSvc.GenerateRefreshToken(*user, deviceID)
+	refreshToken, err := h.authSvc.GenerateRefreshToken(c.Request.Context(), *user, deviceID)
 	if err == nil {
 		c.SetCookie("refresh_token", refreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/auth/refresh", "", false, true)
 	} else {
@@ -489,7 +491,7 @@ func (h *ProfileHandler) PublicProfile(c *gin.Context) {
 		return
 	}
 
-	// Статистика (без импорта game)
+	// Статистика
 	var gamesCreated int64
 	h.db.Table("games").Where("author_id = ?", userID).Count(&gamesCreated)
 
@@ -516,7 +518,7 @@ func (h *ProfileHandler) PublicProfile(c *gin.Context) {
 		isFollowing = followCount > 0
 	}
 
-	// Последние игры автора (без импорта game)
+	// Последние игры автора
 	type RecentGame struct {
 		ID        uint
 		Name      string
@@ -685,7 +687,7 @@ func (h *ProfileHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	hashed, err := bcrypt.GenerateFromPassword([]byte(input.NewPassword), bcrypt.DefaultCost)
+	hashed, err := bcrypt.GenerateFromPassword([]byte(input.NewPassword), crypto.BcryptCost)
 	if err != nil {
 		render.Page(c, http.StatusInternalServerError, "profile-show.html", gin.H{
 			"Error": "Ошибка смены пароля",
@@ -758,14 +760,7 @@ func (h *DashboardHandler) Index(c *gin.Context) {
 		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		return
 	}
-	role, exists := c.Get("role")
-	if !exists {
-		role = "user"
-	}
-	isAdmin := false
-	if roleStr, ok := role.(string); ok && roleStr == "admin" {
-		isAdmin = true
-	}
+	isAdmin := middleware.IsAdmin(c)
 	render.Page(c, http.StatusOK, "dashboard-index.html", gin.H{
 		"Dashboard":     dash,
 		"CurrentUserID": userID,

@@ -14,6 +14,7 @@ import (
 	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/team"
 	apperrors "gengine-0/internal/pkg/errors"
+	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/storage"
@@ -86,7 +87,6 @@ type GameAdminServiceInterface interface {
 // =============================================================================
 
 // CreateGameInput используется для создания игры.
-// Description теперь опционально (без required и min).
 type CreateGameInput struct {
 	Name                 string                `form:"name" binding:"required,min=3,max=100"`
 	Description          string                `form:"description" binding:"max=2000"`
@@ -396,7 +396,7 @@ func (h *GameHandler) Create(c *gin.Context) {
 		IsDraft:              input.IsDraft,
 	}
 
-	if input.CoverFile != nil {
+	if input.CoverFile != nil && input.CoverFile.Size > 0 {
 		createDTO.CoverFile = input.CoverFile
 	}
 
@@ -445,8 +445,10 @@ func (h *GameHandler) EditForm(c *gin.Context) {
 	}
 
 	render.Page(c, http.StatusOK, "games-edit.html", gin.H{
-		"Game": g,
-		"csrf": csrf.GetToken(c),
+		"Game":          g,
+		"csrf":          csrf.GetToken(c),
+		"CurrentUserID": userID,
+		"IsAdmin":       middleware.IsAdmin(c),
 	})
 }
 
@@ -476,28 +478,63 @@ func (h *GameHandler) Update(c *gin.Context) {
 		return
 	}
 
+	// Получаем существующую игру (для сохранения состояния IsDraft и данных формы)
+	existingGame, err := h.gameService.GetByID(c.Request.Context(), uint(id), userID)
+	if err != nil {
+		render.Page(c, http.StatusNotFound, "games-edit.html", gin.H{
+			"Error": "Игра не найдена",
+			"csrf":  csrf.GetToken(c),
+		})
+		return
+	}
+
 	// Парсим даты
 	startsAt, err := parseDateTime(input.StartsAt)
 	if err != nil {
 		render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
+			"Game":  existingGame,
 			"Error": "Неверный формат даты начала: " + err.Error(),
 			"csrf":  csrf.GetToken(c),
+			// Передаём введённые значения для сохранения в форме
+			"Name":                 input.Name,
+			"Description":          input.Description,
+			"MaxTeamNumber":        input.MaxTeamNumber,
+			"Visibility":           input.Visibility,
+			"StartsAt":             input.StartsAt,
+			"RegistrationDeadline": input.RegistrationDeadline,
 		})
 		return
 	}
 	registrationDeadline, err := parseDateTime(input.RegistrationDeadline)
 	if err != nil {
 		render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
+			"Game":  existingGame,
 			"Error": "Неверный формат крайнего срока регистрации: " + err.Error(),
 			"csrf":  csrf.GetToken(c),
+			// Передаём введённые значения
+			"Name":                 input.Name,
+			"Description":          input.Description,
+			"MaxTeamNumber":        input.MaxTeamNumber,
+			"Visibility":           input.Visibility,
+			"StartsAt":             input.StartsAt,
+			"RegistrationDeadline": input.RegistrationDeadline,
 		})
 		return
 	}
 
+	// Валидация дат
 	if err := validation.ValidateGameDates(startsAt, registrationDeadline); err != nil {
 		render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
+			"Game":  existingGame,
 			"Error": err.Error(),
 			"csrf":  csrf.GetToken(c),
+			// Передаём введённые значения
+			"Name":                 input.Name,
+			"Description":          input.Description,
+			"MaxTeamNumber":        input.MaxTeamNumber,
+			"Visibility":           input.Visibility,
+			"StartsAt":             input.StartsAt,
+			"RegistrationDeadline": input.RegistrationDeadline,
 		})
 		return
 	}
@@ -509,17 +546,26 @@ func (h *GameHandler) Update(c *gin.Context) {
 		Visibility:           input.Visibility,
 		StartsAt:             startsAt,
 		RegistrationDeadline: registrationDeadline,
-		IsDraft:              input.IsDraft,
+		IsDraft:              existingGame.IsDraft, // сохраняем текущее состояние
 		DeleteCover:          input.DeleteCover,
 	}
-	if input.CoverFile != nil {
+
+	if input.CoverFile != nil && input.CoverFile.Size > 0 {
 		updateDTO.CoverFile = input.CoverFile
 	}
 
 	if err := h.gameService.UpdateGameWithCover(c.Request.Context(), uint(id), updateDTO, userID); err != nil {
 		render.Page(c, http.StatusForbidden, "games-edit.html", gin.H{
+			"Game":  existingGame,
 			"Error": err.Error(),
 			"csrf":  csrf.GetToken(c),
+			// Передаём введённые значения
+			"Name":                 input.Name,
+			"Description":          input.Description,
+			"MaxTeamNumber":        input.MaxTeamNumber,
+			"Visibility":           input.Visibility,
+			"StartsAt":             input.StartsAt,
+			"RegistrationDeadline": input.RegistrationDeadline,
 		})
 		return
 	}
@@ -582,11 +628,15 @@ func (h *GameHandler) ListPassings(c *gin.Context) {
 		return
 	}
 
+	isAdmin := middleware.IsAdmin(c)
+
 	render.Page(c, http.StatusOK, "game_passings-list.html", gin.H{
-		"GameID":   gameID,
-		"Passings": passings,
-		"UserID":   userID,
-		"csrf":     csrf.GetToken(c),
+		"GameID":        gameID,
+		"Passings":      passings,
+		"UserID":        userID,
+		"CurrentUserID": userID,
+		"IsAdmin":       isAdmin,
+		"csrf":          csrf.GetToken(c),
 	})
 }
 
@@ -605,10 +655,14 @@ func (h *GameHandler) ApplyForm(c *gin.Context) {
 		teams = []team.Team{}
 	}
 
+	isAdmin := middleware.IsAdmin(c)
+
 	render.Page(c, http.StatusOK, "game_passings-apply.html", gin.H{
-		"GameID": gameID,
-		"Teams":  teams,
-		"csrf":   csrf.GetToken(c),
+		"GameID":        gameID,
+		"Teams":         teams,
+		"csrf":          csrf.GetToken(c),
+		"CurrentUserID": userID,
+		"IsAdmin":       isAdmin,
 	})
 }
 
@@ -762,6 +816,7 @@ func (h *GameHandler) ManageCoAuthors(c *gin.Context) {
 		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
+	userID := c.GetUint("userID")
 
 	coAuthors, err := h.coAuthorService.List(uint(gameID))
 	if err != nil {
@@ -769,10 +824,15 @@ func (h *GameHandler) ManageCoAuthors(c *gin.Context) {
 		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		return
 	}
+
+	isAdmin := middleware.IsAdmin(c)
+
 	render.Page(c, http.StatusOK, "co_authors-manage.html", gin.H{
-		"GameID":    gameID,
-		"CoAuthors": coAuthors,
-		"csrf":      csrf.GetToken(c),
+		"GameID":        gameID,
+		"CoAuthors":     coAuthors,
+		"csrf":          csrf.GetToken(c),
+		"CurrentUserID": userID,
+		"IsAdmin":       isAdmin,
 	})
 }
 
@@ -971,7 +1031,8 @@ func (h *GameHandler) SettingsPage(c *gin.Context) {
 	}
 
 	var settings GameSetting
-	if err := h.db.Where("game_id = ?", g.ID).First(&settings).Error; err != nil {
+	err = h.db.Where("game_id = ?", g.ID).First(&settings).Error
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			settings = GameSetting{
 				GameID:                   g.ID,
@@ -982,6 +1043,7 @@ func (h *GameHandler) SettingsPage(c *gin.Context) {
 				HideAnswersUntilFinished: false,
 				AutoStart:                false,
 			}
+			log.Info().Uint("game_id", g.ID).Msg("SettingsPage: no settings found, using defaults")
 		} else {
 			log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.SettingsPage: failed to get settings")
 			c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
@@ -989,10 +1051,24 @@ func (h *GameHandler) SettingsPage(c *gin.Context) {
 		}
 	}
 
+	isAdmin := middleware.IsAdmin(c)
+
+	log.Info().
+		Uint("game_id", g.ID).
+		Bool("allow_hints", settings.AllowHints).
+		Int("hint_penalty_seconds", settings.HintPenaltySeconds).
+		Int("max_hints", settings.MaxHints).
+		Int("per_level_time_limit", settings.PerLevelTimeLimit).
+		Bool("hide_answers_until_finished", settings.HideAnswersUntilFinished).
+		Bool("auto_start", settings.AutoStart).
+		Msg("SettingsPage: rendering settings")
+
 	render.Page(c, http.StatusOK, "games-settings.html", gin.H{
-		"Game":     g,
-		"Settings": settings,
-		"csrf":     csrf.GetToken(c),
+		"Game":          g,
+		"Settings":      settings,
+		"csrf":          csrf.GetToken(c),
+		"CurrentUserID": userID,
+		"IsAdmin":       isAdmin,
 	})
 }
 
@@ -1015,33 +1091,32 @@ func (h *GameHandler) SaveSettings(c *gin.Context) {
 		return
 	}
 
-	var settings GameSetting
-	if err := c.ShouldBind(&settings); err != nil {
+	// Парсим числовые поля
+	hintPenaltySeconds, _ := strconv.Atoi(c.PostForm("hint_penalty_seconds"))
+	maxHints, _ := strconv.Atoi(c.PostForm("max_hints"))
+	perLevelTimeLimit, _ := strconv.Atoi(c.PostForm("per_level_time_limit"))
+
+	// Парсим чекбоксы: если в POST есть ключ со значением "true", то true, иначе false
+	allowHints := c.PostForm("allow_hints") == "true"
+	hideAnswersUntilFinished := c.PostForm("hide_answers_until_finished") == "true"
+	autoStart := c.PostForm("auto_start") == "true"
+
+	// Валидация
+	if hintPenaltySeconds < 0 {
+		hintPenaltySeconds = 0
+	}
+	if maxHints < 0 {
+		maxHints = 0
+	}
+	if perLevelTimeLimit < 0 {
+		perLevelTimeLimit = 0
+	}
+	if perLevelTimeLimit > 3600 {
 		g, _ := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID)
 		render.Page(c, http.StatusBadRequest, "games-settings.html", gin.H{
-			"Game":     g,
-			"Settings": settings,
-			"Error":    "Неверные данные: " + err.Error(),
-			"csrf":     csrf.GetToken(c),
-		})
-		return
-	}
-
-	if settings.HintPenaltySeconds < 0 {
-		settings.HintPenaltySeconds = 0
-	}
-	if settings.MaxHints < 0 {
-		settings.MaxHints = 0
-	}
-	if settings.PerLevelTimeLimit < 0 {
-		settings.PerLevelTimeLimit = 0
-	}
-	if settings.PerLevelTimeLimit > 3600 {
-		render.Page(c, http.StatusBadRequest, "games-settings.html", gin.H{
-			"Game":     nil,
-			"Settings": settings,
-			"Error":    "Лимит времени на уровень не может превышать 3600 минут",
-			"csrf":     csrf.GetToken(c),
+			"Game":  g,
+			"Error": "Лимит времени на уровень не может превышать 3600 минут",
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -1062,13 +1137,54 @@ func (h *GameHandler) SaveSettings(c *gin.Context) {
 		return
 	}
 
-	settings.GameID = g.ID
-	if err := h.db.Save(&settings).Error; err != nil {
-		log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.SaveSettings: failed to save settings")
+	// Поиск существующих настроек
+	var existing GameSetting
+	err = h.db.Where("game_id = ?", g.ID).First(&existing).Error
+	if err == nil {
+		// Обновляем существующие
+		existing.AllowHints = allowHints
+		existing.HintPenaltySeconds = hintPenaltySeconds
+		existing.MaxHints = maxHints
+		existing.PerLevelTimeLimit = perLevelTimeLimit
+		existing.HideAnswersUntilFinished = hideAnswersUntilFinished
+		existing.AutoStart = autoStart
+		if err := h.db.Save(&existing).Error; err != nil {
+			log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.SaveSettings: failed to save settings")
+			render.Page(c, http.StatusInternalServerError, "games-settings.html", gin.H{
+				"Game":     g,
+				"Settings": existing,
+				"Error":    "Ошибка сохранения: " + err.Error(),
+				"csrf":     csrf.GetToken(c),
+			})
+			return
+		}
+	} else if errors.Is(err, gorm.ErrRecordNotFound) {
+		// Создаём новую запись
+		settings := GameSetting{
+			GameID:                   g.ID,
+			AllowHints:               allowHints,
+			HintPenaltySeconds:       hintPenaltySeconds,
+			MaxHints:                 maxHints,
+			PerLevelTimeLimit:        perLevelTimeLimit,
+			HideAnswersUntilFinished: hideAnswersUntilFinished,
+			AutoStart:                autoStart,
+		}
+		if err := h.db.Create(&settings).Error; err != nil {
+			log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.SaveSettings: failed to save settings")
+			render.Page(c, http.StatusInternalServerError, "games-settings.html", gin.H{
+				"Game":     g,
+				"Settings": settings,
+				"Error":    "Ошибка сохранения: " + err.Error(),
+				"csrf":     csrf.GetToken(c),
+			})
+			return
+		}
+	} else {
+		log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.SaveSettings: failed to find settings")
 		render.Page(c, http.StatusInternalServerError, "games-settings.html", gin.H{
 			"Game":     g,
-			"Settings": settings,
-			"Error":    "Ошибка сохранения: " + err.Error(),
+			"Settings": GameSetting{},
+			"Error":    "Ошибка поиска настроек",
 			"csrf":     csrf.GetToken(c),
 		})
 		return
@@ -1102,10 +1218,14 @@ func (h *GameHandler) TestPage(c *gin.Context) {
 		log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.TestPage: failed to list test passings")
 	}
 
+	isAdmin := middleware.IsAdmin(c)
+
 	render.Page(c, http.StatusOK, "games-test.html", gin.H{
-		"Game":         g,
-		"TestPassings": testPassings,
-		"csrf":         csrf.GetToken(c),
+		"Game":          g,
+		"TestPassings":  testPassings,
+		"csrf":          csrf.GetToken(c),
+		"CurrentUserID": userID,
+		"IsAdmin":       isAdmin,
 	})
 }
 

@@ -149,7 +149,11 @@ func CheckTimeouts(db *gorm.DB, ctx context.Context) {
 			return
 		case <-ticker.C:
 			var activeProgresses []LevelProgress
-			if err := db.WithContext(ctx).Where("finished_at IS NULL").
+			// Используем FOR UPDATE SKIP LOCKED для предотвращения гонок между тиками
+			if err := db.WithContext(ctx).Clauses(clause.Locking{
+				Strength: "UPDATE",
+				Options:  "SKIP LOCKED",
+			}).Where("finished_at IS NULL").
 				Preload("GamePassing.Game.GameSetting").
 				Find(&activeProgresses).Error; err != nil {
 				log.Error().Err(err).Msg("CheckTimeouts: failed to fetch active progresses")
@@ -158,23 +162,42 @@ func CheckTimeouts(db *gorm.DB, ctx context.Context) {
 
 			now := time.Now()
 			for _, p := range activeProgresses {
-				// Защита от nil-указателей
-				if p.GamePassing.Game.GameSetting.ID == 0 {
-					log.Warn().Uint("progress_id", p.ID).Msg("CheckTimeouts: game setting not found for progress, skipping")
+				// Повторно загружаем прогресс с блокировкой для проверки актуальности
+				var currentProgress LevelProgress
+				if err := db.WithContext(ctx).Clauses(clause.Locking{
+					Strength: "UPDATE",
+					Options:  "SKIP LOCKED",
+				}).First(&currentProgress, p.ID).Error; err != nil {
+					// Запись уже заблокирована или удалена — пропускаем
 					continue
 				}
-				setting := p.GamePassing.Game.GameSetting
+				// Если прогресс уже завершён — пропускаем
+				if currentProgress.FinishedAt != nil {
+					continue
+				}
+
+				// Загружаем актуальные данные о прохождении и настройках
+				var passing GamePassing
+				if err := db.WithContext(ctx).Preload("Game.GameSetting").First(&passing, currentProgress.GamePassingID).Error; err != nil {
+					log.Error().Err(err).Uint("progress_id", currentProgress.ID).Msg("CheckTimeouts: failed to load passing")
+					continue
+				}
+				if passing.Game.GameSetting.ID == 0 {
+					log.Warn().Uint("progress_id", currentProgress.ID).Msg("CheckTimeouts: game setting not found for progress, skipping")
+					continue
+				}
+				setting := passing.Game.GameSetting
 				if setting.PerLevelTimeLimit > 0 {
-					elapsed := now.Sub(p.StartedAt)
+					elapsed := now.Sub(currentProgress.StartedAt)
 					limit := time.Duration(setting.PerLevelTimeLimit) * time.Minute
 					if elapsed >= limit {
-						p.FinishedAt = &now
-						if err := db.WithContext(ctx).Save(&p).Error; err != nil {
-							log.Error().Err(err).Uint("progress_id", p.ID).Msg("CheckTimeouts: failed to save progress")
+						currentProgress.FinishedAt = &now
+						if err := db.WithContext(ctx).Save(&currentProgress).Error; err != nil {
+							log.Error().Err(err).Uint("progress_id", currentProgress.ID).Msg("CheckTimeouts: failed to save progress")
 							continue
 						}
-						if err := AdvanceToNextLevel(db, p.GamePassingID, p.LevelID); err != nil {
-							log.Error().Err(err).Uint("passing_id", p.GamePassingID).Msg("CheckTimeouts: failed to advance level")
+						if err := AdvanceToNextLevel(db, currentProgress.GamePassingID, currentProgress.LevelID); err != nil {
+							log.Error().Err(err).Uint("passing_id", currentProgress.GamePassingID).Msg("CheckTimeouts: failed to advance level")
 						}
 					}
 				}

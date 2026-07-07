@@ -446,6 +446,7 @@ func newGameService(db *gorm.DB) *game.GameService {
 	gameRepo := game.NewGormGameRepo(db)
 	passingRepo := game.NewGormGamePassingRepo(db)
 	coAuthorSvc := game.NewCoAuthorService(db)
+	userRepo := user.NewGormUserRepo(db)
 
 	// Создаём локальное хранилище для тестов
 	localStorage := storage.NewLocalStorage()
@@ -460,6 +461,7 @@ func newGameService(db *gorm.DB) *game.GameService {
 		cfg,
 		localStorage,
 		nil, // cache
+		userRepo,
 	)
 }
 

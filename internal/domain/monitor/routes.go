@@ -57,7 +57,6 @@ func RegisterRoutes(
 
 		// @Summary Поток мониторинга (SSE)
 		// @Description Устанавливает Server-Sent Events соединение для получения обновлений прогресса игры.
-		// @Description Это лёгкая альтернатива WebSocket для однонаправленного мониторинга, снижающая нагрузку на сервер.
 		// @Tags monitor
 		// @Produce text/event-stream
 		// @Param id path int true "ID игры"
@@ -71,7 +70,6 @@ func RegisterRoutes(
 
 	// @Summary WebSocket мониторинга
 	// @Description Устанавливает WebSocket-соединение для получения обновлений прогресса игры.
-	// @Description Рекомендуется использовать SSE вместо WebSocket для мониторинга, так как SSE легче и не требует поддержания двустороннего канала.
 	// @Tags monitor
 	// @Param id path int true "ID игры"
 	// @Success 101 {string} string "Switching Protocols"
@@ -95,7 +93,6 @@ func RegisterRoutes(
 
 	// @Summary WebSocket чата
 	// @Description Устанавливает WebSocket-соединение для обмена сообщениями в чате.
-	// @Description Для чата WebSocket предпочтительнее, так как требуется двусторонняя связь в реальном времени.
 	// @Tags monitor
 	// @Param room query string true "ID комнаты чата"
 	// @Success 101 {string} string "Switching Protocols"
@@ -130,7 +127,6 @@ func RegisterRoutes(
 
 	// @Summary WebSocket логов
 	// @Description Устанавливает WebSocket-соединение для потоковой передачи логов игры.
-	// @Description Для логов также рекомендуется использовать SSE, если не требуется отправка команд с клиента.
 	// @Tags monitor
 	// @Param id path int true "ID игры"
 	// @Success 101 {string} string "Switching Protocols"

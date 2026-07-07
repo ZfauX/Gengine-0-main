@@ -1,3 +1,4 @@
+// internal/domain/game/co_author_service.go
 package game
 
 import (
@@ -6,7 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// Роли соавторов (константы для защиты от опечаток)
+// Роли соавторов
 const (
 	RoleContentEditor = "content_editor"
 	RoleModerator     = "moderator"
@@ -38,7 +39,6 @@ func (s *CoAuthorService) IsUserManager(gameID, userID uint) (bool, error) {
 }
 
 // HasPermission проверяет наличие у пользователя конкретной роли в игре.
-// Если пользователь — автор игры, всегда возвращает true.
 func (s *CoAuthorService) HasPermission(gameID, userID uint, requiredRole string) (bool, error) {
 	var game Game
 	if err := s.DB.First(&game, gameID).Error; err != nil {
@@ -73,6 +73,7 @@ func (s *CoAuthorService) CanEditContent(gameID, userID uint) (bool, error) {
 	return s.HasPermission(gameID, userID, RoleContentEditor)
 }
 
+// Add добавляет нового соавтора или восстанавливает удалённого.
 func (s *CoAuthorService) Add(gameID, newCoAuthorID, ownerID uint) error {
 	var game Game
 	if err := s.DB.First(&game, gameID).Error; err != nil {
@@ -84,14 +85,30 @@ func (s *CoAuthorService) Add(gameID, newCoAuthorID, ownerID uint) error {
 	if game.AuthorID == newCoAuthorID {
 		return errors.New("владелец уже имеет полный доступ")
 	}
-	var existing CoAuthor
-	if err := s.DB.Where("game_id = ? AND user_id = ?", gameID, newCoAuthorID).First(&existing).Error; err == nil {
+
+	// Проверяем, есть ли запись (включая мягко удалённые)
+	var co CoAuthor
+	err := s.DB.Unscoped().Where("game_id = ? AND user_id = ?", gameID, newCoAuthorID).First(&co).Error
+	if err == nil {
+		if co.DeletedAt.Valid {
+			// Восстанавливаем мягко удалённую запись
+			co.DeletedAt = gorm.DeletedAt{}
+			if err := s.DB.Save(&co).Error; err != nil {
+				return err
+			}
+			return nil
+		}
 		return errors.New("этот пользователь уже соавтор")
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
 	}
-	co := CoAuthor{GameID: gameID, UserID: newCoAuthorID, Role: RoleContentEditor}
+
+	// Нет записи — создаём новую
+	co = CoAuthor{GameID: gameID, UserID: newCoAuthorID, Role: RoleContentEditor}
 	return s.DB.Create(&co).Error
 }
 
+// Remove мягко удаляет соавтора.
 func (s *CoAuthorService) Remove(gameID, coAuthorUserID, ownerID uint) error {
 	var game Game
 	if err := s.DB.First(&game, gameID).Error; err != nil {
@@ -103,6 +120,7 @@ func (s *CoAuthorService) Remove(gameID, coAuthorUserID, ownerID uint) error {
 	return s.DB.Where("game_id = ? AND user_id = ?", gameID, coAuthorUserID).Delete(&CoAuthor{}).Error
 }
 
+// List возвращает список соавторов игры.
 func (s *CoAuthorService) List(gameID uint) ([]CoAuthor, error) {
 	var coAuthors []CoAuthor
 	err := s.DB.Preload("User").Where("game_id = ?", gameID).Find(&coAuthors).Error

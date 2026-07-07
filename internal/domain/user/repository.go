@@ -16,6 +16,7 @@ type UserRepository interface {
 	GetPublicProfile(ctx context.Context, id uint) (*User, error)
 	Update(ctx context.Context, id uint, fields map[string]any) error
 	GetByRole(ctx context.Context, role string) (*User, error)
+	GetUserRole(ctx context.Context, id uint) (string, error)
 
 	// Методы для админки с пагинацией
 	Count(ctx context.Context) (int64, error)
@@ -92,6 +93,12 @@ func (r *gormUserRepo) GetByRole(ctx context.Context, role string) (*User, error
 	var u User
 	err := r.db.WithContext(ctx).Where("role = ?", role).First(&u).Error
 	return &u, err
+}
+
+func (r *gormUserRepo) GetUserRole(ctx context.Context, id uint) (string, error) {
+	var role string
+	err := r.db.WithContext(ctx).Table("users").Select("role").Where("id = ?", id).Scan(&role).Error
+	return role, err
 }
 
 // --- Методы для админки ---

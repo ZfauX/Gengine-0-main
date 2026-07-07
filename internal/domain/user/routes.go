@@ -275,6 +275,7 @@ func RegisterRoutes(
 	// ПУБЛИЧНЫЙ ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ
 	// ============================================================
 	usersGroup := r.Group("/users")
+	usersGroup.Use(middleware.OptionalAuth(authSvc))
 	{
 		// @Summary Публичный профиль пользователя
 		// @Description Отображает публичный профиль пользователя по ID

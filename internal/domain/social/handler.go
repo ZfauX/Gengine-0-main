@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	apperrors "gengine-0/internal/pkg/errors"
+	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
 
 	"github.com/gin-gonic/gin"
@@ -135,8 +136,13 @@ func (h *FollowHandler) Subscriptions(c *gin.Context) {
 		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		return
 	}
+
+	isAdmin := middleware.IsAdmin(c)
+
 	render.Page(c, http.StatusOK, "follow-list.html", gin.H{
-		"Authors": authors,
-		"csrf":    csrf.GetToken(c),
+		"Authors":       authors,
+		"csrf":          csrf.GetToken(c),
+		"CurrentUserID": userID,
+		"IsAdmin":       isAdmin,
 	})
 }

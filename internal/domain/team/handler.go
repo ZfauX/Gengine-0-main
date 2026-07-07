@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/storage"
@@ -79,16 +80,24 @@ func (h *TeamHandler) MyTeams(c *gin.Context) {
 		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		return
 	}
+
+	isAdmin := middleware.IsAdmin(c)
+
 	render.Page(c, http.StatusOK, "teams-my.html", gin.H{
 		"Teams":         teams,
 		"CurrentUserID": userID,
+		"IsAdmin":       isAdmin,
 	})
 }
 
 // NewTeamForm показывает форму создания команды.
 func (h *TeamHandler) NewTeamForm(c *gin.Context) {
+	userID := c.GetUint("userID")
+	isAdmin := middleware.IsAdmin(c)
 	render.Page(c, http.StatusOK, "teams-new.html", gin.H{
-		"csrf": csrf.GetToken(c),
+		"csrf":          csrf.GetToken(c),
+		"CurrentUserID": userID,
+		"IsAdmin":       isAdmin,
 	})
 }
 
@@ -142,12 +151,15 @@ func (h *TeamHandler) ViewTeam(c *gin.Context) {
 
 	canManage := h.teamService.CanManageTeam(c.Request.Context(), req.TeamID, userID)
 
+	isAdmin := middleware.IsAdmin(c)
+
 	render.Page(c, http.StatusOK, "teams-members.html", gin.H{
 		"Team":          team,
 		"Members":       members,
 		"CanManage":     canManage,
 		"IsCaptain":     team.CaptainID == userID,
 		"CurrentUserID": userID,
+		"IsAdmin":       isAdmin,
 	})
 }
 
@@ -173,6 +185,8 @@ func (h *TeamHandler) Members(c *gin.Context) {
 
 	canManage := h.teamService.CanManageTeam(c.Request.Context(), req.TeamID, userID)
 
+	isAdmin := middleware.IsAdmin(c)
+
 	render.Page(c, http.StatusOK, "teams-members.html", gin.H{
 		"GameID":        c.Param("game_id"),
 		"TeamID":        req.TeamID,
@@ -181,6 +195,7 @@ func (h *TeamHandler) Members(c *gin.Context) {
 		"CanManage":     canManage,
 		"IsCaptain":     team.CaptainID == userID,
 		"CurrentUserID": userID,
+		"IsAdmin":       isAdmin,
 	})
 }
 
@@ -198,11 +213,17 @@ func (h *TeamHandler) AddMemberForm(c *gin.Context) {
 		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		return
 	}
+
+	userID := c.GetUint("userID")
+	isAdmin := middleware.IsAdmin(c)
+
 	render.Page(c, http.StatusOK, "teams-add_member.html", gin.H{
-		"GameID": c.Param("game_id"),
-		"TeamID": req.TeamID,
-		"Users":  availableUsers,
-		"csrf":   csrf.GetToken(c),
+		"GameID":        c.Param("game_id"),
+		"TeamID":        req.TeamID,
+		"Users":         availableUsers,
+		"csrf":          csrf.GetToken(c),
+		"CurrentUserID": userID,
+		"IsAdmin":       isAdmin,
 	})
 }
 
@@ -276,11 +297,17 @@ func (h *TeamHandler) ChangeCaptainForm(c *gin.Context) {
 		}
 		return
 	}
+
+	userID := c.GetUint("userID")
+	isAdmin := middleware.IsAdmin(c)
+
 	render.Page(c, http.StatusOK, "teams-change_captain.html", gin.H{
-		"GameID":  c.Param("game_id"),
-		"TeamID":  req.TeamID,
-		"Members": members,
-		"csrf":    csrf.GetToken(c),
+		"GameID":        c.Param("game_id"),
+		"TeamID":        req.TeamID,
+		"Members":       members,
+		"csrf":          csrf.GetToken(c),
+		"CurrentUserID": userID,
+		"IsAdmin":       isAdmin,
 	})
 }
 
@@ -344,10 +371,16 @@ func (h *InvitationHandler) Index(c *gin.Context) {
 		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		return
 	}
+
+	userID := c.GetUint("userID")
+	isAdmin := middleware.IsAdmin(c)
+
 	render.Page(c, http.StatusOK, "invitations-index.html", gin.H{
-		"GameID":      c.Param("game_id"),
-		"TeamID":      req.TeamID,
-		"Invitations": invitations,
+		"GameID":        c.Param("game_id"),
+		"TeamID":        req.TeamID,
+		"Invitations":   invitations,
+		"CurrentUserID": userID,
+		"IsAdmin":       isAdmin,
 	})
 }
 
@@ -358,10 +391,16 @@ func (h *InvitationHandler) NewForm(c *gin.Context) {
 		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID команды"})
 		return
 	}
+
+	userID := c.GetUint("userID")
+	isAdmin := middleware.IsAdmin(c)
+
 	render.Page(c, http.StatusOK, "invitations-new.html", gin.H{
-		"GameID": c.Param("game_id"),
-		"TeamID": req.TeamID,
-		"csrf":   csrf.GetToken(c),
+		"GameID":        c.Param("game_id"),
+		"TeamID":        req.TeamID,
+		"csrf":          csrf.GetToken(c),
+		"CurrentUserID": userID,
+		"IsAdmin":       isAdmin,
 	})
 }
 
@@ -413,9 +452,13 @@ func (h *InvitationHandler) MyInvitations(c *gin.Context) {
 		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		return
 	}
+
+	isAdmin := middleware.IsAdmin(c)
+
 	render.Page(c, http.StatusOK, "invitations-my.html", gin.H{
 		"Invitations":   invitations,
 		"CurrentUserID": userID,
+		"IsAdmin":       isAdmin,
 	})
 }
 

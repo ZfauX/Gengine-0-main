@@ -26,7 +26,7 @@
         </div>
 
         <!-- Форма отправки кода -->
-        <form id="code-form" action="/game/{{.PassingID}}" method="POST" class="flex flex-wrap items-center gap-3 mt-4 fade-in">
+        <form id="code-form" action="/game/{{.PassingID}}/submit" method="POST" class="flex flex-wrap items-center gap-3 mt-4 fade-in">
             <input type="hidden" name="_csrf" value="{{.csrf}}">
             <input type="text" name="code" id="code-input" placeholder="Введите код" required autofocus
                    class="flex-1 min-w-[180px] rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2">
@@ -66,16 +66,14 @@
     </div>
 </div>
 
-<script>
+<script nonce="{{.csp_nonce}}">
     (function() {
-        // Получаем данные из data-атрибутов контейнера
         const container = document.querySelector('[data-passing-id]');
         if (!container) return;
 
         const timeLimitSeconds = parseInt(container.dataset.timeLimit, 10) || 0;
         const passingId = container.dataset.passingId;
 
-        // Таймер
         const timerDisplay = document.getElementById('timer-display');
         const codeForm = document.getElementById('code-form');
         let timeLeft = timeLimitSeconds;
@@ -103,7 +101,6 @@
             setInterval(updateTimer, 1000);
         }
 
-        // Обработка ошибки из URL
         const urlParams = new URLSearchParams(window.location.search);
         const msgArea = document.getElementById('message-area');
         if (urlParams.get('error')) {
@@ -111,7 +108,6 @@
             setTimeout(() => msgArea.innerHTML = '', 3000);
         }
 
-        // Дополнительно: отправка по Enter (уже есть в input, но оставим на всякий случай)
         const codeInput = document.getElementById('code-input');
         if (codeInput) {
             codeInput.addEventListener('keydown', function(e) {
