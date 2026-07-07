@@ -60,30 +60,36 @@ func NewGameplayHandler(
 func (h *GameplayHandler) ShowGame(c *gin.Context) {
 	passingID, err := strconv.Atoi(c.Param("passing_id"))
 	if err != nil || passingID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID прохождения"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID прохождения"})
 		return
 	}
 	userID := c.GetUint("userID")
 
+	// Проверяем наличие активного уровня
 	progress, err := GetCurrentProgress(h.db, uint(passingID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.HTML(http.StatusNotFound, "errors/404.html", gin.H{"Error": "Нет активного уровня"})
-		} else {
-			log.Error().Err(err).Int("passing_id", passingID).Msg("ShowGame: failed to get current progress")
-			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+			// Нет активного уровня — игра завершена
+			render.Page(c, http.StatusOK, "gameplay-finished.html", gin.H{
+				"PassingID": passingID,
+				"GameID":    c.Query("game_id"),
+				"csrf":      csrf.GetToken(c),
+			})
+			return
 		}
+		log.Error().Err(err).Int("passing_id", passingID).Msg("ShowGame: failed to get current progress")
+		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		return
 	}
 
 	var passing GamePassing
 	if err := h.db.Preload("Team").First(&passing, passingID).Error; err != nil {
 		log.Error().Err(err).Int("passing_id", passingID).Msg("ShowGame: failed to get passing")
-		c.HTML(http.StatusForbidden, "errors/403.html", nil)
+		c.HTML(http.StatusForbidden, "errors-403.html", nil)
 		return
 	}
 	if !h.isTeamMember(passing.TeamID, userID) {
-		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": "Вы не являетесь участником этой команды"})
+		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": "Вы не являетесь участником этой команды"})
 		return
 	}
 
@@ -108,7 +114,6 @@ func (h *GameplayHandler) ShowGame(c *gin.Context) {
 
 	hideAnswers := settings.HideAnswersUntilFinished && passing.Status != StatusFinished
 
-	// Используем локальный тип gameBlackboxVotingSession
 	votingActive := h.db.Where("game_passing_id = ? AND level_id = ? AND is_open = true", passingID, progress.LevelID).First(&gameBlackboxVotingSession{}).Error == nil
 
 	render.Page(c, http.StatusOK, "gameplay-show.html", gin.H{
@@ -119,6 +124,7 @@ func (h *GameplayHandler) ShowGame(c *gin.Context) {
 		"HideAnswers":      hideAnswers,
 		"VotingActive":     votingActive,
 		"TeamID":           passing.TeamID,
+		"GameID":           passing.GameID,
 		"csrf":             csrf.GetToken(c),
 	})
 }
@@ -127,13 +133,13 @@ func (h *GameplayHandler) ShowGame(c *gin.Context) {
 func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 	passingID, err := strconv.Atoi(c.Param("passing_id"))
 	if err != nil || passingID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID прохождения"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID прохождения"})
 		return
 	}
 	userID := c.GetUint("userID")
 
 	if !h.isUserInPassing(uint(passingID), userID) {
-		c.HTML(http.StatusForbidden, "errors/403.html", nil)
+		c.HTML(http.StatusForbidden, "errors-403.html", nil)
 		return
 	}
 
@@ -163,8 +169,15 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 		return
 	}
 
+	// Пытаемся отправить код
 	attempt, err := h.gamePlaySvc.SubmitCode(c.Request.Context(), uint(passingID), userID, code)
 	if err != nil {
+		// Если ошибка говорит о том, что нет активного уровня — игра завершена
+		if errors.Is(err, gorm.ErrRecordNotFound) || err.Error() == "нет активного уровня" {
+			// Перенаправляем на страницу завершения игры
+			c.Redirect(http.StatusFound, "/game/"+c.Param("passing_id")+"/finished")
+			return
+		}
 		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
 			"Error": err.Error(),
 			"csrf":  csrf.GetToken(c),
@@ -183,7 +196,7 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 func (h *GameplayHandler) UseHint(c *gin.Context) {
 	passingID, err := strconv.Atoi(c.Param("passing_id"))
 	if err != nil || passingID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID прохождения"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID прохождения"})
 		return
 	}
 	if err := h.gamePlaySvc.UseHint(c.Request.Context(), uint(passingID), c.GetUint("userID")); err != nil {
@@ -200,13 +213,13 @@ func (h *GameplayHandler) UseHint(c *gin.Context) {
 func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 	passingID, err := strconv.Atoi(c.Param("passing_id"))
 	if err != nil || passingID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID прохождения"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID прохождения"})
 		return
 	}
 	userID := c.GetUint("userID")
 
 	if !h.isUserInPassing(uint(passingID), userID) {
-		c.HTML(http.StatusForbidden, "errors/403.html", nil)
+		c.HTML(http.StatusForbidden, "errors-403.html", nil)
 		return
 	}
 
@@ -273,11 +286,11 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 func (h *GameplayHandler) AcceptAnswer(c *gin.Context) {
 	passingID, err := strconv.Atoi(c.Param("passing_id"))
 	if err != nil || passingID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID прохождения"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID прохождения"})
 		return
 	}
 	if err := h.gamePlaySvc.AcceptBlackboxAnswer(c.Request.Context(), uint(passingID), c.GetUint("userID")); err != nil {
-		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
+		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
 		return
 	}
 	c.Redirect(http.StatusFound, "/games/"+c.Query("game_id")+"/monitor")
@@ -289,14 +302,14 @@ func (h *GameplayHandler) AcceptAnswer(c *gin.Context) {
 func (h *GameplayHandler) StartTesting(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID игры"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
 	userID := c.GetUint("userID")
 
 	passing, err := h.gamePlaySvc.StartTesting(c.Request.Context(), uint(gameID), userID)
 	if err != nil {
-		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
+		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
 		return
 	}
 	c.Redirect(http.StatusFound, "/testing/"+strconv.Itoa(int(passing.ID)))
@@ -306,21 +319,45 @@ func (h *GameplayHandler) StartTesting(c *gin.Context) {
 func (h *GameplayHandler) ShowTestGame(c *gin.Context) {
 	passingID, err := strconv.Atoi(c.Param("passing_id"))
 	if err != nil || passingID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID прохождения"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID прохождения"})
 		return
 	}
+	userID := c.GetUint("userID")
+
+	var passing GamePassing
+	if err := h.db.First(&passing, passingID).Error; err != nil {
+		c.HTML(http.StatusNotFound, "errors-404.html", nil)
+		return
+	}
+	var g Game
+	if err := h.db.First(&g, passing.GameID).Error; err != nil {
+		c.HTML(http.StatusNotFound, "errors-404.html", nil)
+		return
+	}
+	ok, err := h.gameService.(*GameService).coAuthor.IsUserManager(g.ID, userID)
+	if err != nil || !ok {
+		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": "Доступ запрещён"})
+		return
+	}
+
 	progress, err := GetCurrentProgress(h.db, uint(passingID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.HTML(http.StatusNotFound, "errors/404.html", gin.H{"Error": "Уровень не найден"})
-		} else {
-			log.Error().Err(err).Int("passing_id", passingID).Msg("ShowTestGame: failed to get current progress")
-			c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+			render.Page(c, http.StatusOK, "gameplay-test-finished.html", gin.H{
+				"PassingID": passingID,
+				"GameID":    passing.GameID,
+				"csrf":      csrf.GetToken(c),
+			})
+			return
 		}
+		log.Error().Err(err).Int("passing_id", passingID).Msg("ShowTestGame: failed to get current progress")
+		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		return
 	}
+
 	render.Page(c, http.StatusOK, "gameplay-test.html", gin.H{
 		"PassingID": passingID,
+		"GameID":    passing.GameID,
 		"Level":     progress.Level,
 		"csrf":      csrf.GetToken(c),
 	})
@@ -330,7 +367,7 @@ func (h *GameplayHandler) ShowTestGame(c *gin.Context) {
 func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
 	passingID, err := strconv.Atoi(c.Param("passing_id"))
 	if err != nil || passingID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID прохождения"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID прохождения"})
 		return
 	}
 
@@ -362,7 +399,7 @@ func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
 
 	if _, err := h.gamePlaySvc.SubmitTestCode(c.Request.Context(), uint(passingID), c.GetUint("userID"), code); err != nil {
 		log.Error().Err(err).Int("passing_id", passingID).Msg("SubmitTestCode: service error")
-		c.HTML(http.StatusInternalServerError, "errors/500.html", gin.H{"Error": err.Error()})
+		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
 		return
 	}
 	c.Redirect(http.StatusFound, "/testing/"+c.Param("passing_id"))
@@ -372,11 +409,11 @@ func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
 func (h *GameplayHandler) SkipTestLevel(c *gin.Context) {
 	passingID, err := strconv.Atoi(c.Param("passing_id"))
 	if err != nil || passingID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors/400.html", gin.H{"Error": "Неверный ID прохождения"})
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID прохождения"})
 		return
 	}
 	if err := h.gamePlaySvc.SkipLevelTest(c.Request.Context(), uint(passingID), c.GetUint("userID")); err != nil {
-		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": err.Error()})
+		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
 		return
 	}
 	c.Redirect(http.StatusFound, "/testing/"+c.Param("passing_id"))

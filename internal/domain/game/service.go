@@ -11,6 +11,7 @@ import (
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/level"
+	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/cache"
 	"gengine-0/internal/pkg/metrics"
 	"gengine-0/internal/pkg/storage"
@@ -63,6 +64,7 @@ type UpdateGameDTO struct {
 type GameService struct {
 	gameRepo       GameRepository
 	passingRepo    GamePassingRepository
+	userRepo       user.UserRepository
 	coAuthor       *CoAuthorService
 	reviewService  *ReviewService
 	monitorService *MonitorService
@@ -82,10 +84,12 @@ func NewGameService(
 	cfg *config.Config,
 	storage storage.FileStorage,
 	cache *cache.Cache,
+	userRepo user.UserRepository,
 ) *GameService {
 	return &GameService{
 		gameRepo:       gameRepo,
 		passingRepo:    passingRepo,
+		userRepo:       userRepo,
 		coAuthor:       ca,
 		reviewService:  rs,
 		monitorService: ms,
@@ -98,11 +102,10 @@ func NewGameService(
 
 // hasAdminRole проверяет, является ли пользователь администратором.
 func (s *GameService) hasAdminRole(ctx context.Context, userID uint) bool {
-	if userID == 0 {
+	if userID == 0 || s.userRepo == nil {
 		return false
 	}
-	var role string
-	err := s.gameRepo.DB(ctx).Table("users").Select("role").Where("id = ?", userID).Scan(&role).Error
+	role, err := s.userRepo.GetUserRole(ctx, userID)
 	if err != nil {
 		log.Warn().Err(err).Uint("user_id", userID).Msg("hasAdminRole: failed to fetch user role")
 		return false
@@ -210,6 +213,7 @@ func (s *GameService) UpdateGameWithCover(ctx context.Context, gameID uint, dto 
 
 	if s.cache != nil {
 		s.cache.Delete(fmt.Sprintf("game:%d", gameID))
+		s.cache.DeleteByPrefix("games:list:")
 	}
 
 	return s.gameRepo.Update(ctx, game)
@@ -285,23 +289,10 @@ func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint) (*Gam
 }
 
 // ListFilteredPaginated возвращает список игр с фильтрацией и пагинацией.
-// Использует триграммный поиск для ускорения поиска по названию (индекс gin_trgm_ops).
+// Кэширование отключено, чтобы удалённые игры сразу перестали отображаться.
 func (s *GameService) ListFilteredPaginated(ctx context.Context, filter GameFilter, sort *GameSort, page, perPage int) ([]Game, int64, error) {
-	cacheable := filter.Status == "published" && filter.Search == "" && filter.AuthorID == nil && filter.DateFrom == "" && filter.DateTo == ""
-
-	if cacheable && s.cache != nil {
-		cacheKey := fmt.Sprintf("games:list:status=%s:sort=%s:%s:page=%d:per=%d", filter.Status, sort.Field, sort.Order, page, perPage)
-		if cached, ok := s.cache.Get(cacheKey); ok {
-			if result, ok := cached.(map[string]interface{}); ok {
-				if games, ok := result["games"].([]Game); ok {
-					if total, ok := result["total"].(int64); ok {
-						log.Debug().Msg("ListFilteredPaginated: cache hit")
-						return games, total, nil
-					}
-				}
-			}
-		}
-	}
+	// Кэширование отключено для предотвращения отображения удалённых игр
+	// (удаление не сбрасывало кэш корректно). Теперь данные всегда свежие.
 
 	query := s.gameRepo.Model(ctx).Preload("Author")
 	query = query.Where("(visibility = 'public' OR author_id = ?) AND (is_draft = false OR author_id = ?)", filter.ViewerID, filter.ViewerID)
@@ -370,15 +361,6 @@ func (s *GameService) ListFilteredPaginated(ctx context.Context, filter GameFilt
 		return nil, 0, err
 	}
 
-	if cacheable && s.cache != nil && len(games) > 0 {
-		cacheKey := fmt.Sprintf("games:list:status=%s:sort=%s:%s:page=%d:per=%d", filter.Status, sort.Field, sort.Order, page, perPage)
-		result := map[string]interface{}{
-			"games": games,
-			"total": total,
-		}
-		s.cache.Set(cacheKey, result, 30*time.Second)
-	}
-
 	return games, total, nil
 }
 
@@ -405,7 +387,7 @@ func (s *GameService) Update(ctx context.Context, id uint, updated *Game, userID
 
 	if s.cache != nil {
 		s.cache.Delete(fmt.Sprintf("game:%d", id))
-		s.cache.Delete("games:list:*")
+		s.cache.DeleteByPrefix("games:list:")
 	}
 
 	return s.gameRepo.Update(ctx, game)
@@ -443,7 +425,7 @@ func (s *GameService) Publish(ctx context.Context, id uint, userID uint) error {
 
 	if s.cache != nil {
 		s.cache.Delete(fmt.Sprintf("game:%d", id))
-		s.cache.Delete("games:list:*")
+		s.cache.DeleteByPrefix("games:list:")
 	}
 	return nil
 }
@@ -477,7 +459,7 @@ func (s *GameService) Delete(ctx context.Context, id uint, userID uint) error {
 
 	if s.cache != nil {
 		s.cache.Delete(fmt.Sprintf("game:%d", id))
-		s.cache.Delete("games:list:*")
+		s.cache.DeleteByPrefix("games:list:")
 	}
 	return nil
 }

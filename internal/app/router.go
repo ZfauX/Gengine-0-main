@@ -16,6 +16,7 @@ import (
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/monitor"
+	"gengine-0/internal/domain/notification"
 	"gengine-0/internal/domain/social"
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/tournament"
@@ -165,22 +166,20 @@ func (app *App) setupEngine(r *gin.Engine) {
 	})
 
 	// ============================================================
-	// ГЛАВНАЯ СТРАНИЦА — рендерим home.html вместо редиректа
+	// ГЛАВНАЯ СТРАНИЦА — используем OptionalAuth вместо дублирования логики
 	// ============================================================
-	r.GET("/", func(c *gin.Context) {
+	r.GET("/", middleware.OptionalAuth(app.Deps.Services.Auth), func(c *gin.Context) {
 		var userID uint
-		var isAdmin bool
-		token, err := c.Cookie("jwt")
-		if err == nil && token != "" {
-			id, role, parseErr := app.Deps.Services.Auth.ParseToken(token)
-			if parseErr == nil {
-				userID = id
-				isAdmin = role == "admin"
-			}
+		var role string
+		if id, ok := c.Get("userID"); ok {
+			userID = id.(uint)
+		}
+		if r, ok := c.Get("role"); ok {
+			role = r.(string)
 		}
 		render.Page(c, http.StatusOK, "home.html", gin.H{
 			"CurrentUserID": userID,
-			"IsAdmin":       isAdmin,
+			"IsAdmin":       role == "admin",
 			"csrf":          csrf.GetToken(c),
 		})
 	})
@@ -204,6 +203,7 @@ func (app *App) registerAllRoutes(r *gin.Engine) error {
 		return fmt.Errorf("регистрация маршрутов экспорта: %w", err)
 	}
 	app.registerGameplayRoutes(r)
+	notification.RegisterRoutes(r, app.DB, app.Deps.Services.Auth)
 	return nil
 }
 
@@ -312,6 +312,7 @@ func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.
 		cfg,
 		localStorage,
 		appCache,
+		repos.User,
 	)
 
 	gamePlaySvc := game.NewGamePlayService(
@@ -412,6 +413,7 @@ func (app *App) registerGameRoutes(r *gin.Engine) {
 		app.Deps.Services.Auth,
 		app.Deps.Services.GamePlay,
 		app.Deps.Services.GameAdmin,
+		app.Deps.Services.Review, // передаём ReviewService
 	)
 }
 
@@ -500,8 +502,16 @@ func (app *App) registerGameplayRoutes(r *gin.Engine) {
 // ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ОБРАТНОЙ СОВМЕСТИМОСТИ
 // =============================================================================
 
+// SetupRouter — legacy-функция для обратной совместимости с тестами.
+// Создаёт новый router с нуля (deps создаются внутри).
 func SetupRouter(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub, cfg *config.Config, baseDir string, appCache *cache.Cache) (*gin.Engine, error) {
 	deps := NewDependencies(db, cfg, hub, localStorage, appCache)
+	app := NewApp(db, localStorage, hub, cfg, baseDir, deps)
+	return app.SetupRouter()
+}
+
+// SetupRouterWithDeps — альтернатива, которая принимает готовые deps (избегает дублирования).
+func SetupRouterWithDeps(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub, cfg *config.Config, baseDir string, deps *Dependencies) (*gin.Engine, error) {
 	app := NewApp(db, localStorage, hub, cfg, baseDir, deps)
 	return app.SetupRouter()
 }

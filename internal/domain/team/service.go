@@ -75,20 +75,38 @@ func (s *TeamService) CanManageTeam(ctx context.Context, teamID, userID uint) bo
 	if team.CaptainID == userID {
 		return true
 	}
+	// Безопасная проверка типа вместо unsafe assertion
+	db, ok := s.getDB()
+	if !ok {
+		return false
+	}
 	var passing gamePassing
-	if err := s.teamRepo.(*gormTeamRepo).db.Where("team_id = ?", teamID).First(&passing).Error; err == nil {
+	if err := db.Where("team_id = ?", teamID).First(&passing).Error; err == nil {
 		var g gameModel
-		if s.teamRepo.(*gormTeamRepo).db.First(&g, passing.GameID).Error == nil && g.AuthorID == userID {
+		if db.First(&g, passing.GameID).Error == nil && g.AuthorID == userID {
 			return true
 		}
 	}
 	return false
 }
 
+// getDB возвращает *gorm.DB из repository, если это возможно.
+// Возвращает false, если repository не поддерживает прямой доступ к БД.
+func (s *TeamService) getDB() (*gorm.DB, bool) {
+	if repo, ok := s.teamRepo.(*gormTeamRepo); ok {
+		return repo.db, true
+	}
+	return nil, false
+}
+
 func (s *TeamService) GetAvailableUsers(ctx context.Context, teamID uint) ([]user.User, error) {
+	db, ok := s.getDB()
+	if !ok {
+		return nil, errors.New("repository не поддерживает прямой доступ к БД")
+	}
 	var users []user.User
-	subQuery := s.teamRepo.(*gormTeamRepo).db.Table("team_members").Select("user_id").Where("team_id = ?", teamID)
-	err := s.teamRepo.(*gormTeamRepo).db.Model(&user.User{}).Where("id NOT IN (?)", subQuery).Find(&users).Error
+	subQuery := db.Table("team_members").Select("user_id").Where("team_id = ?", teamID)
+	err := db.Model(&user.User{}).Where("id NOT IN (?)", subQuery).Find(&users).Error
 	return users, err
 }
 
@@ -144,8 +162,12 @@ func (s *TeamService) ChangeCaptain(ctx context.Context, teamID, newCaptainID, a
 
 // updateTeamMembersTotal обновляет gauge с общим количеством участников команд.
 func (s *TeamService) updateTeamMembersTotal() {
+	db, ok := s.getDB()
+	if !ok {
+		return
+	}
 	var count int64
-	s.teamRepo.(*gormTeamRepo).db.Table("team_members").Count(&count)
+	db.Table("team_members").Count(&count)
 	metrics.SetTeamMembersTotal(float64(count))
 }
 
@@ -196,12 +218,16 @@ func (s *InvitationService) CreateInvitation(ctx context.Context, teamID, invite
 
 	isCaptain := (team.CaptainID == actorID)
 	if !isCaptain {
+		db, ok := s.teamRepo.(*gormTeamRepo)
+		if !ok {
+			return nil, errors.New("не удалось получить доступ к БД")
+		}
 		var passing gamePassing
-		if err := s.teamRepo.(*gormTeamRepo).db.Where("team_id = ?", teamID).First(&passing).Error; err != nil {
+		if err := db.db.Where("team_id = ?", teamID).First(&passing).Error; err != nil {
 			return nil, errors.New("не удалось определить игру для команды")
 		}
-		ok, _ := s.authorizer.IsUserManager(passing.GameID, actorID)
-		if !ok {
+		isManager, _ := s.authorizer.IsUserManager(passing.GameID, actorID)
+		if !isManager {
 			return nil, errors.New("только капитан или автор игры может создавать приглашения")
 		}
 	}
@@ -230,15 +256,18 @@ func (s *InvitationService) CreateInvitation(ctx context.Context, teamID, invite
 
 	if s.cfg != nil && s.cfg.SMTP.Enabled {
 		// Используем глобальную очередь вместо локального сервиса
-		var invitedUser user.User
-		if err := s.teamRepo.(*gormTeamRepo).db.First(&invitedUser, invitedUserID).Error; err == nil {
-			acceptLink := fmt.Sprintf("%s/invitations/%d/accept", s.cfg.Server.BaseURL, inv.ID)
-			if err := email.Enqueue(
-				invitedUser.Email,
-				"Приглашение в команду",
-				fmt.Sprintf("Вас пригласили в команду «%s». Принять приглашение: %s", team.Name, acceptLink),
-			); err != nil {
-				log.Error().Err(err).Str("email", invitedUser.Email).Msg("failed to enqueue invitation email")
+		db, ok := s.teamRepo.(*gormTeamRepo)
+		if ok {
+			var invitedUser user.User
+			if err := db.db.First(&invitedUser, invitedUserID).Error; err == nil {
+				acceptLink := fmt.Sprintf("%s/invitations/%d/accept", s.cfg.Server.BaseURL, inv.ID)
+				if err := email.Enqueue(
+					invitedUser.Email,
+					"Приглашение в команду",
+					fmt.Sprintf("Вас пригласили в команду «%s». Принять приглашение: %s", team.Name, acceptLink),
+				); err != nil {
+					log.Error().Err(err).Str("email", invitedUser.Email).Msg("failed to enqueue invitation email")
+				}
 			}
 		}
 	}
@@ -266,9 +295,12 @@ func (s *InvitationService) AcceptInvitation(ctx context.Context, invitationID, 
 		return errors.New("приглашение уже обработано")
 	}
 
-	db := s.teamRepo.(*gormTeamRepo).db
+	db, ok := s.teamRepo.(*gormTeamRepo)
+	if !ok {
+		return errors.New("repository не поддерживает прямой доступ к БД")
+	}
 
-	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&Invitation{}).Where("id = ?", invitationID).Update("status", InvitationAccepted).Error; err != nil {
 			return err
 		}
@@ -281,11 +313,9 @@ func (s *InvitationService) AcceptInvitation(ctx context.Context, invitationID, 
 		return err
 	}
 
-	if ts, ok := s.teamRepo.(*gormTeamRepo); ok {
-		var count int64
-		ts.db.Table("team_members").Count(&count)
-		metrics.SetTeamMembersTotal(float64(count))
-	}
+	var count int64
+	db.db.Table("team_members").Count(&count)
+	metrics.SetTeamMembersTotal(float64(count))
 	return nil
 }
 

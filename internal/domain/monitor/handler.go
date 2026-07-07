@@ -14,6 +14,7 @@ import (
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/user"
 	apperrors "gengine-0/internal/pkg/errors"
+	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/validation"
@@ -95,9 +96,15 @@ func (h *MonitorHandler) MonitorPage(c *gin.Context) {
 		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
+
+	userID := c.GetUint("userID")
+	isAdmin := middleware.IsAdmin(c)
+
 	render.Page(c, http.StatusOK, "monitor-page.html", gin.H{
-		"GameID": req.ID,
-		"csrf":   csrf.GetToken(c),
+		"GameID":        req.ID,
+		"csrf":          csrf.GetToken(c),
+		"CurrentUserID": userID,
+		"IsAdmin":       isAdmin,
 	})
 }
 
@@ -206,7 +213,7 @@ func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 	}()
 }
 
-// ChatPage отображает HTML-страницу чата игры.
+// ChatPage отображает HTML-страницу чата игры.// ChatPage отображает HTML-страницу чата игры.
 func (h *MonitorHandler) ChatPage(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -244,13 +251,17 @@ func (h *MonitorHandler) ChatPage(c *gin.Context) {
 		log.Error().Err(err).Uint("game_id", gameID).Uint("user_id", userID).Msg("ChatPage: failed to find passing")
 	}
 
+	isAdmin := middleware.IsAdmin(c)
+
 	render.Page(c, http.StatusOK, "chat-page.html", gin.H{
-		"GameID":    gameID,
-		"PassingID": passingID,
-		"TeamID":    teamID,
-		"UserID":    userID,
-		"UserName":  userName,
-		"csrf":      csrf.GetToken(c),
+		"GameID":        gameID,
+		"PassingID":     passingID,
+		"TeamID":        teamID,
+		"UserID":        userID,
+		"UserName":      userName,
+		"csrf":          csrf.GetToken(c),
+		"CurrentUserID": userID,
+		"IsAdmin":       isAdmin,
 	})
 }
 
@@ -284,9 +295,15 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 		log.Error().Err(err).Str("room_id", roomID).Msg("ChatWS: failed to upgrade connection")
 		return
 	}
+	// После успешного апгрейда запрещаем дальнейшую запись в ответ
+	c.Abort()
 
 	client := ws.NewClient(conn, roomID, remoteIP)
 	h.hub.RegisterClient(client)
+	defer func() {
+		h.hub.UnregisterClient(client)
+		client.Close()
+	}()
 
 	msgs, err := h.chatService.GetMessages(c.Request.Context(), uint(roomIDUint), 50)
 	if err != nil {
@@ -309,52 +326,46 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
 
-	go func() {
-		defer func() {
-			h.hub.UnregisterClient(client)
-			client.Close()
-		}()
+	// Используем экспортируемую функцию из пакета websocket
+	go ws.WritePumpWithContext(ctx, client)
 
-		ws.WritePumpWithContext(ctx, client)
-
-		for {
-			select {
-			case <-ctx.Done():
-				log.Debug().Str("room_id", roomID).Msg("ChatWS: context cancelled, stopping read loop")
+	for {
+		select {
+		case <-ctx.Done():
+			log.Debug().Str("room_id", roomID).Msg("ChatWS: context cancelled, stopping read loop")
+			return
+		default:
+			_, message, err := conn.ReadMessage()
+			if err != nil {
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+					log.Error().Err(err).Str("room_id", roomID).Msg("ChatWS: read error")
+				}
 				return
-			default:
-				_, message, err := conn.ReadMessage()
-				if err != nil {
-					if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-						log.Error().Err(err).Str("room_id", roomID).Msg("ChatWS: read error")
-					}
-					return
-				}
-				cleanContent := sanitize.StripHTML(string(message))
-				if cleanContent == "" {
-					continue
-				}
-				msg, err := h.chatService.SaveMessage(c.Request.Context(), uint(roomIDUint), userID, cleanContent)
-				if err != nil {
-					log.Error().Err(err).Str("room_id", roomID).Uint("user_id", userID).Msg("ChatWS: failed to save message")
-					continue
-				}
-				if err := h.db.Preload("User").First(&msg, msg.ID).Error; err != nil {
-					log.Error().Err(err).Uint("msg_id", msg.ID).Msg("ChatWS: failed to preload user")
-				}
-				msg.Content = sanitize.StripHTML(msg.Content)
-				if msg.User.Name != "" {
-					msg.User.Name = sanitize.StripHTML(msg.User.Name)
-				}
-				resp, err := json.Marshal(gin.H{"type": "message", "message": msg})
-				if err != nil {
-					log.Error().Err(err).Uint("msg_id", msg.ID).Msg("ChatWS: failed to marshal message")
-					continue
-				}
-				h.hub.BroadcastToRoom(roomID, resp)
 			}
+			cleanContent := sanitize.StripHTML(string(message))
+			if cleanContent == "" {
+				continue
+			}
+			msg, err := h.chatService.SaveMessage(c.Request.Context(), uint(roomIDUint), userID, cleanContent)
+			if err != nil {
+				log.Error().Err(err).Str("room_id", roomID).Uint("user_id", userID).Msg("ChatWS: failed to save message")
+				continue
+			}
+			if err := h.db.Preload("User").First(&msg, msg.ID).Error; err != nil {
+				log.Error().Err(err).Uint("msg_id", msg.ID).Msg("ChatWS: failed to preload user")
+			}
+			msg.Content = sanitize.StripHTML(msg.Content)
+			if msg.User.Name != "" {
+				msg.User.Name = sanitize.StripHTML(msg.User.Name)
+			}
+			resp, err := json.Marshal(gin.H{"type": "message", "message": msg})
+			if err != nil {
+				log.Error().Err(err).Uint("msg_id", msg.ID).Msg("ChatWS: failed to marshal message")
+				continue
+			}
+			h.hub.BroadcastToRoom(roomID, resp)
 		}
-	}()
+	}
 }
 
 // ChatRoomIDs возвращает ID комнат чата (общая и командная) для игры.

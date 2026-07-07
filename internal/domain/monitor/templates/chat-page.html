@@ -5,9 +5,9 @@
     <div class="card">
         <!-- Кнопки переключения комнат -->
         <div class="flex flex-wrap gap-2 mb-4">
-            <button onclick="switchRoom('general')" id="btn-general" class="btn btn-primary text-sm">Общий чат</button>
+            <button id="btn-general" class="btn btn-primary text-sm">Общий чат</button>
             {{if .PassingID}}
-            <button onclick="switchRoom('team')" id="btn-team" class="btn btn-outline text-sm">Командный чат</button>
+            <button id="btn-team" class="btn btn-outline text-sm">Командный чат</button>
             {{end}}
         </div>
 
@@ -17,9 +17,8 @@
         <!-- Поле ввода и отправка -->
         <div class="flex flex-wrap items-center gap-2">
             <input type="text" id="chat-input" placeholder="Введите сообщение..." 
-                   class="flex-1 min-w-[180px] rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2"
-                   onkeypress="if(event.key === 'Enter') sendMessage()">
-            <button onclick="sendMessage()" class="btn btn-primary text-sm whitespace-nowrap">Отправить</button>
+                   class="flex-1 min-w-[180px] rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2">
+            <button id="send-btn" class="btn btn-primary text-sm whitespace-nowrap">Отправить</button>
         </div>
 
         <!-- Статус подключения -->
@@ -27,9 +26,8 @@
     </div>
 </div>
 
-<script>
+<script nonce="{{.csp_nonce}}">
     (function() {
-        // Данные из data-атрибутов
         const container = document.querySelector('[data-game-id]');
         if (!container) return;
 
@@ -54,7 +52,11 @@
         const btnTeam = document.getElementById('btn-team');
         const chatMessages = document.getElementById('chat-messages');
         const chatInput = document.getElementById('chat-input');
+        const sendBtn = document.getElementById('send-btn');
         const statusEl = document.getElementById('connection-status');
+
+        // Храним ID уже отображённых сообщений, чтобы избежать дублирования
+        const renderedIds = new Set();
 
         function updateConnectionStatus(text, color = '#888') {
             if (statusEl) {
@@ -102,15 +104,19 @@
                     const data = JSON.parse(e.data);
                     if (data.type === 'history') {
                         chatMessages.innerHTML = '';
+                        renderedIds.clear();
                         if (Array.isArray(data.messages)) {
-                            data.messages.forEach(msg => renderMessage(msg));
+                            data.messages.forEach(msg => {
+                                const id = msg.id || msg.ID || '';
+                                if (id) renderedIds.add(id);
+                                renderMessage(msg);
+                            });
                         }
                     } else if (data.type === 'message') {
                         const msg = data.message;
-                        const lastChild = chatMessages.lastElementChild;
-                        if (lastChild && lastChild.dataset.msgId === String(msg.id || msg.ID || '')) {
-                            return;
-                        }
+                        const msgId = msg.id || msg.ID || '';
+                        if (!msgId || renderedIds.has(msgId)) return; // пропускаем дубли
+                        renderedIds.add(msgId);
                         renderMessage(msg);
                     }
                 } catch (err) {
@@ -161,32 +167,41 @@
             return String(text).replace(/[&<>"']/g, m => map[m]);
         }
 
-        window.switchRoom = function(type) {
-            if (currentRoom === type) return;
-            currentRoom = type;
-            if (btnGeneral) btnGeneral.className = type === 'general' ? 'btn btn-primary text-sm' : 'btn btn-outline text-sm';
-            if (btnTeam) btnTeam.className = type === 'team' ? 'btn btn-primary text-sm' : 'btn btn-outline text-sm';
+        // Переключение комнат
+        btnGeneral.addEventListener('click', function() {
+            if (currentRoom === 'general') return;
+            currentRoom = 'general';
+            btnGeneral.className = 'btn btn-primary text-sm';
+            if (btnTeam) btnTeam.className = 'btn btn-outline text-sm';
             connect();
-        };
+        });
 
-        window.sendMessage = function() {
+        if (btnTeam) {
+            btnTeam.addEventListener('click', function() {
+                if (currentRoom === 'team') return;
+                currentRoom = 'team';
+                btnTeam.className = 'btn btn-primary text-sm';
+                btnGeneral.className = 'btn btn-outline text-sm';
+                connect();
+            });
+        }
+
+        // Отправка сообщения (без оптимистичного отображения)
+        function sendMessage() {
             const text = chatInput.value.trim();
             if (!text) return;
             if (!socket || socket.readyState !== WebSocket.OPEN) {
                 updateConnectionStatus('Нет соединения с чатом. Попробуйте позже.', '#e74c3c');
                 return;
             }
-            // Оптимистичное отображение
-            const optimisticMsg = {
-                content: text,
-                created_at: new Date().toISOString(),
-                User: { Name: userName || 'Вы' },
-                id: Date.now().toString()
-            };
-            renderMessage(optimisticMsg);
             socket.send(text);
             chatInput.value = '';
-        };
+        }
+
+        sendBtn.addEventListener('click', sendMessage);
+        chatInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') sendMessage();
+        });
 
         window.addEventListener('beforeunload', function() {
             if (socket) {

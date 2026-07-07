@@ -26,12 +26,12 @@
                 <form action="/profile/update" method="POST" class="space-y-3">
                     <input type="hidden" name="_csrf" value="{{.csrf}}">
                     <div>
-                        <label for="name" class="block text-sm font-medium text-gray-700">Имя</label>
+                        <label for="name" class="block text-sm font-medium text-gray-700 mb-1">Имя</label>
                         <input type="text" name="name" id="name" value="{{.User.Name}}" required
                                class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
                     </div>
                     <div>
-                        <label for="email" class="block text-sm font-medium text-gray-700">Email</label>
+                        <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email</label>
                         <input type="email" name="email" id="email" value="{{.User.Email}}" required
                                class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
                     </div>
@@ -48,12 +48,12 @@
         <form action="/profile/change-password" method="POST" class="space-y-3">
             <input type="hidden" name="_csrf" value="{{.csrf}}">
             <div>
-                <label for="old_password" class="block text-sm font-medium text-gray-700">Текущий пароль</label>
+                <label for="old_password" class="block text-sm font-medium text-gray-700 mb-1">Текущий пароль</label>
                 <input type="password" name="old_password" id="old_password" required
                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
             </div>
             <div>
-                <label for="new_password" class="block text-sm font-medium text-gray-700">Новый пароль</label>
+                <label for="new_password" class="block text-sm font-medium text-gray-700 mb-1">Новый пароль</label>
                 <input type="password" name="new_password" id="new_password" required minlength="6"
                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
             </div>
@@ -113,6 +113,7 @@
         </div>
         <div class="mt-3">
             <button id="save-notifications-btn" class="btn btn-primary text-sm">Сохранить настройки</button>
+            <div id="notification-settings-message" class="mt-2 text-sm hidden"></div>
         </div>
     </div>
 
@@ -143,8 +144,20 @@
             });
         }
 
-        // 2. Сохранение настроек уведомлений
+        // 2. Сохранение настроек уведомлений (без alert)
         const saveBtn = document.getElementById('save-notifications-btn');
+        const msgContainer = document.getElementById('notification-settings-message');
+
+        function showMessage(text, colorClass = 'text-green-600') {
+            if (!msgContainer) return;
+            msgContainer.textContent = text;
+            msgContainer.className = 'mt-2 text-sm ' + colorClass;
+            msgContainer.classList.remove('hidden');
+            setTimeout(() => {
+                msgContainer.classList.add('hidden');
+            }, 3000);
+        }
+
         if (saveBtn) {
             saveBtn.addEventListener('click', function() {
                 const toggles = document.querySelectorAll('.notif-toggle');
@@ -166,14 +179,14 @@
                 .then(r => r.json())
                 .then(data => {
                     if (data.status === 'ok') {
-                        alert('Настройки сохранены');
+                        showMessage('Настройки сохранены', 'text-green-600');
                     } else {
-                        alert('Ошибка сохранения');
+                        showMessage('Ошибка сохранения', 'text-red-600');
                     }
                 })
                 .catch(err => {
                     console.error('Ошибка сохранения настроек уведомлений:', err);
-                    alert('Ошибка сохранения');
+                    showMessage('Ошибка сохранения', 'text-red-600');
                 });
             });
         }

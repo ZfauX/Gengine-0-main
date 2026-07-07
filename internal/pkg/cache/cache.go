@@ -2,6 +2,7 @@
 package cache
 
 import (
+	"strings"
 	"time"
 
 	gocache "github.com/patrickmn/go-cache"
@@ -39,6 +40,18 @@ func (c *Cache) SetDefault(key string, value interface{}) {
 // Delete удаляет значение из кэша по ключу.
 func (c *Cache) Delete(key string) {
 	c.store.Delete(key)
+}
+
+// DeleteByPrefix удаляет все значения из кэша, ключи которых начинаются с prefix.
+// go-cache не поддерживает удаление по префиксу нативно, поэтому используем Items() для обхода.
+// Важно: Items() возвращает копию map, поэтому итерация безопасна.
+func (c *Cache) DeleteByPrefix(prefix string) {
+	items := c.store.Items()
+	for key := range items {
+		if strings.HasPrefix(key, prefix) {
+			c.store.Delete(key)
+		}
+	}
 }
 
 // Flush очищает весь кэш.

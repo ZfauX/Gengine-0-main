@@ -35,6 +35,22 @@ func sanitizeFilename(name string) string {
 	return clean
 }
 
+// validateExtension проверяет, что расширение файла допустимо.
+var allowedExtensions = map[string]bool{
+	".jpg":  true,
+	".jpeg": true,
+	".png":  true,
+	".webp": true,
+	".gif":  true,
+	".pdf":  true,
+	".txt":  true,
+	".bin":  true,
+}
+
+func validateExtension(ext string) bool {
+	return allowedExtensions[strings.ToLower(ext)]
+}
+
 func (s *LocalStorage) Save(baseDir string, reader io.Reader, originalName string, userID uint, maxSize int64, allowedMIMETypes []string) (string, error) {
 	// Защита от path traversal на уровне исходного имени
 	if strings.Contains(originalName, "..") || filepath.IsAbs(originalName) {
@@ -45,6 +61,11 @@ func (s *LocalStorage) Save(baseDir string, reader io.Reader, originalName strin
 	ext := filepath.Ext(safeName)
 	if ext == "" {
 		ext = ".bin"
+	}
+
+	// Дополнительная проверка расширения файла
+	if !validateExtension(ext) {
+		return "", fmt.Errorf("недопустимое расширение файла: %s", ext)
 	}
 
 	// Читаем первые 512 байт для проверки MIME-типа

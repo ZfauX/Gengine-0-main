@@ -595,6 +595,8 @@ func TestGameHandler_Update_Success(t *testing.T) {
 	_ = writer.WriteField("visibility", "private")
 	_ = writer.Close()
 
+	existingGame := createTestGame(1, "Old Game")
+	mockGameService.On("GetByID", mock.Anything, uint(1), uint(1)).Return(existingGame, nil)
 	mockGameService.On("UpdateGameWithCover", mock.Anything, uint(1), mock.Anything, uint(1)).Return(nil)
 	mockAuditService.On("Log", uint(1), "update", "game", uint(1), "Updated Game").Return()
 

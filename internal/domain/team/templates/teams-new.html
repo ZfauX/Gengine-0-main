@@ -6,7 +6,7 @@
     <div class="flash flash-error">{{.Error}}</div>
     {{end}}
 
-    <form action="/teams" method="POST" class="card space-y-4">
+    <form action="/teams/new" method="POST" class="card space-y-4">
         <input type="hidden" name="_csrf" value="{{.csrf}}">
 
         <!-- Название команды -->

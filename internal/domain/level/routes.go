@@ -34,11 +34,15 @@ func RegisterRoutes(
 		hub,
 		cfg,
 		authorizer,
-		nil, // db не нужен для текущих обработчиков
+		nil,
 	)
 
 	protected := r.Group("/games/:id/levels")
 	protected.Use(middleware.AuthRequired(authService))
+
+	// ========================================================================
+	// УРОВНИ
+	// ========================================================================
 
 	// @Summary Список уровней игры
 	// @Description Возвращает HTML-страницу со списком всех уровней игры (доступно автору или соавтору)
@@ -73,7 +77,7 @@ func RegisterRoutes(
 	// @Param name formData string true "Название уровня (2-100 символов)"
 	// @Param description formData string false "Описание (до 5000 символов)"
 	// @Param position formData int false "Позиция (порядок)"
-	// @Param type formData string false "Тип уровня (standard, group)"
+	// @Param type formData string false "Тип уровня (single, checkpoint, parallel_group, blackbox, file_upload)"
 	// @Param parent_id formData int false "ID родительского уровня"
 	// @Param group_id formData int false "ID группы"
 	// @Param min_children formData int false "Минимальное количество детей"
@@ -86,7 +90,21 @@ func RegisterRoutes(
 	// @Failure 403 {object} map[string]interface{} "Нет прав доступа"
 	// @Router /games/{id}/levels [post]
 	// @Security JWT
-	protected.POST("/new", handler.Create)
+	protected.POST("/", handler.Create)
+
+	// @Summary Страница просмотра уровня
+	// @Description Отображает информацию об уровне, вопросах и ответах (доступно автору или соавтору)
+	// @Tags levels
+	// @Produce html
+	// @Param id path int true "ID игры"
+	// @Param level_id path int true "ID уровня"
+	// @Success 200 {string} html "Страница просмотра уровня"
+	// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+	// @Failure 403 {object} map[string]interface{} "Нет прав доступа"
+	// @Failure 404 {object} map[string]interface{} "Уровень не найден"
+	// @Router /games/{id}/levels/{level_id} [get]
+	// @Security JWT
+	protected.GET("/:level_id", handler.EditForm)
 
 	// @Summary Форма редактирования уровня
 	// @Description Возвращает HTML-страницу с формой для редактирования уровня (доступно автору или соавтору)
@@ -98,11 +116,11 @@ func RegisterRoutes(
 	// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 	// @Failure 403 {object} map[string]interface{} "Нет прав доступа"
 	// @Failure 404 {object} map[string]interface{} "Уровень не найден"
-	// @Router /games/{id}/levels/{level_id} [get]
+	// @Router /games/{id}/levels/{level_id}/edit [get]
 	// @Security JWT
-	protected.GET("/:level_id", handler.EditForm)
+	protected.GET("/:level_id/edit", handler.EditForm)
 
-	// @Summary Обновление уровня
+	// @Summary Обновление уровня (через форму)
 	// @Description Обновляет данные уровня (доступно автору или соавтору)
 	// @Tags levels
 	// @Accept x-www-form-urlencoded
@@ -112,7 +130,32 @@ func RegisterRoutes(
 	// @Param name formData string false "Название уровня (2-100 символов)"
 	// @Param description formData string false "Описание (до 5000 символов)"
 	// @Param position formData int false "Позиция (порядок)"
-	// @Param type formData string false "Тип уровня (standard, group)"
+	// @Param type formData string false "Тип уровня (single, checkpoint, parallel_group, blackbox, file_upload)"
+	// @Param parent_id formData int false "ID родительского уровня"
+	// @Param group_id formData int false "ID группы"
+	// @Param min_children formData int false "Минимальное количество детей"
+	// @Param requires_confirmation formData bool false "Требуется подтверждение"
+	// @Param latitude formData number false "Широта (-90..90)"
+	// @Param longitude formData number false "Долгота (-180..180)"
+	// @Success 302 {string} string "Перенаправление на /games/{id}/levels"
+	// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+	// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+	// @Failure 403 {object} map[string]interface{} "Нет прав доступа"
+	// @Router /games/{id}/levels/{level_id}/update [post]
+	// @Security JWT
+	protected.POST("/:level_id/update", handler.Update)
+
+	// @Summary Обновление уровня (через AJAX/PUT)
+	// @Description Обновляет данные уровня (доступно автору или соавтору)
+	// @Tags levels
+	// @Accept x-www-form-urlencoded
+	// @Produce html
+	// @Param id path int true "ID игры"
+	// @Param level_id path int true "ID уровня"
+	// @Param name formData string false "Название уровня (2-100 символов)"
+	// @Param description formData string false "Описание (до 5000 символов)"
+	// @Param position formData int false "Позиция (порядок)"
+	// @Param type formData string false "Тип уровня (single, checkpoint, parallel_group, blackbox, file_upload)"
 	// @Param parent_id formData int false "ID родительского уровня"
 	// @Param group_id formData int false "ID группы"
 	// @Param min_children formData int false "Минимальное количество детей"
@@ -171,6 +214,10 @@ func RegisterRoutes(
 	// @Security JWT
 	protected.POST("/:level_id/move", handler.Move)
 
+	// ========================================================================
+	// ВОПРОСЫ
+	// ========================================================================
+
 	questions := protected.Group("/:level_id/questions")
 	{
 		// @Summary Список вопросов уровня
@@ -214,7 +261,7 @@ func RegisterRoutes(
 		// @Failure 403 {object} map[string]interface{} "Нет прав доступа"
 		// @Router /games/{id}/levels/{level_id}/questions [post]
 		// @Security JWT
-		questions.POST("/new", handler.CreateQuestion)
+		questions.POST("/", handler.CreateQuestion)
 
 		// @Summary Форма редактирования вопроса
 		// @Description Возвращает HTML-страницу с формой для редактирования вопроса (доступно автору или соавтору)
@@ -249,6 +296,24 @@ func RegisterRoutes(
 		// @Security JWT
 		questions.POST("/:question_id/edit", handler.UpdateQuestion)
 
+		// @Summary Обновление вопроса (без /edit)
+		// @Description Обновляет данные вопроса (доступно автору или соавтору)
+		// @Tags questions
+		// @Accept x-www-form-urlencoded
+		// @Produce html
+		// @Param id path int true "ID игры"
+		// @Param level_id path int true "ID уровня"
+		// @Param question_id path int true "ID вопроса"
+		// @Param text formData string true "Текст вопроса (1-5000 символов)"
+		// @Param hint formData string false "Подсказка (до 500 символов)"
+		// @Success 302 {string} string "Перенаправление на /games/{id}/levels/{level_id}/questions"
+		// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+		// @Failure 403 {object} map[string]interface{} "Нет прав доступа"
+		// @Router /games/{id}/levels/{level_id}/questions/{question_id} [post]
+		// @Security JWT
+		questions.POST("/:question_id", handler.UpdateQuestion)
+
 		// @Summary Удаление вопроса
 		// @Description Удаляет вопрос из уровня (доступно автору или соавтору)
 		// @Tags questions
@@ -263,6 +328,10 @@ func RegisterRoutes(
 		// @Router /games/{id}/levels/{level_id}/questions/{question_id}/delete [post]
 		// @Security JWT
 		questions.POST("/:question_id/delete", handler.DeleteQuestion)
+
+		// ====================================================================
+		// ОТВЕТЫ
+		// ====================================================================
 
 		answers := questions.Group("/:question_id/answers")
 		{
@@ -295,7 +364,7 @@ func RegisterRoutes(
 			// @Failure 403 {object} map[string]interface{} "Нет прав доступа"
 			// @Router /games/{id}/levels/{level_id}/questions/{question_id}/answers [post]
 			// @Security JWT
-			answers.POST("/new", handler.CreateAnswer)
+			answers.POST("/", handler.CreateAnswer)
 
 			// @Summary Удаление ответа
 			// @Description Удаляет вариант ответа (должен остаться хотя бы один) (доступно автору или соавтору)

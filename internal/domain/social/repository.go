@@ -6,10 +6,10 @@ import (
 
 	"gengine-0/internal/domain/user"
 
+	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
 
-// FollowRepository определяет контракт для работы с подписками.
 type FollowRepository interface {
 	Follow(ctx context.Context, followerID, authorID uint) error
 	Unfollow(ctx context.Context, followerID, authorID uint) error
@@ -33,7 +33,23 @@ func (r *gormFollowRepo) Follow(ctx context.Context, followerID, authorID uint) 
 }
 
 func (r *gormFollowRepo) Unfollow(ctx context.Context, followerID, authorID uint) error {
-	return r.db.WithContext(ctx).Where("follower_id = ? AND author_id = ?", followerID, authorID).Delete(&Follow{}).Error
+	result := r.db.WithContext(ctx).Unscoped().Where("follower_id = ? AND author_id = ?", followerID, authorID).Delete(&Follow{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		log.Warn().
+			Uint("follower_id", followerID).
+			Uint("author_id", authorID).
+			Msg("Unfollow: no record found to delete")
+	} else {
+		log.Info().
+			Uint("follower_id", followerID).
+			Uint("author_id", authorID).
+			Int64("rows_affected", result.RowsAffected).
+			Msg("Unfollow: all records deleted successfully")
+	}
+	return nil
 }
 
 func (r *gormFollowRepo) IsFollowing(ctx context.Context, followerID, authorID uint) (bool, error) {

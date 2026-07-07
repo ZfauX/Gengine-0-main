@@ -37,6 +37,7 @@ func RegisterRoutes(
 	authService *user.AuthService,
 	gamePlaySvc *GamePlayService,
 	gameAdminSvc *GameAdminService,
+	reviewService *ReviewService, // <-- ДОБАВЛЕНО
 ) {
 	noteService := NewNoteService(db, coAuthorSvc)
 	simulateService := NewSimulateService(db, coAuthorSvc)
@@ -57,12 +58,29 @@ func RegisterRoutes(
 		gameAdminSvc,
 	)
 
-	public := r.Group("/games")
+	// Создаём ReviewHandler для отзывов
+	reviewHandler := NewReviewHandler(reviewService)
+
+	// Создаём GameplayHandler для тестовых маршрутов
+	gameplayHandler := NewGameplayHandler(
+		gameService,
+		gamePlaySvc,
+		attemptSvc,
+		progressSvc,
+		monitorSvc,
+		hub,
+		localStorage,
+		db,
+	)
+
+	// ========================================================================
+	// Публичные маршруты с ОПЦИОНАЛЬНОЙ аутентификацией
+	// ========================================================================
+	optionalAuth := r.Group("/games")
+	optionalAuth.Use(middleware.OptionalAuth(authService))
 	{
 		// @Summary Список игр
 		// @Description Возвращает страницу со списком игр с фильтрацией и пагинацией.
-		// @Description Доступны фильтры: по статусу (draft/published), поиск по названию, диапазон дат, автор.
-		// @Description Сортировка по created_at, name, starts_at, rating (средний рейтинг), participants (количество участвующих команд).
 		// @Tags games
 		// @Produce html
 		// @Param status query string false "Статус игры (draft, published)"
@@ -76,11 +94,10 @@ func RegisterRoutes(
 		// @Param date_to query string false "Дата начала (по) в формате YYYY-MM-DD"
 		// @Success 200 {string} html "Страница со списком игр"
 		// @Router /games [get]
-		public.GET("/", gameHandler.List)
+		optionalAuth.GET("/", gameHandler.List)
 
 		// @Summary Детали игры
 		// @Description Показывает полную информацию об игре: название, описание, автор, даты, рейтинг, отзывы, уровни.
-		// @Description Если игра является черновиком или приватной, доступна только автору или соавторам.
 		// @Tags games
 		// @Produce html
 		// @Param id path int true "ID игры"
@@ -88,7 +105,7 @@ func RegisterRoutes(
 		// @Failure 404 {object} map[string]interface{} "Игра не найдена"
 		// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
 		// @Router /games/{id} [get]
-		public.GET("/:id", gameHandler.Show)
+		optionalAuth.GET("/:id", gameHandler.Show)
 
 		// @Summary Полный просмотр игры (JSON)
 		// @Description Возвращает все уровни с вопросами и ответами для быстрого просмотра (JSON)
@@ -101,9 +118,12 @@ func RegisterRoutes(
 		// @Failure 403 {object} map[string]interface{} "Нет доступа"
 		// @Router /games/{id}/full-preview [get]
 		// @Security JWT
-		public.GET("/:id/full-preview", gameHandler.FullPreview)
+		optionalAuth.GET("/:id/full-preview", gameHandler.FullPreview)
 	}
 
+	// ========================================================================
+	// Защищённые маршруты (требуют обязательной аутентификации)
+	// ========================================================================
 	protected := r.Group("/games")
 	protected.Use(middleware.AuthRequired(authService))
 	{
@@ -123,7 +143,7 @@ func RegisterRoutes(
 		// @Accept multipart/form-data
 		// @Produce html
 		// @Param name formData string true "Название игры (3-100 символов)"
-		// @Param description formData string true "Описание игры (10-2000 символов)"
+		// @Param description formData string false "Описание игры (до 2000 символов)"
 		// @Param max_team_number formData int true "Максимальное количество команд (1-100)"
 		// @Param visibility formData string true "Видимость: public или private"
 		// @Param starts_at formData string false "Дата и время начала (RFC3339)"
@@ -132,7 +152,7 @@ func RegisterRoutes(
 		// @Success 302 {string} string "Перенаправление на /games"
 		// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Router /games [post]
+		// @Router /games/new [post]
 		// @Security JWT
 		protected.POST("/new", gameHandler.Create)
 
@@ -156,7 +176,7 @@ func RegisterRoutes(
 		// @Produce html
 		// @Param id path int true "ID игры"
 		// @Param name formData string false "Название игры (3-100 символов)"
-		// @Param description formData string false "Описание игры (10-2000 символов)"
+		// @Param description formData string false "Описание игры (до 2000 символов)"
 		// @Param max_team_number formData int false "Максимальное количество команд (1-100)"
 		// @Param visibility formData string false "Видимость: public или private"
 		// @Param starts_at formData string false "Дата и время начала (RFC3339)"
@@ -267,6 +287,20 @@ func RegisterRoutes(
 		// @Router /games/{id}/co-authors/{user_id}/delete [post]
 		// @Security JWT
 		protected.POST("/:id/co-authors/:user_id/delete", gameHandler.RemoveCoAuthor)
+
+		// @Summary Удаление соавтора (альтернативный маршрут)
+		// @Description Удаляет соавтора из игры (доступно владельцу)
+		// @Tags coauthors
+		// @Accept x-www-form-urlencoded
+		// @Produce html
+		// @Param id path int true "ID игры"
+		// @Param user_id path int true "ID соавтора"
+		// @Success 302 {string} string "Перенаправление на /games/{id}/co-authors"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+		// @Router /games/{id}/co-authors/{user_id}/remove [post]
+		// @Security JWT
+		protected.POST("/:id/co-authors/:user_id/remove", gameHandler.RemoveCoAuthor)
 
 		// @Summary Список заявок и прохождений
 		// @Description Отображает все заявки и текущие прохождения игры (доступно автору или модератору)
@@ -394,6 +428,18 @@ func RegisterRoutes(
 		// @Security JWT
 		protected.GET("/:id/test", gameHandler.TestPage)
 
+		// @Summary Запуск тестового прохождения
+		// @Description Создаёт тестовое прохождение для игры и перенаправляет на страницу тестового прохождения (доступно автору или соавтору)
+		// @Tags games
+		// @Produce html
+		// @Param id path int true "ID игры"
+		// @Success 302 {string} string "Перенаправление на /testing/{passing_id}"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+		// @Router /games/{id}/testing/start [get]
+		// @Security JWT
+		protected.GET("/:id/testing/start", gameplayHandler.StartTesting)
+
 		// @Summary Фотогалерея игры
 		// @Description Отображает страницу с фотографиями игры
 		// @Tags games
@@ -432,6 +478,38 @@ func RegisterRoutes(
 		// @Router /games/{id}/photos/{photo_id} [delete]
 		// @Security JWT
 		protected.DELETE("/:id/photos/:photo_id", gameHandler.DeletePhoto)
+
+		// ============================================================
+		// ОТЗЫВЫ
+		// ============================================================
+
+		// @Summary Форма для отзыва
+		// @Description Отображает страницу для оставления отзыва об игре (доступно участникам завершённой игры)
+		// @Tags games
+		// @Produce html
+		// @Param id path int true "ID игры"
+		// @Success 200 {string} html "Страница отзыва"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+		// @Failure 403 {object} map[string]interface{} "Недостаточно прав (не участник или игра не завершена)"
+		// @Router /games/{id}/review [get]
+		// @Security JWT
+		protected.GET("/:id/review", reviewHandler.ShowForm)
+
+		// @Summary Отправка отзыва
+		// @Description Сохраняет отзыв пользователя об игре
+		// @Tags games
+		// @Accept x-www-form-urlencoded
+		// @Produce html
+		// @Param id path int true "ID игры"
+		// @Param rating formData int true "Оценка (1-10)"
+		// @Param comment formData string false "Комментарий"
+		// @Success 302 {string} string "Перенаправление на /games/{id}"
+		// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+		// @Router /games/{id}/review [post]
+		// @Security JWT
+		protected.POST("/:id/review", reviewHandler.Create)
 	}
 }
 
@@ -514,6 +592,10 @@ func RegisterGameplayRoutes(
 	// @Security JWT
 	r.POST("/game/:passing_id/accept", handler.AcceptAnswer)
 
+	// ============================================================
+	// ТЕСТОВЫЕ МАРШРУТЫ
+	// ============================================================
+
 	// @Summary Страница тестового прохождения
 	// @Description Отображает текущий уровень в тестовом режиме (виден автору или соавтору)
 	// @Tags testing
@@ -527,7 +609,7 @@ func RegisterGameplayRoutes(
 	// @Security JWT
 	r.GET("/testing/:passing_id", handler.ShowTestGame)
 
-	// @Summary Отправка кода в тестовом режиме
+	// @Summary Отправка кода в тестовом режиме (основной маршрут)
 	// @Description Отправляет код для проверки в тестовом режиме (всегда успешно) с ограничением частоты (10 попыток за минуту на пользователя)
 	// @Tags testing
 	// @Accept x-www-form-urlencoded
@@ -542,6 +624,22 @@ func RegisterGameplayRoutes(
 	// @Router /testing/{passing_id}/submit [post]
 	// @Security JWT
 	r.POST("/testing/:passing_id/submit", middleware.CodeSubmissionRateLimit(1*time.Minute, 10), handler.SubmitTestCode)
+
+	// @Summary Отправка кода в тестовом режиме (альтернативный маршрут для формы)
+	// @Description Дублирует /submit, но без суффикса, чтобы формы с action="/testing/{id}" работали.
+	// @Tags testing
+	// @Accept x-www-form-urlencoded
+	// @Produce html
+	// @Param passing_id path int true "ID прохождения"
+	// @Param code formData string true "Код для проверки (1-10000 символов)"
+	// @Success 302 {string} string "Перенаправление на /testing/{passing_id}"
+	// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+	// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+	// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+	// @Failure 429 {object} map[string]interface{} "Слишком частый ввод кодов"
+	// @Router /testing/{passing_id} [post]
+	// @Security JWT
+	r.POST("/testing/:passing_id", middleware.CodeSubmissionRateLimit(1*time.Minute, 10), handler.SubmitTestCode)
 
 	// @Summary Пропуск уровня в тестовом режиме
 	// @Description Пропускает текущий уровень в тестовом режиме (доступно автору или соавтору)

@@ -19,6 +19,7 @@ import (
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/pkg/cache"
 	"gengine-0/internal/pkg/email"
+	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/storage"
 	ws "gengine-0/internal/pkg/websocket"
 
@@ -142,6 +143,11 @@ func main() {
 	localStorage := storage.NewLocalStorage()
 	hub := ws.NewRoomHub()
 	go hub.Run()
+
+	// --- Инициализация rate limiters (singleton, создаются один раз) ---
+	middleware.InitGlobalRateLimiter(1*time.Minute, 100)
+	middleware.InitLoginRateLimiter(1*time.Minute, 5)
+	middleware.InitRegistrationRateLimiter(1*time.Minute, 3)
 
 	// --- Инициализация persistent-очереди email (только если SMTP включён) ---
 	if cfg.SMTP.Enabled {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gengine-0/internal/config"
+	"gengine-0/internal/pkg/crypto"
 	"gengine-0/internal/testutil"
 
 	"github.com/stretchr/testify/assert"
@@ -64,7 +65,7 @@ func newTestRepos(db *gorm.DB) (
 // Создаёт тестового пользователя в БД
 func createTestUser(t *testing.T, db *gorm.DB, email, password, name string) *User {
 	t.Helper()
-	hashed, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hashed, _ := bcrypt.GenerateFromPassword([]byte(password), crypto.BcryptCost)
 	user := &User{
 		Email:         email,
 		Password:      string(hashed),
