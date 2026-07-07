@@ -4,8 +4,10 @@ package middleware
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
 )
 
 // SecurityHeadersMiddleware добавляет базовые защитные заголовки ко всем ответам.
@@ -14,7 +16,12 @@ func SecurityHeadersMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Генерируем nonce (16 байт случайных данных, base64)
 		nonceBytes := make([]byte, 16)
-		_, _ = rand.Read(nonceBytes)
+		if _, err := rand.Read(nonceBytes); err != nil {
+			// Без криптостойкого nonce CSP небезопасна — прерываем запрос.
+			log.Error().Err(err).Msg("не удалось сгенерировать CSP nonce")
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
 		nonce := base64.StdEncoding.EncodeToString(nonceBytes)
 
 		// Сохраняем nonce в контексте для использования в шаблонах

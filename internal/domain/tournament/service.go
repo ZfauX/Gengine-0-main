@@ -133,7 +133,10 @@ func (s *TournamentService) Apply(ctx context.Context, tournamentID, teamID, use
 		return err
 	}
 
-	games, _ := s.tournamentGameRepo.ListGames(ctx, tournamentID)
+	games, err := s.tournamentGameRepo.ListGames(ctx, tournamentID)
+	if err != nil {
+		log.Error().Err(err).Uint("tournament_id", tournamentID).Msg("не удалось получить игры турнира для создания прохождений")
+	}
 	for _, g := range games {
 		var existing game.GamePassing
 		err := s.tournamentTeamRepo.(*gormTournamentTeamRepo).db.Where("game_id = ? AND team_id = ?", g.ID, teamID).First(&existing).Error
@@ -143,7 +146,11 @@ func (s *TournamentService) Apply(ctx context.Context, tournamentID, teamID, use
 				TeamID: teamID,
 				Status: game.StatusPending,
 			}
-			_ = s.tournamentTeamRepo.(*gormTournamentTeamRepo).db.Create(&passing)
+			if err := s.tournamentTeamRepo.(*gormTournamentTeamRepo).db.Create(&passing).Error; err != nil {
+				log.Error().Err(err).Uint("game_id", g.ID).Uint("team_id", teamID).Msg("не удалось создать прохождение для команды")
+			}
+		} else if err != nil {
+			log.Error().Err(err).Uint("game_id", g.ID).Uint("team_id", teamID).Msg("не удалось проверить существование прохождения")
 		}
 	}
 
@@ -196,7 +203,10 @@ func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint
 	}
 
 	var passings []game.GamePassing
-	s.tournamentGameRepo.(*gormTournamentGameRepo).db.Where("game_id = ? AND status = ?", gameID, game.StatusFinished).Find(&passings)
+	if err := s.tournamentGameRepo.(*gormTournamentGameRepo).db.Where("game_id = ? AND status = ?", gameID, game.StatusFinished).Find(&passings).Error; err != nil {
+		log.Error().Err(err).Uint("game_id", gameID).Msg("не удалось получить завершённые прохождения для подсчёта очков")
+		return
+	}
 
 	for _, p := range passings {
 		_, err := s.tournamentTeamRepo.GetByTournamentAndTeam(ctx, tournament.ID, p.TeamID)
@@ -230,7 +240,9 @@ func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint
 		} else {
 			continue
 		}
-		_ = s.tournamentResultRepo.Upsert(ctx, result)
+		if err := s.tournamentResultRepo.Upsert(ctx, result); err != nil {
+			log.Error().Err(err).Uint("tournament_id", tournament.ID).Uint("team_id", p.TeamID).Msg("не удалось сохранить результат турнира")
+		}
 	}
 }
 

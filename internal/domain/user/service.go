@@ -517,7 +517,9 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 		Provider:   provider,
 		ExternalID: emailStr,
 	}
-	_ = s.extLoginRepo.FindOrCreate(ctx, extLogin)
+	if err := s.extLoginRepo.FindOrCreate(ctx, extLogin); err != nil {
+		return nil, fmt.Errorf("привязка внешнего аккаунта (%s): %w", provider, err)
+	}
 	return user, nil
 }
 
@@ -647,7 +649,9 @@ func (s *EmailVerificationService) VerifyToken(ctx context.Context, tokenStr str
 	if err := s.userRepo.Update(ctx, token.UserID, map[string]any{"email_verified": true}); err != nil {
 		return nil, err
 	}
-	_ = s.emailVerifRepo.DeleteToken(ctx, token)
+	if err := s.emailVerifRepo.DeleteToken(ctx, token); err != nil {
+		log.Warn().Err(err).Uint("user_id", token.UserID).Msg("не удалось удалить использованный токен подтверждения email")
+	}
 	return s.userRepo.GetByID(ctx, token.UserID)
 }
 
