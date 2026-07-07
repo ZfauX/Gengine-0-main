@@ -62,11 +62,7 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 	games, err := h.gameRepo.ListByDateRange(ctx, startOfMonth, endOfMonth)
 	if err != nil {
 		log.Error().Err(err).Int("year", req.Year).Int("month", req.Month).Msg("CalendarData: failed to list games")
-		appErr := apperrors.NewInternalError(err)
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		apperrors.AbortWithError(c, apperrors.NewInternalError(err))
 		return
 	}
 

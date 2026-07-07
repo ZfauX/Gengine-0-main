@@ -571,11 +571,7 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 		Msg("UploadAvatar: received file")
 
 	if header.Size > 2*1024*1024 {
-		appErr := apperrors.NewBadRequestError("Размер файла не должен превышать 2 МБ")
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		apperrors.AbortWithError(c, apperrors.NewBadRequestError("Размер файла не должен превышать 2 МБ"))
 		return
 	}
 
@@ -589,22 +585,14 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 		}
 	}
 	if !allowed {
-		appErr := apperrors.NewBadRequestError("Допустимы только JPEG, PNG и WebP")
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		apperrors.AbortWithError(c, apperrors.NewBadRequestError("Допустимы только JPEG, PNG и WebP"))
 		return
 	}
 
 	webPath, err := h.storage.Save("uploads/avatars", file, header.Filename, userID, 2*1024*1024, allowedTypes)
 	if err != nil {
 		log.Error().Err(err).Uint("user", userID).Msg("UploadAvatar: storage save failed")
-		appErr := apperrors.NewInternalError(err)
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		apperrors.AbortWithError(c, apperrors.NewInternalError(err))
 		return
 	}
 
@@ -613,11 +601,7 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 	if err := h.db.Model(&User{}).Where("id = ?", userID).Update("avatar_path", webPath).Error; err != nil {
 		log.Error().Err(err).Uint("user", userID).Msg("UploadAvatar: failed to update avatar_path")
 		_ = h.storage.Delete(webPath)
-		appErr := apperrors.NewInternalError(err)
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		apperrors.AbortWithError(c, apperrors.NewInternalError(err))
 		return
 	}
 

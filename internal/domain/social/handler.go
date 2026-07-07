@@ -34,30 +34,18 @@ func NewFollowHandler(followService *FollowService) *FollowHandler {
 func (h *FollowHandler) Follow(c *gin.Context) {
 	var req AuthorIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		appErr := apperrors.NewBadRequestError("некорректный ID автора")
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		apperrors.AbortWithError(c, apperrors.NewBadRequestError("некорректный ID автора"))
 		return
 	}
 	userID := c.GetUint("userID")
 	if userID == 0 {
-		appErr := apperrors.NewUnauthorizedError("требуется аутентификация")
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		apperrors.AbortWithError(c, apperrors.NewUnauthorizedError("требуется аутентификация"))
 		return
 	}
 
 	if err := h.followService.Follow(c.Request.Context(), userID, req.ID); err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Uint("author_id", req.ID).Msg("Follow: failed to follow author")
-		appErr := apperrors.NewBadRequestError(err.Error())
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		apperrors.AbortWithError(c, apperrors.NewBadRequestError(err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "followed"})
@@ -67,30 +55,18 @@ func (h *FollowHandler) Follow(c *gin.Context) {
 func (h *FollowHandler) Unfollow(c *gin.Context) {
 	var req AuthorIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		appErr := apperrors.NewBadRequestError("некорректный ID автора")
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		apperrors.AbortWithError(c, apperrors.NewBadRequestError("некорректный ID автора"))
 		return
 	}
 	userID := c.GetUint("userID")
 	if userID == 0 {
-		appErr := apperrors.NewUnauthorizedError("требуется аутентификация")
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		apperrors.AbortWithError(c, apperrors.NewUnauthorizedError("требуется аутентификация"))
 		return
 	}
 
 	if err := h.followService.Unfollow(c.Request.Context(), userID, req.ID); err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Uint("author_id", req.ID).Msg("Unfollow: failed to unfollow author")
-		appErr := apperrors.NewBadRequestError(err.Error())
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		apperrors.AbortWithError(c, apperrors.NewBadRequestError(err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "unfollowed"})
@@ -100,20 +76,12 @@ func (h *FollowHandler) Unfollow(c *gin.Context) {
 func (h *FollowHandler) IsFollowing(c *gin.Context) {
 	var req AuthorIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		appErr := apperrors.NewBadRequestError("некорректный ID автора")
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		apperrors.AbortWithError(c, apperrors.NewBadRequestError("некорректный ID автора"))
 		return
 	}
 	userID := c.GetUint("userID")
 	if userID == 0 {
-		appErr := apperrors.NewUnauthorizedError("требуется аутентификация")
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		apperrors.AbortWithError(c, apperrors.NewUnauthorizedError("требуется аутентификация"))
 		return
 	}
 
