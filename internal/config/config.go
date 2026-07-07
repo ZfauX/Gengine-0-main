@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -227,6 +228,14 @@ func LoadConfig() (*Config, error) {
 	cfg.TLS.KeyFile = os.Getenv("TLS_KEY_FILE")
 
 	return cfg, nil
+}
+
+// SecureCookies сообщает, следует ли устанавливать флаг Secure на cookie аутентификации.
+// Secure-cookie передаются браузером только по HTTPS, поэтому флаг включается,
+// когда приложение обслуживается по HTTPS (BASE_URL начинается с https://).
+// В локальной разработке по HTTP флаг остаётся выключенным, чтобы вход работал.
+func (c *Config) SecureCookies() bool {
+	return strings.HasPrefix(strings.ToLower(c.Server.BaseURL), "https://")
 }
 
 // =============================================================================
