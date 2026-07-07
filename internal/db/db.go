@@ -7,6 +7,7 @@ import (
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/user"
+	"gengine-0/internal/pkg/crypto"
 	"gengine-0/internal/pkg/logging"
 
 	"github.com/rs/zerolog/log"
@@ -81,10 +82,7 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 // Возвращает ошибку, если не удалось выполнить операцию.
 // Вызывающий код должен проверить ошибку и завершить приложение, если это критично.
 func EnsureAdmin(db *gorm.DB, cfg *config.Config) error {
-	// Используем стоимость 12 вместо bcrypt.DefaultCost (10) для повышения стойкости.
-	// При необходимости можно вынести этот параметр в конфиг (cfg.Admin.Cost).
-	const bcryptCost = 12
-	hashed, err := bcrypt.GenerateFromPassword([]byte(cfg.Admin.Password), bcryptCost)
+	hashed, err := bcrypt.GenerateFromPassword([]byte(cfg.Admin.Password), crypto.BcryptCost)
 	if err != nil {
 		return fmt.Errorf("ensureAdmin: не удалось захешировать пароль администратора: %w", err)
 	}

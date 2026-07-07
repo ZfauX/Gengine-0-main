@@ -26,7 +26,7 @@ type CreateLevelInput struct {
 	Name                 string  `form:"name" binding:"required,min=2,max=100"`
 	Description          string  `form:"description" binding:"max=5000"`
 	Position             int     `form:"position" binding:"min=0"`
-	Type                 string  `form:"type" binding:"omitempty,oneof=standard group"`
+	Type                 string  `form:"type" binding:"omitempty,oneof=single checkpoint parallel_group blackbox file_upload"`
 	ParentID             *uint   `form:"parent_id"`
 	GroupID              *uint   `form:"group_id"`
 	MinChildren          int     `form:"min_children" binding:"min=0,max=100"`
@@ -40,7 +40,7 @@ type UpdateLevelInput struct {
 	Name                 string  `form:"name" binding:"omitempty,min=2,max=100"`
 	Description          string  `form:"description" binding:"max=5000"`
 	Position             int     `form:"position" binding:"min=0"`
-	Type                 string  `form:"type" binding:"omitempty,oneof=standard group"`
+	Type                 string  `form:"type" binding:"omitempty,oneof=single checkpoint parallel_group blackbox file_upload"`
 	ParentID             *uint   `form:"parent_id"`
 	GroupID              *uint   `form:"group_id"`
 	MinChildren          int     `form:"min_children" binding:"min=0,max=100"`
@@ -135,10 +135,14 @@ func (h *LevelHandler) ListByGame(c *gin.Context) {
 		return
 	}
 
+	isAdmin := middleware.IsAdmin(c)
+
 	render.Page(c, http.StatusOK, "levels-list.html", gin.H{
-		"GameID": gameID,
-		"Levels": levels,
-		"csrf":   csrf.GetToken(c),
+		"GameID":        gameID,
+		"Levels":        levels,
+		"csrf":          csrf.GetToken(c),
+		"CurrentUserID": userID,
+		"IsAdmin":       isAdmin,
 	})
 }
 
@@ -149,9 +153,13 @@ func (h *LevelHandler) NewForm(c *gin.Context) {
 		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
 		return
 	}
+	userID := c.GetUint("userID")
+	isAdmin := middleware.IsAdmin(c)
 	render.Page(c, http.StatusOK, "levels-new.html", gin.H{
-		"GameID": gameID,
-		"csrf":   csrf.GetToken(c),
+		"GameID":        gameID,
+		"csrf":          csrf.GetToken(c),
+		"CurrentUserID": userID,
+		"IsAdmin":       isAdmin,
 	})
 }
 
@@ -231,9 +239,16 @@ func (h *LevelHandler) EditForm(c *gin.Context) {
 		return
 	}
 
+	isAdmin := middleware.IsAdmin(c)
+
+	gameID := level.GameID
+
 	render.Page(c, http.StatusOK, "levels-edit.html", gin.H{
-		"Level": level,
-		"csrf":  csrf.GetToken(c),
+		"Level":         level,
+		"GameID":        gameID,
+		"csrf":          csrf.GetToken(c),
+		"CurrentUserID": userID,
+		"IsAdmin":       isAdmin,
 	})
 }
 
@@ -389,10 +404,15 @@ func (h *LevelHandler) ListQuestions(c *gin.Context) {
 		return
 	}
 
+	isAdmin := middleware.IsAdmin(c)
+
 	render.Page(c, http.StatusOK, "questions-list.html", gin.H{
-		"LevelID":   levelID,
-		"Questions": questions,
-		"csrf":      csrf.GetToken(c),
+		"LevelID":       levelID,
+		"GameID":        level.GameID,
+		"Questions":     questions,
+		"csrf":          csrf.GetToken(c),
+		"CurrentUserID": userID,
+		"IsAdmin":       isAdmin,
 	})
 }
 
@@ -403,9 +423,27 @@ func (h *LevelHandler) NewQuestionForm(c *gin.Context) {
 		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID уровня"})
 		return
 	}
+	userID := c.GetUint("userID")
+	isAdmin := middleware.IsAdmin(c)
+
+	// Получаем уровень, чтобы узнать GameID
+	level, err := h.levelService.GetByID(c.Request.Context(), uint(levelID))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.HTML(http.StatusNotFound, "errors-404.html", nil)
+		} else {
+			log.Error().Err(err).Int("level_id", levelID).Msg("NewQuestionForm: failed to get level")
+			c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		}
+		return
+	}
+
 	render.Page(c, http.StatusOK, "questions-new.html", gin.H{
-		"LevelID": levelID,
-		"csrf":    csrf.GetToken(c),
+		"LevelID":       levelID,
+		"GameID":        level.GameID,
+		"csrf":          csrf.GetToken(c),
+		"CurrentUserID": userID,
+		"IsAdmin":       isAdmin,
 	})
 }
 
@@ -489,9 +527,15 @@ func (h *LevelHandler) EditQuestionForm(c *gin.Context) {
 		return
 	}
 
+	isAdmin := middleware.IsAdmin(c)
+
 	render.Page(c, http.StatusOK, "questions-edit.html", gin.H{
-		"Question": question,
-		"csrf":     csrf.GetToken(c),
+		"Question":      question,
+		"GameID":        level.GameID,
+		"LevelID":       question.LevelID,
+		"csrf":          csrf.GetToken(c),
+		"CurrentUserID": userID,
+		"IsAdmin":       isAdmin,
 	})
 }
 
@@ -602,10 +646,16 @@ func (h *LevelHandler) ListAnswers(c *gin.Context) {
 		return
 	}
 
-	render.Page(c, http.StatusOK, "answers-list.html", gin.H{
-		"QuestionID": questionID,
-		"Answers":    answers,
-		"csrf":       csrf.GetToken(c),
+	isAdmin := middleware.IsAdmin(c)
+
+	render.Page(c, http.StatusOK, "answers-index.html", gin.H{
+		"QuestionID":    questionID,
+		"GameID":        level.GameID,
+		"LevelID":       question.LevelID,
+		"Answers":       answers,
+		"csrf":          csrf.GetToken(c),
+		"CurrentUserID": userID,
+		"IsAdmin":       isAdmin,
 	})
 }
 

@@ -6,7 +6,8 @@
     <div class="flash flash-error">{{.Error}}</div>
     {{end}}
 
-    <form action="/games/{{.Game.ID}}/update" method="POST" enctype="multipart/form-data" class="card space-y-4">
+    <!-- Исправлен action с /update на /edit -->
+    <form action="/games/{{.Game.ID}}/edit" method="POST" enctype="multipart/form-data" class="card space-y-4">
         <input type="hidden" name="_csrf" value="{{.csrf}}">
 
         <!-- Название -->

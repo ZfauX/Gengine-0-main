@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gengine-0/internal/config"
+	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/pkg/metrics"
 	ws "gengine-0/internal/pkg/websocket"
@@ -56,7 +57,7 @@ func NewGamePlayService(
 func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint, code string) (*Attempt, error) {
 	var attempt *Attempt
 
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// 1. Блокируем прогресс текущего уровня
 		progress, err := GetCurrentProgressForUpdate(tx, passingID)
 		if err != nil {
@@ -107,7 +108,7 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 func (s *GamePlayService) SubmitFile(ctx context.Context, passingID, userID uint, filePath string) (*Attempt, error) {
 	var attempt *Attempt
 
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		progress, err := GetCurrentProgressForUpdate(tx, passingID)
 		if err != nil {
 			return err
@@ -143,7 +144,7 @@ func (s *GamePlayService) SubmitFile(ctx context.Context, passingID, userID uint
 
 // UseHint использует подсказку с транзакцией и блокировкой.
 func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) error {
-	return s.db.Transaction(func(tx *gorm.DB) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		progress, err := GetCurrentProgressForUpdate(tx, passingID)
 		if err != nil {
 			return err
@@ -187,7 +188,7 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) e
 
 // AcceptBlackboxAnswer подтверждает ответ на уровне "чёрный ящик" с транзакцией и блокировкой.
 func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, userID uint) error {
-	return s.db.Transaction(func(tx *gorm.DB) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		progress, err := GetCurrentProgressForUpdate(tx, passingID)
 		if err != nil {
 			return err
@@ -226,7 +227,16 @@ func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, u
 func (s *GamePlayService) StartTesting(ctx context.Context, gameID, userID uint) (*GamePassing, error) {
 	var passing *GamePassing
 
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Проверяем наличие уровней в игре
+		var levelCount int64
+		if err := tx.Model(&level.Level{}).Where("game_id = ?", gameID).Count(&levelCount).Error; err != nil {
+			return err
+		}
+		if levelCount == 0 {
+			return errors.New("игра не содержит уровней")
+		}
+
 		// Создаём тестовую команду
 		testTeam := team.Team{
 			Name:      fmt.Sprintf("_test_%d", userID),
@@ -246,6 +256,7 @@ func (s *GamePlayService) StartTesting(ctx context.Context, gameID, userID uint)
 		}
 		metrics.IncGamePassings(string(StatusTesting))
 
+		// Инициализируем первый уровень
 		progressSvc := NewLevelProgressService(tx)
 		return progressSvc.InitFirstLevel(ctx, passing.ID)
 	})
@@ -260,7 +271,7 @@ func (s *GamePlayService) StartTesting(ctx context.Context, gameID, userID uint)
 func (s *GamePlayService) SubmitTestCode(ctx context.Context, passingID, userID uint, code string) (*Attempt, error) {
 	var attempt *Attempt
 
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		progress, err := GetCurrentProgressForUpdate(tx, passingID)
 		if err != nil {
 			return err
@@ -291,7 +302,7 @@ func (s *GamePlayService) SubmitTestCode(ctx context.Context, passingID, userID 
 
 // SkipLevelTest пропускает уровень в тестовом режиме с транзакцией.
 func (s *GamePlayService) SkipLevelTest(ctx context.Context, passingID, userID uint) error {
-	return s.db.Transaction(func(tx *gorm.DB) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		progress, err := GetCurrentProgressForUpdate(tx, passingID)
 		if err != nil {
 			return err
@@ -311,8 +322,19 @@ func (s *GamePlayService) broadcastSnapshot(ctx context.Context, passingID uint)
 	if s.monitorSvc == nil || s.hub == nil {
 		return
 	}
+	// Проверяем, не отменён ли контекст
+	select {
+	case <-ctx.Done():
+		return
+	default:
+	}
+
+	// Используем контекст с таймаутом для предотвращения зависания
+	timeoutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	var passing GamePassing
-	if err := s.db.WithContext(ctx).Select("game_id").First(&passing, passingID).Error; err != nil {
+	if err := s.db.WithContext(timeoutCtx).Select("game_id").First(&passing, passingID).Error; err != nil {
 		log.Error().Err(err).Uint("passing", passingID).Msg("GamePlayService.broadcastSnapshot: failed to find passing")
 		return
 	}

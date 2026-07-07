@@ -89,7 +89,28 @@ func (rl *RateLimiter) cleanup() {
 }
 
 // GlobalRateLimit — middleware, ограничивающий общее количество запросов с IP.
+// Возвращает handler, который использует глобальный singleton RateLimiter.
+var globalRateLimiter *RateLimiter
+
+// InitGlobalRateLimiter инициализирует глобальный rate limiter (вызывать один раз при старте).
+func InitGlobalRateLimiter(window time.Duration, limit int) {
+	globalRateLimiter = NewRateLimiter(window, limit)
+}
+
+// GlobalRateLimit — middleware, ограничивающий общее количество запросов с IP.
 func GlobalRateLimit(window time.Duration, limit int) gin.HandlerFunc {
+	// Если глобальный лимитер уже создан, используем его; иначе создаём локальный
+	if globalRateLimiter != nil {
+		return func(c *gin.Context) {
+			ip := c.ClientIP()
+			if !globalRateLimiter.Allow(ip) {
+				c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "слишком много запросов"})
+				return
+			}
+			c.Next()
+		}
+	}
+
 	rl := NewRateLimiter(window, limit)
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
@@ -102,7 +123,26 @@ func GlobalRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 }
 
 // LoginRateLimit — middleware, ограничивающий количество попыток входа с IP.
+var loginRateLimiter *RateLimiter
+
+// InitLoginRateLimiter инициализирует глобальный rate limiter для логина.
+func InitLoginRateLimiter(window time.Duration, limit int) {
+	loginRateLimiter = NewRateLimiter(window, limit)
+}
+
+// LoginRateLimit — middleware, ограничивающий количество попыток входа с IP.
 func LoginRateLimit(window time.Duration, limit int) gin.HandlerFunc {
+	if loginRateLimiter != nil {
+		return func(c *gin.Context) {
+			ip := c.ClientIP()
+			if !loginRateLimiter.Allow("login:" + ip) {
+				c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "слишком много попыток входа, попробуйте позже"})
+				return
+			}
+			c.Next()
+		}
+	}
+
 	rl := NewRateLimiter(window, limit)
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
@@ -115,7 +155,26 @@ func LoginRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 }
 
 // RegistrationRateLimit — middleware, ограничивающий количество попыток регистрации с IP.
+var registrationRateLimiter *RateLimiter
+
+// InitRegistrationRateLimiter инициализирует глобальный rate limiter для регистрации.
+func InitRegistrationRateLimiter(window time.Duration, limit int) {
+	registrationRateLimiter = NewRateLimiter(window, limit)
+}
+
+// RegistrationRateLimit — middleware, ограничивающий количество попыток регистрации с IP.
 func RegistrationRateLimit(window time.Duration, limit int) gin.HandlerFunc {
+	if registrationRateLimiter != nil {
+		return func(c *gin.Context) {
+			ip := c.ClientIP()
+			if !registrationRateLimiter.Allow("register:" + ip) {
+				c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "слишком много попыток регистрации, попробуйте позже"})
+				return
+			}
+			c.Next()
+		}
+	}
+
 	rl := NewRateLimiter(window, limit)
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
