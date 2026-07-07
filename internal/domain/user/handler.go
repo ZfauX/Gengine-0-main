@@ -145,14 +145,14 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		h.auditSvc.Log(userID, "login", "user", userID, input.Email)
 	}
 
-	c.SetCookie("jwt", token, int(h.cfg.JWT.AccessExpiry.Seconds()), "/", "", false, true)
+	c.SetCookie("jwt", token, int(h.cfg.JWT.AccessExpiry.Seconds()), "/", "", h.cfg.SecureCookies(), true)
 
 	user, err := h.userService.GetByEmail(c.Request.Context(), input.Email)
 	if err == nil {
 		deviceID := c.GetHeader("X-Device-ID")
 		refreshToken, err := h.authSvc.GenerateRefreshToken(*user, deviceID)
 		if err == nil {
-			c.SetCookie("refresh_token", refreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/auth/refresh", "", false, true)
+			c.SetCookie("refresh_token", refreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/auth/refresh", "", h.cfg.SecureCookies(), true)
 		} else {
 			log.Error().Err(err).Msg("Login: failed to generate refresh token")
 		}
@@ -179,7 +179,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	c.SetCookie("jwt", newAccessToken, int(h.cfg.JWT.AccessExpiry.Seconds()), "/", "", false, true)
+	c.SetCookie("jwt", newAccessToken, int(h.cfg.JWT.AccessExpiry.Seconds()), "/", "", h.cfg.SecureCookies(), true)
 
 	c.JSON(http.StatusOK, gin.H{
 		"access_token": newAccessToken,
@@ -189,8 +189,8 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 
 // Logout выполняет выход из системы (удаляет куки, но не отзывает refresh-токен).
 func (h *AuthHandler) Logout(c *gin.Context) {
-	c.SetCookie("jwt", "", -1, "/", "", false, true)
-	c.SetCookie("refresh_token", "", -1, "/auth/refresh", "", false, true)
+	c.SetCookie("jwt", "", -1, "/", "", h.cfg.SecureCookies(), true)
+	c.SetCookie("refresh_token", "", -1, "/auth/refresh", "", h.cfg.SecureCookies(), true)
 	c.Redirect(http.StatusFound, "/")
 }
 
@@ -204,8 +204,8 @@ func (h *AuthHandler) LogoutAll(c *gin.Context) {
 	if err := h.authSvc.RevokeAllUserTokens(c.Request.Context(), userID); err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Msg("LogoutAll: failed to revoke tokens")
 	}
-	c.SetCookie("jwt", "", -1, "/", "", false, true)
-	c.SetCookie("refresh_token", "", -1, "/auth/refresh", "", false, true)
+	c.SetCookie("jwt", "", -1, "/", "", h.cfg.SecureCookies(), true)
+	c.SetCookie("refresh_token", "", -1, "/auth/refresh", "", h.cfg.SecureCookies(), true)
 	c.Redirect(http.StatusFound, "/")
 }
 
@@ -418,12 +418,12 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 		})
 		return
 	}
-	c.SetCookie("jwt", token, int(h.cfg.JWT.AccessExpiry.Seconds()), "/", "", false, true)
+	c.SetCookie("jwt", token, int(h.cfg.JWT.AccessExpiry.Seconds()), "/", "", h.cfg.SecureCookies(), true)
 
 	deviceID := c.GetHeader("X-Device-ID")
 	refreshToken, err := h.authSvc.GenerateRefreshToken(*user, deviceID)
 	if err == nil {
-		c.SetCookie("refresh_token", refreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/auth/refresh", "", false, true)
+		c.SetCookie("refresh_token", refreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/auth/refresh", "", h.cfg.SecureCookies(), true)
 	} else {
 		log.Error().Err(err).Msg("OAuthCallback: failed to generate refresh token")
 	}
@@ -437,13 +437,15 @@ type ProfileHandler struct {
 	db      *gorm.DB
 	storage storage.FileStorage
 	authSvc *AuthService
+	cfg     *config.Config
 }
 
-func NewProfileHandler(db *gorm.DB, st storage.FileStorage, authSvc *AuthService) *ProfileHandler {
+func NewProfileHandler(db *gorm.DB, st storage.FileStorage, authSvc *AuthService, cfg *config.Config) *ProfileHandler {
 	return &ProfileHandler{
 		db:      db,
 		storage: st,
 		authSvc: authSvc,
+		cfg:     cfg,
 	}
 }
 
@@ -706,7 +708,7 @@ func (h *ProfileHandler) ChangePassword(c *gin.Context) {
 		log.Error().Err(err).Uint("user_id", userID).Msg("ChangePassword: failed to revoke refresh tokens")
 	}
 
-	c.SetCookie("refresh_token", "", -1, "/auth/refresh", "", false, true)
+	c.SetCookie("refresh_token", "", -1, "/auth/refresh", "", h.cfg.SecureCookies(), true)
 
 	c.Redirect(http.StatusFound, "/profile")
 }
