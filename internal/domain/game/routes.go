@@ -38,10 +38,11 @@ func RegisterRoutes(
 	gamePlaySvc *GamePlayService,
 	gameAdminSvc *GameAdminService,
 	reviewService *ReviewService, // <-- ДОБАВЛЕНО
+	gameplayHandler *GameplayHandler, // <-- ДОБАВЛЕНО для тестовых маршрутов
+	photoService *PhotoService, // <-- ДОБАВЛЕНО
 ) {
 	noteService := NewNoteService(db, coAuthorSvc)
 	simulateService := NewSimulateService(db, coAuthorSvc)
-	photoService := NewPhotoService(db)
 
 	gameHandler := NewGameHandler(
 		gameService,
@@ -60,18 +61,6 @@ func RegisterRoutes(
 
 	// Создаём ReviewHandler для отзывов
 	reviewHandler := NewReviewHandler(reviewService)
-
-	// Создаём GameplayHandler для тестовых маршрутов
-	gameplayHandler := NewGameplayHandler(
-		gameService,
-		gamePlaySvc,
-		attemptSvc,
-		progressSvc,
-		monitorSvc,
-		hub,
-		localStorage,
-		db,
-	)
 
 	// ========================================================================
 	// Публичные маршруты с ОПЦИОНАЛЬНОЙ аутентификацией

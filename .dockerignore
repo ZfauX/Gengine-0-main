@@ -1,0 +1,44 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Local environment
+.env
+
+# Test files
+*_test.go
+testutil/
+
+# Documentation (not needed in production)
+docs/
+README.md
+CONTRIBUTING.md
+AGENTS.md
+
+# Build artifacts (rebuild in container)
+gengine
+coverage*
+
+# Development tools
+makefile
+docker-compose.yml
+Dockerfile
+entrypoint.sh
+
+# Uploads and backups (mounted as volumes)
+uploads/
+backups/

@@ -15,7 +15,16 @@ func FuncMap() template.FuncMap {
 		"loop":        loop,
 		"formatBytes": formatBytes,
 		"csrfToken":   csrfToken,
+		"default":     defaultValue,
 	}
+}
+
+// defaultValue возвращает значение по умолчанию, если исходное значение nil.
+func defaultValue(defaultVal, val interface{}) interface{} {
+	if val != nil {
+		return val
+	}
+	return defaultVal
 }
 
 // add1 возвращает i + 1.

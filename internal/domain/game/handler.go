@@ -229,6 +229,23 @@ func parseDateTime(s string) (*time.Time, error) {
 	return &t, nil
 }
 
+// parseGameDatesFromForm парсит и валидирует даты из формы создания/редактирования игры.
+// Возвращает startsAt, registrationDeadline и ошибку.
+func parseGameDatesFromForm(startsAtStr, registrationDeadlineStr string) (*time.Time, *time.Time, error) {
+	startsAt, err := parseDateTime(startsAtStr)
+	if err != nil {
+		return nil, nil, fmt.Errorf("неверный формат даты начала: %w", err)
+	}
+	registrationDeadline, err := parseDateTime(registrationDeadlineStr)
+	if err != nil {
+		return nil, nil, fmt.Errorf("неверный формат крайнего срока регистрации: %w", err)
+	}
+	if err := validation.ValidateGameDates(startsAt, registrationDeadline); err != nil {
+		return nil, nil, err
+	}
+	return startsAt, registrationDeadline, nil
+}
+
 // List отображает список игр с фильтрацией и пагинацией.
 func (h *GameHandler) List(c *gin.Context) {
 	userID := c.GetUint("userID")
@@ -360,25 +377,9 @@ func (h *GameHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// Парсим даты
-	startsAt, err := parseDateTime(input.StartsAt)
+	// Парсим и валидируем даты
+	startsAt, registrationDeadline, err := parseGameDatesFromForm(input.StartsAt, input.RegistrationDeadline)
 	if err != nil {
-		render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
-			"Error": "Неверный формат даты начала: " + err.Error(),
-			"csrf":  csrf.GetToken(c),
-		})
-		return
-	}
-	registrationDeadline, err := parseDateTime(input.RegistrationDeadline)
-	if err != nil {
-		render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
-			"Error": "Неверный формат крайнего срока регистрации: " + err.Error(),
-			"csrf":  csrf.GetToken(c),
-		})
-		return
-	}
-
-	if err := validation.ValidateGameDates(startsAt, registrationDeadline); err != nil {
 		render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
 			"Error": err.Error(),
 			"csrf":  csrf.GetToken(c),
@@ -488,47 +489,14 @@ func (h *GameHandler) Update(c *gin.Context) {
 		return
 	}
 
-	// Парсим даты
-	startsAt, err := parseDateTime(input.StartsAt)
+	// Парсим и валидируем даты
+	startsAt, registrationDeadline, err := parseGameDatesFromForm(input.StartsAt, input.RegistrationDeadline)
 	if err != nil {
-		render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
-			"Game":  existingGame,
-			"Error": "Неверный формат даты начала: " + err.Error(),
-			"csrf":  csrf.GetToken(c),
-			// Передаём введённые значения для сохранения в форме
-			"Name":                 input.Name,
-			"Description":          input.Description,
-			"MaxTeamNumber":        input.MaxTeamNumber,
-			"Visibility":           input.Visibility,
-			"StartsAt":             input.StartsAt,
-			"RegistrationDeadline": input.RegistrationDeadline,
-		})
-		return
-	}
-	registrationDeadline, err := parseDateTime(input.RegistrationDeadline)
-	if err != nil {
-		render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
-			"Game":  existingGame,
-			"Error": "Неверный формат крайнего срока регистрации: " + err.Error(),
-			"csrf":  csrf.GetToken(c),
-			// Передаём введённые значения
-			"Name":                 input.Name,
-			"Description":          input.Description,
-			"MaxTeamNumber":        input.MaxTeamNumber,
-			"Visibility":           input.Visibility,
-			"StartsAt":             input.StartsAt,
-			"RegistrationDeadline": input.RegistrationDeadline,
-		})
-		return
-	}
-
-	// Валидация дат
-	if err := validation.ValidateGameDates(startsAt, registrationDeadline); err != nil {
 		render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
 			"Game":  existingGame,
 			"Error": err.Error(),
 			"csrf":  csrf.GetToken(c),
-			// Передаём введённые значения
+			// Передаём введённые значения для сохранения в форме
 			"Name":                 input.Name,
 			"Description":          input.Description,
 			"MaxTeamNumber":        input.MaxTeamNumber,

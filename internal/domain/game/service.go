@@ -68,6 +68,7 @@ type GameService struct {
 	coAuthor       *CoAuthorService
 	reviewService  *ReviewService
 	monitorService *MonitorService
+	photoService   *PhotoService
 	hub            *ws.RoomHub
 	cfg            *config.Config
 	storage        storage.FileStorage
@@ -80,6 +81,7 @@ func NewGameService(
 	ca *CoAuthorService,
 	rs *ReviewService,
 	ms *MonitorService,
+	ps *PhotoService,
 	hub *ws.RoomHub,
 	cfg *config.Config,
 	storage storage.FileStorage,
@@ -93,6 +95,7 @@ func NewGameService(
 		coAuthor:       ca,
 		reviewService:  rs,
 		monitorService: ms,
+		photoService:   ps,
 		hub:            hub,
 		cfg:            cfg,
 		storage:        storage,
@@ -189,7 +192,7 @@ func (s *GameService) UpdateGameWithCover(ctx context.Context, gameID uint, dto 
 	game.Visibility = dto.Visibility
 	game.StartsAt = dto.StartsAt
 	game.RegistrationDeadline = dto.RegistrationDeadline
-	game.IsDraft = dto.IsDraft
+	// IsDraft не изменяется через Update — только через Publish()
 
 	if dto.DeleteCover {
 		if game.CoverPath != "" {
@@ -256,12 +259,25 @@ func (s *GameService) Create(ctx context.Context, game *Game, authorID uint) err
 }
 
 // GetByID возвращает игру по ID с кэшированием.
+// При возврате из кэша права проверяются повторно, чтобы избежать race condition.
 func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint) (*Game, error) {
 	cacheKey := fmt.Sprintf("game:%d:viewer:%d", id, viewerID)
 
 	if s.cache != nil {
 		if cached, ok := s.cache.Get(cacheKey); ok {
 			if game, ok := cached.(*Game); ok {
+				// Проверяем права доступа даже для кэшированных данных
+				canView, err := s.canViewGame(ctx, game, viewerID)
+				if err != nil {
+					return nil, err
+				}
+				if !canView {
+					// У пользователя больше нет доступа — удаляем из кэша
+					if s.cache != nil {
+						s.cache.Delete(cacheKey)
+					}
+					return nil, errors.New("игра не найдена")
+				}
 				log.Debug().Uint("game_id", id).Msg("GetByID: cache hit")
 				return game, nil
 			}
@@ -282,7 +298,12 @@ func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint) (*Gam
 	}
 
 	if s.cache != nil && (!game.IsDraft || s.hasAdminRole(ctx, viewerID) || ok) {
-		s.cache.Set(cacheKey, game, 10*time.Second)
+		// Увеличен TTL для published игр (5 мин), для черновиков — 1 мин
+		ttl := 1 * time.Minute
+		if !game.IsDraft {
+			ttl = 5 * time.Minute
+		}
+		s.cache.Set(cacheKey, game, ttl)
 	}
 
 	return game, nil
@@ -333,25 +354,27 @@ func (s *GameService) ListFilteredPaginated(ctx context.Context, filter GameFilt
 			field = "created_at"
 		}
 
-		var col string
-		switch field {
-		case "name":
-			col = "name"
-		case "starts_at":
-			col = "starts_at"
-		case "rating":
-			col = "(SELECT COALESCE(AVG(r.rating), 0) FROM reviews r WHERE r.game_id = games.id)"
-		case "participants":
-			col = "(SELECT COUNT(DISTINCT gp.team_id) FROM game_passings gp WHERE gp.game_id = games.id AND gp.status IN ('accepted','started','finished'))"
-		default:
-			col = "created_at"
+		sortDir := string(sort.Order)
+		if sortDir != "ASC" && sortDir != "DESC" {
+			sortDir = "DESC"
 		}
 
-		direction := "ASC"
-		if sort.Order == SortDesc {
-			direction = "DESC"
+		switch field {
+		case "name":
+			orderClause = "games.name " + sortDir
+		case "starts_at":
+			orderClause = "games.starts_at " + sortDir
+		case "rating":
+			// Оптимизация: используем LEFT JOIN вместо подзапроса в ORDER BY
+			query = query.Joins("LEFT JOIN (SELECT game_id, COALESCE(AVG(rating), 0) as avg_rating FROM reviews GROUP BY game_id) ratings ON ratings.game_id = games.id")
+			orderClause = "ratings.avg_rating " + sortDir
+		case "participants":
+			// Оптимизация: используем LEFT JOIN вместо подзапроса в ORDER BY
+			query = query.Joins("LEFT JOIN (SELECT game_id, COUNT(DISTINCT team_id) as participant_count FROM game_passings WHERE status IN ('accepted','started','finished') GROUP BY game_id) participants ON participants.game_id = games.id")
+			orderClause = "participants.participant_count " + sortDir
+		default:
+			orderClause = "games.created_at " + sortDir
 		}
-		orderClause = fmt.Sprintf("%s %s", col, direction)
 	}
 	query = query.Order(orderClause)
 
@@ -449,6 +472,26 @@ func (s *GameService) Delete(ctx context.Context, id uint, userID uint) error {
 	if game.AuthorID != userID {
 		return errors.New("только владелец может удалить игру")
 	}
+
+	// Удаляем обложку с диска
+	if game.CoverPath != "" {
+		if delErr := s.storage.Delete(game.CoverPath); delErr != nil {
+			log.Error().Err(delErr).Str("path", game.CoverPath).Msg("Delete: failed to delete cover file")
+		}
+	}
+
+	// Удаляем связанные фото (если PhotoService доступен)
+	if s.photoService != nil {
+		photos, err := s.photoService.List(id)
+		if err == nil {
+			for _, photo := range photos {
+				if delErr := s.storage.Delete(photo.Path); delErr != nil {
+					log.Error().Err(delErr).Str("path", photo.Path).Msg("Delete: failed to delete photo file")
+				}
+			}
+		}
+	}
+
 	if err := s.gameRepo.Delete(ctx, id); err != nil {
 		return err
 	}

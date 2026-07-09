@@ -62,8 +62,20 @@
         <!-- Обложка -->
         <div>
             <label for="cover" class="block text-sm font-medium text-gray-700 mb-1">Обложка игры (опционально)</label>
-            <input type="file" name="cover" id="cover" accept="image/jpeg,image/png,image/webp"
-                   class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
+            <div id="coverDropZone" class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-500 transition cursor-pointer">
+                <input type="file" name="cover" id="cover" accept="image/jpeg,image/png,image/webp" class="hidden">
+                <div id="coverPlaceholder">
+                    <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                        <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                    <p class="mt-2 text-sm text-gray-600">Перетащите изображение сюда или <span class="text-blue-600 hover:underline">выберите файл</span></p>
+                    <p class="mt-1 text-xs text-gray-500">JPG, PNG или WebP (макс. 5MB)</p>
+                </div>
+                <div id="coverPreview" class="hidden">
+                    <img id="coverImg" class="mx-auto max-h-48 rounded-lg" alt="Preview">
+                    <p class="mt-2 text-sm text-green-600">✓ Файл выбран</p>
+                </div>
+            </div>
         </div>
 
         <!-- Кнопки -->
@@ -73,4 +85,80 @@
         </div>
     </form>
 </div>
+
+<script>
+    // Drag-and-drop для обложки
+    (function() {
+        const dropZone = document.getElementById('coverDropZone');
+        const fileInput = document.getElementById('cover');
+        const placeholder = document.getElementById('coverPlaceholder');
+        const preview = document.getElementById('coverPreview');
+        const coverImg = document.getElementById('coverImg');
+
+        if (!dropZone || !fileInput) return;
+
+        // Клик по зоне открывает файловый диалог
+        dropZone.addEventListener('click', function(e) {
+            if (e.target.tagName !== 'INPUT') {
+                fileInput.click();
+            }
+        });
+
+        // Обработка выбора файла
+        fileInput.addEventListener('change', function() {
+            handleFile(this.files[0]);
+        });
+
+        // Drag-and-drop события
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(function(eventName) {
+            dropZone.addEventListener(eventName, function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+        });
+
+        dropZone.addEventListener('dragover', function() {
+            dropZone.classList.add('border-blue-500', 'bg-blue-50');
+        });
+
+        dropZone.addEventListener('dragleave', function() {
+            dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+        });
+
+        dropZone.addEventListener('drop', function(e) {
+            dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                fileInput.files = files;
+                handleFile(files[0]);
+            }
+        });
+
+        function handleFile(file) {
+            if (!file) return;
+
+            // Проверка типа файла
+            const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
+            if (validTypes.indexOf(file.type) === -1) {
+                showToast('Неподдерживаемый формат файла. Используйте JPG, PNG или WebP.', 'error');
+                return;
+            }
+
+            // Проверка размера (5MB)
+            if (file.size > 5 * 1024 * 1024) {
+                showToast('Файл слишком большой. Максимум 5MB.', 'error');
+                return;
+            }
+
+            // Показываем превью
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                coverImg.src = e.target.result;
+                placeholder.classList.add('hidden');
+                preview.classList.remove('hidden');
+            };
+            reader.readAsDataURL(file);
+        }
+    })();
+</script>
 {{end}}

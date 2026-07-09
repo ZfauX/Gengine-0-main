@@ -174,6 +174,33 @@ func main() {
 	go game.CheckTimeouts(database, ctx)
 	go game.CheckAutoStartGames(database, ctx)
 
+	// Мониторинг connection pool (раз в минуту)
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				log.Info().Msg("Мониторинг connection pool: остановка")
+				return
+			case <-ticker.C:
+				sqlDB, err := database.DB()
+				if err != nil {
+					log.Warn().Err(err).Msg("Мониторинг connection pool: не удалось получить sql.DB")
+					continue
+				}
+				stats := sqlDB.Stats()
+				log.Debug().
+					Int("open_connections", stats.OpenConnections).
+					Int("in_use", stats.InUse).
+					Int("idle", stats.Idle).
+					Int64("wait_count", stats.WaitCount).
+					Int64("wait_duration_ms", stats.WaitDuration.Milliseconds()).
+					Msg("Connection pool stats")
+			}
+		}
+	}()
+
 	// Фоновая очистка просроченных refresh-токенов (раз в час)
 	go func() {
 		ticker := time.NewTicker(1 * time.Hour)
@@ -203,7 +230,14 @@ func main() {
 
 	go func() {
 		log.Info().Str("port", cfg.Server.Port).Msg("Сервер запущен")
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		var err error
+		// Если TLS сертификаты указаны, запускаем с HTTPS
+		if cfg.TLS.CertFile != "" && cfg.TLS.KeyFile != "" {
+			err = srv.ListenAndServeTLS(cfg.TLS.CertFile, cfg.TLS.KeyFile)
+		} else {
+			err = srv.ListenAndServe()
+		}
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error().Err(err).Msg("Ошибка работы сервера")
 		}
 	}()
@@ -216,6 +250,11 @@ func main() {
 
 	// Останавливаем WebSocket-хаб (отправляет CloseMessage всем клиентам)
 	hub.Stop()
+
+	// Останавливаем rate limiters
+	middleware.StopGlobalRateLimiter()
+	middleware.StopLoginRateLimiter()
+	middleware.StopRegistrationRateLimiter()
 
 	// Даём время на завершение обработки запросов
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)

@@ -97,6 +97,13 @@ func InitGlobalRateLimiter(window time.Duration, limit int) {
 	globalRateLimiter = NewRateLimiter(window, limit)
 }
 
+// StopGlobalRateLimiter останавливает глобальный rate limiter (вызывать при graceful shutdown).
+func StopGlobalRateLimiter() {
+	if globalRateLimiter != nil {
+		globalRateLimiter.Stop()
+	}
+}
+
 // GlobalRateLimit — middleware, ограничивающий общее количество запросов с IP.
 func GlobalRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 	// Если глобальный лимитер уже создан, используем его; иначе создаём локальный
@@ -130,6 +137,13 @@ func InitLoginRateLimiter(window time.Duration, limit int) {
 	loginRateLimiter = NewRateLimiter(window, limit)
 }
 
+// StopLoginRateLimiter останавливает глобальный rate limiter для логина.
+func StopLoginRateLimiter() {
+	if loginRateLimiter != nil {
+		loginRateLimiter.Stop()
+	}
+}
+
 // LoginRateLimit — middleware, ограничивающий количество попыток входа с IP.
 func LoginRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 	if loginRateLimiter != nil {
@@ -160,6 +174,13 @@ var registrationRateLimiter *RateLimiter
 // InitRegistrationRateLimiter инициализирует глобальный rate limiter для регистрации.
 func InitRegistrationRateLimiter(window time.Duration, limit int) {
 	registrationRateLimiter = NewRateLimiter(window, limit)
+}
+
+// StopRegistrationRateLimiter останавливает глобальный rate limiter для регистрации.
+func StopRegistrationRateLimiter() {
+	if registrationRateLimiter != nil {
+		registrationRateLimiter.Stop()
+	}
 }
 
 // RegistrationRateLimit — middleware, ограничивающий количество попыток регистрации с IP.
