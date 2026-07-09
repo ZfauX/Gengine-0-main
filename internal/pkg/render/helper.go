@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"html/template"
 	"net/http"
+	"strconv"
 
 	"gengine-0/internal/pkg/middleware"
 
@@ -42,4 +43,32 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 
 	data["ContentHTML"] = template.HTML(buf.String())
 	c.HTML(status, "layout.html", data)
+}
+
+// RenderError рендерит страницу ошибки с заданным статусом и сообщением.
+func RenderError(c *gin.Context, status int, message string) {
+	Page(c, status, "errors-404.html", gin.H{"Error": message})
+}
+
+// ParseID парсит ID из URL-параметра и возвращает ошибку 400 при неудаче.
+// Возвращает ID и bool (успех).
+func ParseID(c *gin.Context, paramName string) (uint, bool) {
+	idStr := c.Param(paramName)
+	id, err := strconv.Atoi(idStr)
+	if err != nil || id <= 0 {
+		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID"})
+		return 0, false
+	}
+	return uint(id), true
+}
+
+// ParseIDQuery парсит ID из query-параметра.
+func ParseIDQuery(c *gin.Context, paramName string) (uint, bool) {
+	idStr := c.Query(paramName)
+	id, err := strconv.Atoi(idStr)
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID", "code": "bad_request"})
+		return 0, false
+	}
+	return uint(id), true
 }

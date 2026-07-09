@@ -700,7 +700,8 @@ type DashboardInvitation struct {
 	Status   string
 }
 
-// GetDashboard собирает данные для дашборда с использованием реальных таблиц.
+// GetDashboard собирает данные для дашборда с оптимизированными запросами.
+// Объединяет несколько запросов в JOIN для уменьшения нагрузки на БД.
 func (s *UserDashboardService) GetDashboard(userID uint) (*UserDashboard, error) {
 	var dash UserDashboard
 
@@ -773,38 +774,38 @@ func (s *UserDashboardService) GetDashboard(userID uint) (*UserDashboard, error)
 	gameIDs = uniqueUintSlice(gameIDs)
 	teamIDsForGames = uniqueUintSlice(teamIDsForGames)
 
-	// 5. Подгружаем названия игр (только не удалённые)
-	var gamesMap = make(map[uint]DashboardGame)
-	if len(gameIDs) > 0 {
-		var games []struct {
-			ID   uint
-			Name string
-		}
+	// 5. Оптимизация: объединяем запросы игр и команд в один с JOIN
+	type GameTeamRow struct {
+		GameID   uint
+		GameName string
+		TeamID   uint
+		TeamName string
+	}
+
+	var gameTeamRows []GameTeamRow
+	if len(gameIDs) > 0 && len(teamIDsForGames) > 0 {
 		if err := s.DB.Table("games").
-			Select("id, name").
-			Where("id IN ? AND deleted_at IS NULL", gameIDs).
-			Find(&games).Error; err == nil {
-			for _, g := range games {
-				gamesMap[g.ID] = DashboardGame{ID: g.ID, Name: g.Name}
-			}
+			Select("games.id as game_id, games.name as game_name, teams.id as team_id, teams.name as team_name").
+			Joins("JOIN teams ON teams.id IN ?", teamIDsForGames).
+			Where("games.id IN ? AND games.deleted_at IS NULL", gameIDs).
+			Find(&gameTeamRows).Error; err != nil {
+			log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to get game-team data")
 		}
 	}
 
-	// 6. Подгружаем названия команд
+	// Формируем мапы из объединённых данных
+	var gamesMap = make(map[uint]DashboardGame)
 	var teamsMap = make(map[uint]DashboardTeam)
-	if len(teamIDsForGames) > 0 {
-		var teams []struct {
-			ID   uint
-			Name string
+	for _, row := range gameTeamRows {
+		if row.GameName != "" {
+			gamesMap[row.GameID] = DashboardGame{ID: row.GameID, Name: row.GameName}
 		}
-		if err := s.DB.Table("teams").Select("id, name").Where("id IN ?", teamIDsForGames).Find(&teams).Error; err == nil {
-			for _, t := range teams {
-				teamsMap[t.ID] = DashboardTeam{ID: t.ID, Name: t.Name}
-			}
+		if row.TeamName != "" {
+			teamsMap[row.TeamID] = DashboardTeam{ID: row.TeamID, Name: row.TeamName}
 		}
 	}
 
-	// 7. Определяем, в каких командах пользователь — капитан (один запрос)
+	// 6. Определяем, в каких командах пользователь — капитан (один запрос)
 	captainTeamIDs := make(map[uint]bool)
 	var captainRows []struct {
 		ID        uint
@@ -818,7 +819,7 @@ func (s *UserDashboardService) GetDashboard(userID uint) (*UserDashboard, error)
 		}
 	}
 
-	// 8. Формируем результат
+	// 7. Формируем результат
 	for _, p := range passings {
 		game, gameOk := gamesMap[p.GameID]
 		team, teamOk := teamsMap[p.TeamID]
@@ -847,7 +848,7 @@ func (s *UserDashboardService) GetDashboard(userID uint) (*UserDashboard, error)
 		}
 	}
 
-	// 9. Приглашения
+	// 8. Приглашения
 	s.loadInvitations(&dash, userID)
 
 	return &dash, nil

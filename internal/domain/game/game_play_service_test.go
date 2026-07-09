@@ -38,6 +38,15 @@ func createGamePlayTestData(t *testing.T, db *gorm.DB) (*game.Game, *level.Level
 	author := createUser(t, db, "author@test.com", "pass")
 	g := createPublishedGameWithSettings(t, db, author.ID, "Play Test Game")
 
+	// Создаём game_settings по умолчанию
+	settings := game.GameSetting{
+		GameID:             g.ID,
+		MaxHints:           3,
+		AllowHints:         true,
+		HintPenaltySeconds: 300,
+	}
+	require.NoError(t, db.Create(&settings).Error)
+
 	lvl := createLevelWithAnswer(t, db, g.ID, "Level 1", 1, "secret")
 	_ = createLevel(t, db, g.ID, "Level 2", 2)
 

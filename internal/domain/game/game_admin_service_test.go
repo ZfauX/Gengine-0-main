@@ -4,10 +4,12 @@ package game_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/level"
+	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/testutil"
 
@@ -15,6 +17,144 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+// allModels — все модели для миграции
+var allModels = []interface{}{
+	&user.User{},
+	&game.Game{},
+	&game.GamePassing{},
+	&game.LevelProgress{},
+	&game.Attempt{},
+	&game.GameSetting{},
+	&game.Log{},
+	&level.Level{},
+	&level.Question{},
+	&level.Answer{},
+	&team.Team{},
+}
+
+// createUser создаёт тестового пользователя
+func createUser(t *testing.T, db *gorm.DB, email, password string) *user.User {
+	t.Helper()
+	u := &user.User{
+		Email:    email,
+		Password: password,
+		Name:     "Test User",
+		Role:     "user",
+	}
+	require.NoError(t, db.Create(u).Error)
+	return u
+}
+
+// createPublishedGameWithSettings создаёт опубликованную игру
+func createPublishedGameWithSettings(t *testing.T, db *gorm.DB, authorID uint, name string) *game.Game {
+	t.Helper()
+	startsAt := time.Now().Add(24 * time.Hour)
+	regDeadline := time.Now()
+	g := &game.Game{
+		Name:                 name,
+		Description:          "Test game",
+		AuthorID:             authorID,
+		Visibility:           "public",
+		IsDraft:              false,
+		StartsAt:             &startsAt,
+		RegistrationDeadline: &regDeadline,
+		MaxTeamNumber:        10,
+	}
+	require.NoError(t, db.Create(g).Error)
+	return g
+}
+
+// createLevel создаёт уровень
+func createLevel(t *testing.T, db *gorm.DB, gameID uint, name string, position int) *level.Level {
+	t.Helper()
+	lvl := &level.Level{
+		Name:        name,
+		GameID:      gameID,
+		Position:    position,
+		Description: "Test content",
+	}
+	require.NoError(t, db.Create(lvl).Error)
+	return lvl
+}
+
+// createTeam создаёт команду
+func createTeam(t *testing.T, db *gorm.DB, captainID uint) *team.Team {
+	t.Helper()
+	tm := &team.Team{
+		Name:      "Test Team",
+		CaptainID: captainID,
+	}
+	require.NoError(t, db.Create(tm).Error)
+	return tm
+}
+
+// createPassing создаёт прохождение
+func createPassing(t *testing.T, db *gorm.DB, gameID, teamID uint, status game.GamePassingStatus) *game.GamePassing {
+	t.Helper()
+	p := &game.GamePassing{
+		GameID: gameID,
+		TeamID: teamID,
+		Status: status,
+	}
+	require.NoError(t, db.Create(p).Error)
+	return p
+}
+
+// createLevelProgress создаёт прогресс уровня
+func createLevelProgress(t *testing.T, db *gorm.DB, passingID, levelID uint, completed bool) *game.LevelProgress {
+	t.Helper()
+	lp := &game.LevelProgress{
+		GamePassingID: passingID,
+		LevelID:       levelID,
+	}
+	if completed {
+		finishedAt := time.Now()
+		lp.FinishedAt = &finishedAt
+	}
+	require.NoError(t, db.Create(lp).Error)
+	return lp
+}
+
+// createLevelWithAnswer создаёт уровень с вопросом и ответом
+func createLevelWithAnswer(t *testing.T, db *gorm.DB, gameID uint, name string, position int, code string) *level.Level {
+	t.Helper()
+	lvl := &level.Level{
+		Name:        name,
+		GameID:      gameID,
+		Position:    position,
+		Description: "Test level",
+	}
+	require.NoError(t, db.Create(lvl).Error)
+
+	q := &level.Question{
+		Text:    "Test question",
+		LevelID: lvl.ID,
+	}
+	require.NoError(t, db.Create(q).Error)
+
+	a := &level.Answer{
+		Code:       code,
+		QuestionID: q.ID,
+	}
+	require.NoError(t, db.Create(a).Error)
+
+	return lvl
+}
+
+// createBlackboxLevel создаёт blackbox уровень
+func createBlackboxLevel(t *testing.T, db *gorm.DB, gameID uint, name string, position int) *level.Level {
+	t.Helper()
+	lvl := &level.Level{
+		Name:        name,
+		GameID:      gameID,
+		Position:    position,
+		Description: "Blackbox level",
+		Type:        "blackbox",
+	}
+	require.NoError(t, db.Create(lvl).Error)
+	return lvl
+}
 
 func setupGameAdminTest(t *testing.T) (*gorm.DB, *game.GameAdminService) {
 	t.Helper()

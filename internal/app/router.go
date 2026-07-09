@@ -127,6 +127,9 @@ func (app *App) setupEngine(r *gin.Engine) {
 		},
 	}))
 
+	// CSRF-защита для JSON API
+	r.Use(middleware.CSRFJSON())
+
 	tmpl := template.New("")
 	tmpl.Funcs(templatefuncs.FuncMap())
 	_, err := tmpl.ParseGlob(filepath.Join(app.BaseDir, "internal", "domain", "*", "templates", "*.html"))
@@ -141,8 +144,8 @@ func (app *App) setupEngine(r *gin.Engine) {
 	r.Use(middleware.GzipMiddleware())
 	r.Use(middleware.StaticCacheMiddleware())
 
-	r.Static("/static", filepath.Join(app.BaseDir, "static"))
-	r.Static("/uploads", filepath.Join(app.BaseDir, "uploads"))
+	r.Static("/static", filepath.Join(app.BaseDir, app.Config.Server.StaticDir))
+	r.Static("/uploads", filepath.Join(app.BaseDir, app.Config.Server.UploadsDir))
 
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
@@ -258,27 +261,29 @@ func initRepositories(db *gorm.DB) *repositories {
 // =============================================================================
 
 type services struct {
-	Auth          *user.AuthService
-	User          *user.UserService
-	Achiev        *user.AchievementService
-	OAuth         *user.OAuthService
-	PasswordReset *user.PasswordResetService
-	EmailVerif    *user.EmailVerificationService
-	Game          *game.GameService
-	GamePlay      *game.GamePlayService
-	GameAdmin     *game.GameAdminService
-	CoAuthor      *game.CoAuthorService
-	Review        *game.ReviewService
-	Attempt       *game.AttemptService
-	Progress      *game.LevelProgressService
-	Monitor       *game.MonitorService
-	Rating        *game.RatingService
-	Level         *level.LevelService
-	Question      *level.QuestionService
-	Answer        *level.AnswerService
-	Team          *team.TeamService
-	Invitation    *team.InvitationService
-	Tournament    *tournament.TournamentService
+	Auth            *user.AuthService
+	User            *user.UserService
+	Achiev          *user.AchievementService
+	OAuth           *user.OAuthService
+	PasswordReset   *user.PasswordResetService
+	EmailVerif      *user.EmailVerificationService
+	Game            *game.GameService
+	GamePlay        *game.GamePlayService
+	GameAdmin       *game.GameAdminService
+	GameplayHandler *game.GameplayHandler
+	CoAuthor        *game.CoAuthorService
+	Review          *game.ReviewService
+	PhotoService    *game.PhotoService
+	Attempt         *game.AttemptService
+	Progress        *game.LevelProgressService
+	Monitor         *game.MonitorService
+	Rating          *game.RatingService
+	Level           *level.LevelService
+	Question        *level.QuestionService
+	Answer          *level.AnswerService
+	Team            *team.TeamService
+	Invitation      *team.InvitationService
+	Tournament      *tournament.TournamentService
 }
 
 func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.RoomHub, localStorage storage.FileStorage, appCache *cache.Cache) *services {
@@ -302,12 +307,15 @@ func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.
 	passResetSvc := user.NewPasswordResetService(repos.User, repos.PassReset, cfg)
 	emailVerifSvc := user.NewEmailVerificationService(repos.User, repos.EmailVerif, cfg)
 
+	photoSvc := game.NewPhotoService(db)
+
 	gameSvc := game.NewGameService(
 		repos.Game,
 		repos.GamePassing,
 		coAuthorSvc,
 		reviewSvc,
 		monitorSvc,
+		photoSvc,
 		hub,
 		cfg,
 		localStorage,
@@ -347,28 +355,42 @@ func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.
 		cfg,
 	)
 
+	// Создаём GameplayHandler один раз для переиспользования
+	gameplayHandler := game.NewGameplayHandler(
+		gameSvc,
+		gamePlaySvc,
+		attemptSvc,
+		progressSvc,
+		monitorSvc,
+		hub,
+		localStorage,
+		db,
+	)
+
 	return &services{
-		Auth:          authSvc,
-		User:          userSvc,
-		Achiev:        achievSvc,
-		OAuth:         oauthSvc,
-		PasswordReset: passResetSvc,
-		EmailVerif:    emailVerifSvc,
-		Game:          gameSvc,
-		GamePlay:      gamePlaySvc,
-		GameAdmin:     gameAdminSvc,
-		CoAuthor:      coAuthorSvc,
-		Review:        reviewSvc,
-		Attempt:       attemptSvc,
-		Progress:      progressSvc,
-		Monitor:       monitorSvc,
-		Rating:        ratingSvc,
-		Level:         levelSvc,
-		Question:      questionSvc,
-		Answer:        answerSvc,
-		Team:          teamSvc,
-		Invitation:    invitationSvc,
-		Tournament:    tournamentSvc,
+		Auth:            authSvc,
+		User:            userSvc,
+		Achiev:          achievSvc,
+		OAuth:           oauthSvc,
+		PasswordReset:   passResetSvc,
+		EmailVerif:      emailVerifSvc,
+		Game:            gameSvc,
+		GamePlay:        gamePlaySvc,
+		GameAdmin:       gameAdminSvc,
+		GameplayHandler: gameplayHandler,
+		CoAuthor:        coAuthorSvc,
+		Review:          reviewSvc,
+		PhotoService:    photoSvc,
+		Attempt:         attemptSvc,
+		Progress:        progressSvc,
+		Monitor:         monitorSvc,
+		Rating:          ratingSvc,
+		Level:           levelSvc,
+		Question:        questionSvc,
+		Answer:          answerSvc,
+		Team:            teamSvc,
+		Invitation:      invitationSvc,
+		Tournament:      tournamentSvc,
 	}
 }
 
@@ -413,7 +435,9 @@ func (app *App) registerGameRoutes(r *gin.Engine) {
 		app.Deps.Services.Auth,
 		app.Deps.Services.GamePlay,
 		app.Deps.Services.GameAdmin,
-		app.Deps.Services.Review, // передаём ReviewService
+		app.Deps.Services.Review,          // передаём ReviewService
+		app.Deps.Services.GameplayHandler, // передаём GameplayHandler для тестовых маршрутов
+		app.Deps.Services.PhotoService,    // передаём PhotoService
 	)
 }
 
@@ -483,19 +507,9 @@ func (app *App) registerExportRoutes(r *gin.Engine) error {
 }
 
 func (app *App) registerGameplayRoutes(r *gin.Engine) {
-	gameplayHandler := game.NewGameplayHandler(
-		app.Deps.Services.Game,
-		app.Deps.Services.GamePlay,
-		app.Deps.Services.Attempt,
-		app.Deps.Services.Progress,
-		app.Deps.Services.Monitor,
-		app.Hub,
-		app.LocalStorage,
-		app.DB,
-	)
 	protected := r.Group("/")
 	protected.Use(middleware.AuthRequired(app.Deps.Services.Auth))
-	game.RegisterGameplayRoutes(protected, gameplayHandler, app.Deps.Services.CoAuthor)
+	game.RegisterGameplayRoutes(protected, app.Deps.Services.GameplayHandler, app.Deps.Services.CoAuthor)
 }
 
 // =============================================================================

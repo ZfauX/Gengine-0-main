@@ -3,12 +3,14 @@ package cache
 
 import (
 	"strings"
+	"sync"
 	"time"
 
 	gocache "github.com/patrickmn/go-cache"
 )
 
 // Cache предоставляет общий интерфейс для кэширования с TTL.
+// Для распределённого кэширования рекомендуется использовать Redis.
 type Cache struct {
 	store *gocache.Cache
 }
@@ -45,13 +47,28 @@ func (c *Cache) Delete(key string) {
 // DeleteByPrefix удаляет все значения из кэша, ключи которых начинаются с prefix.
 // go-cache не поддерживает удаление по префиксу нативно, поэтому используем Items() для обхода.
 // Важно: Items() возвращает копию map, поэтому итерация безопасна.
+// Для больших объёмов данных рекомендуется использовать Redis с SCAN + DELETE.
 func (c *Cache) DeleteByPrefix(prefix string) {
 	items := c.store.Items()
+	var wg sync.WaitGroup
+	keysToDelete := make([]string, 0, len(items))
+
+	// Сначала собираем ключи для удаления
 	for key := range items {
 		if strings.HasPrefix(key, prefix) {
-			c.store.Delete(key)
+			keysToDelete = append(keysToDelete, key)
 		}
 	}
+
+	// Удаляем параллельно (оптимизация для большого количества ключей)
+	for _, key := range keysToDelete {
+		wg.Add(1)
+		go func(k string) {
+			defer wg.Done()
+			c.store.Delete(k)
+		}(key)
+	}
+	wg.Wait()
 }
 
 // Flush очищает весь кэш.

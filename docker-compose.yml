@@ -26,8 +26,8 @@ services:
       retries: 3
     restart: unless-stopped
     volumes:
-      - ./uploads:/root/uploads
-      - ./backups:/root/backups
+      - ./uploads:/app/uploads
+      - ./backups:/app/backups
 
   db:
     image: postgres:18-alpine

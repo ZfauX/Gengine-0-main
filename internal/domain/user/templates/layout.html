@@ -1,27 +1,56 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-theme="light">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="csrf-token" content="{{.csrf}}" />
+    <meta name="description" content="{{.Description | default "Платформа для создания и проведения квестов"}}">
+    <meta name="keywords" content="квесты, игры, командные игры, urban quest, encounter">
+    <meta name="author" content="Encounter Engine">
+    <meta name="theme-color" content="#2563eb">
+    <meta property="og:title" content="{{.Title}} · Encounter Engine">
+    <meta property="og:description" content="{{.Description | default "Платформа для создания и проведения квестов"}}">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
     <title>{{.Title}} · Encounter Engine</title>
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/icon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/icon-16x16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/icon-180x180.png">
     <!-- Подключаем собранный Tailwind CSS (локально) -->
     <link rel="stylesheet" href="/static/css/output.css">
 
     <!-- Небольшие кастомные стили поверх Tailwind с nonce -->
     <style nonce="{{.csp_nonce}}">
+        :root {
+            --bg-primary: #f3f4f6;
+            --bg-card: #ffffff;
+            --text-primary: #111827;
+            --text-secondary: #6b7280;
+            --border-color: #e5e7eb;
+        }
+        [data-theme="dark"] {
+            --bg-primary: #111827;
+            --bg-card: #1f2937;
+            --text-primary: #f9fafb;
+            --text-secondary: #9ca3af;
+            --border-color: #374151;
+        }
         body {
-            background: #f3f4f6;
+            background: var(--bg-primary);
             font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            color: var(--text-primary);
+            transition: background-color 0.2s ease, color 0.2s ease;
         }
         .nav-link {
             transition: color 0.15s ease;
         }
         .card {
-            background: white;
+            background: var(--bg-card);
             border-radius: 0.75rem;
             box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1);
             padding: 1.5rem;
+            transition: background-color 0.2s ease;
         }
         .btn {
             display: inline-block;
@@ -47,12 +76,12 @@
             background: #b91c1c;
         }
         .btn-outline {
-            border: 1px solid #d1d5db;
-            background: white;
-            color: #374151;
+            border: 1px solid var(--border-color);
+            background: var(--bg-card);
+            color: var(--text-primary);
         }
         .btn-outline:hover {
-            background: #f9fafb;
+            background: var(--bg-primary);
         }
         .flash {
             padding: 0.75rem 1rem;
@@ -81,25 +110,94 @@
             transform: translateY(-2px);
             box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1);
         }
+
+        /* Responsive table */
+        @media (max-width: 640px) {
+            .table-responsive {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+            table {
+                min-width: 600px;
+            }
+        }
+
+        /* Print styles */
+        @media print {
+            nav, footer, .no-print {
+                display: none !important;
+            }
+            body {
+                background: white !important;
+                color: black !important;
+            }
+            .card {
+                box-shadow: none !important;
+                border: 1px solid #ddd !important;
+            }
+        }
+
+        /* Tooltip */
+        .tooltip {
+            position: relative;
+        }
+        .tooltip::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 4px 8px;
+            background: #1f2937;
+            color: white;
+            font-size: 12px;
+            border-radius: 4px;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+            margin-bottom: 4px;
+        }
+        .tooltip:hover::after {
+            opacity: 1;
+        }
+
+        /* Loading spinner */
+        .spinner {
+            border: 3px solid rgba(0,0,0,0.1);
+            border-radius: 50%;
+            border-top: 3px solid #2563eb;
+            width: 24px;
+            height: 24px;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
     {{.ExtraHead}}
 </head>
 <body>
 
     <!-- Навигация -->
-    <nav class="bg-white border-b border-gray-200 shadow-sm">
+    <nav class="bg-white border-b border-gray-200 shadow-sm" aria-label="Главная навигация">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between items-center h-16">
                 <!-- Логотип -->
                 <div class="flex items-center space-x-2">
-                    <span class="text-2xl font-bold text-blue-600">🕵️</span>
+                    <span class="text-2xl font-bold text-blue-600" aria-label="Encounter Engine">🕵️</span>
                     <a href="/" class="text-xl font-semibold text-gray-800 hover:text-blue-600 transition">
                         Encounter
                     </a>
                 </div>
 
                 <!-- Меню -->
-                <div class="flex items-center space-x-4 text-sm font-medium">
+                <div class="flex items-center space-x-4 text-sm font-medium" role="menubar">
+                    <!-- Кнопка переключения темы -->
+                    <button id="themeToggle" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400" title="Переключить тему" aria-label="Переключить тему" role="menuitem">
+                        🌙
+                    </button>
                     {{if .CurrentUserID}}
                         <a href="/dashboard" class="nav-link text-gray-600 hover:text-blue-600">Личный кабинет</a>
                         {{if .IsAdmin}}<a href="/admin" class="nav-link text-gray-600 hover:text-blue-600">Админка</a>{{end}}
@@ -117,7 +215,31 @@
     </nav>
 
     <!-- Основной контент -->
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8" role="main" aria-label="Основной контент">
+        <!-- Breadcrumb навигация -->
+        {{if .Breadcrumb}}
+        <nav class="flex mb-6" aria-label="Breadcrumb">
+            <ol class="inline-flex items-center space-x-1 md:space-x-3">
+                <li class="inline-flex items-center">
+                    <a href="/" class="text-gray-700 hover:text-blue-600 text-sm">Главная</a>
+                </li>
+                {{range .Breadcrumb}}
+                <li>
+                    <div class="flex items-center">
+                        <svg class="w-6 h-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path>
+                        </svg>
+                        {{if .URL}}
+                            <a href="{{.URL}}" class="ml-1 text-gray-700 hover:text-blue-600 text-sm md:ml-2">{{.Name}}</a>
+                        {{else}}
+                            <span class="ml-1 text-gray-500 text-sm md:ml-2">{{.Name}}</span>
+                        {{end}}
+                    </div>
+                </li>
+                {{end}}
+            </ol>
+        </nav>
+        {{end}}
         {{if .ContentHTML}}
             {{.ContentHTML}}
         {{else}}
@@ -125,12 +247,30 @@
         {{end}}
     </main>
 
+    <!-- Toast уведомления -->
+    <div id="toastContainer" class="fixed top-4 right-4 z-50 space-y-2"></div>
+
     <!-- Футер (опционально) -->
-    <footer class="border-t border-gray-200 mt-12 py-6 text-center text-sm text-gray-500">
+    <footer class="border-t border-gray-200 mt-12 py-6 text-center text-sm text-gray-500" role="contentinfo">
         &copy; 2026 Encounter Engine · Все права защищены
     </footer>
 
     {{.ExtraScripts}}
+
+    <!-- Регистрация Service Worker для offline support -->
+    <script nonce="{{.csp_nonce}}">
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('/static/sw.js')
+                    .then(function(registration) {
+                        console.log('SW registered:', registration.scope);
+                    })
+                    .catch(function(registrationError) {
+                        console.warn('SW registration failed:', registrationError);
+                    });
+            });
+        }
+    </script>
 
     <!-- Глобальный перехватчик fetch для CSRF (с nonce) -->
     <script nonce="{{.csp_nonce}}">
@@ -155,6 +295,95 @@
                 }
                 return originalFetch.call(this, url, options);
             };
+        })();
+
+        // Переключение темы
+        (function() {
+            const toggle = document.getElementById('themeToggle');
+            if (!toggle) return;
+
+            const stored = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+            if (stored === 'dark' || (!stored && prefersDark)) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                toggle.textContent = '☀️';
+            }
+
+            toggle.addEventListener('click', function() {
+                const current = document.documentElement.getAttribute('data-theme');
+                if (current === 'dark') {
+                    document.documentElement.removeAttribute('data-theme');
+                    localStorage.setItem('theme', 'light');
+                    toggle.textContent = '🌙';
+                } else {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                    localStorage.setItem('theme', 'dark');
+                    toggle.textContent = '☀️';
+                }
+            });
+
+            // Keyboard navigation — клавиша 'T' переключает тему
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 't' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                    const target = e.target;
+                    // Игнорируем ввод в текстовые поля
+                    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+                    toggle.click();
+                }
+            });
+        })();
+
+        // Toast уведомления
+        (function() {
+            const container = document.getElementById('toastContainer');
+            if (!container) return;
+
+            window.showToast = function(message, type) {
+                type = type || 'info';
+                const colors = {
+                    success: 'bg-green-500',
+                    error: 'bg-red-500',
+                    warning: 'bg-yellow-500',
+                    info: 'bg-blue-500'
+                };
+                const icons = {
+                    success: '✅',
+                    error: '❌',
+                    warning: '⚠️',
+                    info: 'ℹ️'
+                };
+
+                const toast = document.createElement('div');
+                toast.className = `${colors[type]} text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 min-w-[250px] animate-[fadeIn_0.2s_ease-in-out]`;
+                toast.innerHTML = `<span>${icons[type]}</span><span>${message}</span>`;
+
+                container.appendChild(toast);
+
+                setTimeout(function() {
+                    toast.style.opacity = '0';
+                    toast.style.transition = 'opacity 0.3s ease';
+                    setTimeout(function() {
+                        if (toast.parentNode) {
+                            toast.parentNode.removeChild(toast);
+                        }
+                    }, 300);
+                }, 3000);
+            };
+
+            // Auto-hide flash messages
+            const flashMessages = document.querySelectorAll('.flash');
+            flashMessages.forEach(function(flash) {
+                setTimeout(function() {
+                    flash.style.opacity = '0';
+                    flash.style.transition = 'opacity 0.5s ease';
+                    setTimeout(function() {
+                        if (flash.parentNode) {
+                            flash.parentNode.removeChild(flash);
+                        }
+                    }, 500);
+                }, 5000);
+            });
         })();
     </script>
 </body>

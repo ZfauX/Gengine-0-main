@@ -38,6 +38,8 @@ type ServerConfig struct {
 	LogMaxAge   int    // максимальное количество дней хранения логов (по умолчанию 28)
 	LogCompress bool   // сжимать ли архивы (по умолчанию true)
 	LogFormat   string // формат вывода логов: "console" или "json" (по умолчанию "console")
+	StaticDir   string // путь к статическим файлам (по умолчанию "static")
+	UploadsDir  string // путь к загружаемым файлам (по умолчанию "uploads")
 }
 
 // DatabaseConfig содержит параметры подключения к PostgreSQL.
@@ -140,6 +142,8 @@ func LoadConfig() (*Config, error) {
 	cfg.Server.LogMaxAge = getEnvAsInt("LOG_MAX_AGE", 28)
 	cfg.Server.LogCompress = getEnvAsBool("LOG_COMPRESS", true)
 	cfg.Server.LogFormat = getEnvOrDefault("LOG_FORMAT", "console") // console или json
+	cfg.Server.StaticDir = getEnvOrDefault("STATIC_DIR", "static")
+	cfg.Server.UploadsDir = getEnvOrDefault("UPLOADS_DIR", "uploads")
 
 	// База данных (обязательные параметры)
 	var err error
@@ -161,7 +165,7 @@ func LoadConfig() (*Config, error) {
 	cfg.Database.SSLMode = getEnvOrDefault("DB_SSLMODE", "disable")
 	cfg.Database.MaxOpenConns = getEnvAsInt("DB_MAX_OPEN_CONNS", 25)
 	cfg.Database.MaxIdleConns = getEnvAsInt("DB_MAX_IDLE_CONNS", 10)
-	if cfg.Database.ConnMaxLifetime, err = parseDuration("DB_CONN_MAX_LIFETIME", "5m"); err != nil {
+	if cfg.Database.ConnMaxLifetime, err = parseDuration("DB_CONN_MAX_LIFETIME", "30m"); err != nil {
 		return nil, err
 	}
 	if cfg.Database.ConnMaxIdleTime, err = parseDuration("DB_CONN_MAX_IDLE_TIME", "10m"); err != nil {

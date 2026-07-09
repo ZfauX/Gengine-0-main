@@ -40,7 +40,7 @@
 
     <!-- Список игр -->
     {{if .Games}}
-    <div class="overflow-x-auto bg-white rounded-lg shadow-sm border border-gray-200">
+    <div id="gamesTable" class="overflow-x-auto bg-white rounded-lg shadow-sm border border-gray-200">
         <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
                 <tr>
@@ -79,6 +79,12 @@
             </tbody>
         </table>
     </div>
+    {{else}}
+    <div class="card text-center py-12">
+        <p class="text-gray-500">Игры не найдены</p>
+        <p class="mt-2 text-sm text-gray-400">Попробуйте изменить параметры фильтра или <a href="/games/new" class="text-blue-600 hover:underline">создайте новую игру</a>.</p>
+    </div>
+    {{end}}
 
     <!-- Пагинация -->
     {{if gt .TotalPages 1}}
@@ -108,12 +114,54 @@
         </div>
     </div>
     {{end}}
-
-    {{else}}
-    <div class="card text-center py-12">
-        <p class="text-gray-500">Игры не найдены</p>
-        <p class="mt-2 text-sm text-gray-400">Попробуйте изменить параметры фильтра или <a href="/games/new" class="text-blue-600 hover:underline">создайте новую игру</a>.</p>
-    </div>
-    {{end}}
 </div>
+
+<script>
+    // Debounce для поиска — отложенный поиск после прекращения ввода
+    (function() {
+        const searchInput = document.getElementById('search');
+        if (!searchInput) return;
+
+        const form = searchInput.closest('form');
+        let timeout = null;
+
+        searchInput.addEventListener('input', function() {
+            clearTimeout(timeout);
+            timeout = setTimeout(function() {
+                form.submit();
+            }, 300);
+        });
+    })();
+
+    // Confirmation для опасных действий (удаление, публикация)
+    (function() {
+        document.addEventListener('click', function(e) {
+            const btn = e.target.closest('[data-confirm]');
+            if (!btn) return;
+
+            const message = btn.getAttribute('data-confirm');
+            if (!confirm(message)) {
+                e.preventDefault();
+                return false;
+            }
+        });
+    })();
+
+    // Skeleton loading для AJAX-запросов
+    window.showSkeleton = function() {
+        const table = document.getElementById('gamesTable');
+        if (!table) return;
+        table.innerHTML = '<div class="p-8 space-y-4">' +
+            '<div class="h-4 bg-gray-200 rounded animate-pulse w-3/4"></div>' +
+            '<div class="h-4 bg-gray-200 rounded animate-pulse w-1/2"></div>' +
+            '<div class="h-4 bg-gray-200 rounded animate-pulse w-2/3"></div>' +
+            '</div>';
+    };
+
+    window.hideSkeleton = function(html) {
+        const table = document.getElementById('gamesTable');
+        if (!table) return;
+        table.innerHTML = html;
+    };
+</script>
 {{end}}
