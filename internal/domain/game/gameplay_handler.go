@@ -334,7 +334,7 @@ func (h *GameplayHandler) ShowTestGame(c *gin.Context) {
 		c.HTML(http.StatusNotFound, "errors-404.html", nil)
 		return
 	}
-	ok, err := h.gameService.(*GameService).coAuthor.IsUserManager(g.ID, userID)
+	ok, err := h.gameService.IsUserManager(g.ID, userID)
 	if err != nil || !ok {
 		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": "Доступ запрещён"})
 		return

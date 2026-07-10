@@ -42,6 +42,7 @@ type GameServiceInterface interface {
 	Publish(ctx context.Context, id uint, userID uint) error
 	ListReviews(ctx context.Context, gameID uint) ([]Review, error)
 	GetAverageRating(ctx context.Context, gameID uint) (float64, int64, error)
+	IsUserManager(gameID, userID uint) (bool, error)
 }
 
 type CoAuthorServiceInterface interface {

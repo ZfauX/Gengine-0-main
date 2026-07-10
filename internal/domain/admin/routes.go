@@ -9,20 +9,23 @@ import (
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/audit"
 	"gengine-0/internal/pkg/middleware"
+	"gengine-0/internal/pkg/websocket"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 // RegisterRoutes регистрирует маршруты административной панели.
+// router — уже сгруппированный группа с /admin prefix и middleware (например 2FA).
 // @tags admin
 func RegisterRoutes(
-	router *gin.Engine,
+	router *gin.RouterGroup,
 	db *gorm.DB,
 	cfg *config.Config,
 	authService *user.AuthService,
 	userRepo user.UserRepository,
 	gameRepo game.GameRepository,
+	hub *websocket.RoomHub,
 ) *audit.Service {
 	auditService := audit.NewService(db)
 
@@ -34,7 +37,8 @@ func RegisterRoutes(
 	authRequired := middleware.AuthRequired(authService)
 	adminOnly := adminOnlyMiddleware()
 
-	protected := router.Group("/admin")
+	// router уже имеет prefix /admin и middleware (2FA) из app/router.go
+	protected := router.Group("/")
 	protected.Use(authRequired, adminOnly)
 	{
 		// @Summary Панель управления администратора
@@ -178,6 +182,24 @@ func RegisterRoutes(
 		// @Router /admin/backups/rotate [post]
 		// @Security JWT
 		protected.POST("/backups/rotate", adminHandler.RotateBackups)
+
+		// @Summary Health check WebSocket
+		// @Description Возвращает состояние WebSocket-хаба (количество соединений, комнат)
+		// @Tags admin
+		// @Produce json
+		// @Success 200 {object} map[string]interface{} "Статус WebSocket-хаба"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+		// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+		// @Router /admin/ws-health [get]
+		// @Security JWT
+		protected.GET("/ws-health", func(c *gin.Context) {
+			if hub == nil {
+				c.JSON(http.StatusOK, gin.H{"status": "healthy", "ws_status": "not_initialized"})
+				return
+			}
+			stats := hub.GetHealthStatus()
+			c.JSON(http.StatusOK, stats)
+		})
 	}
 
 	return auditService

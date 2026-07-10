@@ -139,6 +139,11 @@ func (m *MockGameService) GetAverageRating(ctx context.Context, gameID uint) (fl
 	return args.Get(0).(float64), args.Get(1).(int64), args.Error(2)
 }
 
+func (m *MockGameService) IsUserManager(gameID, userID uint) (bool, error) {
+	args := m.Called(gameID, userID)
+	return args.Bool(0), args.Error(1)
+}
+
 // MockCoAuthorService — мок для CoAuthorServiceInterface
 type MockCoAuthorService struct {
 	mock.Mock

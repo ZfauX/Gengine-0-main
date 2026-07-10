@@ -18,25 +18,27 @@ const (
 )
 
 type Client struct {
-	ID       string
-	Conn     *websocket.Conn
-	Send     chan []byte
-	RoomID   string
-	RemoteIP string // IP-адрес клиента для лимитов
-	Hub      *RoomHub
-	mu       sync.Mutex
-	closed   bool
-	done     chan struct{} // сигнал о завершении всех горутин
+	ID           string
+	Conn         *websocket.Conn
+	Send         chan []byte
+	RoomID       string
+	RemoteIP     string // IP-адрес клиента для лимитов
+	Hub          *RoomHub
+	mu           sync.Mutex
+	closed       bool
+	done         chan struct{} // сигнал о завершении всех горутин
+	LastActivity time.Time     // последнее время активности
 }
 
 func NewClient(conn *websocket.Conn, roomID, remoteIP string) *Client {
 	return &Client{
-		ID:       uuid.New().String(),
-		Conn:     conn,
-		Send:     make(chan []byte, 256),
-		RoomID:   roomID,
-		RemoteIP: remoteIP,
-		done:     make(chan struct{}),
+		ID:           uuid.New().String(),
+		Conn:         conn,
+		Send:         make(chan []byte, 256),
+		RoomID:       roomID,
+		RemoteIP:     remoteIP,
+		done:         make(chan struct{}),
+		LastActivity: time.Now(),
 	}
 }
 
@@ -56,6 +58,13 @@ func (c *Client) IsClosed() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.closed
+}
+
+// RecordActivity обновляет время последней активности клиента.
+func (c *Client) RecordActivity() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.LastActivity = time.Now()
 }
 
 // writePump отправляет сообщения из канала Send в WebSocket-соединение.
@@ -114,6 +123,7 @@ func HandleWebSocketWithContext(ctx context.Context, client *Client) {
 	_ = client.Conn.SetReadDeadline(time.Now().Add(pongWait))
 	client.Conn.SetPongHandler(func(string) error {
 		_ = client.Conn.SetReadDeadline(time.Now().Add(pongWait))
+		client.RecordActivity()
 		return nil
 	})
 
@@ -134,6 +144,8 @@ func HandleWebSocketWithContext(ctx context.Context, client *Client) {
 				}
 				return
 			}
+			// Обновляем активность при чтении сообщения
+			client.RecordActivity()
 		}
 	}
 }
