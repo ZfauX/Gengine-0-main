@@ -25,6 +25,7 @@ import (
 
 	_ "gengine-0/internal/pkg/metrics"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"github.com/rs/zerolog"
@@ -68,6 +69,26 @@ func main() {
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatal().Err(err).Msg("Не удалось загрузить конфигурацию")
+	}
+
+	// ============================================================
+	// ИНИЦИАЛИЗАЦИЯ SENTRY
+	// ============================================================
+	if cfg.Sentry.Enabled && cfg.Sentry.DSN != "" {
+		err := sentry.Init(sentry.ClientOptions{
+			Dsn:              cfg.Sentry.DSN,
+			TracesSampleRate: cfg.Sentry.TracingRate,
+			Release:          version,
+			Environment:      cfg.Server.GinMode,
+		})
+		if err != nil {
+			log.Warn().Err(err).Msg("Sentry: initialization failed, continuing without Sentry")
+		} else {
+			log.Info().Msg("Sentry: initialized successfully")
+			defer sentry.Flush(2 * time.Second)
+		}
+	} else {
+		log.Info().Msg("Sentry: disabled")
 	}
 
 	// ============================================================
@@ -156,8 +177,18 @@ func main() {
 		log.Info().Msg("SMTP отключён, email-очередь не запущена")
 	}
 
-	// --- Инициализация кэша ---
-	appCache := cache.NewCache(10*time.Minute, 5*time.Minute)
+	// --- Инициализация кэша (Valkey с fallback на in-memory) ---
+	var appCache cache.CacheStore
+	if cfg.Valkey.Host != "" {
+		appCache = cache.NewValkeyCache(cfg.Valkey.Host, cfg.Valkey.Port, cfg.Valkey.Password)
+		if appCache == nil {
+			log.Warn().Msg("Valkey недоступен, используется in-memory кэш")
+			appCache = cache.NewCache(10*time.Minute, 5*time.Minute)
+		}
+	} else {
+		log.Info().Msg("Valkey не настроен, используется in-memory кэш")
+		appCache = cache.NewCache(10*time.Minute, 5*time.Minute)
+	}
 
 	deps := app.NewDependencies(database, cfg, hub, localStorage, appCache)
 	appInstance := app.NewApp(database, localStorage, hub, cfg, ".", deps)
@@ -200,6 +231,9 @@ func main() {
 			}
 		}
 	}()
+
+	// WebSocket cleanup — периодическая очистка неактивных соединений
+	go appInstance.Hub.StartCleanupPeriodic()
 
 	// Фоновая очистка просроченных refresh-токенов (раз в час)
 	go func() {

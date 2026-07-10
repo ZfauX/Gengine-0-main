@@ -73,7 +73,7 @@ func RunServer(r *gin.Engine, db *gorm.DB, cfg *config.Config, cancel context.Ca
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Fatal().Err(err).Msg("Server forced to shutdown")
+		log.Error().Err(err).Msg("Server shutdown timeout, forcing exit")
 	}
 
 	if err := sqlDB.Close(); err != nil {

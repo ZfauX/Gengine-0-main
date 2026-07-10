@@ -10,10 +10,12 @@ import (
 )
 
 // Cache предоставляет общий интерфейс для кэширования с TTL.
-// Для распределённого кэширования рекомендуется использовать Redis.
+// Реализует интерфейс CacheStore.
 type Cache struct {
 	store *gocache.Cache
 }
+
+var _ CacheStore = (*Cache)(nil)
 
 // NewCache создаёт новый экземпляр кэша с указанным TTL по умолчанию и интервалом очистки.
 func NewCache(defaultTTL, cleanupInterval time.Duration) *Cache {

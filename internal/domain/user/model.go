@@ -10,19 +10,23 @@ import (
 // User представляет пользователя платформы.
 type User struct {
 	gorm.Model
-	Email             string             `gorm:"uniqueIndex;not null"`
-	Password          string             `gorm:"not null"`
-	Name              string             `gorm:"not null"`
-	Role              string             `gorm:"default:user"` // user / admin
-	EmailVerified     bool               `gorm:"default:false"`
-	AvatarPath        string             `gorm:"default:''"`
-	ProfileVisibility string             `gorm:"default:public"` // public / hidden
-	Plan              string             `gorm:"default:free"`   // free / basic / pro
-	StripeCustomerID  string             `gorm:"default:''"`
-	Achievements      []Achievement      `gorm:"many2many:user_achievements;"`
-	ExternalLogins    []ExternalLogin    `gorm:"foreignKey:UserID"`
-	Subscriptions     []PushSubscription `gorm:"foreignKey:UserID"`
-	RefreshTokens     []RefreshToken     `gorm:"foreignKey:UserID"` // добавлено
+	Email             string `gorm:"uniqueIndex;not null"`
+	Password          string `gorm:"not null"`
+	Name              string `gorm:"not null"`
+	Role              string `gorm:"default:user"` // user / admin
+	EmailVerified     bool   `gorm:"default:false"`
+	AvatarPath        string `gorm:"default:''"`
+	ProfileVisibility string `gorm:"default:public"` // public / hidden
+	Plan              string `gorm:"default:free"`   // free / basic / pro
+	StripeCustomerID  string `gorm:"default:''"`
+	// 2FA fields
+	TwoFactorEnabled     bool               `gorm:"default:false"`      // включена ли 2FA
+	TwoFactorSecret      string             `gorm:"default:'';size:32"` // секрет для TOTP (Base32)
+	TwoFactorBackupCodes string             `gorm:"default:''"`         // резервные коды (через запятую, хешированные)
+	Achievements         []Achievement      `gorm:"many2many:user_achievements;"`
+	ExternalLogins       []ExternalLogin    `gorm:"foreignKey:UserID"`
+	Subscriptions        []PushSubscription `gorm:"foreignKey:UserID"`
+	RefreshTokens        []RefreshToken     `gorm:"foreignKey:UserID"` // добавлено
 }
 
 // Achievement представляет достижение (ачивку).

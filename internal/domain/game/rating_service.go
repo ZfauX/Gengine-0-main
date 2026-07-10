@@ -14,10 +14,10 @@ import (
 
 type RatingService struct {
 	DB    *gorm.DB
-	cache *cache.Cache
+	cache cache.CacheStore
 }
 
-func NewRatingService(db *gorm.DB, c *cache.Cache) *RatingService {
+func NewRatingService(db *gorm.DB, c cache.CacheStore) *RatingService {
 	return &RatingService{DB: db, cache: c}
 }
 

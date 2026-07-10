@@ -16,7 +16,7 @@ import (
 type Config struct {
 	Server    ServerConfig    // настройки HTTP-сервера
 	Database  DatabaseConfig  // параметры подключения к PostgreSQL
-	Redis     RedisConfig     // опциональные настройки Redis
+	Valkey    ValkeyConfig    // параметры подключения к Valkey (Redis-compatible)
 	JWT       JWTConfig       // параметры JWT-токенов
 	Session   SessionConfig   // настройки сессий (подпись cookie)
 	Admin     AdminConfig     // учётные данные администратора по умолчанию
@@ -25,6 +25,7 @@ type Config struct {
 	SMTP      SMTPConfig      // настройки SMTP-сервера (опционально)
 	ReCAPTCHA ReCAPTCHAConfig // настройки reCAPTCHA (опционально)
 	TLS       TLSConfig       // пути к TLS-сертификатам (опционально)
+	Sentry    SentryConfig    // настройки Sentry (опционально)
 }
 
 // ServerConfig содержит параметры HTTP-сервера и логирования.
@@ -56,11 +57,12 @@ type DatabaseConfig struct {
 	ConnMaxIdleTime time.Duration // максимальное время простоя соединения
 }
 
-// RedisConfig содержит параметры подключения к Redis (опционально).
-// Если Redis не используется, поля могут быть пустыми.
-type RedisConfig struct {
-	Host     string // хост Redis
-	Port     string // порт Redis
+// ValkeyConfig содержит параметры подключения к Valkey (опционально).
+// Valkey полностью совместим с Redis API.
+// Если Valkey не используется, поля могут быть пустыми.
+type ValkeyConfig struct {
+	Host     string // хост Valkey
+	Port     string // порт Valkey
 	Password string // пароль (если требуется)
 }
 
@@ -127,6 +129,13 @@ type TLSConfig struct {
 	KeyFile  string // путь к файлу приватного ключа (.key)
 }
 
+// SentryConfig содержит параметры Sentry (опционально).
+type SentryConfig struct {
+	Enabled     bool    // включена ли интеграция с Sentry
+	DSN         string  // DSN для подключения к Sentry
+	TracingRate float64 // доля трассировки (0.0-1.0)
+}
+
 // LoadConfig загружает конфигурацию из переменных окружения с жёсткой проверкой обязательных секретов.
 // Выполняет проверки и возвращает конфигурацию или ошибку.
 func LoadConfig() (*Config, error) {
@@ -172,10 +181,10 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 
-	// Redis (опционально)
-	cfg.Redis.Host = os.Getenv("REDIS_HOST")
-	cfg.Redis.Port = os.Getenv("REDIS_PORT")
-	cfg.Redis.Password = os.Getenv("REDIS_PASSWORD")
+	// Valkey (опционально)
+	cfg.Valkey.Host = os.Getenv("VALKEY_HOST")
+	cfg.Valkey.Port = os.Getenv("VALKEY_PORT")
+	cfg.Valkey.Password = os.Getenv("VALKEY_PASSWORD")
 
 	// JWT – критично, без дефолтов
 	if cfg.JWT.Secret, err = requireStrongSecret("JWT_SECRET", 32); err != nil {
@@ -230,6 +239,11 @@ func LoadConfig() (*Config, error) {
 	// TLS
 	cfg.TLS.CertFile = os.Getenv("TLS_CERT_FILE")
 	cfg.TLS.KeyFile = os.Getenv("TLS_KEY_FILE")
+
+	// Sentry
+	if cfg.Sentry, err = loadSentryConfig(); err != nil {
+		return nil, err
+	}
 
 	return cfg, nil
 }
@@ -387,6 +401,25 @@ func loadReCAPTCHAConfig() (ReCAPTCHAConfig, error) {
 	}, nil
 }
 
+// loadSentryConfig загружает настройки Sentry, если они включены.
+// При включении требует наличия SENTRY_DSN.
+func loadSentryConfig() (SentryConfig, error) {
+	enabled, _ := strconv.ParseBool(os.Getenv("SENTRY_ENABLED"))
+	if !enabled {
+		return SentryConfig{Enabled: false}, nil
+	}
+	dsn := os.Getenv("SENTRY_DSN")
+	if dsn == "" {
+		return SentryConfig{}, errors.New("SENTRY_ENABLED is true but SENTRY_DSN is missing")
+	}
+	tracingRate := getEnvAsFloat("SENTRY_TRACING_RATE", 0.1)
+	return SentryConfig{
+		Enabled:     true,
+		DSN:         dsn,
+		TracingRate: tracingRate,
+	}, nil
+}
+
 // getEnvAsInt возвращает значение переменной окружения как целое число или fallback при ошибке.
 func getEnvAsInt(key string, fallback int) int {
 	if value, ok := os.LookupEnv(key); ok {
@@ -402,6 +435,16 @@ func getEnvAsBool(key string, fallback bool) bool {
 	if value, ok := os.LookupEnv(key); ok {
 		if boolValue, err := strconv.ParseBool(value); err == nil {
 			return boolValue
+		}
+	}
+	return fallback
+}
+
+// getEnvAsFloat возвращает значение переменной окружения как float64 или fallback при ошибке.
+func getEnvAsFloat(key string, fallback float64) float64 {
+	if value, ok := os.LookupEnv(key); ok {
+		if floatValue, err := strconv.ParseFloat(value, 64); err == nil {
+			return floatValue
 		}
 	}
 	return fallback

@@ -36,7 +36,6 @@ import (
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/rs/zerolog/log"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 	csrf "github.com/utrack/gin-csrf"
@@ -53,7 +52,7 @@ type Dependencies struct {
 	AuditSvc *audit.Service
 }
 
-func NewDependencies(db *gorm.DB, cfg *config.Config, hub *ws.RoomHub, localStorage storage.FileStorage, appCache *cache.Cache) *Dependencies {
+func NewDependencies(db *gorm.DB, cfg *config.Config, hub *ws.RoomHub, localStorage storage.FileStorage, appCache cache.CacheStore) *Dependencies {
 	repos := initRepositories(db)
 	services := initServices(db, repos, cfg, hub, localStorage, appCache)
 	auditSvc := audit.NewService(db)
@@ -100,7 +99,9 @@ func NewApp(
 func (app *App) SetupRouter() (*gin.Engine, error) {
 	r := gin.New()
 
-	app.setupEngine(r)
+	if err := app.setupEngine(r); err != nil {
+		return nil, err
+	}
 	if err := app.registerAllRoutes(r); err != nil {
 		return nil, err
 	}
@@ -112,7 +113,7 @@ func (app *App) SetupRouter() (*gin.Engine, error) {
 // НАСТРОЙКА ДВИЖКА
 // =============================================================================
 
-func (app *App) setupEngine(r *gin.Engine) {
+func (app *App) setupEngine(r *gin.Engine) error {
 	store := cookie.NewStore([]byte(app.Config.Session.Secret))
 	r.Use(gin.Recovery())
 	r.Use(middleware.ErrorHandler())
@@ -134,7 +135,7 @@ func (app *App) setupEngine(r *gin.Engine) {
 	tmpl.Funcs(templatefuncs.FuncMap())
 	_, err := tmpl.ParseGlob(filepath.Join(app.BaseDir, "internal", "domain", "*", "templates", "*.html"))
 	if err != nil {
-		log.Fatal().Err(err).Msg("Не удалось загрузить шаблоны")
+		return fmt.Errorf("не удалось загрузить шаблоны: %w", err)
 	}
 	r.SetHTMLTemplate(tmpl)
 	render.SetTemplate(tmpl)
@@ -186,6 +187,8 @@ func (app *App) setupEngine(r *gin.Engine) {
 			"csrf":          csrf.GetToken(c),
 		})
 	})
+
+	return nil
 }
 
 // =============================================================================
@@ -286,7 +289,7 @@ type services struct {
 	Tournament      *tournament.TournamentService
 }
 
-func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.RoomHub, localStorage storage.FileStorage, appCache *cache.Cache) *services {
+func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.RoomHub, localStorage storage.FileStorage, appCache cache.CacheStore) *services {
 	coAuthorSvc := game.NewCoAuthorService(db)
 	reviewSvc := game.NewReviewService(db)
 	attemptSvc := game.NewAttemptService(db)
@@ -321,6 +324,7 @@ func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.
 		localStorage,
 		appCache,
 		repos.User,
+		ratingSvc,
 	)
 
 	gamePlaySvc := game.NewGamePlayService(
@@ -399,7 +403,16 @@ func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.
 // =============================================================================
 
 func (app *App) registerAdminRoutes(r *gin.Engine) {
-	_ = admin.RegisterRoutes(r, app.DB, app.Config, app.Deps.Services.Auth, app.Deps.Repos.User, app.Deps.Repos.Game)
+	twoFactorSvc := user.NewTwoFactorService()
+
+	// Middleware для проверки 2FA (из domain/user чтобы избежать циклического импорта)
+	twoFactorRequired := user.TwoFactorRequired(twoFactorSvc, app.Deps.Repos.User)
+
+	// Применяем 2FA middleware к админ-маршрутам (до регистрации, чтобы сработал на все маршруты)
+	adminGroup := r.Group("/admin")
+	adminGroup.Use(twoFactorRequired)
+
+	_ = admin.RegisterRoutes(adminGroup, app.DB, app.Config, app.Deps.Services.Auth, app.Deps.Repos.User, app.Deps.Repos.Game, app.Hub)
 }
 
 func (app *App) registerUserRoutes(r *gin.Engine) {
@@ -518,7 +531,7 @@ func (app *App) registerGameplayRoutes(r *gin.Engine) {
 
 // SetupRouter — legacy-функция для обратной совместимости с тестами.
 // Создаёт новый router с нуля (deps создаются внутри).
-func SetupRouter(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub, cfg *config.Config, baseDir string, appCache *cache.Cache) (*gin.Engine, error) {
+func SetupRouter(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub, cfg *config.Config, baseDir string, appCache cache.CacheStore) (*gin.Engine, error) {
 	deps := NewDependencies(db, cfg, hub, localStorage, appCache)
 	app := NewApp(db, localStorage, hub, cfg, baseDir, deps)
 	return app.SetupRouter()

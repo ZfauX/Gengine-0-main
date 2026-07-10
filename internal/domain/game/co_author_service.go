@@ -108,7 +108,7 @@ func (s *CoAuthorService) Add(gameID, newCoAuthorID, ownerID uint) error {
 	return s.DB.Create(&co).Error
 }
 
-// Remove мягко удаляет соавтора.
+// Remove мягко удаляет соавтора (устанавливает deleted_at).
 func (s *CoAuthorService) Remove(gameID, coAuthorUserID, ownerID uint) error {
 	var game Game
 	if err := s.DB.First(&game, gameID).Error; err != nil {
@@ -117,6 +117,7 @@ func (s *CoAuthorService) Remove(gameID, coAuthorUserID, ownerID uint) error {
 	if game.AuthorID != ownerID {
 		return errors.New("только владелец может управлять соавторами")
 	}
+	// Используем Delete, который в GORM v2 автоматически устанавливает deleted_at
 	return s.DB.Where("game_id = ? AND user_id = ?", gameID, coAuthorUserID).Delete(&CoAuthor{}).Error
 }
 
