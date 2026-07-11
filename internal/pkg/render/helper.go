@@ -46,8 +46,51 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 }
 
 // RenderError рендерит страницу ошибки с заданным статусом и сообщением.
+// Автоматически выбирает шаблон по статусу (400, 403, 404, 500).
 func RenderError(c *gin.Context, status int, message string) {
-	Page(c, status, "errors-404.html", gin.H{"Error": message})
+	if message == "" {
+		message = defaultErrorMessage(status)
+	}
+	templateName := errorTemplateForStatus(status)
+	Page(c, status, templateName, gin.H{"Error": message})
+}
+
+// RenderErrorPage рендерит страницу ошибки без сообщения (используется для 403/500).
+func RenderErrorPage(c *gin.Context, status int) {
+	templateName := errorTemplateForStatus(status)
+	Page(c, status, templateName, gin.H{})
+}
+
+// defaultErrorMessage возвращает стандартное сообщение для HTTP-статуса.
+func defaultErrorMessage(status int) string {
+	switch status {
+	case http.StatusBadRequest:
+		return "Неверный запрос"
+	case http.StatusForbidden:
+		return "Доступ запрещён"
+	case http.StatusNotFound:
+		return "Не найдено"
+	case http.StatusInternalServerError:
+		return "Внутренняя ошибка сервера"
+	default:
+		return "Ошибка"
+	}
+}
+
+// errorTemplateForStatus возвращает имя шаблона для статуса ошибки.
+func errorTemplateForStatus(status int) string {
+	switch status {
+	case http.StatusBadRequest:
+		return "errors-400.html"
+	case http.StatusForbidden:
+		return "errors-403.html"
+	case http.StatusNotFound:
+		return "errors-404.html"
+	case http.StatusInternalServerError:
+		return "errors-500.html"
+	default:
+		return "errors-500.html"
+	}
 }
 
 // ParseID парсит ID из URL-параметра и возвращает ошибку 400 при неудаче.

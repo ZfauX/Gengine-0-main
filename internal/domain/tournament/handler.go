@@ -87,7 +87,7 @@ func (h *TournamentHandler) List(c *gin.Context) {
 	tournaments, err := h.tournamentService.List(c.Request.Context())
 	if err != nil {
 		log.Error().Err(err).Msg("TournamentHandler.List: failed to list tournaments")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 	render.Page(c, http.StatusOK, "tournaments-list.html", gin.H{
@@ -99,7 +99,7 @@ func (h *TournamentHandler) List(c *gin.Context) {
 func (h *TournamentHandler) Show(c *gin.Context) {
 	var req TournamentIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID турнира"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID турнира")
 		return
 	}
 	userID := c.GetUint("userID")
@@ -107,10 +107,10 @@ func (h *TournamentHandler) Show(c *gin.Context) {
 	t, err := h.tournamentService.GetByID(c.Request.Context(), req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.HTML(http.StatusNotFound, "errors-404.html", nil)
+			render.RenderErrorPage(c, http.StatusNotFound)
 		} else {
 			log.Error().Err(err).Uint("tournament_id", req.ID).Msg("TournamentHandler.Show: failed to get tournament")
-			c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+			render.RenderErrorPage(c, http.StatusInternalServerError)
 		}
 		return
 	}
@@ -185,7 +185,7 @@ func (h *TournamentHandler) Create(c *gin.Context) {
 func (h *TournamentHandler) EditForm(c *gin.Context) {
 	var req TournamentIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID турнира"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID турнира")
 		return
 	}
 	userID := c.GetUint("userID")
@@ -193,15 +193,15 @@ func (h *TournamentHandler) EditForm(c *gin.Context) {
 	t, err := h.tournamentService.GetByID(c.Request.Context(), req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.HTML(http.StatusNotFound, "errors-404.html", nil)
+			render.RenderErrorPage(c, http.StatusNotFound)
 		} else {
 			log.Error().Err(err).Uint("tournament_id", req.ID).Msg("TournamentHandler.EditForm: failed to get tournament")
-			c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+			render.RenderErrorPage(c, http.StatusInternalServerError)
 		}
 		return
 	}
 	if t.AuthorID != userID {
-		c.HTML(http.StatusForbidden, "errors-403.html", nil)
+		render.RenderErrorPage(c, http.StatusForbidden)
 		return
 	}
 
@@ -215,7 +215,7 @@ func (h *TournamentHandler) EditForm(c *gin.Context) {
 func (h *TournamentHandler) Update(c *gin.Context) {
 	var req TournamentIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID турнира"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID турнира")
 		return
 	}
 	userID := c.GetUint("userID")
@@ -254,7 +254,7 @@ func (h *TournamentHandler) Update(c *gin.Context) {
 func (h *TournamentHandler) Games(c *gin.Context) {
 	var req TournamentIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID турнира"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID турнира")
 		return
 	}
 	userID := c.GetUint("userID")
@@ -262,7 +262,7 @@ func (h *TournamentHandler) Games(c *gin.Context) {
 	games, err := h.tournamentService.ListGames(c.Request.Context(), req.ID)
 	if err != nil {
 		log.Error().Err(err).Uint("tournament_id", req.ID).Msg("TournamentHandler.Games: failed to list games")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 
@@ -284,26 +284,26 @@ func (h *TournamentHandler) Games(c *gin.Context) {
 func (h *TournamentHandler) AddGame(c *gin.Context) {
 	var req TournamentGameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверные данные"})
+		render.RenderError(c, http.StatusBadRequest, "Неверные данные")
 		return
 	}
 	userID := c.GetUint("userID")
 
 	var input AddGameInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверные данные: " + err.Error()})
+		render.RenderError(c, http.StatusBadRequest, "Неверные данные: "+err.Error())
 		return
 	}
 
 	// Валидация ID игры
 	if err := validation.ValidatePositiveUint("ID игры", input.GameID); err != nil {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": err.Error()})
+		render.RenderError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	if err := h.tournamentService.AddGame(c.Request.Context(), req.ID, input.GameID, userID); err != nil {
 		log.Error().Err(err).Uint("tournament_id", req.ID).Uint("game_id", input.GameID).Uint("user_id", userID).Msg("TournamentHandler.AddGame: failed to add game")
-		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
+		render.RenderError(c, http.StatusForbidden, err.Error())
 		return
 	}
 
@@ -314,14 +314,14 @@ func (h *TournamentHandler) AddGame(c *gin.Context) {
 func (h *TournamentHandler) RemoveGame(c *gin.Context) {
 	var req TournamentGameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверные данные"})
+		render.RenderError(c, http.StatusBadRequest, "Неверные данные")
 		return
 	}
 	userID := c.GetUint("userID")
 
 	if err := h.tournamentService.RemoveGame(c.Request.Context(), req.ID, req.GameID, userID); err != nil {
 		log.Error().Err(err).Uint("tournament_id", req.ID).Uint("game_id", req.GameID).Uint("user_id", userID).Msg("TournamentHandler.RemoveGame: failed to remove game")
-		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
+		render.RenderError(c, http.StatusForbidden, err.Error())
 		return
 	}
 
@@ -332,7 +332,7 @@ func (h *TournamentHandler) RemoveGame(c *gin.Context) {
 func (h *TournamentHandler) ApplyForm(c *gin.Context) {
 	var req TournamentIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID турнира"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID турнира")
 		return
 	}
 	userID := c.GetUint("userID")
@@ -354,26 +354,26 @@ func (h *TournamentHandler) ApplyForm(c *gin.Context) {
 func (h *TournamentHandler) Apply(c *gin.Context) {
 	var req TournamentIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID турнира"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID турнира")
 		return
 	}
 	userID := c.GetUint("userID")
 
 	var input ApplyInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверные данные: " + err.Error()})
+		render.RenderError(c, http.StatusBadRequest, "Неверные данные: "+err.Error())
 		return
 	}
 
 	// Валидация ID команды
 	if err := validation.ValidatePositiveUint("ID команды", input.TeamID); err != nil {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": err.Error()})
+		render.RenderError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	if err := h.tournamentService.Apply(c.Request.Context(), req.ID, input.TeamID, userID); err != nil {
 		log.Error().Err(err).Uint("tournament_id", req.ID).Uint("team_id", input.TeamID).Uint("user_id", userID).Msg("TournamentHandler.Apply: failed to apply")
-		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
+		render.RenderError(c, http.StatusForbidden, err.Error())
 		return
 	}
 

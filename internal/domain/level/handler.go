@@ -112,7 +112,7 @@ func NewLevelHandler(
 func (h *LevelHandler) ListByGame(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
 		return
 	}
 	userID := c.GetUint("userID")
@@ -120,18 +120,18 @@ func (h *LevelHandler) ListByGame(c *gin.Context) {
 	ok, err := h.authorizer.IsUserManager(uint(gameID), userID)
 	if err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Uint("user", userID).Msg("ListByGame: failed to check manager")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 	if !ok {
-		c.HTML(http.StatusForbidden, "errors-403.html", nil)
+		render.RenderErrorPage(c, http.StatusForbidden)
 		return
 	}
 
 	levels, err := h.levelService.ListByGame(c.Request.Context(), uint(gameID))
 	if err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Msg("ListByGame: failed to list levels")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 
@@ -150,7 +150,7 @@ func (h *LevelHandler) ListByGame(c *gin.Context) {
 func (h *LevelHandler) NewForm(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
 		return
 	}
 	userID := c.GetUint("userID")
@@ -167,7 +167,7 @@ func (h *LevelHandler) NewForm(c *gin.Context) {
 func (h *LevelHandler) Create(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
 		return
 	}
 	userID := c.GetUint("userID")
@@ -212,7 +212,7 @@ func (h *LevelHandler) Create(c *gin.Context) {
 func (h *LevelHandler) EditForm(c *gin.Context) {
 	levelID, err := strconv.Atoi(c.Param("level_id"))
 	if err != nil || levelID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID уровня"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID уровня")
 		return
 	}
 	userID := c.GetUint("userID")
@@ -220,10 +220,10 @@ func (h *LevelHandler) EditForm(c *gin.Context) {
 	level, err := h.levelService.GetByID(c.Request.Context(), uint(levelID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.HTML(http.StatusNotFound, "errors-404.html", nil)
+			render.RenderErrorPage(c, http.StatusNotFound)
 		} else {
 			log.Error().Err(err).Int("level_id", levelID).Msg("EditForm: failed to get level")
-			c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+			render.RenderErrorPage(c, http.StatusInternalServerError)
 		}
 		return
 	}
@@ -231,11 +231,11 @@ func (h *LevelHandler) EditForm(c *gin.Context) {
 	ok, err := h.authorizer.IsUserManager(level.GameID, userID)
 	if err != nil {
 		log.Error().Err(err).Uint("game_id", level.GameID).Uint("user", userID).Msg("EditForm: failed to check manager")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 	if !ok {
-		c.HTML(http.StatusForbidden, "errors-403.html", nil)
+		render.RenderErrorPage(c, http.StatusForbidden)
 		return
 	}
 
@@ -256,7 +256,7 @@ func (h *LevelHandler) EditForm(c *gin.Context) {
 func (h *LevelHandler) Update(c *gin.Context) {
 	levelID, err := strconv.Atoi(c.Param("level_id"))
 	if err != nil || levelID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID уровня"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID уровня")
 		return
 	}
 	userID := c.GetUint("userID")
@@ -301,18 +301,18 @@ func (h *LevelHandler) Update(c *gin.Context) {
 func (h *LevelHandler) Delete(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
 		return
 	}
 	levelID, err := strconv.Atoi(c.Param("level_id"))
 	if err != nil || levelID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID уровня"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID уровня")
 		return
 	}
 	userID := c.GetUint("userID")
 
 	if err := h.levelService.DeleteFromActiveGame(c.Request.Context(), uint(gameID), uint(levelID), userID); err != nil {
-		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
+		render.RenderError(c, http.StatusForbidden, err.Error())
 		return
 	}
 
@@ -323,7 +323,7 @@ func (h *LevelHandler) Delete(c *gin.Context) {
 func (h *LevelHandler) Duplicate(c *gin.Context) {
 	levelID, err := strconv.Atoi(c.Param("level_id"))
 	if err != nil || levelID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID уровня"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID уровня")
 		return
 	}
 	userID := c.GetUint("userID")
@@ -331,7 +331,7 @@ func (h *LevelHandler) Duplicate(c *gin.Context) {
 	newLevel, err := h.levelService.Duplicate(c.Request.Context(), uint(levelID), userID)
 	if err != nil {
 		log.Error().Err(err).Int("level_id", levelID).Uint("user", userID).Msg("Duplicate: failed to duplicate level")
-		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
+		render.RenderError(c, http.StatusForbidden, err.Error())
 		return
 	}
 
@@ -343,20 +343,20 @@ func (h *LevelHandler) Duplicate(c *gin.Context) {
 func (h *LevelHandler) Move(c *gin.Context) {
 	levelID, err := strconv.Atoi(c.Param("level_id"))
 	if err != nil || levelID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID уровня"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID уровня")
 		return
 	}
 	userID := c.GetUint("userID")
 
 	var input MoveLevelInput
 	if err := c.ShouldBind(&input); err != nil {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверные данные: " + err.Error()})
+		render.RenderError(c, http.StatusBadRequest, "Неверные данные: "+err.Error())
 		return
 	}
 
 	if err := h.levelService.Move(c.Request.Context(), uint(levelID), input.Direction, userID); err != nil {
 		log.Error().Err(err).Int("level_id", levelID).Msg("Move: failed to move level")
-		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
+		render.RenderError(c, http.StatusForbidden, err.Error())
 		return
 	}
 
@@ -370,7 +370,7 @@ func (h *LevelHandler) Move(c *gin.Context) {
 func (h *LevelHandler) ListQuestions(c *gin.Context) {
 	levelID, err := strconv.Atoi(c.Param("level_id"))
 	if err != nil || levelID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID уровня"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID уровня")
 		return
 	}
 	userID := c.GetUint("userID")
@@ -378,10 +378,10 @@ func (h *LevelHandler) ListQuestions(c *gin.Context) {
 	level, err := h.levelService.GetByID(c.Request.Context(), uint(levelID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.HTML(http.StatusNotFound, "errors-404.html", nil)
+			render.RenderErrorPage(c, http.StatusNotFound)
 		} else {
 			log.Error().Err(err).Int("level_id", levelID).Msg("ListQuestions: failed to get level")
-			c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+			render.RenderErrorPage(c, http.StatusInternalServerError)
 		}
 		return
 	}
@@ -389,18 +389,18 @@ func (h *LevelHandler) ListQuestions(c *gin.Context) {
 	ok, err := h.authorizer.IsUserManager(level.GameID, userID)
 	if err != nil {
 		log.Error().Err(err).Uint("game_id", level.GameID).Uint("user", userID).Msg("ListQuestions: failed to check manager")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 	if !ok {
-		c.HTML(http.StatusForbidden, "errors-403.html", nil)
+		render.RenderErrorPage(c, http.StatusForbidden)
 		return
 	}
 
 	questions, err := h.questionService.ListByLevel(c.Request.Context(), uint(levelID))
 	if err != nil {
 		log.Error().Err(err).Int("level_id", levelID).Msg("ListQuestions: failed to list questions")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 
@@ -420,7 +420,7 @@ func (h *LevelHandler) ListQuestions(c *gin.Context) {
 func (h *LevelHandler) NewQuestionForm(c *gin.Context) {
 	levelID, err := strconv.Atoi(c.Param("level_id"))
 	if err != nil || levelID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID уровня"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID уровня")
 		return
 	}
 	userID := c.GetUint("userID")
@@ -430,10 +430,10 @@ func (h *LevelHandler) NewQuestionForm(c *gin.Context) {
 	level, err := h.levelService.GetByID(c.Request.Context(), uint(levelID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.HTML(http.StatusNotFound, "errors-404.html", nil)
+			render.RenderErrorPage(c, http.StatusNotFound)
 		} else {
 			log.Error().Err(err).Int("level_id", levelID).Msg("NewQuestionForm: failed to get level")
-			c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+			render.RenderErrorPage(c, http.StatusInternalServerError)
 		}
 		return
 	}
@@ -451,7 +451,7 @@ func (h *LevelHandler) NewQuestionForm(c *gin.Context) {
 func (h *LevelHandler) CreateQuestion(c *gin.Context) {
 	levelID, err := strconv.Atoi(c.Param("level_id"))
 	if err != nil || levelID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID уровня"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID уровня")
 		return
 	}
 	userID := c.GetUint("userID")
@@ -489,7 +489,7 @@ func (h *LevelHandler) CreateQuestion(c *gin.Context) {
 func (h *LevelHandler) EditQuestionForm(c *gin.Context) {
 	questionID, err := strconv.Atoi(c.Param("question_id"))
 	if err != nil || questionID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID вопроса"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID вопроса")
 		return
 	}
 	userID := c.GetUint("userID")
@@ -497,10 +497,10 @@ func (h *LevelHandler) EditQuestionForm(c *gin.Context) {
 	question, err := h.questionService.GetByID(c.Request.Context(), uint(questionID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.HTML(http.StatusNotFound, "errors-404.html", nil)
+			render.RenderErrorPage(c, http.StatusNotFound)
 		} else {
 			log.Error().Err(err).Int("question_id", questionID).Msg("EditQuestionForm: failed to get question")
-			c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+			render.RenderErrorPage(c, http.StatusInternalServerError)
 		}
 		return
 	}
@@ -508,10 +508,10 @@ func (h *LevelHandler) EditQuestionForm(c *gin.Context) {
 	level, err := h.levelService.GetByID(c.Request.Context(), question.LevelID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.HTML(http.StatusNotFound, "errors-404.html", nil)
+			render.RenderErrorPage(c, http.StatusNotFound)
 		} else {
 			log.Error().Err(err).Uint("level_id", question.LevelID).Msg("EditQuestionForm: failed to get level")
-			c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+			render.RenderErrorPage(c, http.StatusInternalServerError)
 		}
 		return
 	}
@@ -519,11 +519,11 @@ func (h *LevelHandler) EditQuestionForm(c *gin.Context) {
 	ok, err := h.authorizer.IsUserManager(level.GameID, userID)
 	if err != nil {
 		log.Error().Err(err).Uint("game_id", level.GameID).Uint("user", userID).Msg("EditQuestionForm: failed to check manager")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 	if !ok {
-		c.HTML(http.StatusForbidden, "errors-403.html", nil)
+		render.RenderErrorPage(c, http.StatusForbidden)
 		return
 	}
 
@@ -543,7 +543,7 @@ func (h *LevelHandler) EditQuestionForm(c *gin.Context) {
 func (h *LevelHandler) UpdateQuestion(c *gin.Context) {
 	questionID, err := strconv.Atoi(c.Param("question_id"))
 	if err != nil || questionID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID вопроса"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID вопроса")
 		return
 	}
 	userID := c.GetUint("userID")
@@ -580,14 +580,14 @@ func (h *LevelHandler) UpdateQuestion(c *gin.Context) {
 func (h *LevelHandler) DeleteQuestion(c *gin.Context) {
 	questionID, err := strconv.Atoi(c.Param("question_id"))
 	if err != nil || questionID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID вопроса"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID вопроса")
 		return
 	}
 	userID := c.GetUint("userID")
 
 	if err := h.questionService.Delete(c.Request.Context(), uint(questionID), userID); err != nil {
 		log.Error().Err(err).Int("question_id", questionID).Uint("user", userID).Msg("DeleteQuestion: failed to delete question")
-		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
+		render.RenderError(c, http.StatusForbidden, err.Error())
 		return
 	}
 
@@ -601,7 +601,7 @@ func (h *LevelHandler) DeleteQuestion(c *gin.Context) {
 func (h *LevelHandler) ListAnswers(c *gin.Context) {
 	questionID, err := strconv.Atoi(c.Param("question_id"))
 	if err != nil || questionID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID вопроса"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID вопроса")
 		return
 	}
 	userID := c.GetUint("userID")
@@ -609,10 +609,10 @@ func (h *LevelHandler) ListAnswers(c *gin.Context) {
 	question, err := h.questionService.GetByID(c.Request.Context(), uint(questionID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.HTML(http.StatusNotFound, "errors-404.html", nil)
+			render.RenderErrorPage(c, http.StatusNotFound)
 		} else {
 			log.Error().Err(err).Int("question_id", questionID).Msg("ListAnswers: failed to get question")
-			c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+			render.RenderErrorPage(c, http.StatusInternalServerError)
 		}
 		return
 	}
@@ -620,10 +620,10 @@ func (h *LevelHandler) ListAnswers(c *gin.Context) {
 	level, err := h.levelService.GetByID(c.Request.Context(), question.LevelID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.HTML(http.StatusNotFound, "errors-404.html", nil)
+			render.RenderErrorPage(c, http.StatusNotFound)
 		} else {
 			log.Error().Err(err).Uint("level_id", question.LevelID).Msg("ListAnswers: failed to get level")
-			c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+			render.RenderErrorPage(c, http.StatusInternalServerError)
 		}
 		return
 	}
@@ -631,18 +631,18 @@ func (h *LevelHandler) ListAnswers(c *gin.Context) {
 	ok, err := h.authorizer.IsUserManager(level.GameID, userID)
 	if err != nil {
 		log.Error().Err(err).Uint("game_id", level.GameID).Uint("user", userID).Msg("ListAnswers: failed to check manager")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 	if !ok {
-		c.HTML(http.StatusForbidden, "errors-403.html", nil)
+		render.RenderErrorPage(c, http.StatusForbidden)
 		return
 	}
 
 	answers, err := h.answerService.ListByQuestion(c.Request.Context(), uint(questionID))
 	if err != nil {
 		log.Error().Err(err).Int("question_id", questionID).Msg("ListAnswers: failed to list answers")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 
@@ -663,7 +663,7 @@ func (h *LevelHandler) ListAnswers(c *gin.Context) {
 func (h *LevelHandler) CreateAnswer(c *gin.Context) {
 	questionID, err := strconv.Atoi(c.Param("question_id"))
 	if err != nil || questionID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID вопроса"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID вопроса")
 		return
 	}
 	userID := c.GetUint("userID")
@@ -700,14 +700,14 @@ func (h *LevelHandler) CreateAnswer(c *gin.Context) {
 func (h *LevelHandler) DeleteAnswer(c *gin.Context) {
 	answerID, err := strconv.Atoi(c.Param("answer_id"))
 	if err != nil || answerID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID ответа"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID ответа")
 		return
 	}
 	userID := c.GetUint("userID")
 
 	if err := h.answerService.Delete(c.Request.Context(), uint(answerID), userID); err != nil {
 		log.Error().Err(err).Int("answer_id", answerID).Uint("user", userID).Msg("DeleteAnswer: failed to delete answer")
-		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
+		render.RenderError(c, http.StatusForbidden, err.Error())
 		return
 	}
 

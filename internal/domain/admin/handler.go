@@ -129,7 +129,7 @@ func (h *AdminHandler) ListUsers(c *gin.Context) {
 	total, err := h.userRepo.CountByRole(ctx, req.Role)
 	if err != nil {
 		log.Error().Err(err).Str("role", req.Role).Msg("ListUsers: failed to count users")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 
@@ -137,7 +137,7 @@ func (h *AdminHandler) ListUsers(c *gin.Context) {
 	users, err := h.userRepo.ListPaginated(ctx, req.Role, offset, req.PerPage)
 	if err != nil {
 		log.Error().Err(err).Str("role", req.Role).Msg("ListUsers: failed to list users")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 
@@ -255,7 +255,7 @@ func (h *AdminHandler) ListGames(c *gin.Context) {
 	total, err := h.gameRepo.Count(ctx, query)
 	if err != nil {
 		log.Error().Err(err).Str("status", req.Status).Msg("ListGames: failed to count games")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 
@@ -263,7 +263,7 @@ func (h *AdminHandler) ListGames(c *gin.Context) {
 	games, err := h.gameRepo.ListFiltered(ctx, query, offset, req.PerPage)
 	if err != nil {
 		log.Error().Err(err).Str("status", req.Status).Msg("ListGames: failed to list games")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 
@@ -336,7 +336,7 @@ func (h *AdminHandler) AuditLog(c *gin.Context) {
 	logs, total, err := h.auditService.List(c.Request.Context(), req.UserID, req.Action, req.Page, req.PerPage)
 	if err != nil {
 		log.Error().Err(err).Str("user_id", req.UserID).Str("action", req.Action).Msg("AuditLog list failed")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 
@@ -374,7 +374,7 @@ func (h *AdminHandler) ListBackups(c *gin.Context) {
 	backups, err := h.backupService.List(c.Request.Context())
 	if err != nil {
 		log.Error().Err(err).Msg("ListBackups failed")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 	maxBackups := h.backupService.GetMaxBackups()
@@ -392,7 +392,7 @@ func (h *AdminHandler) ListBackups(c *gin.Context) {
 func (h *AdminHandler) CreateBackup(c *gin.Context) {
 	if err := h.backupService.CreateNow(c.Request.Context()); err != nil {
 		log.Error().Err(err).Msg("CreateBackup failed")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/backups")
@@ -403,7 +403,7 @@ func (h *AdminHandler) DownloadBackup(c *gin.Context) {
 	var req IDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
 		log.Warn().Err(err).Msg("DownloadBackup: invalid backup ID")
-		c.HTML(http.StatusBadRequest, "errors-400.html", nil)
+		render.RenderError(c, http.StatusBadRequest, "")
 		return
 	}
 
@@ -411,10 +411,10 @@ func (h *AdminHandler) DownloadBackup(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			log.Warn().Uint("backup_id", req.ID).Msg("DownloadBackup: backup not found")
-			c.HTML(http.StatusNotFound, "errors-404.html", nil)
+			render.RenderErrorPage(c, http.StatusNotFound)
 		} else {
 			log.Error().Err(err).Uint("backup_id", req.ID).Msg("DownloadBackup: failed to download backup")
-			c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+			render.RenderErrorPage(c, http.StatusInternalServerError)
 		}
 		return
 	}
@@ -425,7 +425,7 @@ func (h *AdminHandler) DownloadBackup(c *gin.Context) {
 func (h *AdminHandler) RotateBackups(c *gin.Context) {
 	if err := h.backupService.RotateBackups(c.Request.Context()); err != nil {
 		log.Error().Err(err).Msg("RotateBackups failed")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 	c.Redirect(http.StatusFound, "/admin/backups")

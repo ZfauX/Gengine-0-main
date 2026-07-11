@@ -3,7 +3,6 @@ package db
 
 import (
 	"fmt"
-	"time"
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/user"
@@ -51,12 +50,6 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 	sqlDB.SetMaxOpenConns(cfg.Database.MaxOpenConns)
 	sqlDB.SetMaxIdleConns(cfg.Database.MaxIdleConns)
 	sqlDB.SetConnMaxLifetime(cfg.Database.ConnMaxLifetime)
-
-	// Добавляем ConnMaxIdleTime (если поддерживается GORM v2)
-	// Значение по умолчанию — 10 минут, можно переопределить через DB_CONN_MAX_IDLE_TIME в .env
-	if cfg.Database.ConnMaxIdleTime == 0 {
-		cfg.Database.ConnMaxIdleTime = 10 * time.Minute
-	}
 	sqlDB.SetConnMaxIdleTime(cfg.Database.ConnMaxIdleTime)
 
 	// Логируем настройки пула для диагностики

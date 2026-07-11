@@ -13,6 +13,12 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// Typed errors для level progress
+var (
+	ErrNoActiveLevel = errors.New("нет активного уровня")
+	ErrNoLevels      = errors.New("у игры нет уровней")
+)
+
 type LevelProgressService struct {
 	DB *gorm.DB
 }
@@ -38,7 +44,7 @@ func (s *LevelProgressService) InitFirstLevel(ctx context.Context, gamePassingID
 
 	levels := passing.Game.Levels
 	if len(levels) == 0 {
-		return errors.New("у игры нет уровней")
+		return ErrNoLevels
 	}
 
 	firstLevel := levels[0]
@@ -59,7 +65,7 @@ func GetCurrentProgress(db *gorm.DB, gamePassingID uint) (*LevelProgress, error)
 		Where("game_passing_id = ? AND finished_at IS NULL", gamePassingID).
 		First(&progress).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, errors.New("нет активного уровня")
+		return nil, ErrNoActiveLevel
 	}
 	return &progress, err
 }
@@ -73,7 +79,7 @@ func GetCurrentProgressForUpdate(tx *gorm.DB, gamePassingID uint) (*LevelProgres
 		Where("game_passing_id = ? AND finished_at IS NULL", gamePassingID).
 		First(&progress).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, errors.New("нет активного уровня")
+		return nil, ErrNoActiveLevel
 	}
 	return &progress, err
 }
@@ -129,16 +135,8 @@ func AdvanceToNextLevel(db *gorm.DB, gamePassingID, completedLevelID uint) error
 }
 
 // CheckTimeouts проверяет все незавершённые прогрессы и завершает просроченные.
-// Обёрнута в recover для защиты от паник.
+// Запущена как горутина, останавливается через ctx.
 func CheckTimeouts(db *gorm.DB, ctx context.Context) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Error().Interface("panic", r).Msg("CheckTimeouts: panic recovered, restarting goroutine")
-			time.Sleep(5 * time.Second)
-			go CheckTimeouts(db, ctx)
-		}
-	}()
-
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -148,8 +146,8 @@ func CheckTimeouts(db *gorm.DB, ctx context.Context) {
 			log.Info().Msg("CheckTimeouts: context cancelled, stopping")
 			return
 		case <-ticker.C:
+			// Логируем ошибки, но не перезапускаем горутину — контекст управляет жизненным циклом
 			var activeProgresses []LevelProgress
-			// Используем FOR UPDATE SKIP LOCKED для предотвращения гонок между тиками
 			if err := db.WithContext(ctx).Clauses(clause.Locking{
 				Strength: "UPDATE",
 				Options:  "SKIP LOCKED",
@@ -162,21 +160,17 @@ func CheckTimeouts(db *gorm.DB, ctx context.Context) {
 
 			now := time.Now()
 			for _, p := range activeProgresses {
-				// Повторно загружаем прогресс с блокировкой для проверки актуальности
 				var currentProgress LevelProgress
 				if err := db.WithContext(ctx).Clauses(clause.Locking{
 					Strength: "UPDATE",
 					Options:  "SKIP LOCKED",
 				}).First(&currentProgress, p.ID).Error; err != nil {
-					// Запись уже заблокирована или удалена — пропускаем
 					continue
 				}
-				// Если прогресс уже завершён — пропускаем
 				if currentProgress.FinishedAt != nil {
 					continue
 				}
 
-				// Загружаем актуальные данные о прохождении и настройках
 				var passing GamePassing
 				if err := db.WithContext(ctx).Preload("Game.GameSetting").First(&passing, currentProgress.GamePassingID).Error; err != nil {
 					log.Error().Err(err).Uint("progress_id", currentProgress.ID).Msg("CheckTimeouts: failed to load passing")
@@ -207,16 +201,8 @@ func CheckTimeouts(db *gorm.DB, ctx context.Context) {
 }
 
 // CheckAutoStartGames автоматически запускает игры, у которых наступило время старта.
-// Обёрнута в recover для защиты от паник.
+// Запущена как горутина, останавливается через ctx.
 func CheckAutoStartGames(db *gorm.DB, ctx context.Context) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Error().Interface("panic", r).Msg("CheckAutoStartGames: panic recovered, restarting goroutine")
-			time.Sleep(5 * time.Second)
-			go CheckAutoStartGames(db, ctx)
-		}
-	}()
-
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 

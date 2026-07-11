@@ -18,47 +18,9 @@ func NewAttemptService(db *gorm.DB) *AttemptService {
 }
 
 // SubmitCode проверяет введённый код для указанного прогресса уровня.
-// (Существующий метод, оставлен для обратной совместимости, но рекомендуется использовать версию с транзакцией)
+// Делегирует SubmitCodeWithTx для единообразной обработки.
 func (s *AttemptService) SubmitCode(progress *LevelProgress, code string) (*Attempt, bool, error) {
-	var lvl level.Level
-	if err := s.DB.Preload("Questions.Answers").First(&lvl, progress.LevelID).Error; err != nil {
-		return nil, false, err
-	}
-
-	if lvl.Type == level.TypeBlackbox || lvl.RequiresConfirmation {
-		attempt := &Attempt{
-			LevelProgressID: progress.ID,
-			Code:            code,
-			Success:         false,
-		}
-		if err := s.DB.Create(attempt).Error; err != nil {
-			return nil, false, err
-		}
-		return attempt, false, nil
-	}
-
-	success := false
-	for _, q := range lvl.Questions {
-		for _, a := range q.Answers {
-			if strings.EqualFold(a.Code, code) {
-				success = true
-				break
-			}
-		}
-		if success {
-			break
-		}
-	}
-
-	attempt := &Attempt{
-		LevelProgressID: progress.ID,
-		Code:            code,
-		Success:         success,
-	}
-	if err := s.DB.Create(attempt).Error; err != nil {
-		return nil, false, err
-	}
-	return attempt, success, nil
+	return s.SubmitCodeWithTx(s.DB, progress, code)
 }
 
 // SubmitCodeWithTx — проверяет код внутри переданной транзакции.
@@ -106,18 +68,9 @@ func (s *AttemptService) SubmitCodeWithTx(tx *gorm.DB, progress *LevelProgress, 
 }
 
 // SubmitFile создаёт файловую попытку.
-// (Существующий метод)
+// Делегирует SubmitFileWithTx для единообразной обработки.
 func (s *AttemptService) SubmitFile(progress *LevelProgress, filePath string) (*Attempt, error) {
-	attempt := &Attempt{
-		LevelProgressID: progress.ID,
-		IsFile:          true,
-		FilePath:        filePath,
-		Success:         false,
-	}
-	if err := s.DB.Create(attempt).Error; err != nil {
-		return nil, err
-	}
-	return attempt, nil
+	return s.SubmitFileWithTx(s.DB, progress, filePath)
 }
 
 // SubmitFileWithTx создаёт файловую попытку внутри переданной транзакции.
@@ -135,18 +88,9 @@ func (s *AttemptService) SubmitFileWithTx(tx *gorm.DB, progress *LevelProgress, 
 }
 
 // AcceptPendingAttempt помечает последнюю неподтверждённую попытку как успешную.
-// (Существующий метод)
+// Делегирует AcceptPendingAttemptWithTx для единообразной обработки.
 func (s *AttemptService) AcceptPendingAttempt(progress *LevelProgress) error {
-	var lastAttempt Attempt
-	err := s.DB.
-		Where("level_progress_id = ? AND success = false", progress.ID).
-		Order("created_at DESC").
-		First(&lastAttempt).Error
-	if err != nil {
-		return errors.New("нет ожидающей попытки для подтверждения")
-	}
-	lastAttempt.Success = true
-	return s.DB.Save(&lastAttempt).Error
+	return s.AcceptPendingAttemptWithTx(s.DB, progress)
 }
 
 // AcceptPendingAttemptWithTx работает в транзакции.

@@ -133,7 +133,7 @@ func (h *FollowHandler) Subscriptions(c *gin.Context) {
 	authors, err := h.followService.GetSubscriptions(c.Request.Context(), userID)
 	if err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Msg("Subscriptions: failed to get subscriptions")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 
