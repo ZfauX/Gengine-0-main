@@ -12,6 +12,14 @@ import (
 
 const sessionKey2FAMiddlewareVerified = "2fa_verified"
 
+// withRedirectFlag добавляет ?redirect=1 или &redirect=1 к URL.
+func withRedirectFlag(rawURL string) string {
+	if strings.Contains(rawURL, "?") {
+		return rawURL + "&redirect=1"
+	}
+	return rawURL + "?redirect=1"
+}
+
 // TwoFactorRequired проверяет, что у пользователя включена 2FA и он прошёл проверку.
 // Используется для защиты админ-маршрутов.
 // Флаг верификации персистируется в сессии, чтобы выдерживать multiple запросы.
@@ -54,18 +62,10 @@ func TwoFactorRequired(twoFactorSvc *TwoFactorService, userRepo UserRepository) 
 
 		// Если код не передан — перенаправляем на страницу ввода
 		if code == "" {
-			// Сохраняем return URL для редиректа после проверки
-			returnURL := c.Request.URL.String()
-			if strings.Contains(returnURL, "?") {
-				returnURL += "&redirect=1"
-			} else {
-				returnURL += "?redirect=1"
-			}
-
 			c.HTML(http.StatusOK, "admin-2fa-verify.html", gin.H{
 				"Title":     "Подтверждение 2FA",
 				"Message":   "Введите код из Google Authenticator",
-				"ReturnURL": returnURL,
+				"ReturnURL": withRedirectFlag(c.Request.URL.String()),
 			})
 			c.Abort()
 			return
@@ -75,32 +75,20 @@ func TwoFactorRequired(twoFactorSvc *TwoFactorService, userRepo UserRepository) 
 		valid, err := twoFactorSvc.VerifyCode(userObj.TwoFactorSecret, code)
 		if err != nil {
 			log.Error().Err(err).Uint("user_id", userIDVal).Msg("TwoFactorRequired: TOTP verification error")
-			returnURL := c.Request.URL.String()
-			if strings.Contains(returnURL, "?") {
-				returnURL += "&redirect=1"
-			} else {
-				returnURL += "?redirect=1"
-			}
 			c.HTML(http.StatusOK, "admin-2fa-verify.html", gin.H{
 				"Title":     "Подтверждение 2FA",
 				"Error":     "Ошибка проверки кода",
-				"ReturnURL": returnURL,
+				"ReturnURL": withRedirectFlag(c.Request.URL.String()),
 			})
 			c.Abort()
 			return
 		}
 
 		if !valid {
-			returnURL := c.Request.URL.String()
-			if strings.Contains(returnURL, "?") {
-				returnURL += "&redirect=1"
-			} else {
-				returnURL += "?redirect=1"
-			}
 			c.HTML(http.StatusOK, "admin-2fa-verify.html", gin.H{
 				"Title":     "Подтверждение 2FA",
 				"Error":     "Неверный код",
-				"ReturnURL": returnURL,
+				"ReturnURL": withRedirectFlag(c.Request.URL.String()),
 			})
 			c.Abort()
 			return

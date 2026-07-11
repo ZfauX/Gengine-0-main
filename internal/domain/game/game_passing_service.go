@@ -9,6 +9,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type GamePassingService struct {
@@ -22,27 +23,32 @@ func NewGamePassingService(db *gorm.DB, ts *team.TeamService, ca *CoAuthorServic
 }
 
 // Apply подаёт заявку на игру.
+// Обёрнуто в транзакцию для предотвращения race condition при одновременных заявках.
 func (s *GamePassingService) Apply(ctx context.Context, gameID, teamID, userID uint) error {
-	var t team.Team
-	if err := s.DB.WithContext(ctx).First(&t, teamID).Error; err != nil {
-		return err
-	}
-	if t.CaptainID != userID {
-		return errors.New("только капитан может подать заявку")
-	}
-	var game Game
-	if err := s.DB.WithContext(ctx).First(&game, gameID).Error; err != nil {
-		return err
-	}
-	if game.IsDraft {
-		return errors.New("нельзя подать заявку на черновик")
-	}
-	var existing GamePassing
-	if err := s.DB.WithContext(ctx).Where("game_id = ? AND team_id = ?", gameID, teamID).First(&existing).Error; err == nil {
-		return errors.New("заявка уже подана")
-	}
-	passing := GamePassing{GameID: gameID, TeamID: teamID, Status: StatusPending}
-	return s.DB.WithContext(ctx).Create(&passing).Error
+	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var t team.Team
+		if err := tx.First(&t, teamID).Error; err != nil {
+			return err
+		}
+		if t.CaptainID != userID {
+			return errors.New("только капитан может подать заявку")
+		}
+		var game Game
+		if err := tx.First(&game, gameID).Error; err != nil {
+			return err
+		}
+		if game.IsDraft {
+			return errors.New("нельзя подать заявку на черновик")
+		}
+		var existing GamePassing
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("game_id = ? AND team_id = ?", gameID, teamID).
+			First(&existing).Error; err == nil {
+			return errors.New("заявка уже подана")
+		}
+		passing := GamePassing{GameID: gameID, TeamID: teamID, Status: StatusPending}
+		return tx.Create(&passing).Error
+	})
 }
 
 // ListByGame возвращает все прохождения для игры.
@@ -50,6 +56,11 @@ func (s *GamePassingService) ListByGame(ctx context.Context, gameID uint) ([]Gam
 	var passings []GamePassing
 	err := s.DB.WithContext(ctx).Preload("Team.Captain").Where("game_id = ?", gameID).Find(&passings).Error
 	return passings, err
+}
+
+// ListTestPassings возвращает тестовые прохождения для игры.
+func (s *GamePassingService) ListTestPassings(ctx context.Context, gameID uint, result *[]GamePassing) error {
+	return s.DB.WithContext(ctx).Where("game_id = ? AND status = ?", gameID, StatusTesting).Find(result).Error
 }
 
 // UpdateStatus обновляет статус прохождения.

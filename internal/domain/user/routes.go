@@ -31,7 +31,8 @@ func RegisterRoutes(
 	localStorage storage.FileStorage,
 ) {
 	authHandler := NewAuthHandler(cfg, authSvc, userSvc, passwordResetSvc, emailVerifSvc, oauthSvc, auditSvc)
-	profileHandler := NewProfileHandler(db, localStorage, authSvc)
+	profileSvc := NewProfileService(db)
+	profileHandler := NewProfileHandler(db, localStorage, authSvc, profileSvc)
 	achievementHandler := NewAchievementHandler(db)
 	dashboardHandler := NewDashboardHandler(NewUserDashboardService(db), db)
 

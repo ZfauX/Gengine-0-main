@@ -15,6 +15,7 @@ import (
 	ws "gengine-0/internal/pkg/websocket"
 
 	"github.com/rs/zerolog/log"
+	"gorm.io/gorm"
 )
 
 // Константы для фильтрации статусов игр (чтобы избежать магических строк)
@@ -70,10 +71,13 @@ type GameService struct {
 	storage        storage.FileStorage
 	cache          cache.CacheStore
 	ratingService  *RatingService
+	db             *gorm.DB
+	coAuthorSvc    *CoAuthorService
 }
 
 // NewGameService создаёт фасад GameService с подсервисами.
 func NewGameService(
+	db *gorm.DB,
 	gameRepo GameRepository,
 	passingRepo GamePassingRepository,
 	ca *CoAuthorService,
@@ -102,6 +106,8 @@ func NewGameService(
 		storage:        storage,
 		cache:          cache,
 		ratingService:  ratingSvc,
+		db:             db,
+		coAuthorSvc:    ca,
 	}
 }
 
@@ -287,8 +293,55 @@ func (s *GameService) GetAverageRating(ctx context.Context, gameID uint) (float6
 
 // IsUserManager делегирует CoAuthorService.
 func (s *GameService) IsUserManager(gameID, userID uint) (bool, error) {
-	if s.crudService == nil || s.crudService.CoAuthor == nil {
-		return false, nil
+	return s.coAuthorSvc.IsUserManager(gameID, userID)
+}
+
+// GetSettingsWithDefaults загружает настройки игры или возвращает значения по умолчанию.
+func (s *GameService) GetSettingsWithDefaults(ctx context.Context, gameID uint) (*GameSetting, error) {
+	var settings GameSetting
+	err := s.db.WithContext(ctx).Where("game_id = ?", gameID).First(&settings).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &GameSetting{
+				GameID:                   gameID,
+				AllowHints:               true,
+				HintPenaltySeconds:       300,
+				MaxHints:                 3,
+				PerLevelTimeLimit:        0,
+				HideAnswersUntilFinished: false,
+				AutoStart:                false,
+			}, nil
+		}
+		return nil, err
 	}
-	return s.crudService.CoAuthor.IsUserManager(gameID, userID)
+	return &settings, nil
+}
+
+// SaveSettings сохраняет или обновляет настройки игры.
+func (s *GameService) SaveSettings(ctx context.Context, gameID uint, input GameSetting) (*GameSetting, error) {
+	var existing GameSetting
+	err := s.db.WithContext(ctx).Where("game_id = ?", gameID).First(&existing).Error
+	if err == nil {
+		// Обновляем существующие
+		existing.AllowHints = input.AllowHints
+		existing.HintPenaltySeconds = input.HintPenaltySeconds
+		existing.MaxHints = input.MaxHints
+		existing.PerLevelTimeLimit = input.PerLevelTimeLimit
+		existing.HideAnswersUntilFinished = input.HideAnswersUntilFinished
+		existing.AutoStart = input.AutoStart
+		return &existing, s.db.WithContext(ctx).Save(&existing).Error
+	} else if errors.Is(err, gorm.ErrRecordNotFound) {
+		// Создаём новую запись
+		newSettings := GameSetting{
+			GameID:                   gameID,
+			AllowHints:               input.AllowHints,
+			HintPenaltySeconds:       input.HintPenaltySeconds,
+			MaxHints:                 input.MaxHints,
+			PerLevelTimeLimit:        input.PerLevelTimeLimit,
+			HideAnswersUntilFinished: input.HideAnswersUntilFinished,
+			AutoStart:                input.AutoStart,
+		}
+		return &newSettings, s.db.WithContext(ctx).Create(&newSettings).Error
+	}
+	return nil, err
 }

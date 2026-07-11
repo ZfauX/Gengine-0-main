@@ -330,7 +330,7 @@ func (s *GamePlayService) broadcastSnapshot(ctx context.Context, passingID uint)
 	}
 
 	// Используем контекст с таймаутом для предотвращения зависания
-	timeoutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	var passing GamePassing
@@ -351,4 +351,77 @@ func (s *GamePlayService) broadcastSnapshot(ctx context.Context, passingID uint)
 		return
 	}
 	s.hub.BroadcastToRoom(strconv.Itoa(int(gameID)), data)
+}
+
+// GetGameplayData загружает все данные, необходимые для отображения страницы геймплея.
+func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (*GameplayData, error) {
+	var passing GamePassing
+	if err := s.db.WithContext(ctx).Preload("Team").First(&passing, passingID).Error; err != nil {
+		return nil, err
+	}
+
+	var settings GameSetting
+	_ = s.db.WithContext(ctx).Where("game_id = ?", passing.GameID).First(&settings).Error
+
+	var progress LevelProgress
+	err := s.db.WithContext(ctx).
+		Preload("Level.Questions.Answers").
+		Where("game_passing_id = ? AND finished_at IS NULL", passingID).
+		First(&progress).Error
+	if err != nil {
+		return nil, err
+	}
+
+	var attempts []Attempt
+	_ = s.db.WithContext(ctx).
+		Where("level_progress_id = ?", progress.ID).
+		Order("created_at DESC").
+		Find(&attempts).Error
+
+	var votingSession gameBlackboxVotingSession
+	votingActive := s.db.WithContext(ctx).
+		Where("game_passing_id = ? AND level_id = ? AND is_open = true", passingID, progress.LevelID).
+		First(&votingSession).Error == nil
+
+	timeLimitSec := 0
+	if settings.PerLevelTimeLimit > 0 {
+		elapsed := time.Since(progress.StartedAt)
+		limit := time.Duration(settings.PerLevelTimeLimit) * time.Minute
+		remaining := limit - elapsed
+		if remaining < 0 {
+			remaining = 0
+		}
+		timeLimitSec = int(remaining.Seconds())
+	}
+
+	return &GameplayData{
+		Passing:      passing,
+		Settings:     settings,
+		Attempts:     attempts,
+		VotingActive: votingActive,
+		TimeLimitSec: timeLimitSec,
+	}, nil
+}
+
+// GetPassingWithGame загружает Passing с GameID для проверки прав.
+func (s *GamePlayService) GetPassingWithGame(ctx context.Context, passingID uint) (*GamePassing, error) {
+	var passing GamePassing
+	if err := s.db.WithContext(ctx).Select("id", "game_id", "team_id").First(&passing, passingID).Error; err != nil {
+		return nil, err
+	}
+	return &passing, nil
+}
+
+// IsTeamMember проверяет, является ли пользователь участником команды.
+func (s *GamePlayService) IsTeamMember(ctx context.Context, teamID, userID uint) (bool, error) {
+	var t team.Team
+	if err := s.db.WithContext(ctx).First(&t, teamID).Error; err != nil {
+		return false, err
+	}
+	if t.CaptainID == userID {
+		return true, nil
+	}
+	var count int64
+	s.db.WithContext(ctx).Table("team_members").Where("team_id = ? AND user_id = ?", teamID, userID).Count(&count)
+	return count > 0, nil
 }

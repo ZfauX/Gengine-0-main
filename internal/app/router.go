@@ -313,6 +313,7 @@ func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.
 	photoSvc := game.NewPhotoService(db)
 
 	gameSvc := game.NewGameService(
+		db,
 		repos.Game,
 		repos.GamePassing,
 		coAuthorSvc,
@@ -368,7 +369,6 @@ func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.
 		monitorSvc,
 		hub,
 		localStorage,
-		db,
 	)
 
 	return &services{

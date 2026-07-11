@@ -372,13 +372,13 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 func (h *AuthHandler) OAuthLogin(c *gin.Context) {
 	var req OAuthProviderRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный провайдер"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный провайдер")
 		return
 	}
 
 	url, state, err := h.oauthSvc.GetAuthURL(req.Provider)
 	if err != nil {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": err.Error()})
+		render.RenderError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -386,7 +386,7 @@ func (h *AuthHandler) OAuthLogin(c *gin.Context) {
 	session.Set("oauth_state", state)
 	if err := session.Save(); err != nil {
 		log.Error().Err(err).Msg("OAuthLogin: failed to save session")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", gin.H{"Error": "Внутренняя ошибка"})
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 
@@ -462,16 +462,18 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 // ---------- Профиль ----------
 
 type ProfileHandler struct {
-	db      *gorm.DB
-	storage storage.FileStorage
-	authSvc *AuthService
+	db         *gorm.DB
+	storage    storage.FileStorage
+	authSvc    *AuthService
+	profileSvc *ProfileService
 }
 
-func NewProfileHandler(db *gorm.DB, st storage.FileStorage, authSvc *AuthService) *ProfileHandler {
+func NewProfileHandler(db *gorm.DB, st storage.FileStorage, authSvc *AuthService, profileSvc *ProfileService) *ProfileHandler {
 	return &ProfileHandler{
-		db:      db,
-		storage: st,
-		authSvc: authSvc,
+		db:         db,
+		storage:    st,
+		authSvc:    authSvc,
+		profileSvc: profileSvc,
 	}
 }
 
@@ -480,7 +482,7 @@ func (h *ProfileHandler) Show(c *gin.Context) {
 	userID := c.GetUint("userID")
 	var user User
 	if err := h.db.Preload("Achievements").First(&user, userID).Error; err != nil {
-		c.HTML(http.StatusNotFound, "errors-404.html", nil)
+		render.RenderErrorPage(c, http.StatusNotFound)
 		return
 	}
 	render.Page(c, http.StatusOK, "profile-show.html", gin.H{
@@ -495,7 +497,7 @@ func (h *ProfileHandler) Show(c *gin.Context) {
 func (h *ProfileHandler) PublicProfile(c *gin.Context) {
 	var req UserIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID пользователя"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID пользователя")
 		return
 	}
 
@@ -505,69 +507,50 @@ func (h *ProfileHandler) PublicProfile(c *gin.Context) {
 	var user User
 	if err := h.db.Preload("Achievements").First(&user, userID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.HTML(http.StatusNotFound, "errors-404.html", nil)
+			render.RenderErrorPage(c, http.StatusNotFound)
 		} else {
 			log.Error().Err(err).Uint("user_id", userID).Msg("PublicProfile: failed to get user")
-			c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+			render.RenderErrorPage(c, http.StatusInternalServerError)
 		}
 		return
 	}
 	if user.ProfileVisibility == "hidden" {
-		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": "Профиль скрыт"})
+		render.RenderError(c, http.StatusForbidden, "Профиль скрыт")
 		return
 	}
 
 	// Статистика
-	var gamesCreated int64
-	h.db.Table("games").Where("author_id = ?", userID).Count(&gamesCreated)
-
-	var gamesPlayed int64
-	h.db.Table("game_passings").
-		Joins("JOIN team_members ON team_members.team_id = game_passings.team_id").
-		Where("game_passings.status = ? AND team_members.user_id = ?", "finished", userID).
-		Count(&gamesPlayed)
-
-	var wins int64
-	h.db.Table("game_passings").
-		Joins("JOIN team_members ON team_members.team_id = game_passings.team_id").
-		Where("game_passings.status = ? AND game_passings.place = 1 AND team_members.user_id = ?", "finished", userID).
-		Count(&wins)
-
-	var rating int
-	h.db.Table("player_ratings").Where("user_id = ?", userID).Select("score").Scan(&rating)
+	stats, err := h.profileSvc.GetPublicProfileStats(c.Request.Context(), userID)
+	if err != nil {
+		log.Error().Err(err).Uint("user_id", userID).Msg("PublicProfile: failed to get stats")
+		stats = &UserStats{GamesCreated: 0, GamesPlayed: 0, Wins: 0, Rating: 0}
+	}
 
 	// Проверка подписки
 	isFollowing := false
 	if currentUserID != 0 && currentUserID != userID {
-		var followCount int64
-		h.db.Table("follows").Where("follower_id = ? AND author_id = ?", currentUserID, userID).Count(&followCount)
-		isFollowing = followCount > 0
+		isFollowing, err = h.profileSvc.IsFollowing(c.Request.Context(), currentUserID, userID)
+		if err != nil {
+			log.Error().Err(err).Uint("user_id", userID).Msg("PublicProfile: failed to check follow")
+		}
 	}
 
 	// Последние игры автора
-	type RecentGame struct {
-		ID        uint
-		Name      string
-		IsDraft   bool
-		CoverPath string
-		CreatedAt string
+	recentGames, err := h.profileSvc.GetRecentGames(c.Request.Context(), userID)
+	if err != nil {
+		log.Error().Err(err).Uint("user_id", userID).Msg("PublicProfile: failed to get recent games")
+		recentGames = []RecentGame{}
 	}
-	var recentGames []RecentGame
-	h.db.Table("games").
-		Where("author_id = ? AND is_draft = false", userID).
-		Order("created_at DESC").
-		Limit(6).
-		Find(&recentGames)
 
 	render.Page(c, http.StatusOK, "profile-public.html", gin.H{
 		"ProfileUser":   user,
 		"Achievements":  user.Achievements,
 		"CurrentUserID": currentUserID,
 		"IsOwner":       currentUserID == userID,
-		"GamesCreated":  gamesCreated,
-		"GamesPlayed":   gamesPlayed,
-		"Wins":          wins,
-		"Rating":        rating,
+		"GamesCreated":  stats.GamesCreated,
+		"GamesPlayed":   stats.GamesPlayed,
+		"Wins":          stats.Wins,
+		"Rating":        stats.Rating,
 		"IsFollowing":   isFollowing,
 		"RecentGames":   recentGames,
 		"csrf":          csrf.GetToken(c),
@@ -757,7 +740,7 @@ func (h *AchievementHandler) List(c *gin.Context) {
 		Where("user_achievements.user_id = ?", userID).
 		Find(&achievements).Error; err != nil {
 		log.Error().Err(err).Uint("user", userID).Msg("AchievementHandler.List: failed to fetch achievements")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 	render.Page(c, http.StatusOK, "achievements-list.html", gin.H{
@@ -782,8 +765,8 @@ func (h *DashboardHandler) Index(c *gin.Context) {
 	userID := c.GetUint("userID")
 	dash, err := h.dashboardService.GetDashboard(userID)
 	if err != nil {
-		log.Error().Err(err).Uint("user", userID).Msg("DashboardHandler.Index: failed to get dashboard")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		log.Error().Err(err).Uint("user_id", userID).Msg("DashboardHandler.Index: failed to get dashboard")
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 	isAdmin := middleware.IsAdmin(c)

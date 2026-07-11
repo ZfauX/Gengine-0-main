@@ -144,6 +144,22 @@ func (m *MockGameService) IsUserManager(gameID, userID uint) (bool, error) {
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *MockGameService) GetSettingsWithDefaults(ctx context.Context, gameID uint) (*GameSetting, error) {
+	args := m.Called(ctx, gameID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*GameSetting), args.Error(1)
+}
+
+func (m *MockGameService) SaveSettings(ctx context.Context, gameID uint, settings GameSetting) (*GameSetting, error) {
+	args := m.Called(ctx, gameID, settings)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*GameSetting), args.Error(1)
+}
+
 // MockCoAuthorService — мок для CoAuthorServiceInterface
 type MockCoAuthorService struct {
 	mock.Mock
@@ -241,6 +257,11 @@ func (m *MockGamePassingService) GetTeamsByCaptain(ctx context.Context, userID u
 	return args.Get(0).([]team.Team), args.Error(1)
 }
 
+func (m *MockGamePassingService) ListTestPassings(ctx context.Context, gameID uint, result *[]GamePassing) error {
+	args := m.Called(ctx, gameID, result)
+	return args.Error(0)
+}
+
 // =============================================================================
 // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 // =============================================================================
@@ -263,7 +284,7 @@ func setupTestRouter() *gin.Engine {
 		"co_authors-manage.html", "games-settings.html", "games-test.html",
 		"games-photos.html", "simulate-results.html", "gameplay-show.html",
 		"gameplay-test.html",
-		"errors/500.html", "errors/404.html", "errors/400.html", "errors/403.html",
+		"errors-500.html", "errors-404.html", "errors-400.html", "errors-403.html",
 	}
 	for _, t := range templates {
 		tmpl, err = tmpl.Parse(`{{define "` + t + `"}}<h1>` + t + `</h1>{{end}}`)

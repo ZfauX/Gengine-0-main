@@ -75,7 +75,7 @@ func (h *ExportHandler) ExportGameCSV(c *gin.Context) {
 	var buf bytes.Buffer
 	if err := h.exportService.ExportGameToCSV(c.Request.Context(), gameID, &buf); err != nil {
 		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportGameCSV: failed to export game to CSV")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 
@@ -196,7 +196,7 @@ func (h *ExportHandler) ExportResultsCSV(c *gin.Context) {
 	var buf bytes.Buffer
 	if err := h.exportService.ExportResultsToCSV(c.Request.Context(), gameID, &buf); err != nil {
 		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportResultsCSV: failed to export results to CSV")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 
@@ -228,7 +228,7 @@ func (h *ExportHandler) ExportGamePDF(c *gin.Context) {
 	var buf bytes.Buffer
 	if err := h.exportService.ExportGameToPDF(c.Request.Context(), gameID, &buf); err != nil {
 		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportGamePDF: failed to generate PDF")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 
@@ -260,7 +260,7 @@ func (h *ExportHandler) ExportStatisticsPDF(c *gin.Context) {
 	var buf bytes.Buffer
 	if err := h.exportService.ExportStatisticsToPDF(c.Request.Context(), gameID, &buf); err != nil {
 		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportStatisticsPDF: failed to generate statistics PDF")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 
@@ -296,7 +296,7 @@ func (h *ExportHandler) ExportGameExcel(c *gin.Context) {
 	var buf bytes.Buffer
 	if err := h.exportService.ExportGameToExcel(c.Request.Context(), gameID, &buf); err != nil {
 		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportGameExcel: failed to generate Excel")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 
@@ -328,7 +328,7 @@ func (h *ExportHandler) ExportResultsExcel(c *gin.Context) {
 	var buf bytes.Buffer
 	if err := h.exportService.ExportResultsToExcel(c.Request.Context(), gameID, &buf); err != nil {
 		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportResultsExcel: failed to generate Excel")
-		c.HTML(http.StatusInternalServerError, "errors-500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 
