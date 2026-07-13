@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -127,7 +128,7 @@ func (s *GamePlayService) SubmitFile(ctx context.Context, passingID, userID uint
 		logEntry := Log{
 			GamePassingID: passingID,
 			LevelID:       progress.LevelID,
-			Message:       fmt.Sprintf("загружен файл: %s", filePath),
+			Message:       fmt.Sprintf("загружен файл: %s", filepath.Base(filepath.Clean(filePath))),
 		}
 		return tx.Create(&logEntry).Error
 	})

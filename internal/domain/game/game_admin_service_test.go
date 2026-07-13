@@ -27,6 +27,7 @@ var allModels = []interface{}{
 	&game.Attempt{},
 	&game.GameSetting{},
 	&game.Log{},
+	&game.CoAuthor{},
 	&level.Level{},
 	&level.Question{},
 	&level.Answer{},

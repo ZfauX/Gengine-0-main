@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gengine-0/internal/config"
@@ -132,9 +133,7 @@ func (app *App) setupEngine(r *gin.Engine) error {
 
 	// API маршруты не требуют CSRF (используют JWT)
 	apiGroup := r.Group("/api")
-	apiGroup.Use(func(c *gin.Context) {
-		c.Next() // Просто пропускаем API запросы без CSRF
-	})
+	apiGroup.Use(middleware.CSRFJSON())
 
 	tmpl := template.New("")
 	tmpl.Funcs(templatefuncs.FuncMap())
@@ -149,6 +148,12 @@ func (app *App) setupEngine(r *gin.Engine) error {
 	r.Use(middleware.SecurityHeadersMiddleware())
 	r.Use(middleware.GzipMiddleware())
 	r.Use(middleware.StaticCacheMiddleware())
+
+	// Настройка доверенных прокси для корректного определения реальных IP клиентов
+	if app.Config.Server.TrustedProxies != "" {
+		proxies := strings.Split(app.Config.Server.TrustedProxies, ",")
+		r.Use(middleware.TrustedProxyMiddleware(proxies))
+	}
 
 	r.Static("/static", filepath.Join(app.BaseDir, app.Config.Server.StaticDir))
 	r.Static("/uploads", filepath.Join(app.BaseDir, app.Config.Server.UploadsDir))

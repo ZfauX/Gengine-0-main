@@ -181,14 +181,19 @@ func (c *ValkeyCache) DeleteByPrefixWithCtx(ctx context.Context, prefix string) 
 		return
 	}
 
+	var keys []string
 	iter := c.client.Scan(ctx, 0, prefix+"*", 0).Iterator()
 	for iter.Next(ctx) {
-		if err := c.client.Del(ctx, iter.Val()).Err(); err != nil {
-			log.Warn().Err(err).Str("key", iter.Val()).Msg("Valkey: DeleteByPrefixWithCtx error")
-		}
+		keys = append(keys, iter.Val())
 	}
 	if err := iter.Err(); err != nil {
 		log.Warn().Err(err).Str("prefix", prefix).Msg("Valkey: DeleteByPrefixWithCtx scan error")
+	}
+
+	if len(keys) > 0 {
+		if err := c.client.Del(ctx, keys...).Err(); err != nil {
+			log.Warn().Err(err).Str("prefix", prefix).Msg("Valkey: DeleteByPrefixWithCtx error")
+		}
 	}
 }
 
@@ -257,8 +262,9 @@ func (c *ValkeyCache) GetOrSetInt(key string, ttl time.Duration, fn func() (int,
 	if err != nil {
 		return 0, err
 	}
-	if i, ok := val.(int); ok {
-		return i, nil
+	// JSON deserializes numbers as float64
+	if i, ok := val.(float64); ok {
+		return int(i), nil
 	}
 	return 0, fmt.Errorf("unexpected type for key %s", key)
 }

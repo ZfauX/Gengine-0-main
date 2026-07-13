@@ -172,7 +172,8 @@ func checkTimeoutsImpl(db *gorm.DB, ctx context.Context) {
 	if err := db.WithContext(ctx).Clauses(clause.Locking{
 		Strength: "UPDATE",
 		Options:  "SKIP LOCKED",
-	}).Where("finished_at IS NULL").
+	}).Preload("GamePassing.Game.GameSetting").
+		Where("finished_at IS NULL").
 		Limit(batchSize).
 		Find(&activeProgresses).Error; err != nil {
 		log.Error().Err(err).Msg("CheckTimeouts: failed to fetch active progresses")
@@ -225,7 +226,9 @@ func checkAutoStartGamesImpl(db *gorm.DB, ctx context.Context) {
 
 	var games []Game
 	now := time.Now()
-	if err := db.WithContext(ctx).Where("is_draft = false AND starts_at IS NOT NULL AND starts_at <= ? AND auto_start = true", now).
+	if err := db.WithContext(ctx).
+		Joins("JOIN game_settings ON game_settings.game_id = games.id").
+		Where("games.is_draft = false AND games.starts_at IS NOT NULL AND games.starts_at <= ? AND game_settings.auto_start = true", now).
 		Limit(batchSize).
 		Find(&games).Error; err != nil {
 		log.Error().Err(err).Msg("CheckAutoStartGames: failed to fetch games")

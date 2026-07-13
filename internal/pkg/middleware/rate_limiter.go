@@ -69,7 +69,12 @@ func (rl *RateLimiter) Allow(key string) bool {
 
 // cleanup удаляет записи, которые не обновлялись дольше окна.
 func (rl *RateLimiter) cleanup() {
-	ticker := time.NewTicker(time.Minute)
+	// Интервал очистки — не чаще 1 раза в минуту и не реже window/4
+	interval := time.Minute
+	if rl.window > 0 && rl.window/4 < interval {
+		interval = rl.window / 4
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {

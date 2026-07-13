@@ -137,10 +137,15 @@ func (c *Checker) checkValkey(ctx context.Context) Status {
 		}
 	}
 	start := time.Now()
-	// Пытаемся получить значение из кэша — если работает, значит connection ok
-	_, ok := c.valkey.Get("health:check")
-	if !ok {
-		// Ключ не найден — это нормально, главное что не было ошибки
+	// Проверяем доступность через IsAvailable, если доступно
+	if vc, ok := c.valkey.(interface{ IsAvailable() bool }); ok {
+		if !vc.IsAvailable() {
+			return Status{
+				Status:  "error",
+				Message: "valkey connection failed",
+				Latency: time.Since(start).String(),
+			}
+		}
 	}
 	return Status{
 		Status:  "ok",

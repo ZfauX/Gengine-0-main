@@ -121,18 +121,18 @@ func (s *GameCRUDService) Publish(ctx context.Context, id uint, userID uint) err
 		return err
 	}
 	metrics.IncGamesPublished()
-	metrics.SetActiveGames(float64(len(s.getActiveGames(ctx))))
+	metrics.SetActiveGames(float64(s.getActiveGames(ctx)))
 	return nil
 }
 
-// getActiveGames возвращает список опубликованных игр для обновления метрики.
-func (s *GameCRUDService) getActiveGames(ctx context.Context) []Game {
-	var games []Game
-	if err := s.gameRepo.Model(ctx).Where("is_draft = false").Find(&games).Error; err != nil {
-		log.Error().Err(err).Msg("getActiveGames: failed to fetch active games")
-		return []Game{}
+// getActiveGames возвращает количество опубликованных игр для обновления метрики.
+func (s *GameCRUDService) getActiveGames(ctx context.Context) int64 {
+	var count int64
+	if err := s.gameRepo.Model(ctx).Where("is_draft = false").Count(&count).Error; err != nil {
+		log.Error().Err(err).Msg("getActiveGames: failed to count active games")
+		return 0
 	}
-	return games
+	return count
 }
 
 // CanViewGame проверяет, имеет ли пользователь право видеть игру.

@@ -444,7 +444,7 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 			})
 		} else {
 			render.Page(c, http.StatusBadRequest, "auth-login.html", gin.H{
-				"Error": "Ошибка входа через " + req.Provider + ": " + err.Error(),
+				"Error": "Ошибка входа через " + req.Provider,
 				"csrf":  csrf.GetToken(c),
 			})
 		}

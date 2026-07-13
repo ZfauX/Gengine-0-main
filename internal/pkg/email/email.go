@@ -14,6 +14,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // EmailService представляет сервис отправки писем с использованием persistent-очереди.
@@ -103,6 +104,7 @@ func (s *EmailService) processPendingEmails(ctx context.Context, batchSize int) 
 		Where("status = ? AND (scheduled_at IS NULL OR scheduled_at <= ?)", "pending", time.Now()).
 		Order("created_at ASC").
 		Limit(batchSize).
+		Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 		Find(&emails).Error; err != nil {
 		return err
 	}

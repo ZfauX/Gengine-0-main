@@ -81,6 +81,14 @@ func (s *MonitorService) GetOrFetchSnapshot(gameID uint) ([]TeamProgress, error)
 
 		// Сохраняем в кэш
 		s.mu.Lock()
+		if len(s.cache) > 100 {
+			// Удаление самых старых записей при переполнении
+			for id, cached := range s.cache {
+				if time.Since(cached.timestamp) > 5*time.Minute {
+					delete(s.cache, id)
+				}
+			}
+		}
 		s.cache[gameID] = &cachedSnapshot{
 			data:      snapshot,
 			timestamp: time.Now(),
@@ -243,7 +251,7 @@ func (s *MonitorService) CalculateResults(gameID uint) error {
 		}
 	}
 
-	// Обновляем duration и рассчитываем места
+	// Рассчитываем места
 	type passingResult struct {
 		ID       uint
 		Duration time.Duration
@@ -251,15 +259,19 @@ func (s *MonitorService) CalculateResults(gameID uint) error {
 	var results []passingResult
 	for _, p := range passings {
 		total := durationMap[p.ID]
-		if err := s.DB.Model(&p).Update("result_duration", total).Error; err != nil {
-			return err
-		}
 		results = append(results, passingResult{ID: p.ID, Duration: total})
 	}
 
+	// Batch update durations и места
 	sort.Slice(results, func(i, j int) bool { return results[i].Duration < results[j].Duration })
 	for i, res := range results {
-		if err := s.DB.Model(&GamePassing{}).Where("id = ?", res.ID).Update("place", i+1).Error; err != nil {
+		duration := res.Duration
+		place := i + 1
+		updates := map[string]interface{}{
+			"result_duration": duration,
+			"place":           place,
+		}
+		if err := s.DB.Model(&GamePassing{}).Where("id = ?", res.ID).Updates(updates).Error; err != nil {
 			return err
 		}
 	}

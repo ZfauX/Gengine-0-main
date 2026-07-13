@@ -78,3 +78,27 @@ func NewBadRequestError(message string) *AppError {
 		Message:    message,
 	}
 }
+
+// NewRateLimitError — превышение лимита запросов
+func NewRateLimitError(message string) *AppError {
+	return &AppError{
+		HTTPStatus: http.StatusTooManyRequests,
+		Code:       "rate_limit",
+		Message:    message,
+	}
+}
+
+// NewConfigurationError — ошибка конфигурации сервера
+func NewConfigurationError(message string) *AppError {
+	return &AppError{
+		HTTPStatus: http.StatusServiceUnavailable,
+		Code:       "configuration_error",
+		Message:    message,
+	}
+}
+
+// IsAppError проверяет, является ли ошибка структурированной
+func IsAppError(err error) bool {
+	_, ok := err.(*AppError)
+	return ok
+}
