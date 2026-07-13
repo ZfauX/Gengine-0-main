@@ -9,7 +9,6 @@ import (
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/team"
-	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/email"
 
 	"github.com/rs/zerolog/log"
@@ -133,17 +132,21 @@ func (s *TournamentService) Apply(ctx context.Context, tournamentID, teamID, use
 		return err
 	}
 
-	games, _ := s.tournamentGameRepo.ListGames(ctx, tournamentID)
+	games, err := s.tournamentGameRepo.ListGames(ctx, tournamentID)
+	if err != nil {
+		log.Error().Err(err).Uint("tournament_id", tournamentID).Msg("Apply: failed to list tournament games")
+	}
 	for _, g := range games {
-		var existing game.GamePassing
-		err := s.tournamentTeamRepo.(*gormTournamentTeamRepo).db.Where("game_id = ? AND team_id = ?", g.ID, teamID).First(&existing).Error
+		_, err := s.tournamentTeamRepo.FindByGameAndTeam(ctx, g.ID, teamID)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			passing := game.GamePassing{
 				GameID: g.ID,
 				TeamID: teamID,
 				Status: game.StatusPending,
 			}
-			_ = s.tournamentTeamRepo.(*gormTournamentTeamRepo).db.Create(&passing)
+			if err := s.tournamentTeamRepo.CreatePassing(ctx, &passing); err != nil {
+				log.Error().Err(err).Uint("game_id", g.ID).Uint("team_id", teamID).Msg("Apply: failed to create passing")
+			}
 		}
 	}
 
@@ -151,14 +154,14 @@ func (s *TournamentService) Apply(ctx context.Context, tournamentID, teamID, use
 		// Используем глобальную очередь вместо локального сервиса
 		tournamentPtr, err := s.tournamentRepo.GetByID(ctx, tournamentID)
 		if err == nil {
-			var team team.Team
-			if err := s.tournamentTeamRepo.(*gormTournamentTeamRepo).db.First(&team, teamID).Error; err == nil {
-				var captain user.User
-				if err := s.tournamentTeamRepo.(*gormTournamentTeamRepo).db.First(&captain, team.CaptainID).Error; err == nil {
+			teamObj, err := s.tournamentTeamRepo.GetTeam(ctx, teamID)
+			if err == nil {
+				captain, err := s.tournamentTeamRepo.GetCaptain(ctx, teamObj.CaptainID)
+				if err == nil {
 					if err := email.Enqueue(
 						captain.Email,
 						"Заявка на турнир",
-						fmt.Sprintf("Ваша команда «%s» подала заявку на турнир «%s».", team.Name, tournamentPtr.Name),
+						fmt.Sprintf("Ваша команда «%s» подала заявку на турнир «%s».", teamObj.Name, tournamentPtr.Name),
 					); err != nil {
 						log.Error().Err(err).Str("email", captain.Email).Msg("failed to enqueue tournament application email")
 					}
@@ -186,8 +189,8 @@ func (s *TournamentService) CanApply(ctx context.Context, tournamentID, userID u
 // ---------- Подсчёт очков ----------
 
 func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint) {
-	var tg TournamentGame
-	if err := s.tournamentGameRepo.(*gormTournamentGameRepo).db.Where("game_id = ?", gameID).First(&tg).Error; err != nil {
+	tg, err := s.tournamentGameRepo.FindByGameID(ctx, gameID)
+	if err != nil {
 		return
 	}
 	tournament, err := s.tournamentRepo.GetByID(ctx, tg.TournamentID)
@@ -195,8 +198,10 @@ func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint
 		return
 	}
 
-	var passings []game.GamePassing
-	s.tournamentGameRepo.(*gormTournamentGameRepo).db.Where("game_id = ? AND status = ?", gameID, game.StatusFinished).Find(&passings)
+	passings, err := s.tournamentGameRepo.ListFinishedPassings(ctx, gameID, game.StatusFinished)
+	if err != nil {
+		return
+	}
 
 	for _, p := range passings {
 		_, err := s.tournamentTeamRepo.GetByTournamentAndTeam(ctx, tournament.ID, p.TeamID)

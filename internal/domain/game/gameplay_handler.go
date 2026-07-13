@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -54,7 +55,7 @@ func NewGameplayHandler(
 func (h *GameplayHandler) ShowGame(c *gin.Context) {
 	passingID, err := strconv.Atoi(c.Param("passing_id"))
 	if err != nil || passingID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID прохождения"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID прохождения")
 		return
 	}
 	userID := c.GetUint("userID")
@@ -85,7 +86,7 @@ func (h *GameplayHandler) ShowGame(c *gin.Context) {
 
 	render.Page(c, http.StatusOK, "gameplay-show.html", gin.H{
 		"PassingID":        passingID,
-		"Level":            data.Passing.Status,
+		"Level":            data.Level,
 		"Attempts":         data.Attempts,
 		"TimeLimitSeconds": data.TimeLimitSec,
 		"HideAnswers":      hideAnswers,
@@ -163,7 +164,7 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 func (h *GameplayHandler) UseHint(c *gin.Context) {
 	passingID, err := strconv.Atoi(c.Param("passing_id"))
 	if err != nil || passingID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID прохождения"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID прохождения")
 		return
 	}
 	if err := h.gamePlaySvc.UseHint(c.Request.Context(), uint(passingID), c.GetUint("userID")); err != nil {
@@ -228,7 +229,7 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 
 	webPath, err := h.storage.Save("uploads/answers", file, header.Filename, userID, 10*1024*1024, allowedTypes)
 	if err != nil {
-		log.Error().Err(err).Str("filename", header.Filename).Msg("SubmitFile: failed to save file")
+		log.Error().Err(err).Str("filename", filepath.Base(header.Filename)).Msg("SubmitFile: failed to save file")
 		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
 			"Error": "Ошибка сохранения файла",
 			"csrf":  csrf.GetToken(c),
@@ -239,7 +240,9 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 	_, err = h.gamePlaySvc.SubmitFile(c.Request.Context(), uint(passingID), userID, webPath)
 	if err != nil {
 		log.Error().Err(err).Uint("passing", uint(passingID)).Msg("SubmitFile: service error")
-		_ = h.storage.Delete(webPath)
+		if delErr := h.storage.Delete(webPath); delErr != nil {
+			log.Error().Err(delErr).Str("path", webPath).Msg("SubmitFile: failed to delete uploaded file")
+		}
 		render.Page(c, http.StatusInternalServerError, "gameplay-show.html", gin.H{
 			"Error": "Не удалось сохранить попытку",
 			"csrf":  csrf.GetToken(c),
@@ -253,11 +256,11 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 func (h *GameplayHandler) AcceptAnswer(c *gin.Context) {
 	passingID, err := strconv.Atoi(c.Param("passing_id"))
 	if err != nil || passingID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID прохождения"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID прохождения")
 		return
 	}
 	if err := h.gamePlaySvc.AcceptBlackboxAnswer(c.Request.Context(), uint(passingID), c.GetUint("userID")); err != nil {
-		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
+		render.RenderError(c, http.StatusForbidden, err.Error())
 		return
 	}
 	c.Redirect(http.StatusFound, "/games/"+c.Query("game_id")+"/monitor")
@@ -269,14 +272,14 @@ func (h *GameplayHandler) AcceptAnswer(c *gin.Context) {
 func (h *GameplayHandler) StartTesting(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID игры"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
 		return
 	}
 	userID := c.GetUint("userID")
 
 	passing, err := h.gamePlaySvc.StartTesting(c.Request.Context(), uint(gameID), userID)
 	if err != nil {
-		c.HTML(http.StatusForbidden, "errors-403.html", gin.H{"Error": err.Error()})
+		render.RenderError(c, http.StatusForbidden, err.Error())
 		return
 	}
 	c.Redirect(http.StatusFound, "/testing/"+strconv.Itoa(int(passing.ID)))
@@ -286,7 +289,7 @@ func (h *GameplayHandler) StartTesting(c *gin.Context) {
 func (h *GameplayHandler) ShowTestGame(c *gin.Context) {
 	passingID, err := strconv.Atoi(c.Param("passing_id"))
 	if err != nil || passingID <= 0 {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID прохождения"})
+		render.RenderError(c, http.StatusBadRequest, "Неверный ID прохождения")
 		return
 	}
 	userID := c.GetUint("userID")

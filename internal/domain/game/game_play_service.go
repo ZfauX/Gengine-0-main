@@ -256,9 +256,9 @@ func (s *GamePlayService) StartTesting(ctx context.Context, gameID, userID uint)
 		}
 		metrics.IncGamePassings(string(StatusTesting))
 
-		// Инициализируем первый уровень
-		progressSvc := NewLevelProgressService(tx)
-		return progressSvc.InitFirstLevel(ctx, passing.ID)
+		// Инициализируем первый уровень с транзакцией
+		txProgressSvc := NewLevelProgressService(tx)
+		return txProgressSvc.InitFirstLevel(ctx, passing.ID)
 	})
 
 	if err != nil {
@@ -362,6 +362,7 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 
 	var settings GameSetting
 	_ = s.db.WithContext(ctx).Where("game_id = ?", passing.GameID).First(&settings).Error
+	// settings не обязательны — при отсутствии или ошибке используются значения по умолчанию
 
 	var progress LevelProgress
 	err := s.db.WithContext(ctx).
@@ -373,10 +374,10 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 	}
 
 	var attempts []Attempt
-	_ = s.db.WithContext(ctx).
+	s.db.WithContext(ctx).
 		Where("level_progress_id = ?", progress.ID).
 		Order("created_at DESC").
-		Find(&attempts).Error
+		Find(&attempts)
 
 	var votingSession gameBlackboxVotingSession
 	votingActive := s.db.WithContext(ctx).
@@ -396,6 +397,7 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 
 	return &GameplayData{
 		Passing:      passing,
+		Level:        progress.Level,
 		Settings:     settings,
 		Attempts:     attempts,
 		VotingActive: votingActive,
@@ -422,6 +424,8 @@ func (s *GamePlayService) IsTeamMember(ctx context.Context, teamID, userID uint)
 		return true, nil
 	}
 	var count int64
-	s.db.WithContext(ctx).Table("team_members").Where("team_id = ? AND user_id = ?", teamID, userID).Count(&count)
+	if err := s.db.WithContext(ctx).Table("team_members").Where("team_id = ? AND user_id = ?", teamID, userID).Count(&count).Error; err != nil {
+		return false, err
+	}
 	return count > 0, nil
 }

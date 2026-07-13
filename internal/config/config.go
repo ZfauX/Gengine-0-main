@@ -280,8 +280,9 @@ func requireStrongSecret(key string, minLen int) (string, error) {
 		return "", fmt.Errorf("environment variable %s must be at least %d characters long (current: %d)", key, minLen, len(value))
 	}
 	commonWeak := []string{"change-me", "secret", "password", "admin", "123456", "your-"}
+	lowerValue := strings.ToLower(value)
 	for _, w := range commonWeak {
-		if strings.HasPrefix(value, w) || strings.Contains(value, w) {
+		if strings.Contains(lowerValue, w) {
 			return "", fmt.Errorf("environment variable %s appears to be a weak/default value, please change it", key)
 		}
 	}

@@ -96,6 +96,50 @@ func (r *RedisCache) Flush() {
 	}
 }
 
+// GetWithCtx возвращает значение из кэша по ключу с контекстом.
+func (r *RedisCache) GetWithCtx(ctx context.Context, key string) (interface{}, bool) {
+	val, err := r.client.Get(ctx, r.prefix+key).Result()
+	if err == redis.Nil {
+		return nil, false
+	}
+	if err != nil {
+		return nil, false
+	}
+	return val, true
+}
+
+// SetWithCtx сохраняет значение в кэш с контекстом.
+func (r *RedisCache) SetWithCtx(ctx context.Context, key string, value interface{}, ttl time.Duration) {
+	str, ok := value.(string)
+	if !ok {
+		return
+	}
+	r.client.Set(ctx, r.prefix+key, str, ttl)
+}
+
+// DeleteWithCtx удаляет значение из кэша с контекстом.
+func (r *RedisCache) DeleteWithCtx(ctx context.Context, key string) {
+	r.client.Del(ctx, r.prefix+key)
+}
+
+// DeleteByPrefixWithCtx удаляет все ключи с префиксом с контекстом.
+func (r *RedisCache) DeleteByPrefixWithCtx(ctx context.Context, prefix string) {
+	var cursor uint64
+	for {
+		keys, nextCursor, err := r.client.Scan(ctx, cursor, r.prefix+prefix+"*", 100).Result()
+		if err != nil {
+			break
+		}
+		if len(keys) > 0 {
+			r.client.Del(ctx, keys...)
+		}
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+}
+
 // GetOrSet возвращает значение из кэша, иначе вызывает fn, сохраняет и возвращает.
 func (r *RedisCache) GetOrSet(key string, ttl time.Duration, fn func() (interface{}, error)) (interface{}, error) {
 	if val, ok := r.Get(key); ok {

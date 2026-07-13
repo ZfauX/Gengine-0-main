@@ -53,12 +53,15 @@ func (h *FollowHandler) Follow(c *gin.Context) {
 	}
 
 	if err := h.followService.Follow(c.Request.Context(), userID, req.ID); err != nil {
-		log.Error().Err(err).Uint("user_id", userID).Uint("author_id", req.ID).Msg("Follow: failed to follow author")
-		appErr := apperrors.NewBadRequestError(err.Error())
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		switch err.Error() {
+		case "нельзя подписаться на самого себя", "не подписан":
+			appErr := apperrors.NewBadRequestError(err.Error())
+			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
+		default:
+			log.Error().Err(err).Uint("user_id", userID).Uint("author_id", req.ID).Msg("Follow: failed to follow author")
+			appErr := apperrors.NewInternalError(err)
+			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
+		}
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "followed"})
@@ -86,12 +89,15 @@ func (h *FollowHandler) Unfollow(c *gin.Context) {
 	}
 
 	if err := h.followService.Unfollow(c.Request.Context(), userID, req.ID); err != nil {
-		log.Error().Err(err).Uint("user_id", userID).Uint("author_id", req.ID).Msg("Unfollow: failed to unfollow author")
-		appErr := apperrors.NewBadRequestError(err.Error())
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		switch err.Error() {
+		case "не подписан":
+			appErr := apperrors.NewBadRequestError(err.Error())
+			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
+		default:
+			log.Error().Err(err).Uint("user_id", userID).Uint("author_id", req.ID).Msg("Unfollow: failed to unfollow author")
+			appErr := apperrors.NewInternalError(err)
+			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
+		}
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "unfollowed"})

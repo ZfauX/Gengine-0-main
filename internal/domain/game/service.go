@@ -3,6 +3,7 @@ package game
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"mime/multipart"
@@ -135,7 +136,7 @@ func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint) (*Gam
 	cacheKey := fmt.Sprintf("game:%d:viewer:%d", id, viewerID)
 
 	if s.cache != nil {
-		if cached, ok := s.cache.Get(cacheKey); ok {
+		if cached, ok := s.cache.GetWithCtx(ctx, cacheKey); ok {
 			if game, ok := cached.(*Game); ok {
 				canView, err := s.crudService.CanViewGame(ctx, game, viewerID)
 				if err != nil {
@@ -143,12 +144,16 @@ func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint) (*Gam
 				}
 				if !canView {
 					if s.cache != nil {
-						s.cache.Delete(cacheKey)
+						s.cache.DeleteWithCtx(ctx, cacheKey)
 					}
 					return nil, errors.New("игра не найдена")
 				}
 				log.Debug().Uint("game_id", id).Msg("GetByID: cache hit")
 				return game, nil
+			}
+			// Если кэш вернул тип из Valkey (map), не используем — удаляем
+			if s.cache != nil {
+				s.cache.DeleteWithCtx(ctx, cacheKey)
 			}
 		}
 	}
@@ -166,12 +171,13 @@ func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint) (*Gam
 		return nil, errors.New("игра не найдена")
 	}
 
-	if s.cache != nil && (!game.IsDraft || s.crudService.hasAdminRole(ctx, viewerID) || ok) {
+	// Кэшируем только для не-черновиков или админов
+	if s.cache != nil && (!game.IsDraft || s.crudService.hasAdminRole(ctx, viewerID)) {
 		ttl := 1 * time.Minute
 		if !game.IsDraft {
 			ttl = 5 * time.Minute
 		}
-		s.cache.Set(cacheKey, game, ttl)
+		s.cache.SetWithCtx(ctx, cacheKey, game, ttl)
 	}
 
 	return game, nil
@@ -184,8 +190,8 @@ func (s *GameService) Update(ctx context.Context, id uint, updated *Game, userID
 		return err
 	}
 	if s.cache != nil {
-		s.cache.Delete(fmt.Sprintf("game:%d", id))
-		s.cache.DeleteByPrefix("games:list:")
+		s.cache.DeleteByPrefixWithCtx(ctx, fmt.Sprintf("game:%d:viewer:", id))
+		s.cache.DeleteByPrefixWithCtx(ctx, "games:list:")
 	}
 	return nil
 }
@@ -222,8 +228,8 @@ func (s *GameService) Delete(ctx context.Context, id uint, userID uint) error {
 		return err
 	}
 	if s.cache != nil {
-		s.cache.Delete(fmt.Sprintf("game:%d", id))
-		s.cache.DeleteByPrefix("games:list:")
+		s.cache.DeleteByPrefixWithCtx(ctx, fmt.Sprintf("game:%d:viewer:", id))
+		s.cache.DeleteByPrefixWithCtx(ctx, "games:list:")
 	}
 	return nil
 }
@@ -235,8 +241,8 @@ func (s *GameService) Publish(ctx context.Context, id uint, userID uint) error {
 		return err
 	}
 	if s.cache != nil {
-		s.cache.Delete(fmt.Sprintf("game:%d", id))
-		s.cache.DeleteByPrefix("games:list:")
+		s.cache.DeleteByPrefixWithCtx(ctx, fmt.Sprintf("game:%d:viewer:", id))
+		s.cache.DeleteByPrefixWithCtx(ctx, "games:list:")
 	}
 	return nil
 }
@@ -263,12 +269,25 @@ func (s *GameService) GetAverageRating(ctx context.Context, gameID uint) (float6
 	cacheKey := fmt.Sprintf("rating:game:%d", gameID)
 
 	if s.cache != nil {
-		if cached, ok := s.cache.Get(cacheKey); ok {
+		if cached, ok := s.cache.GetWithCtx(ctx, cacheKey); ok {
+			// In-memory cache: may be map[string]interface{}
 			if result, ok := cached.(map[string]interface{}); ok {
 				if avg, ok := result["avg"].(float64); ok {
 					if count, ok := result["count"].(int64); ok {
 						log.Debug().Uint("game_id", gameID).Msg("GetAverageRating: cache hit")
 						return avg, count, nil
+					}
+				}
+			}
+			// If cached as struct or other type, try to unmarshal from JSON bytes
+			if result, ok := cached.([]byte); ok {
+				var parsed map[string]interface{}
+				if err := json.Unmarshal(result, &parsed); err == nil {
+					if avg, ok := parsed["avg"].(float64); ok {
+						if count, ok := parsed["count"].(int64); ok {
+							log.Debug().Uint("game_id", gameID).Msg("GetAverageRating: cache hit (json)")
+							return avg, count, nil
+						}
 					}
 				}
 			}
@@ -285,7 +304,7 @@ func (s *GameService) GetAverageRating(ctx context.Context, gameID uint) (float6
 			"avg":   avg,
 			"count": count,
 		}
-		s.cache.Set(cacheKey, result, 5*time.Minute)
+		s.cache.SetWithCtx(ctx, cacheKey, result, 5*time.Minute)
 	}
 
 	return avg, count, nil
@@ -294,6 +313,24 @@ func (s *GameService) GetAverageRating(ctx context.Context, gameID uint) (float6
 // IsUserManager делегирует CoAuthorService.
 func (s *GameService) IsUserManager(gameID, userID uint) (bool, error) {
 	return s.coAuthorSvc.IsUserManager(gameID, userID)
+}
+
+// GetPassingByUser возвращает активное passing для игры и пользователя.
+func (s *GameService) GetPassingByUser(ctx context.Context, gameID, userID uint) (*GamePassing, error) {
+	var passing GamePassing
+	err := s.db.WithContext(ctx).
+		Joins("JOIN team_members ON team_members.team_id = game_passings.team_id").
+		Where("game_passings.game_id = ? AND game_passings.status IN (?,?) AND team_members.user_id = ?",
+			gameID, StatusAccepted, StatusStarted, userID).
+		First(&passing).Error
+	return &passing, err
+}
+
+// GetLogsByGameID возвращает логи игры, отсортированные по времени создания.
+func (s *GameService) GetLogsByGameID(ctx context.Context, gameID uint) ([]Log, error) {
+	var logs []Log
+	err := s.db.WithContext(ctx).Where("game_id = ?", gameID).Order("created_at ASC").Find(&logs).Error
+	return logs, err
 }
 
 // GetSettingsWithDefaults загружает настройки игры или возвращает значения по умолчанию.

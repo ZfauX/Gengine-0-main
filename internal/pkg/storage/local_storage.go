@@ -150,13 +150,20 @@ func (s *LocalStorage) Delete(webPath string) error {
 	if webPath == "" {
 		return nil
 	}
-	localPath := filepath.FromSlash(strings.TrimPrefix(webPath, "/"))
-	absPath, err := filepath.Abs(localPath)
-	if err != nil {
-		return fmt.Errorf("не удалось получить абсолютный путь: %w", err)
+	// Извлекаем относительную часть пути (после первого "/")
+	relPath := webPath
+	if strings.HasPrefix(webPath, "/") {
+		relPath = webPath[1:]
 	}
-	if _, err := os.Stat(absPath); os.IsNotExist(err) {
+
+	// Path traversal protection: запрещаем ".." в относительной части пути
+	if strings.Contains(relPath, "..") {
+		return fmt.Errorf("путь файла выходит за пределы директории загрузок")
+	}
+
+	fullPath := filepath.FromSlash(relPath)
+	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
 		return nil
 	}
-	return os.Remove(absPath)
+	return os.Remove(fullPath)
 }

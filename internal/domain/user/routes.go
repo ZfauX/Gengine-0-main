@@ -32,7 +32,7 @@ func RegisterRoutes(
 ) {
 	authHandler := NewAuthHandler(cfg, authSvc, userSvc, passwordResetSvc, emailVerifSvc, oauthSvc, auditSvc)
 	profileSvc := NewProfileService(db)
-	profileHandler := NewProfileHandler(db, localStorage, authSvc, profileSvc)
+	profileHandler := NewProfileHandler(db, localStorage, authSvc, profileSvc, userSvc)
 	achievementHandler := NewAchievementHandler(db)
 	dashboardHandler := NewDashboardHandler(NewUserDashboardService(db), db)
 

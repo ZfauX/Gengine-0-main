@@ -44,6 +44,10 @@ func (s *LevelService) ListByGame(ctx context.Context, gameID uint) ([]Level, er
 	return s.levelRepo.ListByGameOrdered(ctx, gameID)
 }
 
+func (s *LevelService) ListWithQuestions(ctx context.Context, gameID uint) ([]Level, error) {
+	return s.levelRepo.ListWithQuestions(ctx, gameID)
+}
+
 func (s *LevelService) GetByID(ctx context.Context, levelID uint) (*Level, error) {
 	return s.levelRepo.GetByIDWithQuestions(ctx, levelID)
 }
@@ -51,7 +55,7 @@ func (s *LevelService) GetByID(ctx context.Context, levelID uint) (*Level, error
 func (s *LevelService) Create(ctx context.Context, gameID uint, level *Level, userID uint) error {
 	ok, err := s.authorizer.IsUserManager(gameID, userID)
 	if err != nil {
-		return errors.New("ошибка проверки прав")
+		return err
 	}
 	if !ok {
 		return errors.New("только автор или контент-менеджер может создавать уровни")
@@ -86,7 +90,7 @@ func (s *LevelService) Update(ctx context.Context, levelID uint, updated *Level,
 	}
 	ok, err := s.authorizer.IsUserManager(level.GameID, userID)
 	if err != nil {
-		return errors.New("ошибка проверки прав")
+		return err
 	}
 	if !ok {
 		return errors.New("только автор или контент-менеджер может обновлять уровни")
@@ -128,59 +132,59 @@ func (s *LevelService) Duplicate(ctx context.Context, levelID, userID uint) (*Le
 	}
 	ok, err := s.authorizer.IsUserManager(original.GameID, userID)
 	if err != nil {
-		return nil, errors.New("ошибка проверки прав")
+		return nil, err
 	}
 	if !ok {
 		return nil, errors.New("недостаточно прав")
 	}
 
-	var newLevel *Level
-	err = s.levelRepo.(*gormLevelRepo).db.Transaction(func(tx *gorm.DB) error {
-		targetPos := original.Position + 1
-		if err := tx.Model(&Level{}).Where("game_id = ? AND position >= ?", original.GameID, targetPos).
-			Update("position", gorm.Expr("position + 1")).Error; err != nil {
-			return err
-		}
+	tx := s.levelRepo.BeginTransaction(ctx)
+	defer tx.Rollback()
 
-		newLevel = &Level{
-			GameID:               original.GameID,
-			Name:                 original.Name + " (копия)",
-			Description:          original.Description,
-			Position:             targetPos,
-			Type:                 original.Type,
-			ParentID:             original.ParentID,
-			GroupID:              original.GroupID,
-			MinChildren:          original.MinChildren,
-			RequiresConfirmation: original.RequiresConfirmation,
-			Latitude:             original.Latitude,
-			Longitude:            original.Longitude,
-		}
-		if err := tx.Create(newLevel).Error; err != nil {
-			return err
-		}
+	targetPos := original.Position + 1
+	if err := tx.Model(&Level{}).Where("game_id = ? AND position >= ?", original.GameID, targetPos).
+		Update("position", gorm.Expr("position + 1")).Error; err != nil {
+		return nil, err
+	}
 
-		for _, q := range original.Questions {
-			newQ := Question{
-				LevelID: newLevel.ID,
-				Text:    q.Text,
-				Hint:    q.Hint,
+	newLevel := &Level{
+		GameID:               original.GameID,
+		Name:                 original.Name + " (копия)",
+		Description:          original.Description,
+		Position:             targetPos,
+		Type:                 original.Type,
+		ParentID:             original.ParentID,
+		GroupID:              original.GroupID,
+		MinChildren:          original.MinChildren,
+		RequiresConfirmation: original.RequiresConfirmation,
+		Latitude:             original.Latitude,
+		Longitude:            original.Longitude,
+	}
+	if err := tx.Create(newLevel).Error; err != nil {
+		return nil, err
+	}
+
+	for _, q := range original.Questions {
+		newQ := Question{
+			LevelID: newLevel.ID,
+			Text:    q.Text,
+			Hint:    q.Hint,
+		}
+		if err := tx.Create(&newQ).Error; err != nil {
+			return nil, err
+		}
+		for _, a := range q.Answers {
+			newA := Answer{
+				QuestionID: newQ.ID,
+				Code:       a.Code,
 			}
-			if err := tx.Create(&newQ).Error; err != nil {
-				return err
-			}
-			for _, a := range q.Answers {
-				newA := Answer{
-					QuestionID: newQ.ID,
-					Code:       a.Code,
-				}
-				if err := tx.Create(&newA).Error; err != nil {
-					return err
-				}
+			if err := tx.Create(&newA).Error; err != nil {
+				return nil, err
 			}
 		}
-		return nil
-	})
-	if err != nil {
+	}
+
+	if err := tx.Commit().Error; err != nil {
 		return nil, err
 	}
 	return newLevel, nil
@@ -193,23 +197,21 @@ func (s *LevelService) Move(ctx context.Context, levelID uint, direction string,
 	}
 	ok, err := s.authorizer.IsUserManager(level.GameID, userID)
 	if err != nil {
-		return errors.New("ошибка проверки прав")
+		return err
 	}
 	if !ok {
 		return errors.New("недостаточно прав")
 	}
 
-	var sibling Level
+	var sibling *Level
 	switch direction {
 	case "up":
-		err := s.levelRepo.(*gormLevelRepo).db.Where("game_id = ? AND position < ?", level.GameID, level.Position).
-			Order("position DESC").First(&sibling).Error
+		sibling, err = s.levelRepo.FindPrevLevel(ctx, level.GameID, level.Position)
 		if err != nil {
 			return errors.New("некуда двигать")
 		}
 	case "down":
-		err := s.levelRepo.(*gormLevelRepo).db.Where("game_id = ? AND position > ?", level.GameID, level.Position).
-			Order("position ASC").First(&sibling).Error
+		sibling, err = s.levelRepo.FindNextLevel(ctx, level.GameID, level.Position)
 		if err != nil {
 			return errors.New("некуда двигать")
 		}
@@ -217,7 +219,7 @@ func (s *LevelService) Move(ctx context.Context, levelID uint, direction string,
 		return errors.New("неверное направление")
 	}
 
-	tx := s.levelRepo.(*gormLevelRepo).db.Begin()
+	tx := s.levelRepo.BeginTransaction(ctx)
 	if tx.Error != nil {
 		return tx.Error
 	}
@@ -225,25 +227,22 @@ func (s *LevelService) Move(ctx context.Context, levelID uint, direction string,
 	oldLevelPos := level.Position
 	oldSiblingPos := sibling.Position
 
-	var maxPos int
-	if err := tx.Model(&Level{}).
-		Where("game_id = ?", level.GameID).
-		Select("COALESCE(MAX(position), 0)").
-		Scan(&maxPos).Error; err != nil {
+	maxPos, err := s.levelRepo.GetMaxPositionForTransaction(ctx, tx, level.GameID)
+	if err != nil {
 		tx.Rollback()
 		return err
 	}
 	tempPos := maxPos + 1
 
-	if err := tx.Model(&level).Update("position", tempPos).Error; err != nil {
+	if err := tx.Model(level).Update("position", tempPos).Error; err != nil {
 		tx.Rollback()
 		return err
 	}
-	if err := tx.Model(&sibling).Update("position", oldLevelPos).Error; err != nil {
+	if err := tx.Model(sibling).Update("position", oldLevelPos).Error; err != nil {
 		tx.Rollback()
 		return err
 	}
-	if err := tx.Model(&level).Update("position", oldSiblingPos).Error; err != nil {
+	if err := tx.Model(level).Update("position", oldSiblingPos).Error; err != nil {
 		tx.Rollback()
 		return err
 	}
@@ -286,7 +285,7 @@ func (s *QuestionService) Create(ctx context.Context, levelID uint, question *Qu
 	}
 	ok, err := s.authorizer.IsUserManager(level.GameID, userID)
 	if err != nil {
-		return errors.New("ошибка проверки прав")
+		return err
 	}
 	if !ok {
 		return errors.New("только автор или контент-менеджер может создавать вопросы")
@@ -306,7 +305,7 @@ func (s *QuestionService) Update(ctx context.Context, questionID uint, updated *
 	}
 	ok, err := s.authorizer.IsUserManager(level.GameID, userID)
 	if err != nil {
-		return errors.New("ошибка проверки прав")
+		return err
 	}
 	if !ok {
 		return errors.New("только автор или контент-менеджер может обновлять вопросы")
@@ -327,7 +326,7 @@ func (s *QuestionService) Delete(ctx context.Context, questionID uint, userID ui
 	}
 	ok, err := s.authorizer.IsUserManager(level.GameID, userID)
 	if err != nil {
-		return errors.New("ошибка проверки прав")
+		return err
 	}
 	if !ok {
 		return errors.New("нет прав на удаление вопроса")
@@ -373,7 +372,7 @@ func (s *AnswerService) Create(ctx context.Context, questionID uint, answer *Ans
 	}
 	ok, err := s.authorizer.IsUserManager(level.GameID, userID)
 	if err != nil {
-		return errors.New("ошибка проверки прав")
+		return err
 	}
 	if !ok {
 		return errors.New("нет прав на создание ответа")
@@ -398,7 +397,7 @@ func (s *AnswerService) Delete(ctx context.Context, answerID uint, userID uint) 
 	}
 	ok, err := s.authorizer.IsUserManager(level.GameID, userID)
 	if err != nil {
-		return errors.New("ошибка проверки прав")
+		return err
 	}
 	if !ok {
 		return errors.New("нет прав на удаление ответа")

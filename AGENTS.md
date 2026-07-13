@@ -39,21 +39,26 @@ cmd/server/main.go          — Entry point: loads env → config → DB → mig
     routes.go  — Route registration (creates services, applies middleware)
     templates/ — HTML templates for that domain
   internal/pkg/              — Shared infrastructure
-    middleware/ — auth (JWT cookie), CSRF, security headers, gzip, game_manager, team_access, permissions
+    middleware/ — auth (JWT cookie), CSRF, security headers, gzip, game_manager, team_access, permissions, rate_limiter
     websocket/  — Room-based WS hub for real-time monitor/chat
     storage/    — Local filesystem storage interface + implementation
-    email/      — SMTP email sending
-  internal/testutil/         — Test helpers: SQLite in-memory DB + PostgreSQL isolated-schema DB
+    email/      — SMTP email sending with persistent queue
+    cache/      — In-memory (go-cache) + Valkey/Redis fallback
+    health/     — Health check endpoint with DB, WS, and Valkey checks
+    sanitize/   — XSS protection via bluemonday
+  internal/testutil/         — Test helpers: PostgreSQL isolated-schema DB
   cmd/server/integration_test.go — External integration tests (package main_test)
 ```
 
 **Key data flow:**
-1. `main.go` loads config, opens PostgreSQL, runs GORM AutoMigrate for all models
-2. Creates a single `ws.RoomHub`, starts it (`go hub.Run()` — note: `Run()` is intentionally a no-op)
+1. `main.go` loads config, opens PostgreSQL, runs migrations via `-migrate` flag
+2. Creates a single `ws.RoomHub`, starts it (`go hub.Run()` — the Run() method has a full implementation with register/unregister/broadcast channels)
 3. Calls `app.SetupRouter(db, storage, hub, cfg, ".")` which creates all domain services and mounts routes
 4. Services are manually composed via dependency injection (no DI framework)
 5. Auth uses JWT stored in cookies, extracted by `middleware.AuthRequired` / `middleware.OptionalAuth`
 6. `userID` is stored in `gin.Context` via `c.Set("userID", userID)` and read via `c.GetUint("userID")`
+7. Rate limiters are initialized as singletons in main.go and applied per-route
+8. Email queue uses persistent DB storage with background workers
 
 ## Domain Structure Pattern
 
@@ -77,7 +82,12 @@ Every domain follows the same pattern. When adding a new domain, replicate this:
 
 ## Testing
 
-All tests use PostgreSQL isolated schemas (`testutil.SetupPostgresDB`) — creates a unique schema per test, auto-cleans via `t.Cleanup`. Requires a local `gengine_test` database with user `test`/password `test`.
+All tests use PostgreSQL isolated schemas (`testutil.SetupPostgresDB`) — creates a unique schema per test, auto-cleans via `t.Cleanup`. Requires a local PostgreSQL database. Test credentials are configurable via environment variables:
+- `TEST_DB_HOST` (default: localhost)
+- `TEST_DB_PORT` (default: 5432)
+- `TEST_DB_USER` (default: test)
+- `TEST_DB_PASSWORD` (default: test)
+- `TEST_DB_NAME` (default: gengine_test)
 
 **Integration tests** (`cmd/server/integration_test.go`):
 - Use package `main_test` (external test package)
@@ -101,19 +111,25 @@ Auth middleware flavors:
 - `GameManager(coAuthorSvc)` — checks `:id` param, validates user is author or co-author
 - `RequirePermission(authorizer, role)` — checks `:game_id` param, calls `IsUserManager`
 
+Rate limiting middleware:
+- `GlobalRateLimit` — global per-IP rate limiter (initialized in main.go)
+- `LoginRateLimit` — login endpoint rate limiter
+- `RegistrationRateLimit` — registration endpoint rate limiter
+- `CodeSubmissionRateLimit` — code input rate limiter per user
+
 ## Gotchas & Non-Obvious Patterns
 
 1. **`interfaces.go`** in middleware is a comment-only reference file. The `TokenParser` interface is actually declared in `auth.go`. `GameAuthorizer` and `TeamAccessChecker` are declared here.
 
-2. **`ws.RoomHub.Run()` is a no-op** — the method body is empty (`func (h *RoomHub) Run() {}`), but it's still called as `go hub.Run()` in both main and tests. Do not remove this call.
+2. **`ws.RoomHub.Run()` has a full implementation** — it processes register/unregister/broadcast channels. It is NOT a no-op. The method is called as `go hub.Run()` in main and tests.
 
 3. **Duplicate model wrappers in `game/model.go`**: `gameLevel`, `gameQuestion`, `gameAnswer`, `gameBlackboxVotingSession` shadow the real models from `level/` and `monitor/` packages by overriding `TableName()` to point at the canonical tables. This is intentional — the game domain uses its own lightweight versions of these types.
 
-4. **Config validation is aggressive**: `requireStrongSecret` checks not only min length but also rejects common weak prefixes like `"change-me"`, `"secret"`, `"password"`. The app **will crash on startup** if secrets are weak.
+4. **Config validation is aggressive**: `requireStrongSecret` checks not only min length but also rejects common weak values (using `strings.Contains`). The app **will crash on startup** if secrets are weak.
 
 5. **Form-based CSRF**: Every HTML form needs a hidden `_csrf` field. The CSRF token is provided by the `gin-csrf` middleware. Integration tests must scrape the token from form HTML using a regex before POSTing.
 
-6. **Hardcoded PostgreSQL test credentials**: `testutil/postgres.go` hardcodes `host=localhost port=5432 user=test password=test dbname=gengine_test`. Tests requiring PostgreSQL will fail silently if this DB doesn't exist.
+6. **Test credentials are configurable**: `testutil/postgres.go` uses environment variables with fallback defaults for test database credentials.
 
 7. **Go module name is `gengine-0`** (with a hyphen, not underscore). All imports use `gengine-0/internal/...`.
 
@@ -122,3 +138,9 @@ Auth middleware flavors:
 9. **Build flags**: The Dockerfile and README both use `CGO_ENABLED=0` for production builds. The binary embeds version/date via `-ldflags`.
 
 10. **Two separate route registration functions** for game: `RegisterRoutes` (public + auth) and `RegisterGameplayRoutes` (actual gameplay under `/game/:passing_id`). The gameplay routes use a separate `GameplayHandler` and are registered in `router.go` after the main game routes.
+
+11. **Graceful shutdown order**: `cancel()` → `srv.Shutdown()` → `hub.Stop()` → `email.ShutdownQueue()`. Background goroutines receive cancel signal first.
+
+12. **Valkey cache uses JSON serialization**: `ValkeyCache` marshals/unmarshals values as JSON. In-memory cache stores raw values. Cache key deletion uses prefix scanning.
+
+13. **Sensitive query parameters are masked in logs**: `token`, `refresh_token`, `state`, `code`, `password` are replaced with `***` in HTTP request logs.

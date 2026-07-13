@@ -5,11 +5,38 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"testing"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
+
+// testDSN возвращает DSN для подключения к тестовой PostgreSQL.
+// Использует переменные окружения или fallback на значения по умолчанию.
+func testDSN() string {
+	host := os.Getenv("TEST_DB_HOST")
+	if host == "" {
+		host = "localhost"
+	}
+	port := os.Getenv("TEST_DB_PORT")
+	if port == "" {
+		port = "5432"
+	}
+	user := os.Getenv("TEST_DB_USER")
+	if user == "" {
+		user = "test"
+	}
+	password := os.Getenv("TEST_DB_PASSWORD")
+	if password == "" {
+		password = "test"
+	}
+	dbname := os.Getenv("TEST_DB_NAME")
+	if dbname == "" {
+		dbname = "gengine_test"
+	}
+	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
+}
 
 // SetupPostgresDB создаёт изолированную схему в тестовой PostgreSQL,
 // выполняет миграцию моделей и возвращает подключение к ней.
@@ -26,7 +53,7 @@ func SetupPostgresDB(t *testing.T, models ...any) *gorm.DB {
 	schemaName := "test_" + hex.EncodeToString(randomBytes)
 
 	// Основное подключение к базе (без указания схемы)
-	dsn := "host=localhost port=5432 user=test password=test dbname=gengine_test sslmode=disable"
+	dsn := testDSN()
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("Не удалось подключиться к PostgreSQL: %v", err)

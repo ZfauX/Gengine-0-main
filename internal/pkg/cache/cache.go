@@ -2,8 +2,8 @@
 package cache
 
 import (
+	"context"
 	"strings"
-	"sync"
 	"time"
 
 	gocache "github.com/patrickmn/go-cache"
@@ -52,30 +52,40 @@ func (c *Cache) Delete(key string) {
 // Для больших объёмов данных рекомендуется использовать Redis с SCAN + DELETE.
 func (c *Cache) DeleteByPrefix(prefix string) {
 	items := c.store.Items()
-	var wg sync.WaitGroup
-	keysToDelete := make([]string, 0, len(items))
-
-	// Сначала собираем ключи для удаления
 	for key := range items {
 		if strings.HasPrefix(key, prefix) {
-			keysToDelete = append(keysToDelete, key)
+			c.store.Delete(key)
 		}
 	}
-
-	// Удаляем параллельно (оптимизация для большого количества ключей)
-	for _, key := range keysToDelete {
-		wg.Add(1)
-		go func(k string) {
-			defer wg.Done()
-			c.store.Delete(k)
-		}(key)
-	}
-	wg.Wait()
 }
 
 // Flush очищает весь кэш.
 func (c *Cache) Flush() {
 	c.store.Flush()
+}
+
+// GetWithCtx возвращает значение из кэша по ключу с контекстом.
+// Контекст игнорируется для in-memory кэша.
+func (c *Cache) GetWithCtx(ctx context.Context, key string) (interface{}, bool) {
+	return c.store.Get(key)
+}
+
+// SetWithCtx сохраняет значение в кэше с контекстом.
+// Контекст игнорируется для in-memory кэша.
+func (c *Cache) SetWithCtx(ctx context.Context, key string, value interface{}, ttl time.Duration) {
+	c.store.Set(key, value, ttl)
+}
+
+// DeleteWithCtx удаляет значение из кэша с контекстом.
+// Контекст игнорируется для in-memory кэша.
+func (c *Cache) DeleteWithCtx(ctx context.Context, key string) {
+	c.store.Delete(key)
+}
+
+// DeleteByPrefixWithCtx удаляет все ключи с префиксом с контекстом.
+// Контекст игнорируется для in-memory кэша.
+func (c *Cache) DeleteByPrefixWithCtx(ctx context.Context, prefix string) {
+	c.DeleteByPrefix(prefix)
 }
 
 // GetOrSet возвращает значение из кэша, если оно существует,

@@ -1,5 +1,5 @@
 # Dockerfile
-FROM golang:1.25-alpine AS builder
+FROM golang:1.22-alpine AS builder
 
 WORKDIR /app
 
@@ -17,12 +17,12 @@ COPY . .
 RUN CGO_ENABLED=0 go build -o gengine -ldflags="-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo 'dev') -X main.buildDate=$(date -u '+%Y-%m-%d_%H:%M:%S')" ./cmd/server
 
 # Финальный образ
-FROM alpine:3.19
+FROM alpine:3.20
 
 WORKDIR /app
 
 # Устанавливаем PostgreSQL client для pg_dump (нужен для бэкапов)
-RUN apk add --no-cache ca-certificates tzdata postgresql16-client
+RUN apk add --no-cache ca-certificates tzdata postgresql17-client
 
 # Копируем бинарник
 COPY --from=builder /app/gengine .

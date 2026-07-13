@@ -118,8 +118,7 @@ func (h *TeamHandler) CreateTeam(c *gin.Context) {
 	userID := c.GetUint("userID")
 	_, err := h.teamService.CreateTeam(c.Request.Context(), cleanName, userID)
 	if err != nil {
-		log.Error().Err(err).Uint("user_id", userID).Str("name", cleanName).Msg("CreateTeam: failed to create team")
-		render.Page(c, http.StatusInternalServerError, "teams-new.html", gin.H{
+		render.Page(c, http.StatusBadRequest, "teams-new.html", gin.H{
 			"Error": err.Error(),
 			"csrf":  csrf.GetToken(c),
 		})
@@ -255,8 +254,13 @@ func (h *TeamHandler) AddMember(c *gin.Context) {
 	}
 
 	if err := h.teamService.AddMember(c.Request.Context(), req.TeamID, input.UserID, actorID); err != nil {
-		log.Error().Err(err).Uint("team_id", req.TeamID).Uint("user_id", input.UserID).Uint("actor_id", actorID).Msg("AddMember: failed to add member")
-		render.RenderError(c, http.StatusForbidden, err.Error())
+		switch err.Error() {
+		case "пользователь уже в команде", "только капитан или автор игры может добавлять участников":
+			render.RenderError(c, http.StatusBadRequest, err.Error())
+		default:
+			log.Error().Err(err).Uint("team_id", req.TeamID).Uint("user_id", input.UserID).Uint("actor_id", actorID).Msg("AddMember: failed to add member")
+			render.RenderError(c, http.StatusInternalServerError, "Ошибка при добавлении участника")
+		}
 		return
 	}
 	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/teams/"+strconv.Itoa(int(req.TeamID))+"/members")
@@ -272,8 +276,13 @@ func (h *TeamHandler) RemoveMember(c *gin.Context) {
 	actorID := c.GetUint("userID")
 
 	if err := h.teamService.RemoveMember(c.Request.Context(), req.TeamID, req.MemberID, actorID); err != nil {
-		log.Error().Err(err).Uint("team_id", req.TeamID).Uint("member_id", req.MemberID).Uint("actor_id", actorID).Msg("RemoveMember: failed to remove member")
-		render.RenderError(c, http.StatusForbidden, err.Error())
+		switch err.Error() {
+		case "невозможно удалить капитана", "нет прав на удаление участников":
+			render.RenderError(c, http.StatusBadRequest, err.Error())
+		default:
+			log.Error().Err(err).Uint("team_id", req.TeamID).Uint("member_id", req.MemberID).Uint("actor_id", actorID).Msg("RemoveMember: failed to remove member")
+			render.RenderError(c, http.StatusInternalServerError, "Ошибка при удалении участника")
+		}
 		return
 	}
 	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/teams/"+strconv.Itoa(int(req.TeamID))+"/members")
@@ -339,8 +348,12 @@ func (h *TeamHandler) ChangeCaptain(c *gin.Context) {
 	}
 
 	if err := h.teamService.ChangeCaptain(c.Request.Context(), req.TeamID, input.CaptainID, actorID); err != nil {
-		log.Error().Err(err).Uint("team_id", req.TeamID).Uint("captain_id", input.CaptainID).Uint("actor_id", actorID).Msg("ChangeCaptain: failed to change captain")
-		render.RenderError(c, http.StatusForbidden, err.Error())
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			render.RenderErrorPage(c, http.StatusNotFound)
+		} else {
+			log.Error().Err(err).Uint("team_id", req.TeamID).Uint("captain_id", input.CaptainID).Uint("actor_id", actorID).Msg("ChangeCaptain: failed to change captain")
+			render.RenderError(c, http.StatusForbidden, err.Error())
+		}
 		return
 	}
 	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/teams/"+strconv.Itoa(int(req.TeamID))+"/members")

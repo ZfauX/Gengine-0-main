@@ -27,6 +27,12 @@ func (s *PhotoService) Create(photo *Photo) error {
 	return s.DB.Create(photo).Error
 }
 
+func (s *PhotoService) GetByID(photoID uint) (*Photo, error) {
+	var photo Photo
+	err := s.DB.First(&photo, photoID).Error
+	return &photo, err
+}
+
 func (s *PhotoService) Delete(photoID, userID uint) error {
 	var photo Photo
 	if err := s.DB.First(&photo, photoID).Error; err != nil {

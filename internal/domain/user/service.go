@@ -206,6 +206,12 @@ func (s *UserService) UpdateProfile(ctx context.Context, id uint, name, emailStr
 	})
 }
 
+func (s *UserService) UpdateAvatarPath(ctx context.Context, id uint, avatarPath string) error {
+	return s.userRepo.Update(ctx, id, map[string]any{
+		"avatar_path": avatarPath,
+	})
+}
+
 func (s *UserService) ChangePassword(ctx context.Context, id uint, oldPassword, newPassword string) error {
 	user, err := s.userRepo.GetByID(ctx, id)
 	if err != nil {
@@ -547,9 +553,10 @@ func (s *PasswordResetService) GenerateToken(ctx context.Context, user User) (st
 		return "", fmt.Errorf("не удалось сгенерировать токен: %w", err)
 	}
 	rawToken := hex.EncodeToString(b)
+	hash := sha256.Sum256([]byte(rawToken))
 	token := PasswordResetToken{
 		UserID:    user.ID,
-		Token:     rawToken,
+		TokenHash: hex.EncodeToString(hash[:]),
 		ExpiresAt: time.Now().Add(1 * time.Hour),
 	}
 	if err := s.passResetRepo.CreateToken(ctx, &token); err != nil {
@@ -616,9 +623,10 @@ func (s *EmailVerificationService) SendVerificationEmail(ctx context.Context, us
 		return fmt.Errorf("не удалось сгенерировать токен верификации: %w", err)
 	}
 	token := hex.EncodeToString(b)
+	hash := sha256.Sum256([]byte(token))
 	if err := s.emailVerifRepo.CreateToken(ctx, &EmailVerificationToken{
 		UserID:    user.ID,
-		Token:     token,
+		TokenHash: hex.EncodeToString(hash[:]),
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 	}); err != nil {
 		return fmt.Errorf("не удалось сохранить токен верификации: %w", err)
@@ -630,7 +638,7 @@ func (s *EmailVerificationService) SendVerificationEmail(ctx context.Context, us
 	); err != nil {
 		log.Error().Err(err).Str("email", user.Email).Msg("SendVerificationEmail: failed to enqueue email")
 		// Удаляем токен, так как письмо не ушло
-		_ = s.emailVerifRepo.DeleteToken(ctx, &EmailVerificationToken{Token: token})
+		_ = s.emailVerifRepo.DeleteToken(ctx, &EmailVerificationToken{TokenHash: hex.EncodeToString(hash[:])})
 		return fmt.Errorf("не удалось отправить письмо: %w", err)
 	}
 	return nil
@@ -774,34 +782,41 @@ func (s *UserDashboardService) GetDashboard(userID uint) (*UserDashboard, error)
 	gameIDs = uniqueUintSlice(gameIDs)
 	teamIDsForGames = uniqueUintSlice(teamIDsForGames)
 
-	// 5. Оптимизация: объединяем запросы игр и команд в один с JOIN
-	type GameTeamRow struct {
-		GameID   uint
-		GameName string
-		TeamID   uint
-		TeamName string
-	}
-
-	var gameTeamRows []GameTeamRow
-	if len(gameIDs) > 0 && len(teamIDsForGames) > 0 {
-		if err := s.DB.Table("games").
-			Select("games.id as game_id, games.name as game_name, teams.id as team_id, teams.name as team_name").
-			Joins("JOIN teams ON teams.id IN ?", teamIDsForGames).
-			Where("games.id IN ? AND games.deleted_at IS NULL", gameIDs).
-			Find(&gameTeamRows).Error; err != nil {
-			log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to get game-team data")
-		}
-	}
-
-	// Формируем мапы из объединённых данных
+	// 5. Оптимизация: получаем названия игр и команд отдельными запросами
 	var gamesMap = make(map[uint]DashboardGame)
 	var teamsMap = make(map[uint]DashboardTeam)
-	for _, row := range gameTeamRows {
-		if row.GameName != "" {
-			gamesMap[row.GameID] = DashboardGame{ID: row.GameID, Name: row.GameName}
+
+	if len(gameIDs) > 0 {
+		var games []struct {
+			ID   uint
+			Name string
 		}
-		if row.TeamName != "" {
-			teamsMap[row.TeamID] = DashboardTeam{ID: row.TeamID, Name: row.TeamName}
+		if err := s.DB.Table("games").
+			Select("id, name").
+			Where("id IN ? AND deleted_at IS NULL", gameIDs).
+			Find(&games).Error; err != nil {
+			log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to get games")
+		} else {
+			for _, g := range games {
+				gamesMap[g.ID] = DashboardGame{ID: g.ID, Name: g.Name}
+			}
+		}
+	}
+
+	if len(teamIDsForGames) > 0 {
+		var teams []struct {
+			ID   uint
+			Name string
+		}
+		if err := s.DB.Table("teams").
+			Select("id, name").
+			Where("id IN ?", teamIDsForGames).
+			Find(&teams).Error; err != nil {
+			log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to get teams")
+		} else {
+			for _, t := range teams {
+				teamsMap[t.ID] = DashboardTeam{ID: t.ID, Name: t.Name}
+			}
 		}
 	}
 

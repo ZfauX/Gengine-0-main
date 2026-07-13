@@ -25,6 +25,8 @@ func RegisterRoutes(
 	progressSvc *game.LevelProgressService,
 	authService *user.AuthService,
 	gameRepo game.GameRepository,
+	userService *user.UserService,
+	gameService *game.GameService,
 ) {
 	chatRepo := NewGormChatRepo(db)
 	blackboxRepo := NewGormBlackboxRepo(db)
@@ -32,7 +34,7 @@ func RegisterRoutes(
 	chatService := NewChatService(chatRepo)
 	blackboxVoteService := NewBlackboxVoteService(blackboxRepo, gameRepo, cfg)
 
-	monitorHandler := NewMonitorHandler(db, monitorSvc, blackboxVoteService, chatService, hub)
+	monitorHandler := NewMonitorHandler(db, monitorSvc, blackboxVoteService, chatService, hub, userService, gameService)
 
 	authRequired := middleware.AuthRequired(authService)
 	gameManager := middleware.GameManager(coAuthorSvc)

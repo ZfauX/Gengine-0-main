@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"gengine-0/internal/config"
+	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/audit"
 	"gengine-0/internal/pkg/middleware"
@@ -40,6 +41,7 @@ func RegisterRoutes(
 	reviewService *ReviewService, // <-- ДОБАВЛЕНО
 	gameplayHandler *GameplayHandler, // <-- ДОБАВЛЕНО для тестовых маршрутов
 	photoService *PhotoService, // <-- ДОБАВЛЕНО
+	levelService *level.LevelService, // <-- ДОБАВЛЕНО
 ) {
 	noteService := NewNoteService(db, coAuthorSvc)
 	simulateService := NewSimulateService(db, coAuthorSvc)
@@ -57,6 +59,7 @@ func RegisterRoutes(
 		db,
 		gamePlaySvc,
 		gameAdminSvc,
+		levelService,
 	)
 
 	// Создаём ReviewHandler для отзывов

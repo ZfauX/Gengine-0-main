@@ -16,10 +16,11 @@ type GamePassingService struct {
 	DB          *gorm.DB
 	teamService *team.TeamService
 	coAuthor    *CoAuthorService
+	progressSvc *LevelProgressService
 }
 
-func NewGamePassingService(db *gorm.DB, ts *team.TeamService, ca *CoAuthorService) *GamePassingService {
-	return &GamePassingService{DB: db, teamService: ts, coAuthor: ca}
+func NewGamePassingService(db *gorm.DB, ts *team.TeamService, ca *CoAuthorService, progressSvc *LevelProgressService) *GamePassingService {
+	return &GamePassingService{DB: db, teamService: ts, coAuthor: ca, progressSvc: progressSvc}
 }
 
 // Apply подаёт заявку на игру.
@@ -111,7 +112,7 @@ func (s *GamePassingService) StartGame(ctx context.Context, passingID, userID ui
 	if err := s.DB.WithContext(ctx).Save(&passing).Error; err != nil {
 		return err
 	}
-	if err := NewLevelProgressService(s.DB).InitFirstLevel(ctx, passingID); err != nil {
+	if err := s.progressSvc.InitFirstLevel(ctx, passingID); err != nil {
 		log.Error().Err(err).Uint("passing", passingID).Msg("StartGame: InitFirstLevel failed")
 	}
 	return nil

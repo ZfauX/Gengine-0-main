@@ -212,33 +212,54 @@ func (s *MonitorService) CalculateResults(gameID uint) error {
 	if err := s.DB.Where("game_id = ? AND status = ?", gameID, StatusFinished).Find(&passings).Error; err != nil {
 		return err
 	}
+	if len(passings) == 0 {
+		return nil
+	}
 
+	// Загружаем все progresses одним запросом
+	type progressDuration struct {
+		GamePassingID  uint
+		FinishedAt     *time.Time
+		StartedAt      time.Time
+		PenaltySeconds int
+	}
+	var progresses []progressDuration
+	if err := s.DB.Table("level_progresses").Select("game_passing_id, finished_at, started_at, penalty_seconds").
+		Where("game_passing_id IN ?", func() []uint {
+			ids := make([]uint, len(passings))
+			for i, p := range passings {
+				ids[i] = p.ID
+			}
+			return ids
+		}()).Find(&progresses).Error; err != nil {
+		return err
+	}
+
+	// Группируем progresses по passing
+	durationMap := make(map[uint]time.Duration)
+	for _, pr := range progresses {
+		if pr.FinishedAt != nil {
+			durationMap[pr.GamePassingID] += pr.FinishedAt.Sub(pr.StartedAt) + time.Duration(pr.PenaltySeconds)*time.Second
+		}
+	}
+
+	// Обновляем duration и рассчитываем места
 	type passingResult struct {
 		ID       uint
 		Duration time.Duration
 	}
 	var results []passingResult
 	for _, p := range passings {
-		var progresses []LevelProgress
-		if err := s.DB.Where("game_passing_id = ?", p.ID).Find(&progresses).Error; err != nil {
-			return err
-		}
-		var total time.Duration
-		for _, pr := range progresses {
-			if pr.FinishedAt != nil {
-				total += pr.FinishedAt.Sub(pr.StartedAt) + time.Duration(pr.PenaltySeconds)*time.Second
-			}
-		}
-		results = append(results, passingResult{ID: p.ID, Duration: total})
+		total := durationMap[p.ID]
 		if err := s.DB.Model(&p).Update("result_duration", total).Error; err != nil {
 			return err
 		}
+		results = append(results, passingResult{ID: p.ID, Duration: total})
 	}
 
 	sort.Slice(results, func(i, j int) bool { return results[i].Duration < results[j].Duration })
 	for i, res := range results {
-		place := i + 1
-		if err := s.DB.Model(&GamePassing{}).Where("id = ?", res.ID).Update("place", place).Error; err != nil {
+		if err := s.DB.Model(&GamePassing{}).Where("id = ?", res.ID).Update("place", i+1).Error; err != nil {
 			return err
 		}
 	}

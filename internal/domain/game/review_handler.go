@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strconv"
 
+	"gengine-0/internal/pkg/render"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -24,11 +26,11 @@ func (h *ReviewHandler) ShowForm(c *gin.Context) {
 
 	can, err := h.reviewService.CanReview(uint(gameID), userID)
 	if err != nil || !can {
-		c.HTML(http.StatusForbidden, "errors/403.html", gin.H{"Error": "Вы не можете оставить отзыв"})
+		render.RenderError(c, http.StatusForbidden, "Вы не можете оставить отзыв")
 		return
 	}
 
-	c.HTML(http.StatusOK, "reviews/new.html", gin.H{
+	render.Page(c, http.StatusOK, "reviews-new.html", gin.H{
 		"GameID": gameID,
 	})
 }
@@ -39,7 +41,7 @@ func (h *ReviewHandler) Create(c *gin.Context) {
 	userID := c.GetUint("userID")
 	rating, err := strconv.Atoi(c.PostForm("rating"))
 	if err != nil {
-		c.HTML(http.StatusOK, "reviews/new.html", gin.H{
+		render.Page(c, http.StatusOK, "reviews-new.html", gin.H{
 			"GameID": gameID,
 			"Error":  "Неверный рейтинг",
 		})
@@ -48,7 +50,7 @@ func (h *ReviewHandler) Create(c *gin.Context) {
 	comment := c.PostForm("comment")
 
 	if err := h.reviewService.Create(uint(gameID), userID, rating, comment); err != nil {
-		c.HTML(http.StatusOK, "reviews/new.html", gin.H{
+		render.Page(c, http.StatusOK, "reviews-new.html", gin.H{
 			"GameID": gameID,
 			"Error":  err.Error(),
 		})

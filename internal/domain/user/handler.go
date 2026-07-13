@@ -8,7 +8,6 @@ import (
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/pkg/audit"
-	"gengine-0/internal/pkg/crypto"
 	apperrors "gengine-0/internal/pkg/errors"
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
@@ -19,7 +18,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 	csrf "github.com/utrack/gin-csrf"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -195,7 +193,11 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	if err != nil || refreshToken == "" {
 		var input RefreshTokenInput
 		if bindErr := c.ShouldBindJSON(&input); bindErr != nil || input.RefreshToken == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "refresh token required"})
+			appErr := apperrors.NewUnauthorizedError("refresh token required")
+			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
+				"error": appErr.Message,
+				"code":  appErr.Code,
+			})
 			return
 		}
 		refreshToken = input.RefreshToken
@@ -203,7 +205,11 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 
 	newAccessToken, err := h.authSvc.RefreshAccessToken(c.Request.Context(), refreshToken)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		appErr := apperrors.NewUnauthorizedError(err.Error())
+		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
+			"error": appErr.Message,
+			"code":  appErr.Code,
+		})
 		return
 	}
 
@@ -431,10 +437,17 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 
 	user, err := h.oauthSvc.Authenticate(c.Request.Context(), req.Provider, code, state)
 	if err != nil {
-		render.Page(c, http.StatusBadRequest, "auth-login.html", gin.H{
-			"Error": "Ошибка входа через " + req.Provider + ": " + err.Error(),
-			"csrf":  csrf.GetToken(c),
-		})
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			render.Page(c, http.StatusBadRequest, "auth-login.html", gin.H{
+				"Error": "Пользователь не найден",
+				"csrf":  csrf.GetToken(c),
+			})
+		} else {
+			render.Page(c, http.StatusBadRequest, "auth-login.html", gin.H{
+				"Error": "Ошибка входа через " + req.Provider + ": " + err.Error(),
+				"csrf":  csrf.GetToken(c),
+			})
+		}
 		return
 	}
 
@@ -466,14 +479,16 @@ type ProfileHandler struct {
 	storage    storage.FileStorage
 	authSvc    *AuthService
 	profileSvc *ProfileService
+	userSvc    *UserService
 }
 
-func NewProfileHandler(db *gorm.DB, st storage.FileStorage, authSvc *AuthService, profileSvc *ProfileService) *ProfileHandler {
+func NewProfileHandler(db *gorm.DB, st storage.FileStorage, authSvc *AuthService, profileSvc *ProfileService, userSvc *UserService) *ProfileHandler {
 	return &ProfileHandler{
 		db:         db,
 		storage:    st,
 		authSvc:    authSvc,
 		profileSvc: profileSvc,
+		userSvc:    userSvc,
 	}
 }
 
@@ -621,9 +636,11 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 
 	log.Info().Uint("user_id", userID).Str("path", webPath).Msg("UploadAvatar: file saved")
 
-	if err := h.db.Model(&User{}).Where("id = ?", userID).Update("avatar_path", webPath).Error; err != nil {
+	if err := h.userSvc.UpdateAvatarPath(c.Request.Context(), userID, webPath); err != nil {
 		log.Error().Err(err).Uint("user", userID).Msg("UploadAvatar: failed to update avatar_path")
-		_ = h.storage.Delete(webPath)
+		if delErr := h.storage.Delete(webPath); delErr != nil {
+			log.Error().Err(delErr).Str("path", webPath).Msg("UploadAvatar: failed to delete uploaded file")
+		}
 		appErr := apperrors.NewInternalError(err)
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
@@ -652,10 +669,7 @@ func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 	cleanName := sanitize.StripHTML(input.Name)
 	cleanEmail := sanitize.StripHTML(input.Email)
 
-	if err := h.db.Model(&User{}).Where("id = ?", userID).Updates(map[string]any{
-		"name":  cleanName,
-		"email": cleanEmail,
-	}).Error; err != nil {
+	if err := h.profileSvc.UpdateProfile(c.Request.Context(), userID, cleanName, cleanEmail); err != nil {
 		log.Error().Err(err).Uint("user", userID).Msg("UpdateProfile: failed to update")
 		render.Page(c, http.StatusInternalServerError, "profile-show.html", gin.H{
 			"Error": "Ошибка обновления профиля",
@@ -679,35 +693,10 @@ func (h *ProfileHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	var user User
-	if err := h.db.First(&user, userID).Error; err != nil {
-		render.Page(c, http.StatusNotFound, "profile-show.html", gin.H{
-			"Error": "Пользователь не найден",
-			"csrf":  csrf.GetToken(c),
-		})
-		return
-	}
-
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.OldPassword)); err != nil {
+	if err := h.userSvc.ChangePassword(c.Request.Context(), userID, input.OldPassword, input.NewPassword); err != nil {
+		log.Error().Err(err).Uint("user", userID).Msg("ChangePassword: failed to update")
 		render.Page(c, http.StatusBadRequest, "profile-show.html", gin.H{
 			"Error": "Неверный текущий пароль",
-			"csrf":  csrf.GetToken(c),
-		})
-		return
-	}
-
-	hashed, err := bcrypt.GenerateFromPassword([]byte(input.NewPassword), crypto.BcryptCost)
-	if err != nil {
-		render.Page(c, http.StatusInternalServerError, "profile-show.html", gin.H{
-			"Error": "Ошибка смены пароля",
-			"csrf":  csrf.GetToken(c),
-		})
-		return
-	}
-	if err := h.db.Model(&user).Update("password", string(hashed)).Error; err != nil {
-		log.Error().Err(err).Uint("user", userID).Msg("ChangePassword: failed to update")
-		render.Page(c, http.StatusInternalServerError, "profile-show.html", gin.H{
-			"Error": "Ошибка смены пароля",
 			"csrf":  csrf.GetToken(c),
 		})
 		return

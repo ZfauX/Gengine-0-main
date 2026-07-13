@@ -34,6 +34,9 @@ var upgrader = websocket.Upgrader{
 			return true
 		}
 		host := r.Host
+		if forwardedHost := r.Header.Get("X-Forwarded-Host"); forwardedHost != "" {
+			host = forwardedHost
+		}
 		if strings.HasPrefix(origin, "http://"+host) || strings.HasPrefix(origin, "https://"+host) {
 			return true
 		}
@@ -71,6 +74,8 @@ type MonitorHandler struct {
 	blackboxVoteService *BlackboxVoteService
 	chatService         *ChatService
 	hub                 *ws.RoomHub
+	userService         *user.UserService
+	gameService         *game.GameService
 }
 
 func NewMonitorHandler(
@@ -79,6 +84,8 @@ func NewMonitorHandler(
 	voteSvc *BlackboxVoteService,
 	chatSvc *ChatService,
 	hub *ws.RoomHub,
+	userSvc *user.UserService,
+	gameSvc *game.GameService,
 ) *MonitorHandler {
 	return &MonitorHandler{
 		db:                  db,
@@ -86,6 +93,8 @@ func NewMonitorHandler(
 		blackboxVoteService: voteSvc,
 		chatService:         chatSvc,
 		hub:                 hub,
+		userService:         userSvc,
+		gameService:         gameSvc,
 	}
 }
 
@@ -122,8 +131,11 @@ func (h *MonitorHandler) MonitorStreamSSE(c *gin.Context) {
 	c.Header("Connection", "keep-alive")
 	c.Header("X-Accel-Buffering", "no")
 
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
+	pingTicker := time.NewTicker(30 * time.Second)
+	defer pingTicker.Stop()
+
+	updateTicker := time.NewTicker(1 * time.Second)
+	defer updateTicker.Stop()
 
 	ctx := c.Request.Context()
 
@@ -132,26 +144,26 @@ func (h *MonitorHandler) MonitorStreamSSE(c *gin.Context) {
 		case <-ctx.Done():
 			log.Debug().Uint("game_id", gameID).Msg("SSE connection closed by client")
 			return
-		case <-ticker.C:
+		case <-pingTicker.C:
 			if _, err := fmt.Fprintf(c.Writer, ": ping\n\n"); err != nil {
 				log.Debug().Err(err).Uint("game_id", gameID).Msg("SSE ping write error")
 				return
 			}
 			c.Writer.Flush()
-		default:
+		case <-updateTicker.C:
 			snapshot, err := h.monitorService.GetOrFetchSnapshot(gameID)
 			if err != nil {
 				log.Error().Err(err).Uint("game_id", gameID).Msg("SSE: failed to get snapshot")
-				_, _ = fmt.Fprintf(c.Writer, "event: error\ndata: {\"error\": \"%s\"}\n\n", err.Error())
+				if _, err := fmt.Fprintf(c.Writer, "event: error\ndata: {\"error\": \"%s\"}\n\n", err.Error()); err != nil {
+					log.Error().Err(err).Uint("game_id", gameID).Msg("SSE: failed to write error event")
+				}
 				c.Writer.Flush()
-				time.Sleep(2 * time.Second)
 				continue
 			}
 
 			data, err := json.Marshal(snapshot)
 			if err != nil {
 				log.Error().Err(err).Uint("game_id", gameID).Msg("SSE: failed to marshal snapshot")
-				time.Sleep(2 * time.Second)
 				continue
 			}
 
@@ -160,7 +172,6 @@ func (h *MonitorHandler) MonitorStreamSSE(c *gin.Context) {
 				return
 			}
 			c.Writer.Flush()
-			time.Sleep(1 * time.Second)
 		}
 	}
 }
@@ -224,27 +235,17 @@ func (h *MonitorHandler) ChatPage(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	ctx := c.Request.Context()
-	var currentUser user.User
 	userName := "Вы"
-	if err := h.db.WithContext(ctx).First(&currentUser, userID).Error; err != nil {
-		log.Warn().Err(err).Uint("user_id", userID).Msg("ChatPage: failed to get user name")
-	} else {
-		userName = sanitize.StripHTML(currentUser.Name)
+	if u, err := h.userService.GetByID(ctx, userID); err == nil {
+		userName = sanitize.StripHTML(u.Name)
 	}
 
 	var passingID *uint
 	var teamID *uint
 
-	var passing game.GamePassing
-	err := h.db.
-		WithContext(ctx).
-		Joins("JOIN team_members ON team_members.team_id = game_passings.team_id").
-		Where("game_passings.game_id = ? AND game_passings.status IN (?,?) AND team_members.user_id = ?",
-			gameID, game.StatusAccepted, game.StatusStarted, userID).
-		First(&passing).Error
-	if err == nil {
-		pID := passing.ID
-		tID := passing.TeamID
+	if p, err := h.gameService.GetPassingByUser(ctx, gameID, userID); err == nil {
+		pID := p.ID
+		tID := p.TeamID
 		passingID = &pID
 		teamID = &tID
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -372,7 +373,11 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 func (h *MonitorHandler) ChatRoomIDs(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID игры"})
+		appErr := apperrors.NewBadRequestError("Неверный ID игры")
+		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
+			"error": appErr.Message,
+			"code":  appErr.Code,
+		})
 		return
 	}
 	gameID := req.ID
@@ -382,7 +387,11 @@ func (h *MonitorHandler) ChatRoomIDs(c *gin.Context) {
 	generalRoom, err := h.chatService.GetOrCreateGameRoom(ctx, gameID)
 	if err != nil {
 		log.Error().Err(err).Uint("game_id", gameID).Msg("ChatRoomIDs: failed to get general room")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		appErr := apperrors.NewInternalError(err)
+		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
+			"error": appErr.Message,
+			"code":  appErr.Code,
+		})
 		return
 	}
 
@@ -426,8 +435,8 @@ func (h *MonitorHandler) ListLogs(c *gin.Context) {
 	}
 	gameID := req.ID
 
-	var logs []game.Log
-	if err := h.db.WithContext(c.Request.Context()).Where("game_id = ?", gameID).Order("created_at ASC").Find(&logs).Error; err != nil {
+	logs, err := h.gameService.GetLogsByGameID(c.Request.Context(), gameID)
+	if err != nil {
 		log.Error().Err(err).Uint("game_id", gameID).Msg("ListLogs: failed to fetch logs")
 		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
@@ -507,12 +516,15 @@ func (h *MonitorHandler) StartVoting(c *gin.Context) {
 
 	userID := c.GetUint("userID")
 	if err := h.blackboxVoteService.StartVoting(c.Request.Context(), input.PassingID, input.LevelID, userID); err != nil {
-		log.Error().Err(err).Uint("passing_id", input.PassingID).Uint("level_id", input.LevelID).Uint("user_id", userID).Msg("StartVoting: failed to start voting")
-		appErr := apperrors.NewForbiddenError(err.Error())
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		switch err.Error() {
+		case "голосование уже активно", "голосование уже было проведено":
+			appErr := apperrors.NewBadRequestError(err.Error())
+			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
+		default:
+			log.Error().Err(err).Uint("passing_id", input.PassingID).Uint("level_id", input.LevelID).Uint("user_id", userID).Msg("StartVoting: failed to start voting")
+			appErr := apperrors.NewInternalError(err)
+			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
+		}
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "Голосование запущено"})
@@ -558,12 +570,15 @@ func (h *MonitorHandler) Vote(c *gin.Context) {
 	cleanOption := sanitize.StripHTML(input.Option)
 
 	if err := h.blackboxVoteService.Vote(c.Request.Context(), input.SessionID, input.TeamID, cleanOption); err != nil {
-		log.Error().Err(err).Uint("session_id", input.SessionID).Uint("team_id", input.TeamID).Str("option", cleanOption).Msg("Vote: failed to vote")
-		appErr := apperrors.NewForbiddenError(err.Error())
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		switch err.Error() {
+		case "голосование закрыто", "недопустимый вариант ответа", "ваш голос уже учтён":
+			appErr := apperrors.NewBadRequestError(err.Error())
+			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
+		default:
+			log.Error().Err(err).Uint("session_id", input.SessionID).Uint("team_id", input.TeamID).Str("option", cleanOption).Msg("Vote: failed to vote")
+			appErr := apperrors.NewInternalError(err)
+			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
+		}
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "Голос учтён"})

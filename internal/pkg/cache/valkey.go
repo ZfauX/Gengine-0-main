@@ -3,6 +3,7 @@ package cache
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -22,6 +23,11 @@ type CacheStore interface {
 	GetOrSetString(key string, ttl time.Duration, fn func() (string, error)) (string, error)
 	GetOrSetInt(key string, ttl time.Duration, fn func() (int, error)) (int, error)
 	GetOrSetFloat64(key string, ttl time.Duration, fn func() (float64, error)) (float64, error)
+	// Context-aware методы для graceful shutdown
+	GetWithCtx(ctx context.Context, key string) (interface{}, bool)
+	SetWithCtx(ctx context.Context, key string, value interface{}, ttl time.Duration)
+	DeleteWithCtx(ctx context.Context, key string)
+	DeleteByPrefixWithCtx(ctx context.Context, prefix string)
 }
 
 // ValkeyCache предоставляет интерфейс кэширования через Valkey (Redis-compatible).
@@ -66,7 +72,7 @@ func (c *ValkeyCache) Get(key string) (interface{}, bool) {
 		return nil, false
 	}
 
-	val, err := c.client.Get(c.ctx, key).Bytes()
+	valBytes, err := c.client.Get(c.ctx, key).Bytes()
 	if err == redis.Nil {
 		return nil, false
 	}
@@ -75,7 +81,13 @@ func (c *ValkeyCache) Get(key string) (interface{}, bool) {
 		return nil, false
 	}
 
-	return val, true
+	// Try to unmarshal as JSON first
+	var result interface{}
+	if err := json.Unmarshal(valBytes, &result); err == nil {
+		return result, true
+	}
+	// Fallback: return raw bytes as string
+	return string(valBytes), true
 }
 
 // Set сохраняет значение в кэше с указанным TTL.
@@ -84,9 +96,9 @@ func (c *ValkeyCache) Set(key string, value interface{}, ttl time.Duration) {
 		return
 	}
 
-	data, ok := value.([]byte)
-	if !ok {
-		log.Warn().Str("key", key).Msg("Valkey: value is not []byte")
+	data, err := json.Marshal(value)
+	if err != nil {
+		log.Warn().Err(err).Str("key", key).Msg("Valkey: JSON marshal error, skipping set")
 		return
 	}
 
@@ -108,6 +120,75 @@ func (c *ValkeyCache) Delete(key string) {
 
 	if err := c.client.Del(c.ctx, key).Err(); err != nil {
 		log.Warn().Err(err).Str("key", key).Msg("Valkey: Delete error")
+	}
+}
+
+// GetWithCtx возвращает значение из кэша по ключу с контекстом.
+func (c *ValkeyCache) GetWithCtx(ctx context.Context, key string) (interface{}, bool) {
+	if c == nil || c.client == nil {
+		return nil, false
+	}
+
+	valBytes, err := c.client.Get(ctx, key).Bytes()
+	if err == redis.Nil {
+		return nil, false
+	}
+	if err != nil {
+		log.Warn().Err(err).Str("key", key).Msg("Valkey: GetWithCtx error")
+		return nil, false
+	}
+
+	// Try to unmarshal as JSON first
+	var result interface{}
+	if err := json.Unmarshal(valBytes, &result); err == nil {
+		return result, true
+	}
+	// Fallback: return raw bytes as string
+	return string(valBytes), true
+}
+
+// SetWithCtx сохраняет значение в кэше с указанным TTL и контекстом.
+func (c *ValkeyCache) SetWithCtx(ctx context.Context, key string, value interface{}, ttl time.Duration) {
+	if c == nil || c.client == nil {
+		return
+	}
+
+	data, err := json.Marshal(value)
+	if err != nil {
+		log.Warn().Err(err).Str("key", key).Msg("Valkey: JSON marshal error, skipping set")
+		return
+	}
+
+	if err := c.client.Set(ctx, key, data, ttl).Err(); err != nil {
+		log.Warn().Err(err).Str("key", key).Msg("Valkey: SetWithCtx error")
+	}
+}
+
+// DeleteWithCtx удаляет значение из кэша по ключу с контекстом.
+func (c *ValkeyCache) DeleteWithCtx(ctx context.Context, key string) {
+	if c == nil || c.client == nil {
+		return
+	}
+
+	if err := c.client.Del(ctx, key).Err(); err != nil {
+		log.Warn().Err(err).Str("key", key).Msg("Valkey: DeleteWithCtx error")
+	}
+}
+
+// DeleteByPrefixWithCtx удаляет все значения из кэша с контекстом.
+func (c *ValkeyCache) DeleteByPrefixWithCtx(ctx context.Context, prefix string) {
+	if c == nil || c.client == nil {
+		return
+	}
+
+	iter := c.client.Scan(ctx, 0, prefix+"*", 0).Iterator()
+	for iter.Next(ctx) {
+		if err := c.client.Del(ctx, iter.Val()).Err(); err != nil {
+			log.Warn().Err(err).Str("key", iter.Val()).Msg("Valkey: DeleteByPrefixWithCtx error")
+		}
+	}
+	if err := iter.Err(); err != nil {
+		log.Warn().Err(err).Str("prefix", prefix).Msg("Valkey: DeleteByPrefixWithCtx scan error")
 	}
 }
 

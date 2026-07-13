@@ -92,3 +92,11 @@ func (s *ProfileService) GetRecentGames(ctx context.Context, authorID uint) ([]R
 		Find(&games).Error
 	return games, err
 }
+
+// UpdateProfile обновляет имя и email пользователя.
+func (s *ProfileService) UpdateProfile(ctx context.Context, userID uint, name, email string) error {
+	return s.db.WithContext(ctx).Model(&User{}).Where("id = ?", userID).Updates(map[string]any{
+		"name":  name,
+		"email": email,
+	}).Error
+}
