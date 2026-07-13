@@ -36,6 +36,16 @@ func maskQuery(rawQuery string) string {
 	return strings.Join(parts, "&")
 }
 
+// getRealIP возвращает реальный IP клиента, если он задан middleware доверенных прокси.
+func getRealIP(c *gin.Context) string {
+	if ip, ok := c.Get("real_ip"); ok {
+		if s, ok := ip.(string); ok && s != "" {
+			return s
+		}
+	}
+	return c.ClientIP()
+}
+
 // LoggerMiddleware логирует HTTP-запросы и обновляет Prometheus метрики.
 func LoggerMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -61,7 +71,7 @@ func LoggerMiddleware() gin.HandlerFunc {
 			Str("method", method).
 			Str("path", path).
 			Dur("latency", latency).
-			Str("ip", c.ClientIP()).
+			Str("ip", getRealIP(c)).
 			Int("size", c.Writer.Size()).
 			Msg("HTTP запрос")
 

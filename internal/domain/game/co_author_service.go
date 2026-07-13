@@ -50,7 +50,10 @@ func (s *CoAuthorService) HasPermission(gameID, userID uint, requiredRole string
 	var co CoAuthor
 	err := s.DB.Where("game_id = ? AND user_id = ?", gameID, userID).First(&co).Error
 	if err != nil {
-		return false, nil
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return false, err
 	}
 	switch requiredRole {
 	case RoleContentEditor:

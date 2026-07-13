@@ -30,17 +30,18 @@ type Config struct {
 
 // ServerConfig содержит параметры HTTP-сервера и логирования.
 type ServerConfig struct {
-	Port        string // порт, на котором слушает сервер (по умолчанию 8080)
-	GinMode     string // режим работы Gin (debug, release, test)
-	BaseURL     string // базовый URL приложения для формирования ссылок
-	MaxBackups  int    // максимальное количество сохраняемых архивов логов
-	LogFilePath string // путь к файлу логов (по умолчанию "logs/app.log")
-	LogMaxSize  int    // максимальный размер файла лога в МБ (по умолчанию 100)
-	LogMaxAge   int    // максимальное количество дней хранения логов (по умолчанию 28)
-	LogCompress bool   // сжимать ли архивы (по умолчанию true)
-	LogFormat   string // формат вывода логов: "console" или "json" (по умолчанию "console")
-	StaticDir   string // путь к статическим файлам (по умолчанию "static")
-	UploadsDir  string // путь к загружаемым файлам (по умолчанию "uploads")
+	Port           string // порт, на котором слушает сервер (по умолчанию 8080)
+	GinMode        string // режим работы Gin (debug, release, test)
+	BaseURL        string // базовый URL приложения для формирования ссылок
+	MaxBackups     int    // максимальное количество сохраняемых архивов логов
+	LogFilePath    string // путь к файлу логов (по умолчанию "logs/app.log")
+	LogMaxSize     int    // максимальный размер файла лога в МБ (по умолчанию 100)
+	LogMaxAge      int    // максимальное количество дней хранения логов (по умолчанию 28)
+	LogCompress    bool   // сжимать ли архивы (по умолчанию true)
+	LogFormat      string // формат вывода логов: "console" или "json" (по умолчанию "console")
+	StaticDir      string // путь к статическим файлам (по умолчанию "static")
+	UploadsDir     string // путь к загружаемым файлам (по умолчанию "uploads")
+	TrustedProxies string // доверенные прокси через запятую (например: 127.0.0.1,192.168.0.0/24)
 }
 
 // DatabaseConfig содержит параметры подключения к PostgreSQL.

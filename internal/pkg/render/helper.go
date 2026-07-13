@@ -10,6 +10,7 @@ import (
 	"gengine-0/internal/pkg/middleware"
 
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
 )
 
 var globalTemplate *template.Template
@@ -37,7 +38,8 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 
 	var buf bytes.Buffer
 	if err := globalTemplate.ExecuteTemplate(&buf, contentTemplate, data); err != nil {
-		c.String(http.StatusInternalServerError, "Ошибка рендеринга: "+err.Error())
+		log.Error().Err(err).Msg("Render: template execution error")
+		c.String(http.StatusInternalServerError, "Внутренняя ошибка сервера")
 		return
 	}
 

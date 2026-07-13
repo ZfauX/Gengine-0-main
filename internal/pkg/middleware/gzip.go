@@ -24,6 +24,17 @@ func GzipMiddleware() gin.HandlerFunc {
 			return
 		}
 
+		// Не сжимаем бинарные файлы и уже сжатые типы
+		ct := c.Writer.Header().Get("Content-Type")
+		if strings.HasPrefix(ct, "image/") ||
+			strings.HasPrefix(ct, "application/zip") ||
+			strings.HasPrefix(ct, "application/pdf") ||
+			strings.HasPrefix(ct, "video/") ||
+			strings.HasPrefix(ct, "audio/") {
+			c.Next()
+			return
+		}
+
 		gz := gzip.NewWriter(c.Writer)
 		defer func() { _ = gz.Close() }()
 
