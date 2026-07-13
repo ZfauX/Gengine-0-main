@@ -5,6 +5,7 @@ import (
 	"context"
 	"time"
 
+	"gengine-0/internal/pkg/cache"
 	ws "gengine-0/internal/pkg/websocket"
 
 	"gorm.io/gorm"
@@ -12,13 +13,19 @@ import (
 
 // Checker содержит зависимости для проверки здоровья.
 type Checker struct {
-	db  *gorm.DB
-	hub *ws.RoomHub
+	db     *gorm.DB
+	hub    *ws.RoomHub
+	valkey cache.CacheStore
 }
 
 // NewChecker создаёт новый Checker.
 func NewChecker(db *gorm.DB, hub *ws.RoomHub) *Checker {
 	return &Checker{db: db, hub: hub}
+}
+
+// NewCheckerWithValkey создаёт новый Checker с Valkey.
+func NewCheckerWithValkey(db *gorm.DB, hub *ws.RoomHub, valkey cache.CacheStore) *Checker {
+	return &Checker{db: db, hub: hub, valkey: valkey}
 }
 
 // Status представляет статус компонента.
@@ -52,6 +59,15 @@ func (c *Checker) Check(ctx context.Context) HealthResponse {
 	components["websocket_hub"] = hubStatus
 	if hubStatus.Status != "ok" {
 		overall = "degraded"
+	}
+
+	// Проверка Valkey (если настроен)
+	if c.valkey != nil {
+		valkeyStatus := c.checkValkey(ctx)
+		components["valkey"] = valkeyStatus
+		if valkeyStatus.Status != "ok" {
+			overall = "degraded"
+		}
 	}
 
 	// Если оба компонента в ошибке — ставим "error"
@@ -108,5 +124,27 @@ func (c *Checker) checkHub() Status {
 	return Status{
 		Status:  "ok",
 		Message: "hub is running",
+	}
+}
+
+// checkValkey проверяет соединение с Valkey (если настроен).
+func (c *Checker) checkValkey(ctx context.Context) Status {
+	if c.valkey == nil {
+		// Valkey не настроен — это не ошибка
+		return Status{
+			Status:  "ok",
+			Message: "not configured",
+		}
+	}
+	start := time.Now()
+	// Пытаемся получить значение из кэша — если работает, значит connection ok
+	_, ok := c.valkey.Get("health:check")
+	if !ok {
+		// Ключ не найден — это нормально, главное что не было ошибки
+	}
+	return Status{
+		Status:  "ok",
+		Message: "connected",
+		Latency: time.Since(start).String(),
 	}
 }

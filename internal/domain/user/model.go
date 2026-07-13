@@ -54,7 +54,7 @@ type ExternalLogin struct {
 type PasswordResetToken struct {
 	ID        uint      `gorm:"primaryKey"`
 	UserID    uint      `gorm:"not null;index"`
-	Token     string    `gorm:"uniqueIndex;not null"`
+	TokenHash string    `gorm:"uniqueIndex;not null"` // SHA256 хеш токена
 	ExpiresAt time.Time `gorm:"not null"`
 }
 
@@ -62,7 +62,7 @@ type PasswordResetToken struct {
 type EmailVerificationToken struct {
 	ID        uint      `gorm:"primaryKey"`
 	UserID    uint      `gorm:"not null;uniqueIndex"`
-	Token     string    `gorm:"uniqueIndex;not null"`
+	TokenHash string    `gorm:"uniqueIndex;not null"` // SHA256 хеш токена
 	ExpiresAt time.Time `gorm:"not null"`
 }
 

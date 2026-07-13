@@ -3,6 +3,8 @@ package user
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"time"
 
 	"gorm.io/gorm"
@@ -171,8 +173,9 @@ func (r *gormPasswordResetRepo) CreateToken(ctx context.Context, token *Password
 	return r.db.WithContext(ctx).Create(token).Error
 }
 func (r *gormPasswordResetRepo) GetToken(ctx context.Context, tokenStr string) (*PasswordResetToken, error) {
+	hash := sha256.Sum256([]byte(tokenStr))
 	var t PasswordResetToken
-	err := r.db.WithContext(ctx).Where("token = ?", tokenStr).First(&t).Error
+	err := r.db.WithContext(ctx).Where("token_hash = ?", hex.EncodeToString(hash[:])).First(&t).Error
 	return &t, err
 }
 func (r *gormPasswordResetRepo) DeleteToken(ctx context.Context, token *PasswordResetToken) error {
@@ -188,8 +191,9 @@ func (r *gormEmailVerificationRepo) CreateToken(ctx context.Context, token *Emai
 	return r.db.WithContext(ctx).Create(token).Error
 }
 func (r *gormEmailVerificationRepo) GetToken(ctx context.Context, tokenStr string) (*EmailVerificationToken, error) {
+	hash := sha256.Sum256([]byte(tokenStr))
 	var t EmailVerificationToken
-	err := r.db.WithContext(ctx).Where("token = ?", tokenStr).First(&t).Error
+	err := r.db.WithContext(ctx).Where("token_hash = ?", hex.EncodeToString(hash[:])).First(&t).Error
 	return &t, err
 }
 func (r *gormEmailVerificationRepo) DeleteToken(ctx context.Context, token *EmailVerificationToken) error {

@@ -48,7 +48,7 @@ func TestRatingService_UpdateRatingsForGame(t *testing.T) {
 	require.NoError(t, db.Create(passing).Error)
 	require.NoError(t, db.Exec("INSERT INTO team_members (team_id, user_id) VALUES (?, ?)", tm.ID, player.ID).Error)
 
-	err := rs.UpdateRatingsForGame(g.ID)
+	err := rs.UpdateRatingsForGame(context.Background(), g.ID)
 	require.NoError(t, err)
 
 	var authorRating game.PlayerRating
@@ -70,7 +70,7 @@ func TestRatingService_GetLeaderboard(t *testing.T) {
 	db.Create(&game.PlayerRating{UserID: u1.ID, Score: 100})
 	db.Create(&game.PlayerRating{UserID: u2.ID, Score: 200})
 
-	board, err := rs.GetLeaderboard(10)
+	board, err := rs.GetLeaderboard(context.Background(), 10)
 	require.NoError(t, err)
 	assert.Len(t, board, 2)
 	assert.Equal(t, u2.ID, board[0].UserID)
@@ -80,7 +80,7 @@ func TestRatingService_GetLeaderboardEmpty(t *testing.T) {
 	db := setupSocialDB(t)
 	rs := game.NewRatingService(db, nil)
 
-	board, err := rs.GetLeaderboard(10)
+	board, err := rs.GetLeaderboard(context.Background(), 10)
 	require.NoError(t, err)
 	assert.Len(t, board, 0)
 }
@@ -92,7 +92,7 @@ func TestRatingService_UpdateRatingsForGame_NoPassings(t *testing.T) {
 	author := createUser(t, db, "author@test.com", "pass")
 	g := createGame(t, db, author.ID, "No Passings")
 
-	err := rs.UpdateRatingsForGame(g.ID)
+	err := rs.UpdateRatingsForGame(context.Background(), g.ID)
 	require.NoError(t, err)
 
 	var authorRating game.PlayerRating

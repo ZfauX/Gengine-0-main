@@ -3,9 +3,33 @@ package team
 
 import (
 	"context"
+	"gengine-0/internal/domain/user"
 
 	"gorm.io/gorm"
 )
+
+// Локальные модели для запросов к внешним таблицам.
+type teamGamePassing struct {
+	ID     uint
+	GameID uint
+	TeamID uint
+}
+
+func (teamGamePassing) TableName() string { return "game_passings" }
+
+type teamGameModel struct {
+	ID       uint
+	AuthorID uint
+}
+
+func (teamGameModel) TableName() string { return "games" }
+
+type userUser struct {
+	ID    uint
+	Email string
+}
+
+func (userUser) TableName() string { return "users" }
 
 type TeamRepository interface {
 	Create(ctx context.Context, team *Team) error
@@ -19,6 +43,13 @@ type TeamRepository interface {
 	RemoveMember(ctx context.Context, teamID, userID uint) error
 	ChangeCaptain(ctx context.Context, teamID, newCaptainID uint) error
 	IsMember(ctx context.Context, teamID, userID uint) (bool, error)
+	GetPassingByTeam(ctx context.Context, teamID uint) (*teamGamePassing, error)
+	GetUserByID(ctx context.Context, userID uint) (*userUser, error)
+	GetGameByID(ctx context.Context, gameID uint) (*teamGameModel, error)
+	TeamMembersCount(ctx context.Context) (int64, error)
+	BeginTransaction(ctx context.Context) *gorm.DB
+	DeclineInvitation(ctx context.Context, id uint) error
+	GetAvailableUsers(ctx context.Context, teamID uint) ([]user.User, error)
 }
 
 type InvitationRepository interface {
@@ -86,6 +117,38 @@ func (r *gormTeamRepo) IsMember(ctx context.Context, teamID, userID uint) (bool,
 	var count int64
 	err := r.db.WithContext(ctx).Table("team_members").Where("team_id = ? AND user_id = ?", teamID, userID).Count(&count).Error
 	return count > 0, err
+}
+func (r *gormTeamRepo) GetPassingByTeam(ctx context.Context, teamID uint) (*teamGamePassing, error) {
+	var passing teamGamePassing
+	err := r.db.WithContext(ctx).Where("team_id = ?", teamID).First(&passing).Error
+	return &passing, err
+}
+func (r *gormTeamRepo) GetUserByID(ctx context.Context, userID uint) (*userUser, error) {
+	var u userUser
+	err := r.db.WithContext(ctx).First(&u, userID).Error
+	return &u, err
+}
+func (r *gormTeamRepo) GetGameByID(ctx context.Context, gameID uint) (*teamGameModel, error) {
+	var g teamGameModel
+	err := r.db.WithContext(ctx).First(&g, gameID).Error
+	return &g, err
+}
+func (r *gormTeamRepo) TeamMembersCount(ctx context.Context) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Table("team_members").Count(&count).Error
+	return count, err
+}
+func (r *gormTeamRepo) BeginTransaction(ctx context.Context) *gorm.DB {
+	return r.db.WithContext(ctx).Begin()
+}
+func (r *gormTeamRepo) DeclineInvitation(ctx context.Context, id uint) error {
+	return r.db.WithContext(ctx).Model(&Invitation{}).Where("id = ?", id).Update("status", InvitationDeclined).Error
+}
+func (r *gormTeamRepo) GetAvailableUsers(ctx context.Context, teamID uint) ([]user.User, error) {
+	var users []user.User
+	subQuery := r.db.WithContext(ctx).Table("team_members").Select("user_id").Where("team_id = ?", teamID)
+	err := r.db.WithContext(ctx).Model(&user.User{}).Where("id NOT IN (?)", subQuery).Find(&users).Error
+	return users, err
 }
 
 type gormInvitationRepo struct{ db *gorm.DB }

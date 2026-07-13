@@ -169,6 +169,7 @@ func main() {
 	middleware.InitGlobalRateLimiter(1*time.Minute, 100)
 	middleware.InitLoginRateLimiter(1*time.Minute, 5)
 	middleware.InitRegistrationRateLimiter(1*time.Minute, 3)
+	middleware.InitCodeSubmissionRateLimiter(1*time.Minute, 10)
 
 	// --- Инициализация persistent-очереди email (только если SMTP включён) ---
 	if cfg.SMTP.Enabled {
@@ -282,13 +283,14 @@ func main() {
 	<-quit
 	log.Info().Msg("Получен сигнал завершения, инициируем graceful shutdown...")
 
-	// Останавливаем WebSocket-хаб (отправляет CloseMessage всем клиентам)
-	hub.Stop()
-
 	// Останавливаем rate limiters
 	middleware.StopGlobalRateLimiter()
 	middleware.StopLoginRateLimiter()
 	middleware.StopRegistrationRateLimiter()
+	middleware.StopCodeSubmissionRateLimiter()
+
+	// Отменяем контекст фоновых задач — они должны остановиться первыми
+	cancel()
 
 	// Даём время на завершение обработки запросов
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -298,8 +300,8 @@ func main() {
 		log.Error().Err(err).Msg("Ошибка при завершении сервера")
 	}
 
-	// Отменяем контекст фоновых задач
-	cancel()
+	// Останавливаем WebSocket-хаб (отправляет CloseMessage всем клиентам)
+	hub.Stop()
 
 	// Останавливаем очередь email (если была запущена)
 	if cfg.SMTP.Enabled {

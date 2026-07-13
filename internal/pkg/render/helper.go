@@ -99,7 +99,7 @@ func ParseID(c *gin.Context, paramName string) (uint, bool) {
 	idStr := c.Param(paramName)
 	id, err := strconv.Atoi(idStr)
 	if err != nil || id <= 0 {
-		c.HTML(http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID"})
+		Page(c, http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID"})
 		return 0, false
 	}
 	return uint(id), true

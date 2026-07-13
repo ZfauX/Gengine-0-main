@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"gengine-0/internal/domain/user"
+	"gengine-0/internal/pkg/render"
 
 	"github.com/gin-gonic/gin"
 )
@@ -20,9 +21,9 @@ func NewRatingHandler(ratingService *RatingService) *RatingHandler {
 
 // Leaderboard отображает таблицу лидеров.
 func (h *RatingHandler) Leaderboard(c *gin.Context) {
-	ratings, err := h.ratingService.GetLeaderboard(50)
+	ratings, err := h.ratingService.GetLeaderboard(c.Request.Context(), 50)
 	if err != nil {
-		c.HTML(http.StatusInternalServerError, "errors/500.html", nil)
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 
@@ -40,7 +41,7 @@ func (h *RatingHandler) Leaderboard(c *gin.Context) {
 		})
 	}
 
-	c.HTML(http.StatusOK, "ratings/leaderboard.html", gin.H{
+	render.Page(c, http.StatusOK, "ratings-leaderboard.html", gin.H{
 		"Entries": entries,
 	})
 }

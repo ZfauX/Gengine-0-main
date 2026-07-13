@@ -17,6 +17,12 @@ type LevelRepository interface {
 	GetMaxPosition(ctx context.Context, gameID uint) (int, error)
 	GetFullLevel(ctx context.Context, id uint) (*Level, error)
 	ListByGameOrdered(ctx context.Context, gameID uint) ([]Level, error)
+	ListWithQuestions(ctx context.Context, gameID uint) ([]Level, error)
+	FindPrevLevel(ctx context.Context, gameID uint, position int) (*Level, error)
+	FindNextLevel(ctx context.Context, gameID uint, position int) (*Level, error)
+	BeginTransaction(ctx context.Context) *gorm.DB
+	ShiftPositions(ctx context.Context, gameID uint, fromPos int, delta int) error
+	GetMaxPositionForTransaction(ctx context.Context, tx *gorm.DB, gameID uint) (int, error)
 }
 
 type QuestionRepository interface {
@@ -78,6 +84,43 @@ func (r *gormLevelRepo) ListByGameOrdered(ctx context.Context, gameID uint) ([]L
 	var levels []Level
 	err := r.db.WithContext(ctx).Where("game_id = ?", gameID).Order("position ASC").Find(&levels).Error
 	return levels, err
+}
+func (r *gormLevelRepo) ListWithQuestions(ctx context.Context, gameID uint) ([]Level, error) {
+	var levels []Level
+	err := r.db.WithContext(ctx).Preload("Questions.Answers").
+		Where("game_id = ?", gameID).
+		Order("position ASC").
+		Find(&levels).Error
+	return levels, err
+}
+
+func (r *gormLevelRepo) FindPrevLevel(ctx context.Context, gameID uint, position int) (*Level, error) {
+	var l Level
+	err := r.db.WithContext(ctx).Where("game_id = ? AND position < ?", gameID, position).
+		Order("position DESC").First(&l).Error
+	return &l, err
+}
+func (r *gormLevelRepo) FindNextLevel(ctx context.Context, gameID uint, position int) (*Level, error) {
+	var l Level
+	err := r.db.WithContext(ctx).Where("game_id = ? AND position > ?", gameID, position).
+		Order("position ASC").First(&l).Error
+	return &l, err
+}
+func (r *gormLevelRepo) BeginTransaction(ctx context.Context) *gorm.DB {
+	return r.db.WithContext(ctx).Begin()
+}
+func (r *gormLevelRepo) ShiftPositions(ctx context.Context, gameID uint, fromPos int, delta int) error {
+	return r.db.WithContext(ctx).Model(&Level{}).
+		Where("game_id = ? AND position >= ?", gameID, fromPos).
+		Update("position", gorm.Expr("position + ?", delta)).Error
+}
+func (r *gormLevelRepo) GetMaxPositionForTransaction(ctx context.Context, tx *gorm.DB, gameID uint) (int, error) {
+	var maxPos int
+	err := tx.Model(&Level{}).
+		Where("game_id = ?", gameID).
+		Select("COALESCE(MAX(position), 0)").
+		Scan(&maxPos).Error
+	return maxPos, err
 }
 
 type gormQuestionRepo struct{ db *gorm.DB }

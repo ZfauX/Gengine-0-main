@@ -13,7 +13,7 @@ import (
 
 	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/team"
-	apperrors "gengine-0/internal/pkg/errors"
+	apperr "gengine-0/internal/pkg/errors"
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/sanitize"
@@ -86,6 +86,7 @@ type GamePlayServiceInterface interface {
 // GameplayData содержит все данные, необходимые для рендеринга страницы геймплея.
 type GameplayData struct {
 	Passing      GamePassing
+	Level        level.Level
 	Settings     GameSetting
 	Attempts     []Attempt
 	VotingActive bool
@@ -191,6 +192,7 @@ type GameHandler struct {
 	db              *gorm.DB
 	gamePlaySvc     GamePlayServiceInterface
 	gameAdminSvc    GameAdminServiceInterface
+	levelService    *level.LevelService
 }
 
 func NewGameHandler(
@@ -206,6 +208,7 @@ func NewGameHandler(
 	db *gorm.DB,
 	gamePlaySvc GamePlayServiceInterface,
 	gameAdminSvc GameAdminServiceInterface,
+	levelSvc *level.LevelService,
 ) *GameHandler {
 	return &GameHandler{
 		gameService:     gameService,
@@ -220,6 +223,7 @@ func NewGameHandler(
 		db:              db,
 		gamePlaySvc:     gamePlaySvc,
 		gameAdminSvc:    gameAdminSvc,
+		levelService:    levelSvc,
 	}
 }
 
@@ -539,19 +543,29 @@ func (h *GameHandler) Update(c *gin.Context) {
 	}
 
 	if err := h.gameService.UpdateGameWithCover(c.Request.Context(), uint(id), updateDTO, userID); err != nil {
-		render.Page(c, http.StatusForbidden, "games-edit.html", gin.H{
-			"Game":  existingGame,
-			"Error": err.Error(),
-			"csrf":  csrf.GetToken(c),
-			// Передаём введённые значения
-			"Name":                 input.Name,
-			"Description":          input.Description,
-			"MaxTeamNumber":        input.MaxTeamNumber,
-			"Visibility":           input.Visibility,
-			"StartsAt":             input.StartsAt,
-			"RegistrationDeadline": input.RegistrationDeadline,
-		})
-		return
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			render.Page(c, http.StatusNotFound, "games-edit.html", gin.H{
+				"Error": "Игра не найдена",
+				"csrf":  csrf.GetToken(c),
+			})
+		} else {
+			render.Page(c, http.StatusForbidden, "games-edit.html", gin.H{
+				"Game":  existingGame,
+				"Error": err.Error(),
+				"csrf":  csrf.GetToken(c),
+				// Передаём введённые значения
+				"Name":                 input.Name,
+				"Description":          input.Description,
+				"MaxTeamNumber":        input.MaxTeamNumber,
+				"Visibility":           input.Visibility,
+				"StartsAt":             input.StartsAt,
+				"RegistrationDeadline": input.RegistrationDeadline,
+			})
+			return
+		}
+
+		h.auditService.Log(userID, "update", "game", uint(id), input.Name)
+		c.Redirect(http.StatusFound, "/games/"+c.Param("id"))
 	}
 
 	h.auditService.Log(userID, "update", "game", uint(id), input.Name)
@@ -568,7 +582,11 @@ func (h *GameHandler) Delete(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	if err := h.gameService.Delete(c.Request.Context(), uint(id), userID); err != nil {
-		render.RenderError(c, http.StatusForbidden, err.Error())
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			render.RenderErrorPage(c, http.StatusNotFound)
+		} else {
+			render.RenderError(c, http.StatusForbidden, err.Error())
+		}
 		return
 	}
 
@@ -586,7 +604,11 @@ func (h *GameHandler) Publish(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	if err := h.gameService.Publish(c.Request.Context(), uint(id), userID); err != nil {
-		render.RenderError(c, http.StatusForbidden, err.Error())
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			render.RenderErrorPage(c, http.StatusNotFound)
+		} else {
+			render.RenderError(c, http.StatusForbidden, err.Error())
+		}
 		return
 	}
 
@@ -659,48 +681,37 @@ func (h *GameHandler) Apply(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 
-	if err := limitRequestBody(c, 1*1024*1024); err != nil {
-		teams, _ := h.passingService.GetTeamsByCaptain(c.Request.Context(), userID)
+	renderTeams := func(teams []team.Team, errMsg string) {
+		t, _ := h.passingService.GetTeamsByCaptain(c.Request.Context(), userID)
+		if t != nil {
+			teams = t
+		}
 		render.Page(c, http.StatusBadRequest, "game_passings-apply.html", gin.H{
 			"GameID": gameID,
 			"Teams":  teams,
-			"Error":  err.Error(),
+			"Error":  errMsg,
 			"csrf":   csrf.GetToken(c),
 		})
+	}
+
+	if err := limitRequestBody(c, 1*1024*1024); err != nil {
+		renderTeams(nil, err.Error())
 		return
 	}
 
 	var input ApplyInput
 	if err := c.ShouldBind(&input); err != nil {
-		teams, _ := h.passingService.GetTeamsByCaptain(c.Request.Context(), userID)
-		render.Page(c, http.StatusBadRequest, "game_passings-apply.html", gin.H{
-			"GameID": gameID,
-			"Teams":  teams,
-			"Error":  "Неверные данные: " + err.Error(),
-			"csrf":   csrf.GetToken(c),
-		})
+		renderTeams(nil, "Неверные данные: "+err.Error())
 		return
 	}
 
 	if err := validation.ValidatePositiveUint("ID команды", input.TeamID); err != nil {
-		teams, _ := h.passingService.GetTeamsByCaptain(c.Request.Context(), userID)
-		render.Page(c, http.StatusBadRequest, "game_passings-apply.html", gin.H{
-			"GameID": gameID,
-			"Teams":  teams,
-			"Error":  err.Error(),
-			"csrf":   csrf.GetToken(c),
-		})
+		renderTeams(nil, err.Error())
 		return
 	}
 
 	if err := h.passingService.Apply(c.Request.Context(), uint(gameID), input.TeamID, userID); err != nil {
-		teams, _ := h.passingService.GetTeamsByCaptain(c.Request.Context(), userID)
-		render.Page(c, http.StatusBadRequest, "game_passings-apply.html", gin.H{
-			"GameID": gameID,
-			"Teams":  teams,
-			"Error":  err.Error(),
-			"csrf":   csrf.GetToken(c),
-		})
+		renderTeams(nil, err.Error())
 		return
 	}
 
@@ -887,7 +898,7 @@ func (h *GameHandler) Notes(c *gin.Context) {
 	userID := c.GetUint("userID")
 	notes, err := h.noteService.ListByGame(uint(gameID), userID)
 	if err != nil {
-		appErr := apperrors.NewForbiddenError(err.Error())
+		appErr := apperr.NewForbiddenError(err.Error())
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -939,7 +950,7 @@ func (h *GameHandler) CreateNote(c *gin.Context) {
 
 	note, err := h.noteService.Create(uint(gameID), input.LevelID, userID, input.Text)
 	if err != nil {
-		appErr := apperrors.NewForbiddenError(err.Error())
+		appErr := apperr.NewForbiddenError(err.Error())
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -961,7 +972,7 @@ func (h *GameHandler) DeleteNote(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 	if err := h.noteService.Delete(uint(noteID), userID); err != nil {
-		appErr := apperrors.NewForbiddenError(err.Error())
+		appErr := apperr.NewForbiddenError(err.Error())
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -1023,16 +1034,6 @@ func (h *GameHandler) SettingsPage(c *gin.Context) {
 	}
 
 	isAdmin := middleware.IsAdmin(c)
-
-	log.Info().
-		Uint("game_id", g.ID).
-		Bool("allow_hints", settings.AllowHints).
-		Int("hint_penalty_seconds", settings.HintPenaltySeconds).
-		Int("max_hints", settings.MaxHints).
-		Int("per_level_time_limit", settings.PerLevelTimeLimit).
-		Bool("hide_answers_until_finished", settings.HideAnswersUntilFinished).
-		Bool("auto_start", settings.AutoStart).
-		Msg("SettingsPage: rendering settings")
 
 	render.Page(c, http.StatusOK, "games-settings.html", gin.H{
 		"Game":          g,
@@ -1249,7 +1250,7 @@ func (h *GameHandler) UploadPhoto(c *gin.Context) {
 	webPath, err := h.storage.Save("uploads/photos", file, header.Filename, userID, 10*1024*1024, allowedTypes)
 	if err != nil {
 		log.Error().Err(err).Str("filename", header.Filename).Msg("UploadPhoto: failed to save file")
-		appErr := apperrors.NewInternalError(err)
+		appErr := apperr.NewInternalError(err)
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -1264,8 +1265,10 @@ func (h *GameHandler) UploadPhoto(c *gin.Context) {
 	}
 	if err := h.photoService.Create(photo); err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Msg("UploadPhoto: failed to create photo record")
-		_ = h.storage.Delete(webPath)
-		appErr := apperrors.NewInternalError(err)
+		if delErr := h.storage.Delete(webPath); delErr != nil {
+			log.Error().Err(delErr).Str("path", webPath).Msg("UploadPhoto: failed to delete uploaded file")
+		}
+		appErr := apperr.NewInternalError(err)
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -1288,8 +1291,8 @@ func (h *GameHandler) DeletePhoto(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 
-	var photo Photo
-	if err := h.db.First(&photo, photoID).Error; err != nil {
+	photo, err := h.photoService.GetByID(uint(photoID))
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.AbortWithStatusJSON(http.StatusNotFound, gin.H{
 				"error": "Фото не найдено",
@@ -1297,7 +1300,7 @@ func (h *GameHandler) DeletePhoto(c *gin.Context) {
 			})
 		} else {
 			log.Error().Err(err).Int("photo_id", photoID).Msg("DeletePhoto: failed to get photo")
-			appErr := apperrors.NewInternalError(err)
+			appErr := apperr.NewInternalError(err)
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 				"error": appErr.Message,
 				"code":  appErr.Code,
@@ -1310,7 +1313,7 @@ func (h *GameHandler) DeletePhoto(c *gin.Context) {
 	isManager, err := h.coAuthorService.IsUserManager(photo.GameID, userID)
 	if err != nil {
 		log.Error().Err(err).Int("photo_id", photoID).Msg("DeletePhoto: failed to check manager")
-		appErr := apperrors.NewInternalError(err)
+		appErr := apperr.NewInternalError(err)
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -1328,7 +1331,7 @@ func (h *GameHandler) DeletePhoto(c *gin.Context) {
 
 	if err := h.photoService.Delete(photo.ID, userID); err != nil {
 		log.Error().Err(err).Uint("photo_id", photo.ID).Msg("DeletePhoto: failed to delete record")
-		appErr := apperrors.NewInternalError(err)
+		appErr := apperr.NewInternalError(err)
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -1357,18 +1360,25 @@ func (h *GameHandler) FullPreview(c *gin.Context) {
 
 	_, err = h.gameService.GetByID(c.Request.Context(), uint(gameID), userID)
 	if err != nil {
-		appErr := apperrors.NewForbiddenError("Нет доступа к игре")
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.AbortWithStatusJSON(http.StatusNotFound, gin.H{
+				"error": "Игра не найдена",
+				"code":  "not_found",
+			})
+		} else {
+			appErr := apperr.NewForbiddenError("Нет доступа к игре")
+			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
+				"error": appErr.Message,
+				"code":  appErr.Code,
+			})
+		}
 		return
 	}
 
-	var levels []level.Level
-	if err := h.db.Preload("Questions.Answers").Where("game_id = ?", gameID).Order("position ASC").Find(&levels).Error; err != nil {
+	levels, err := h.levelService.ListWithQuestions(c.Request.Context(), uint(gameID))
+	if err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Msg("FullPreview: failed to load levels")
-		appErr := apperrors.NewInternalError(err)
+		appErr := apperr.NewInternalError(err)
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,

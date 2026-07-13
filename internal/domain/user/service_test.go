@@ -3,6 +3,8 @@ package user
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"testing"
 	"time"
 
@@ -74,6 +76,12 @@ func createTestUser(t *testing.T, db *gorm.DB, email, password, name string) *Us
 	}
 	require.NoError(t, db.Create(user).Error)
 	return user
+}
+
+// hashToken возвращает SHA-256 хеш строки токена (как в репозиториях).
+func hashToken(token string) string {
+	hash := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(hash[:])
 }
 
 // =============================================================================
@@ -318,9 +326,10 @@ func TestPasswordResetService_GenerateToken(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, token)
 
-	// Проверяем, что токен сохранён в БД
+	// Проверяем, что токен сохранён в БД (ищем по хешу)
+	tokenHash := hashToken(token)
 	var stored PasswordResetToken
-	err = db.Where("token = ?", token).First(&stored).Error
+	err = db.Where("token_hash = ?", tokenHash).First(&stored).Error
 	require.NoError(t, err)
 	assert.Equal(t, user.ID, stored.UserID)
 	assert.True(t, stored.ExpiresAt.After(time.Now()))
@@ -355,7 +364,7 @@ func TestPasswordResetService_ResetPassword(t *testing.T) {
 		// Создаём просроченный токен вручную
 		expiredToken := &PasswordResetToken{
 			UserID:    user.ID,
-			Token:     "expiredtoken",
+			TokenHash: hashToken("expiredtoken"),
 			ExpiresAt: time.Now().Add(-time.Hour),
 		}
 		_ = passResetRepo.CreateToken(context.Background(), expiredToken)
@@ -386,7 +395,7 @@ func TestEmailVerificationService_VerifyToken(t *testing.T) {
 	// Создаём токен вручную (в реальности он создаётся при регистрации)
 	token := &EmailVerificationToken{
 		UserID:    user.ID,
-		Token:     "validtoken",
+		TokenHash: hashToken("validtoken"),
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
 	_ = emailVerifRepo.CreateToken(context.Background(), token)
@@ -403,7 +412,7 @@ func TestEmailVerificationService_VerifyToken(t *testing.T) {
 	t.Run("истекший токен", func(t *testing.T) {
 		expired := &EmailVerificationToken{
 			UserID:    user.ID,
-			Token:     "expiredverif",
+			TokenHash: hashToken("expiredverif"),
 			ExpiresAt: time.Now().Add(-time.Hour),
 		}
 		_ = emailVerifRepo.CreateToken(context.Background(), expired)

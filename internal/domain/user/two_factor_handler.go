@@ -2,6 +2,7 @@
 package user
 
 import (
+	"gengine-0/internal/pkg/render"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -33,12 +34,12 @@ func (h *TwoFactorHandler) EnableForm(c *gin.Context) {
 
 	user, err := h.userRepo.GetByID(c.Request.Context(), userID)
 	if err != nil {
-		c.HTML(http.StatusNotFound, "errors-404.html", nil)
+		render.RenderErrorPage(c, http.StatusNotFound)
 		return
 	}
 
 	if user.TwoFactorEnabled {
-		c.HTML(http.StatusOK, "user-2fa-enabled.html", gin.H{
+		render.Page(c, http.StatusOK, "user-2fa-enabled.html", gin.H{
 			"Title": "2FA уже включена",
 			"User":  user,
 		})
@@ -49,7 +50,7 @@ func (h *TwoFactorHandler) EnableForm(c *gin.Context) {
 	secret, _ := h.twoFactorSvc.GenerateSecret()
 	qrURL, _ := h.twoFactorSvc.GenerateQRCodeURL(secret, user.Email, "Gengine-0")
 
-	c.HTML(http.StatusOK, "user-2fa-enable.html", gin.H{
+	render.Page(c, http.StatusOK, "user-2fa-enable.html", gin.H{
 		"Title":  "Включить 2FA",
 		"User":   user,
 		"Secret": secret,
@@ -75,14 +76,14 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 
 	user, err := h.userRepo.GetByID(c.Request.Context(), userID)
 	if err != nil {
-		c.HTML(http.StatusNotFound, "errors-404.html", nil)
+		render.RenderErrorPage(c, http.StatusNotFound)
 		return
 	}
 
 	// Проверяем код
 	valid, err := h.twoFactorSvc.VerifyCode(user.TwoFactorSecret, input.Code)
 	if err != nil || !valid {
-		c.HTML(http.StatusOK, "user-2fa-enable.html", gin.H{
+		render.Page(c, http.StatusOK, "user-2fa-enable.html", gin.H{
 			"Title":  "Включить 2FA",
 			"Error":  "Неверный код. Попробуйте ещё раз.",
 			"User":   user,
@@ -93,7 +94,7 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 
 	// Включаем 2FA
 	if err := h.twoFactorSvc.Enable2FA(user); err != nil {
-		c.HTML(http.StatusOK, "user-2fa-enable.html", gin.H{
+		render.Page(c, http.StatusOK, "user-2fa-enable.html", gin.H{
 			"Title": "Включить 2FA",
 			"Error": "Ошибка включения: " + err.Error(),
 			"User":  user,
@@ -107,7 +108,7 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 		"two_factor_secret":       user.TwoFactorSecret,
 		"two_factor_backup_codes": user.TwoFactorBackupCodes,
 	}); err != nil {
-		c.HTML(http.StatusOK, "user-2fa-enable.html", gin.H{
+		render.Page(c, http.StatusOK, "user-2fa-enable.html", gin.H{
 			"Title": "Включить 2FA",
 			"Error": "Ошибка сохранения: " + err.Error(),
 			"User":  user,
@@ -128,7 +129,7 @@ func (h *TwoFactorHandler) DisableForm(c *gin.Context) {
 
 	user, err := h.userRepo.GetByID(c.Request.Context(), userID)
 	if err != nil {
-		c.HTML(http.StatusNotFound, "errors-404.html", nil)
+		render.RenderErrorPage(c, http.StatusNotFound)
 		return
 	}
 
@@ -137,7 +138,7 @@ func (h *TwoFactorHandler) DisableForm(c *gin.Context) {
 		return
 	}
 
-	c.HTML(http.StatusOK, "user-2fa-disable.html", gin.H{
+	render.Page(c, http.StatusOK, "user-2fa-disable.html", gin.H{
 		"Title": "Отключить 2FA",
 		"User":  user,
 	})
@@ -161,14 +162,14 @@ func (h *TwoFactorHandler) Disable(c *gin.Context) {
 
 	user, err := h.userRepo.GetByID(c.Request.Context(), userID)
 	if err != nil {
-		c.HTML(http.StatusNotFound, "errors-404.html", nil)
+		render.RenderErrorPage(c, http.StatusNotFound)
 		return
 	}
 
 	// Проверяем TOTP-код
 	valid, err := h.twoFactorSvc.VerifyCode(user.TwoFactorSecret, input.Code)
 	if err != nil || !valid {
-		c.HTML(http.StatusOK, "user-2fa-disable.html", gin.H{
+		render.Page(c, http.StatusOK, "user-2fa-disable.html", gin.H{
 			"Title": "Отключить 2FA",
 			"Error": "Неверный код.",
 			"User":  user,
@@ -185,7 +186,7 @@ func (h *TwoFactorHandler) Disable(c *gin.Context) {
 		"two_factor_secret":       "",
 		"two_factor_backup_codes": "",
 	}); err != nil {
-		c.HTML(http.StatusOK, "user-2fa-disable.html", gin.H{
+		render.Page(c, http.StatusOK, "user-2fa-disable.html", gin.H{
 			"Title": "Отключить 2FA",
 			"Error": "Ошибка сохранения: " + err.Error(),
 			"User":  user,

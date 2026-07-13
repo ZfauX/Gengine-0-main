@@ -2,6 +2,7 @@
 package game
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -21,7 +22,7 @@ func NewRatingService(db *gorm.DB, c cache.CacheStore) *RatingService {
 	return &RatingService{DB: db, cache: c}
 }
 
-func (s *RatingService) UpdateRatingsForGame(gameID uint) error {
+func (s *RatingService) UpdateRatingsForGame(ctx context.Context, gameID uint) error {
 	now := time.Now()
 
 	var g Game
@@ -82,7 +83,7 @@ func (s *RatingService) UpdateRatingsForGame(gameID uint) error {
 
 	// Инвалидируем кэш рейтинга после обновления
 	if s.cache != nil {
-		s.cache.Delete("leaderboard")
+		s.cache.DeleteByPrefixWithCtx(ctx, "leaderboard:")
 	}
 	return nil
 }
@@ -98,11 +99,11 @@ func (s *RatingService) awardPoints(userID uint, points int, now time.Time) erro
 }
 
 // GetLeaderboard возвращает топ игроков с кэшированием.
-func (s *RatingService) GetLeaderboard(limit int) ([]PlayerRating, error) {
+func (s *RatingService) GetLeaderboard(ctx context.Context, limit int) ([]PlayerRating, error) {
 	cacheKey := fmt.Sprintf("leaderboard:limit:%d", limit)
 
 	if s.cache != nil {
-		if cached, ok := s.cache.Get(cacheKey); ok {
+		if cached, ok := s.cache.GetWithCtx(ctx, cacheKey); ok {
 			if ratings, ok := cached.([]PlayerRating); ok {
 				log.Debug().Msg("GetLeaderboard: cache hit")
 				return ratings, nil
@@ -117,7 +118,7 @@ func (s *RatingService) GetLeaderboard(limit int) ([]PlayerRating, error) {
 	}
 
 	if s.cache != nil && len(ratings) > 0 {
-		s.cache.Set(cacheKey, ratings, 5*time.Minute)
+		s.cache.SetWithCtx(ctx, cacheKey, ratings, 5*time.Minute)
 	}
 
 	return ratings, nil

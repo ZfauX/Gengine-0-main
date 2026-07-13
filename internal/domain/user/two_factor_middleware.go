@@ -2,6 +2,7 @@
 package user
 
 import (
+	"gengine-0/internal/pkg/render"
 	"net/http"
 	"strings"
 
@@ -62,7 +63,7 @@ func TwoFactorRequired(twoFactorSvc *TwoFactorService, userRepo UserRepository) 
 
 		// Если код не передан — перенаправляем на страницу ввода
 		if code == "" {
-			c.HTML(http.StatusOK, "admin-2fa-verify.html", gin.H{
+			render.Page(c, http.StatusOK, "admin-2fa-verify.html", gin.H{
 				"Title":     "Подтверждение 2FA",
 				"Message":   "Введите код из Google Authenticator",
 				"ReturnURL": withRedirectFlag(c.Request.URL.String()),
@@ -75,7 +76,7 @@ func TwoFactorRequired(twoFactorSvc *TwoFactorService, userRepo UserRepository) 
 		valid, err := twoFactorSvc.VerifyCode(userObj.TwoFactorSecret, code)
 		if err != nil {
 			log.Error().Err(err).Uint("user_id", userIDVal).Msg("TwoFactorRequired: TOTP verification error")
-			c.HTML(http.StatusOK, "admin-2fa-verify.html", gin.H{
+			render.Page(c, http.StatusOK, "admin-2fa-verify.html", gin.H{
 				"Title":     "Подтверждение 2FA",
 				"Error":     "Ошибка проверки кода",
 				"ReturnURL": withRedirectFlag(c.Request.URL.String()),
@@ -85,7 +86,7 @@ func TwoFactorRequired(twoFactorSvc *TwoFactorService, userRepo UserRepository) 
 		}
 
 		if !valid {
-			c.HTML(http.StatusOK, "admin-2fa-verify.html", gin.H{
+			render.Page(c, http.StatusOK, "admin-2fa-verify.html", gin.H{
 				"Title":     "Подтверждение 2FA",
 				"Error":     "Неверный код",
 				"ReturnURL": withRedirectFlag(c.Request.URL.String()),
@@ -123,7 +124,7 @@ func TwoFactorBackupCodeRequired(twoFactorSvc *TwoFactorService, userRepo UserRe
 
 		backupCode := c.PostForm("backup_code")
 		if backupCode == "" {
-			c.HTML(http.StatusOK, "admin-2fa-backup.html", gin.H{
+			render.Page(c, http.StatusOK, "admin-2fa-backup.html", gin.H{
 				"Title": "Резервный код 2FA",
 				"Error": "Введите резервный код",
 			})
@@ -133,7 +134,7 @@ func TwoFactorBackupCodeRequired(twoFactorSvc *TwoFactorService, userRepo UserRe
 
 		userObj, err := userRepo.GetByID(c.Request.Context(), userIDVal)
 		if err != nil {
-			c.HTML(http.StatusOK, "admin-2fa-backup.html", gin.H{
+			render.Page(c, http.StatusOK, "admin-2fa-backup.html", gin.H{
 				"Title": "Резервный код 2FA",
 				"Error": "Ошибка загрузки пользователя",
 			})
@@ -150,7 +151,7 @@ func TwoFactorBackupCodeRequired(twoFactorSvc *TwoFactorService, userRepo UserRe
 
 		valid, err := twoFactorSvc.VerifyBackupCode(userObj.TwoFactorBackupCodes, backupCode)
 		if err != nil {
-			c.HTML(http.StatusOK, "admin-2fa-backup.html", gin.H{
+			render.Page(c, http.StatusOK, "admin-2fa-backup.html", gin.H{
 				"Title": "Резервный код 2FA",
 				"Error": "Ошибка проверки кода",
 			})
@@ -159,7 +160,7 @@ func TwoFactorBackupCodeRequired(twoFactorSvc *TwoFactorService, userRepo UserRe
 		}
 
 		if !valid {
-			c.HTML(http.StatusOK, "admin-2fa-backup.html", gin.H{
+			render.Page(c, http.StatusOK, "admin-2fa-backup.html", gin.H{
 				"Title": "Резервный код 2FA",
 				"Error": "Неверный резервный код",
 			})

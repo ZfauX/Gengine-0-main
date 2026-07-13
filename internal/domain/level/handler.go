@@ -284,12 +284,19 @@ func (h *LevelHandler) Update(c *gin.Context) {
 	}
 
 	if err := h.levelService.Update(c.Request.Context(), uint(levelID), updated, userID); err != nil {
-		log.Error().Err(err).Int("level_id", levelID).Uint("user", userID).Msg("Update: failed to update level")
-		render.Page(c, http.StatusInternalServerError, "levels-edit.html", gin.H{
-			"Level": updated,
-			"Error": err.Error(),
-			"csrf":  csrf.GetToken(c),
-		})
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			render.Page(c, http.StatusNotFound, "levels-edit.html", gin.H{
+				"Error": "Уровень не найден",
+				"csrf":  csrf.GetToken(c),
+			})
+		} else {
+			log.Error().Err(err).Int("level_id", levelID).Uint("user", userID).Msg("Update: failed to update level")
+			render.Page(c, http.StatusInternalServerError, "levels-edit.html", gin.H{
+				"Level": updated,
+				"Error": err.Error(),
+				"csrf":  csrf.GetToken(c),
+			})
+		}
 		return
 	}
 

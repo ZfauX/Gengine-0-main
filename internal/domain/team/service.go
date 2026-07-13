@@ -13,7 +13,6 @@ import (
 	"gengine-0/internal/pkg/middleware"
 
 	"github.com/rs/zerolog/log"
-	"gorm.io/gorm"
 )
 
 type TeamService struct {
@@ -75,39 +74,20 @@ func (s *TeamService) CanManageTeam(ctx context.Context, teamID, userID uint) bo
 	if team.CaptainID == userID {
 		return true
 	}
-	// Безопасная проверка типа вместо unsafe assertion
-	db, ok := s.getDB()
-	if !ok {
+	passing, err := s.teamRepo.GetPassingByTeam(ctx, teamID)
+	if err != nil {
 		return false
 	}
-	var passing gamePassing
-	if err := db.Where("team_id = ?", teamID).First(&passing).Error; err == nil {
-		var g gameModel
-		if db.First(&g, passing.GameID).Error == nil && g.AuthorID == userID {
-			return true
-		}
+	game, err := s.teamRepo.GetGameByID(ctx, passing.GameID)
+	if err != nil {
+		return false
 	}
-	return false
-}
-
-// getDB возвращает *gorm.DB из repository, если это возможно.
-// Возвращает false, если repository не поддерживает прямой доступ к БД.
-func (s *TeamService) getDB() (*gorm.DB, bool) {
-	if repo, ok := s.teamRepo.(*gormTeamRepo); ok {
-		return repo.db, true
-	}
-	return nil, false
+	isManager, _ := s.authorizer.IsUserManager(game.ID, userID)
+	return isManager
 }
 
 func (s *TeamService) GetAvailableUsers(ctx context.Context, teamID uint) ([]user.User, error) {
-	db, ok := s.getDB()
-	if !ok {
-		return nil, errors.New("repository не поддерживает прямой доступ к БД")
-	}
-	var users []user.User
-	subQuery := db.Table("team_members").Select("user_id").Where("team_id = ?", teamID)
-	err := db.Model(&user.User{}).Where("id NOT IN (?)", subQuery).Find(&users).Error
-	return users, err
+	return s.teamRepo.GetAvailableUsers(ctx, teamID)
 }
 
 func (s *TeamService) AddMember(ctx context.Context, teamID, newMemberID, actorID uint) error {
@@ -124,7 +104,7 @@ func (s *TeamService) AddMember(ctx context.Context, teamID, newMemberID, actorI
 	if err := s.teamRepo.AddMember(ctx, teamID, newMemberID); err != nil {
 		return err
 	}
-	s.updateTeamMembersTotal()
+	s.updateTeamMembersTotal(ctx)
 	return nil
 }
 
@@ -142,7 +122,7 @@ func (s *TeamService) RemoveMember(ctx context.Context, teamID, memberID, actorI
 	if err := s.teamRepo.RemoveMember(ctx, teamID, memberID); err != nil {
 		return err
 	}
-	s.updateTeamMembersTotal()
+	s.updateTeamMembersTotal(ctx)
 	return nil
 }
 
@@ -161,31 +141,13 @@ func (s *TeamService) ChangeCaptain(ctx context.Context, teamID, newCaptainID, a
 }
 
 // updateTeamMembersTotal обновляет gauge с общим количеством участников команд.
-func (s *TeamService) updateTeamMembersTotal() {
-	db, ok := s.getDB()
-	if !ok {
+func (s *TeamService) updateTeamMembersTotal(ctx context.Context) {
+	count, err := s.teamRepo.TeamMembersCount(ctx)
+	if err != nil {
 		return
 	}
-	var count int64
-	db.Table("team_members").Count(&count)
 	metrics.SetTeamMembersTotal(float64(count))
 }
-
-// ---------- локальные модели ----------
-type gamePassing struct {
-	ID     uint
-	GameID uint
-	TeamID uint
-}
-
-func (gamePassing) TableName() string { return "game_passings" }
-
-type gameModel struct {
-	ID       uint
-	AuthorID uint
-}
-
-func (gameModel) TableName() string { return "games" }
 
 // ---------- InvitationService ----------
 
@@ -218,12 +180,8 @@ func (s *InvitationService) CreateInvitation(ctx context.Context, teamID, invite
 
 	isCaptain := (team.CaptainID == actorID)
 	if !isCaptain {
-		db, ok := s.teamRepo.(*gormTeamRepo)
-		if !ok {
-			return nil, errors.New("не удалось получить доступ к БД")
-		}
-		var passing gamePassing
-		if err := db.db.Where("team_id = ?", teamID).First(&passing).Error; err != nil {
+		passing, err := s.teamRepo.GetPassingByTeam(ctx, teamID)
+		if err != nil {
 			return nil, errors.New("не удалось определить игру для команды")
 		}
 		isManager, _ := s.authorizer.IsUserManager(passing.GameID, actorID)
@@ -256,18 +214,15 @@ func (s *InvitationService) CreateInvitation(ctx context.Context, teamID, invite
 
 	if s.cfg != nil && s.cfg.SMTP.Enabled {
 		// Используем глобальную очередь вместо локального сервиса
-		db, ok := s.teamRepo.(*gormTeamRepo)
-		if ok {
-			var invitedUser user.User
-			if err := db.db.First(&invitedUser, invitedUserID).Error; err == nil {
-				acceptLink := fmt.Sprintf("%s/invitations/%d/accept", s.cfg.Server.BaseURL, inv.ID)
-				if err := email.Enqueue(
-					invitedUser.Email,
-					"Приглашение в команду",
-					fmt.Sprintf("Вас пригласили в команду «%s». Принять приглашение: %s", team.Name, acceptLink),
-				); err != nil {
-					log.Error().Err(err).Str("email", invitedUser.Email).Msg("failed to enqueue invitation email")
-				}
+		invitedUser, err := s.teamRepo.GetUserByID(ctx, invitedUserID)
+		if err == nil {
+			acceptLink := fmt.Sprintf("%s/invitations/%d/accept", s.cfg.Server.BaseURL, inv.ID)
+			if err := email.Enqueue(
+				invitedUser.Email,
+				"Приглашение в команду",
+				fmt.Sprintf("Вас пригласили в команду «%s». Принять приглашение: %s", team.Name, acceptLink),
+			); err != nil {
+				log.Error().Err(err).Str("email", invitedUser.Email).Msg("failed to enqueue invitation email")
 			}
 		}
 	}
@@ -295,27 +250,27 @@ func (s *InvitationService) AcceptInvitation(ctx context.Context, invitationID, 
 		return errors.New("приглашение уже обработано")
 	}
 
-	db, ok := s.teamRepo.(*gormTeamRepo)
-	if !ok {
-		return errors.New("repository не поддерживает прямой доступ к БД")
+	tx := s.teamRepo.BeginTransaction(ctx)
+	if tx.Error != nil {
+		return tx.Error
 	}
+	defer tx.Rollback()
 
-	err = db.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&Invitation{}).Where("id = ?", invitationID).Update("status", InvitationAccepted).Error; err != nil {
-			return err
-		}
-		if err := tx.Exec("INSERT INTO team_members (team_id, user_id) VALUES (?, ?)", inv.TeamID, userID).Error; err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
+	if err := tx.Model(&Invitation{}).Where("id = ?", invitationID).Update("status", InvitationAccepted).Error; err != nil {
+		return err
+	}
+	if err := tx.Exec("INSERT INTO team_members (team_id, user_id) VALUES (?, ?)", inv.TeamID, userID).Error; err != nil {
 		return err
 	}
 
-	var count int64
-	db.db.Table("team_members").Count(&count)
-	metrics.SetTeamMembersTotal(float64(count))
+	if err := tx.Commit().Error; err != nil {
+		return err
+	}
+
+	count, err := s.teamRepo.TeamMembersCount(ctx)
+	if err == nil {
+		metrics.SetTeamMembersTotal(float64(count))
+	}
 	return nil
 }
 

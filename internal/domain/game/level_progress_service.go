@@ -134,66 +134,77 @@ func AdvanceToNextLevel(db *gorm.DB, gamePassingID, completedLevelID uint) error
 	return nil
 }
 
-// CheckTimeouts проверяет все незавершённые прогрессы и завершает просроченные.
-// Запущена как горутина, останавливается через ctx.
-func CheckTimeouts(db *gorm.DB, ctx context.Context) {
-	ticker := time.NewTicker(30 * time.Second)
+// periodicRunner запускает периодическую функцию с контекстом и ticker.
+type periodicRunner struct {
+	interval time.Duration
+	fn       func(db *gorm.DB, ctx context.Context)
+}
+
+// runPeriodic запускает periodicRunner в горутине.
+func runPeriodic(db *gorm.DB, ctx context.Context, runner periodicRunner) {
+	ticker := time.NewTicker(runner.interval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			log.Info().Msg("CheckTimeouts: context cancelled, stopping")
+			log.Info().Msgf("periodicRunner: context cancelled, stopping")
 			return
 		case <-ticker.C:
-			// Логируем ошибки, но не перезапускаем горутину — контекст управляет жизненным циклом
-			var activeProgresses []LevelProgress
-			if err := db.WithContext(ctx).Clauses(clause.Locking{
-				Strength: "UPDATE",
-				Options:  "SKIP LOCKED",
-			}).Where("finished_at IS NULL").
-				Preload("GamePassing.Game.GameSetting").
-				Find(&activeProgresses).Error; err != nil {
-				log.Error().Err(err).Msg("CheckTimeouts: failed to fetch active progresses")
-				continue
-			}
+			runner.fn(db, ctx)
+		}
+	}
+}
 
-			now := time.Now()
-			for _, p := range activeProgresses {
-				var currentProgress LevelProgress
-				if err := db.WithContext(ctx).Clauses(clause.Locking{
-					Strength: "UPDATE",
-					Options:  "SKIP LOCKED",
-				}).First(&currentProgress, p.ID).Error; err != nil {
-					continue
-				}
-				if currentProgress.FinishedAt != nil {
-					continue
-				}
+// CheckTimeouts проверяет все незавершённые прогрессы и завершает просроченные.
+// Запущена как горутина, останавливается через ctx.
+func CheckTimeouts(db *gorm.DB, ctx context.Context) {
+	runPeriodic(db, ctx, periodicRunner{
+		interval: 30 * time.Second,
+		fn:       checkTimeoutsImpl,
+	})
+}
 
-				var passing GamePassing
-				if err := db.WithContext(ctx).Preload("Game.GameSetting").First(&passing, currentProgress.GamePassingID).Error; err != nil {
-					log.Error().Err(err).Uint("progress_id", currentProgress.ID).Msg("CheckTimeouts: failed to load passing")
+func checkTimeoutsImpl(db *gorm.DB, ctx context.Context) {
+	const batchSize = 50
+
+	var activeProgresses []LevelProgress
+	if err := db.WithContext(ctx).Clauses(clause.Locking{
+		Strength: "UPDATE",
+		Options:  "SKIP LOCKED",
+	}).Where("finished_at IS NULL").
+		Limit(batchSize).
+		Find(&activeProgresses).Error; err != nil {
+		log.Error().Err(err).Msg("CheckTimeouts: failed to fetch active progresses")
+		return
+	}
+
+	if len(activeProgresses) == 0 {
+		return
+	}
+
+	now := time.Now()
+	for _, p := range activeProgresses {
+		if p.FinishedAt != nil {
+			continue
+		}
+
+		if p.GamePassing.Game.GameSetting.ID == 0 {
+			log.Warn().Uint("progress_id", p.ID).Msg("CheckTimeouts: game setting not found for progress, skipping")
+			continue
+		}
+		setting := p.GamePassing.Game.GameSetting
+		if setting.PerLevelTimeLimit > 0 {
+			elapsed := now.Sub(p.StartedAt)
+			limit := time.Duration(setting.PerLevelTimeLimit) * time.Minute
+			if elapsed >= limit {
+				p.FinishedAt = &now
+				if err := db.WithContext(ctx).Save(&p).Error; err != nil {
+					log.Error().Err(err).Uint("progress_id", p.ID).Msg("CheckTimeouts: failed to save progress")
 					continue
 				}
-				if passing.Game.GameSetting.ID == 0 {
-					log.Warn().Uint("progress_id", currentProgress.ID).Msg("CheckTimeouts: game setting not found for progress, skipping")
-					continue
-				}
-				setting := passing.Game.GameSetting
-				if setting.PerLevelTimeLimit > 0 {
-					elapsed := now.Sub(currentProgress.StartedAt)
-					limit := time.Duration(setting.PerLevelTimeLimit) * time.Minute
-					if elapsed >= limit {
-						currentProgress.FinishedAt = &now
-						if err := db.WithContext(ctx).Save(&currentProgress).Error; err != nil {
-							log.Error().Err(err).Uint("progress_id", currentProgress.ID).Msg("CheckTimeouts: failed to save progress")
-							continue
-						}
-						if err := AdvanceToNextLevel(db, currentProgress.GamePassingID, currentProgress.LevelID); err != nil {
-							log.Error().Err(err).Uint("passing_id", currentProgress.GamePassingID).Msg("CheckTimeouts: failed to advance level")
-						}
-					}
+				if err := AdvanceToNextLevel(db, p.GamePassingID, p.LevelID); err != nil {
+					log.Error().Err(err).Uint("passing_id", p.GamePassingID).Msg("CheckTimeouts: failed to advance level")
 				}
 			}
 		}
@@ -203,56 +214,54 @@ func CheckTimeouts(db *gorm.DB, ctx context.Context) {
 // CheckAutoStartGames автоматически запускает игры, у которых наступило время старта.
 // Запущена как горутина, останавливается через ctx.
 func CheckAutoStartGames(db *gorm.DB, ctx context.Context) {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
+	runPeriodic(db, ctx, periodicRunner{
+		interval: 30 * time.Second,
+		fn:       checkAutoStartGamesImpl,
+	})
+}
 
-	for {
-		select {
-		case <-ctx.Done():
-			log.Info().Msg("CheckAutoStartGames: context cancelled, stopping")
-			return
-		case <-ticker.C:
-			var games []Game
-			now := time.Now()
-			if err := db.WithContext(ctx).Where("is_draft = false AND starts_at IS NOT NULL AND starts_at <= ?", now).
-				Preload("GameSetting").
-				Find(&games).Error; err != nil {
-				log.Error().Err(err).Msg("CheckAutoStartGames: failed to fetch games")
+func checkAutoStartGamesImpl(db *gorm.DB, ctx context.Context) {
+	const batchSize = 20
+
+	var games []Game
+	now := time.Now()
+	if err := db.WithContext(ctx).Where("is_draft = false AND starts_at IS NOT NULL AND starts_at <= ? AND auto_start = true", now).
+		Limit(batchSize).
+		Find(&games).Error; err != nil {
+		log.Error().Err(err).Msg("CheckAutoStartGames: failed to fetch games")
+		return
+	}
+
+	for _, g := range games {
+		if g.GameSetting.ID == 0 {
+			log.Warn().Uint("game_id", g.ID).Msg("CheckAutoStartGames: game setting not found, skipping")
+			continue
+		}
+		if !g.GameSetting.AutoStart {
+			continue
+		}
+		var startedCount int64
+		if err := db.WithContext(ctx).Model(&GamePassing{}).Where("game_id = ? AND status = ?", g.ID, StatusStarted).Count(&startedCount).Error; err != nil {
+			log.Error().Err(err).Uint("game_id", g.ID).Msg("CheckAutoStartGames: failed to count started passings")
+			continue
+		}
+		if startedCount > 0 {
+			continue
+		}
+
+		var passings []GamePassing
+		if err := db.WithContext(ctx).Where("game_id = ? AND status = ?", g.ID, StatusAccepted).Find(&passings).Error; err != nil {
+			log.Error().Err(err).Uint("game_id", g.ID).Msg("CheckAutoStartGames: failed to fetch passings")
+			continue
+		}
+		for _, p := range passings {
+			p.Status = StatusStarted
+			if err := db.WithContext(ctx).Save(&p).Error; err != nil {
+				log.Error().Err(err).Uint("passing_id", p.ID).Msg("CheckAutoStartGames: failed to update passing status")
 				continue
 			}
-
-			for _, g := range games {
-				if g.GameSetting.ID == 0 {
-					log.Warn().Uint("game_id", g.ID).Msg("CheckAutoStartGames: game setting not found, skipping")
-					continue
-				}
-				if !g.GameSetting.AutoStart {
-					continue
-				}
-				var startedCount int64
-				if err := db.WithContext(ctx).Model(&GamePassing{}).Where("game_id = ? AND status = ?", g.ID, StatusStarted).Count(&startedCount).Error; err != nil {
-					log.Error().Err(err).Uint("game_id", g.ID).Msg("CheckAutoStartGames: failed to count started passings")
-					continue
-				}
-				if startedCount > 0 {
-					continue
-				}
-
-				var passings []GamePassing
-				if err := db.WithContext(ctx).Where("game_id = ? AND status = ?", g.ID, StatusAccepted).Find(&passings).Error; err != nil {
-					log.Error().Err(err).Uint("game_id", g.ID).Msg("CheckAutoStartGames: failed to fetch passings")
-					continue
-				}
-				for _, p := range passings {
-					p.Status = StatusStarted
-					if err := db.WithContext(ctx).Save(&p).Error; err != nil {
-						log.Error().Err(err).Uint("passing_id", p.ID).Msg("CheckAutoStartGames: failed to update passing status")
-						continue
-					}
-					if err := NewLevelProgressService(db).InitFirstLevel(ctx, p.ID); err != nil {
-						log.Error().Err(err).Uint("passing_id", p.ID).Msg("CheckAutoStartGames: failed to init first level")
-					}
-				}
+			if err := NewLevelProgressService(db).InitFirstLevel(ctx, p.ID); err != nil {
+				log.Error().Err(err).Uint("passing_id", p.ID).Msg("CheckAutoStartGames: failed to init first level")
 			}
 		}
 	}

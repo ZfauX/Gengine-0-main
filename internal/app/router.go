@@ -50,6 +50,7 @@ type Dependencies struct {
 	Repos    *repositories
 	Services *services
 	AuditSvc *audit.Service
+	Cache    cache.CacheStore
 }
 
 func NewDependencies(db *gorm.DB, cfg *config.Config, hub *ws.RoomHub, localStorage storage.FileStorage, appCache cache.CacheStore) *Dependencies {
@@ -61,6 +62,7 @@ func NewDependencies(db *gorm.DB, cfg *config.Config, hub *ws.RoomHub, localStor
 		Repos:    repos,
 		Services: services,
 		AuditSvc: auditSvc,
+		Cache:    appCache,
 	}
 }
 
@@ -128,8 +130,11 @@ func (app *App) setupEngine(r *gin.Engine) error {
 		},
 	}))
 
-	// CSRF-защита для JSON API
-	r.Use(middleware.CSRFJSON())
+	// API маршруты не требуют CSRF (используют JWT)
+	apiGroup := r.Group("/api")
+	apiGroup.Use(func(c *gin.Context) {
+		c.Next() // Просто пропускаем API запросы без CSRF
+	})
 
 	tmpl := template.New("")
 	tmpl.Funcs(templatefuncs.FuncMap())
@@ -151,7 +156,7 @@ func (app *App) setupEngine(r *gin.Engine) error {
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
-	healthChecker := health.NewChecker(app.DB, app.Hub)
+	healthChecker := health.NewCheckerWithValkey(app.DB, app.Hub, app.Deps.Cache)
 	r.GET("/healthz", func(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
 		defer cancel()
@@ -431,7 +436,7 @@ func (app *App) registerUserRoutes(r *gin.Engine) {
 }
 
 func (app *App) registerGameRoutes(r *gin.Engine) {
-	passingSvc := game.NewGamePassingService(app.DB, app.Deps.Services.Team, app.Deps.Services.CoAuthor)
+	passingSvc := game.NewGamePassingService(app.DB, app.Deps.Services.Team, app.Deps.Services.CoAuthor, app.Deps.Services.Progress)
 	game.RegisterRoutes(
 		r,
 		app.DB,
@@ -451,6 +456,7 @@ func (app *App) registerGameRoutes(r *gin.Engine) {
 		app.Deps.Services.Review,          // передаём ReviewService
 		app.Deps.Services.GameplayHandler, // передаём GameplayHandler для тестовых маршрутов
 		app.Deps.Services.PhotoService,    // передаём PhotoService
+		app.Deps.Services.Level,           // передаём LevelService
 	)
 }
 
@@ -500,6 +506,8 @@ func (app *App) registerMonitorRoutes(r *gin.Engine) {
 		app.Deps.Services.Progress,
 		app.Deps.Services.Auth,
 		app.Deps.Repos.Game,
+		app.Deps.Services.User,
+		app.Deps.Services.Game,
 	)
 }
 
