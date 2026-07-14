@@ -117,6 +117,24 @@ func (h *MonitorHandler) MonitorPage(c *gin.Context) {
 	})
 }
 
+// MonitorData возвращает snapshot прогресса игры в JSON (для polling fallback).
+func (h *MonitorHandler) MonitorData(c *gin.Context) {
+	var req GameIDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID игры"})
+		return
+	}
+
+	snapshot, err := h.monitorService.GetOrFetchSnapshot(req.ID)
+	if err != nil {
+		log.Error().Err(err).Uint("game_id", req.ID).Msg("MonitorData: failed to get snapshot")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось получить данные мониторинга"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"teams": snapshot})
+}
+
 // MonitorStreamSSE предоставляет Server-Sent Events для обновлений прогресса игры.
 func (h *MonitorHandler) MonitorStreamSSE(c *gin.Context) {
 	var req GameIDRequest

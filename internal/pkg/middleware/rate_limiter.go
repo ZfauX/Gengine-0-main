@@ -57,7 +57,6 @@ func (rl *RateLimiter) Allow(key string) bool {
 	}
 
 	if v.count >= rl.limit {
-		v.lastSeen = now
 		return false
 	}
 

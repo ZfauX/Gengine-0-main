@@ -152,7 +152,12 @@ func (s *EmailService) sendEmailWithRetry(email *QueuedEmail) {
 
 		if attempt < maxAttempts {
 			delay := time.Duration(1<<(attempt-1)) * time.Second
-			time.Sleep(delay)
+			select {
+			case <-time.After(delay):
+			case <-s.stop:
+				log.Info().Uint("email_id", email.ID).Msg("sendEmailWithRetry: stopped during backoff")
+				break
+			}
 		}
 	}
 

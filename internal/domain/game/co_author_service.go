@@ -41,15 +41,20 @@ func (s *CoAuthorService) IsUserManager(gameID, userID uint) (bool, error) {
 
 // HasPermission проверяет наличие у пользователя конкретной роли в игре.
 func (s *CoAuthorService) HasPermission(gameID, userID uint, requiredRole string) (bool, error) {
+	return s.HasPermissionTx(s.DB, gameID, userID, requiredRole)
+}
+
+// HasPermissionTx — версия HasPermission с передачей транзакции.
+func (s *CoAuthorService) HasPermissionTx(tx *gorm.DB, gameID, userID uint, requiredRole string) (bool, error) {
 	var game Game
-	if err := s.DB.First(&game, gameID).Error; err != nil {
+	if err := tx.First(&game, gameID).Error; err != nil {
 		return false, err
 	}
 	if game.AuthorID == userID {
 		return true, nil
 	}
 	var co CoAuthor
-	err := s.DB.Where("game_id = ? AND user_id = ?", gameID, userID).First(&co).Error
+	err := tx.Where("game_id = ? AND user_id = ?", gameID, userID).First(&co).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return false, nil
@@ -66,7 +71,6 @@ func (s *CoAuthorService) HasPermission(gameID, userID uint, requiredRole string
 	default:
 		return false, fmt.Errorf("неизвестная роль: %s", requiredRole)
 	}
-	return false, nil
 }
 
 // CanModerateGame — удобный метод для проверки права на модерацию игры.

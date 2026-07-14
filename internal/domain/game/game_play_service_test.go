@@ -17,7 +17,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func setupGamePlayTest(t *testing.T) (*gorm.DB, *game.GamePlayService) {
+func setupGamePlayTest(t *testing.T) (*gorm.DB, *game.GamePlayService, *game.LevelProgressService) {
 	t.Helper()
 	db := testutil.SetupPostgresDB(t, allModels...)
 	hub := websocket.NewRoomHub()
@@ -30,7 +30,7 @@ func setupGamePlayTest(t *testing.T) (*gorm.DB, *game.GamePlayService) {
 	cfg := &config.Config{}
 
 	playSvc := game.NewGamePlayService(db, attemptSvc, progressSvc, monitorSvc, hub, coAuthorSvc, cfg)
-	return db, playSvc
+	return db, playSvc, progressSvc
 }
 
 func createGamePlayTestData(t *testing.T, db *gorm.DB) (*game.Game, *level.Level, *game.GamePassing, *user.User) {
@@ -58,11 +58,11 @@ func createGamePlayTestData(t *testing.T, db *gorm.DB) (*game.Game, *level.Level
 }
 
 func TestGamePlayService_SubmitCode_Success(t *testing.T) {
-	db, playSvc := setupGamePlayTest(t)
+	db, playSvc, progressSvc := setupGamePlayTest(t)
 	_, lvl, passing, author := createGamePlayTestData(t, db)
 
 	// Проверяем начальный прогресс
-	progress, err := game.GetCurrentProgress(db, passing.ID)
+	progress, err := progressSvc.GetCurrentProgress(context.Background(), passing.ID)
 	require.NoError(t, err)
 	assert.Equal(t, lvl.ID, progress.LevelID)
 
@@ -72,16 +72,16 @@ func TestGamePlayService_SubmitCode_Success(t *testing.T) {
 	assert.True(t, attempt.Success)
 
 	// Проверяем, что прогресс переключился на следующий уровень
-	newProgress, err := game.GetCurrentProgress(db, passing.ID)
+	newProgress, err := progressSvc.GetCurrentProgress(context.Background(), passing.ID)
 	require.NoError(t, err)
 	assert.NotEqual(t, lvl.ID, newProgress.LevelID)
 }
 
 func TestGamePlayService_SubmitCode_Wrong(t *testing.T) {
-	db, playSvc := setupGamePlayTest(t)
+	db, playSvc, progressSvc := setupGamePlayTest(t)
 	_, lvl, passing, author := createGamePlayTestData(t, db)
 
-	progress, err := game.GetCurrentProgress(db, passing.ID)
+	progress, err := progressSvc.GetCurrentProgress(context.Background(), passing.ID)
 	require.NoError(t, err)
 	assert.Equal(t, lvl.ID, progress.LevelID)
 
@@ -89,14 +89,14 @@ func TestGamePlayService_SubmitCode_Wrong(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, attempt.Success)
 
-	updatedProgress, err := game.GetCurrentProgress(db, passing.ID)
+	updatedProgress, err := progressSvc.GetCurrentProgress(context.Background(), passing.ID)
 	require.NoError(t, err)
 	assert.Nil(t, updatedProgress.FinishedAt)
 	assert.Equal(t, lvl.ID, updatedProgress.LevelID)
 }
 
 func TestGamePlayService_SubmitCode_Blackbox(t *testing.T) {
-	db, playSvc := setupGamePlayTest(t)
+	db, playSvc, progressSvc := setupGamePlayTest(t)
 	author := createUser(t, db, "author@test.com", "pass")
 	g := createPublishedGameWithSettings(t, db, author.ID, "Blackbox Test")
 	lvl := createBlackboxLevel(t, db, g.ID, "BB", 1)
@@ -109,20 +109,20 @@ func TestGamePlayService_SubmitCode_Blackbox(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, attempt.Success)
 
-	progress, err := game.GetCurrentProgress(db, passing.ID)
+	progress, err := progressSvc.GetCurrentProgress(context.Background(), passing.ID)
 	require.NoError(t, err)
 	assert.Nil(t, progress.FinishedAt)
 
 	err = playSvc.AcceptBlackboxAnswer(context.Background(), passing.ID, author.ID)
 	require.NoError(t, err)
 
-	_, err = game.GetCurrentProgress(db, passing.ID)
+	_, err = progressSvc.GetCurrentProgress(context.Background(), passing.ID)
 	assert.Error(t, err)
 	assert.Equal(t, "нет активного уровня", err.Error())
 }
 
 func TestGamePlayService_SubmitFile(t *testing.T) {
-	db, playSvc := setupGamePlayTest(t)
+	db, playSvc, _ := setupGamePlayTest(t)
 	_, _, passing, author := createGamePlayTestData(t, db)
 
 	filePath := "/uploads/answers/test.txt"
@@ -134,10 +134,10 @@ func TestGamePlayService_SubmitFile(t *testing.T) {
 }
 
 func TestGamePlayService_UseHint(t *testing.T) {
-	db, playSvc := setupGamePlayTest(t)
+	db, playSvc, progressSvc := setupGamePlayTest(t)
 	_, _, passing, author := createGamePlayTestData(t, db)
 
-	progress, err := game.GetCurrentProgress(db, passing.ID)
+	progress, err := progressSvc.GetCurrentProgress(context.Background(), passing.ID)
 	require.NoError(t, err)
 	assert.Equal(t, 0, progress.HintsUsed)
 	assert.Equal(t, 0, progress.PenaltySeconds)
@@ -145,7 +145,7 @@ func TestGamePlayService_UseHint(t *testing.T) {
 	err = playSvc.UseHint(context.Background(), passing.ID, author.ID)
 	require.NoError(t, err)
 
-	updatedProgress, err := game.GetCurrentProgress(db, passing.ID)
+	updatedProgress, err := progressSvc.GetCurrentProgress(context.Background(), passing.ID)
 	require.NoError(t, err)
 	assert.Equal(t, 1, updatedProgress.HintsUsed)
 	assert.Equal(t, 300, updatedProgress.PenaltySeconds)
@@ -153,14 +153,14 @@ func TestGamePlayService_UseHint(t *testing.T) {
 	err = playSvc.UseHint(context.Background(), passing.ID, author.ID)
 	require.NoError(t, err)
 
-	updatedProgress, err = game.GetCurrentProgress(db, passing.ID)
+	updatedProgress, err = progressSvc.GetCurrentProgress(context.Background(), passing.ID)
 	require.NoError(t, err)
 	assert.Equal(t, 2, updatedProgress.HintsUsed)
 	assert.Equal(t, 300+600, updatedProgress.PenaltySeconds)
 }
 
 func TestGamePlayService_UseHint_Disabled(t *testing.T) {
-	db, playSvc := setupGamePlayTest(t)
+	db, playSvc, _ := setupGamePlayTest(t)
 	_, _, passing, author := createGamePlayTestData(t, db)
 
 	var g game.Game
@@ -178,7 +178,7 @@ func TestGamePlayService_UseHint_Disabled(t *testing.T) {
 }
 
 func TestGamePlayService_UseHint_MaxReached(t *testing.T) {
-	db, playSvc := setupGamePlayTest(t)
+	db, playSvc, _ := setupGamePlayTest(t)
 	_, _, passing, author := createGamePlayTestData(t, db)
 
 	var g game.Game
@@ -199,7 +199,7 @@ func TestGamePlayService_UseHint_MaxReached(t *testing.T) {
 }
 
 func TestGamePlayService_StartTesting(t *testing.T) {
-	db, playSvc := setupGamePlayTest(t)
+	db, playSvc, _ := setupGamePlayTest(t)
 	author := createUser(t, db, "author@test.com", "pass")
 	g := createPublishedGameWithSettings(t, db, author.ID, "Test Game")
 	_ = createLevel(t, db, g.ID, "L1", 1)
@@ -216,7 +216,7 @@ func TestGamePlayService_StartTesting(t *testing.T) {
 }
 
 func TestGamePlayService_SubmitTestCode(t *testing.T) {
-	db, playSvc := setupGamePlayTest(t)
+	db, playSvc, progressSvc := setupGamePlayTest(t)
 	author := createUser(t, db, "author@test.com", "pass")
 	g := createPublishedGameWithSettings(t, db, author.ID, "Test Code")
 	lvl := createLevelWithAnswer(t, db, g.ID, "L1", 1, "secret")
@@ -235,12 +235,12 @@ func TestGamePlayService_SubmitTestCode(t *testing.T) {
 	assert.NotNil(t, progress.FinishedAt)
 
 	// Проверяем, что активных прогрессов нет
-	_, err = game.GetCurrentProgress(db, passing.ID)
+	_, err = progressSvc.GetCurrentProgress(context.Background(), passing.ID)
 	assert.Error(t, err)
 }
 
 func TestGamePlayService_SkipLevelTest(t *testing.T) {
-	db, playSvc := setupGamePlayTest(t)
+	db, playSvc, _ := setupGamePlayTest(t)
 	author := createUser(t, db, "author@test.com", "pass")
 	g := createPublishedGameWithSettings(t, db, author.ID, "Skip Test")
 	l1 := createLevel(t, db, g.ID, "L1", 1)

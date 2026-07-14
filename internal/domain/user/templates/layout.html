@@ -180,6 +180,9 @@
 </head>
 <body>
 
+    <!-- Top progress bar -->
+    <div id="top-progress-bar" class="fixed top-0 left-0 z-[100] h-1 bg-blue-600 transition-all duration-300 ease-out" style="width:0%;opacity:0"></div>
+
     <!-- Навигация -->
     <nav class="bg-white border-b border-gray-200 shadow-sm" aria-label="Главная навигация">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -192,8 +195,8 @@
                     </a>
                 </div>
 
-                <!-- Меню -->
-                <div class="flex items-center space-x-4 text-sm font-medium" role="menubar">
+                <!-- Desktop меню -->
+                <div class="hidden sm:flex items-center space-x-4 text-sm font-medium" role="menubar">
                     <!-- Кнопка переключения темы -->
                     <button id="themeToggle" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400" title="Переключить тему" aria-label="Переключить тему" role="menuitem">
                         🌙
@@ -210,6 +213,29 @@
                         <a href="/auth/register" class="btn btn-primary text-sm">Регистрация</a>
                     {{end}}
                 </div>
+
+                <!-- Mobile hamburger -->
+                <div class="flex items-center space-x-3 sm:hidden">
+                    <button id="themeToggleMobile" class="nav-link text-gray-600 hover:text-blue-600 text-xl" title="Переключить тему" aria-label="Переключить тему">🌙</button>
+                    <button id="hamburgerBtn" class="text-gray-600 hover:text-blue-600 focus:outline-none" aria-label="Меню" aria-expanded="false">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Mobile dropdown menu -->
+            <div id="mobileMenu" class="hidden sm:hidden pb-4 space-y-2 text-sm font-medium">
+                {{if .CurrentUserID}}
+                    <a href="/dashboard" class="block px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100">Личный кабинет</a>
+                    {{if .IsAdmin}}<a href="/admin" class="block px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100">Админка</a>{{end}}
+                    <a href="/games" class="block px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100">Игры</a>
+                    <a href="/teams" class="block px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100">Команды</a>
+                    <a href="/profile" class="block px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100">Профиль</a>
+                    <a href="/auth/logout" class="block px-3 py-2 rounded-md text-red-500 hover:bg-red-50">Выйти</a>
+                {{else}}
+                    <a href="/auth/login" class="block px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100">Войти</a>
+                    <a href="/auth/register" class="block px-3 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700">Регистрация</a>
+                {{end}}
             </div>
         </div>
     </nav>
@@ -332,6 +358,96 @@
                     toggle.click();
                 }
             });
+        })();
+
+        // Mobile hamburger menu
+        (function() {
+            const hamburger = document.getElementById('hamburgerBtn');
+            const mobileMenu = document.getElementById('mobileMenu');
+            if (!hamburger || !mobileMenu) return;
+
+            hamburger.addEventListener('click', function() {
+                const isHidden = mobileMenu.classList.contains('hidden');
+                mobileMenu.classList.toggle('hidden');
+                hamburger.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
+            });
+
+            // Sync theme toggle for mobile button
+            const mobileThemeBtn = document.getElementById('themeToggleMobile');
+            const desktopThemeBtn = document.getElementById('themeToggle');
+            if (mobileThemeBtn && desktopThemeBtn) {
+                mobileThemeBtn.addEventListener('click', function() {
+                    desktopThemeBtn.click();
+                    // Sync icon
+                    setTimeout(function() {
+                        mobileThemeBtn.textContent = desktopThemeBtn.textContent;
+                    }, 0);
+                });
+            }
+        })();
+
+        // Top progress bar for navigation
+        (function() {
+            const bar = document.getElementById('top-progress-bar');
+            if (!bar) return;
+
+            let progressTimer = null;
+
+            window.startProgress = function() {
+                bar.style.opacity = '1';
+                bar.style.width = '30%';
+                if (progressTimer) clearInterval(progressTimer);
+                let width = 30;
+                progressTimer = setInterval(function() {
+                    width += (90 - width) * 0.1;
+                    bar.style.width = width + '%';
+                }, 200);
+            };
+
+            window.completeProgress = function() {
+                if (progressTimer) clearInterval(progressTimer);
+                bar.style.width = '100%';
+                setTimeout(function() {
+                    bar.style.opacity = '0';
+                    bar.style.width = '0%';
+                }, 300);
+            };
+
+            // Show progress on traditional navigation
+            document.addEventListener('click', function(e) {
+                const link = e.target.closest('a');
+                if (!link) return;
+                const href = link.getAttribute('href');
+                if (!href || href.startsWith('#') || href.startsWith('javascript:') || link.target === '_blank') return;
+                if (link.hasAttribute('download')) return;
+                // Only for same-origin navigation
+                try {
+                    const url = new URL(link.href, window.location.origin);
+                    if (url.origin !== window.location.origin) return;
+                } catch(_) { return; }
+                window.startProgress();
+            });
+
+            // Complete on page load
+            if (document.readyState === 'complete') {
+                window.completeProgress();
+            } else {
+                window.addEventListener('load', window.completeProgress);
+            }
+
+            // Show progress on fetch (non-GET)
+            const originalFetch = window.fetch;
+            window.fetch = function() {
+                const args = arguments;
+                const method = (args[1] && args[1].method || 'GET').toUpperCase();
+                if (method !== 'GET' && method !== 'HEAD') {
+                    window.startProgress();
+                }
+                return originalFetch.apply(this, args).then(function(resp) {
+                    window.completeProgress();
+                    return resp;
+                });
+            };
         })();
 
         // Toast уведомления

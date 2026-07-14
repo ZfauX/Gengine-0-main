@@ -70,20 +70,6 @@ func (s *LevelProgressService) GetCurrentProgress(ctx context.Context, gamePassi
 	return &progress, err
 }
 
-// GetCurrentProgress возвращает текущий незавершённый прогресс уровня.
-// БЕЗ БЛОКИРОВКИ — для чтения.
-func GetCurrentProgress(db *gorm.DB, gamePassingID uint) (*LevelProgress, error) {
-	var progress LevelProgress
-	err := db.
-		Preload("Level.Questions.Answers").
-		Where("game_passing_id = ? AND finished_at IS NULL", gamePassingID).
-		First(&progress).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, ErrNoActiveLevel
-	}
-	return &progress, err
-}
-
 // GetCurrentProgressForUpdate возвращает текущий незавершённый прогресс с блокировкой FOR UPDATE.
 // Используется внутри транзакций для предотвращения гонок.
 func GetCurrentProgressForUpdate(tx *gorm.DB, gamePassingID uint) (*LevelProgress, error) {
@@ -186,7 +172,7 @@ func checkTimeoutsImpl(db *gorm.DB, ctx context.Context) {
 	if err := db.WithContext(ctx).Clauses(clause.Locking{
 		Strength: "UPDATE",
 		Options:  "SKIP LOCKED",
-	}).Preload("GamePassing.Game.GameSetting").
+	}).Select("id, game_passing_id, level_id, started_at, finished_at, penalty_seconds, hints_used").
 		Where("finished_at IS NULL").
 		Limit(batchSize).
 		Find(&activeProgresses).Error; err != nil {
@@ -198,29 +184,56 @@ func checkTimeoutsImpl(db *gorm.DB, ctx context.Context) {
 		return
 	}
 
+	// Собираем уникальные game_passing_id для batch-загрузки settings
+	var passingIDs []uint
+	for _, p := range activeProgresses {
+		passingIDs = append(passingIDs, p.GamePassingID)
+	}
+
+	// Batch-загружаем game_passings с settings
+	type passingWithSetting struct {
+		ID                uint
+		PerLevelTimeLimit int
+	}
+	var passingsWithSettings []passingWithSetting
+	if err := db.WithContext(ctx).
+		Model(&GamePassing{}).
+		Select("game_passings.id, game_settings.per_level_time_limit").
+		Joins("LEFT JOIN game_settings ON game_settings.game_id = game_passings.game_id").
+		Where("game_passings.id IN ?", passingIDs).
+		Find(&passingsWithSettings).Error; err != nil {
+		log.Error().Err(err).Msg("CheckTimeouts: failed to fetch passings with settings")
+	}
+
+	settingMap := make(map[uint]*GameSetting)
+	for _, ps := range passingsWithSettings {
+		settingMap[ps.ID] = &GameSetting{PerLevelTimeLimit: ps.PerLevelTimeLimit}
+	}
+	for _, ps := range passingsWithSettings {
+		settingMap[ps.ID] = &GameSetting{PerLevelTimeLimit: ps.PerLevelTimeLimit}
+	}
+
 	now := time.Now()
 	for _, p := range activeProgresses {
 		if p.FinishedAt != nil {
 			continue
 		}
 
-		if p.GamePassing.Game.GameSetting.ID == 0 {
-			log.Warn().Uint("progress_id", p.ID).Msg("CheckTimeouts: game setting not found for progress, skipping")
+		setting, ok := settingMap[p.GamePassingID]
+		if !ok || setting.PerLevelTimeLimit <= 0 {
 			continue
 		}
-		setting := p.GamePassing.Game.GameSetting
-		if setting.PerLevelTimeLimit > 0 {
-			elapsed := now.Sub(p.StartedAt)
-			limit := time.Duration(setting.PerLevelTimeLimit) * time.Minute
-			if elapsed >= limit {
-				p.FinishedAt = &now
-				if err := db.WithContext(ctx).Save(&p).Error; err != nil {
-					log.Error().Err(err).Uint("progress_id", p.ID).Msg("CheckTimeouts: failed to save progress")
-					continue
-				}
-				if err := AdvanceToNextLevel(db, p.GamePassingID, p.LevelID); err != nil {
-					log.Error().Err(err).Uint("passing_id", p.GamePassingID).Msg("CheckTimeouts: failed to advance level")
-				}
+
+		elapsed := now.Sub(p.StartedAt)
+		limit := time.Duration(setting.PerLevelTimeLimit) * time.Minute
+		if elapsed >= limit {
+			p.FinishedAt = &now
+			if err := db.WithContext(ctx).Save(&p).Error; err != nil {
+				log.Error().Err(err).Uint("progress_id", p.ID).Msg("CheckTimeouts: failed to save progress")
+				continue
+			}
+			if err := AdvanceToNextLevel(db, p.GamePassingID, p.LevelID); err != nil {
+				log.Error().Err(err).Uint("passing_id", p.GamePassingID).Msg("CheckTimeouts: failed to advance level")
 			}
 		}
 	}

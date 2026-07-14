@@ -4,11 +4,16 @@
         <div class="text-6xl mb-6">😵</div>
         <h1 class="text-2xl font-bold text-gray-800 mb-4">500 — Внутренняя ошибка сервера</h1>
         {{if .Error}}
-        <p class="text-red-600 mb-6">{{.Error}}</p>
+        <p class="text-red-600 mb-2">{{.Error}}</p>
         {{else}}
-        <p class="text-gray-600 mb-6">Что-то пошло не так. Мы уже работаем над исправлением.</p>
+        <p class="text-gray-600 mb-2">Что-то пошло не так. Мы уже работаем над исправлением.</p>
         {{end}}
-        <a href="/" class="btn btn-primary text-sm inline-block">На главную</a>
+        <p class="text-sm text-gray-400 mb-6">Попробуйте обновить страницу через несколько минут или вернитесь назад.</p>
+        <div class="flex flex-wrap gap-3 justify-center">
+            <a href="/" class="btn btn-primary text-sm inline-block">На главную</a>
+            <button onclick="location.reload()" class="btn btn-outline text-sm inline-block">Обновить</button>
+            <button onclick="history.back()" class="btn btn-outline text-sm inline-block">← Назад</button>
+        </div>
     </div>
 </div>
 {{end}}
