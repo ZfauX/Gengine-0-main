@@ -118,9 +118,13 @@ func (c *Checker) checkHub() Status {
 			Message: "hub is nil",
 		}
 	}
-	// Простая проверка: если hub не nil, считаем, что работает.
-	// При необходимости можно добавить проверку на закрытие канала,
-	// если у ws.RoomHub есть поле done.
+	// Проверяем, что хаб не остановлен
+	if c.hub.IsStopped() {
+		return Status{
+			Status:  "error",
+			Message: "hub is stopped",
+		}
+	}
 	return Status{
 		Status:  "ok",
 		Message: "hub is running",

@@ -294,7 +294,7 @@ func (h *GameplayHandler) ShowTestGame(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 
-	progress, err := GetCurrentProgress(h.progressSvc.DB, uint(passingID))
+	progress, err := h.progressSvc.GetCurrentProgress(c.Request.Context(), uint(passingID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, ErrNoActiveLevel) {
 			render.Page(c, http.StatusOK, "gameplay-test-finished.html", gin.H{
@@ -345,6 +345,31 @@ func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
 	passingID, err := strconv.Atoi(c.Param("passing_id"))
 	if err != nil || passingID <= 0 {
 		render.RenderError(c, http.StatusBadRequest, "Неверный ID прохождения")
+		return
+	}
+
+	userID := c.GetUint("userID")
+
+	// Проверяем права: пользователь должен быть автором или соавтором игры
+	passing, err := h.gamePlaySvc.GetPassingWithGame(c.Request.Context(), uint(passingID))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			render.RenderErrorPage(c, http.StatusNotFound)
+		} else {
+			log.Error().Err(err).Int("passing_id", passingID).Msg("SubmitTestCode: failed to get passing")
+			render.RenderErrorPage(c, http.StatusInternalServerError)
+		}
+		return
+	}
+	g, err := h.gameService.GetByID(c.Request.Context(), passing.GameID, userID)
+	if err != nil {
+		log.Error().Err(err).Uint("game_id", passing.GameID).Msg("SubmitTestCode: failed to get game")
+		render.RenderErrorPage(c, http.StatusInternalServerError)
+		return
+	}
+	ok, err := h.gameService.IsUserManager(g.ID, userID)
+	if err != nil || !ok {
+		render.RenderError(c, http.StatusForbidden, "Доступ запрещён")
 		return
 	}
 

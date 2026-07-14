@@ -16,33 +16,50 @@ import (
 	"gorm.io/gorm"
 )
 
+// GameDeps содержит все зависимости для регистрации маршрутов игрового домена.
+// Позволяет избежать передачи 16+ параметров в RegisterRoutes.
+type GameDeps struct {
+	DB              *gorm.DB
+	GameService     *GameService
+	PassingService  *GamePassingService
+	CoAuthorSvc     *CoAuthorService
+	AttemptSvc      *AttemptService
+	ProgressSvc     *LevelProgressService
+	MonitorSvc      *MonitorService
+	LocalStorage    storage.FileStorage
+	Hub             *ws.RoomHub
+	Cfg             *config.Config
+	AuditSvc        *audit.Service
+	AuthService     *user.AuthService
+	GamePlaySvc     *GamePlayService
+	GameAdminSvc    *GameAdminService
+	ReviewService   *ReviewService
+	GameplayHandler *GameplayHandler
+	PhotoService    *PhotoService
+	LevelService    *level.LevelService
+}
+
 // RegisterRoutes регистрирует маршруты для игр, используя готовые обработчики.
 // @tags games
 // @tags coauthors
 // @tags passings
 // @tags gameplay
 // @tags admin
-func RegisterRoutes(
-	r *gin.Engine,
-	db *gorm.DB,
-	gameService *GameService,
-	passingService *GamePassingService,
-	coAuthorSvc *CoAuthorService,
-	attemptSvc *AttemptService,
-	progressSvc *LevelProgressService,
-	monitorSvc *MonitorService,
-	localStorage storage.FileStorage,
-	hub *ws.RoomHub,
-	cfg *config.Config,
-	auditSvc *audit.Service,
-	authService *user.AuthService,
-	gamePlaySvc *GamePlayService,
-	gameAdminSvc *GameAdminService,
-	reviewService *ReviewService, // <-- ДОБАВЛЕНО
-	gameplayHandler *GameplayHandler, // <-- ДОБАВЛЕНО для тестовых маршрутов
-	photoService *PhotoService, // <-- ДОБАВЛЕНО
-	levelService *level.LevelService, // <-- ДОБАВЛЕНО
-) {
+func RegisterRoutes(r *gin.Engine, deps *GameDeps) {
+	db := deps.DB
+	gameService := deps.GameService
+	passingService := deps.PassingService
+	coAuthorSvc := deps.CoAuthorSvc
+	localStorage := deps.LocalStorage
+	hub := deps.Hub
+	auditSvc := deps.AuditSvc
+	authService := deps.AuthService
+	gamePlaySvc := deps.GamePlaySvc
+	gameAdminSvc := deps.GameAdminSvc
+	reviewService := deps.ReviewService
+	gameplayHandler := deps.GameplayHandler
+	photoService := deps.PhotoService
+	levelService := deps.LevelService
 	noteService := NewNoteService(db, coAuthorSvc)
 	simulateService := NewSimulateService(db, coAuthorSvc)
 
@@ -98,7 +115,14 @@ func RegisterRoutes(
 		// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
 		// @Router /games/{id} [get]
 		optionalAuth.GET("/:id", gameHandler.Show)
+	}
 
+	// ========================================================================
+	// Защищённые маршруты (требуют обязательной аутентификации)
+	// ========================================================================
+	protected := r.Group("/games")
+	protected.Use(middleware.AuthRequired(authService))
+	{
 		// @Summary Полный просмотр игры (JSON)
 		// @Description Возвращает все уровни с вопросами и ответами для быстрого просмотра (JSON)
 		// @Tags games
@@ -110,15 +134,8 @@ func RegisterRoutes(
 		// @Failure 403 {object} map[string]interface{} "Нет доступа"
 		// @Router /games/{id}/full-preview [get]
 		// @Security JWT
-		optionalAuth.GET("/:id/full-preview", gameHandler.FullPreview)
-	}
+		protected.GET("/:id/full-preview", gameHandler.FullPreview)
 
-	// ========================================================================
-	// Защищённые маршруты (требуют обязательной аутентификации)
-	// ========================================================================
-	protected := r.Group("/games")
-	protected.Use(middleware.AuthRequired(authService))
-	{
 		// @Summary Форма создания игры
 		// @Description Возвращает HTML-страницу с формой для создания новой игры
 		// @Tags games
@@ -554,7 +571,7 @@ func RegisterGameplayRoutes(
 	// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
 	// @Router /game/{passing_id}/hint [post]
 	// @Security JWT
-	r.POST("/game/:passing_id/hint", handler.UseHint)
+	r.POST("/game/:passing_id/hint", middleware.CodeSubmissionRateLimit(1*time.Minute, 30), handler.UseHint)
 
 	// @Summary Загрузка файла ответа
 	// @Description Загружает файл в качестве ответа на текущий уровень (до 10 МБ, поддерживаются JPEG, PNG, GIF, PDF, TXT)
@@ -569,7 +586,7 @@ func RegisterGameplayRoutes(
 	// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
 	// @Router /game/{passing_id}/file [post]
 	// @Security JWT
-	r.POST("/game/:passing_id/file", handler.SubmitFile)
+	r.POST("/game/:passing_id/file", middleware.CodeSubmissionRateLimit(1*time.Minute, 10), handler.SubmitFile)
 
 	// @Summary Подтверждение ответа (только для чёрного ящика)
 	// @Description Автор игры подтверждает ответ команды на уровне "чёрный ящик"
@@ -582,7 +599,7 @@ func RegisterGameplayRoutes(
 	// @Failure 403 {object} map[string]interface{} "Только автор может подтвердить"
 	// @Router /game/{passing_id}/accept [post]
 	// @Security JWT
-	r.POST("/game/:passing_id/accept", handler.AcceptAnswer)
+	r.POST("/game/:passing_id/accept", middleware.CodeSubmissionRateLimit(1*time.Minute, 20), handler.AcceptAnswer)
 
 	// ============================================================
 	// ТЕСТОВЫЕ МАРШРУТЫ

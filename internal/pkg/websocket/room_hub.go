@@ -183,6 +183,11 @@ func (h *RoomHub) isStopped() bool {
 	return h.stopped
 }
 
+// IsStopped проверяет, остановлен ли хаб (публичный метод для health check).
+func (h *RoomHub) IsStopped() bool {
+	return h.isStopped()
+}
+
 // Stop останавливает хаб и закрывает все соединения, отправив CloseMessage.
 func (h *RoomHub) Stop() {
 	h.mu.Lock()

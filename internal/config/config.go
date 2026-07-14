@@ -14,7 +14,7 @@ import (
 
 // Config содержит все настройки приложения, сгруппированные по функциональным областям.
 type Config struct {
-	Server    ServerConfig    // настройки HTTP-сервера
+	Server    ServerConfig    // настройки HTTP-сервера и логирования
 	Database  DatabaseConfig  // параметры подключения к PostgreSQL
 	Valkey    ValkeyConfig    // параметры подключения к Valkey (Redis-compatible)
 	JWT       JWTConfig       // параметры JWT-токенов
@@ -26,6 +26,7 @@ type Config struct {
 	ReCAPTCHA ReCAPTCHAConfig // настройки reCAPTCHA (опционально)
 	TLS       TLSConfig       // пути к TLS-сертификатам (опционально)
 	Sentry    SentryConfig    // настройки Sentry (опционально)
+	WebSocket WebSocketConfig // настройки WebSocket-соединений
 }
 
 // ServerConfig содержит параметры HTTP-сервера и логирования.
@@ -137,6 +138,12 @@ type SentryConfig struct {
 	TracingRate float64 // доля трассировки (0.0-1.0)
 }
 
+// WebSocketConfig содержит параметры WebSocket-соединений.
+type WebSocketConfig struct {
+	MaxTotalConns int // максимальное общее количество соединений (0 = без ограничения)
+	MaxConnsPerIP int // максимальное количество соединений с одного IP (0 = без ограничения)
+}
+
 // LoadConfig загружает конфигурацию из переменных окружения с жёсткой проверкой обязательных секретов.
 // Выполняет проверки и возвращает конфигурацию или ошибку.
 func LoadConfig() (*Config, error) {
@@ -245,6 +252,10 @@ func LoadConfig() (*Config, error) {
 	if cfg.Sentry, err = loadSentryConfig(); err != nil {
 		return nil, err
 	}
+
+	// WebSocket
+	cfg.WebSocket.MaxTotalConns = getEnvAsInt("WS_MAX_TOTAL_CONNS", 1000)
+	cfg.WebSocket.MaxConnsPerIP = getEnvAsInt("WS_MAX_CONNS_PER_IP", 50)
 
 	return cfg, nil
 }

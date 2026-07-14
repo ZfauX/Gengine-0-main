@@ -3,6 +3,7 @@ package middleware
 
 import (
 	"net"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -38,7 +39,7 @@ func TrustedProxyMiddleware(proxies []string) gin.HandlerFunc {
 			if ip.To4() == nil {
 				bit = 128
 			}
-			_, cidr, _ := net.ParseCIDR(ip.String() + "/" + string(rune(bit)))
+			_, cidr, _ := net.ParseCIDR(ip.String() + "/" + strconv.Itoa(bit))
 			if cidr != nil {
 				trusted = append(trusted, cidr)
 			}

@@ -183,7 +183,13 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) e
 			LevelID:       progress.LevelID,
 			Message:       fmt.Sprintf("использована подсказка (+%d сек)", penalty),
 		}
-		return tx.Create(&logEntry).Error
+		if err := tx.Create(&logEntry).Error; err != nil {
+			return err
+		}
+
+		// Отправляем WebSocket-обновление, чтобы монитор обновил штрафное время
+		s.broadcastSnapshot(ctx, passingID)
+		return nil
 	})
 }
 
@@ -193,6 +199,15 @@ func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, u
 		progress, err := GetCurrentProgressForUpdate(tx, passingID)
 		if err != nil {
 			return err
+		}
+
+		// Проверяем, что уровень требует подтверждения (чёрный ящик)
+		var lvl level.Level
+		if err := tx.Where("id = ?", progress.LevelID).First(&lvl).Error; err != nil {
+			return err
+		}
+		if lvl.Type != level.TypeBlackbox {
+			return errors.New("подтверждение ответа доступно только для уровней типа чёрный ящик")
 		}
 
 		var passing GamePassing
@@ -309,6 +324,23 @@ func (s *GamePlayService) SkipLevelTest(ctx context.Context, passingID, userID u
 			return err
 		}
 
+		// Проверяем, что пользователь — автор или соавтор игры (тестовый режим)
+		var passing GamePassing
+		if err := tx.First(&passing, passingID).Error; err != nil {
+			return err
+		}
+		var game Game
+		if err := tx.First(&game, passing.GameID).Error; err != nil {
+			return err
+		}
+		if game.AuthorID != userID {
+			var co CoAuthor
+			if err := tx.Where("game_id = ? AND user_id = ?", game.ID, userID).First(&co).Error; err != nil {
+				return errors.New("доступ запрещён: только автор или соавтор может пропускать уровни")
+			}
+			_ = co
+		}
+
 		now := time.Now()
 		progress.FinishedAt = &now
 		if err := tx.Save(progress).Error; err != nil {
@@ -357,13 +389,17 @@ func (s *GamePlayService) broadcastSnapshot(ctx context.Context, passingID uint)
 // GetGameplayData загружает все данные, необходимые для отображения страницы геймплея.
 func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (*GameplayData, error) {
 	var passing GamePassing
-	if err := s.db.WithContext(ctx).Preload("Team").First(&passing, passingID).Error; err != nil {
+	if err := s.db.WithContext(ctx).Preload("Team").Preload("Game.GameSetting").First(&passing, passingID).Error; err != nil {
 		return nil, err
 	}
 
 	var settings GameSetting
-	_ = s.db.WithContext(ctx).Where("game_id = ?", passing.GameID).First(&settings).Error
-	// settings не обязательны — при отсутствии или ошибке используются значения по умолчанию
+	if passing.Game.GameSetting.ID != 0 {
+		settings = passing.Game.GameSetting
+	} else if err := s.db.WithContext(ctx).Where("game_id = ?", passing.GameID).First(&settings).Error; err != nil {
+		// settings не обязательны — при отсутствии или ошибке используются значения по умолчанию
+		log.Debug().Err(err).Uint("game_id", passing.GameID).Msg("GetGameplayData: settings not found, using defaults")
+	}
 
 	var progress LevelProgress
 	err := s.db.WithContext(ctx).
@@ -375,10 +411,12 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 	}
 
 	var attempts []Attempt
-	s.db.WithContext(ctx).
+	if err := s.db.WithContext(ctx).
 		Where("level_progress_id = ?", progress.ID).
 		Order("created_at DESC").
-		Find(&attempts)
+		Find(&attempts).Error; err != nil {
+		log.Error().Err(err).Uint("progress_id", progress.ID).Msg("GetGameplayData: failed to fetch attempts")
+	}
 
 	var votingSession gameBlackboxVotingSession
 	votingActive := s.db.WithContext(ctx).

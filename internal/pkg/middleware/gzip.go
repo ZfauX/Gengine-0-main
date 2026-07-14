@@ -2,11 +2,8 @@
 package middleware
 
 import (
-	"bufio"
+	"bytes"
 	"compress/gzip"
-	"io"
-	"net"
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -24,55 +21,46 @@ func GzipMiddleware() gin.HandlerFunc {
 			return
 		}
 
+		// Перехватываем body через custom writer
+		sw := &switchWriter{ResponseWriter: c.Writer, buf: &bytes.Buffer{}}
+		c.Writer = sw
+
+		c.Next()
+
 		// Не сжимаем бинарные файлы и уже сжатые типы
-		ct := c.Writer.Header().Get("Content-Type")
+		ct := sw.Header().Get("Content-Type")
 		if strings.HasPrefix(ct, "image/") ||
 			strings.HasPrefix(ct, "application/zip") ||
 			strings.HasPrefix(ct, "application/pdf") ||
 			strings.HasPrefix(ct, "video/") ||
 			strings.HasPrefix(ct, "audio/") {
-			c.Next()
+			// Копируем uncompressed body back
+			sw.ResponseWriter.Write(sw.buf.Bytes())
 			return
 		}
 
-		gz := gzip.NewWriter(c.Writer)
-		defer func() { _ = gz.Close() }()
-
-		c.Writer = &gzipResponseWriter{
-			ResponseWriter: c.Writer,
-			Writer:         gz,
+		// Сжимаем и записываем
+		if sw.buf.Len() > 0 {
+			c.Header("Content-Encoding", "gzip")
+			c.Header("Vary", "Accept-Encoding")
+			gzWriter := gzip.NewWriter(sw.ResponseWriter)
+			_, _ = gzWriter.Write(sw.buf.Bytes())
+			_ = gzWriter.Close()
 		}
-		c.Header("Content-Encoding", "gzip")
-		c.Header("Vary", "Accept-Encoding")
-		c.Next()
 	}
 }
 
-type gzipResponseWriter struct {
+type switchWriter struct {
 	gin.ResponseWriter
-	io.Writer
+	buf *bytes.Buffer
 }
 
-func (w *gzipResponseWriter) Write(b []byte) (int, error) {
-	return w.Writer.Write(b)
+func (w *switchWriter) Write(b []byte) (int, error) {
+	w.buf.Write(b)
+	return len(b), nil
 }
 
-func (w *gzipResponseWriter) WriteString(s string) (int, error) {
-	return w.Writer.Write([]byte(s))
-}
-
-func (w *gzipResponseWriter) Flush() {
-	if flusher, ok := w.Writer.(interface{ Flush() error }); ok {
-		_ = flusher.Flush()
-	}
-	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
-		flusher.Flush()
-	}
-}
-
-func (w *gzipResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	if hijacker, ok := w.ResponseWriter.(http.Hijacker); ok {
-		return hijacker.Hijack()
-	}
-	return nil, nil, http.ErrNotSupported
+func (w *switchWriter) WriteString(s string) (int, error) {
+	w.buf.WriteString(s)
+	return len(s), nil
 }

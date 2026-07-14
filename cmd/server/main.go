@@ -163,6 +163,7 @@ func main() {
 
 	localStorage := storage.NewLocalStorage()
 	hub := ws.NewRoomHub()
+	hub.SetLimits(cfg.WebSocket.MaxTotalConns, cfg.WebSocket.MaxConnsPerIP)
 	go hub.Run()
 
 	// --- Инициализация rate limiters (singleton, создаются один раз) ---

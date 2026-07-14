@@ -136,22 +136,27 @@ func (s *MonitorService) GameSnapshot(gameID uint) ([]TeamProgress, error) {
 
 	var aggregated []AggregatedPassing
 	query := `
-		SELECT 
+		SELECT
 			gp.id AS game_passing_id,
 			gp.team_id,
 			t.name AS team_name,
 			gp.status,
 			gp.place,
 			COUNT(lp.id) FILTER (WHERE lp.finished_at IS NOT NULL) AS completed_count,
-			COALESCE(SUM((SELECT COUNT(*) FROM attempts a WHERE a.level_progress_id = lp.id)), 0) AS total_attempts,
+			COALESCE(ac.total_attempts, 0) AS total_attempts,
 			COALESCE(SUM(lp.penalty_seconds), 0) AS total_penalty,
 			MIN(lp.started_at) AS first_started,
 			MAX(lp.finished_at) AS last_finished
 		FROM game_passings gp
 		JOIN teams t ON t.id = gp.team_id
 		LEFT JOIN level_progresses lp ON lp.game_passing_id = gp.id
+		LEFT JOIN (
+			SELECT level_progress_id, COUNT(*) AS total_attempts
+			FROM attempts
+			GROUP BY level_progress_id
+		) ac ON ac.level_progress_id = lp.id
 		WHERE gp.game_id = ?
-		GROUP BY gp.id, gp.team_id, t.name, gp.status, gp.place
+		GROUP BY gp.id, gp.team_id, t.name, gp.status, gp.place, ac.total_attempts
 	`
 	if err := s.DB.Raw(query, gameID).Scan(&aggregated).Error; err != nil {
 		return nil, err
@@ -282,17 +287,23 @@ func (s *MonitorService) CalculateResults(gameID uint) error {
 // Упрощённая версия для снижения нагрузки.
 func (s *MonitorService) analyzeTeamBehavior(teamID, gameID uint) (bool, string) {
 	var passings []uint
-	s.DB.Model(&GamePassing{}).Where("game_id = ? AND team_id = ?", gameID, teamID).Pluck("id", &passings)
+	err := s.DB.Model(&GamePassing{}).Where("game_id = ? AND team_id = ?", gameID, teamID).Pluck("id", &passings).Error
+	if err != nil {
+		return false, ""
+	}
 	if len(passings) == 0 {
 		return false, ""
 	}
 
 	fiveMinAgo := time.Now().Add(-5 * time.Minute)
 	var attempts []Attempt
-	s.DB.Joins("JOIN level_progresses ON level_progresses.id = attempts.level_progress_id").
+	err = s.DB.Joins("JOIN level_progresses ON level_progresses.id = attempts.level_progress_id").
 		Where("level_progresses.game_passing_id IN ? AND attempts.created_at >= ?", passings, fiveMinAgo).
 		Order("attempts.created_at ASC").
-		Find(&attempts)
+		Find(&attempts).Error
+	if err != nil {
+		return false, ""
+	}
 
 	if len(attempts) == 0 {
 		return false, ""

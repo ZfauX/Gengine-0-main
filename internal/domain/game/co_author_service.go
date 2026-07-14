@@ -3,6 +3,7 @@ package game
 
 import (
 	"errors"
+	"fmt"
 
 	"gorm.io/gorm"
 )
@@ -62,6 +63,8 @@ func (s *CoAuthorService) HasPermission(gameID, userID uint, requiredRole string
 		return co.Role == RoleModerator, nil
 	case RoleObserver:
 		return true, nil
+	default:
+		return false, fmt.Errorf("неизвестная роль: %s", requiredRole)
 	}
 	return false, nil
 }
