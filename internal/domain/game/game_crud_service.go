@@ -58,7 +58,7 @@ func (s *GameCRUDService) Update(ctx context.Context, id uint, updated *Game, us
 	if err != nil {
 		return err
 	}
-	isManager, err := s.CoAuthor.HasPermission(id, userID, "content")
+	isManager, err := s.CoAuthor.HasPermission(id, userID, RoleContentEditor)
 	if err != nil {
 		return fmt.Errorf("ошибка проверки прав: %w", err)
 	}
@@ -99,7 +99,7 @@ func (s *GameCRUDService) Publish(ctx context.Context, id uint, userID uint) err
 	if err != nil {
 		return err
 	}
-	isManager, err := s.CoAuthor.HasPermission(id, userID, "content")
+	isManager, err := s.CoAuthor.HasPermission(id, userID, RoleContentEditor)
 	if err != nil {
 		return fmt.Errorf("ошибка проверки прав: %w", err)
 	}

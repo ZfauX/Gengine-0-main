@@ -97,7 +97,7 @@ type CoAuthor struct {
 	gorm.Model
 	GameID uint      `gorm:"not null;uniqueIndex:idx_game_user"`
 	UserID uint      `gorm:"not null;uniqueIndex:idx_game_user"`
-	Role   string    `gorm:"default:'content'"`
+	Role   string    `gorm:"default:'content_editor'"`
 	Game   Game      `gorm:"foreignKey:GameID"`
 	User   user.User `gorm:"foreignKey:UserID"`
 }

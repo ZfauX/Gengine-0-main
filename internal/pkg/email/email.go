@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/smtp"
 	"strings"
+	"sync"
 	"time"
 
 	"gengine-0/internal/config"
@@ -22,6 +23,7 @@ type EmailService struct {
 	cfg  *config.Config
 	db   *gorm.DB
 	stop chan struct{}
+	wg   sync.WaitGroup
 }
 
 // NewEmailService создаёт новый EmailService.
@@ -71,6 +73,8 @@ func (s *EmailService) getQueueSize() int64 {
 
 // StartWorker запускает воркер, который периодически отправляет письма из очереди.
 func (s *EmailService) StartWorker(ctx context.Context, interval time.Duration, batchSize int) {
+	s.wg.Add(1)
+	defer s.wg.Done()
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 

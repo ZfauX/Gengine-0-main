@@ -39,17 +39,16 @@ func checkTeamMembership(tx *gorm.DB, passingID, userID uint) error {
 	return errors.New("вы не являетесь участником этой команды")
 }
 
-// finishPassingProgress завершает прогресс прохождения (все незавершённые уровни)
+// finishPassingProgress завершает все незавершённые прогрессы прохождения
 func finishPassingProgress(tx *gorm.DB, passing *GamePassing, now time.Time) error {
-	var progress LevelProgress
-	err := tx.Where("game_passing_id = ? AND finished_at IS NULL", passing.ID).First(&progress).Error
-	if err == nil {
-		progress.FinishedAt = &now
-		if err := tx.Save(&progress).Error; err != nil {
-			return err
-		}
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
+	result := tx.Model(&LevelProgress{}).
+		Where("game_passing_id = ? AND finished_at IS NULL", passing.ID).
+		Updates(map[string]interface{}{
+			"finished_at": now,
+			"updated_at":  now,
+		})
+	if result.Error != nil {
+		return result.Error
 	}
 	passing.Status = StatusFinished
 	return tx.Save(passing).Error

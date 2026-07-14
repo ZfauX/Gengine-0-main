@@ -52,6 +52,7 @@ func ShutdownQueue() {
 	}
 	if globalService != nil {
 		globalService.Stop()
+		globalService.wg.Wait()
 	}
 	log.Info().Msg("Email queue (persistent) stopped")
 }

@@ -44,7 +44,11 @@ func (s *GamePassingService) Apply(ctx context.Context, gameID, teamID, userID u
 		var existing GamePassing
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("game_id = ? AND team_id = ?", gameID, teamID).
-			First(&existing).Error; err == nil {
+			First(&existing).Error; err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+		} else {
 			return errors.New("заявка уже подана")
 		}
 		passing := GamePassing{GameID: gameID, TeamID: teamID, Status: StatusPending}
@@ -74,7 +78,7 @@ func (s *GamePassingService) UpdateStatus(ctx context.Context, passingID uint, s
 	if err := s.DB.WithContext(ctx).First(&g, passing.GameID).Error; err != nil {
 		return err
 	}
-	ok, err := s.coAuthor.HasPermission(passing.GameID, userID, "moderator")
+	ok, err := s.coAuthor.HasPermission(passing.GameID, userID, RoleModerator)
 	if err != nil {
 		return err
 	}
@@ -97,7 +101,7 @@ func (s *GamePassingService) StartGame(ctx context.Context, passingID, userID ui
 	}
 	isCaptain := (t.CaptainID == userID)
 	if !isCaptain {
-		ok, err := s.coAuthor.HasPermission(passing.GameID, userID, "moderator")
+		ok, err := s.coAuthor.HasPermission(passing.GameID, userID, RoleModerator)
 		if err != nil {
 			return err
 		}

@@ -35,7 +35,7 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 		cfg.Database.Name, cfg.Database.SSLMode,
 	)
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: &logging.GormLogger{LogLevel: logger.Info},
+		Logger: &logging.GormLogger{LogLevel: logger.Warn},
 	})
 	if err != nil {
 		return nil, err

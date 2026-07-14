@@ -8,7 +8,7 @@ import (
 )
 
 type SimulateService struct {
-	DB        *gorm.DB
+	DB          *gorm.DB
 	coAuthorSvc *CoAuthorService
 }
 
@@ -34,7 +34,10 @@ func (s *SimulateService) Simulate(gameID, userID uint) (*SimulateResult, error)
 	if err := s.DB.Preload("Levels.Questions.Answers").First(&game, gameID).Error; err != nil {
 		return nil, err
 	}
-	isManager, _ := s.coAuthorSvc.IsUserManager(gameID, userID)
+	isManager, err := s.coAuthorSvc.IsUserManager(gameID, userID)
+	if err != nil {
+		return nil, err
+	}
 	if !isManager {
 		return nil, errors.New("только автор или соавтор может запустить симуляцию")
 	}
@@ -43,12 +46,17 @@ func (s *SimulateService) Simulate(gameID, userID uint) (*SimulateResult, error)
 	}
 	result := &SimulateResult{}
 	startTime := time.Now()
-	for _, lvl := range game.Levels {
+	for i, lvl := range game.Levels {
 		code := "невозможно определить"
 		if len(lvl.Questions) > 0 && len(lvl.Questions[0].Answers) > 0 {
 			code = lvl.Questions[0].Answers[0].Code
 		}
-		time.Sleep(5 * time.Second)
+		// Имитация задержки: 100ms на уровень вместо 5s
+		delay := time.Duration(i+1) * 100 * time.Millisecond
+		if delay > 500*time.Millisecond {
+			delay = 500 * time.Millisecond
+		}
+		time.Sleep(delay)
 		step := SimulateStep{LevelName: lvl.Name, Code: code, Duration: time.Since(startTime), Success: true}
 		result.Log = append(result.Log, step)
 		result.LevelsPassed++

@@ -58,6 +58,20 @@ func (s *LevelProgressService) InitFirstLevel(ctx context.Context, gamePassingID
 
 // GetCurrentProgress возвращает текущий незавершённый прогресс уровня.
 // БЕЗ БЛОКИРОВКИ — для чтения.
+func (s *LevelProgressService) GetCurrentProgress(ctx context.Context, gamePassingID uint) (*LevelProgress, error) {
+	var progress LevelProgress
+	err := s.DB.WithContext(ctx).
+		Preload("Level.Questions.Answers").
+		Where("game_passing_id = ? AND finished_at IS NULL", gamePassingID).
+		First(&progress).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNoActiveLevel
+	}
+	return &progress, err
+}
+
+// GetCurrentProgress возвращает текущий незавершённый прогресс уровня.
+// БЕЗ БЛОКИРОВКИ — для чтения.
 func GetCurrentProgress(db *gorm.DB, gamePassingID uint) (*LevelProgress, error) {
 	var progress LevelProgress
 	err := db.
@@ -215,18 +229,20 @@ func checkTimeoutsImpl(db *gorm.DB, ctx context.Context) {
 // CheckAutoStartGames автоматически запускает игры, у которых наступило время старта.
 // Запущена как горутина, останавливается через ctx.
 func CheckAutoStartGames(db *gorm.DB, ctx context.Context) {
+	progressSvc := NewLevelProgressService(db)
 	runPeriodic(db, ctx, periodicRunner{
 		interval: 30 * time.Second,
-		fn:       checkAutoStartGamesImpl,
+		fn:       func(db *gorm.DB, ctx context.Context) { checkAutoStartGamesImpl(db, ctx, progressSvc) },
 	})
 }
 
-func checkAutoStartGamesImpl(db *gorm.DB, ctx context.Context) {
+func checkAutoStartGamesImpl(db *gorm.DB, ctx context.Context, progressSvc *LevelProgressService) {
 	const batchSize = 20
 
 	var games []Game
 	now := time.Now()
 	if err := db.WithContext(ctx).
+		Preload("GameSetting").
 		Joins("JOIN game_settings ON game_settings.game_id = games.id").
 		Where("games.is_draft = false AND games.starts_at IS NOT NULL AND games.starts_at <= ? AND game_settings.auto_start = true", now).
 		Limit(batchSize).
@@ -263,7 +279,7 @@ func checkAutoStartGamesImpl(db *gorm.DB, ctx context.Context) {
 				log.Error().Err(err).Uint("passing_id", p.ID).Msg("CheckAutoStartGames: failed to update passing status")
 				continue
 			}
-			if err := NewLevelProgressService(db).InitFirstLevel(ctx, p.ID); err != nil {
+			if err := progressSvc.InitFirstLevel(ctx, p.ID); err != nil {
 				log.Error().Err(err).Uint("passing_id", p.ID).Msg("CheckAutoStartGames: failed to init first level")
 			}
 		}

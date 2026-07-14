@@ -229,9 +229,13 @@ func NewGameHandler(
 
 // ---------- Вспомогательная функция для ограничения размера тела запроса ----------
 
+// multipartOverhead — примерный размер multipart boundary и заголовков формы.
+const multipartOverhead = 2 * 1024 // 2 КБ
+
 func limitRequestBody(c *gin.Context, maxBytes int64) error {
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes)
-	if c.Request.ContentLength > maxBytes {
+	// Для multipart форм добавляем overhead на boundary и заголовки
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes+multipartOverhead)
+	if c.Request.ContentLength > maxBytes+multipartOverhead {
 		return fmt.Errorf("размер тела запроса превышает допустимый лимит (%d байт)", maxBytes)
 	}
 	return nil
@@ -548,24 +552,21 @@ func (h *GameHandler) Update(c *gin.Context) {
 				"Error": "Игра не найдена",
 				"csrf":  csrf.GetToken(c),
 			})
-		} else {
-			render.Page(c, http.StatusForbidden, "games-edit.html", gin.H{
-				"Game":  existingGame,
-				"Error": err.Error(),
-				"csrf":  csrf.GetToken(c),
-				// Передаём введённые значения
-				"Name":                 input.Name,
-				"Description":          input.Description,
-				"MaxTeamNumber":        input.MaxTeamNumber,
-				"Visibility":           input.Visibility,
-				"StartsAt":             input.StartsAt,
-				"RegistrationDeadline": input.RegistrationDeadline,
-			})
 			return
 		}
-
-		h.auditService.Log(userID, "update", "game", uint(id), input.Name)
-		c.Redirect(http.StatusFound, "/games/"+c.Param("id"))
+		render.Page(c, http.StatusForbidden, "games-edit.html", gin.H{
+			"Game":  existingGame,
+			"Error": err.Error(),
+			"csrf":  csrf.GetToken(c),
+			// Передаём введённые значения
+			"Name":                 input.Name,
+			"Description":          input.Description,
+			"MaxTeamNumber":        input.MaxTeamNumber,
+			"Visibility":           input.Visibility,
+			"StartsAt":             input.StartsAt,
+			"RegistrationDeadline": input.RegistrationDeadline,
+		})
+		return
 	}
 
 	h.auditService.Log(userID, "update", "game", uint(id), input.Name)

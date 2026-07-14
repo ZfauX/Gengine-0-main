@@ -442,27 +442,27 @@ func (app *App) registerUserRoutes(r *gin.Engine) {
 
 func (app *App) registerGameRoutes(r *gin.Engine) {
 	passingSvc := game.NewGamePassingService(app.DB, app.Deps.Services.Team, app.Deps.Services.CoAuthor, app.Deps.Services.Progress)
-	game.RegisterRoutes(
-		r,
-		app.DB,
-		app.Deps.Services.Game,
-		passingSvc,
-		app.Deps.Services.CoAuthor,
-		app.Deps.Services.Attempt,
-		app.Deps.Services.Progress,
-		app.Deps.Services.Monitor,
-		app.LocalStorage,
-		app.Hub,
-		app.Config,
-		app.Deps.AuditSvc,
-		app.Deps.Services.Auth,
-		app.Deps.Services.GamePlay,
-		app.Deps.Services.GameAdmin,
-		app.Deps.Services.Review,          // передаём ReviewService
-		app.Deps.Services.GameplayHandler, // передаём GameplayHandler для тестовых маршрутов
-		app.Deps.Services.PhotoService,    // передаём PhotoService
-		app.Deps.Services.Level,           // передаём LevelService
-	)
+
+	game.RegisterRoutes(r, &game.GameDeps{
+		DB:              app.DB,
+		GameService:     app.Deps.Services.Game,
+		PassingService:  passingSvc,
+		CoAuthorSvc:     app.Deps.Services.CoAuthor,
+		AttemptSvc:      app.Deps.Services.Attempt,
+		ProgressSvc:     app.Deps.Services.Progress,
+		MonitorSvc:      app.Deps.Services.Monitor,
+		LocalStorage:    app.LocalStorage,
+		Hub:             app.Hub,
+		Cfg:             app.Config,
+		AuditSvc:        app.Deps.AuditSvc,
+		AuthService:     app.Deps.Services.Auth,
+		GamePlaySvc:     app.Deps.Services.GamePlay,
+		GameAdminSvc:    app.Deps.Services.GameAdmin,
+		ReviewService:   app.Deps.Services.Review,
+		GameplayHandler: app.Deps.Services.GameplayHandler,
+		PhotoService:    app.Deps.Services.PhotoService,
+		LevelService:    app.Deps.Services.Level,
+	})
 }
 
 func (app *App) registerLevelRoutes(r *gin.Engine) {
