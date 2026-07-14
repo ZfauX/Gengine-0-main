@@ -3,7 +3,7 @@ package game
 
 import (
 	"fmt"
-	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -111,6 +111,20 @@ func (s *MonitorService) InvalidateCache(gameID uint) {
 	s.mu.Unlock()
 }
 
+// teamAggregatedData — данные для batch-анализа подозрительного поведения.
+type teamAggregatedData struct {
+	TeamID        uint
+	GamePassingID uint
+}
+
+// attemptRecord — запись об попытке для batch-анализа.
+type attemptRecord struct {
+	PassingID uint
+	Code      string
+	Success   bool
+	CreatedAt time.Time
+}
+
 // GameSnapshot формирует полную сводку по всем прохождениям игры.
 // Оптимизированная версия: использует агрегирующие SQL-запросы.
 func (s *MonitorService) GameSnapshot(gameID uint) ([]TeamProgress, error) {
@@ -182,7 +196,18 @@ func (s *MonitorService) GameSnapshot(gameID uint) ([]TeamProgress, error) {
 		currentLevelMap[cl.GamePassingID] = cl.LevelID
 	}
 
-	// 4. Формируем результат
+	// 4. Собираем данные для batch-анализа
+	teamData := make([]teamAggregatedData, 0, len(aggregated))
+	for _, a := range aggregated {
+		teamData = append(teamData, teamAggregatedData{
+			TeamID:        a.TeamID,
+			GamePassingID: a.GamePassingID,
+		})
+	}
+
+	// 5. Формируем результат
+	suspiciousMap := s.analyzeTeamsBehavior(teamData, gameID)
+
 	result := make([]TeamProgress, 0, len(aggregated))
 	for _, a := range aggregated {
 		tp := TeamProgress{
@@ -207,11 +232,11 @@ func (s *MonitorService) GameSnapshot(gameID uint) ([]TeamProgress, error) {
 			tp.CurrentLevel = &cur
 		}
 
-		// Проверка на подозрительное поведение (можно оставить как есть или упростить)
-		// Для производительности можно пропустить анализ или делать его асинхронно
-		sus, reason := s.analyzeTeamBehavior(a.TeamID, gameID)
-		tp.Suspicious = sus
-		tp.SuspiciousReason = reason
+		// Подозрительное поведение (из batch-анализа)
+		if reason, ok := suspiciousMap[a.TeamID]; ok {
+			tp.Suspicious = true
+			tp.SuspiciousReason = reason
+		}
 
 		result = append(result, tp)
 	}
@@ -267,18 +292,36 @@ func (s *MonitorService) CalculateResults(gameID uint) error {
 		results = append(results, passingResult{ID: p.ID, Duration: total})
 	}
 
-	// Batch update durations и места
-	sort.Slice(results, func(i, j int) bool { return results[i].Duration < results[j].Duration })
+	// Batch update durations и места через UPDATE с CASE
+	if len(results) == 0 {
+		return nil
+	}
+
+	// Формируем SQL UPDATE с CASE для каждого passing
+	// result_duration = CASE id WHEN ? THEN ? ... END
+	// place = CASE id WHEN ? THEN ? ... END
+	var durationWHENs []string
+	var durationArgs []interface{}
+	var placeWHENs []string
+	var whereIDsStr []string
+
 	for i, res := range results {
-		duration := res.Duration
-		place := i + 1
-		updates := map[string]interface{}{
-			"result_duration": duration,
-			"place":           place,
-		}
-		if err := s.DB.Model(&GamePassing{}).Where("id = ?", res.ID).Updates(updates).Error; err != nil {
-			return err
-		}
+		durationWHENs = append(durationWHENs, fmt.Sprintf("WHEN %d THEN ?", res.ID))
+		durationArgs = append(durationArgs, res.Duration)
+		placeWHENs = append(placeWHENs, fmt.Sprintf("WHEN %d THEN %d", res.ID, i+1))
+		whereIDsStr = append(whereIDsStr, fmt.Sprintf("%d", res.ID))
+	}
+
+	idList := "(" + strings.Join(whereIDsStr, ", ") + ")"
+
+	query := fmt.Sprintf(
+		"UPDATE game_passings SET result_duration = CASE id %s ELSE result_duration END, place = CASE id %s ELSE place END WHERE id IN %s",
+		strings.Join(durationWHENs, " "),
+		strings.Join(placeWHENs, " "),
+		idList,
+	)
+	if err := s.DB.Exec(query, durationArgs...).Error; err != nil {
+		return err
 	}
 	return nil
 }
@@ -295,23 +338,104 @@ func (s *MonitorService) analyzeTeamBehavior(teamID, gameID uint) (bool, string)
 		return false, ""
 	}
 
+	// Временная обёртка для совместимости
+	teamData := []teamAggregatedData{{TeamID: teamID, GamePassingID: passings[0]}}
+	for _, pid := range passings {
+		teamData = append(teamData, teamAggregatedData{TeamID: teamID, GamePassingID: pid})
+	}
+	suspiciousMap := s.analyzeTeamsBehavior(teamData, gameID)
+	if reason, ok := suspiciousMap[teamID]; ok {
+		return true, reason
+	}
+	return false, ""
+}
+
+// analyzeTeamsBehavior — batch-версия: проверяет все команды одним запросом.
+// Возвращает map[teamID]suspiciousReason.
+func (s *MonitorService) analyzeTeamsBehavior(teamData []teamAggregatedData, gameID uint) map[uint]string {
+	// Собираем уникальные teamID и их passingIDs
+	type teamPassings struct {
+		TeamID     uint
+		PassingIDs []uint
+	}
+	teamMap := make(map[uint]*teamPassings)
+	for _, td := range teamData {
+		if tp, ok := teamMap[td.TeamID]; ok {
+			tp.PassingIDs = append(tp.PassingIDs, td.GamePassingID)
+		} else {
+			teamMap[td.TeamID] = &teamPassings{TeamID: td.TeamID, PassingIDs: []uint{td.GamePassingID}}
+		}
+	}
+
+	if len(teamMap) == 0 {
+		return nil
+	}
+
+	// Собираем все passingIDs для batch-запроса
+	var allPassingIDs []uint
+	for _, tp := range teamMap {
+		allPassingIDs = append(allPassingIDs, tp.PassingIDs...)
+	}
+
 	fiveMinAgo := time.Now().Add(-5 * time.Minute)
-	var attempts []Attempt
-	err = s.DB.Joins("JOIN level_progresses ON level_progresses.id = attempts.level_progress_id").
-		Where("level_progresses.game_passing_id IN ? AND attempts.created_at >= ?", passings, fiveMinAgo).
+	var attempts []attemptRecord
+	err := s.DB.Table("attempts").
+		Select("attempts.level_progress_id, attempts.code, attempts.success, attempts.created_at").
+		Joins("JOIN level_progresses ON level_progresses.id = attempts.level_progress_id").
+		Where("level_progresses.game_passing_id IN ? AND attempts.created_at >= ?", allPassingIDs, fiveMinAgo).
 		Order("attempts.created_at ASC").
 		Find(&attempts).Error
 	if err != nil {
-		return false, ""
+		return nil
+	}
+	if len(attempts) == 0 {
+		return nil
 	}
 
+	// Группируем attempts по passingID
+	attemptsByPassing := make(map[uint][]attemptRecord)
+	for _, a := range attempts {
+		attemptsByPassing[a.PassingID] = append(attemptsByPassing[a.PassingID], a)
+	}
+
+	// Группируем passingID по teamID
+	passingToTeam := make(map[uint]uint)
+	for _, tp := range teamMap {
+		for _, pid := range tp.PassingIDs {
+			passingToTeam[pid] = tp.TeamID
+		}
+	}
+
+	// Анализируем подозрительное поведение по passingID
+	suspiciousPassings := make(map[uint]string)
+	for pid, atts := range attemptsByPassing {
+		reason := checkSuspiciousAttempts(atts)
+		if reason != "" {
+			suspiciousPassings[pid] = reason
+		}
+	}
+
+	// Группируем подозрительные passing по teamID
+	suspiciousMap := make(map[uint]string)
+	for pid, reason := range suspiciousPassings {
+		teamID := passingToTeam[pid]
+		if _, exists := suspiciousMap[teamID]; !exists {
+			suspiciousMap[teamID] = reason
+		}
+	}
+
+	return suspiciousMap
+}
+
+// checkSuspiciousAttempts проверяет список попыток на подозрительное поведение.
+func checkSuspiciousAttempts(attempts []attemptRecord) string {
 	if len(attempts) == 0 {
-		return false, ""
+		return ""
 	}
 
 	rate := float64(len(attempts)) / 5.0 // попыток в минуту
 	if rate > 10 {
-		return true, fmt.Sprintf("Подозрительная частота: %.1f попыток/мин", rate)
+		return fmt.Sprintf("Подозрительная частота: %.1f попыток/мин", rate)
 	}
 
 	var lastCode string
@@ -321,7 +445,7 @@ func (s *MonitorService) analyzeTeamBehavior(teamID, gameID uint) (bool, string)
 			if a.Code == lastCode {
 				streak++
 				if streak >= 3 {
-					return true, fmt.Sprintf("Брутфорс: код '%s' введён %d раз подряд", a.Code, streak+1)
+					return fmt.Sprintf("Брутфорс: код '%s' введён %d раз подряд", a.Code, streak+1)
 				}
 			} else {
 				lastCode = a.Code
@@ -332,5 +456,5 @@ func (s *MonitorService) analyzeTeamBehavior(teamID, gameID uint) (bool, string)
 			streak = 0
 		}
 	}
-	return false, ""
+	return ""
 }

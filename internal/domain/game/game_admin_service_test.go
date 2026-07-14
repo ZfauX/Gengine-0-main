@@ -157,13 +157,14 @@ func createBlackboxLevel(t *testing.T, db *gorm.DB, gameID uint, name string, po
 	return lvl
 }
 
-func setupGameAdminTest(t *testing.T) (*gorm.DB, *game.GameAdminService) {
+func setupGameAdminTest(t *testing.T) (*gorm.DB, *game.GameAdminService, *game.LevelProgressService) {
 	t.Helper()
 	db := testutil.SetupPostgresDB(t, allModels...)
 	coAuthorSvc := game.NewCoAuthorService(db)
 	cfg := &config.Config{}
 	adminSvc := game.NewGameAdminService(db, coAuthorSvc, cfg)
-	return db, adminSvc
+	progressSvc := game.NewLevelProgressService(db)
+	return db, adminSvc, progressSvc
 }
 
 func createGameAdminTestData(t *testing.T, db *gorm.DB) (*game.Game, *game.GamePassing, *user.User) {
@@ -180,7 +181,7 @@ func createGameAdminTestData(t *testing.T, db *gorm.DB) (*game.Game, *game.GameP
 }
 
 func TestGameAdminService_ForceFinishGame(t *testing.T) {
-	db, adminSvc := setupGameAdminTest(t)
+	db, adminSvc, _ := setupGameAdminTest(t)
 	g, passing, _ := createGameAdminTestData(t, db)
 
 	otherUser := createUser(t, db, "other@test.com", "pass")
@@ -205,7 +206,7 @@ func TestGameAdminService_ForceFinishGame(t *testing.T) {
 }
 
 func TestGameAdminService_ForceFinishGame_NoActive(t *testing.T) {
-	db, adminSvc := setupGameAdminTest(t)
+	db, adminSvc, _ := setupGameAdminTest(t)
 	author := createUser(t, db, "author@test.com", "pass")
 	g := createPublishedGameWithSettings(t, db, author.ID, "No Active Game")
 
@@ -215,7 +216,7 @@ func TestGameAdminService_ForceFinishGame_NoActive(t *testing.T) {
 }
 
 func TestGameAdminService_DisqualifyTeam(t *testing.T) {
-	db, adminSvc := setupGameAdminTest(t)
+	db, adminSvc, _ := setupGameAdminTest(t)
 	g, passing, _ := createGameAdminTestData(t, db)
 
 	err := adminSvc.DisqualifyTeam(context.Background(), g.ID, passing.TeamID)
@@ -232,7 +233,7 @@ func TestGameAdminService_DisqualifyTeam(t *testing.T) {
 }
 
 func TestGameAdminService_DisqualifyTeam_NotInGame(t *testing.T) {
-	db, adminSvc := setupGameAdminTest(t)
+	db, adminSvc, _ := setupGameAdminTest(t)
 	author := createUser(t, db, "author@test.com", "pass")
 	g := createPublishedGameWithSettings(t, db, author.ID, "Disq Game")
 	tm := createTeam(t, db, author.ID)
@@ -243,10 +244,10 @@ func TestGameAdminService_DisqualifyTeam_NotInGame(t *testing.T) {
 }
 
 func TestGameAdminService_DeleteLevelFromActiveGame(t *testing.T) {
-	db, adminSvc := setupGameAdminTest(t)
+	db, adminSvc, progressSvc := setupGameAdminTest(t)
 	g, passing, author := createGameAdminTestData(t, db)
 
-	progress, err := game.GetCurrentProgress(db, passing.ID)
+	progress, err := progressSvc.GetCurrentProgress(context.Background(), passing.ID)
 	require.NoError(t, err)
 	levelID := progress.LevelID
 
@@ -268,17 +269,17 @@ func TestGameAdminService_DeleteLevelFromActiveGame(t *testing.T) {
 	assert.Equal(t, gorm.ErrRecordNotFound, err)
 
 	// Проверяем, что прогресс переключился на следующий уровень
-	updatedProgress, err := game.GetCurrentProgress(db, passing.ID)
+	updatedProgress, err := progressSvc.GetCurrentProgress(context.Background(), passing.ID)
 	require.NoError(t, err)
 	assert.Equal(t, nextLevel.ID, updatedProgress.LevelID)
 }
 
 func TestGameAdminService_DeleteLevelFromActiveGame_NotAuthor(t *testing.T) {
-	db, adminSvc := setupGameAdminTest(t)
+	db, adminSvc, progressSvc := setupGameAdminTest(t)
 	g, passing, _ := createGameAdminTestData(t, db)
 	other := createUser(t, db, "other@test.com", "pass")
 
-	progress, err := game.GetCurrentProgress(db, passing.ID)
+	progress, err := progressSvc.GetCurrentProgress(context.Background(), passing.ID)
 	require.NoError(t, err)
 
 	err = adminSvc.DeleteLevelFromActiveGame(context.Background(), g.ID, progress.LevelID, other.ID)

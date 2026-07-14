@@ -9,8 +9,14 @@
         <form id="upload-photo-form" enctype="multipart/form-data" class="flex flex-wrap items-center gap-3">
             <input type="file" name="photo" accept="image/jpeg,image/png,image/webp" required
                    class="flex-1 text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
-            <button type="submit" class="btn btn-primary text-sm whitespace-nowrap">Загрузить фото</button>
+            <button type="submit" id="upload-btn" class="btn btn-primary text-sm whitespace-nowrap">Загрузить фото</button>
         </form>
+        <div id="upload-progress" class="mt-3 hidden">
+            <div class="w-full bg-gray-200 rounded-full h-2">
+                <div id="upload-progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-150" style="width:0%"></div>
+            </div>
+            <p id="upload-progress-text" class="text-xs text-gray-500 mt-1"></p>
+        </div>
         <div id="upload-status" class="mt-3 text-sm"></div>
     </div>
 
@@ -19,10 +25,11 @@
     <div id="photos-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {{range .Photos}}
         <div class="photo-card bg-white rounded-lg overflow-hidden shadow-sm border border-gray-200 transition hover:shadow-md" data-photo-id="{{.ID}}">
-            <img src="{{.Path}}" alt="Фото" class="w-full h-48 object-cover cursor-pointer photo-thumb"
+            <img src="{{.Path}}" alt="Фото" loading="lazy" class="w-full h-48 object-cover cursor-pointer photo-thumb transition-opacity duration-300 opacity-0"
                  data-path="{{.Path}}"
                  data-user="{{.User.Name}}"
-                 data-date="{{.CreatedAt.Format "2006-01-02 15:04:05"}}">
+                 data-date="{{.CreatedAt.Format "2006-01-02 15:04:05"}}"
+                 onload="this.classList.remove('opacity-0')">
             <div class="p-3">
                 <p class="font-semibold text-gray-800 text-sm">{{.User.Name}}</p>
                 <p class="text-xs text-gray-500">{{.CreatedAt.Format "02.01.2006 15:04"}}</p>
@@ -60,9 +67,24 @@
             return meta ? meta.getAttribute('content') : '';
         }
 
-        // Загрузка фото
+        function escapeHtml(text) {
+            const map = { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;' };
+            return String(text).replace(/[&<>"']/g, m => map[m]);
+        }
+
+        function formatBytes(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / 1048576).toFixed(1) + ' MB';
+        }
+
+        // Загрузка фото с progress bar
         const uploadForm = document.getElementById('upload-photo-form');
         const uploadStatus = document.getElementById('upload-status');
+        const uploadProgress = document.getElementById('upload-progress');
+        const uploadProgressBar = document.getElementById('upload-progress-bar');
+        const uploadProgressText = document.getElementById('upload-progress-text');
+        const uploadBtn = document.getElementById('upload-btn');
 
         uploadForm.addEventListener('submit', function(e) {
             e.preventDefault();
@@ -73,30 +95,52 @@
             const formData = new FormData();
             formData.append('photo', file);
 
-            fetch('/games/' + gameID + '/photos', {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: { 'X-CSRF-TOKEN': getCsrfToken() },
-                body: formData
-            })
-            .then(r => {
-                if (!r.ok) {
-                    throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+            uploadProgress.classList.remove('hidden');
+            uploadBtn.disabled = true;
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/games/' + gameID + '/photos');
+            xhr.setRequestHeader('X-CSRF-TOKEN', getCsrfToken());
+
+            xhr.upload.addEventListener('progress', function(e) {
+                if (e.lengthComputable) {
+                    const pct = Math.round((e.loaded / e.total) * 100);
+                    uploadProgressBar.style.width = pct + '%';
+                    uploadProgressText.textContent = `Загрузка: ${pct}% (${formatBytes(e.loaded)} / ${formatBytes(e.total)})`;
                 }
-                return r.json();
-            })
-            .then(data => {
-                if (data.error) {
-                    uploadStatus.innerHTML = `<span class="text-red-600">${data.error}</span>`;
-                } else {
-                    uploadStatus.innerHTML = '<span class="text-green-600">Фото загружено! Обновление...</span>';
-                    setTimeout(() => location.reload(), 1000);
-                }
-            })
-            .catch(err => {
-                console.error('Upload error:', err);
-                uploadStatus.innerHTML = '<span class="text-red-600">Ошибка загрузки: ' + err.message + '</span>';
             });
+
+            xhr.addEventListener('load', function() {
+                uploadProgressBar.style.width = '100%';
+                if (xhr.status >= 200 && xhr.status < 400) {
+                    try {
+                        const data = JSON.parse(xhr.responseText);
+                        if (data.error) {
+                            uploadStatus.innerHTML = `<span class="text-red-600">${escapeHtml(data.error)}</span>`;
+                            uploadBtn.disabled = false;
+                            setTimeout(() => uploadProgress.classList.add('hidden'), 1000);
+                        } else {
+                            uploadStatus.innerHTML = '<span class="text-green-600">Фото загружено! Обновление...</span>';
+                            setTimeout(() => location.reload(), 800);
+                        }
+                    } catch(_) {
+                        uploadStatus.innerHTML = '<span class="text-green-600">Фото загружено! Обновление...</span>';
+                        setTimeout(() => location.reload(), 800);
+                    }
+                } else {
+                    uploadStatus.innerHTML = `<span class="text-red-600">Ошибка: HTTP ${xhr.status}</span>`;
+                    uploadBtn.disabled = false;
+                    setTimeout(() => uploadProgress.classList.add('hidden'), 1000);
+                }
+            });
+
+            xhr.addEventListener('error', function() {
+                uploadStatus.innerHTML = '<span class="text-red-600">Ошибка сети</span>';
+                uploadBtn.disabled = false;
+                setTimeout(() => uploadProgress.classList.add('hidden'), 1000);
+            });
+
+            xhr.send(formData);
         });
 
         // Открытие модального окна
@@ -137,7 +181,7 @@
             if (!btn) return;
             const photoID = btn.dataset.photoId;
             if (!photoID) return;
-            if (!confirm('Удалить это фото?')) return;
+            if (!confirm('Удалить это фото? Действие необратимо.')) return;
             fetch('/games/' + gameID + '/photos/' + photoID, {
                 method: 'DELETE',
                 credentials: 'same-origin',
@@ -151,7 +195,13 @@
             })
             .then(data => {
                 if (data.status === 'ok') {
-                    location.reload();
+                    // Remove card with fade-out instead of full reload
+                    const card = btn.closest('.photo-card');
+                    if (card) {
+                        card.style.transition = 'opacity 0.3s';
+                        card.style.opacity = '0';
+                        setTimeout(() => card.remove(), 300);
+                    }
                 } else {
                     alert('Ошибка удаления');
                 }

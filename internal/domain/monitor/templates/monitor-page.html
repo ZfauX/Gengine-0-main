@@ -18,6 +18,7 @@
         if (!container) return;
 
         const gameID = container.dataset.gameId;
+        const csrfToken = '{{.csrf}}';
         const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${wsProtocol}//${location.host}/games/${gameID}/monitor/ws`;
         let socket;
@@ -26,9 +27,13 @@
         let reconnectTimer = null;
         const MAX_RECONNECT_DELAY = 30000;
         const BASE_RECONNECT_DELAY = 1000;
+        const MAX_RECONNECT_ATTEMPTS = 5;
+        const POLL_INTERVAL = 10000;
 
         const teamsContainer = document.getElementById('teams-container');
         const statusEl = document.getElementById('connection-status');
+        let pollingTimer = null;
+        let wsConnected = false;
 
         function updateConnectionStatus(text, color = '#888') {
             if (statusEl) {
@@ -38,11 +43,14 @@
         }
 
         function connect() {
+            if (wsConnected) return;
             socket = new WebSocket(wsUrl);
             socket.onopen = function() {
                 console.log('Мониторинг: WebSocket подключён');
-                updateConnectionStatus('Подключено', '#2ecc71');
+                updateConnectionStatus('Подключено (реальное время)', '#2ecc71');
                 reconnectAttempts = 0;
+                wsConnected = true;
+                stopPolling();
             };
             socket.onmessage = function(e) {
                 try {
@@ -54,12 +62,12 @@
                 }
             };
             socket.onclose = function(event) {
+                wsConnected = false;
                 if (event.wasClean) {
                     console.log('Мониторинг: WebSocket закрыт чисто');
                 } else {
                     console.log('Мониторинг: WebSocket обрыв, переподключение...');
                 }
-                updateConnectionStatus('Переподключение...', '#e67e22');
                 scheduleReconnect();
             };
             socket.onerror = function(error) {
@@ -70,6 +78,14 @@
 
         function scheduleReconnect() {
             if (reconnectTimer) clearTimeout(reconnectTimer);
+
+            if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+                console.log('Мониторинг: превышен лимит попыток, переключение на polling');
+                updateConnectionStatus('Переключение на периодическое обновление...', '#e67e22');
+                startPolling();
+                return;
+            }
+
             const delay = Math.min(MAX_RECONNECT_DELAY, BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts));
             reconnectAttempts++;
             console.log(`Мониторинг: переподключение через ${delay}ms (попытка ${reconnectAttempts})`);
@@ -77,6 +93,44 @@
             reconnectTimer = setTimeout(() => {
                 connect();
             }, delay);
+        }
+
+        // Polling fallback
+        function startPolling() {
+            stopPolling();
+            fetchInitialData();
+            pollingTimer = setInterval(fetchInitialData, POLL_INTERVAL);
+        }
+
+        function stopPolling() {
+            if (pollingTimer) {
+                clearInterval(pollingTimer);
+                pollingTimer = null;
+            }
+        }
+
+        function fetchInitialData() {
+            fetch(`/games/${gameID}/monitor/data`, {
+                headers: { 'X-CSRF-TOKEN': csrfToken }
+            })
+            .then(r => {
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                return r.json();
+            })
+            .then(data => {
+                teamsData = data.teams || data || [];
+                renderTeams();
+                updateConnectionStatus('Обновление каждые 10с (polling)', '#3498db');
+                // Try reconnecting WS in background
+                if (!wsConnected && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                    reconnectAttempts = 0;
+                    connect();
+                }
+            })
+            .catch(err => {
+                console.error('Мониторинг: ошибка polling', err);
+                updateConnectionStatus('Ошибка получения данных', '#e74c3c');
+            });
         }
 
         function formatTime(seconds) {
@@ -122,6 +176,14 @@
                             <span>⚠️</span> ${escapeHtml(team.suspicious_reason || 'Подозрительная активность')}
                         </div>
                     ` : ''}
+
+                    ${!team.finished && !team.suspicious ? `
+                        <div class="mt-3">
+                            <button onclick="disqualifyTeam(${team.team_id})" class="btn btn-danger text-xs w-full">
+                                Дисквалифицировать
+                            </button>
+                        </div>
+                    ` : ''}
                 `;
                 teamsContainer.appendChild(card);
             });
@@ -138,6 +200,32 @@
             return String(text).replace(/[&<>"']/g, m => map[m]);
         }
 
+        // Дисквалификация команды с подтверждением
+        window.disqualifyTeam = function(teamId) {
+            if (!confirm('Дисквалифицировать команду? Капитан получит уведомление по email.')) {
+                return;
+            }
+
+            fetch(`/games/${gameID}/disqualify`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `_csrf=${encodeURIComponent(csrfToken)}&team_id=${teamId}`
+            })
+            .then(r => {
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                return r.text();
+            })
+            .then(() => {
+                console.log(`Команда #${teamId} дисквалифицирована`);
+            })
+            .catch(err => {
+                console.error('Дисквалификация:', err);
+                alert('Ошибка при дисквалификации: ' + err.message);
+            });
+        };
+
         // Запуск
         connect();
 
@@ -148,6 +236,7 @@
                 socket.close();
             }
             if (reconnectTimer) clearTimeout(reconnectTimer);
+            stopPolling();
         });
     })();
 </script>

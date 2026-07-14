@@ -2,7 +2,9 @@
 package calendar
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"gengine-0/internal/domain/game"
@@ -88,4 +90,66 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 		"month":  req.Month,
 		"events": events,
 	})
+}
+
+// CalendarICal экспортирует предстоящие игры в формате iCalendar (.ics).
+func (h *CalendarHandler) CalendarICal(c *gin.Context) {
+	now := time.Now()
+	startRange := now
+	endRange := now.AddDate(1, 0, 0) // 1 год вперёд
+
+	ctx := c.Request.Context()
+	games, err := h.gameRepo.ListByDateRange(ctx, startRange, endRange)
+	if err != nil {
+		log.Error().Err(err).Msg("CalendarICal: failed to list games")
+		appErr := apperrors.NewInternalError(err)
+		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
+			"error": appErr.Message,
+			"code":  appErr.Code,
+		})
+		return
+	}
+
+	var sb strings.Builder
+	sb.WriteString("BEGIN:VCALENDAR\r\n")
+	sb.WriteString("VERSION:2.0\r\n")
+	sb.WriteString("PRODID:-//Gengine//Encounter Engine//RU\r\n")
+	sb.WriteString("CALSCALE:GREGORIAN\r\n")
+	sb.WriteString("METHOD:PUBLISH\r\n")
+
+	for _, g := range games {
+		if g.StartsAt == nil {
+			continue
+		}
+		start := g.StartsAt.UTC()
+		// Длительность по умолчанию — 2 часа
+		end := start.Add(2 * time.Hour)
+
+		sb.WriteString("BEGIN:VEVENT\r\n")
+		sb.WriteString(fmt.Sprintf("UID:%d-gengine@encounter\r\n", g.ID))
+		sb.WriteString(fmt.Sprintf("DTSTAMP:%s\r\n", now.UTC().Format("20060102T150405Z")))
+		sb.WriteString(fmt.Sprintf("DTSTART:%s\r\n", start.Format("20060102T150405Z")))
+		sb.WriteString(fmt.Sprintf("DTEND:%s\r\n", end.Format("20060102T150405Z")))
+		sb.WriteString(fmt.Sprintf("SUMMARY:%s\r\n", escapeICalText(g.Name)))
+		if g.Description != "" {
+			sb.WriteString(fmt.Sprintf("DESCRIPTION:%s\r\n", escapeICalText(g.Description)))
+		}
+		sb.WriteString(fmt.Sprintf("URL:https://%s/games/%d\r\n", c.Request.Host, g.ID))
+		sb.WriteString("END:VEVENT\r\n")
+	}
+
+	sb.WriteString("END:VCALENDAR\r\n")
+
+	c.Header("Content-Type", "text/calendar; charset=utf-8")
+	c.Header("Content-Disposition", `attachment; filename="encounter-calendar.ics"`)
+	c.String(http.StatusOK, sb.String())
+}
+
+// escapeICalText экранирует спецсимволы для формата iCalendar.
+func escapeICalText(text string) string {
+	text = strings.ReplaceAll(text, `\`, `\`)
+	text = strings.ReplaceAll(text, ";", `\;`)
+	text = strings.ReplaceAll(text, ",", `\,`)
+	text = strings.ReplaceAll(text, "\n", `\n`)
+	return text
 }

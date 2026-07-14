@@ -37,18 +37,18 @@
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm space-x-2">
                         {{if eq .Status "pending"}}
-                        <form action="/games/{{$.GameID}}/passings/{{.ID}}/status" method="POST" class="inline">
+                        <form action="/games/{{$.GameID}}/passings/{{.ID}}/status" method="POST" class="inline" onsubmit="return confirm('Принять заявку от команды «{{.Team.Name}}»?')">
                             <input type="hidden" name="_csrf" value="{{$.csrf}}">
                             <input type="hidden" name="status" value="accepted">
                             <button type="submit" class="btn btn-primary text-xs">Принять</button>
                         </form>
-                        <form action="/games/{{$.GameID}}/passings/{{.ID}}/status" method="POST" class="inline">
+                        <form action="/games/{{$.GameID}}/passings/{{.ID}}/status" method="POST" class="inline" onsubmit="return confirm('Отклонить заявку от команды «{{.Team.Name}}»?')">
                             <input type="hidden" name="_csrf" value="{{$.csrf}}">
                             <input type="hidden" name="status" value="rejected">
                             <button type="submit" class="btn btn-danger text-xs">Отклонить</button>
                         </form>
                         {{else if eq .Status "accepted"}}
-                        <form action="/games/{{$.GameID}}/passings/{{.ID}}/start" method="POST" class="inline">
+                        <form action="/games/{{$.GameID}}/passings/{{.ID}}/start" method="POST" class="inline" onsubmit="return confirm('Начать игру для команды «{{.Team.Name}}»?')">
                             <input type="hidden" name="_csrf" value="{{$.csrf}}">
                             <button type="submit" class="btn btn-primary text-xs">Начать игру</button>
                         </form>

@@ -68,6 +68,18 @@ func RegisterRoutes(
 		// @Router /games/{id}/monitor/stream [get]
 		// @Security JWT
 		gameGroup.GET("/monitor/stream", monitorHandler.MonitorStreamSSE)
+
+		// @Summary Данные мониторинга (JSON)
+		// @Description Возвращает текущий snapshot прогресса игры в формате JSON. Используется как fallback при недоступности WebSocket.
+		// @Tags monitor
+		// @Produce json
+		// @Param id path int true "ID игры"
+		// @Success 200 {object} map[string]interface{} "Snapshot прогресса команд"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+		// @Router /games/{id}/monitor/data [get]
+		// @Security JWT
+		gameGroup.GET("/monitor/data", monitorHandler.MonitorData)
 	}
 
 	// @Summary WebSocket мониторинга

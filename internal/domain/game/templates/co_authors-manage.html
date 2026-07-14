@@ -13,7 +13,7 @@
                     <span class="font-medium text-gray-800">{{.User.Name}}</span>
                     <span class="text-sm text-gray-500 ml-2">({{.User.Email}})</span>
                 </div>
-                <form action="/games/{{$.GameID}}/co-authors/{{.UserID}}/remove" method="POST" class="inline">
+                <form action="/games/{{$.GameID}}/co-authors/{{.UserID}}/remove" method="POST" class="inline" onsubmit="return confirm('Удалить соавтора «{{.User.Name}}»?')">
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
                     <button type="submit" class="btn btn-danger text-xs">Удалить</button>
                 </form>

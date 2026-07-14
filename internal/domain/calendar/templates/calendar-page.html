@@ -7,10 +7,13 @@
 
     <div class="card">
         <!-- Управление месяцем -->
-        <div class="flex justify-between items-center mb-4">
+        <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
             <button id="prev-month" class="btn btn-outline text-sm">← Предыдущий</button>
             <h2 id="month-year" class="text-xl font-semibold text-gray-800 m-0"></h2>
-            <button id="next-month" class="btn btn-outline text-sm">Следующий →</button>
+            <div class="flex gap-2">
+                <a href="/calendar/export.ics" class="btn btn-outline text-sm" title="Экспорт в iCal">📅 Экспорт .ics</a>
+                <button id="next-month" class="btn btn-outline text-sm">Следующий →</button>
+            </div>
         </div>
 
         <!-- Календарная сетка -->

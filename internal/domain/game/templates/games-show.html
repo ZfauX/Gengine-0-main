@@ -79,7 +79,7 @@
     <div class="flex flex-wrap gap-3 mb-6">
         {{if .IsManager}}
             {{if .Game.IsDraft}}
-            <form action="/games/{{.Game.ID}}/publish" method="POST" class="inline">
+            <form action="/games/{{.Game.ID}}/publish" method="POST" class="inline" onsubmit="return confirm('Опубликовать игру? После публикации она станет видимой для игроков.')">
                 <input type="hidden" name="_csrf" value="{{.csrf}}">
                 <button type="submit" class="btn btn-primary text-sm">Опубликовать</button>
             </form>

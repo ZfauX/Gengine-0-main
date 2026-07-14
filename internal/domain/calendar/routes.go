@@ -30,4 +30,13 @@ func RegisterRoutes(router *gin.Engine, gameRepo game.GameRepository) {
 	// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
 	// @Router /api/v1/calendar [get]
 	router.GET("/api/v1/calendar", calendarHandler.CalendarData)
+
+	// @Summary Экспорт календаря в iCal
+	// @Description Возвращает .ics файл с предстоящими играми для импорта в внешние календари (Google Calendar, Apple Calendar и др.)
+	// @Tags calendar
+	// @Produce text/calendar
+	// @Success 200 {string} string "iCalendar файл"
+	// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+	// @Router /calendar/export.ics [get]
+	router.GET("/calendar/export.ics", calendarHandler.CalendarICal)
 }

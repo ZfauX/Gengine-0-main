@@ -3,8 +3,12 @@
     <div class="max-w-md w-full text-center">
         <div class="text-6xl mb-6">😕</div>
         <h1 class="text-2xl font-bold text-gray-800 mb-4">400 — Неверный запрос</h1>
-        {{if .Error}}<p class="text-red-600 mb-6">{{.Error}}</p>{{end}}
-        <a href="/" class="btn btn-primary text-sm inline-block">На главную</a>
+        {{if .Error}}<p class="text-red-600 mb-2">{{.Error}}</p>{{end}}
+        <p class="text-sm text-gray-400 mb-6">Проверьте введённые данные и попробуйте снова.</p>
+        <div class="flex flex-wrap gap-3 justify-center">
+            <a href="/" class="btn btn-primary text-sm inline-block">На главную</a>
+            <button onclick="history.back()" class="btn btn-outline text-sm inline-block">← Назад</button>
+        </div>
     </div>
 </div>
 {{end}}
