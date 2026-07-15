@@ -311,8 +311,8 @@ func (s *GameService) GetAverageRating(ctx context.Context, gameID uint) (float6
 }
 
 // IsUserManager делегирует CoAuthorService.
-func (s *GameService) IsUserManager(gameID, userID uint) (bool, error) {
-	return s.coAuthorSvc.IsUserManager(gameID, userID)
+func (s *GameService) IsUserManager(ctx context.Context, gameID, userID uint) (bool, error) {
+	return s.coAuthorSvc.IsUserManager(ctx, gameID, userID)
 }
 
 // GetPassingByUser возвращает активное passing для игры и пользователя.

@@ -82,7 +82,7 @@ func (s *TeamService) CanManageTeam(ctx context.Context, teamID, userID uint) bo
 	if err != nil {
 		return false
 	}
-	isManager, _ := s.authorizer.IsUserManager(game.ID, userID)
+	isManager, _ := s.authorizer.IsUserManager(ctx, game.ID, userID)
 	return isManager
 }
 
@@ -184,7 +184,7 @@ func (s *InvitationService) CreateInvitation(ctx context.Context, teamID, invite
 		if err != nil {
 			return nil, errors.New("не удалось определить игру для команды")
 		}
-		isManager, _ := s.authorizer.IsUserManager(passing.GameID, actorID)
+		isManager, _ := s.authorizer.IsUserManager(ctx, passing.GameID, actorID)
 		if !isManager {
 			return nil, errors.New("только капитан или автор игры может создавать приглашения")
 		}

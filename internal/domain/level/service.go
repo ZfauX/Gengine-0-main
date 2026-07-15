@@ -53,7 +53,7 @@ func (s *LevelService) GetByID(ctx context.Context, levelID uint) (*Level, error
 }
 
 func (s *LevelService) Create(ctx context.Context, gameID uint, level *Level, userID uint) error {
-	ok, err := s.authorizer.IsUserManager(gameID, userID)
+	ok, err := s.authorizer.IsUserManager(ctx, gameID, userID)
 	if err != nil {
 		return err
 	}
@@ -88,7 +88,7 @@ func (s *LevelService) Update(ctx context.Context, levelID uint, updated *Level,
 	if err != nil {
 		return err
 	}
-	ok, err := s.authorizer.IsUserManager(level.GameID, userID)
+	ok, err := s.authorizer.IsUserManager(ctx, level.GameID, userID)
 	if err != nil {
 		return err
 	}
@@ -130,7 +130,7 @@ func (s *LevelService) Duplicate(ctx context.Context, levelID, userID uint) (*Le
 	if err != nil {
 		return nil, err
 	}
-	ok, err := s.authorizer.IsUserManager(original.GameID, userID)
+	ok, err := s.authorizer.IsUserManager(ctx, original.GameID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +195,7 @@ func (s *LevelService) Move(ctx context.Context, levelID uint, direction string,
 	if err != nil {
 		return err
 	}
-	ok, err := s.authorizer.IsUserManager(level.GameID, userID)
+	ok, err := s.authorizer.IsUserManager(ctx, level.GameID, userID)
 	if err != nil {
 		return err
 	}
@@ -283,7 +283,7 @@ func (s *QuestionService) Create(ctx context.Context, levelID uint, question *Qu
 	if err != nil {
 		return err
 	}
-	ok, err := s.authorizer.IsUserManager(level.GameID, userID)
+	ok, err := s.authorizer.IsUserManager(ctx, level.GameID, userID)
 	if err != nil {
 		return err
 	}
@@ -303,7 +303,7 @@ func (s *QuestionService) Update(ctx context.Context, questionID uint, updated *
 	if err != nil {
 		return err
 	}
-	ok, err := s.authorizer.IsUserManager(level.GameID, userID)
+	ok, err := s.authorizer.IsUserManager(ctx, level.GameID, userID)
 	if err != nil {
 		return err
 	}
@@ -324,7 +324,7 @@ func (s *QuestionService) Delete(ctx context.Context, questionID uint, userID ui
 	if err != nil {
 		return err
 	}
-	ok, err := s.authorizer.IsUserManager(level.GameID, userID)
+	ok, err := s.authorizer.IsUserManager(ctx, level.GameID, userID)
 	if err != nil {
 		return err
 	}
@@ -370,7 +370,7 @@ func (s *AnswerService) Create(ctx context.Context, questionID uint, answer *Ans
 	if err != nil {
 		return err
 	}
-	ok, err := s.authorizer.IsUserManager(level.GameID, userID)
+	ok, err := s.authorizer.IsUserManager(ctx, level.GameID, userID)
 	if err != nil {
 		return err
 	}
@@ -395,7 +395,7 @@ func (s *AnswerService) Delete(ctx context.Context, answerID uint, userID uint) 
 	if err != nil {
 		return err
 	}
-	ok, err := s.authorizer.IsUserManager(level.GameID, userID)
+	ok, err := s.authorizer.IsUserManager(ctx, level.GameID, userID)
 	if err != nil {
 		return err
 	}

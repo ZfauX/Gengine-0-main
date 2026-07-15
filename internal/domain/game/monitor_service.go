@@ -2,6 +2,7 @@
 package game
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -53,7 +54,7 @@ type TeamProgress struct {
 
 // GetOrFetchSnapshot возвращает снимок игры: из кэша, если TTL не истёк, иначе из БД.
 // Использует singleflight для предотвращения множественных одновременных запросов к БД.
-func (s *MonitorService) GetOrFetchSnapshot(gameID uint) ([]TeamProgress, error) {
+func (s *MonitorService) GetOrFetchSnapshot(ctx context.Context, gameID uint) ([]TeamProgress, error) {
 	// Быстрая проверка кэша с RLock
 	s.mu.RLock()
 	if cached, ok := s.cache[gameID]; ok && time.Since(cached.timestamp) < s.cacheTTL {
@@ -74,7 +75,7 @@ func (s *MonitorService) GetOrFetchSnapshot(gameID uint) ([]TeamProgress, error)
 		s.mu.RUnlock()
 
 		// Загрузка из БД
-		snapshot, err := s.GameSnapshot(gameID)
+		snapshot, err := s.GameSnapshot(ctx, gameID)
 		if err != nil {
 			return nil, err
 		}
@@ -127,10 +128,10 @@ type attemptRecord struct {
 
 // GameSnapshot формирует полную сводку по всем прохождениям игры.
 // Оптимизированная версия: использует агрегирующие SQL-запросы.
-func (s *MonitorService) GameSnapshot(gameID uint) ([]TeamProgress, error) {
+func (s *MonitorService) GameSnapshot(ctx context.Context, gameID uint) ([]TeamProgress, error) {
 	// 1. Получаем общее количество уровней в игре
 	var totalLevels int64
-	if err := s.DB.Model(&level.Level{}).Where("game_id = ?", gameID).Count(&totalLevels).Error; err != nil {
+	if err := s.DB.WithContext(ctx).Model(&level.Level{}).Where("game_id = ?", gameID).Count(&totalLevels).Error; err != nil {
 		return nil, err
 	}
 
@@ -245,9 +246,9 @@ func (s *MonitorService) GameSnapshot(gameID uint) ([]TeamProgress, error) {
 }
 
 // CalculateResults пересчитывает итоговое время и места для завершённых прохождений.
-func (s *MonitorService) CalculateResults(gameID uint) error {
+func (s *MonitorService) CalculateResults(ctx context.Context, gameID uint) error {
 	var passings []GamePassing
-	if err := s.DB.Where("game_id = ? AND status = ?", gameID, StatusFinished).Find(&passings).Error; err != nil {
+	if err := s.DB.WithContext(ctx).Where("game_id = ? AND status = ?", gameID, StatusFinished).Find(&passings).Error; err != nil {
 		return err
 	}
 	if len(passings) == 0 {
@@ -324,30 +325,6 @@ func (s *MonitorService) CalculateResults(gameID uint) error {
 		return err
 	}
 	return nil
-}
-
-// analyzeTeamBehavior проверяет команду на подозрительную активность.
-// Упрощённая версия для снижения нагрузки.
-func (s *MonitorService) analyzeTeamBehavior(teamID, gameID uint) (bool, string) {
-	var passings []uint
-	err := s.DB.Model(&GamePassing{}).Where("game_id = ? AND team_id = ?", gameID, teamID).Pluck("id", &passings).Error
-	if err != nil {
-		return false, ""
-	}
-	if len(passings) == 0 {
-		return false, ""
-	}
-
-	// Временная обёртка для совместимости
-	teamData := []teamAggregatedData{{TeamID: teamID, GamePassingID: passings[0]}}
-	for _, pid := range passings {
-		teamData = append(teamData, teamAggregatedData{TeamID: teamID, GamePassingID: pid})
-	}
-	suspiciousMap := s.analyzeTeamsBehavior(teamData, gameID)
-	if reason, ok := suspiciousMap[teamID]; ok {
-		return true, reason
-	}
-	return false, ""
 }
 
 // analyzeTeamsBehavior — batch-версия: проверяет все команды одним запросом.
