@@ -141,6 +141,11 @@
             previewModal.classList.remove('flex');
         }
 
+        function escapeHtml(text) {
+            const map = { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;' };
+            return String(text).replace(/[&<>"']/g, m => map[m]);
+        }
+
         document.getElementById('preview-btn').addEventListener('click', function() {
             const now = Date.now();
             if (previewCache[gameID] && (now - previewCache[gameID].timestamp) < CACHE_TIMEOUT) {
@@ -148,7 +153,6 @@
                 openModal();
                 return;
             }
-            // Используем правильный URL
             fetch('/games/' + gameID + '/full-preview', {
                 headers: { 'Accept': 'application/json' },
                 credentials: 'same-origin'
@@ -168,7 +172,7 @@
             })
             .catch(err => {
                 console.error('Preview error:', err);
-                previewContent.innerHTML = `<p class="text-red-500">Ошибка загрузки: ${err.message}</p>`;
+                previewContent.innerHTML = `<p class="text-red-500">Ошибка загрузки: ${escapeHtml(err.message)}</p>`;
                 openModal();
             });
         });
@@ -190,14 +194,14 @@
             }
             let html = '';
             levels.forEach(lvl => {
-                html += `<div class="mb-4"><h3 class="font-semibold text-gray-800">${lvl.position}. ${lvl.name}</h3>`;
-                if (lvl.description) html += `<p class="text-sm text-gray-600 italic">${lvl.description}</p>`;
+                html += `<div class="mb-4"><h3 class="font-semibold text-gray-800">${escapeHtml(String(lvl.position))}. ${escapeHtml(lvl.name)}</h3>`;
+                if (lvl.description) html += `<p class="text-sm text-gray-600 italic">${escapeHtml(lvl.description)}</p>`;
                 lvl.questions.forEach(q => {
                     html += `<div class="ml-4 mt-2 pl-4 border-l-4 border-blue-400">`;
-                    html += `<p class="font-medium text-gray-700">${q.text}</p>`;
-                    if (q.hint) html += `<p class="text-sm text-gray-500">Подсказка: ${q.hint}</p>`;
+                    html += `<p class="font-medium text-gray-700">${escapeHtml(q.text)}</p>`;
+                    if (q.hint) html += `<p class="text-sm text-gray-500">Подсказка: ${escapeHtml(q.hint)}</p>`;
                     html += `<ul class="text-green-700 text-sm list-disc list-inside">`;
-                    q.answers.forEach(a => html += `<li>${a}</li>`);
+                    q.answers.forEach(a => html += `<li>${escapeHtml(a)}</li>`);
                     html += `</ul></div>`;
                 });
                 html += `</div>`;

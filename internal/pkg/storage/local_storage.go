@@ -96,6 +96,11 @@ func (s *LocalStorage) Save(baseDir string, reader io.Reader, originalName strin
 	// Создаём reader, который сначала отдаст заголовок, потом остаток исходного потока
 	dataReader := io.MultiReader(bytes.NewReader(header[:n]), reader)
 
+	// Ограничиваем размер на уровне reader — предотвращает переполнение диска
+	if maxSize > 0 {
+		dataReader = io.LimitReader(dataReader, maxSize+1) // +1 чтобы обнаружить превышение
+	}
+
 	// Создаём директорию
 	if err := os.MkdirAll(baseDir, 0755); err != nil {
 		return "", fmt.Errorf("не удалось создать директорию %s: %w", baseDir, err)
@@ -129,16 +134,24 @@ func (s *LocalStorage) Save(baseDir string, reader io.Reader, originalName strin
 		}
 	}()
 
-	if _, err := io.Copy(dst, dataReader); err != nil {
+	var written int64
+	written, err = io.Copy(dst, dataReader)
+	if err != nil && err != io.EOF {
 		return "", fmt.Errorf("не удалось записать файл: %w", err)
 	}
 
-	if maxSize > 0 {
+	// Проверяем, не превышен ли лимит (io.LimitReader может вернуть io.EOF раньше)
+	if maxSize > 0 && written > maxSize {
+		_ = dst.Close()
+		_ = os.Remove(fullPath)
+		return "", fmt.Errorf("размер файла превышает допустимый лимит %d байт", maxSize)
+	} else if maxSize == 0 {
+		// Если лимит не задан, проверяем фактический размер (по умолчанию 50 MB)
+		maxSize = 50 * 1024 * 1024
 		info, err := os.Stat(fullPath)
-		if err != nil {
-			return "", fmt.Errorf("не удалось проверить файл: %w", err)
-		}
-		if info.Size() > maxSize {
+		if err == nil && info.Size() > maxSize {
+			_ = dst.Close()
+			_ = os.Remove(fullPath)
 			return "", fmt.Errorf("размер файла превышает допустимый лимит %d байт", maxSize)
 		}
 	}

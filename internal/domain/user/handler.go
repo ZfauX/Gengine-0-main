@@ -758,10 +758,56 @@ func (h *DashboardHandler) Index(c *gin.Context) {
 		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
+
+	// Фильтрация по поисковому запросу
+	searchQuery := strings.TrimSpace(c.Query("search"))
+	if searchQuery != "" {
+		lowerQuery := strings.ToLower(searchQuery)
+		// Фильтруем авторские игры
+		var filteredGames []DashboardGame
+		for _, g := range dash.AuthoredGames {
+			if strings.Contains(strings.ToLower(g.Name), lowerQuery) {
+				filteredGames = append(filteredGames, g)
+			}
+		}
+		dash.AuthoredGames = filteredGames
+
+		// Фильтруем команды (капитанство)
+		var filteredCaptainTeams []DashboardTeamWithGame
+		for _, t := range dash.CaptainTeams {
+			if strings.Contains(strings.ToLower(t.Team.Name), lowerQuery) ||
+				strings.Contains(strings.ToLower(t.Game.Name), lowerQuery) {
+				filteredCaptainTeams = append(filteredCaptainTeams, t)
+			}
+		}
+		dash.CaptainTeams = filteredCaptainTeams
+
+		// Фильтруем участие в командах
+		var filteredMemberTeams []DashboardTeamWithGame
+		for _, t := range dash.MemberTeams {
+			if strings.Contains(strings.ToLower(t.Team.Name), lowerQuery) ||
+				strings.Contains(strings.ToLower(t.Game.Name), lowerQuery) {
+				filteredMemberTeams = append(filteredMemberTeams, t)
+			}
+		}
+		dash.MemberTeams = filteredMemberTeams
+
+		// Фильтруем активные прохождения
+		var filteredPassings []DashboardPassingWithGame
+		for _, p := range dash.ActivePassings {
+			if strings.Contains(strings.ToLower(p.GameName), lowerQuery) ||
+				strings.Contains(strings.ToLower(p.TeamName), lowerQuery) {
+				filteredPassings = append(filteredPassings, p)
+			}
+		}
+		dash.ActivePassings = filteredPassings
+	}
+
 	isAdmin := middleware.IsAdmin(c)
 	render.Page(c, http.StatusOK, "dashboard-index.html", gin.H{
 		"Dashboard":     dash,
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,
+		"SearchQuery":   searchQuery,
 	})
 }

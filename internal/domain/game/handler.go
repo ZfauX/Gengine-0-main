@@ -42,16 +42,16 @@ type GameServiceInterface interface {
 	Publish(ctx context.Context, id uint, userID uint) error
 	ListReviews(ctx context.Context, gameID uint) ([]Review, error)
 	GetAverageRating(ctx context.Context, gameID uint) (float64, int64, error)
-	IsUserManager(gameID, userID uint) (bool, error)
+	IsUserManager(ctx context.Context, gameID, userID uint) (bool, error)
 	GetSettingsWithDefaults(ctx context.Context, gameID uint) (*GameSetting, error)
 	SaveSettings(ctx context.Context, gameID uint, settings GameSetting) (*GameSetting, error)
 }
 
 type CoAuthorServiceInterface interface {
-	IsUserManager(gameID, userID uint) (bool, error)
-	HasPermission(gameID, userID uint, requiredRole string) (bool, error)
-	CanModerateGame(gameID, userID uint) (bool, error)
-	CanEditContent(gameID, userID uint) (bool, error)
+	IsUserManager(ctx context.Context, gameID, userID uint) (bool, error)
+	HasPermission(ctx context.Context, gameID, userID uint, requiredRole string) (bool, error)
+	CanModerateGame(ctx context.Context, gameID, userID uint) (bool, error)
+	CanEditContent(ctx context.Context, gameID, userID uint) (bool, error)
 	Add(gameID, newCoAuthorID, ownerID uint) error
 	Remove(gameID, coAuthorUserID, ownerID uint) error
 	List(gameID uint) ([]CoAuthor, error)
@@ -341,7 +341,7 @@ func (h *GameHandler) Show(c *gin.Context) {
 		return
 	}
 
-	isManager, err := h.coAuthorService.IsUserManager(uint(id), userID)
+	isManager, err := h.coAuthorService.IsUserManager(c.Request.Context(), uint(id), userID)
 	if err != nil {
 		log.Error().Err(err).Int("game_id", id).Msg("GameHandler.Show: failed to check manager")
 		isManager = false
@@ -458,7 +458,7 @@ func (h *GameHandler) EditForm(c *gin.Context) {
 		return
 	}
 
-	isManager, err := h.coAuthorService.IsUserManager(uint(id), userID)
+	isManager, err := h.coAuthorService.IsUserManager(c.Request.Context(), uint(id), userID)
 	if err != nil {
 		log.Error().Err(err).Int("game_id", id).Msg("GameHandler.EditForm: failed to check manager")
 		render.RenderErrorPage(c, http.StatusInternalServerError)
@@ -1099,7 +1099,7 @@ func (h *GameHandler) SaveSettings(c *gin.Context) {
 		render.RenderErrorPage(c, http.StatusNotFound)
 		return
 	}
-	isManager, err := h.coAuthorService.IsUserManager(g.ID, userID)
+	isManager, err := h.coAuthorService.IsUserManager(c.Request.Context(), g.ID, userID)
 	if err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.SaveSettings: failed to check manager")
 		render.RenderErrorPage(c, http.StatusInternalServerError)
@@ -1185,7 +1185,7 @@ func (h *GameHandler) PhotosPage(c *gin.Context) {
 			log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.PhotosPage: failed to list photos")
 		}
 	}
-	isManager, err := h.coAuthorService.IsUserManager(uint(gameID), userID)
+	isManager, err := h.coAuthorService.IsUserManager(c.Request.Context(), uint(gameID), userID)
 	if err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.PhotosPage: failed to check manager")
 		isManager = false
@@ -1311,7 +1311,7 @@ func (h *GameHandler) DeletePhoto(c *gin.Context) {
 	}
 
 	isOwner := photo.UserID == userID
-	isManager, err := h.coAuthorService.IsUserManager(photo.GameID, userID)
+	isManager, err := h.coAuthorService.IsUserManager(c.Request.Context(), photo.GameID, userID)
 	if err != nil {
 		log.Error().Err(err).Int("photo_id", photoID).Msg("DeletePhoto: failed to check manager")
 		appErr := apperr.NewInternalError(err)

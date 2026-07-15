@@ -117,7 +117,7 @@ func (h *LevelHandler) ListByGame(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 
-	ok, err := h.authorizer.IsUserManager(uint(gameID), userID)
+	ok, err := h.authorizer.IsUserManager(c.Request.Context(), uint(gameID), userID)
 	if err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Uint("user", userID).Msg("ListByGame: failed to check manager")
 		render.RenderErrorPage(c, http.StatusInternalServerError)
@@ -228,7 +228,7 @@ func (h *LevelHandler) EditForm(c *gin.Context) {
 		return
 	}
 
-	ok, err := h.authorizer.IsUserManager(level.GameID, userID)
+	ok, err := h.authorizer.IsUserManager(c.Request.Context(), level.GameID, userID)
 	if err != nil {
 		log.Error().Err(err).Uint("game_id", level.GameID).Uint("user", userID).Msg("EditForm: failed to check manager")
 		render.RenderErrorPage(c, http.StatusInternalServerError)
@@ -393,7 +393,7 @@ func (h *LevelHandler) ListQuestions(c *gin.Context) {
 		return
 	}
 
-	ok, err := h.authorizer.IsUserManager(level.GameID, userID)
+	ok, err := h.authorizer.IsUserManager(c.Request.Context(), level.GameID, userID)
 	if err != nil {
 		log.Error().Err(err).Uint("game_id", level.GameID).Uint("user", userID).Msg("ListQuestions: failed to check manager")
 		render.RenderErrorPage(c, http.StatusInternalServerError)
@@ -523,7 +523,7 @@ func (h *LevelHandler) EditQuestionForm(c *gin.Context) {
 		return
 	}
 
-	ok, err := h.authorizer.IsUserManager(level.GameID, userID)
+	ok, err := h.authorizer.IsUserManager(c.Request.Context(), level.GameID, userID)
 	if err != nil {
 		log.Error().Err(err).Uint("game_id", level.GameID).Uint("user", userID).Msg("EditQuestionForm: failed to check manager")
 		render.RenderErrorPage(c, http.StatusInternalServerError)
@@ -635,7 +635,7 @@ func (h *LevelHandler) ListAnswers(c *gin.Context) {
 		return
 	}
 
-	ok, err := h.authorizer.IsUserManager(level.GameID, userID)
+	ok, err := h.authorizer.IsUserManager(c.Request.Context(), level.GameID, userID)
 	if err != nil {
 		log.Error().Err(err).Uint("game_id", level.GameID).Uint("user", userID).Msg("ListAnswers: failed to check manager")
 		render.RenderErrorPage(c, http.StatusInternalServerError)

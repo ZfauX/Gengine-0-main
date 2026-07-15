@@ -125,9 +125,9 @@ func (h *MonitorHandler) MonitorData(c *gin.Context) {
 		return
 	}
 
-	snapshot, err := h.monitorService.GetOrFetchSnapshot(req.ID)
+	snapshot, err := h.monitorService.GetOrFetchSnapshot(c.Request.Context(), req.ID)
 	if err != nil {
-		log.Error().Err(err).Uint("game_id", req.ID).Msg("MonitorData: failed to get snapshot")
+		log.Error().Err(err).Uint("game_id", req.ID).Msg("MonitorWS: failed to get snapshot")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось получить данные мониторинга"})
 		return
 	}
@@ -169,11 +169,11 @@ func (h *MonitorHandler) MonitorStreamSSE(c *gin.Context) {
 			}
 			c.Writer.Flush()
 		case <-updateTicker.C:
-			snapshot, err := h.monitorService.GetOrFetchSnapshot(gameID)
+			snapshot, err := h.monitorService.GetOrFetchSnapshot(c.Request.Context(), req.ID)
 			if err != nil {
-				log.Error().Err(err).Uint("game_id", gameID).Msg("SSE: failed to get snapshot")
+				log.Error().Err(err).Uint("game_id", req.ID).Msg("MonitorStreamSSE: failed to get snapshot")
 				if _, err := fmt.Fprintf(c.Writer, "event: error\ndata: {\"error\": \"%s\"}\n\n", err.Error()); err != nil {
-					log.Error().Err(err).Uint("game_id", gameID).Msg("SSE: failed to write error event")
+					log.Error().Err(err).Uint("game_id", req.ID).Msg("MonitorStreamSSE: failed to write error event")
 				}
 				c.Writer.Flush()
 				continue
@@ -219,7 +219,7 @@ func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 	client := ws.NewClient(conn, gameID, remoteIP)
 	h.hub.RegisterClient(client)
 
-	snapshot, err := h.monitorService.GetOrFetchSnapshot(req.ID)
+	snapshot, err := h.monitorService.GetOrFetchSnapshot(c.Request.Context(), req.ID)
 	if err != nil {
 		log.Error().Err(err).Uint("game_id", req.ID).Msg("MonitorWS: failed to get snapshot")
 	} else {

@@ -8,6 +8,7 @@ import (
 	"net/smtp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gengine-0/internal/config"
@@ -24,6 +25,8 @@ type EmailService struct {
 	db   *gorm.DB
 	stop chan struct{}
 	wg   sync.WaitGroup
+
+	queueSize atomic.Int64 // атомарный счётчик для предотвращения race condition
 }
 
 // NewEmailService создаёт новый EmailService.
@@ -52,7 +55,8 @@ func (s *EmailService) Send(to, subject, body string) error {
 		return fmt.Errorf("failed to queue email: %w", err)
 	}
 
-	metrics.SetEmailQueueSize(float64(s.getQueueSize()))
+	s.queueSize.Add(1)
+	metrics.SetEmailQueueSize(float64(s.queueSize.Load()))
 	return nil
 }
 
@@ -90,7 +94,7 @@ func (s *EmailService) StartWorker(ctx context.Context, interval time.Duration, 
 			if err := s.processPendingEmails(ctx, batchSize); err != nil {
 				log.Error().Err(err).Msg("Email worker: failed to process pending emails")
 			}
-			metrics.SetEmailQueueSize(float64(s.getQueueSize()))
+			metrics.SetEmailQueueSize(float64(s.queueSize.Load()))
 		}
 	}
 }
@@ -126,6 +130,9 @@ func (s *EmailService) processPendingEmails(ctx context.Context, batchSize int) 
 		}
 	}
 
+	s.queueSize.Add(-int64(len(emails)))
+	metrics.SetEmailQueueSize(float64(s.queueSize.Load()))
+
 	return nil
 }
 
@@ -156,7 +163,7 @@ func (s *EmailService) sendEmailWithRetry(email *QueuedEmail) {
 			case <-time.After(delay):
 			case <-s.stop:
 				log.Info().Uint("email_id", email.ID).Msg("sendEmailWithRetry: stopped during backoff")
-				break
+				return
 			}
 		}
 	}

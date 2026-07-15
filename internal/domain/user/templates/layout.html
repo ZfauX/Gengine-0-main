@@ -457,22 +457,33 @@
 
             window.showToast = function(message, type) {
                 type = type || 'info';
-                const colors = {
+                var colors = {
                     success: 'bg-green-500',
                     error: 'bg-red-500',
                     warning: 'bg-yellow-500',
                     info: 'bg-blue-500'
                 };
-                const icons = {
+                var icons = {
                     success: '✅',
                     error: '❌',
                     warning: '⚠️',
                     info: 'ℹ️'
                 };
 
-                const toast = document.createElement('div');
+                function escapeHtmlToast(text) {
+                    var map = {
+                        '&': '&amp;',
+                        '<': '&lt;',
+                        '>': '&gt;',
+                        '"': '&quot;',
+                        "'": '&#039;'
+                    };
+                    return String(text).replace(/[&<>"']/g, function(m) { return map[m]; });
+                }
+
+                var toast = document.createElement('div');
                 toast.className = `${colors[type]} text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 min-w-[250px] animate-[fadeIn_0.2s_ease-in-out]`;
-                toast.innerHTML = `<span>${icons[type]}</span><span>${message}</span>`;
+                toast.innerHTML = `<span>${icons[type]}</span><span>${escapeHtmlToast(message)}</span>`;
 
                 container.appendChild(toast);
 

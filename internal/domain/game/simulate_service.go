@@ -1,6 +1,7 @@
 package game
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -34,7 +35,7 @@ func (s *SimulateService) Simulate(gameID, userID uint) (*SimulateResult, error)
 	if err := s.DB.Preload("Levels.Questions.Answers").First(&game, gameID).Error; err != nil {
 		return nil, err
 	}
-	isManager, err := s.coAuthorSvc.IsUserManager(gameID, userID)
+	isManager, err := s.coAuthorSvc.IsUserManager(context.Background(), gameID, userID)
 	if err != nil {
 		return nil, err
 	}

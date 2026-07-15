@@ -441,7 +441,9 @@ func (app *App) registerUserRoutes(r *gin.Engine) {
 }
 
 func (app *App) registerGameRoutes(r *gin.Engine) {
-	passingSvc := game.NewGamePassingService(app.DB, app.Deps.Services.Team, app.Deps.Services.CoAuthor, app.Deps.Services.Progress)
+	passingSvc := game.NewGamePassingService(app.DB, app.Deps.Services.Team, app.Deps.Services.CoAuthor, app.Deps.Services.Progress).
+		WithHub(app.Hub).
+		WithMonitorService(app.Deps.Services.Monitor)
 
 	game.RegisterRoutes(r, &game.GameDeps{
 		DB:              app.DB,

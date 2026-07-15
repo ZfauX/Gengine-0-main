@@ -326,7 +326,7 @@ func (h *GameplayHandler) ShowTestGame(c *gin.Context) {
 		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
-	ok, err := h.gameService.IsUserManager(g.ID, userID)
+	ok, err := h.gameService.IsUserManager(c.Request.Context(), g.ID, userID)
 	if err != nil || !ok {
 		render.RenderError(c, http.StatusForbidden, "Доступ запрещён")
 		return
@@ -367,7 +367,7 @@ func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
 		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
-	ok, err := h.gameService.IsUserManager(g.ID, userID)
+	ok, err := h.gameService.IsUserManager(c.Request.Context(), g.ID, userID)
 	if err != nil || !ok {
 		render.RenderError(c, http.StatusForbidden, "Доступ запрещён")
 		return

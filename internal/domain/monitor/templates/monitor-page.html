@@ -55,6 +55,12 @@
             socket.onmessage = function(e) {
                 try {
                     const data = JSON.parse(e.data);
+                    // Проверяем, является ли это уведомлением о старте игры
+                    if (data && data.type === 'game_started') {
+                        handleGameStartedNotification(data);
+                        return;
+                    }
+                    // Иначе это snapshot данных мониторинга
                     teamsData = data;
                     renderTeams();
                 } catch (err) {
@@ -187,6 +193,24 @@
                 `;
                 teamsContainer.appendChild(card);
             });
+        }
+
+        // Обработка уведомления о старте игры
+        function handleGameStartedNotification(data) {
+            console.log('Мониторинг: игра началась —', data.team_name);
+            
+            // Обновляем статус соединения
+            updateConnectionStatus('✅ ' + data.team_name + ' начала игру!', '#2ecc71');
+            
+            // Перезагружаем данные через 1 секунду чтобы увидеть обновление
+            setTimeout(() => {
+                if (wsConnected) {
+                    // WebSocket активен — данные придут автоматически
+                } else {
+                    // Fallback на polling
+                    fetchInitialData();
+                }
+            }, 1000);
         }
 
         function escapeHtml(text) {

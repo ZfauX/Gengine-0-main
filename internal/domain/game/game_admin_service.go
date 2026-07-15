@@ -19,8 +19,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// GameAdminService отвечает за административные действия: принудительное завершение,
-// дисквалификация, удаление уровней из активной игры.
 type GameAdminService struct {
 	db          *gorm.DB
 	coAuthorSvc *CoAuthorService
@@ -36,10 +34,13 @@ func NewGameAdminService(db *gorm.DB, coAuthorSvc *CoAuthorService, cfg *config.
 	}
 }
 
-// ForceFinishGame принудительно завершает игру с транзакцией и блокировками.
+// GameAdminService принудительно завершает игру с транзакцией и блокировками.
 func (s *GameAdminService) ForceFinishGame(ctx context.Context, gameID uint) error {
-	return s.db.Transaction(func(tx *gorm.DB) error {
-		var passings []GamePassing
+	var passings []GamePassing
+	var game Game
+	var teamIDs []uint
+
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("game_id = ? AND status = ?", gameID, StatusStarted).
 			Preload("Team.Captain").
@@ -50,7 +51,6 @@ func (s *GameAdminService) ForceFinishGame(ctx context.Context, gameID uint) err
 			return errors.New("нет активных прохождений")
 		}
 
-		var game Game
 		if err := tx.First(&game, gameID).Error; err != nil {
 			return err
 		}
@@ -60,7 +60,7 @@ func (s *GameAdminService) ForceFinishGame(ctx context.Context, gameID uint) err
 			if err := finishPassingProgress(tx, &p, now); err != nil {
 				return err
 			}
-			s.notifyCaptainAboutFinishWithTx(tx, p.TeamID, &game)
+			teamIDs = append(teamIDs, p.TeamID)
 			metrics.IncGamePassings(string(StatusFinished))
 			if !p.CreatedAt.IsZero() {
 				duration := now.Sub(p.CreatedAt).Seconds()
@@ -69,12 +69,25 @@ func (s *GameAdminService) ForceFinishGame(ctx context.Context, gameID uint) err
 		}
 		return nil
 	})
+
+	if err != nil {
+		return err
+	}
+
+	// Отправляем уведомления после фиксации транзакции
+	for i, p := range passings {
+		s.notifyCaptainAboutFinish(p.TeamID, &game)
+		_ = teamIDs[i] // teamIDs заполнены в транзакции
+	}
+	return nil
 }
 
 // DisqualifyTeam дисквалифицирует команду с транзакцией и блокировкой.
 func (s *GameAdminService) DisqualifyTeam(ctx context.Context, gameID, teamID uint) error {
-	return s.db.Transaction(func(tx *gorm.DB) error {
-		var passing GamePassing
+	var passing GamePassing
+	var game Game
+
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("game_id = ? AND team_id = ? AND status = ?", gameID, teamID, StatusStarted).
 			Preload("Team.Captain").
@@ -82,7 +95,6 @@ func (s *GameAdminService) DisqualifyTeam(ctx context.Context, gameID, teamID ui
 			return errors.New("команда не в игре или уже завершила")
 		}
 
-		var game Game
 		if err := tx.First(&game, gameID).Error; err != nil {
 			return err
 		}
@@ -97,15 +109,21 @@ func (s *GameAdminService) DisqualifyTeam(ctx context.Context, gameID, teamID ui
 			return err
 		}
 		metrics.IncGamePassings(string(StatusDisqualified))
-
-		s.notifyCaptainAboutDisqualificationWithTx(tx, teamID, &game)
 		return nil
 	})
+
+	if err != nil {
+		return err
+	}
+
+	// Отправляем уведомление после фиксации транзакции
+	s.notifyCaptainAboutDisqualification(teamID, &game)
+	return nil
 }
 
 // DeleteLevelFromActiveGame удаляет уровень из активной игры с транзакцией.
 func (s *GameAdminService) DeleteLevelFromActiveGame(ctx context.Context, gameID, levelID, userID uint) error {
-	return s.db.Transaction(func(tx *gorm.DB) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Проверка прав внутри транзакции
 		ok, err := s.coAuthorSvc.HasPermissionTx(tx, gameID, userID, RoleContentEditor)
 		if err != nil {
@@ -143,7 +161,7 @@ func (s *GameAdminService) DeleteLevelFromActiveGame(ctx context.Context, gameID
 					log.Error().Uint("progress", progress.ID).Err(err).Msg("DeleteLevelFromActiveGame: Save progress error")
 					continue
 				}
-				if err := AdvanceToNextLevel(tx, p.ID, levelID); err != nil {
+				if err := AdvanceToNextLevel(tx, p.ID, levelID, nil); err != nil {
 					log.Error().Uint("passing", p.ID).Err(err).Msg("DeleteLevelFromActiveGame: AdvanceToNextLevel error")
 				}
 			}
@@ -160,32 +178,56 @@ func (s *GameAdminService) DeleteLevelFromActiveGame(ctx context.Context, gameID
 	})
 }
 
-// notifyCaptainAboutFinishTx — оптимизированная версия с предзагруженными данными.
-func (s *GameAdminService) notifyCaptainAboutFinishTx(teamID uint, game *Game) {
+// notifyCaptainAboutFinish отправляет уведомление после фиксации транзакции.
+func (s *GameAdminService) notifyCaptainAboutFinish(teamID uint, game *Game) {
 	if s.cfg == nil || !s.cfg.SMTP.Enabled {
 		return
 	}
 	var t team.Team
 	if err := s.db.First(&t, teamID).Error; err != nil {
-		log.Error().Err(err).Uint("team", teamID).Msg("notifyCaptainAboutFinishTx: failed to get team")
+		log.Error().Err(err).Uint("team", teamID).Msg("notifyCaptainAboutFinish: failed to get team")
 		return
 	}
 	var captain user.User
 	if err := s.db.First(&captain, t.CaptainID).Error; err != nil {
-		log.Error().Err(err).Uint("captain", t.CaptainID).Msg("notifyCaptainAboutFinishTx: failed to get captain")
+		log.Error().Err(err).Uint("captain", t.CaptainID).Msg("notifyCaptainAboutFinish: failed to get captain")
 		return
 	}
-	// Email enqueue — асинхронная операция, не требует транзакции
 	if err := email.Enqueue(
 		captain.Email,
 		"Игра завершена",
 		fmt.Sprintf("Игра «%s» была принудительно завершена автором.", game.Name),
 	); err != nil {
-		log.Error().Err(err).Uint("game", game.ID).Uint("team", teamID).Msg("notifyCaptainAboutFinishTx: failed to enqueue email")
+		log.Error().Err(err).Uint("game", game.ID).Uint("team", teamID).Msg("notifyCaptainAboutFinish: failed to enqueue email")
+	}
+}
+
+// notifyCaptainAboutDisqualification отправляет уведомление после фиксации транзакции.
+func (s *GameAdminService) notifyCaptainAboutDisqualification(teamID uint, game *Game) {
+	if s.cfg == nil || !s.cfg.SMTP.Enabled {
+		return
+	}
+	var t team.Team
+	if err := s.db.First(&t, teamID).Error; err != nil {
+		log.Error().Err(err).Uint("team", teamID).Msg("notifyCaptainAboutDisqualification: failed to get team")
+		return
+	}
+	var captain user.User
+	if err := s.db.First(&captain, t.CaptainID).Error; err != nil {
+		log.Error().Err(err).Uint("captain", t.CaptainID).Msg("notifyCaptainAboutDisqualification: failed to get captain")
+		return
+	}
+	if err := email.Enqueue(
+		captain.Email,
+		"Дисквалификация",
+		fmt.Sprintf("Ваша команда была дисквалифицирована в игре «%s».", game.Name),
+	); err != nil {
+		log.Error().Err(err).Uint("game", game.ID).Uint("team", teamID).Msg("notifyCaptainAboutDisqualification: failed to enqueue email")
 	}
 }
 
 // notifyCaptainAboutFinishWithTx — отправляет уведомление внутри транзакции.
+// Устаревший метод — оставлен для обратной совместимости.
 func (s *GameAdminService) notifyCaptainAboutFinishWithTx(tx *gorm.DB, teamID uint, game *Game) {
 	if s.cfg == nil || !s.cfg.SMTP.Enabled {
 		return
@@ -206,30 +248,6 @@ func (s *GameAdminService) notifyCaptainAboutFinishWithTx(tx *gorm.DB, teamID ui
 		fmt.Sprintf("Игра «%s» была принудительно завершена автором.", game.Name),
 	); err != nil {
 		log.Error().Err(err).Uint("game", game.ID).Uint("team", teamID).Msg("notifyCaptainAboutFinishWithTx: failed to enqueue email")
-	}
-}
-
-// notifyCaptainAboutDisqualificationTx — оптимизированная версия с предзагруженными данными.
-func (s *GameAdminService) notifyCaptainAboutDisqualificationTx(teamID uint, game *Game) {
-	if s.cfg == nil || !s.cfg.SMTP.Enabled {
-		return
-	}
-	var t team.Team
-	if err := s.db.First(&t, teamID).Error; err != nil {
-		log.Error().Err(err).Uint("team", teamID).Msg("notifyCaptainAboutDisqualificationTx: failed to get team")
-		return
-	}
-	var captain user.User
-	if err := s.db.First(&captain, t.CaptainID).Error; err != nil {
-		log.Error().Err(err).Uint("captain", t.CaptainID).Msg("notifyCaptainAboutDisqualificationTx: failed to get captain")
-		return
-	}
-	if err := email.Enqueue(
-		captain.Email,
-		"Дисквалификация",
-		fmt.Sprintf("Ваша команда была дисквалифицирована в игре «%s».", game.Name),
-	); err != nil {
-		log.Error().Err(err).Uint("game", game.ID).Uint("team", teamID).Msg("notifyCaptainAboutDisqualificationTx: failed to enqueue email")
 	}
 }
 

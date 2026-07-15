@@ -1,12 +1,14 @@
 package game
 
 import (
+	"context"
 	"errors"
+
 	"gorm.io/gorm"
 )
 
 type NoteService struct {
-	DB        *gorm.DB
+	DB          *gorm.DB
 	coAuthorSvc *CoAuthorService
 }
 
@@ -15,7 +17,7 @@ func NewNoteService(db *gorm.DB, ca *CoAuthorService) *NoteService {
 }
 
 func (s *NoteService) ListByGame(gameID, userID uint) ([]Note, error) {
-	isManager, _ := s.coAuthorSvc.IsUserManager(gameID, userID)
+	isManager, _ := s.coAuthorSvc.IsUserManager(context.Background(), gameID, userID)
 	if !isManager {
 		return nil, errors.New("только автор или соавтор может видеть заметки")
 	}
@@ -25,7 +27,7 @@ func (s *NoteService) ListByGame(gameID, userID uint) ([]Note, error) {
 }
 
 func (s *NoteService) Create(gameID uint, levelID *uint, userID uint, text string) (*Note, error) {
-	isManager, _ := s.coAuthorSvc.IsUserManager(gameID, userID)
+	isManager, _ := s.coAuthorSvc.IsUserManager(context.Background(), gameID, userID)
 	if !isManager {
 		return nil, errors.New("только автор или соавтор может создавать заметки")
 	}
@@ -42,7 +44,7 @@ func (s *NoteService) Delete(noteID, userID uint) error {
 	if err := s.DB.First(&note, noteID).Error; err != nil {
 		return err
 	}
-	isManager, _ := s.coAuthorSvc.IsUserManager(note.GameID, userID)
+	isManager, _ := s.coAuthorSvc.IsUserManager(context.Background(), note.GameID, userID)
 	if note.UserID != userID && !isManager {
 		return errors.New("нет прав на удаление")
 	}

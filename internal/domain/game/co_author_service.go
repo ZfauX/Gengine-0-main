@@ -2,6 +2,7 @@
 package game
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -24,24 +25,24 @@ func NewCoAuthorService(db *gorm.DB) *CoAuthorService {
 }
 
 // IsUserManager проверяет, является ли пользователь автором или соавтором игры.
-func (s *CoAuthorService) IsUserManager(gameID, userID uint) (bool, error) {
+func (s *CoAuthorService) IsUserManager(ctx context.Context, gameID, userID uint) (bool, error) {
 	var game Game
-	if err := s.DB.First(&game, gameID).Error; err != nil {
+	if err := s.DB.WithContext(ctx).First(&game, gameID).Error; err != nil {
 		return false, err
 	}
 	if game.AuthorID == userID {
 		return true, nil
 	}
 	var count int64
-	if err := s.DB.Model(&CoAuthor{}).Where("game_id = ? AND user_id = ?", gameID, userID).Count(&count).Error; err != nil {
+	if err := s.DB.WithContext(ctx).Model(&CoAuthor{}).Where("game_id = ? AND user_id = ?", gameID, userID).Count(&count).Error; err != nil {
 		return false, err
 	}
 	return count > 0, nil
 }
 
 // HasPermission проверяет наличие у пользователя конкретной роли в игре.
-func (s *CoAuthorService) HasPermission(gameID, userID uint, requiredRole string) (bool, error) {
-	return s.HasPermissionTx(s.DB, gameID, userID, requiredRole)
+func (s *CoAuthorService) HasPermission(ctx context.Context, gameID, userID uint, requiredRole string) (bool, error) {
+	return s.HasPermissionTx(s.DB.WithContext(ctx), gameID, userID, requiredRole)
 }
 
 // HasPermissionTx — версия HasPermission с передачей транзакции.
@@ -74,13 +75,13 @@ func (s *CoAuthorService) HasPermissionTx(tx *gorm.DB, gameID, userID uint, requ
 }
 
 // CanModerateGame — удобный метод для проверки права на модерацию игры.
-func (s *CoAuthorService) CanModerateGame(gameID, userID uint) (bool, error) {
-	return s.HasPermission(gameID, userID, RoleModerator)
+func (s *CoAuthorService) CanModerateGame(ctx context.Context, gameID, userID uint) (bool, error) {
+	return s.HasPermission(ctx, gameID, userID, RoleModerator)
 }
 
 // CanEditContent — удобный метод для проверки права на редактирование контента.
-func (s *CoAuthorService) CanEditContent(gameID, userID uint) (bool, error) {
-	return s.HasPermission(gameID, userID, RoleContentEditor)
+func (s *CoAuthorService) CanEditContent(ctx context.Context, gameID, userID uint) (bool, error) {
+	return s.HasPermission(ctx, gameID, userID, RoleContentEditor)
 }
 
 // Add добавляет нового соавтора или восстанавливает удалённого.

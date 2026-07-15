@@ -393,7 +393,7 @@ type simpleGameAuthorizer struct {
 	db *gorm.DB
 }
 
-func (a *simpleGameAuthorizer) IsUserManager(gameID, userID uint) (bool, error) {
+func (a *simpleGameAuthorizer) IsUserManager(ctx context.Context, gameID, userID uint) (bool, error) {
 	var g game.Game
 	if err := a.db.First(&g, gameID).Error; err != nil {
 		return false, err
@@ -401,8 +401,8 @@ func (a *simpleGameAuthorizer) IsUserManager(gameID, userID uint) (bool, error) 
 	return g.AuthorID == userID, nil
 }
 
-func (a *simpleGameAuthorizer) HasPermission(gameID, userID uint, role string) (bool, error) {
-	return a.IsUserManager(gameID, userID)
+func (a *simpleGameAuthorizer) HasPermission(ctx context.Context, gameID, userID uint, role string) (bool, error) {
+	return a.IsUserManager(ctx, gameID, userID)
 }
 
 // simpleActiveGameManager — реализация level.ActiveGameManager для тестов.

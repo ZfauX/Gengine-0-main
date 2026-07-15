@@ -3,6 +3,7 @@ package middleware_test
 
 import (
 	"compress/gzip"
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -37,7 +38,7 @@ type stubGameAuthorizer struct {
 	err       error
 }
 
-func (s *stubGameAuthorizer) IsUserManager(gameID, userID uint) (bool, error) {
+func (s *stubGameAuthorizer) IsUserManager(ctx context.Context, gameID, userID uint) (bool, error) {
 	return s.isManager, s.err
 }
 

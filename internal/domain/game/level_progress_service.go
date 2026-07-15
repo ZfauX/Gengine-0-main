@@ -29,14 +29,24 @@ func NewLevelProgressService(db *gorm.DB) *LevelProgressService {
 
 // InitFirstLevel инициализирует прогресс первого уровня при старте игры.
 func (s *LevelProgressService) InitFirstLevel(ctx context.Context, gamePassingID uint) error {
+	return s.dbTransaction(ctx, s.DB, gamePassingID)
+}
+
+// InitFirstLevelWithTx инициализирует прогресс первого уровня с переданной транзакцией.
+func (s *LevelProgressService) InitFirstLevelWithTx(ctx context.Context, tx *gorm.DB, gamePassingID uint) error {
+	return s.dbTransaction(ctx, tx, gamePassingID)
+}
+
+// dbTransaction — общий метод инициализации первого уровня с переданным *gorm.DB.
+func (s *LevelProgressService) dbTransaction(ctx context.Context, db *gorm.DB, gamePassingID uint) error {
 	var count int64
-	s.DB.WithContext(ctx).Model(&LevelProgress{}).Where("game_passing_id = ?", gamePassingID).Count(&count)
+	db.Model(&LevelProgress{}).Where("game_passing_id = ?", gamePassingID).Count(&count)
 	if count > 0 {
 		return nil
 	}
 
 	var passing GamePassing
-	if err := s.DB.WithContext(ctx).Preload("Game.Levels", func(db *gorm.DB) *gorm.DB {
+	if err := db.Preload("Game.Levels", func(db *gorm.DB) *gorm.DB {
 		return db.Order("position ASC")
 	}).First(&passing, gamePassingID).Error; err != nil {
 		return err
@@ -53,7 +63,7 @@ func (s *LevelProgressService) InitFirstLevel(ctx context.Context, gamePassingID
 		LevelID:       firstLevel.ID,
 		StartedAt:     time.Now(),
 	}
-	return s.DB.WithContext(ctx).Create(progress).Error
+	return db.Create(progress).Error
 }
 
 // GetCurrentProgress возвращает текущий незавершённый прогресс уровня.
@@ -86,18 +96,19 @@ func GetCurrentProgressForUpdate(tx *gorm.DB, gamePassingID uint) (*LevelProgres
 
 // CompleteLevel завершает прогресс уровня и переходит к следующему.
 // Работает с переданным *gorm.DB (может быть транзакцией).
-func CompleteLevel(db *gorm.DB, progress *LevelProgress) error {
+func CompleteLevel(db *gorm.DB, progress *LevelProgress, onGameFinished func()) error {
 	now := time.Now()
 	progress.FinishedAt = &now
 	if err := db.Save(progress).Error; err != nil {
 		return err
 	}
-	return AdvanceToNextLevel(db, progress.GamePassingID, progress.LevelID)
+	return AdvanceToNextLevel(db, progress.GamePassingID, progress.LevelID, onGameFinished)
 }
 
 // AdvanceToNextLevel находит следующий уровень и создаёт для него прогресс.
 // Работает с переданным *gorm.DB (может быть транзакцией).
-func AdvanceToNextLevel(db *gorm.DB, gamePassingID, completedLevelID uint) error {
+// onGameFinished — необязательный callback, вызывается когда завершается последний уровень (игра окончена).
+func AdvanceToNextLevel(db *gorm.DB, gamePassingID, completedLevelID uint, onGameFinished func()) error {
 	// Загружаем прохождение только для получения GameID и Status
 	var passing GamePassing
 	if err := db.First(&passing, gamePassingID).Error; err != nil {
@@ -129,7 +140,13 @@ func AdvanceToNextLevel(db *gorm.DB, gamePassingID, completedLevelID uint) error
 	// Если нет следующего уровня, завершаем игру (кроме тестирования)
 	if passing.Status != StatusTesting {
 		passing.Status = StatusFinished
-		return db.Save(&passing).Error
+		if err := db.Save(&passing).Error; err != nil {
+			return err
+		}
+		// Вызываем callback после фиксации транзакции
+		if onGameFinished != nil {
+			onGameFinished()
+		}
 	}
 	return nil
 }
@@ -209,9 +226,6 @@ func checkTimeoutsImpl(db *gorm.DB, ctx context.Context) {
 	for _, ps := range passingsWithSettings {
 		settingMap[ps.ID] = &GameSetting{PerLevelTimeLimit: ps.PerLevelTimeLimit}
 	}
-	for _, ps := range passingsWithSettings {
-		settingMap[ps.ID] = &GameSetting{PerLevelTimeLimit: ps.PerLevelTimeLimit}
-	}
 
 	now := time.Now()
 	for _, p := range activeProgresses {
@@ -227,13 +241,21 @@ func checkTimeoutsImpl(db *gorm.DB, ctx context.Context) {
 		elapsed := now.Sub(p.StartedAt)
 		limit := time.Duration(setting.PerLevelTimeLimit) * time.Minute
 		if elapsed >= limit {
-			p.FinishedAt = &now
-			if err := db.WithContext(ctx).Save(&p).Error; err != nil {
-				log.Error().Err(err).Uint("progress_id", p.ID).Msg("CheckTimeouts: failed to save progress")
-				continue
-			}
-			if err := AdvanceToNextLevel(db, p.GamePassingID, p.LevelID); err != nil {
-				log.Error().Err(err).Uint("passing_id", p.GamePassingID).Msg("CheckTimeouts: failed to advance level")
+			if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+				// Блокируем прогресс
+				var current LevelProgress
+				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+					Where("id = ? AND finished_at IS NULL", p.ID).
+					First(&current).Error; err != nil {
+					return err
+				}
+				current.FinishedAt = &now
+				if err := tx.Save(&current).Error; err != nil {
+					return err
+				}
+				return AdvanceToNextLevel(tx, current.GamePassingID, current.LevelID, nil)
+			}); err != nil {
+				log.Error().Err(err).Uint("progress_id", p.ID).Msg("CheckTimeouts: transaction failed")
 			}
 		}
 	}
@@ -281,20 +303,25 @@ func checkAutoStartGamesImpl(db *gorm.DB, ctx context.Context, progressSvc *Leve
 			continue
 		}
 
-		var passings []GamePassing
-		if err := db.WithContext(ctx).Where("game_id = ? AND status = ?", g.ID, StatusAccepted).Find(&passings).Error; err != nil {
-			log.Error().Err(err).Uint("game_id", g.ID).Msg("CheckAutoStartGames: failed to fetch passings")
-			continue
-		}
-		for _, p := range passings {
-			p.Status = StatusStarted
-			if err := db.WithContext(ctx).Save(&p).Error; err != nil {
-				log.Error().Err(err).Uint("passing_id", p.ID).Msg("CheckAutoStartGames: failed to update passing status")
-				continue
+		// Транзакция на всю партию passings для одной игры
+		if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var passings []GamePassing
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("game_id = ? AND status = ?", g.ID, StatusAccepted).Find(&passings).Error; err != nil {
+				return err
 			}
-			if err := progressSvc.InitFirstLevel(ctx, p.ID); err != nil {
-				log.Error().Err(err).Uint("passing_id", p.ID).Msg("CheckAutoStartGames: failed to init first level")
+			for _, p := range passings {
+				p.Status = StatusStarted
+				if err := tx.Save(&p).Error; err != nil {
+					return err
+				}
+				txProgressSvc := NewLevelProgressService(tx)
+				if err := txProgressSvc.InitFirstLevelWithTx(ctx, tx, p.ID); err != nil {
+					log.Error().Err(err).Uint("passing_id", p.ID).Msg("CheckAutoStartGames: failed to init first level")
+				}
 			}
+			return nil
+		}); err != nil {
+			log.Error().Err(err).Uint("game_id", g.ID).Msg("CheckAutoStartGames: transaction failed")
 		}
 	}
 }

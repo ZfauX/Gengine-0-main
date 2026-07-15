@@ -123,9 +123,14 @@
             setInterval(updateTimer, 1000);
         }
 
+        function escapeHtml(text) {
+            const map = { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;' };
+            return String(text).replace(/[&<>"']/g, m => map[m]);
+        }
+
         function showMessage(text, type) {
             const cls = type === 'error' ? 'flash flash-error' : 'flash flash-success';
-            msgArea.innerHTML = `<div class="${cls}">${text}</div>`;
+            msgArea.innerHTML = `<div class="${cls}">${escapeHtml(text)}</div>`;
             setTimeout(() => { msgArea.innerHTML = ''; }, 4000);
         }
 
@@ -140,11 +145,6 @@
                 : '<span class="inline-flex items-center gap-1 text-red-600 font-medium">❌ Неверно</span>';
             li.innerHTML = `<span class="font-mono">${escapeHtml(code)}</span><span class="flex items-center gap-2">${badge}<span class="text-gray-400 text-xs">${timeStr}</span></span>`;
             attemptsList.prepend(li);
-        }
-
-        function escapeHtml(text) {
-            const map = { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;' };
-            return String(text).replace(/[&<>"']/g, m => map[m]);
         }
 
         // AJAX code submission
@@ -171,7 +171,6 @@
                 }
                 // Check if redirect to finished page
                 if (r.ok) {
-                    // Could be a re-render with error — check URL for error param
                     window.location.reload();
                     return null;
                 }
@@ -181,8 +180,17 @@
                 if (!data) return; // redirect happened
             })
             .catch(err => {
-                // If error contains "wrong_code" or similar, show inline
-                showMessage('Неверный код! Попробуйте ещё раз.', 'error');
+                // Показываем конкретную ошибку или сообщение по умолчанию
+                const errorMsg = String(err.message || '');
+                if (errorMsg.indexOf('already completed') !== -1 || errorMsg.indexOf('завершён') !== -1) {
+                    showMessage('Уровень уже завершён.', 'warning');
+                } else if (errorMsg.indexOf('not member') !== -1 || errorMsg.indexOf('участником') !== -1) {
+                    showMessage('Вы не являетесь участником этой команды.', 'error');
+                } else if (errorMsg.indexOf('not found') !== -1 || errorMsg.indexOf('не найден') !== -1) {
+                    showMessage('Прогресс не найден — возможно время истекло.', 'warning');
+                } else {
+                    showMessage('Неверный код! Попробуйте ещё раз.', 'error');
+                }
                 addAttempt(code, false);
                 codeInput.value = '';
                 codeInput.focus();

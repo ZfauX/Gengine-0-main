@@ -229,7 +229,7 @@ type gameAuthorizerStub struct {
 	db *gorm.DB
 }
 
-func (g *gameAuthorizerStub) IsUserManager(gameID, userID uint) (bool, error) {
+func (g *gameAuthorizerStub) IsUserManager(ctx context.Context, gameID, userID uint) (bool, error) {
 	var ga game.Game
 	if err := g.db.First(&ga, gameID).Error; err != nil {
 		return false, err
@@ -237,8 +237,8 @@ func (g *gameAuthorizerStub) IsUserManager(gameID, userID uint) (bool, error) {
 	return ga.AuthorID == userID, nil
 }
 
-func (g *gameAuthorizerStub) HasPermission(gameID, userID uint, role string) (bool, error) {
-	return g.IsUserManager(gameID, userID)
+func (g *gameAuthorizerStub) HasPermission(ctx context.Context, gameID, userID uint, role string) (bool, error) {
+	return g.IsUserManager(ctx, gameID, userID)
 }
 
 func newTeamService(db *gorm.DB) *team.TeamService {

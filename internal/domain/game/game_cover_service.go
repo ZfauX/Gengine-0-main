@@ -73,7 +73,7 @@ func (s *GameCoverService) UpdateGameWithCover(ctx context.Context, gameID uint,
 		return err
 	}
 
-	isManager, err := s.coAuthor.HasPermission(gameID, userID, RoleContentEditor)
+	isManager, err := s.coAuthor.HasPermission(ctx, gameID, userID, RoleContentEditor)
 	if err != nil {
 		return fmt.Errorf("ошибка проверки прав: %w", err)
 	}

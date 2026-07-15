@@ -139,8 +139,8 @@ func (m *MockGameService) GetAverageRating(ctx context.Context, gameID uint) (fl
 	return args.Get(0).(float64), args.Get(1).(int64), args.Error(2)
 }
 
-func (m *MockGameService) IsUserManager(gameID, userID uint) (bool, error) {
-	args := m.Called(gameID, userID)
+func (m *MockGameService) IsUserManager(ctx context.Context, gameID, userID uint) (bool, error) {
+	args := m.Called(ctx, gameID, userID)
 	return args.Bool(0), args.Error(1)
 }
 
@@ -165,23 +165,23 @@ type MockCoAuthorService struct {
 	mock.Mock
 }
 
-func (m *MockCoAuthorService) IsUserManager(gameID, userID uint) (bool, error) {
-	args := m.Called(gameID, userID)
+func (m *MockCoAuthorService) IsUserManager(ctx context.Context, gameID, userID uint) (bool, error) {
+	args := m.Called(ctx, gameID, userID)
 	return args.Bool(0), args.Error(1)
 }
 
-func (m *MockCoAuthorService) HasPermission(gameID, userID uint, requiredRole string) (bool, error) {
-	args := m.Called(gameID, userID, requiredRole)
+func (m *MockCoAuthorService) HasPermission(ctx context.Context, gameID, userID uint, requiredRole string) (bool, error) {
+	args := m.Called(ctx, gameID, userID, requiredRole)
 	return args.Bool(0), args.Error(1)
 }
 
-func (m *MockCoAuthorService) CanModerateGame(gameID, userID uint) (bool, error) {
-	args := m.Called(gameID, userID)
+func (m *MockCoAuthorService) CanModerateGame(ctx context.Context, gameID, userID uint) (bool, error) {
+	args := m.Called(ctx, gameID, userID)
 	return args.Bool(0), args.Error(1)
 }
 
-func (m *MockCoAuthorService) CanEditContent(gameID, userID uint) (bool, error) {
-	args := m.Called(gameID, userID)
+func (m *MockCoAuthorService) CanEditContent(ctx context.Context, gameID, userID uint) (bool, error) {
+	args := m.Called(ctx, gameID, userID)
 	return args.Bool(0), args.Error(1)
 }
 
@@ -418,7 +418,7 @@ func TestGameHandler_Show_Success(t *testing.T) {
 
 	game := createTestGame(1, "Test Game")
 	mockGameService.On("GetByID", mock.Anything, uint(1), uint(1)).Return(game, nil)
-	mockCoAuthorService.On("IsUserManager", uint(1), uint(1)).Return(true, nil)
+	mockCoAuthorService.On("IsUserManager", mock.Anything, uint(1), uint(1)).Return(true, nil)
 	mockGameService.On("ListReviews", mock.Anything, uint(1)).Return([]Review{}, nil)
 	mockGameService.On("GetAverageRating", mock.Anything, uint(1)).Return(0.0, int64(0), nil)
 

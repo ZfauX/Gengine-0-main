@@ -142,6 +142,11 @@
         tbody.appendChild(row);
     }
 
+    function escapeHtml(text) {
+        const map = { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;' };
+        return String(text).replace(/[&<>"']/g, m => map[m]);
+    }
+
     function showGamesForDate(dateStr, games) {
         const container = document.getElementById('selected-day-games');
         const title = document.getElementById('selected-date-title');
@@ -157,7 +162,7 @@
             games.forEach(game => {
                 const li = document.createElement('li');
                 li.className = 'text-sm';
-                li.innerHTML = `<a href="/games/${game.id}" class="text-blue-600 hover:underline">${game.name}</a> — начало в ${game.time || 'не указано'}`;
+                li.innerHTML = `<a href="/games/${game.id}" class="text-blue-600 hover:underline">${escapeHtml(game.name)}</a> — начало в ${escapeHtml(game.time || 'не указано')}`;
                 list.appendChild(li);
             });
         }

@@ -28,7 +28,7 @@ func (gameBlackboxVotingSession) TableName() string { return "blackbox_voting_se
 type Game struct {
 	gorm.Model
 	Name                 string     `form:"name" binding:"required,min=2,max=100"`
-	Description          string     `form:"description" binding:"max=5000"`
+	Description          string     `form:"description" binding:"max=2000"`
 	AuthorID             uint       `gorm:"not null;index"`
 	Author               user.User  `gorm:"foreignKey:AuthorID"`
 	IsDraft              bool       `gorm:"default:true"`

@@ -70,7 +70,13 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 			return err
 		}
 
-		// 3. Отправляем код через attemptService с передачей tx
+		// 3. Загружаем passing для получения GameID
+		var passing GamePassing
+		if err := tx.First(&passing, passingID).Error; err != nil {
+			return err
+		}
+
+		// 4. Отправляем код через attemptService с передачей tx
 		att, success, err := s.attemptSvc.SubmitCodeWithTx(tx, progress, code)
 		if err != nil {
 			return err
@@ -78,13 +84,21 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 		attempt = att
 
 		if success {
-			// 4. Завершаем уровень
-			if err := CompleteLevel(tx, progress); err != nil {
+			// 5. Завершаем уровень — при завершении последнего уровня вызываем расчёт результатов
+			gameID := passing.GameID
+			if err := CompleteLevel(tx, progress, func() {
+				// После фиксации транзакции — рассчитываем результаты
+				if s.monitorSvc != nil {
+					if err := s.monitorSvc.CalculateResults(ctx, gameID); err != nil {
+						log.Error().Err(err).Uint("game_id", gameID).Msg("SubmitCode: CalculateResults failed")
+					}
+				}
+			}); err != nil {
 				return err
 			}
 		}
 
-		// 5. Сохраняем лог
+		// 6. Сохраняем лог
 		logEntry := Log{
 			GamePassingID: passingID,
 			LevelID:       progress.LevelID,
@@ -145,7 +159,7 @@ func (s *GamePlayService) SubmitFile(ctx context.Context, passingID, userID uint
 
 // UseHint использует подсказку с транзакцией и блокировкой.
 func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		progress, err := GetCurrentProgressForUpdate(tx, passingID)
 		if err != nil {
 			return err
@@ -187,10 +201,16 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) e
 			return err
 		}
 
-		// Отправляем WebSocket-обновление, чтобы монитор обновил штрафное время
-		s.broadcastSnapshot(ctx, passingID)
 		return nil
 	})
+
+	if err != nil {
+		return err
+	}
+
+	// Отправляем WebSocket-обновление после фиксации транзакции
+	s.broadcastSnapshot(ctx, passingID)
+	return nil
 }
 
 // AcceptBlackboxAnswer подтверждает ответ на уровне "чёрный ящик" с транзакцией и блокировкой.
@@ -226,7 +246,7 @@ func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, u
 			return err
 		}
 
-		if err := CompleteLevel(tx, progress); err != nil {
+		if err := CompleteLevel(tx, progress, nil); err != nil {
 			return err
 		}
 
@@ -302,7 +322,7 @@ func (s *GamePlayService) SubmitTestCode(ctx context.Context, passingID, userID 
 			return err
 		}
 
-		if err := CompleteLevel(tx, progress); err != nil {
+		if err := CompleteLevel(tx, progress, nil); err != nil {
 			return err
 		}
 		return nil
@@ -346,7 +366,7 @@ func (s *GamePlayService) SkipLevelTest(ctx context.Context, passingID, userID u
 		if err := tx.Save(progress).Error; err != nil {
 			return err
 		}
-		return AdvanceToNextLevel(tx, passingID, progress.LevelID)
+		return AdvanceToNextLevel(tx, passingID, progress.LevelID, nil)
 	})
 }
 
@@ -373,7 +393,7 @@ func (s *GamePlayService) broadcastSnapshot(ctx context.Context, passingID uint)
 	}
 	gameID := passing.GameID
 	s.monitorSvc.InvalidateCache(gameID)
-	snapshot, err := s.monitorSvc.GetOrFetchSnapshot(gameID)
+	snapshot, err := s.monitorSvc.GetOrFetchSnapshot(ctx, gameID)
 	if err != nil {
 		log.Error().Err(err).Uint("game", gameID).Msg("GamePlayService.broadcastSnapshot: GetOrFetchSnapshot error")
 		return
