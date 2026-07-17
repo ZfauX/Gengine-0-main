@@ -3,9 +3,11 @@ package health
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"gengine-0/internal/pkg/cache"
+	"gengine-0/internal/pkg/email"
 	ws "gengine-0/internal/pkg/websocket"
 
 	"gorm.io/gorm"
@@ -16,11 +18,13 @@ type Checker struct {
 	db     *gorm.DB
 	hub    *ws.RoomHub
 	valkey cache.CacheStore
+	// failedEmailThreshold — порог failed email для degraded status
+	failedEmailThreshold int
 }
 
 // NewChecker создаёт новый Checker.
 func NewChecker(db *gorm.DB, hub *ws.RoomHub) *Checker {
-	return &Checker{db: db, hub: hub}
+	return &Checker{db: db, hub: hub, failedEmailThreshold: 100}
 }
 
 // NewCheckerWithValkey создаёт новый Checker с Valkey.
@@ -68,6 +72,13 @@ func (c *Checker) Check(ctx context.Context) HealthResponse {
 		if valkeyStatus.Status != "ok" {
 			overall = "degraded"
 		}
+	}
+
+	// Проверка email queue (failed emails)
+	emailStatus := c.checkEmailQueue()
+	components["email_queue"] = emailStatus
+	if emailStatus.Status != "ok" {
+		overall = "degraded"
 	}
 
 	// Если оба компонента в ошибке — ставим "error"
@@ -154,6 +165,35 @@ func (c *Checker) checkValkey(ctx context.Context) Status {
 	return Status{
 		Status:  "ok",
 		Message: "connected",
+		Latency: time.Since(start).String(),
+	}
+}
+
+// checkEmailQueue проверяет количество failed email в очереди.
+func (c *Checker) checkEmailQueue() Status {
+	start := time.Now()
+
+	// Проверяем количество failed email
+	var failedCount int64
+	if err := c.db.Model(&email.QueuedEmail{}).Where("status = ?", "failed").Count(&failedCount).Error; err != nil {
+		return Status{
+			Status:  "error",
+			Message: "failed to check email queue: " + err.Error(),
+			Latency: time.Since(start).String(),
+		}
+	}
+
+	if failedCount > int64(c.failedEmailThreshold) {
+		return Status{
+			Status:  "degraded",
+			Message: fmt.Sprintf("high number of failed emails: %d", failedCount),
+			Latency: time.Since(start).String(),
+		}
+	}
+
+	return Status{
+		Status:  "ok",
+		Message: fmt.Sprintf("failed emails: %d", failedCount),
 		Latency: time.Since(start).String(),
 	}
 }

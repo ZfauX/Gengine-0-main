@@ -126,15 +126,15 @@ func (h *CalendarHandler) CalendarICal(c *gin.Context) {
 		end := start.Add(2 * time.Hour)
 
 		sb.WriteString("BEGIN:VEVENT\r\n")
-		sb.WriteString(fmt.Sprintf("UID:%d-gengine@encounter\r\n", g.ID))
-		sb.WriteString(fmt.Sprintf("DTSTAMP:%s\r\n", now.UTC().Format("20060102T150405Z")))
-		sb.WriteString(fmt.Sprintf("DTSTART:%s\r\n", start.Format("20060102T150405Z")))
-		sb.WriteString(fmt.Sprintf("DTEND:%s\r\n", end.Format("20060102T150405Z")))
-		sb.WriteString(fmt.Sprintf("SUMMARY:%s\r\n", escapeICalText(g.Name)))
+		fmt.Fprintf(&sb, "UID:%d-gengine@encounter\r\n", g.ID)
+		fmt.Fprintf(&sb, "DTSTAMP:%s\r\n", now.UTC().Format("20060102T150405Z"))
+		fmt.Fprintf(&sb, "DTSTART:%s\r\n", start.Format("20060102T150405Z"))
+		fmt.Fprintf(&sb, "DTEND:%s\r\n", end.Format("20060102T150405Z"))
+		fmt.Fprintf(&sb, "SUMMARY:%s\r\n", escapeICalText(g.Name))
 		if g.Description != "" {
-			sb.WriteString(fmt.Sprintf("DESCRIPTION:%s\r\n", escapeICalText(g.Description)))
+			fmt.Fprintf(&sb, "DESCRIPTION:%s\r\n", escapeICalText(g.Description))
 		}
-		sb.WriteString(fmt.Sprintf("URL:https://%s/games/%d\r\n", c.Request.Host, g.ID))
+		fmt.Fprintf(&sb, "URL:https://%s/games/%d\r\n", c.Request.Host, g.ID)
 		sb.WriteString("END:VEVENT\r\n")
 	}
 
