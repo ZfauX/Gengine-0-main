@@ -13,7 +13,7 @@ var (
 			Name: "gengine_http_requests_total",
 			Help: "Total number of HTTP requests",
 		},
-		[]string{"method", "path", "status"},
+		[]string{"method", "route", "status"},
 	)
 
 	RequestDuration = promauto.NewHistogramVec(
@@ -22,7 +22,7 @@ var (
 			Help:    "HTTP request duration in seconds",
 			Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
 		},
-		[]string{"method", "path"},
+		[]string{"method", "route"},
 	)
 
 	RequestSize = promauto.NewHistogramVec(
@@ -31,7 +31,7 @@ var (
 			Help:    "HTTP request size in bytes",
 			Buckets: []float64{100, 500, 1000, 5000, 10000, 50000, 100000, 500000, 1000000},
 		},
-		[]string{"method", "path"},
+		[]string{"method", "route"},
 	)
 
 	ResponseSize = promauto.NewHistogramVec(
@@ -40,7 +40,7 @@ var (
 			Help:    "HTTP response size in bytes",
 			Buckets: []float64{100, 500, 1000, 5000, 10000, 50000, 100000, 500000, 1000000},
 		},
-		[]string{"method", "path"},
+		[]string{"method", "route"},
 	)
 
 	// --- Бизнес-метрики ---

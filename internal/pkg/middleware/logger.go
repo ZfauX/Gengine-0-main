@@ -76,13 +76,13 @@ func LoggerMiddleware() gin.HandlerFunc {
 			Msg("HTTP запрос")
 
 		// Обновляем метрики Prometheus
-		metrics.RequestsTotal.WithLabelValues(method, c.Request.URL.Path, statusStr).Inc()
-		metrics.RequestDuration.WithLabelValues(method, c.Request.URL.Path).Observe(latency.Seconds())
+		metrics.RequestsTotal.WithLabelValues(method, c.FullPath(), statusStr).Inc()
+		metrics.RequestDuration.WithLabelValues(method, c.FullPath()).Observe(latency.Seconds())
 		if requestSize > 0 {
-			metrics.RequestSize.WithLabelValues(method, c.Request.URL.Path).Observe(requestSize)
+			metrics.RequestSize.WithLabelValues(method, c.FullPath()).Observe(requestSize)
 		}
 		if c.Writer.Size() > 0 {
-			metrics.ResponseSize.WithLabelValues(method, c.Request.URL.Path).Observe(float64(c.Writer.Size()))
+			metrics.ResponseSize.WithLabelValues(method, c.FullPath()).Observe(float64(c.Writer.Size()))
 		}
 	}
 }

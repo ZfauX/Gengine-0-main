@@ -35,7 +35,7 @@ func GzipMiddleware() gin.HandlerFunc {
 			strings.HasPrefix(ct, "video/") ||
 			strings.HasPrefix(ct, "audio/") {
 			// Копируем uncompressed body back
-			sw.ResponseWriter.Write(sw.buf.Bytes())
+			_, _ = sw.ResponseWriter.Write(sw.buf.Bytes())
 			return
 		}
 

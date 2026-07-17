@@ -68,13 +68,6 @@ func (s *EmailService) SendSync(to, subject, body string) error {
 	return SendEmail(s.cfg, to, subject, body)
 }
 
-// getQueueSize возвращает количество писем со статусом 'pending'.
-func (s *EmailService) getQueueSize() int64 {
-	var count int64
-	s.db.Model(&QueuedEmail{}).Where("status = ?", "pending").Count(&count)
-	return count
-}
-
 // StartWorker запускает воркер, который периодически отправляет письма из очереди.
 func (s *EmailService) StartWorker(ctx context.Context, interval time.Duration, batchSize int) {
 	s.wg.Add(1)
@@ -121,14 +114,29 @@ func (s *EmailService) processPendingEmails(ctx context.Context, batchSize int) 
 		return nil
 	}
 
-	for _, email := range emails {
+	// O6: Parallel sending с лимитом concurrent workers
+	const maxConcurrent = 10 // максимум 10 параллельных SMTP-соединений
+	sem := make(chan struct{}, maxConcurrent)
+	var wg sync.WaitGroup
+
+	for i := range emails {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			s.sendEmailWithRetry(&email)
 		}
+
+		wg.Add(1)
+		go func(e *QueuedEmail) {
+			defer wg.Done()
+			sem <- struct{}{}        // acquire semaphore
+			defer func() { <-sem }() // release semaphore
+
+			s.sendEmailWithRetry(e)
+		}(&emails[i])
 	}
+
+	wg.Wait()
 
 	s.queueSize.Add(-int64(len(emails)))
 	metrics.SetEmailQueueSize(float64(s.queueSize.Load()))

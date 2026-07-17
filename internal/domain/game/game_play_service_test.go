@@ -160,7 +160,7 @@ func TestGamePlayService_UseHint(t *testing.T) {
 	assert.Equal(t, 1, updatedProgress.HintsUsed)
 	assert.Equal(t, 300, updatedProgress.PenaltySeconds)
 
-	hint, err = playSvc.UseHint(context.Background(), passing.ID, author.ID)
+	_, err = playSvc.UseHint(context.Background(), passing.ID, author.ID)
 	require.NoError(t, err)
 
 	updatedProgress, err = progressSvc.GetCurrentProgress(context.Background(), passing.ID)
