@@ -173,16 +173,19 @@ func runPeriodic(db *gorm.DB, ctx context.Context, runner periodicRunner) {
 	}
 }
 
+// GameCompletionCallback — функция, вызываемая при завершении игры.
+type GameCompletionCallback func(ctx context.Context, gameID uint)
+
 // CheckTimeouts проверяет все незавершённые прогрессы и завершает просроченные.
-// Запущена как горутина, останавливается через ctx.
-func CheckTimeouts(db *gorm.DB, ctx context.Context) {
+// onGameFinished — необязательный callback для расчёта результатов при завершении игры.
+func CheckTimeouts(db *gorm.DB, ctx context.Context, onGameFinished GameCompletionCallback) {
 	runPeriodic(db, ctx, periodicRunner{
 		interval: 30 * time.Second,
-		fn:       checkTimeoutsImpl,
+		fn:       func(db *gorm.DB, ctx context.Context) { checkTimeoutsImpl(db, ctx, onGameFinished) },
 	})
 }
 
-func checkTimeoutsImpl(db *gorm.DB, ctx context.Context) {
+func checkTimeoutsImpl(db *gorm.DB, ctx context.Context, onGameFinished GameCompletionCallback) {
 	const batchSize = 50
 
 	var activeProgresses []LevelProgress
@@ -253,7 +256,16 @@ func checkTimeoutsImpl(db *gorm.DB, ctx context.Context) {
 				if err := tx.Save(&current).Error; err != nil {
 					return err
 				}
-				return AdvanceToNextLevel(tx, current.GamePassingID, current.LevelID, nil)
+				// Загружаем passing для получения GameID
+				var passing GamePassing
+				if err := tx.First(&passing, current.GamePassingID).Error; err != nil {
+					return err
+				}
+				return AdvanceToNextLevel(tx, current.GamePassingID, current.LevelID, func() {
+					if onGameFinished != nil {
+						onGameFinished(ctx, passing.GameID)
+					}
+				})
 			}); err != nil {
 				log.Error().Err(err).Uint("progress_id", p.ID).Msg("CheckTimeouts: transaction failed")
 			}

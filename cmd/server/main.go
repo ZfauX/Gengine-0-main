@@ -161,7 +161,7 @@ func main() {
 		log.Fatal().Err(err).Msg("Не удалось создать/обновить администратора")
 	}
 
-	localStorage := storage.NewLocalStorage()
+	localStorage := storage.NewLocalStorage().WithBaseDir(filepath.Join(".", cfg.Server.UploadsDir))
 	hub := ws.NewRoomHub()
 	hub.SetLimits(cfg.WebSocket.MaxTotalConns, cfg.WebSocket.MaxConnsPerIP)
 	go hub.Run()
@@ -203,8 +203,17 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Callback для расчёта результатов при завершении игры
+	onGameFinished := func(ctx context.Context, gameID uint) {
+		if deps.Services.Monitor != nil {
+			if err := deps.Services.Monitor.CalculateResults(ctx, gameID); err != nil {
+				log.Error().Err(err).Uint("game_id", gameID).Msg("onGameFinished: CalculateResults failed")
+			}
+		}
+	}
+
 	// Запуск фоновых задач
-	go game.CheckTimeouts(database, ctx)
+	go game.CheckTimeouts(database, ctx, onGameFinished)
 	go game.CheckAutoStartGames(database, ctx)
 
 	// Мониторинг connection pool (раз в минуту)

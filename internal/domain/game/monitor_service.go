@@ -4,6 +4,7 @@ package game
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -306,10 +307,26 @@ func (s *MonitorService) CalculateResults(ctx context.Context, gameID uint) erro
 	var placeWHENs []string
 	var whereIDsStr []string
 
+	// Сортируем результаты по длительности (для корректного назначения мест)
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Duration < results[j].Duration
+	})
+
+	// Назначаем места с учётом ничьих (одинаковое время = одинаковое место)
+	lastPlace := 0
 	for i, res := range results {
 		durationWHENs = append(durationWHENs, fmt.Sprintf("WHEN %d THEN ?", res.ID))
 		durationArgs = append(durationArgs, res.Duration)
-		placeWHENs = append(placeWHENs, fmt.Sprintf("WHEN %d THEN %d", res.ID, i+1))
+
+		// Вычисляем место: если предыдущий результат имеет ту же длительность — то же место
+		place := i + 1
+		if i > 0 && results[i].Duration == results[i-1].Duration {
+			// Извлекаем место из предыдущего placeWHENs
+			// placeWHENs[i-1] имеет формат "WHEN X THEN Y"
+			place = lastPlace
+		}
+		lastPlace = place
+		placeWHENs = append(placeWHENs, fmt.Sprintf("WHEN %d THEN %d", res.ID, place))
 		whereIDsStr = append(whereIDsStr, fmt.Sprintf("%d", res.ID))
 	}
 

@@ -182,14 +182,14 @@ func createGameAdminTestData(t *testing.T, db *gorm.DB) (*game.Game, *game.GameP
 
 func TestGameAdminService_ForceFinishGame(t *testing.T) {
 	db, adminSvc, _ := setupGameAdminTest(t)
-	g, passing, _ := createGameAdminTestData(t, db)
+	g, passing, author := createGameAdminTestData(t, db)
 
 	otherUser := createUser(t, db, "other@test.com", "pass")
 	otherTeam := createTeam(t, db, otherUser.ID)
 	otherPassing := createPassing(t, db, g.ID, otherTeam.ID, game.StatusStarted)
 	createLevelProgress(t, db, otherPassing.ID, createLevel(t, db, g.ID, "Level 2", 2).ID, false)
 
-	err := adminSvc.ForceFinishGame(context.Background(), g.ID)
+	err := adminSvc.ForceFinishGame(context.Background(), g.ID, author.ID)
 	require.NoError(t, err)
 
 	var passings []game.GamePassing
@@ -210,16 +210,16 @@ func TestGameAdminService_ForceFinishGame_NoActive(t *testing.T) {
 	author := createUser(t, db, "author@test.com", "pass")
 	g := createPublishedGameWithSettings(t, db, author.ID, "No Active Game")
 
-	err := adminSvc.ForceFinishGame(context.Background(), g.ID)
+	err := adminSvc.ForceFinishGame(context.Background(), g.ID, author.ID)
 	assert.Error(t, err)
 	assert.Equal(t, "нет активных прохождений", err.Error())
 }
 
 func TestGameAdminService_DisqualifyTeam(t *testing.T) {
 	db, adminSvc, _ := setupGameAdminTest(t)
-	g, passing, _ := createGameAdminTestData(t, db)
+	g, passing, author := createGameAdminTestData(t, db)
 
-	err := adminSvc.DisqualifyTeam(context.Background(), g.ID, passing.TeamID)
+	err := adminSvc.DisqualifyTeam(context.Background(), g.ID, passing.TeamID, author.ID)
 	require.NoError(t, err)
 
 	var updated game.GamePassing
@@ -238,7 +238,7 @@ func TestGameAdminService_DisqualifyTeam_NotInGame(t *testing.T) {
 	g := createPublishedGameWithSettings(t, db, author.ID, "Disq Game")
 	tm := createTeam(t, db, author.ID)
 
-	err := adminSvc.DisqualifyTeam(context.Background(), g.ID, tm.ID)
+	err := adminSvc.DisqualifyTeam(context.Background(), g.ID, tm.ID, author.ID)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "команда не в игре")
 }

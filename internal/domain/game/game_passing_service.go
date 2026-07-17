@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -59,6 +60,10 @@ func (s *GamePassingService) Apply(ctx context.Context, gameID, teamID, userID u
 		if game.IsDraft {
 			return errors.New("нельзя подать заявку на черновик")
 		}
+		// S6: Проверка дедлайна регистрации
+		if game.RegistrationDeadline != nil && game.RegistrationDeadline.Before(time.Now()) {
+			return errors.New("регистрация завершена")
+		}
 		var acceptedCount int64
 		if err := tx.Model(&GamePassing{}).Where("game_id = ? AND status IN (?, ?)", gameID, StatusAccepted, StatusStarted).Count(&acceptedCount).Error; err != nil {
 			return err
@@ -93,30 +98,72 @@ func (s *GamePassingService) ListTestPassings(ctx context.Context, gameID uint, 
 	return s.DB.WithContext(ctx).Where("game_id = ? AND status = ?", gameID, StatusTesting).Find(result).Error
 }
 
-// UpdateStatus обновляет статус прохождения.
+// UpdateStatus обновляет статус прохождения с транзакцией, блокировкой и валидацией переходов.
 func (s *GamePassingService) UpdateStatus(ctx context.Context, passingID uint, status GamePassingStatus, userID uint) error {
-	var passing GamePassing
-	if err := s.DB.WithContext(ctx).First(&passing, passingID).Error; err != nil {
-		return err
+	// Валидация переходов статусов
+	validTransitions := map[GamePassingStatus][]GamePassingStatus{
+		StatusPending:      {StatusAccepted, StatusRejected},
+		StatusAccepted:     {StatusStarted},
+		StatusStarted:      {StatusFinished, StatusDisqualified},
+		StatusFinished:     {},
+		StatusRejected:     {},
+		StatusDisqualified: {},
+		StatusTesting:      {StatusFinished},
 	}
-	var g Game
-	if err := s.DB.WithContext(ctx).First(&g, passing.GameID).Error; err != nil {
-		return err
+	validFor := validTransitions[status]
+	if len(validFor) == 0 {
+		return errors.New("невозможно перейти в статус " + string(status))
 	}
-	ok, err := s.coAuthor.HasPermission(ctx, passing.GameID, userID, RoleModerator)
+
+	var currentStatus GamePassingStatus
+	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var passing GamePassing
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&passing, passingID).Error; err != nil {
+			return err
+		}
+		currentStatus = passing.Status
+
+		var g Game
+		if err := tx.First(&g, passing.GameID).Error; err != nil {
+			return err
+		}
+		ok, err := s.coAuthor.HasPermission(ctx, passing.GameID, userID, RoleModerator)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return errors.New("только автор или модератор может менять статус заявки")
+		}
+
+		// Проверка допустимости перехода
+		allowed := false
+		for _, s := range validFor {
+			if s == currentStatus {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return fmt.Errorf("невозможно перейти из %s в %s", currentStatus, status)
+		}
+
+		passing.Status = status
+		return tx.Save(&passing).Error
+	})
+
 	if err != nil {
 		return err
 	}
-	if !ok {
-		return errors.New("только автор или модератор может менять статус заявки")
-	}
-	passing.Status = status
-	return s.DB.WithContext(ctx).Save(&passing).Error
+
+	return nil
 }
 
 // StartGame запускает игру для прохождения.
 func (s *GamePassingService) StartGame(ctx context.Context, passingID, userID uint) error {
-	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	var gameID uint
+	var teamName string
+
+	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var passing GamePassing
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&passing, passingID).Error; err != nil {
 			return err
@@ -143,14 +190,25 @@ func (s *GamePassingService) StartGame(ctx context.Context, passingID, userID ui
 			return err
 		}
 		if err := s.progressSvc.InitFirstLevelWithTx(ctx, tx, passingID); err != nil {
-			log.Error().Err(err).Uint("passing", passingID).Msg("StartGame: InitFirstLevel failed")
+			return err
 		}
-
-		// Отправляем WebSocket-уведомление о старте игры
-		s.broadcastGameStart(ctx, passing.GameID, passingID, t.Name)
-
+		// Сохраняем данные для broadcast после транзакции
+		gameID = passing.GameID
+		teamName = t.Name
 		return nil
 	})
+
+	if err != nil {
+		return err
+	}
+
+	// L4: Отправляем WebSocket-уведомление ПОСЛЕ фиксации транзакции
+	// L5: Используем контекст с таймаутом правильно
+	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	s.broadcastGameStart(timeoutCtx, gameID, passingID, teamName)
+
+	return nil
 }
 
 // broadcastGameStart отправляет WebSocket-уведомление о старте игры всем клиентам мониторинга.

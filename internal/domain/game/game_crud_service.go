@@ -141,7 +141,7 @@ func (s *GameCRUDService) CanViewGame(ctx context.Context, game *Game, viewerID 
 		return true, nil
 	}
 
-	isManager, err := s.CoAuthor.IsUserManager(context.Background(), game.ID, viewerID)
+	isManager, err := s.CoAuthor.IsUserManager(ctx, game.ID, viewerID)
 	if err != nil {
 		return false, fmt.Errorf("ошибка проверки прав: %w", err)
 	}

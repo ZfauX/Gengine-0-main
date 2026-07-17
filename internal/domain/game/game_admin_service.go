@@ -35,12 +35,22 @@ func NewGameAdminService(db *gorm.DB, coAuthorSvc *CoAuthorService, cfg *config.
 }
 
 // GameAdminService принудительно завершает игру с транзакцией и блокировками.
-func (s *GameAdminService) ForceFinishGame(ctx context.Context, gameID uint) error {
+// Требует прав модератора.
+func (s *GameAdminService) ForceFinishGame(ctx context.Context, gameID, userID uint) error {
 	var passings []GamePassing
 	var game Game
 	var teamIDs []uint
 
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	// Проверка прав перед транзакцией
+	ok, err := s.coAuthorSvc.HasPermission(ctx, gameID, userID, RoleModerator)
+	if err != nil {
+		return fmt.Errorf("ошибка проверки прав: %w", err)
+	}
+	if !ok {
+		return errors.New("только автор или модератор может завершить игру")
+	}
+
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("game_id = ? AND status = ?", gameID, StatusStarted).
 			Preload("Team.Captain").
@@ -75,19 +85,28 @@ func (s *GameAdminService) ForceFinishGame(ctx context.Context, gameID uint) err
 	}
 
 	// Отправляем уведомления после фиксации транзакции
-	for i, p := range passings {
+	for _, p := range passings {
 		s.notifyCaptainAboutFinish(p.TeamID, &game)
-		_ = teamIDs[i] // teamIDs заполнены в транзакции
 	}
 	return nil
 }
 
 // DisqualifyTeam дисквалифицирует команду с транзакцией и блокировкой.
-func (s *GameAdminService) DisqualifyTeam(ctx context.Context, gameID, teamID uint) error {
+// Требует прав модератора.
+func (s *GameAdminService) DisqualifyTeam(ctx context.Context, gameID, teamID, userID uint) error {
 	var passing GamePassing
 	var game Game
 
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	// Проверка прав перед транзакцией
+	ok, err := s.coAuthorSvc.HasPermission(ctx, gameID, userID, RoleModerator)
+	if err != nil {
+		return fmt.Errorf("ошибка проверки прав: %w", err)
+	}
+	if !ok {
+		return errors.New("только автор или модератор может дисквалифицировать команду")
+	}
+
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("game_id = ? AND team_id = ? AND status = ?", gameID, teamID, StatusStarted).
 			Preload("Team.Captain").

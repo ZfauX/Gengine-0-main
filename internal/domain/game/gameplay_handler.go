@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -97,6 +98,36 @@ func (h *GameplayHandler) ShowGame(c *gin.Context) {
 	})
 }
 
+// renderGameplayError рендерит страницу ошибки с полными данными уровня.
+func (h *GameplayHandler) renderGameplayError(c *gin.Context, passingID uint, err_msg string) {
+	// Загружаем те же данные, что и в ShowGame
+	data, err := h.gamePlaySvc.GetGameplayData(c.Request.Context(), passingID)
+	if err != nil {
+		// Если данные не удалось загрузить — просто рендерим ошибку
+		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
+			"Error":     err_msg,
+			"csrf":      csrf.GetToken(c),
+			"PassingID": passingID,
+			"GameID":    c.Param("game_id"),
+		})
+		return
+	}
+
+	hideAnswers := data.Settings.HideAnswersUntilFinished && data.Passing.Status != StatusFinished
+	render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
+		"PassingID":        passingID,
+		"Level":            data.Level,
+		"Attempts":         data.Attempts,
+		"TimeLimitSeconds": data.TimeLimitSec,
+		"HideAnswers":      hideAnswers,
+		"VotingActive":     data.VotingActive,
+		"TeamID":           data.Passing.TeamID,
+		"GameID":           data.Passing.GameID,
+		"Error":            err_msg,
+		"csrf":             csrf.GetToken(c),
+	})
+}
+
 // SubmitCode обрабатывает ввод текстового кода.
 func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 	passingID, err := strconv.Atoi(c.Param("passing_id"))
@@ -112,28 +143,19 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 	}
 
 	if err := limitRequestBody(c, 1*1024*1024); err != nil {
-		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
-			"Error": err.Error(),
-			"csrf":  csrf.GetToken(c),
-		})
+		h.renderGameplayError(c, uint(passingID), err.Error())
 		return
 	}
 
 	var input SubmitCodeInput
 	if err := c.ShouldBind(&input); err != nil {
-		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
-			"Error": "Неверные данные: " + err.Error(),
-			"csrf":  csrf.GetToken(c),
-		})
+		h.renderGameplayError(c, uint(passingID), "Неверные данные: "+err.Error())
 		return
 	}
 
 	code := strings.TrimSpace(input.Code)
 	if err := validation.ValidateString("Код", code, 1, 10000); err != nil {
-		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
-			"Error": err.Error(),
-			"csrf":  csrf.GetToken(c),
-		})
+		h.renderGameplayError(c, uint(passingID), err.Error())
 		return
 	}
 
@@ -146,10 +168,7 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 			c.Redirect(http.StatusFound, "/game/"+c.Param("passing_id")+"/finished")
 			return
 		}
-		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
-			"Error": err.Error(),
-			"csrf":  csrf.GetToken(c),
-		})
+		h.renderGameplayError(c, uint(passingID), err.Error())
 		return
 	}
 
@@ -167,11 +186,14 @@ func (h *GameplayHandler) UseHint(c *gin.Context) {
 		render.RenderError(c, http.StatusBadRequest, "Неверный ID прохождения")
 		return
 	}
-	if err := h.gamePlaySvc.UseHint(c.Request.Context(), uint(passingID), c.GetUint("userID")); err != nil {
-		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
-			"Error": err.Error(),
-			"csrf":  csrf.GetToken(c),
-		})
+	hintText, err := h.gamePlaySvc.UseHint(c.Request.Context(), uint(passingID), c.GetUint("userID"))
+	if err != nil {
+		h.renderGameplayError(c, uint(passingID), err.Error())
+		return
+	}
+	// Если есть текст подсказки — передаём его в шаблон
+	if hintText != "" {
+		c.Redirect(http.StatusFound, "/game/"+c.Param("passing_id")+"?hint="+url.QueryEscape(hintText))
 		return
 	}
 	c.Redirect(http.StatusFound, "/game/"+c.Param("passing_id"))
@@ -192,19 +214,13 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 	}
 
 	if err := limitRequestBody(c, 10*1024*1024); err != nil {
-		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
-			"Error": err.Error(),
-			"csrf":  csrf.GetToken(c),
-		})
+		h.renderGameplayError(c, uint(passingID), err.Error())
 		return
 	}
 
 	file, header, err := c.Request.FormFile("answer_file")
 	if err != nil {
-		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
-			"Error": "Файл не выбран",
-			"csrf":  csrf.GetToken(c),
-		})
+		h.renderGameplayError(c, uint(passingID), "Файл не выбран")
 		return
 	}
 	defer func() { _ = file.Close() }()

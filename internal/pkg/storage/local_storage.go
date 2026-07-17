@@ -14,11 +14,19 @@ import (
 )
 
 // LocalStorage реализует FileStorage через локальную файловую систему.
-type LocalStorage struct{}
+type LocalStorage struct {
+	baseDir string
+}
 
 // NewLocalStorage создаёт новый LocalStorage.
 func NewLocalStorage() *LocalStorage {
 	return &LocalStorage{}
+}
+
+// WithBaseDir задаёт базовую директорию для хранилища.
+func (s *LocalStorage) WithBaseDir(baseDir string) *LocalStorage {
+	s.baseDir = baseDir
+	return s
 }
 
 // sanitizeFilename очищает имя файла, оставляя только безопасные символы.
@@ -163,7 +171,7 @@ func (s *LocalStorage) Delete(webPath string) error {
 	if webPath == "" {
 		return nil
 	}
-	// Извлекаем относительную часть пути (после первого "/")
+	// webPath — абсолютный путь, возвращённый Save (например, /abs/path/to/file.jpg)
 	relPath := webPath
 	if strings.HasPrefix(webPath, "/") {
 		relPath = webPath[1:]

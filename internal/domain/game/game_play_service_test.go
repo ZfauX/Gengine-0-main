@@ -123,7 +123,16 @@ func TestGamePlayService_SubmitCode_Blackbox(t *testing.T) {
 
 func TestGamePlayService_SubmitFile(t *testing.T) {
 	db, playSvc, _ := setupGamePlayTest(t)
-	_, _, passing, author := createGamePlayTestData(t, db)
+	author := createUser(t, db, "author2@test.com", "pass")
+	g := createPublishedGameWithSettings(t, db, author.ID, "File Upload Game")
+
+	// Создаём файл_upload уровень
+	lvl := createLevel(t, db, g.ID, "File Level", 1)
+	db.Model(&lvl).Update("type", "file_upload")
+
+	tm := createTeam(t, db, author.ID)
+	passing := createPassing(t, db, g.ID, tm.ID, game.StatusStarted)
+	createLevelProgress(t, db, passing.ID, lvl.ID, false)
 
 	filePath := "/uploads/answers/test.txt"
 	attempt, err := playSvc.SubmitFile(context.Background(), passing.ID, author.ID, filePath)
@@ -142,15 +151,16 @@ func TestGamePlayService_UseHint(t *testing.T) {
 	assert.Equal(t, 0, progress.HintsUsed)
 	assert.Equal(t, 0, progress.PenaltySeconds)
 
-	err = playSvc.UseHint(context.Background(), passing.ID, author.ID)
+	hint, err := playSvc.UseHint(context.Background(), passing.ID, author.ID)
 	require.NoError(t, err)
+	assert.Equal(t, "", hint) // пустая подсказка, т.к. в тесте нет вопроса с hint
 
 	updatedProgress, err := progressSvc.GetCurrentProgress(context.Background(), passing.ID)
 	require.NoError(t, err)
 	assert.Equal(t, 1, updatedProgress.HintsUsed)
 	assert.Equal(t, 300, updatedProgress.PenaltySeconds)
 
-	err = playSvc.UseHint(context.Background(), passing.ID, author.ID)
+	hint, err = playSvc.UseHint(context.Background(), passing.ID, author.ID)
 	require.NoError(t, err)
 
 	updatedProgress, err = progressSvc.GetCurrentProgress(context.Background(), passing.ID)
@@ -172,7 +182,7 @@ func TestGamePlayService_UseHint_Disabled(t *testing.T) {
 	err = db.Save(&settings).Error
 	require.NoError(t, err)
 
-	err = playSvc.UseHint(context.Background(), passing.ID, author.ID)
+	_, err = playSvc.UseHint(context.Background(), passing.ID, author.ID)
 	assert.Error(t, err)
 	assert.Equal(t, "подсказки запрещены", err.Error())
 }
@@ -190,10 +200,10 @@ func TestGamePlayService_UseHint_MaxReached(t *testing.T) {
 	err = db.Save(&settings).Error
 	require.NoError(t, err)
 
-	err = playSvc.UseHint(context.Background(), passing.ID, author.ID)
+	_, err = playSvc.UseHint(context.Background(), passing.ID, author.ID)
 	require.NoError(t, err)
 
-	err = playSvc.UseHint(context.Background(), passing.ID, author.ID)
+	_, err = playSvc.UseHint(context.Background(), passing.ID, author.ID)
 	assert.Error(t, err)
 	assert.Equal(t, "лимит подсказок исчерпан", err.Error())
 }
