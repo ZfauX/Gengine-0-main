@@ -16,8 +16,8 @@ func NewNoteService(db *gorm.DB, ca *CoAuthorService) *NoteService {
 	return &NoteService{DB: db, coAuthorSvc: ca}
 }
 
-func (s *NoteService) ListByGame(gameID, userID uint) ([]Note, error) {
-	isManager, _ := s.coAuthorSvc.IsUserManager(context.Background(), gameID, userID)
+func (s *NoteService) ListByGame(ctx context.Context, gameID, userID uint) ([]Note, error) {
+	isManager, _ := s.coAuthorSvc.IsUserManager(ctx, gameID, userID)
 	if !isManager {
 		return nil, errors.New("только автор или соавтор может видеть заметки")
 	}
@@ -26,8 +26,8 @@ func (s *NoteService) ListByGame(gameID, userID uint) ([]Note, error) {
 	return notes, err
 }
 
-func (s *NoteService) Create(gameID uint, levelID *uint, userID uint, text string) (*Note, error) {
-	isManager, _ := s.coAuthorSvc.IsUserManager(context.Background(), gameID, userID)
+func (s *NoteService) Create(ctx context.Context, gameID uint, levelID *uint, userID uint, text string) (*Note, error) {
+	isManager, _ := s.coAuthorSvc.IsUserManager(ctx, gameID, userID)
 	if !isManager {
 		return nil, errors.New("только автор или соавтор может создавать заметки")
 	}
@@ -39,12 +39,12 @@ func (s *NoteService) Create(gameID uint, levelID *uint, userID uint, text strin
 	return &note, nil
 }
 
-func (s *NoteService) Delete(noteID, userID uint) error {
+func (s *NoteService) Delete(ctx context.Context, noteID, userID uint) error {
 	var note Note
 	if err := s.DB.First(&note, noteID).Error; err != nil {
 		return err
 	}
-	isManager, _ := s.coAuthorSvc.IsUserManager(context.Background(), note.GameID, userID)
+	isManager, _ := s.coAuthorSvc.IsUserManager(ctx, note.GameID, userID)
 	if note.UserID != userID && !isManager {
 		return errors.New("нет прав на удаление")
 	}

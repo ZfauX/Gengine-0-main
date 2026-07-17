@@ -73,7 +73,7 @@ type GamePassingServiceInterface interface {
 type GamePlayServiceInterface interface {
 	SubmitCode(ctx context.Context, passingID, userID uint, code string) (*Attempt, error)
 	SubmitFile(ctx context.Context, passingID, userID uint, filePath string) (*Attempt, error)
-	UseHint(ctx context.Context, passingID, userID uint) error
+	UseHint(ctx context.Context, passingID, userID uint) (string, error)
 	AcceptBlackboxAnswer(ctx context.Context, passingID, userID uint) error
 	StartTesting(ctx context.Context, gameID, userID uint) (*GamePassing, error)
 	SubmitTestCode(ctx context.Context, passingID, userID uint, code string) (*Attempt, error)
@@ -94,8 +94,8 @@ type GameplayData struct {
 }
 
 type GameAdminServiceInterface interface {
-	ForceFinishGame(ctx context.Context, gameID uint) error
-	DisqualifyTeam(ctx context.Context, gameID, teamID uint) error
+	ForceFinishGame(ctx context.Context, gameID, userID uint) error
+	DisqualifyTeam(ctx context.Context, gameID, teamID, userID uint) error
 	DeleteLevelFromActiveGame(ctx context.Context, gameID, levelID, userID uint) error
 }
 
@@ -763,8 +763,9 @@ func (h *GameHandler) ForceFinish(c *gin.Context) {
 		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
 		return
 	}
+	userID := c.GetUint("userID")
 
-	if err := h.gameAdminSvc.ForceFinishGame(c.Request.Context(), uint(gameID)); err != nil {
+	if err := h.gameAdminSvc.ForceFinishGame(c.Request.Context(), uint(gameID), userID); err != nil {
 		render.RenderError(c, http.StatusForbidden, err.Error())
 		return
 	}
@@ -779,6 +780,7 @@ func (h *GameHandler) DisqualifyTeam(c *gin.Context) {
 		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
 		return
 	}
+	userID := c.GetUint("userID")
 
 	if err := limitRequestBody(c, 1*1024*1024); err != nil {
 		render.RenderError(c, http.StatusBadRequest, err.Error())
@@ -795,7 +797,7 @@ func (h *GameHandler) DisqualifyTeam(c *gin.Context) {
 		return
 	}
 
-	if err := h.gameAdminSvc.DisqualifyTeam(c.Request.Context(), uint(gameID), input.TeamID); err != nil {
+	if err := h.gameAdminSvc.DisqualifyTeam(c.Request.Context(), uint(gameID), input.TeamID, userID); err != nil {
 		render.RenderError(c, http.StatusForbidden, err.Error())
 		return
 	}
@@ -897,7 +899,7 @@ func (h *GameHandler) Notes(c *gin.Context) {
 		return
 	}
 	userID := c.GetUint("userID")
-	notes, err := h.noteService.ListByGame(uint(gameID), userID)
+	notes, err := h.noteService.ListByGame(c.Request.Context(), uint(gameID), userID)
 	if err != nil {
 		appErr := apperr.NewForbiddenError(err.Error())
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
@@ -949,7 +951,7 @@ func (h *GameHandler) CreateNote(c *gin.Context) {
 	}
 	input.Text = sanitize.StripHTML(input.Text)
 
-	note, err := h.noteService.Create(uint(gameID), input.LevelID, userID, input.Text)
+	note, err := h.noteService.Create(c.Request.Context(), uint(gameID), input.LevelID, userID, input.Text)
 	if err != nil {
 		appErr := apperr.NewForbiddenError(err.Error())
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
@@ -972,7 +974,7 @@ func (h *GameHandler) DeleteNote(c *gin.Context) {
 		return
 	}
 	userID := c.GetUint("userID")
-	if err := h.noteService.Delete(uint(noteID), userID); err != nil {
+	if err := h.noteService.Delete(c.Request.Context(), uint(noteID), userID); err != nil {
 		appErr := apperr.NewForbiddenError(err.Error())
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
@@ -993,7 +995,7 @@ func (h *GameHandler) Simulate(c *gin.Context) {
 		return
 	}
 	userID := c.GetUint("userID")
-	result, err := h.simulateService.Simulate(uint(gameID), userID)
+	result, err := h.simulateService.Simulate(c.Request.Context(), uint(gameID), userID)
 	if err != nil {
 		render.RenderError(c, http.StatusForbidden, err.Error())
 		return

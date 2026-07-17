@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 
@@ -21,7 +20,7 @@ func GameManager(authorizer GameAuthorizer) gin.HandlerFunc {
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
-		ok, err := authorizer.IsUserManager(context.Background(), uint(gameID), userID)
+		ok, err := authorizer.IsUserManager(c.Request.Context(), uint(gameID), userID)
 		if err != nil || !ok {
 			c.AbortWithStatus(http.StatusForbidden)
 			return

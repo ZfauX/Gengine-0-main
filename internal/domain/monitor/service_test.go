@@ -68,16 +68,34 @@ func TestMonitorService_CalculateResults(t *testing.T) {
 	author := createUser(t, db, "auth@test.com", "pass")
 	g := createGame(t, db, author.ID, "Results Game")
 
+	// Создаём уровень
+	lvl := createLevel(t, db, g.ID, "Test Level", 1)
+
 	tm1 := createTeam(t, db, author.ID)
 	tm2 := createTeam(t, db, author.ID)
 
 	p1 := createPassing(t, db, g.ID, tm1.ID, game.StatusFinished)
 	p2 := createPassing(t, db, g.ID, tm2.ID, game.StatusFinished)
 
+	// Создаём level_progresses с корректным finished_at
+	baseTime := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	d1 := 5 * time.Minute
 	d2 := 10 * time.Minute
-	db.Model(p1).Update("result_duration", d1)
-	db.Model(p2).Update("result_duration", d2)
+
+	createLevelProgress(t, db, p1.ID, lvl.ID, true)
+	createLevelProgress(t, db, p2.ID, lvl.ID, true)
+
+	// Устанавливаем durations через UPDATE
+	// p1: started=baseTime, finished=baseTime+d1 => duration=5min
+	// p2: started=baseTime, finished=baseTime+d2 => duration=10min
+	db.Model(&game.LevelProgress{}).Where("game_passing_id = ?", p1.ID).Updates(map[string]interface{}{
+		"started_at":  baseTime,
+		"finished_at": baseTime.Add(d1),
+	})
+	db.Model(&game.LevelProgress{}).Where("game_passing_id = ?", p2.ID).Updates(map[string]interface{}{
+		"started_at":  baseTime,
+		"finished_at": baseTime.Add(d2),
+	})
 
 	err := ms.CalculateResults(context.Background(), g.ID)
 	require.NoError(t, err)

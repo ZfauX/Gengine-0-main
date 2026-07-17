@@ -86,23 +86,18 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 		if success {
 			// 5. Завершаем уровень — при завершении последнего уровня вызываем расчёт результатов
 			gameID := passing.GameID
-			if err := CompleteLevel(tx, progress, func() {
-				// После фиксации транзакции — рассчитываем результаты
-				if s.monitorSvc != nil {
-					if err := s.monitorSvc.CalculateResults(ctx, gameID); err != nil {
-						log.Error().Err(err).Uint("game_id", gameID).Msg("SubmitCode: CalculateResults failed")
-					}
-				}
-			}); err != nil {
+			if err := CompleteLevel(tx, progress, nil); err != nil {
 				return err
 			}
+			// Сохраняем gameID для вызова после транзакции
+			attempt._gameID = gameID
 		}
 
 		// 6. Сохраняем лог
 		logEntry := Log{
 			GamePassingID: passingID,
 			LevelID:       progress.LevelID,
-			Message:       fmt.Sprintf("код %s: %s", code, map[bool]string{true: "принят", false: "неверный"}[success]),
+			Message:       fmt.Sprintf("код ***: %s", map[bool]string{true: "принят", false: "неверный"}[success]),
 		}
 		return tx.Create(&logEntry).Error
 	})
@@ -111,9 +106,17 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 		return nil, err
 	}
 
-	// Отправляем WebSocket-обновления после транзакции
+	// Отправляем WebSocket-обновления и рассчитываем результаты ПОСЛЕ транзакции
 	if attempt != nil {
 		s.broadcastSnapshot(ctx, passingID)
+		// Рассчитываем результаты, если игра завершена (на основе gameID)
+		if attempt._gameID != 0 {
+			if s.monitorSvc != nil {
+				if err := s.monitorSvc.CalculateResults(ctx, attempt._gameID); err != nil {
+					log.Error().Err(err).Uint("game_id", attempt._gameID).Msg("SubmitCode: CalculateResults failed")
+				}
+			}
+		}
 	}
 
 	return attempt, nil
@@ -131,6 +134,15 @@ func (s *GamePlayService) SubmitFile(ctx context.Context, passingID, userID uint
 
 		if err := checkTeamMembership(tx, passingID, userID); err != nil {
 			return err
+		}
+
+		// Q5: Проверяем, что уровень поддерживает файловые ответы
+		var lvl level.Level
+		if err := tx.Where("id = ?", progress.LevelID).First(&lvl).Error; err != nil {
+			return err
+		}
+		if lvl.Type != level.TypeFileUpload {
+			return errors.New("этот уровень не поддерживает файловые ответы")
 		}
 
 		att, err := s.attemptSvc.SubmitFileWithTx(tx, progress, filePath)
@@ -158,7 +170,8 @@ func (s *GamePlayService) SubmitFile(ctx context.Context, passingID, userID uint
 }
 
 // UseHint использует подсказку с транзакцией и блокировкой.
-func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) error {
+func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (string, error) {
+	var hintText string
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		progress, err := GetCurrentProgressForUpdate(tx, passingID)
 		if err != nil {
@@ -172,6 +185,9 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) e
 		var passing GamePassing
 		if err := tx.First(&passing, passingID).Error; err != nil {
 			return err
+		}
+		if passing.Status != StatusStarted {
+			return errors.New("игра не запущена")
 		}
 		var settings GameSetting
 		if err := tx.Where("game_id = ?", passing.GameID).First(&settings).Error; err != nil {
@@ -192,6 +208,15 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) e
 			return err
 		}
 
+		// Получаем текст подсказки из вопросов уровня
+		var lvl level.Level
+		if err := tx.Where("id = ?", progress.LevelID).First(&lvl).Error; err != nil {
+			return err
+		}
+		if len(lvl.Questions) > 0 {
+			hintText = lvl.Questions[0].Hint
+		}
+
 		logEntry := Log{
 			GamePassingID: passingID,
 			LevelID:       progress.LevelID,
@@ -205,17 +230,19 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) e
 	})
 
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// Отправляем WebSocket-обновление после фиксации транзакции
 	s.broadcastSnapshot(ctx, passingID)
-	return nil
+	return hintText, nil
 }
 
 // AcceptBlackboxAnswer подтверждает ответ на уровне "чёрный ящик" с транзакцией и блокировкой.
 func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, userID uint) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	var gameID uint
+
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		progress, err := GetCurrentProgressForUpdate(tx, passingID)
 		if err != nil {
 			return err
@@ -234,11 +261,11 @@ func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, u
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&passing, passingID).Error; err != nil {
 			return err
 		}
-		var g Game
-		if err := tx.First(&g, passing.GameID).Error; err != nil {
+		gameID = passing.GameID
+		var game Game
+		if err := tx.First(&game, passing.GameID).Error; err != nil {
 			return err
-		}
-		if g.AuthorID != userID {
+		} else if game.AuthorID != userID {
 			return errors.New("только автор может подтвердить ответ")
 		}
 
@@ -257,13 +284,36 @@ func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, u
 		}
 		return tx.Create(&logEntry).Error
 	})
+
+	if err != nil {
+		return err
+	}
+
+	// Рассчитываем результаты ПОСЛЕ транзакции
+	if s.monitorSvc != nil {
+		if err := s.monitorSvc.CalculateResults(ctx, gameID); err != nil {
+			log.Error().Err(err).Uint("game_id", gameID).Msg("AcceptBlackboxAnswer: CalculateResults failed")
+		}
+	}
+
+	s.broadcastSnapshot(ctx, passingID)
+	return nil
 }
 
 // StartTesting создаёт тестовое прохождение с транзакцией.
 func (s *GamePlayService) StartTesting(ctx context.Context, gameID, userID uint) (*GamePassing, error) {
 	var passing *GamePassing
 
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	// Проверка прав: только автор или модератор может запускать тестирование
+	ok, err := s.coAuthorSvc.HasPermission(ctx, gameID, userID, RoleModerator)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка проверки прав: %w", err)
+	}
+	if !ok {
+		return nil, errors.New("только автор или модератор может запускать тестирование")
+	}
+
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Проверяем наличие уровней в игре
 		var levelCount int64
 		if err := tx.Model(&level.Level{}).Where("game_id = ?", gameID).Count(&levelCount).Error; err != nil {
@@ -271,6 +321,14 @@ func (s *GamePlayService) StartTesting(ctx context.Context, gameID, userID uint)
 		}
 		if levelCount == 0 {
 			return errors.New("игра не содержит уровней")
+		}
+
+		// Проверяем, не существует ли уже тестовое прохождение для этой игры и пользователя
+		var existing GamePassing
+		if err := tx.Where("game_id = ? AND status = ? AND team_id::text LIKE ?", gameID, StatusTesting, "_test_%").First(&existing).Error; err == nil {
+			return fmt.Errorf("тестовое прохождение уже существует")
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
 		}
 
 		// Создаём тестовую команду
@@ -344,21 +402,18 @@ func (s *GamePlayService) SkipLevelTest(ctx context.Context, passingID, userID u
 			return err
 		}
 
-		// Проверяем, что пользователь — автор или соавтор игры (тестовый режим)
+		// Проверяем, что пользователь — автор или соавтор игры
 		var passing GamePassing
 		if err := tx.First(&passing, passingID).Error; err != nil {
 			return err
 		}
-		var game Game
-		if err := tx.First(&game, passing.GameID).Error; err != nil {
-			return err
+
+		ok, err := s.coAuthorSvc.HasPermission(ctx, passing.GameID, userID, RoleModerator)
+		if err != nil {
+			return fmt.Errorf("ошибка проверки прав: %w", err)
 		}
-		if game.AuthorID != userID {
-			var co CoAuthor
-			if err := tx.Where("game_id = ? AND user_id = ?", game.ID, userID).First(&co).Error; err != nil {
-				return errors.New("доступ запрещён: только автор или соавтор может пропускать уровни")
-			}
-			_ = co
+		if !ok {
+			return errors.New("доступ запрещён: только автор или соавтор может пропускать уровни")
 		}
 
 		now := time.Now()

@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 
@@ -20,7 +19,7 @@ func RequirePermission(authorizer GameAuthorizer, requiredRole string) gin.Handl
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "требуется аутентификация"})
 			return
 		}
-		ok, _ := authorizer.IsUserManager(context.Background(), uint(gameID), userID)
+		ok, _ := authorizer.IsUserManager(c.Request.Context(), uint(gameID), userID)
 		if !ok {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "недостаточно прав"})
 			return

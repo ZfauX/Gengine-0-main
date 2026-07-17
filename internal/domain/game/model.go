@@ -91,6 +91,7 @@ type Attempt struct {
 	IsFile          bool
 	Success         bool
 	LevelProgress   LevelProgress `gorm:"foreignKey:LevelProgressID"`
+	_gameID         uint          // internal: ID игры для вызова после транзакции
 }
 
 type CoAuthor struct {

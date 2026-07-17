@@ -30,12 +30,12 @@ type SimulateStep struct {
 	Success   bool
 }
 
-func (s *SimulateService) Simulate(gameID, userID uint) (*SimulateResult, error) {
+func (s *SimulateService) Simulate(ctx context.Context, gameID, userID uint) (*SimulateResult, error) {
 	var game Game
-	if err := s.DB.Preload("Levels.Questions.Answers").First(&game, gameID).Error; err != nil {
+	if err := s.DB.WithContext(ctx).Preload("Levels.Questions.Answers").First(&game, gameID).Error; err != nil {
 		return nil, err
 	}
-	isManager, err := s.coAuthorSvc.IsUserManager(context.Background(), gameID, userID)
+	isManager, err := s.coAuthorSvc.IsUserManager(ctx, gameID, userID)
 	if err != nil {
 		return nil, err
 	}
