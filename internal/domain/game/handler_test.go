@@ -79,12 +79,12 @@ func (m *MockGameService) DisqualifyTeam(ctx context.Context, gameID, teamID uin
 	return args.Error(0)
 }
 
-func (m *MockGameService) SubmitCode(ctx context.Context, passingID, userID uint, code string) (*Attempt, error) {
+func (m *MockGameService) SubmitCode(ctx context.Context, passingID, userID uint, code string) (*SubmitResult, error) {
 	args := m.Called(ctx, passingID, userID, code)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*Attempt), args.Error(1)
+	return args.Get(0).(*SubmitResult), args.Error(1)
 }
 
 func (m *MockGameService) SubmitFile(ctx context.Context, passingID, userID uint, filePath string) (*Attempt, error) {
@@ -137,6 +137,14 @@ func (m *MockGameService) ListReviews(ctx context.Context, gameID uint) ([]Revie
 func (m *MockGameService) GetAverageRating(ctx context.Context, gameID uint) (float64, int64, error) {
 	args := m.Called(ctx, gameID)
 	return args.Get(0).(float64), args.Get(1).(int64), args.Error(2)
+}
+
+func (m *MockGameService) GetGameWithStats(ctx context.Context, gameID uint) (*Game, []Review, float64, int64, error) {
+	args := m.Called(ctx, gameID)
+	if args.Get(0) == nil {
+		return nil, nil, 0, 0, args.Error(4)
+	}
+	return args.Get(0).(*Game), args.Get(1).([]Review), args.Get(2).(float64), args.Get(3).(int64), args.Error(4)
 }
 
 func (m *MockGameService) IsUserManager(ctx context.Context, gameID, userID uint) (bool, error) {
@@ -239,6 +247,11 @@ func (m *MockGamePassingService) ListByGame(ctx context.Context, gameID uint) ([
 	return args.Get(0).([]GamePassing), args.Error(1)
 }
 
+func (m *MockGamePassingService) ListByGamePaginated(ctx context.Context, gameID uint, page, perPage int) ([]GamePassing, int64, error) {
+	args := m.Called(ctx, gameID, page, perPage)
+	return args.Get(0).([]GamePassing), args.Get(1).(int64), args.Error(2)
+}
+
 func (m *MockGamePassingService) UpdateStatus(ctx context.Context, passingID uint, status GamePassingStatus, userID uint) error {
 	args := m.Called(ctx, passingID, status, userID)
 	return args.Error(0)
@@ -333,15 +346,11 @@ func TestGameHandler_List_Success(t *testing.T) {
 	mockGameService := new(MockGameService)
 	mockCoAuthorService := new(MockCoAuthorService)
 	mockAuditService := new(MockAuditService)
-	mockStorage := new(MockStorage)
-	mockPassingService := new(MockGamePassingService)
 
 	handler := &GameHandler{
 		gameService:     mockGameService,
-		passingService:  mockPassingService,
 		coAuthorService: mockCoAuthorService,
 		auditService:    mockAuditService,
-		storage:         mockStorage,
 	}
 
 	router := setupTestRouter()
@@ -368,15 +377,11 @@ func TestGameHandler_List_Error(t *testing.T) {
 	mockGameService := new(MockGameService)
 	mockCoAuthorService := new(MockCoAuthorService)
 	mockAuditService := new(MockAuditService)
-	mockStorage := new(MockStorage)
-	mockPassingService := new(MockGamePassingService)
 
 	handler := &GameHandler{
 		gameService:     mockGameService,
-		passingService:  mockPassingService,
 		coAuthorService: mockCoAuthorService,
 		auditService:    mockAuditService,
-		storage:         mockStorage,
 	}
 
 	router := setupTestRouter()
@@ -402,15 +407,11 @@ func TestGameHandler_Show_Success(t *testing.T) {
 	mockGameService := new(MockGameService)
 	mockCoAuthorService := new(MockCoAuthorService)
 	mockAuditService := new(MockAuditService)
-	mockStorage := new(MockStorage)
-	mockPassingService := new(MockGamePassingService)
 
 	handler := &GameHandler{
 		gameService:     mockGameService,
-		passingService:  mockPassingService,
 		coAuthorService: mockCoAuthorService,
 		auditService:    mockAuditService,
-		storage:         mockStorage,
 	}
 
 	router := setupTestRouter()
@@ -435,15 +436,11 @@ func TestGameHandler_Show_NotFound(t *testing.T) {
 	mockGameService := new(MockGameService)
 	mockCoAuthorService := new(MockCoAuthorService)
 	mockAuditService := new(MockAuditService)
-	mockStorage := new(MockStorage)
-	mockPassingService := new(MockGamePassingService)
 
 	handler := &GameHandler{
 		gameService:     mockGameService,
-		passingService:  mockPassingService,
 		coAuthorService: mockCoAuthorService,
 		auditService:    mockAuditService,
-		storage:         mockStorage,
 	}
 
 	router := setupTestRouter()
@@ -463,15 +460,11 @@ func TestGameHandler_Create_Success(t *testing.T) {
 	mockGameService := new(MockGameService)
 	mockCoAuthorService := new(MockCoAuthorService)
 	mockAuditService := new(MockAuditService)
-	mockStorage := new(MockStorage)
-	mockPassingService := new(MockGamePassingService)
 
 	handler := &GameHandler{
 		gameService:     mockGameService,
-		passingService:  mockPassingService,
 		coAuthorService: mockCoAuthorService,
 		auditService:    mockAuditService,
-		storage:         mockStorage,
 	}
 
 	router := setupTestRouter()
@@ -504,15 +497,11 @@ func TestGameHandler_Create_BadRequest(t *testing.T) {
 	mockGameService := new(MockGameService)
 	mockCoAuthorService := new(MockCoAuthorService)
 	mockAuditService := new(MockAuditService)
-	mockStorage := new(MockStorage)
-	mockPassingService := new(MockGamePassingService)
 
 	handler := &GameHandler{
 		gameService:     mockGameService,
-		passingService:  mockPassingService,
 		coAuthorService: mockCoAuthorService,
 		auditService:    mockAuditService,
-		storage:         mockStorage,
 	}
 
 	router := setupTestRouter()
@@ -535,15 +524,11 @@ func TestGameHandler_Delete_Success(t *testing.T) {
 	mockGameService := new(MockGameService)
 	mockCoAuthorService := new(MockCoAuthorService)
 	mockAuditService := new(MockAuditService)
-	mockStorage := new(MockStorage)
-	mockPassingService := new(MockGamePassingService)
 
 	handler := &GameHandler{
 		gameService:     mockGameService,
-		passingService:  mockPassingService,
 		coAuthorService: mockCoAuthorService,
 		auditService:    mockAuditService,
-		storage:         mockStorage,
 	}
 
 	router := setupTestRouter()
@@ -566,15 +551,11 @@ func TestGameHandler_Delete_Forbidden(t *testing.T) {
 	mockGameService := new(MockGameService)
 	mockCoAuthorService := new(MockCoAuthorService)
 	mockAuditService := new(MockAuditService)
-	mockStorage := new(MockStorage)
-	mockPassingService := new(MockGamePassingService)
 
 	handler := &GameHandler{
 		gameService:     mockGameService,
-		passingService:  mockPassingService,
 		coAuthorService: mockCoAuthorService,
 		auditService:    mockAuditService,
-		storage:         mockStorage,
 	}
 
 	router := setupTestRouter()
@@ -599,15 +580,11 @@ func TestGameHandler_Update_Success(t *testing.T) {
 	mockGameService := new(MockGameService)
 	mockCoAuthorService := new(MockCoAuthorService)
 	mockAuditService := new(MockAuditService)
-	mockStorage := new(MockStorage)
-	mockPassingService := new(MockGamePassingService)
 
 	handler := &GameHandler{
 		gameService:     mockGameService,
-		passingService:  mockPassingService,
 		coAuthorService: mockCoAuthorService,
 		auditService:    mockAuditService,
-		storage:         mockStorage,
 	}
 
 	router := setupTestRouter()
@@ -641,15 +618,11 @@ func TestGameHandler_Publish_Success(t *testing.T) {
 	mockGameService := new(MockGameService)
 	mockCoAuthorService := new(MockCoAuthorService)
 	mockAuditService := new(MockAuditService)
-	mockStorage := new(MockStorage)
-	mockPassingService := new(MockGamePassingService)
 
 	handler := &GameHandler{
 		gameService:     mockGameService,
-		passingService:  mockPassingService,
 		coAuthorService: mockCoAuthorService,
 		auditService:    mockAuditService,
-		storage:         mockStorage,
 	}
 
 	router := setupTestRouter()
@@ -672,15 +645,11 @@ func TestGameHandler_Publish_Forbidden(t *testing.T) {
 	mockGameService := new(MockGameService)
 	mockCoAuthorService := new(MockCoAuthorService)
 	mockAuditService := new(MockAuditService)
-	mockStorage := new(MockStorage)
-	mockPassingService := new(MockGamePassingService)
 
 	handler := &GameHandler{
 		gameService:     mockGameService,
-		passingService:  mockPassingService,
 		coAuthorService: mockCoAuthorService,
 		auditService:    mockAuditService,
-		storage:         mockStorage,
 	}
 
 	router := setupTestRouter()

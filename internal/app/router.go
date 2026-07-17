@@ -52,6 +52,7 @@ type Dependencies struct {
 	Services *services
 	AuditSvc *audit.Service
 	Cache    cache.CacheStore
+	Hub      *ws.RoomHub
 }
 
 func NewDependencies(db *gorm.DB, cfg *config.Config, hub *ws.RoomHub, localStorage storage.FileStorage, appCache cache.CacheStore) *Dependencies {
@@ -64,6 +65,7 @@ func NewDependencies(db *gorm.DB, cfg *config.Config, hub *ws.RoomHub, localStor
 		Services: services,
 		AuditSvc: auditSvc,
 		Cache:    appCache,
+		Hub:      hub,
 	}
 }
 
@@ -118,6 +120,11 @@ func (app *App) SetupRouter() (*gin.Engine, error) {
 
 func (app *App) setupEngine(r *gin.Engine) error {
 	store := cookie.NewStore([]byte(app.Config.Session.Secret))
+	store.Options(sessions.Options{
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
 	r.Use(gin.Recovery())
 	r.Use(middleware.ErrorHandler())
 	r.Use(middleware.LoggerMiddleware())
@@ -158,8 +165,21 @@ func (app *App) setupEngine(r *gin.Engine) error {
 	r.Static("/static", filepath.Join(app.BaseDir, app.Config.Server.StaticDir))
 	r.Static("/uploads", filepath.Join(app.BaseDir, app.Config.Server.UploadsDir))
 
-	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	// 🔒 Swagger и Metrics доступны только авторизованным пользователям (защита от утечки информации)
+	r.GET("/swagger/*any", middleware.OptionalAuth(app.Deps.Services.Auth), func(c *gin.Context) {
+		if c.GetUint("userID") == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "доступно только авторизованным пользователям"})
+			return
+		}
+		ginSwagger.WrapHandler(swaggerFiles.Handler)(c)
+	})
+	r.GET("/metrics", middleware.OptionalAuth(app.Deps.Services.Auth), func(c *gin.Context) {
+		if c.GetUint("userID") == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "доступно только авторизованным пользователям"})
+			return
+		}
+		gin.WrapH(promhttp.Handler())(c)
+	})
 
 	healthChecker := health.NewCheckerWithValkey(app.DB, app.Hub, app.Deps.Cache)
 	r.GET("/healthz", func(c *gin.Context) {
@@ -219,7 +239,7 @@ func (app *App) registerAllRoutes(r *gin.Engine) error {
 		return fmt.Errorf("регистрация маршрутов экспорта: %w", err)
 	}
 	app.registerGameplayRoutes(r)
-	notification.RegisterRoutes(r, app.DB, app.Deps.Services.Auth)
+	notification.RegisterRoutes(r, app.DB, app.Deps.Services.Auth, app.Deps.Hub)
 	return nil
 }
 
@@ -538,22 +558,4 @@ func (app *App) registerGameplayRoutes(r *gin.Engine) {
 	protected := r.Group("/")
 	protected.Use(middleware.AuthRequired(app.Deps.Services.Auth))
 	game.RegisterGameplayRoutes(protected, app.Deps.Services.GameplayHandler, app.Deps.Services.CoAuthor)
-}
-
-// =============================================================================
-// ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ОБРАТНОЙ СОВМЕСТИМОСТИ
-// =============================================================================
-
-// SetupRouter — legacy-функция для обратной совместимости с тестами.
-// Создаёт новый router с нуля (deps создаются внутри).
-func SetupRouter(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub, cfg *config.Config, baseDir string, appCache cache.CacheStore) (*gin.Engine, error) {
-	deps := NewDependencies(db, cfg, hub, localStorage, appCache)
-	app := NewApp(db, localStorage, hub, cfg, baseDir, deps)
-	return app.SetupRouter()
-}
-
-// SetupRouterWithDeps — альтернатива, которая принимает готовые deps (избегает дублирования).
-func SetupRouterWithDeps(db *gorm.DB, localStorage storage.FileStorage, hub *ws.RoomHub, cfg *config.Config, baseDir string, deps *Dependencies) (*gin.Engine, error) {
-	app := NewApp(db, localStorage, hub, cfg, baseDir, deps)
-	return app.SetupRouter()
 }

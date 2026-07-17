@@ -336,3 +336,74 @@ func (h *ExportHandler) ExportResultsExcel(c *gin.Context) {
 	c.Header("Content-Disposition", "attachment; filename=results_"+strconv.Itoa(int(gameID))+".xlsx")
 	c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buf.Bytes())
 }
+
+// ExportTeamResultsCSV отдаёт CSV-файл с результатами команды капитана.
+// @Summary Экспорт результатов команды в CSV
+// @Description Выгружает результаты конкретной команды в CSV-формат (доступно капитану или автору игры)
+// @Tags export
+// @Produce text/csv
+// @Param id path int true "ID игры"
+// @Param team_id path int true "ID команды"
+// @Success 200 {file} file "CSV-файл с результатами команды"
+// @Failure 400 {object} map[string]interface{} "Неверный ID"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+// @Router /games/{id}/teams/{team_id}/export-results [get]
+// @Security JWT
+func (h *ExportHandler) ExportTeamResultsCSV(c *gin.Context) {
+	gameID, err := parseGameID(c)
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	teamIDStr := c.Param("team_id")
+	teamID, err := strconv.Atoi(teamIDStr)
+	if err != nil || teamID <= 0 {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "Неверный ID команды"})
+		return
+	}
+
+	userID := c.GetUint("userID")
+
+	// Проверяем, что пользователь — капитан команды или автор игры
+	var passing game.GamePassing
+	if err := h.db.WithContext(c.Request.Context()).
+		Where("game_id = ? AND team_id = ? AND status = ?", gameID, teamID, "finished").
+		First(&passing).Error; err != nil {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Доступ запрещён"})
+		return
+	}
+
+	// Проверяем права: капитан или автор
+	isCaptain := false
+	var t struct{ CaptainID uint }
+	h.db.Table("teams").Select("captain_id").Where("id = ?", teamID).First(&t)
+	if t.CaptainID == userID {
+		isCaptain = true
+	}
+
+	isAuthor := false
+	var g game.Game
+	h.db.WithContext(c.Request.Context()).First(&g, gameID)
+	if g.AuthorID == userID {
+		isAuthor = true
+	}
+
+	if !isCaptain && !isAuthor {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Только капитан или автор может экспортировать результаты"})
+		return
+	}
+
+	var buf bytes.Buffer
+	if err := h.exportService.ExportTeamResultsToCSV(c.Request.Context(), gameID, uint(teamID), &buf); err != nil {
+		log.Error().Err(err).Uint("game_id", gameID).Uint("team_id", uint(teamID)).Msg("ExportTeamResultsCSV: failed to export")
+		render.RenderErrorPage(c, http.StatusInternalServerError)
+		return
+	}
+
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", "attachment; filename=team_"+strconv.Itoa(teamID)+"_results.csv")
+	c.Data(http.StatusOK, "text/csv", buf.Bytes())
+}

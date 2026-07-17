@@ -25,16 +25,19 @@ func NewCoAuthorService(db *gorm.DB) *CoAuthorService {
 }
 
 // IsUserManager проверяет, является ли пользователь автором или соавтором игры.
+// Оптимизация: использует один запрос с UNION вместо двух отдельных запросов.
 func (s *CoAuthorService) IsUserManager(ctx context.Context, gameID, userID uint) (bool, error) {
-	var game Game
-	if err := s.DB.WithContext(ctx).First(&game, gameID).Error; err != nil {
-		return false, err
-	}
-	if game.AuthorID == userID {
-		return true, nil
-	}
 	var count int64
-	if err := s.DB.WithContext(ctx).Model(&CoAuthor{}).Where("game_id = ? AND user_id = ?", gameID, userID).Count(&count).Error; err != nil {
+	err := s.DB.WithContext(ctx).
+		Raw(`
+			SELECT COUNT(*) FROM (
+				SELECT 1 FROM games WHERE id = ? AND author_id = ?
+				UNION
+				SELECT 1 FROM co_authors WHERE game_id = ? AND user_id = ? AND deleted_at IS NULL
+			) sub
+		`, gameID, userID, gameID, userID).
+		Scan(&count).Error
+	if err != nil {
 		return false, err
 	}
 	return count > 0, nil

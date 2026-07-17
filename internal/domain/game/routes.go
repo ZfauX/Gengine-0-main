@@ -51,33 +51,35 @@ func RegisterRoutes(r *gin.Engine, deps *GameDeps) {
 	passingService := deps.PassingService
 	coAuthorSvc := deps.CoAuthorSvc
 	localStorage := deps.LocalStorage
-	hub := deps.Hub
 	auditSvc := deps.AuditSvc
 	authService := deps.AuthService
-	gamePlaySvc := deps.GamePlaySvc
 	gameAdminSvc := deps.GameAdminSvc
 	reviewService := deps.ReviewService
 	gameplayHandler := deps.GameplayHandler
 	photoService := deps.PhotoService
 	levelService := deps.LevelService
-	noteService := NewNoteService(db, coAuthorSvc)
 	simulateService := NewSimulateService(db, coAuthorSvc)
 
 	gameHandler := NewGameHandler(
 		gameService,
-		passingService,
 		coAuthorSvc,
-		noteService,
-		simulateService,
-		photoService,
-		localStorage,
-		hub,
 		auditSvc,
-		db,
-		gamePlaySvc,
-		gameAdminSvc,
-		levelService,
 	)
+
+	// Создаём специализированные обработчики для каждого поддомена
+	passingHandler := NewPassingHandler(
+		passingService,
+		gameAdminSvc,
+		coAuthorSvc,
+		auditSvc,
+		localStorage,
+	)
+	coAuthorHandler := NewCoAuthorHandler(coAuthorSvc, auditSvc)
+	settingsHandler := NewSettingsHandler(gameService, coAuthorSvc)
+	testHandler := NewTestHandler(gameService, passingService)
+	photoHandler := NewPhotoHandler(gameService, coAuthorSvc, photoService, localStorage)
+	simulateHandler := NewSimulateHandler(simulateService)
+	fullPreviewHandler := NewFullPreviewHandler(gameService, levelService)
 
 	// Создаём ReviewHandler для отзывов
 	reviewHandler := NewReviewHandler(reviewService)
@@ -134,7 +136,7 @@ func RegisterRoutes(r *gin.Engine, deps *GameDeps) {
 		// @Failure 403 {object} map[string]interface{} "Нет доступа"
 		// @Router /games/{id}/full-preview [get]
 		// @Security JWT
-		protected.GET("/:id/full-preview", gameHandler.FullPreview)
+		protected.GET("/:id/full-preview", fullPreviewHandler.FullPreview)
 
 		// @Summary Форма создания игры
 		// @Description Возвращает HTML-страницу с формой для создания новой игры
@@ -239,7 +241,7 @@ func RegisterRoutes(r *gin.Engine, deps *GameDeps) {
 		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
 		// @Router /games/{id}/force-finish [post]
 		// @Security JWT
-		protected.POST("/:id/force-finish", gameHandler.ForceFinish)
+		protected.POST("/:id/force-finish", passingHandler.ForceFinish)
 
 		// @Summary Дисквалификация команды
 		// @Description Дисквалифицирует команду в игре (доступно автору или модератору)
@@ -254,7 +256,7 @@ func RegisterRoutes(r *gin.Engine, deps *GameDeps) {
 		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
 		// @Router /games/{id}/disqualify [post]
 		// @Security JWT
-		protected.POST("/:id/disqualify", gameHandler.DisqualifyTeam)
+		protected.POST("/:id/disqualify", passingHandler.DisqualifyTeam)
 
 		// @Summary Управление соавторами
 		// @Description Отображает страницу управления соавторами игры (доступно владельцу)
@@ -266,7 +268,7 @@ func RegisterRoutes(r *gin.Engine, deps *GameDeps) {
 		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
 		// @Router /games/{id}/co-authors [get]
 		// @Security JWT
-		protected.GET("/:id/co-authors", gameHandler.ManageCoAuthors)
+		protected.GET("/:id/co-authors", coAuthorHandler.ManageCoAuthors)
 
 		// @Summary Добавление соавтора
 		// @Description Добавляет нового соавтора к игре (доступно владельцу)
@@ -281,7 +283,7 @@ func RegisterRoutes(r *gin.Engine, deps *GameDeps) {
 		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
 		// @Router /games/{id}/co-authors [post]
 		// @Security JWT
-		protected.POST("/:id/co-authors", gameHandler.AddCoAuthor)
+		protected.POST("/:id/co-authors", coAuthorHandler.AddCoAuthor)
 
 		// @Summary Удаление соавтора
 		// @Description Удаляет соавтора из игры (доступно владельцу)
@@ -295,21 +297,7 @@ func RegisterRoutes(r *gin.Engine, deps *GameDeps) {
 		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
 		// @Router /games/{id}/co-authors/{user_id}/delete [post]
 		// @Security JWT
-		protected.POST("/:id/co-authors/:user_id/delete", gameHandler.RemoveCoAuthor)
-
-		// @Summary Удаление соавтора (альтернативный маршрут)
-		// @Description Удаляет соавтора из игры (доступно владельцу)
-		// @Tags coauthors
-		// @Accept x-www-form-urlencoded
-		// @Produce html
-		// @Param id path int true "ID игры"
-		// @Param user_id path int true "ID соавтора"
-		// @Success 302 {string} string "Перенаправление на /games/{id}/co-authors"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-		// @Router /games/{id}/co-authors/{user_id}/remove [post]
-		// @Security JWT
-		protected.POST("/:id/co-authors/:user_id/remove", gameHandler.RemoveCoAuthor)
+		protected.POST("/:id/co-authors/:user_id/delete", coAuthorHandler.RemoveCoAuthor)
 
 		// @Summary Список заявок и прохождений
 		// @Description Отображает все заявки и текущие прохождения игры (доступно автору или модератору)
@@ -321,7 +309,7 @@ func RegisterRoutes(r *gin.Engine, deps *GameDeps) {
 		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
 		// @Router /games/{id}/passings [get]
 		// @Security JWT
-		protected.GET("/:id/passings", gameHandler.ListPassings)
+		protected.GET("/:id/passings", passingHandler.ListPassings)
 
 		// @Summary Изменение статуса заявки
 		// @Description Принимает или отклоняет заявку команды на участие в игре (доступно автору или модератору)
@@ -337,7 +325,7 @@ func RegisterRoutes(r *gin.Engine, deps *GameDeps) {
 		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
 		// @Router /games/{id}/passings/{passing_id}/status [post]
 		// @Security JWT
-		protected.POST("/:id/passings/:passing_id/status", gameHandler.UpdatePassingStatus)
+		protected.POST("/:id/passings/:passing_id/status", passingHandler.UpdatePassingStatus)
 
 		// @Summary Запуск игры
 		// @Description Запускает игру для конкретного прохождения (доступно капитану команды или автору/модератору)
@@ -352,7 +340,7 @@ func RegisterRoutes(r *gin.Engine, deps *GameDeps) {
 		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
 		// @Router /games/{id}/passings/{passing_id}/start [post]
 		// @Security JWT
-		protected.POST("/:id/passings/:passing_id/start", gameHandler.StartGame)
+		protected.POST("/:id/passings/:passing_id/start", passingHandler.StartGame)
 
 		// @Summary Подача заявки на игру (форма)
 		// @Description Возвращает страницу выбора команды для подачи заявки на участие в игре
@@ -363,7 +351,7 @@ func RegisterRoutes(r *gin.Engine, deps *GameDeps) {
 		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 		// @Router /games/{id}/apply [get]
 		// @Security JWT
-		protected.GET("/:id/apply", gameHandler.ApplyForm)
+		protected.GET("/:id/apply", passingHandler.ApplyForm)
 
 		// @Summary Подача заявки на игру
 		// @Description Подаёт заявку от команды на участие в игре (доступно капитану команды)
@@ -378,7 +366,7 @@ func RegisterRoutes(r *gin.Engine, deps *GameDeps) {
 		// @Failure 403 {object} map[string]interface{} "Недостаточно прав (только капитан)"
 		// @Router /games/{id}/apply [post]
 		// @Security JWT
-		protected.POST("/:id/apply", gameHandler.Apply)
+		protected.POST("/:id/apply", passingHandler.Apply)
 
 		// @Summary Симуляция прохождения
 		// @Description Запускает симуляцию игры для проверки логики (доступно автору или соавтору)
@@ -390,7 +378,7 @@ func RegisterRoutes(r *gin.Engine, deps *GameDeps) {
 		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
 		// @Router /games/{id}/simulate [get]
 		// @Security JWT
-		protected.GET("/:id/simulate", gameHandler.Simulate)
+		protected.GET("/:id/simulate", simulateHandler.Simulate)
 
 		// @Summary Настройки игры
 		// @Description Отображает страницу с настройками игры (доступно автору или контент-менеджеру)
@@ -403,7 +391,7 @@ func RegisterRoutes(r *gin.Engine, deps *GameDeps) {
 		// @Failure 404 {object} map[string]interface{} "Игра не найдена"
 		// @Router /games/{id}/settings [get]
 		// @Security JWT
-		protected.GET("/:id/settings", gameHandler.SettingsPage)
+		protected.GET("/:id/settings", settingsHandler.SettingsPage)
 
 		// @Summary Сохранение настроек
 		// @Description Сохраняет настройки игры (доступно автору или контент-менеджеру)
@@ -423,7 +411,7 @@ func RegisterRoutes(r *gin.Engine, deps *GameDeps) {
 		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
 		// @Router /games/{id}/settings [post]
 		// @Security JWT
-		protected.POST("/:id/settings", gameHandler.SaveSettings)
+		protected.POST("/:id/settings", settingsHandler.SaveSettings)
 
 		// @Summary Тестовые прохождения
 		// @Description Отображает страницу управления тестовыми прохождениями игры (доступно автору или соавтору)
@@ -435,7 +423,7 @@ func RegisterRoutes(r *gin.Engine, deps *GameDeps) {
 		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
 		// @Router /games/{id}/test [get]
 		// @Security JWT
-		protected.GET("/:id/test", gameHandler.TestPage)
+		protected.GET("/:id/test", testHandler.TestPage)
 
 		// @Summary Запуск тестового прохождения
 		// @Description Создаёт тестовое прохождение для игры и перенаправляет на страницу тестового прохождения (доступно автору или соавтору)
@@ -458,7 +446,7 @@ func RegisterRoutes(r *gin.Engine, deps *GameDeps) {
 		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 		// @Router /games/{id}/photos [get]
 		// @Security JWT
-		protected.GET("/:id/photos", gameHandler.PhotosPage)
+		protected.GET("/:id/photos", photoHandler.PhotosPage)
 
 		// @Summary Загрузка фото
 		// @Description Загружает новое фото в галерею игры (до 10 МБ, поддерживаются JPEG, PNG, WebP)
@@ -472,7 +460,7 @@ func RegisterRoutes(r *gin.Engine, deps *GameDeps) {
 		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 		// @Router /games/{id}/photos [post]
 		// @Security JWT
-		protected.POST("/:id/photos", gameHandler.UploadPhoto)
+		protected.POST("/:id/photos", photoHandler.UploadPhoto)
 
 		// @Summary Удаление фото
 		// @Description Удаляет фото из галереи (доступно автору фото или автору/соавтору игры)
@@ -486,7 +474,7 @@ func RegisterRoutes(r *gin.Engine, deps *GameDeps) {
 		// @Failure 404 {object} map[string]interface{} "Фото не найдено"
 		// @Router /games/{id}/photos/{photo_id} [delete]
 		// @Security JWT
-		protected.DELETE("/:id/photos/:photo_id", gameHandler.DeletePhoto)
+		protected.DELETE("/:id/photos/:photo_id", photoHandler.DeletePhoto)
 
 		// ============================================================
 		// ОТЗЫВЫ

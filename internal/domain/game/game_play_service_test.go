@@ -69,7 +69,7 @@ func TestGamePlayService_SubmitCode_Success(t *testing.T) {
 	// Отправляем правильный код
 	attempt, err := playSvc.SubmitCode(context.Background(), passing.ID, author.ID, "secret")
 	require.NoError(t, err)
-	assert.True(t, attempt.Success)
+	assert.True(t, attempt.Attempt.Success)
 
 	// Проверяем, что прогресс переключился на следующий уровень
 	newProgress, err := progressSvc.GetCurrentProgress(context.Background(), passing.ID)
@@ -87,7 +87,7 @@ func TestGamePlayService_SubmitCode_Wrong(t *testing.T) {
 
 	attempt, err := playSvc.SubmitCode(context.Background(), passing.ID, author.ID, "wrong")
 	require.NoError(t, err)
-	assert.False(t, attempt.Success)
+	assert.False(t, attempt.Attempt.Success)
 
 	updatedProgress, err := progressSvc.GetCurrentProgress(context.Background(), passing.ID)
 	require.NoError(t, err)
@@ -107,7 +107,7 @@ func TestGamePlayService_SubmitCode_Blackbox(t *testing.T) {
 
 	attempt, err := playSvc.SubmitCode(context.Background(), passing.ID, author.ID, "any")
 	require.NoError(t, err)
-	assert.False(t, attempt.Success)
+	assert.False(t, attempt.Attempt.Success)
 
 	progress, err := progressSvc.GetCurrentProgress(context.Background(), passing.ID)
 	require.NoError(t, err)

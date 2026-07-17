@@ -93,7 +93,17 @@ func (h *RoomHub) cleanupInactiveClients() cleanupResult {
 			_ = client.Conn.Close()
 			client.Close()
 			delete(room, client)
-			h.decConnection(client.RemoteIP)
+			// Уменьшаем счётчики напрямую (decConnection тоже блокирует mu.Lock(), что вызовет дедлок)
+			if h.totalConns > 0 {
+				h.totalConns--
+			}
+			if count, ok := h.connsPerIP[client.RemoteIP]; ok && count > 0 {
+				if count == 1 {
+					delete(h.connsPerIP, client.RemoteIP)
+				} else {
+					h.connsPerIP[client.RemoteIP] = count - 1
+				}
+			}
 			result.removedClients++
 		}
 

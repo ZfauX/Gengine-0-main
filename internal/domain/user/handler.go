@@ -44,6 +44,8 @@ func isHTTPS(c *gin.Context) bool {
 func setSecureCookie(c *gin.Context, name, value string, maxAge int, path string) {
 	secure := isHTTPS(c)
 	c.SetCookie(name, value, maxAge, path, "", secure, true)
+	// Явно устанавливаем SameSite=Lax для защиты от CSRF
+	c.Writer.Header().Set("SameSite", "Lax")
 }
 
 // ---------- Входные структуры для валидации ----------

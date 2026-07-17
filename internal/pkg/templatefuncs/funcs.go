@@ -11,6 +11,7 @@ func FuncMap() template.FuncMap {
 	return template.FuncMap{
 		"add1":        add1,
 		"sub":         sub,
+		"subtract":    subtract,
 		"add":         add,
 		"loop":        loop,
 		"formatBytes": formatBytes,
@@ -34,6 +35,11 @@ func add1(i int) int {
 
 // sub возвращает a - b.
 func sub(a, b int) int {
+	return a - b
+}
+
+// subtract возвращает a - b (альяс для sub, для совместимости с шаблонами).
+func subtract(a, b int) int {
 	return a - b
 }
 

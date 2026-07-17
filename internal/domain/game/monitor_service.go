@@ -173,7 +173,8 @@ func (s *MonitorService) GameSnapshot(ctx context.Context, gameID uint) ([]TeamP
 		) ac ON ac.level_progress_id = lp.id
 		WHERE gp.game_id = ?
 		GROUP BY gp.id, gp.team_id, t.name, gp.status, gp.place, ac.total_attempts
-	`
+		ORDER BY gp.place ASC
+		LIMIT 100`
 	if err := s.DB.Raw(query, gameID).Scan(&aggregated).Error; err != nil {
 		return nil, err
 	}

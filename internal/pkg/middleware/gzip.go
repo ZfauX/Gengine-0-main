@@ -2,12 +2,37 @@
 package middleware
 
 import (
-	"bytes"
 	"compress/gzip"
+	"io"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 )
+
+// gzipResponseWriter реализует io.Writer поверх ResponseWriter для потокового сжатия.
+type gzipResponseWriter struct {
+	gin.ResponseWriter
+	writer  *gzip.Writer
+	written bool
+}
+
+func (w *gzipResponseWriter) Write(b []byte) (int, error) {
+	if !w.written {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Vary", "Accept-Encoding")
+		w.written = true
+	}
+	return w.writer.Write(b)
+}
+
+func (w *gzipResponseWriter) WriteString(s string) (int, error) {
+	if !w.written {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Vary", "Accept-Encoding")
+		w.written = true
+	}
+	return io.WriteString(w.writer, s)
+}
 
 func GzipMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -21,46 +46,17 @@ func GzipMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// Перехватываем body через custom writer
-		sw := &switchWriter{ResponseWriter: c.Writer, buf: &bytes.Buffer{}}
-		c.Writer = sw
+		// Потоковое сжатие: не буферизируем весь ответ в памяти
+		gz := gzip.NewWriter(c.Writer)
+		gzWriter := &gzipResponseWriter{
+			ResponseWriter: c.Writer,
+			writer:         gz,
+		}
+		c.Writer = gzWriter
 
 		c.Next()
 
-		// Не сжимаем бинарные файлы и уже сжатые типы
-		ct := sw.Header().Get("Content-Type")
-		if strings.HasPrefix(ct, "image/") ||
-			strings.HasPrefix(ct, "application/zip") ||
-			strings.HasPrefix(ct, "application/pdf") ||
-			strings.HasPrefix(ct, "video/") ||
-			strings.HasPrefix(ct, "audio/") {
-			// Копируем uncompressed body back
-			_, _ = sw.ResponseWriter.Write(sw.buf.Bytes())
-			return
-		}
-
-		// Сжимаем и записываем
-		if sw.buf.Len() > 0 {
-			c.Header("Content-Encoding", "gzip")
-			c.Header("Vary", "Accept-Encoding")
-			gzWriter := gzip.NewWriter(sw.ResponseWriter)
-			_, _ = gzWriter.Write(sw.buf.Bytes())
-			_ = gzWriter.Close()
-		}
+		// Закрываем gzip-writer (записывает trailer и flush)
+		_ = gz.Close()
 	}
-}
-
-type switchWriter struct {
-	gin.ResponseWriter
-	buf *bytes.Buffer
-}
-
-func (w *switchWriter) Write(b []byte) (int, error) {
-	w.buf.Write(b)
-	return len(b), nil
-}
-
-func (w *switchWriter) WriteString(s string) (int, error) {
-	w.buf.WriteString(s)
-	return len(s), nil
 }

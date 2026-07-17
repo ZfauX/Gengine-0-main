@@ -73,6 +73,94 @@ func (s *ExportService) ExportGameToCSV(ctx context.Context, gameID uint, w io.W
 	return nil
 }
 
+// ExportTeamResultsToCSV экспортирует результаты конкретной команды в CSV.
+func (s *ExportService) ExportTeamResultsToCSV(ctx context.Context, gameID, teamID uint, w io.Writer) error {
+	db := s.exportRepo.DB(ctx)
+
+	// Получаем passing для команды
+	var passing game.GamePassing
+	if err := db.Where("game_id = ? AND team_id = ?", gameID, teamID).First(&passing).Error; err != nil {
+		return fmt.Errorf("прохождение не найдено: %w", err)
+	}
+
+	// Запрашиваем прогресс
+	var progress []game.LevelProgress
+	if err := db.Where("game_passing_id = ?", passing.ID).
+		Order("created_at ASC").
+		Find(&progress).Error; err != nil {
+		return err
+	}
+
+	// Запрашиваем уровни
+	var levels []level.Level
+	if err := db.Where("game_id = ?", gameID).Order("position ASC").Find(&levels).Error; err != nil {
+		return err
+	}
+
+	levelMap := make(map[uint]*level.Level)
+	for i := range levels {
+		levelMap[levels[i].ID] = &levels[i]
+	}
+
+	type TeamResult struct {
+		LevelName  string
+		Status     string
+		StartedAt  string
+		FinishedAt string
+		Attempts   int
+		Penalty    int
+	}
+
+	var results []TeamResult
+
+	for _, p := range progress {
+		lvl := levelMap[p.LevelID]
+		if lvl == nil {
+			continue
+		}
+
+		result := TeamResult{
+			LevelName: lvl.Name,
+			Status:    "finished",
+		}
+
+		if !p.StartedAt.IsZero() {
+			result.StartedAt = p.StartedAt.Format("2006-01-02 15:04:05")
+		}
+		if p.FinishedAt != nil && !p.FinishedAt.IsZero() {
+			result.FinishedAt = p.FinishedAt.Format("2006-01-02 15:04:05")
+		}
+
+		result.Penalty = int(p.PenaltySeconds)
+
+		// Подсчитываем attempts
+		var attempts []game.Attempt
+		db.Where("level_progress_id = ?", p.ID).Find(&attempts)
+		result.Attempts = len(attempts)
+
+		results = append(results, result)
+	}
+
+	// Записываем в CSV
+	csvWriter := csv.NewWriter(w)
+	defer csvWriter.Flush()
+
+	_ = csvWriter.Write([]string{"Уровень", "Статус", "Начало", "Завершение", "Попытки", "Штраф (сек)"})
+
+	for _, r := range results {
+		_ = csvWriter.Write([]string{
+			r.LevelName,
+			r.Status,
+			r.StartedAt,
+			r.FinishedAt,
+			strconv.Itoa(r.Attempts),
+			strconv.Itoa(r.Penalty),
+		})
+	}
+
+	return nil
+}
+
 // ImportGameFromCSV парсит CSV и создаёт уровни/вопросы/ответы для указанной игры.
 func (s *ExportService) ImportGameFromCSV(db *gorm.DB, gameID uint, r io.Reader) error {
 	return db.Transaction(func(tx *gorm.DB) error {

@@ -1,5 +1,30 @@
 {{define "games-show.html"}}
 <div class="max-w-7xl mx-auto">
+    <!-- Breadcrumb -->
+    <nav class="flex mb-6" aria-label="Breadcrumb">
+        <ol class="inline-flex items-center space-x-1 md:space-x-3">
+            <li class="inline-flex items-center">
+                <a href="/" class="text-gray-700 hover:text-blue-600 text-sm">Главная</a>
+            </li>
+            <li>
+                <div class="flex items-center">
+                    <svg class="w-6 h-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path>
+                    </svg>
+                    <a href="/games" class="ml-1 text-gray-700 hover:text-blue-600 text-sm md:ml-2">Игры</a>
+                </div>
+            </li>
+            <li>
+                <div class="flex items-center">
+                    <svg class="w-6 h-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path>
+                    </svg>
+                    <span class="ml-1 text-gray-500 text-sm md:ml-2">{{.Game.Name}}</span>
+                </div>
+            </li>
+        </ol>
+    </nav>
+
     <!-- Заголовок -->
     <h1 class="text-2xl font-bold text-gray-800 mb-6">{{.Game.Name}}</h1>
 
@@ -96,10 +121,7 @@
             <a href="/games/{{.Game.ID}}/export" class="btn btn-outline text-sm">Экспорт CSV</a>
             <a href="/games/{{.Game.ID}}/export-pdf" class="btn btn-outline text-sm">📄 PDF</a>
             <a href="/games/{{.Game.ID}}/test" class="btn btn-outline text-sm">Тест</a>
-            <form action="/games/{{.Game.ID}}/delete" method="POST" class="inline" onsubmit="return confirm('Удалить игру?')">
-                <input type="hidden" name="_csrf" value="{{.csrf}}">
-                <button type="submit" class="btn btn-danger text-sm">Удалить</button>
-            </form>
+            <button id="delete-btn" class="btn btn-danger text-sm" data-game-id="{{.Game.ID}}" data-game-name="{{.Game.Name}}">Удалить</button>
         {{end}}
         {{if .CanApply}}
         <a href="/games/{{.Game.ID}}/apply" class="btn btn-primary text-sm">Подать заявку</a>
@@ -116,6 +138,31 @@
             </div>
             <div id="preview-content" class="p-6 overflow-y-auto max-h-[70vh]">
                 <p class="text-gray-500">Загрузка...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно удаления с undo -->
+    <div id="delete-modal" class="fixed inset-0 z-50 hidden bg-black/50 flex items-center justify-center">
+        <div class="bg-white w-full max-w-md rounded-lg shadow-xl mx-4">
+            <div class="p-6">
+                <h3 class="text-lg font-bold text-gray-800 mb-2">Удалить игру?</h3>
+                <p class="text-gray-600 mb-4">Вы действительно хотите удалить <strong id="delete-game-name"></strong>?</p>
+                <p class="text-sm text-red-600 mb-4">⚠️ Это действие нельзя будет отменить. Все уровни, вопросы и ответы будут удалены.</p>
+                <div class="flex gap-3">
+                    <button id="confirm-delete" class="btn btn-danger text-sm flex-1">Удалить</button>
+                    <button id="cancel-delete" class="btn btn-outline text-sm flex-1">Отмена</button>
+                </div>
+                <div id="delete-undo" class="hidden mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                    <p class="text-sm text-yellow-800 mb-2">Удаление запланировано...</p>
+                    <div class="w-full bg-yellow-200 rounded-full h-2 mb-2">
+                        <div id="delete-timer-bar" class="bg-yellow-600 h-2 rounded-full transition-all duration-1000" style="width:100%"></div>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <p class="text-xs text-yellow-600">Отмена через <span id="delete-timer-count">5</span> сек</p>
+                        <button id="undo-delete" class="text-sm font-medium text-blue-600 hover:text-blue-800">↩ Отменить удаление</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -193,21 +240,190 @@
                 return;
             }
             let html = '';
-            levels.forEach(lvl => {
-                html += `<div class="mb-4"><h3 class="font-semibold text-gray-800">${escapeHtml(String(lvl.position))}. ${escapeHtml(lvl.name)}</h3>`;
+            let hasMapLevels = false;
+            let mapLevels = [];
+
+            levels.forEach(function(lvl, index) {
+                html += `<div class="mb-4"><h3 class="font-semibold text-gray-800">${escapeHtml(String(index + 1))}. ${escapeHtml(lvl.name)}</h3>`;
                 if (lvl.description) html += `<p class="text-sm text-gray-600 italic">${escapeHtml(lvl.description)}</p>`;
-                lvl.questions.forEach(q => {
-                    html += `<div class="ml-4 mt-2 pl-4 border-l-4 border-blue-400">`;
-                    html += `<p class="font-medium text-gray-700">${escapeHtml(q.text)}</p>`;
-                    if (q.hint) html += `<p class="text-sm text-gray-500">Подсказка: ${escapeHtml(q.hint)}</p>`;
-                    html += `<ul class="text-green-700 text-sm list-disc list-inside">`;
-                    q.answers.forEach(a => html += `<li>${escapeHtml(a)}</li>`);
-                    html += `</ul></div>`;
-                });
+
+                // Check if level has coordinates
+                if (lvl.latitude && lvl.longitude) {
+                    hasMapLevels = true;
+                    mapLevels.push({name: lvl.name, lat: parseFloat(lvl.latitude), lng: parseFloat(lvl.longitude)});
+                }
+
+                if (lvl.questions && lvl.questions.length > 0) {
+                    html += `<div class="ml-4 mt-2 space-y-2">`;
+                    lvl.questions.forEach(function(q) {
+                        html += `<div class="pl-4 border-l-4 border-blue-400">`;
+                        html += `<p class="font-medium text-gray-700">${escapeHtml(q.text)}</p>`;
+                        if (q.hint) html += `<p class="text-sm text-gray-500">Подсказка: ${escapeHtml(q.hint)}</p>`;
+                        if (q.answers && q.answers.length > 0) {
+                            html += `<ul class="text-green-700 text-sm list-disc list-inside mt-1">`;
+                            q.answers.forEach(function(a) { html += `<li>${escapeHtml(a)}</li>`; });
+                            html += `</ul>`;
+                        }
+                        html += `</div>`;
+                    });
+                    html += `</div>`;
+                }
                 html += `</div>`;
             });
+
             previewContent.innerHTML = html;
+
+            // Render map if there are levels with coordinates
+            if (hasMapLevels && mapLevels.length > 0 && typeof L !== 'undefined') {
+                setTimeout(function() {
+                    const mapDiv = document.createElement('div');
+                    mapDiv.className = 'map-container mt-6';
+                    mapDiv.id = 'preview-map';
+                    previewContent.appendChild(mapDiv);
+
+                    const map = L.map('preview-map').setView([mapLevels[0].lat, mapLevels[0].lng], 13);
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '© OpenStreetMap contributors'
+                    }).addTo(map);
+
+                    var markers = [];
+                    mapLevels.forEach(function(point) {
+                        var marker = L.marker([point.lat, point.lng])
+                            .addTo(map)
+                            .bindPopup(`<strong>${escapeHtml(point.name)}</strong>`);
+                        markers.push(marker);
+                    });
+
+                    // Fit bounds to show all markers
+                    if (markers.length > 0) {
+                        var group = new L.featureGroup(markers);
+                        map.fitBounds(group.getBounds().pad(0.1));
+                    }
+                }, 100);
+            }
         }
+    })();
+</script>
+
+<script nonce="{{.csp_nonce}}">
+    (function() {
+        // Delete modal with undo
+        const deleteModal = document.getElementById('delete-modal');
+        const deleteBtn = document.getElementById('delete-btn');
+        const confirmDeleteBtn = document.getElementById('confirm-delete');
+        const cancelDeleteBtn = document.getElementById('cancel-delete');
+        const undoDeleteBtn = document.getElementById('undo-delete');
+        const deleteUndoSection = document.getElementById('delete-undo');
+        const deleteTimerBar = document.getElementById('delete-timer-bar');
+        const deleteTimerCount = document.getElementById('delete-timer-count');
+        const deleteGameName = document.getElementById('delete-game-name');
+
+        if (!deleteBtn || !deleteModal) return;
+
+        let deleteTimer = null;
+        let undoTimer = null;
+        let countdown = 5;
+        let pendingGameId = null;
+        let pendingCsrf = null;
+
+        deleteBtn.addEventListener('click', function() {
+            pendingGameId = this.getAttribute('data-game-id');
+            pendingCsrf = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+            deleteGameName.textContent = this.getAttribute('data-game-name');
+            deleteModal.classList.remove('hidden');
+            deleteModal.classList.add('flex');
+            deleteUndoSection.classList.add('hidden');
+            confirmDeleteBtn.disabled = false;
+            confirmDeleteBtn.textContent = 'Удалить';
+        });
+
+        function closeModal() {
+            deleteModal.classList.add('hidden');
+            deleteModal.classList.remove('flex');
+            clearTimeout(deleteTimer);
+            clearTimeout(undoTimer);
+        }
+
+        cancelDeleteBtn.addEventListener('click', closeModal);
+
+        deleteModal.addEventListener('click', function(e) {
+            if (e.target === this) closeModal();
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && !deleteModal.classList.contains('hidden')) {
+                closeModal();
+            }
+        });
+
+        confirmDeleteBtn.addEventListener('click', function() {
+            if (!pendingGameId) return;
+
+            // Show undo section
+            deleteUndoSection.classList.remove('hidden');
+            confirmDeleteBtn.disabled = true;
+            confirmDeleteBtn.textContent = 'Удаление...';
+            countdown = 5;
+            deleteTimerCount.textContent = countdown;
+            deleteTimerBar.style.width = '100%';
+
+            // Start countdown
+            let elapsed = 0;
+            const totalDuration = 5000;
+            const interval = 100;
+
+            deleteTimer = setInterval(function() {
+                elapsed += interval;
+                const remaining = 100 - (elapsed / totalDuration) * 100;
+                deleteTimerBar.style.width = remaining + '%';
+
+                if (elapsed % 1000 < interval) {
+                    countdown--;
+                    deleteTimerCount.textContent = countdown;
+                }
+
+                if (elapsed >= totalDuration) {
+                    clearInterval(deleteTimer);
+                    // Actually delete
+                    fetch('/games/' + pendingGameId + '/delete', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'X-CSRF-TOKEN': pendingCsrf
+                        },
+                        body: '_csrf=' + encodeURIComponent(pendingCsrf)
+                    })
+                    .then(function(r) {
+                        if (r.ok || r.redirected) {
+                            window.location.href = '/games';
+                        } else {
+                            window.showToast('Ошибка при удалении', 'error');
+                            closeModal();
+                        }
+                    })
+                    .catch(function() {
+                        window.showToast('Ошибка сети', 'error');
+                        closeModal();
+                    });
+                }
+            }, interval);
+
+            // Countdown timer for text
+            undoTimer = setInterval(function() {
+                countdown--;
+                if (countdown <= 0) {
+                    clearInterval(undoTimer);
+                }
+                deleteTimerCount.textContent = Math.max(0, countdown);
+            }, 1000);
+        });
+
+        undoDeleteBtn.addEventListener('click', function() {
+            clearTimeout(deleteTimer);
+            clearTimeout(undoTimer);
+            window.showToast('Удаление отменено', 'success');
+            closeModal();
+        });
     })();
 </script>
 {{end}}

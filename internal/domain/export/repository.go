@@ -16,6 +16,8 @@ type ExportRepository interface {
 	GetGameWithLevels(ctx context.Context, gameID uint) (*game.Game, []level.Level, error)
 	// GetFinishedPassingsWithDetails загружает завершённые прохождения с командами, прогрессом, попытками и уровнями.
 	GetFinishedPassingsWithDetails(ctx context.Context, gameID uint) ([]game.GamePassing, error)
+	// DB возвращает *gorm.DB с контекстом.
+	DB(ctx context.Context) *gorm.DB
 }
 
 type gormExportRepo struct {
@@ -51,4 +53,9 @@ func (r *gormExportRepo) GetFinishedPassingsWithDetails(ctx context.Context, gam
 		Order("place ASC").
 		Find(&passings).Error
 	return passings, err
+}
+
+// DB возвращает *gorm.DB с контекстом.
+func (r *gormExportRepo) DB(ctx context.Context) *gorm.DB {
+	return r.db.WithContext(ctx)
 }
