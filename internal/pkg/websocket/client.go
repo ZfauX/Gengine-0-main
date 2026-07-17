@@ -120,14 +120,17 @@ func HandleWebSocket(client *Client) {
 func HandleWebSocketWithContext(ctx context.Context, client *Client) {
 	go client.writePump(ctx)
 
-	_ = client.Conn.SetReadDeadline(time.Now().Add(pongWait))
+	// Таймаут для чтения — позволяет проверять ctx.Done()
+	const readTimeout = 5 * time.Second
+
+	_ = client.Conn.SetReadDeadline(time.Now().Add(readTimeout))
 	client.Conn.SetPongHandler(func(string) error {
-		_ = client.Conn.SetReadDeadline(time.Now().Add(pongWait))
+		_ = client.Conn.SetReadDeadline(time.Now().Add(readTimeout))
 		client.RecordActivity()
 		return nil
 	})
 
-	// Цикл чтения с поддержкой отмены
+	// Цикл чтения с поддержкой отмены контекста
 	for {
 		select {
 		case <-ctx.Done():
@@ -137,16 +140,19 @@ func HandleWebSocketWithContext(ctx context.Context, client *Client) {
 			log.Debug().Str("client_id", client.ID).Msg("HandleWebSocketWithContext: client closed")
 			return
 		default:
-			_, _, err := client.Conn.ReadMessage()
-			if err != nil {
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-					log.Error().Err(err).Str("client_id", client.ID).Msg("HandleWebSocketWithContext: read error")
-				}
-				return
-			}
-			// Обновляем активность при чтении сообщения
-			client.RecordActivity()
 		}
+
+		// ReadMessage будет ждать до readTimeout, затем вернёт ошибку,
+		// что позволит циклу проверить ctx.Done()
+		_, _, err := client.Conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Error().Err(err).Str("client_id", client.ID).Msg("HandleWebSocketWithContext: read error")
+			}
+			return
+		}
+		// Обновляем активность при чтении сообщения
+		client.RecordActivity()
 	}
 }
 

@@ -93,6 +93,31 @@ func (s *GamePassingService) ListByGame(ctx context.Context, gameID uint) ([]Gam
 	return passings, err
 }
 
+// ListByGamePaginated возвращает прохождения для игры с пагинацией.
+func (s *GamePassingService) ListByGamePaginated(ctx context.Context, gameID uint, page, perPage int) ([]GamePassing, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 {
+		perPage = 20
+	}
+
+	var total int64
+	var passings []GamePassing
+
+	query := s.DB.WithContext(ctx).Preload("Team.Captain").Where("game_id = ?", gameID)
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	offset := (page - 1) * perPage
+	if err := query.Order("created_at DESC").Offset(offset).Limit(perPage).Find(&passings).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return passings, total, nil
+}
+
 // ListTestPassings возвращает тестовые прохождения для игры.
 func (s *GamePassingService) ListTestPassings(ctx context.Context, gameID uint, result *[]GamePassing) error {
 	return s.DB.WithContext(ctx).Where("game_id = ? AND status = ?", gameID, StatusTesting).Find(result).Error
@@ -127,7 +152,8 @@ func (s *GamePassingService) UpdateStatus(ctx context.Context, passingID uint, s
 		if err := tx.First(&g, passing.GameID).Error; err != nil {
 			return err
 		}
-		ok, err := s.coAuthor.HasPermission(ctx, passing.GameID, userID, RoleModerator)
+		// Проверка прав ВНУТРИ транзакции (предотвращает race condition)
+		ok, err := s.coAuthor.HasPermissionTx(tx, passing.GameID, userID, RoleModerator)
 		if err != nil {
 			return err
 		}
@@ -174,7 +200,8 @@ func (s *GamePassingService) StartGame(ctx context.Context, passingID, userID ui
 		}
 		isCaptain := (t.CaptainID == userID)
 		if !isCaptain {
-			ok, err := s.coAuthor.HasPermission(ctx, passing.GameID, userID, RoleModerator)
+			// Проверка прав ВНУТРИ транзакции (предотвращает race condition)
+			ok, err := s.coAuthor.HasPermissionTx(tx, passing.GameID, userID, RoleModerator)
 			if err != nil {
 				return err
 			}
@@ -223,10 +250,6 @@ func (s *GamePassingService) broadcastGameStart(ctx context.Context, gameID, pas
 		return
 	default:
 	}
-
-	// Используем контекст с таймаутом для предотвращения зависания
-	_, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
 
 	// Инвалидируем кэш мониторинга
 	if s.monitorSvc != nil {

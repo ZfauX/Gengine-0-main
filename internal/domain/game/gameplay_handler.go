@@ -172,7 +172,7 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 		return
 	}
 
-	if attempt.Success {
+	if attempt.Attempt.Success {
 		c.Redirect(http.StatusFound, "/game/"+c.Param("passing_id"))
 	} else {
 		c.Redirect(http.StatusFound, "/game/"+c.Param("passing_id")+"?error=wrong_code")

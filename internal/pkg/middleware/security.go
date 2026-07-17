@@ -8,6 +8,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// getLeafletHash возвращает SHA-256 hash для Leaflet 1.9.4 JS.
+// Вычисляется: openssl dgst -sha256 -binary leaflet.js | base64
+const leafletJSHash = "'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo='"
+
+// getLeafletCSSHash возвращает SHA-256 hash для Leaflet 1.9.4 CSS.
+const leafletCSSHash = "'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY='"
+
 // SecurityHeadersMiddleware добавляет базовые защитные заголовки ко всем ответам.
 // Генерирует nonce для инлайн-скриптов и стилей.
 func SecurityHeadersMiddleware() gin.HandlerFunc {
@@ -21,11 +28,10 @@ func SecurityHeadersMiddleware() gin.HandlerFunc {
 		c.Set("csp_nonce", nonce)
 
 		// Формируем CSP с nonce
-		// Tailwind теперь загружается локально, поэтому CDN не требуется.
-		// Оставляем только необходимые CDN для потенциальных внешних скриптов/стилей (например, Swagger UI или библиотеки).
+		// CDN заменены на hash для Leaflet — это предотвращает XSS даже при компрометации CDN.
 		csp := "default-src 'self'; " +
-			"script-src 'self' 'nonce-" + nonce + "' https://cdn.jsdelivr.net; " +
-			"style-src 'self' 'nonce-" + nonce + "' https://cdn.jsdelivr.net https://unpkg.com; " +
+			"script-src 'self' 'nonce-" + nonce + "' " + leafletJSHash + "; " +
+			"style-src 'self' 'nonce-" + nonce + "' " + leafletCSSHash + "; " +
 			"img-src 'self' data: https:; " +
 			"connect-src 'self' ws: wss:; " +
 			"frame-src 'self' https://www.youtube.com https://player.vimeo.com https://rutube.ru;"

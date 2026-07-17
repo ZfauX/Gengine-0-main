@@ -139,39 +139,58 @@ func (s *AuthService) RefreshAccessToken(ctx context.Context, refreshTokenStr st
 }
 
 func (s *AuthService) ParseToken(tokenStr string) (uint, string, error) {
-	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (any, error) {
+	claims := jwt.MapClaims{}
+	token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("неверный метод подписи")
 		}
 		return []byte(s.cfg.JWT.Secret), nil
 	})
-	if err != nil || !token.Valid {
+	if err != nil || token == nil || !token.Valid {
 		return 0, "", errors.New("невалидный токен")
 	}
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return 0, "", errors.New("неверные данные токена")
-	}
+
+	// Проверяем, что токен не refresh-токен
 	if isRefresh, ok := claims["refresh"].(bool); ok && isRefresh {
 		return 0, "", errors.New("использование refresh-токена как access запрещено")
 	}
+
+	// Проверяем nbf (not before) — jwt.ParseWithClaims с MapClaims не проверяет автоматически
+	if nbf, ok := claims["nbf"].(float64); ok {
+		if time.Now().Unix() < int64(nbf) {
+			return 0, "", errors.New("токен ещё не действителен")
+		}
+	}
+
+	// Проверяем iat (issued at) — токен не должен быть выдан в будущем
+	if iat, ok := claims["iat"].(float64); ok {
+		if time.Now().Unix() < int64(iat) {
+			return 0, "", errors.New("неверная дата выдачи токена")
+		}
+	}
+
 	userIDFloat, ok := claims["user_id"].(float64)
 	if !ok {
 		return 0, "", errors.New("неверный ID пользователя в токене")
 	}
+
 	role := "user"
 	if roleVal, ok := claims["role"].(string); ok && roleVal != "" {
 		role = roleVal
 	}
+
 	return uint(userIDFloat), role, nil
 }
 
 func (s *AuthService) generateJWT(user User) (string, error) {
+	now := time.Now()
 	claims := jwt.MapClaims{
 		"user_id": user.ID,
 		"email":   user.Email,
 		"role":    user.Role,
-		"exp":     time.Now().Add(s.cfg.JWT.AccessExpiry).Unix(),
+		"exp":     now.Add(s.cfg.JWT.AccessExpiry).Unix(),
+		"iat":     now.Unix(),
+		"nbf":     now.Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(s.cfg.JWT.Secret))

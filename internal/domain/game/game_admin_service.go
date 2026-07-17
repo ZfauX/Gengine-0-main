@@ -41,16 +41,16 @@ func (s *GameAdminService) ForceFinishGame(ctx context.Context, gameID, userID u
 	var game Game
 	var teamIDs []uint
 
-	// Проверка прав перед транзакцией
-	ok, err := s.coAuthorSvc.HasPermission(ctx, gameID, userID, RoleModerator)
-	if err != nil {
-		return fmt.Errorf("ошибка проверки прав: %w", err)
-	}
-	if !ok {
-		return errors.New("только автор или модератор может завершить игру")
-	}
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Проверка прав ВНУТРИ транзакции (предотвращает race condition)
+		ok, err := s.coAuthorSvc.HasPermissionTx(tx, gameID, userID, RoleModerator)
+		if err != nil {
+			return fmt.Errorf("ошибка проверки прав: %w", err)
+		}
+		if !ok {
+			return errors.New("только автор или модератор может завершить игру")
+		}
 
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("game_id = ? AND status = ?", gameID, StatusStarted).
 			Preload("Team.Captain").
@@ -97,16 +97,16 @@ func (s *GameAdminService) DisqualifyTeam(ctx context.Context, gameID, teamID, u
 	var passing GamePassing
 	var game Game
 
-	// Проверка прав перед транзакцией
-	ok, err := s.coAuthorSvc.HasPermission(ctx, gameID, userID, RoleModerator)
-	if err != nil {
-		return fmt.Errorf("ошибка проверки прав: %w", err)
-	}
-	if !ok {
-		return errors.New("только автор или модератор может дисквалифицировать команду")
-	}
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Проверка прав ВНУТРИ транзакции (предотвращает race condition)
+		ok, err := s.coAuthorSvc.HasPermissionTx(tx, gameID, userID, RoleModerator)
+		if err != nil {
+			return fmt.Errorf("ошибка проверки прав: %w", err)
+		}
+		if !ok {
+			return errors.New("только автор или модератор может дисквалифицировать команду")
+		}
 
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("game_id = ? AND team_id = ? AND status = ?", gameID, teamID, StatusStarted).
 			Preload("Team.Captain").

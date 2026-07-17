@@ -24,6 +24,28 @@
         {{end}}
         {{if .Level.Latitude}}
         <p><span class="font-medium text-gray-600">Координаты:</span> {{.Level.Latitude}}, {{.Level.Longitude}}</p>
+        
+        <!-- Карта Leaflet -->
+        <div class="mt-4">
+            <div id="level-map" class="map-container" style="height: 300px;"></div>
+        </div>
+        <script>
+            (function() {
+                const lat = {{.Level.Latitude}};
+                const lng = {{.Level.Longitude}};
+                const name = "{{.Level.Name}}";
+                
+                if (lat && lng && typeof L !== 'undefined') {
+                    const map = L.map('level-map').setView([lat, lng], 15);
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '© OpenStreetMap contributors'
+                    }).addTo(map);
+                    L.marker([lat, lng]).addTo(map)
+                        .bindPopup(name)
+                        .openPopup();
+                }
+            })();
+        </script>
         {{end}}
     </div>
 

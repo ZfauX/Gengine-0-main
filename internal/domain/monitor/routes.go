@@ -34,7 +34,7 @@ func RegisterRoutes(
 	chatService := NewChatService(chatRepo)
 	blackboxVoteService := NewBlackboxVoteService(blackboxRepo, gameRepo, cfg)
 
-	monitorHandler := NewMonitorHandler(db, monitorSvc, blackboxVoteService, chatService, hub, userService, gameService)
+	monitorHandler := NewMonitorHandler(db, monitorSvc, blackboxVoteService, chatService, hub, userService, gameService, coAuthorSvc)
 
 	authRequired := middleware.AuthRequired(authService)
 	gameManager := middleware.GameManager(coAuthorSvc)

@@ -188,88 +188,97 @@ func CheckTimeouts(db *gorm.DB, ctx context.Context, onGameFinished GameCompleti
 func checkTimeoutsImpl(db *gorm.DB, ctx context.Context, onGameFinished GameCompletionCallback) {
 	const batchSize = 50
 
-	var activeProgresses []LevelProgress
-	if err := db.WithContext(ctx).Clauses(clause.Locking{
-		Strength: "UPDATE",
-		Options:  "SKIP LOCKED",
-	}).Select("id, game_passing_id, level_id, started_at, finished_at, penalty_seconds, hints_used").
-		Where("finished_at IS NULL").
-		Limit(batchSize).
-		Find(&activeProgresses).Error; err != nil {
-		log.Error().Err(err).Msg("CheckTimeouts: failed to fetch active progresses")
-		return
-	}
-
-	if len(activeProgresses) == 0 {
-		return
-	}
-
-	// Собираем уникальные game_passing_id для batch-загрузки settings
-	var passingIDs []uint
-	for _, p := range activeProgresses {
-		passingIDs = append(passingIDs, p.GamePassingID)
-	}
-
-	// Batch-загружаем game_passings с settings
-	type passingWithSetting struct {
+	// Batch-загружаем active progresses с game_passings и settings в одном запросе
+	type progressWithSetting struct {
 		ID                uint
+		GamePassingID     uint
+		LevelID           uint
+		StartedAt         time.Time
+		FinishedAt        *time.Time
 		PerLevelTimeLimit int
 	}
-	var passingsWithSettings []passingWithSetting
+
+	var progressesWithSettings []progressWithSetting
 	if err := db.WithContext(ctx).
-		Model(&GamePassing{}).
-		Select("game_passings.id, game_settings.per_level_time_limit").
+		Table("level_progresses").
+		Select(`level_progresses.id, level_progresses.game_passing_id, level_progresses.level_id, 
+		        level_progresses.started_at, level_progresses.finished_at, 
+		        COALESCE(game_settings.per_level_time_limit, 0) as per_level_time_limit`).
+		Joins("LEFT JOIN game_passings ON game_passings.id = level_progresses.game_passing_id").
 		Joins("LEFT JOIN game_settings ON game_settings.game_id = game_passings.game_id").
-		Where("game_passings.id IN ?", passingIDs).
-		Find(&passingsWithSettings).Error; err != nil {
-		log.Error().Err(err).Msg("CheckTimeouts: failed to fetch passings with settings")
+		Where("level_progresses.finished_at IS NULL").
+		Limit(batchSize).
+		Find(&progressesWithSettings).Error; err != nil {
+		log.Error().Err(err).Msg("CheckTimeouts: failed to fetch progresses with settings")
+		return
 	}
 
-	settingMap := make(map[uint]*GameSetting)
-	for _, ps := range passingsWithSettings {
-		settingMap[ps.ID] = &GameSetting{PerLevelTimeLimit: ps.PerLevelTimeLimit}
+	if len(progressesWithSettings) == 0 {
+		return
 	}
 
 	now := time.Now()
-	for _, p := range activeProgresses {
+	var timedOutIDs []uint
+	var timedOutProgresses []struct {
+		ID            uint
+		GamePassingID uint
+		LevelID       uint
+	}
+
+	// Определяем просроченные прогрессы
+	for _, p := range progressesWithSettings {
 		if p.FinishedAt != nil {
 			continue
 		}
-
-		setting, ok := settingMap[p.GamePassingID]
-		if !ok || setting.PerLevelTimeLimit <= 0 {
+		if p.PerLevelTimeLimit <= 0 {
 			continue
 		}
-
 		elapsed := now.Sub(p.StartedAt)
-		limit := time.Duration(setting.PerLevelTimeLimit) * time.Minute
+		limit := time.Duration(p.PerLevelTimeLimit) * time.Minute
 		if elapsed >= limit {
-			if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-				// Блокируем прогресс
-				var current LevelProgress
-				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-					Where("id = ? AND finished_at IS NULL", p.ID).
-					First(&current).Error; err != nil {
-					return err
+			timedOutIDs = append(timedOutIDs, p.ID)
+			timedOutProgresses = append(timedOutProgresses, struct {
+				ID            uint
+				GamePassingID uint
+				LevelID       uint
+			}{ID: p.ID, GamePassingID: p.GamePassingID, LevelID: p.LevelID})
+		}
+	}
+
+	if len(timedOutIDs) == 0 {
+		return
+	}
+
+	// Batch UPDATE всех просроченных прогрессов одной транзакцией
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Batch update finished_at для всех просроченных
+		if err := tx.Model(&LevelProgress{}).
+			Where("id IN ?", timedOutIDs).
+			Where("finished_at IS NULL").
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Update("finished_at", now).Error; err != nil {
+			return err
+		}
+
+		// Для каждого просроченного прогресса advance to next level
+		for _, p := range timedOutProgresses {
+			var passing GamePassing
+			if err := tx.First(&passing, p.GamePassingID).Error; err != nil {
+				log.Error().Err(err).Uint("passing_id", p.GamePassingID).Msg("CheckTimeouts: failed to fetch passing")
+				continue
+			}
+			if err := AdvanceToNextLevel(tx, p.GamePassingID, p.LevelID, func() {
+				if onGameFinished != nil {
+					onGameFinished(ctx, passing.GameID)
 				}
-				current.FinishedAt = &now
-				if err := tx.Save(&current).Error; err != nil {
-					return err
-				}
-				// Загружаем passing для получения GameID
-				var passing GamePassing
-				if err := tx.First(&passing, current.GamePassingID).Error; err != nil {
-					return err
-				}
-				return AdvanceToNextLevel(tx, current.GamePassingID, current.LevelID, func() {
-					if onGameFinished != nil {
-						onGameFinished(ctx, passing.GameID)
-					}
-				})
 			}); err != nil {
-				log.Error().Err(err).Uint("progress_id", p.ID).Msg("CheckTimeouts: transaction failed")
+				log.Error().Err(err).Uint("progress_id", p.ID).Msg("CheckTimeouts: AdvanceToNextLevel failed")
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		log.Error().Err(err).Msg("CheckTimeouts: batch transaction failed")
 	}
 }
 

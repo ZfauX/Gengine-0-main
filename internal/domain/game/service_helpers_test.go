@@ -102,6 +102,7 @@ func TestParseGameDatesFromForm(t *testing.T) {
 func TestValidateGameDates(t *testing.T) {
 	now := time.Now()
 	later := now.Add(24 * time.Hour)
+	muchLater := now.Add(48 * time.Hour)
 
 	tests := []struct {
 		name                 string
@@ -123,14 +124,14 @@ func TestValidateGameDates(t *testing.T) {
 		},
 		{
 			name:                 "валидные даты (будущее)",
-			startsAt:             &later,
-			registrationDeadline: &now,
+			startsAt:             &muchLater,
+			registrationDeadline: &later,
 			wantErr:              false,
 		},
 		{
 			name:                 "registrationDeadline после startsAt",
-			startsAt:             &now,
-			registrationDeadline: &later,
+			startsAt:             &later,
+			registrationDeadline: &muchLater,
 			wantErr:              true,
 		},
 	}

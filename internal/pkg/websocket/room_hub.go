@@ -149,24 +149,41 @@ func (h *RoomHub) Run() {
 				log.Warn().Str("room", msg.Room).Msg("RoomHub: broadcast skipped, hub is stopping")
 				continue
 			}
+			// Копируем список клиентов под локом, затем рассылка БЕЗ блокировки
 			h.mu.Lock()
 			room, ok := h.rooms[msg.Room]
 			if !ok {
 				h.mu.Unlock()
 				continue
 			}
+			// Копируем map клиентов (защита от concurrent map modifications)
+			clientsCopy := make(map[*Client]bool, len(room))
 			for client := range room {
+				clientsCopy[client] = true
+			}
+			h.mu.Unlock()
+
+			// Рассылка БЕЗ удержания лока
+			for client := range clientsCopy {
 				if client.IsClosed() {
+					// Удаляем из оригинальной map под локом
+					h.mu.Lock()
 					delete(room, client)
+					h.mu.Unlock()
 					continue
 				}
 				select {
 				case client.Send <- msg.Data:
 				default:
 					client.Close()
+					// Удаляем из оригинальной map под локом
+					h.mu.Lock()
 					delete(room, client)
+					h.mu.Unlock()
 				}
 			}
+			// Проверяем, пуста ли комната (под локом)
+			h.mu.Lock()
 			if len(room) == 0 {
 				delete(h.rooms, msg.Room)
 				log.Debug().Str("room", msg.Room).Msg("Room removed (empty)")

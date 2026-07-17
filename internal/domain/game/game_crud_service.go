@@ -19,6 +19,8 @@ type GameCRUDService struct {
 	CoAuthor       *CoAuthorService
 	userRepo       user.UserRepository
 	monitorService *MonitorService
+	reviewService  *ReviewService
+	ratingService  *RatingService
 }
 
 // NewGameCRUDService создаёт новый сервис CRUD.
@@ -27,12 +29,16 @@ func NewGameCRUDService(
 	coAuthor *CoAuthorService,
 	userRepo user.UserRepository,
 	monitorService *MonitorService,
+	reviewService *ReviewService,
+	ratingService *RatingService,
 ) *GameCRUDService {
 	return &GameCRUDService{
 		gameRepo:       gameRepo,
 		CoAuthor:       coAuthor,
 		userRepo:       userRepo,
 		monitorService: monitorService,
+		reviewService:  reviewService,
+		ratingService:  ratingService,
 	}
 }
 
@@ -136,7 +142,7 @@ func (s *GameCRUDService) getActiveGames(ctx context.Context) int64 {
 }
 
 // CanViewGame проверяет, имеет ли пользователь право видеть игру.
-func (s *GameCRUDService) CanViewGame(ctx context.Context, game *Game, viewerID uint) (bool, error) {
+func (s *GameCRUDService) CanViewGame(ctx context.Context, game *Game, viewerID uint, userRole string) (bool, error) {
 	if !game.IsDraft && game.Visibility != "private" {
 		return true, nil
 	}
@@ -149,22 +155,55 @@ func (s *GameCRUDService) CanViewGame(ctx context.Context, game *Game, viewerID 
 		return true, nil
 	}
 
-	if s.hasAdminRole(ctx, viewerID) {
+	// Роль уже есть в JWT — читаем из параметра, а не из БД
+	if userRole == "admin" {
 		return true, nil
 	}
 
 	return false, nil
 }
 
-// hasAdminRole проверяет, является ли пользователь администратором.
-func (s *GameCRUDService) hasAdminRole(ctx context.Context, userID uint) bool {
-	if userID == 0 || s.userRepo == nil {
-		return false
-	}
-	role, err := s.userRepo.GetUserRole(ctx, userID)
+// GetGameWithStats объединяет запросы: игра + отзывы + рейтинг (оптимизация Show).
+// Возвращает игру, список отзывов, средний рейтинг и количество отзывов.
+func (s *GameCRUDService) GetGameWithStats(ctx context.Context, gameID uint) (*Game, []Review, float64, int64, error) {
+	game, err := s.gameRepo.GetByIDPreloaded(ctx, gameID)
 	if err != nil {
-		log.Warn().Err(err).Uint("user_id", userID).Msg("hasAdminRole: failed to fetch user role")
-		return false
+		return nil, nil, 0, 0, err
 	}
-	return role == "admin"
+
+	reviews := []Review{}
+	avgRating := 0.0
+	reviewsCount := int64(0)
+
+	if s.reviewService != nil {
+		reviews, err = s.reviewService.ListByGame(gameID)
+		if err != nil {
+			log.Warn().Err(err).Uint("game_id", gameID).Msg("GetGameWithStats: failed to list reviews")
+		}
+	}
+
+	if s.ratingService != nil {
+		avgRating, reviewsCount, err = s.ratingService.GetAverageRating(gameID)
+		if err != nil {
+			log.Warn().Err(err).Uint("game_id", gameID).Msg("GetGameWithStats: failed to get average rating")
+		}
+	}
+
+	return game, reviews, avgRating, reviewsCount, nil
+}
+
+// ListReviews делегирует ReviewService.
+func (s *GameCRUDService) ListReviews(ctx context.Context, gameID uint) ([]Review, error) {
+	if s.reviewService == nil {
+		return []Review{}, nil
+	}
+	return s.reviewService.ListByGame(gameID)
+}
+
+// GetAverageRating делегирует RatingService.
+func (s *GameCRUDService) GetAverageRating(ctx context.Context, gameID uint) (float64, int64, error) {
+	if s.ratingService == nil {
+		return 0, 0, nil
+	}
+	return s.ratingService.GetAverageRating(gameID)
 }

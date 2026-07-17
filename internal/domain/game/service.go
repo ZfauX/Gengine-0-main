@@ -3,7 +3,6 @@ package game
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"mime/multipart"
@@ -92,7 +91,7 @@ func NewGameService(
 	userRepo user.UserRepository,
 	ratingSvc *RatingService,
 ) *GameService {
-	crudSvc := NewGameCRUDService(gameRepo, ca, userRepo, ms)
+	crudSvc := NewGameCRUDService(gameRepo, ca, userRepo, ms, rs, ratingSvc)
 	coverSvc := NewGameCoverService(gameRepo, storage, ca)
 	listingSvc := NewGameListingService(gameRepo)
 
@@ -138,7 +137,7 @@ func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint) (*Gam
 	if s.cache != nil {
 		if cached, ok := s.cache.GetWithCtx(ctx, cacheKey); ok {
 			if game, ok := cached.(*Game); ok {
-				canView, err := s.crudService.CanViewGame(ctx, game, viewerID)
+				canView, err := s.crudService.CanViewGame(ctx, game, viewerID, "user")
 				if err != nil {
 					return nil, err
 				}
@@ -163,7 +162,7 @@ func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint) (*Gam
 		return nil, err
 	}
 
-	ok, err := s.crudService.CanViewGame(ctx, game, viewerID)
+	ok, err := s.crudService.CanViewGame(ctx, game, viewerID, "user")
 	if err != nil {
 		return nil, err
 	}
@@ -171,12 +170,9 @@ func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint) (*Gam
 		return nil, errors.New("игра не найдена")
 	}
 
-	// Кэшируем только для не-черновиков или админов
-	if s.cache != nil && (!game.IsDraft || s.crudService.hasAdminRole(ctx, viewerID)) {
-		ttl := 1 * time.Minute
-		if !game.IsDraft {
-			ttl = 5 * time.Minute
-		}
+	// Кэшируем только для не-черновиков (hasAdminRole убран — роль в JWT)
+	if s.cache != nil && !game.IsDraft {
+		ttl := 5 * time.Minute
 		s.cache.SetWithCtx(ctx, cacheKey, game, ttl)
 	}
 
@@ -279,35 +275,27 @@ func (s *GameService) GetAverageRating(ctx context.Context, gameID uint) (float6
 					}
 				}
 			}
-			// If cached as struct or other type, try to unmarshal from JSON bytes
-			if result, ok := cached.([]byte); ok {
-				var parsed map[string]interface{}
-				if err := json.Unmarshal(result, &parsed); err == nil {
-					if avg, ok := parsed["avg"].(float64); ok {
-						if count, ok := parsed["count"].(int64); ok {
-							log.Debug().Uint("game_id", gameID).Msg("GetAverageRating: cache hit (json)")
-							return avg, count, nil
-						}
-					}
-				}
-			}
 		}
 	}
 
-	avg, count, err := s.reviewService.GetAverageRating(gameID)
+	avgRating, count, err := s.ratingService.GetAverageRating(gameID)
 	if err != nil {
 		return 0, 0, err
 	}
 
 	if s.cache != nil {
-		result := map[string]interface{}{
-			"avg":   avg,
+		s.cache.SetWithCtx(ctx, cacheKey, map[string]interface{}{
+			"avg":   avgRating,
 			"count": count,
-		}
-		s.cache.SetWithCtx(ctx, cacheKey, result, 5*time.Minute)
+		}, 5*time.Minute)
 	}
 
-	return avg, count, nil
+	return avgRating, count, nil
+}
+
+// GetGameWithStats объединяет запросы: игра + отзывы + рейтинг (оптимизация Show).
+func (s *GameService) GetGameWithStats(ctx context.Context, gameID uint) (*Game, []Review, float64, int64, error) {
+	return s.crudService.GetGameWithStats(ctx, gameID)
 }
 
 // IsUserManager делегирует CoAuthorService.

@@ -45,8 +45,10 @@ func setupTestRouter(t *testing.T, db *gorm.DB, cfg *config.Config) *gin.Engine 
 	hub := ws.NewRoomHub()
 	go hub.Run()
 
-	// В интеграционных тестах кэш не используется, передаём nil.
-	router, err := app.SetupRouter(db, localStorage, hub, cfg, "../..", nil)
+	// Создаём deps и app напрямую, без legacy-функций
+	deps := app.NewDependencies(db, cfg, hub, localStorage, nil)
+	appInstance := app.NewApp(db, localStorage, hub, cfg, "../..", deps)
+	router, err := appInstance.SetupRouter()
 	if err != nil {
 		t.Fatalf("failed to setup router: %v", err)
 	}

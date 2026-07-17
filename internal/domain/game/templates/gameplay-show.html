@@ -28,11 +28,20 @@
         <!-- Форма отправки кода -->
         <form id="code-form" action="/game/{{.PassingID}}/submit" method="POST" class="flex flex-wrap items-center gap-3 mt-4 fade-in">
             <input type="hidden" name="_csrf" value="{{.csrf}}">
-            <input type="text" name="code" id="code-input" placeholder="Введите код" required autofocus
-                   class="flex-1 min-w-[180px] rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2">
-            <button type="submit" id="submit-btn" class="btn btn-primary text-sm whitespace-nowrap">Отправить</button>
-            <button type="button" id="hint-btn" class="btn btn-outline text-sm whitespace-nowrap" title="Использовать подсказку (горячая клавиша: H)">💡 Подсказка</button>
+            <input type="text" name="code" id="code-input" placeholder="Введите код" required autocomplete="off"
+                    class="flex-1 min-w-[200px] sm:min-w-[250px] rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-3 text-base md:text-lg"
+                    style="font-size: 16px;" <!-- Prevents iOS zoom on focus -->
+                    inputmode="text">
+            <button type="submit" id="submit-btn" class="btn btn-primary text-sm whitespace-nowrap py-3 px-4 sm:py-2 sm:px-3"
+                    style="min-height: 44px; min-width: 44px;">Отправить</button>
+            <button type="button" id="hint-btn" class="btn btn-outline text-sm whitespace-nowrap py-3 px-4 sm:py-2 sm:px-3" title="Использовать подсказку (горячая клавиша: H)"
+                    style="min-height: 44px; min-width: 44px;">💡 Подсказка</button>
         </form>
+
+        <!-- Mobile sticky timer -->
+        <div id="mobile-sticky-timer" class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-3 sm:hidden z-40 hidden">
+            <p id="mobile-timer-display" class="text-center font-mono font-bold text-lg text-gray-800"></p>
+        </div>
 
         <!-- Форма файла -->
         <form id="file-form" action="/game/{{.PassingID}}/file" method="POST" enctype="multipart/form-data" class="flex flex-wrap items-center gap-3 mt-3">
@@ -97,30 +106,109 @@
         const submitBtn = document.getElementById('submit-btn');
         const msgArea = document.getElementById('message-area');
         const attemptsList = document.getElementById('attempts-list');
+        const mobileStickyTimer = document.getElementById('mobile-sticky-timer');
+        const mobileTimerDisplay = document.getElementById('mobile-timer-display');
         let timeLeft = timeLimitSeconds;
         let isSubmitting = false;
 
+        // Real-time timer with server sync
         function updateTimer() {
             if (timeLimitSeconds <= 0) {
                 timerDisplay.textContent = '';
+                return;
+            }
+
+            // Sync with server time
+            fetch('/game/' + passingId + '/timer-sync', {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' }
+            })
+            .then(function(r) {
+                if (!r.ok) throw new Error('sync failed');
+                return r.json();
+            })
+            .then(function(data) {
+                if (data.timeLeft !== undefined) {
+                    timeLeft = data.timeLeft;
+                }
+                renderTimer();
+            })
+            .catch(function() {
+                // Fallback to client-side timer
+                renderTimer();
+            });
+        }
+
+        function renderTimer() {
+            if (timeLimitSeconds <= 0) {
+                timerDisplay.textContent = '';
+                if (mobileTimerDisplay) mobileTimerDisplay.textContent = '';
                 return;
             }
             if (timeLeft <= 0) {
                 timerDisplay.textContent = '⏰ Время вышло!';
                 timerDisplay.className = 'text-red-600 font-bold text-xl';
                 codeForm.style.display = 'none';
+                if (mobileTimerDisplay) {
+                    mobileTimerDisplay.textContent = '⏰ Время вышло!';
+                    mobileTimerDisplay.className = 'text-center font-mono font-bold text-lg text-red-600';
+                }
                 return;
             }
             const mins = Math.floor(timeLeft / 60);
             const secs = timeLeft % 60;
-            timerDisplay.textContent = `⏱️ Осталось: ${mins}:${secs.toString().padStart(2, '0')}`;
-            timerDisplay.className = 'text-gray-700 font-mono text-xl';
-            timeLeft--;
+            const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
+
+            timerDisplay.textContent = `⏱️ Осталось: ${timeStr}`;
+
+            // Color coding: green > 5min, yellow > 1min, red < 1min
+            if (timeLeft <= 60) {
+                timerDisplay.className = 'text-red-600 font-mono text-xl font-bold animate-pulse';
+                if (mobileTimerDisplay) {
+                    mobileTimerDisplay.textContent = `⏱️ ${timeStr}`;
+                    mobileTimerDisplay.className = 'text-center font-mono font-bold text-lg text-red-600 animate-pulse';
+                }
+            } else if (timeLeft <= 300) {
+                timerDisplay.className = 'text-yellow-600 font-mono text-xl font-bold';
+                if (mobileTimerDisplay) {
+                    mobileTimerDisplay.textContent = `⏱️ ${timeStr}`;
+                    mobileTimerDisplay.className = 'text-center font-mono font-bold text-lg text-yellow-600';
+                }
+            } else {
+                timerDisplay.className = 'text-gray-700 font-mono text-xl';
+                if (mobileTimerDisplay) {
+                    mobileTimerDisplay.textContent = `⏱️ ${timeStr}`;
+                    mobileTimerDisplay.className = 'text-center font-mono font-bold text-lg text-gray-800';
+                }
+            }
         }
 
+        // Initial sync and interval
         if (timeLimitSeconds > 0) {
             updateTimer();
-            setInterval(updateTimer, 1000);
+            setInterval(updateTimer, 10000); // Sync every 10 seconds
+            setInterval(function() {
+                if (timeLeft > 0) timeLeft--;
+                renderTimer();
+            }, 1000);
+
+            // Show mobile sticky timer on scroll
+            if (mobileStickyTimer && mobileTimerDisplay) {
+                let lastScrollY = 0;
+                window.addEventListener('scroll', function() {
+                    const scrollY = window.scrollY || window.pageYOffset;
+                    const timerContainer = document.getElementById('timer-container');
+                    if (timerContainer) {
+                        const rect = timerContainer.getBoundingClientRect();
+                        if (rect.bottom < 0) {
+                            mobileStickyTimer.classList.remove('hidden');
+                        } else {
+                            mobileStickyTimer.classList.add('hidden');
+                        }
+                    }
+                    lastScrollY = scrollY;
+                });
+            }
         }
 
         function escapeHtml(text) {

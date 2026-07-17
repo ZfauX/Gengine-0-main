@@ -59,16 +59,16 @@ func main() {
 
 	if err := godotenv.Load(); err != nil {
 		if !os.IsNotExist(err) {
-			log.Fatal().Err(err).Msg("Ошибка при загрузке .env файла")
+			log.Fatal().Err(err).Msg("failed to load .env file")
 		}
-		log.Info().Msg("Файл .env не найден, используются только системные переменные окружения")
+		log.Info().Msg(".env file not found, using only system environment variables")
 	}
 
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatal().Err(err).Msg("Не удалось загрузить конфигурацию")
+		log.Fatal().Err(err).Msg("failed to load configuration")
 	}
 
 	// ============================================================
@@ -99,7 +99,7 @@ func main() {
 		logFilePath = "logs/app.log"
 	}
 	if err := os.MkdirAll(filepath.Dir(logFilePath), 0755); err != nil {
-		log.Fatal().Err(err).Msg("Не удалось создать директорию для логов")
+		log.Fatal().Err(err).Msg("failed to create log directory")
 	}
 
 	logFile := &lumberjack.Logger{
@@ -144,21 +144,21 @@ func main() {
 	// --- Подключение к БД ---
 	database, err := connectDBWithRetry(cfg, 5, 2*time.Second)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Не удалось подключиться к БД после нескольких попыток")
+		log.Fatal().Err(err).Msg("failed to connect to DB after several attempts")
 	}
-	log.Info().Msg("Подключение к БД установлено")
+	log.Info().Msg("DB connection established")
 
 	if *migrateFlag {
-		log.Info().Msg("Запуск миграций...")
+		log.Info().Msg("running migrations...")
 		if err := db.RunMigrations(database, "migrations"); err != nil {
-			log.Fatal().Err(err).Msg("Ошибка применения миграций")
+			log.Fatal().Err(err).Msg("migration error")
 		}
-		log.Info().Msg("Миграции успешно применены")
+		log.Info().Msg("migrations applied successfully")
 		return
 	}
 
 	if err := db.EnsureAdmin(database, cfg); err != nil {
-		log.Fatal().Err(err).Msg("Не удалось создать/обновить администратора")
+		log.Fatal().Err(err).Msg("failed to create/update admin")
 	}
 
 	localStorage := storage.NewLocalStorage().WithBaseDir(filepath.Join(".", cfg.Server.UploadsDir))
@@ -176,7 +176,7 @@ func main() {
 	if cfg.SMTP.Enabled {
 		email.InitQueue(cfg, database, 5, 10*time.Second, 10)
 	} else {
-		log.Info().Msg("SMTP отключён, email-очередь не запущена")
+		log.Info().Msg("SMTP disabled, email queue not started")
 	}
 
 	// --- Инициализация кэша (Valkey с fallback на in-memory) ---
@@ -184,11 +184,11 @@ func main() {
 	if cfg.Valkey.Host != "" {
 		appCache = cache.NewValkeyCache(cfg.Valkey.Host, cfg.Valkey.Port, cfg.Valkey.Password)
 		if appCache == nil {
-			log.Warn().Msg("Valkey недоступен, используется in-memory кэш")
+			log.Warn().Msg("Valkey unavailable, using in-memory cache")
 			appCache = cache.NewCache(10*time.Minute, 5*time.Minute)
 		}
 	} else {
-		log.Info().Msg("Valkey не настроен, используется in-memory кэш")
+		log.Info().Msg("Valkey not configured, using in-memory cache")
 		appCache = cache.NewCache(10*time.Minute, 5*time.Minute)
 	}
 
@@ -196,7 +196,7 @@ func main() {
 	appInstance := app.NewApp(database, localStorage, hub, cfg, ".", deps)
 	r, err := appInstance.SetupRouter()
 	if err != nil {
-		log.Fatal().Err(err).Msg("Не удалось настроить маршруты")
+		log.Fatal().Err(err).Msg("failed to setup routes")
 	}
 
 	// Контекст для фоновых задач
@@ -223,12 +223,12 @@ func main() {
 		for {
 			select {
 			case <-ctx.Done():
-				log.Info().Msg("Мониторинг connection pool: остановка")
+				log.Info().Msg("connection pool monitoring: stopping")
 				return
 			case <-ticker.C:
 				sqlDB, err := database.DB()
 				if err != nil {
-					log.Warn().Err(err).Msg("Мониторинг connection pool: не удалось получить sql.DB")
+					log.Warn().Err(err).Msg("connection pool monitoring: failed to get sql.DB")
 					continue
 				}
 				stats := sqlDB.Stats()
@@ -253,7 +253,7 @@ func main() {
 		for {
 			select {
 			case <-ctx.Done():
-				log.Info().Msg("Очистка refresh-токенов: контекст отменён, остановка")
+				log.Info().Msg("refresh token cleanup: context cancelled, stopping")
 				return
 			case <-ticker.C:
 				if err := deps.Services.Auth.CleanExpiredRefreshTokens(ctx); err != nil {

@@ -76,6 +76,7 @@ type MonitorHandler struct {
 	hub                 *ws.RoomHub
 	userService         *user.UserService
 	gameService         *game.GameService
+	coAuthorSvc         *game.CoAuthorService
 }
 
 func NewMonitorHandler(
@@ -86,6 +87,7 @@ func NewMonitorHandler(
 	hub *ws.RoomHub,
 	userSvc *user.UserService,
 	gameSvc *game.GameService,
+	coAuthorSvc *game.CoAuthorService,
 ) *MonitorHandler {
 	return &MonitorHandler{
 		db:                  db,
@@ -95,6 +97,7 @@ func NewMonitorHandler(
 		hub:                 hub,
 		userService:         userSvc,
 		gameService:         gameSvc,
+		coAuthorSvc:         coAuthorSvc,
 	}
 }
 
@@ -204,6 +207,20 @@ func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 	gameID := strconv.Itoa(int(req.ID))
 	remoteIP := c.ClientIP()
 
+	// 🔒 P1-2: Проверка аутентификации перед WebSocket-соединением
+	userID := c.GetUint("userID")
+	if userID == 0 {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "требуется аутентификация"})
+		return
+	}
+
+	// 🔒 Проверка прав доступа к игре (автор, соавтор или модератор)
+	ok, err := h.coAuthorSvc.IsUserManager(c.Request.Context(), req.ID, userID)
+	if err != nil || !ok {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "нет доступа к мониторингу"})
+		return
+	}
+
 	if !h.hub.CanAccept(remoteIP) {
 		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 			"error": "слишком много активных WebSocket-соединений",
@@ -293,6 +310,10 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 		return
 	}
 	userID := c.GetUint("userID")
+	if userID == 0 {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "требуется аутентификация"})
+		return
+	}
 	remoteIP := c.ClientIP()
 
 	if !h.hub.CanAccept(remoteIP) {
@@ -471,6 +492,11 @@ func (h *MonitorHandler) LogsWS(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
 		log.Warn().Err(err).Msg("LogsWS: invalid game ID")
+		return
+	}
+	userID := c.GetUint("userID")
+	if userID == 0 {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "требуется аутентификация"})
 		return
 	}
 	gameID := strconv.Itoa(int(req.ID))

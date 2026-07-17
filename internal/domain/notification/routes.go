@@ -6,6 +6,7 @@ import (
 
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/middleware"
+	ws "gengine-0/internal/pkg/websocket"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -13,8 +14,8 @@ import (
 )
 
 // RegisterRoutes регистрирует API-маршруты для уведомлений.
-func RegisterRoutes(r *gin.Engine, db *gorm.DB, authService *user.AuthService) {
-	service := NewNotificationService(db)
+func RegisterRoutes(r *gin.Engine, db *gorm.DB, authService *user.AuthService, hub *ws.RoomHub) {
+	service := NewNotificationService(db, hub).WithHub(hub)
 
 	// Группа с обязательной аутентификацией
 	api := r.Group("/api/notifications")

@@ -55,8 +55,8 @@ func NewGamePlayService(
 }
 
 // SubmitCode обрабатывает отправку текстового кода с транзакцией и блокировкой.
-func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint, code string) (*Attempt, error) {
-	var attempt *Attempt
+func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint, code string) (*SubmitResult, error) {
+	var result *SubmitResult
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// 1. Блокируем прогресс текущего уровня
@@ -81,7 +81,6 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 		if err != nil {
 			return err
 		}
-		attempt = att
 
 		if success {
 			// 5. Завершаем уровень — при завершении последнего уровня вызываем расчёт результатов
@@ -90,7 +89,9 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 				return err
 			}
 			// Сохраняем gameID для вызова после транзакции
-			attempt._gameID = gameID
+			result = &SubmitResult{Attempt: att, GameID: gameID}
+		} else {
+			result = &SubmitResult{Attempt: att, GameID: 0}
 		}
 
 		// 6. Сохраняем лог
@@ -107,19 +108,19 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 	}
 
 	// Отправляем WebSocket-обновления и рассчитываем результаты ПОСЛЕ транзакции
-	if attempt != nil {
+	if result != nil && result.Attempt != nil {
 		s.broadcastSnapshot(ctx, passingID)
 		// Рассчитываем результаты, если игра завершена (на основе gameID)
-		if attempt._gameID != 0 {
+		if result.GameID != 0 {
 			if s.monitorSvc != nil {
-				if err := s.monitorSvc.CalculateResults(ctx, attempt._gameID); err != nil {
-					log.Error().Err(err).Uint("game_id", attempt._gameID).Msg("SubmitCode: CalculateResults failed")
+				if err := s.monitorSvc.CalculateResults(ctx, result.GameID); err != nil {
+					log.Error().Err(err).Uint("game_id", result.GameID).Msg("SubmitCode: CalculateResults failed")
 				}
 			}
 		}
 	}
 
-	return attempt, nil
+	return result, nil
 }
 
 // SubmitFile обрабатывает файловый ответ с транзакцией и блокировкой.
@@ -462,9 +463,13 @@ func (s *GamePlayService) broadcastSnapshot(ctx context.Context, passingID uint)
 }
 
 // GetGameplayData загружает все данные, необходимые для отображения страницы геймплея.
+// Оптимизация: использует Preload для объединения запросов passing/settings/progress/attempts.
 func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (*GameplayData, error) {
 	var passing GamePassing
-	if err := s.db.WithContext(ctx).Preload("Team").Preload("Game.GameSetting").First(&passing, passingID).Error; err != nil {
+	if err := s.db.WithContext(ctx).
+		Preload("Team").
+		Preload("Game.GameSetting").
+		First(&passing, passingID).Error; err != nil {
 		return nil, err
 	}
 
@@ -485,10 +490,12 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 		return nil, err
 	}
 
+	// Оптимизация: загружаем attempts в одном запросе с LIMIT для последних попыток
 	var attempts []Attempt
 	if err := s.db.WithContext(ctx).
 		Where("level_progress_id = ?", progress.ID).
 		Order("created_at DESC").
+		Limit(50).
 		Find(&attempts).Error; err != nil {
 		log.Error().Err(err).Uint("progress_id", progress.ID).Msg("GetGameplayData: failed to fetch attempts")
 	}

@@ -137,13 +137,20 @@ func (h *LevelHandler) ListByGame(c *gin.Context) {
 
 	isAdmin := middleware.IsAdmin(c)
 
-	render.Page(c, http.StatusOK, "levels-list.html", gin.H{
+	data := gin.H{
 		"GameID":        gameID,
 		"Levels":        levels,
 		"csrf":          csrf.GetToken(c),
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,
-	})
+	}
+	render.SetBreadcrumb(data,
+		render.BreadcrumbItem{Name: "Главная", URL: "/"},
+		render.BreadcrumbItem{Name: "Игры", URL: "/games"},
+		render.BreadcrumbItem{Name: "Уровни"},
+	)
+
+	render.Page(c, http.StatusOK, "levels-list.html", data)
 }
 
 // NewForm отображает форму создания уровня.

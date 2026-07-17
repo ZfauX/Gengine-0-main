@@ -74,8 +74,10 @@ func setupRouterTest(t *testing.T) (*gin.Engine, *gorm.DB, func()) {
 	hub := ws.NewRoomHub()
 
 	baseDir := projectRoot()
+	deps := NewDependencies(db, cfg, hub, localStorage, nil)
+	app := NewApp(db, localStorage, hub, cfg, baseDir, deps)
 	// В тестах кэш не используется, передаём nil
-	router, err := SetupRouter(db, localStorage, hub, cfg, baseDir, nil)
+	router, err := app.SetupRouter()
 	require.NoError(t, err)
 
 	cleanup := func() {}
@@ -97,7 +99,7 @@ func TestRouter_PublicRoutes(t *testing.T) {
 			name:       "swagger UI",
 			method:     "GET",
 			path:       "/swagger/index.html",
-			wantStatus: http.StatusOK,
+			wantStatus: http.StatusUnauthorized,
 		},
 		{
 			name:       "login page",

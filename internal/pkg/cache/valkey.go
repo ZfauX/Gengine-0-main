@@ -34,7 +34,6 @@ type CacheStore interface {
 // Реализует интерфейс CacheStore.
 type ValkeyCache struct {
 	client *redis.Client
-	ctx    context.Context
 }
 
 var _ CacheStore = (*ValkeyCache)(nil)
@@ -50,9 +49,10 @@ func NewValkeyCache(host, port, password string) CacheStore {
 		DB:       0, // используем базу 0 по умолчанию
 	})
 
-	ctx := context.Background()
+	// Проверяем подключение с таймаутом
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	// Проверяем подключение
 	if err := client.Ping(ctx).Err(); err != nil {
 		log.Warn().Err(err).Str("addr", addr).Msg("Valkey: failed to connect, cache disabled")
 		return nil
@@ -62,7 +62,6 @@ func NewValkeyCache(host, port, password string) CacheStore {
 
 	return &ValkeyCache{
 		client: client,
-		ctx:    ctx,
 	}
 }
 
@@ -72,7 +71,10 @@ func (c *ValkeyCache) Get(key string) (interface{}, bool) {
 		return nil, false
 	}
 
-	valBytes, err := c.client.Get(c.ctx, key).Bytes()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	valBytes, err := c.client.Get(ctx, key).Bytes()
 	if err == redis.Nil {
 		return nil, false
 	}
@@ -96,13 +98,16 @@ func (c *ValkeyCache) Set(key string, value interface{}, ttl time.Duration) {
 		return
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	data, err := json.Marshal(value)
 	if err != nil {
 		log.Warn().Err(err).Str("key", key).Msg("Valkey: JSON marshal error, skipping set")
 		return
 	}
 
-	if err := c.client.Set(c.ctx, key, data, ttl).Err(); err != nil {
+	if err := c.client.Set(ctx, key, data, ttl).Err(); err != nil {
 		log.Warn().Err(err).Str("key", key).Msg("Valkey: Set error")
 	}
 }
@@ -118,7 +123,10 @@ func (c *ValkeyCache) Delete(key string) {
 		return
 	}
 
-	if err := c.client.Del(c.ctx, key).Err(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := c.client.Del(ctx, key).Err(); err != nil {
 		log.Warn().Err(err).Str("key", key).Msg("Valkey: Delete error")
 	}
 }
@@ -198,20 +206,36 @@ func (c *ValkeyCache) DeleteByPrefixWithCtx(ctx context.Context, prefix string) 
 }
 
 // DeleteByPrefix удаляет все значения из кэша, ключи которых начинаются с prefix.
-// Использует SCAN для безопасного перебора ключей.
+// Использует SCAN для безопасного перебора ключей с батч DEL.
 func (c *ValkeyCache) DeleteByPrefix(prefix string) {
 	if c == nil || c.client == nil {
 		return
 	}
 
-	iter := c.client.Scan(c.ctx, 0, prefix+"*", 0).Iterator()
-	for iter.Next(c.ctx) {
-		if err := c.client.Del(c.ctx, iter.Val()).Err(); err != nil {
-			log.Warn().Err(err).Str("key", iter.Val()).Msg("Valkey: DeleteByPrefix error")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var keys []string
+	iter := c.client.Scan(ctx, 0, prefix+"*", 0).Iterator()
+	for iter.Next(ctx) {
+		keys = append(keys, iter.Val())
+		// Батчим DEL по 100 ключей для эффективности
+		if len(keys) >= 100 {
+			if err := c.client.Del(ctx, keys...).Err(); err != nil {
+				log.Warn().Err(err).Str("prefix", prefix).Msg("Valkey: DeleteByPrefix batch error")
+			}
+			keys = keys[:0]
 		}
 	}
 	if err := iter.Err(); err != nil {
 		log.Warn().Err(err).Str("prefix", prefix).Msg("Valkey: DeleteByPrefix scan error")
+	}
+
+	// Удаляем оставшиеся ключи
+	if len(keys) > 0 {
+		if err := c.client.Del(ctx, keys...).Err(); err != nil {
+			log.Warn().Err(err).Str("prefix", prefix).Msg("Valkey: DeleteByPrefix final batch error")
+		}
 	}
 }
 
@@ -221,7 +245,10 @@ func (c *ValkeyCache) Flush() {
 		return
 	}
 
-	if err := c.client.FlushDB(c.ctx).Err(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := c.client.FlushDB(ctx).Err(); err != nil {
 		log.Error().Err(err).Msg("Valkey: Flush error")
 	}
 }
@@ -296,5 +323,7 @@ func (c *ValkeyCache) IsAvailable() bool {
 	if c == nil || c.client == nil {
 		return false
 	}
-	return c.client.Ping(c.ctx).Err() == nil
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return c.client.Ping(ctx).Err() == nil
 }

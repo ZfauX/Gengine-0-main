@@ -4,6 +4,7 @@ package cache
 import (
 	"context"
 	"strings"
+	"sync"
 	"time"
 
 	gocache "github.com/patrickmn/go-cache"
@@ -12,7 +13,9 @@ import (
 // Cache предоставляет общий интерфейс для кэширования с TTL.
 // Реализует интерфейс CacheStore.
 type Cache struct {
-	store *gocache.Cache
+	store      *gocache.Cache
+	prefixLock sync.RWMutex
+	prefixKeys map[string]map[string]bool // prefix -> set of keys
 }
 
 var _ CacheStore = (*Cache)(nil)
@@ -20,7 +23,8 @@ var _ CacheStore = (*Cache)(nil)
 // NewCache создаёт новый экземпляр кэша с указанным TTL по умолчанию и интервалом очистки.
 func NewCache(defaultTTL, cleanupInterval time.Duration) *Cache {
 	return &Cache{
-		store: gocache.New(defaultTTL, cleanupInterval),
+		store:      gocache.New(defaultTTL, cleanupInterval),
+		prefixKeys: make(map[string]map[string]bool),
 	}
 }
 
@@ -32,31 +36,75 @@ func (c *Cache) Get(key string) (interface{}, bool) {
 
 // Set сохраняет значение в кэше с указанным TTL.
 // Если ttl == 0, используется TTL по умолчанию.
+// Отслеживает префиксы для быстрого DeleteByPrefix.
 func (c *Cache) Set(key string, value interface{}, ttl time.Duration) {
 	c.store.Set(key, value, ttl)
+	c.trackPrefix(key)
 }
 
 // SetDefault сохраняет значение в кэше с TTL по умолчанию.
+// Отслеживает префиксы для быстрого DeleteByPrefix.
 func (c *Cache) SetDefault(key string, value interface{}) {
 	c.store.SetDefault(key, value)
+	c.trackPrefix(key)
 }
 
 // Delete удаляет значение из кэша по ключу.
+// Удаляет ключ из индекса префиксов.
 func (c *Cache) Delete(key string) {
 	c.store.Delete(key)
+	c.prefixLock.Lock()
+	for _, keys := range c.prefixKeys {
+		delete(keys, key)
+	}
+	c.prefixLock.Unlock()
+}
+
+// trackPrefix добавляет ключ в индекс префиксов.
+func (c *Cache) trackPrefix(key string) {
+	c.prefixLock.Lock()
+	defer c.prefixLock.Unlock()
+
+	// Извлекаем все возможные префиксы (до 3 уровней)
+	parts := strings.Split(key, ":")
+	for i := range parts {
+		prefix := strings.Join(parts[:i+1], ":")
+		if c.prefixKeys[prefix] == nil {
+			c.prefixKeys[prefix] = make(map[string]bool)
+		}
+		c.prefixKeys[prefix][key] = true
+	}
 }
 
 // DeleteByPrefix удаляет все значения из кэша, ключи которых начинаются с prefix.
-// go-cache не поддерживает удаление по префиксу нативно, поэтому используем Items() для обхода.
-// Важно: Items() возвращает копию map, поэтому итерация безопасна.
-// Для больших объёмов данных рекомендуется использовать Redis с SCAN + DELETE.
+// Оптимизация: использует индекс префиксов вместо полного обхода map.
 func (c *Cache) DeleteByPrefix(prefix string) {
-	items := c.store.Items()
-	for key := range items {
-		if strings.HasPrefix(key, prefix) {
-			c.store.Delete(key)
+	c.prefixLock.RLock()
+	keys, exists := c.prefixKeys[prefix]
+	c.prefixLock.RUnlock()
+
+	if !exists || len(keys) == 0 {
+		return
+	}
+
+	// Удаляем ключи из основного кэша
+	for key := range keys {
+		c.store.Delete(key)
+	}
+
+	// Удаляем индекс префикса и все вложенные префиксы
+	c.prefixLock.Lock()
+	delete(c.prefixKeys, prefix)
+	for key := range keys {
+		parts := strings.Split(key, ":")
+		for i := range parts {
+			p := strings.Join(parts[:i+1], ":")
+			if p != prefix && c.prefixKeys[p] != nil {
+				delete(c.prefixKeys[p], key)
+			}
 		}
 	}
+	c.prefixLock.Unlock()
 }
 
 // Flush очищает весь кэш.

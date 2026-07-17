@@ -13,6 +13,12 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// BreadcrumbItem представляет один элемент навигационной цепочки
+type BreadcrumbItem struct {
+	Name string `json:"name"`
+	URL  string `json:"url,omitempty"`
+}
+
 var globalTemplate *template.Template
 
 // SetTemplate сохраняет общий *template.Template для использования в хелпере.
@@ -116,4 +122,13 @@ func ParseIDQuery(c *gin.Context, paramName string) (uint, bool) {
 		return 0, false
 	}
 	return uint(id), true
+}
+
+// SetBreadcrumb добавляет breadcrumb в данные шаблона.
+// data — карта gin.H, items — список элементов навигации.
+func SetBreadcrumb(data gin.H, items ...BreadcrumbItem) {
+	if data == nil {
+		data = gin.H{}
+	}
+	data["Breadcrumb"] = items
 }

@@ -91,7 +91,13 @@ type Attempt struct {
 	IsFile          bool
 	Success         bool
 	LevelProgress   LevelProgress `gorm:"foreignKey:LevelProgressID"`
-	_gameID         uint          // internal: ID игры для вызова после транзакции
+}
+
+// SubmitResult содержит результат успешной отправки кода/файла.
+// GameID заполняется после транзакции для вызова CalculateResults.
+type SubmitResult struct {
+	Attempt *Attempt
+	GameID  uint
 }
 
 type CoAuthor struct {

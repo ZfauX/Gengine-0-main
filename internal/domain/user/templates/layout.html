@@ -20,6 +20,9 @@
     <!-- Подключаем собранный Tailwind CSS (локально) -->
     <link rel="stylesheet" href="/static/css/output.css">
 
+    <!-- Leaflet CSS для карт (локально) -->
+    <link rel="stylesheet" href="/static/css/leaflet.css">
+
     <!-- Небольшие кастомные стили поверх Tailwind с nonce -->
     <style nonce="{{.csp_nonce}}">
         :root {
@@ -175,10 +178,40 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+
+        /* Map container */
+        .map-container {
+            height: 300px;
+            border-radius: 0.5rem;
+            overflow: hidden;
+            margin-top: 1rem;
+        }
+        .map-container.leaflet-container {
+            background: #f3f4f6;
+        }
+        [data-theme="dark"] .map-container.leaflet-container {
+            background: #374151;
+        }
+
+        /* Mobile sticky timer */
+        @media (max-width: 639px) {
+            #mobile-sticky-timer {
+                box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+            }
+            [data-theme="dark"] #mobile-sticky-timer {
+                box-shadow: 0 -2px 10px rgba(0,0,0,0.3);
+            }
+        }
     </style>
     {{.ExtraHead}}
 </head>
 <body>
+
+    <!-- Leaflet JS (локально) -->
+    <script src="/static/js/leaflet.js"></script>
+
+    <!-- App JS (локально) -->
+    <script src="/static/js/app.js"></script>
 
     <!-- Top progress bar -->
     <div id="top-progress-bar" class="fixed top-0 left-0 z-[100] h-1 bg-blue-600 transition-all duration-300 ease-out" style="width:0%;opacity:0"></div>
@@ -197,6 +230,30 @@
 
                 <!-- Desktop меню -->
                 <div class="hidden sm:flex items-center space-x-4 text-sm font-medium" role="menubar">
+                    <!-- Колокольчик уведомлений -->
+                    {{if .CurrentUserID}}
+                    <div class="relative">
+                        <button id="notificationBell" class="nav-link text-gray-600 hover:text-blue-600 relative" title="Уведомления" aria-label="Уведомления" role="menuitem">
+                            🔔
+                            {{if .UnreadNotificationCount}}
+                            <span class="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">{{.UnreadNotificationCount}}</span>
+                            {{end}}
+                        </button>
+                        <!-- Dropdown уведомлений -->
+                        <div id="notificationDropdown" class="hidden absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-200 z-50">
+                            <div class="p-4 border-b border-gray-200">
+                                <h3 class="font-semibold text-gray-800">Уведомления</h3>
+                            </div>
+                            <div id="notificationList" class="max-h-96 overflow-y-auto">
+                                <div class="p-4 text-center text-gray-500">Загрузка...</div>
+                            </div>
+                            <div class="p-3 border-t border-gray-200 text-center">
+                                <a href="/notifications" class="text-sm text-blue-600 hover:text-blue-700">Все уведомления</a>
+                            </div>
+                        </div>
+                    </div>
+                    {{end}}
+                    
                     <!-- Кнопка переключения темы -->
                     <button id="themeToggle" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400" title="Переключить тему" aria-label="Переключить тему" role="menuitem">
                         🌙
@@ -511,6 +568,101 @@
                     }, 500);
                 }, 5000);
             });
+        })();
+
+        // Уведомления — колокольчик
+        (function() {
+            var bell = document.getElementById('notificationBell');
+            var dropdown = document.getElementById('notificationDropdown');
+            var list = document.getElementById('notificationList');
+            if (!bell || !dropdown) return;
+
+            bell.addEventListener('click', function(e) {
+                e.stopPropagation();
+                dropdown.classList.toggle('hidden');
+                if (!dropdown.classList.contains('hidden') && list.innerHTML.trim() === '') {
+                    loadNotifications();
+                }
+            });
+
+            document.addEventListener('click', function(e) {
+                if (!dropdown.contains(e.target) && e.target !== bell) {
+                    dropdown.classList.add('hidden');
+                }
+            });
+
+            function loadNotifications() {
+                fetch('/api/notifications/list?page=1&per_page=10')
+                    .then(function(resp) { return resp.json(); })
+                    .then(function(data) {
+                        if (!data.notifications || data.notifications.length === 0) {
+                            list.innerHTML = '<div class="p-4 text-center text-gray-500">Нет уведомлений</div>';
+                            return;
+                        }
+                        var html = '';
+                        data.notifications.forEach(function(n) {
+                            var readClass = n.read ? '' : 'bg-blue-50';
+                            html += '<a href="' + (n.url || '#') + '" class="block p-3 border-b border-gray-100 ' + readClass + ' hover:bg-gray-50">';
+                            html += '<p class="font-medium text-sm text-gray-800">' + escapeHtml(n.title) + '</p>';
+                            html += '<p class="text-xs text-gray-500 mt-1">' + escapeHtml(n.message) + '</p>';
+                            html += '</a>';
+                        });
+                        list.innerHTML = html;
+                    })
+                    .catch(function(err) {
+                        list.innerHTML = '<div class="p-4 text-center text-red-500">Ошибка загрузки</div>';
+                    });
+            }
+
+            function escapeHtml(text) {
+                var map = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'};
+                return String(text).replace(/[&<>"']/g, function(m) { return map[m]; });
+            }
+
+            // WebSocket для real-time уведомлений
+            function initWebSocket() {
+                var protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                var ws = new WebSocket(protocol + '//' + window.location.host + '/ws/notifications');
+                
+                ws.onmessage = function(event) {
+                    var data = JSON.parse(event.data);
+                    if (data.type && data.type !== 'ping') {
+                        showToast(data.message || data.title, 'info');
+                        if (data.unread_count !== undefined) {
+                            updateNotificationBadge(data.unread_count);
+                        }
+                    }
+                };
+
+                ws.onerror = function() {
+                    console.warn('WebSocket notifications error');
+                };
+
+                window.addEventListener('beforeunload', function() {
+                    ws.close();
+                });
+            }
+
+            function updateNotificationBadge(count) {
+                var badge = bell.querySelector('span');
+                if (count > 0) {
+                    if (!badge) {
+                        badge = document.createElement('span');
+                        badge.className = 'absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center';
+                        bell.appendChild(badge);
+                    }
+                    badge.textContent = count > 9 ? '9+' : count;
+                    badge.style.display = 'flex';
+                } else if (badge) {
+                    badge.style.display = 'none';
+                }
+            }
+
+            // Инициализация
+            updateNotificationBadge({{.UnreadNotificationCount | default 0}});
+            if ({% if .CurrentUserID %}true{% else %}false{% endif %}) {
+                initWebSocket();
+            }
         })();
     </script>
 </body>

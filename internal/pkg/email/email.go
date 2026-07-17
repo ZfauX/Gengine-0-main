@@ -138,13 +138,12 @@ func (s *EmailService) processPendingEmails(ctx context.Context, batchSize int) 
 
 	wg.Wait()
 
-	s.queueSize.Add(-int64(len(emails)))
-	metrics.SetEmailQueueSize(float64(s.queueSize.Load()))
-
+	// queueSize уже уменьшен по факту отправки/ошибки каждого письма в sendEmailWithRetry
 	return nil
 }
 
 // sendEmailWithRetry пытается отправить письмо и обновляет статус в БД.
+// Уменьшает queueSize по факту отправки/ошибки каждого письма (не батчем).
 func (s *EmailService) sendEmailWithRetry(email *QueuedEmail) {
 	const maxAttempts = 3
 
@@ -159,6 +158,8 @@ func (s *EmailService) sendEmailWithRetry(email *QueuedEmail) {
 				log.Error().Err(err).Uint("email_id", email.ID).Msg("Failed to update email status to sent")
 			}
 			log.Debug().Uint("email_id", email.ID).Str("to", email.Recipient).Msg("Email sent successfully")
+			// Уменьшаем счётчик по факту отправки
+			s.queueSize.Add(-1)
 			return
 		}
 		lastErr = err
@@ -171,6 +172,8 @@ func (s *EmailService) sendEmailWithRetry(email *QueuedEmail) {
 			case <-time.After(delay):
 			case <-s.stop:
 				log.Info().Uint("email_id", email.ID).Msg("sendEmailWithRetry: stopped during backoff")
+				// Уменьшаем счётчик даже при остановке
+				s.queueSize.Add(-1)
 				return
 			}
 		}
@@ -181,6 +184,9 @@ func (s *EmailService) sendEmailWithRetry(email *QueuedEmail) {
 	if err := s.db.Save(email).Error; err != nil {
 		log.Error().Err(err).Uint("email_id", email.ID).Msg("Failed to update email status to failed")
 	}
+
+	// Уменьшаем счётчик по факту ошибки
+	s.queueSize.Add(-1)
 
 	log.Error().
 		Uint("email_id", email.ID).
