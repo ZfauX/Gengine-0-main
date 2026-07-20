@@ -150,7 +150,7 @@ func main() {
 
 	if *migrateFlag {
 		log.Info().Msg("running migrations...")
-		if err := db.RunMigrations(database, "migrations"); err != nil {
+		if err := db.MigrateFromFiles(database, "migrations"); err != nil {
 			log.Fatal().Err(err).Msg("migration error")
 		}
 		log.Info().Msg("migrations applied successfully")
@@ -293,32 +293,54 @@ func main() {
 	<-quit
 	log.Info().Msg("Получен сигнал завершения, инициируем graceful shutdown...")
 
-	// Останавливаем rate limiters
+	// ============================================================
+	// GRACEFUL SHUTDOWN — правильный порядок:
+	// 1. Остановить rate limiters (перестать принимать новые запросы)
+	// 2. Остановить HTTP-сервер (дождаться завершения текущих запросов, включая WS upgrade)
+	// 3. Остановить WebSocket-хаб (после HTTP — больше нет активных хендлеров)
+	// 4. Отменить контекст фоновых задач
+	// 5. Остановить email-очередь
+	// 6. Закрыть кэш (Valkey)
+	// ============================================================
+
+	// 1. Останавливаем rate limiters — запрещаем новые запросы
 	middleware.StopGlobalRateLimiter()
 	middleware.StopLoginRateLimiter()
 	middleware.StopRegistrationRateLimiter()
 	middleware.StopCodeSubmissionRateLimiter()
 
-	// Отменяем контекст фоновых задач — они должны остановиться первыми
-	cancel()
-
-	// Даём время на завершение обработки запросов
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// 2. Останавливаем HTTP-сервер (ожидаем завершения текущих запросов)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Error().Err(err).Msg("Ошибка при завершении сервера")
+		log.Error().Err(err).Msg("Ошибка при завершении HTTP-сервера")
 	}
+	log.Info().Msg("HTTP-сервер остановлен")
 
-	// Останавливаем WebSocket-хаб (отправляет CloseMessage всем клиентам)
+	// 3. Останавливаем WebSocket-хаб (после HTTP — ни один хендлер не использует хаб)
 	hub.Stop()
+	log.Info().Msg("WebSocket-хаб остановлен")
 
-	// Останавливаем очередь email (если была запущена)
+	// 4. Отменяем контекст фоновых задач
+	cancel()
+	log.Info().Msg("Контекст отменён, фоновые задачи останавливаются")
+
+	// 5. Останавливаем очередь email (если была запущена)
 	if cfg.SMTP.Enabled {
 		email.ShutdownQueue()
 	}
 
-	log.Info().Msg("Сервер остановлен")
+	// 6. Закрываем кэш (Valkey connection)
+	if closer, ok := appCache.(interface{ Close() error }); ok {
+		if err := closer.Close(); err != nil {
+			log.Warn().Err(err).Msg("Ошибка закрытия кэша")
+		} else {
+			log.Info().Msg("Кэш закрыт")
+		}
+	}
+
+	log.Info().Msg("Сервер полностью остановлен")
 }
 
 func connectDBWithRetry(cfg *config.Config, maxAttempts int, initialDelay time.Duration) (*gorm.DB, error) {

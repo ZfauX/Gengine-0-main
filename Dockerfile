@@ -1,5 +1,5 @@
 # Dockerfile
-FROM golang:1.25-alpine AS builder
+FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
@@ -13,7 +13,7 @@ RUN go mod download
 # Копируем исходный код
 COPY . .
 
-# Собираем приложение с флагом -migrate для возможности запуска миграций
+# Собираем приложение
 RUN CGO_ENABLED=0 go build -o gengine -ldflags="-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo 'dev') -X main.buildDate=$(date -u '+%Y-%m-%d_%H:%M:%S')" ./cmd/server
 
 # Финальный образ
@@ -21,23 +21,23 @@ FROM alpine:3.20
 
 WORKDIR /app
 
-# Устанавливаем PostgreSQL client для pg_dump (нужен для бэкапов)
 RUN apk add --no-cache ca-certificates tzdata postgresql17-client
 
-# Копируем бинарник
+# Бинарник
 COPY --from=builder /app/gengine .
 
-# Копируем папку с миграциями
+# Миграции
 COPY --from=builder /app/migrations ./migrations
 
-# Копируем статику и шаблоны — одним слоем
+# Статика
 COPY --from=builder /app/static ./static
+
+# HTML-шаблоны (нужны для рендеринга — ParseGlob использует "internal/domain/*/templates/")
 COPY --from=builder /app/internal ./internal
 
-# Создаём директории для логов, загрузок и бэкапов
+# Директории для runtime-данных
 RUN mkdir -p logs uploads backups
 
-# Копируем entrypoint и делаем его исполняемым
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

@@ -19,7 +19,7 @@ import (
 // @tags achievements
 // @tags dashboard
 func RegisterRoutes(
-	r *gin.Engine,
+	r *gin.RouterGroup,
 	cfg *config.Config,
 	authSvc *AuthService,
 	userSvc *UserService,

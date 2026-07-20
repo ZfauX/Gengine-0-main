@@ -17,7 +17,7 @@ type UserRepository interface {
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	GetPublicProfile(ctx context.Context, id uint) (*User, error)
 	Update(ctx context.Context, id uint, fields map[string]any) error
-	GetByRole(ctx context.Context, role string) (*User, error)
+	GetByRole(ctx context.Context, role string) ([]User, error)
 	GetUserRole(ctx context.Context, id uint) (string, error)
 
 	// Методы для админки с пагинацией
@@ -91,10 +91,11 @@ func (r *gormUserRepo) GetPublicProfile(ctx context.Context, id uint) (*User, er
 func (r *gormUserRepo) Update(ctx context.Context, id uint, fields map[string]any) error {
 	return r.db.WithContext(ctx).Model(&User{}).Where("id = ?", id).Updates(fields).Error
 }
-func (r *gormUserRepo) GetByRole(ctx context.Context, role string) (*User, error) {
-	var u User
-	err := r.db.WithContext(ctx).Where("role = ?", role).First(&u).Error
-	return &u, err
+// GetByRole returns multiple users by role.
+func (r *gormUserRepo) GetByRole(ctx context.Context, role string) ([]User, error) {
+	var users []User
+	err := r.db.WithContext(ctx).Where("role = ?", role).Find(&users).Error
+	return users, err
 }
 
 func (r *gormUserRepo) GetUserRole(ctx context.Context, id uint) (string, error) {

@@ -14,12 +14,54 @@ import (
 )
 
 // RegisterRoutes регистрирует API-маршруты для уведомлений.
-func RegisterRoutes(r *gin.Engine, db *gorm.DB, authService *user.AuthService, hub *ws.RoomHub) {
+func RegisterRoutes(r *gin.RouterGroup, db *gorm.DB, authService *user.AuthService, hub *ws.RoomHub) {
 	service := NewNotificationService(db, hub).WithHub(hub)
+	settingsHandler := NewSettingsHandler(service)
+
+	// HTML-маршруты для страницы настроек уведомлений
+	protected := r.Group("/settings")
+	protected.Use(middleware.AuthRequired(authService))
+	{
+		// @Summary Страница настроек уведомлений
+		// @Description Отображает страницу управления email и push-уведомлениями
+		// @Tags notifications
+		// @Produce html
+		// @Success 200 {string} html "Страница настроек"
+		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+		// @Router /settings/notifications [get]
+		// @Security JWT
+		protected.GET("/notifications", settingsHandler.ShowForm)
+	}
+
+	// Форма сохранения настроек (POST)
+	protected.POST("/notifications", settingsHandler.Save)
+
+	// API-маршруты для AJAX-операций
+	api := r.Group("/api/settings")
+	api.Use(middleware.AuthRequired(authService))
+	{
+		// @Summary Получить флаги email-уведомлений
+		// @Description Возвращает гранулярные настройки email-уведомлений
+		// @Tags notifications
+		// @Produce json
+		// @Success 200 {object} map[string]interface{} "Флаги"
+		// @Router /api/settings/notifications [get]
+		api.GET("/notifications", settingsHandler.APIEmailFlags)
+
+		// @Summary Сохранить флаги email-уведомлений
+		// @Description Сохраняет гранулярные настройки email-уведомлений
+		// @Tags notifications
+		// @Accept json
+		// @Produce json
+		// @Param settings body map[string]interface{} "Настройки"
+		// @Success 200 {object} map[string]interface{} "Статус"
+		// @Router /api/settings/notifications [post]
+		api.POST("/notifications", settingsHandler.APIEmailSave)
+	}
 
 	// Группа с обязательной аутентификацией
-	api := r.Group("/api/notifications")
-	api.Use(middleware.AuthRequired(authService)) // <-- ДОБАВЛЕНО
+	apiNotifs := r.Group("/api/notifications")
+	apiNotifs.Use(middleware.AuthRequired(authService))
 	{
 		// @Summary Получить настройки уведомлений
 		// @Description Возвращает текущие настройки уведомлений пользователя

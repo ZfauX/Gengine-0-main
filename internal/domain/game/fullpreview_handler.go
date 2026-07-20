@@ -51,7 +51,7 @@ func (h *FullPreviewHandler) FullPreview(c *gin.Context) {
 				"code":  "not_found",
 			})
 		} else {
-			appErr := apperr.NewForbiddenError("Нет доступа к игре")
+			appErr := apperr.Forbidden("Нет доступа к игре")
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 				"error": appErr.Message,
 				"code":  appErr.Code,
@@ -63,7 +63,7 @@ func (h *FullPreviewHandler) FullPreview(c *gin.Context) {
 	levels, err := h.levelService.ListWithQuestions(c.Request.Context(), uint(gameID))
 	if err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Msg("FullPreview: failed to load levels")
-		appErr := apperr.NewInternalError(err)
+		appErr := apperr.Wrap(err, "FullPreview: failed to load levels")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,

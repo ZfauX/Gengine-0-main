@@ -15,7 +15,7 @@ import (
 // RegisterRoutes регистрирует маршруты мониторинга.
 // @tags monitor
 func RegisterRoutes(
-	router *gin.Engine,
+	router *gin.RouterGroup,
 	db *gorm.DB,
 	hub *ws.RoomHub,
 	cfg *config.Config,

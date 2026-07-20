@@ -35,7 +35,7 @@ func NewFollowHandler(followService *FollowService) *FollowHandler {
 func (h *FollowHandler) Follow(c *gin.Context) {
 	var req AuthorIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		appErr := apperrors.NewBadRequestError("некорректный ID автора")
+		appErr := apperrors.BadRequest("некорректный ID автора")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -44,7 +44,7 @@ func (h *FollowHandler) Follow(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 	if userID == 0 {
-		appErr := apperrors.NewUnauthorizedError("требуется аутентификация")
+		appErr := apperrors.Unauthorized("требуется аутентификация")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -55,11 +55,11 @@ func (h *FollowHandler) Follow(c *gin.Context) {
 	if err := h.followService.Follow(c.Request.Context(), userID, req.ID); err != nil {
 		switch err.Error() {
 		case "нельзя подписаться на самого себя", "не подписан":
-			appErr := apperrors.NewBadRequestError(err.Error())
+			appErr := apperrors.BadRequest(err.Error())
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
 		default:
 			log.Error().Err(err).Uint("user_id", userID).Uint("author_id", req.ID).Msg("Follow: failed to follow author")
-			appErr := apperrors.NewInternalError(err)
+			appErr := apperrors.Wrap(err, "Follow: failed to follow author")
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
 		}
 		return
@@ -71,7 +71,7 @@ func (h *FollowHandler) Follow(c *gin.Context) {
 func (h *FollowHandler) Unfollow(c *gin.Context) {
 	var req AuthorIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		appErr := apperrors.NewBadRequestError("некорректный ID автора")
+		appErr := apperrors.BadRequest("некорректный ID автора")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -80,7 +80,7 @@ func (h *FollowHandler) Unfollow(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 	if userID == 0 {
-		appErr := apperrors.NewUnauthorizedError("требуется аутентификация")
+		appErr := apperrors.Unauthorized("требуется аутентификация")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -91,11 +91,11 @@ func (h *FollowHandler) Unfollow(c *gin.Context) {
 	if err := h.followService.Unfollow(c.Request.Context(), userID, req.ID); err != nil {
 		switch err.Error() {
 		case "не подписан":
-			appErr := apperrors.NewBadRequestError(err.Error())
+			appErr := apperrors.BadRequest(err.Error())
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
 		default:
 			log.Error().Err(err).Uint("user_id", userID).Uint("author_id", req.ID).Msg("Unfollow: failed to unfollow author")
-			appErr := apperrors.NewInternalError(err)
+			appErr := apperrors.Wrap(err, "Unfollow: failed to unfollow author")
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
 		}
 		return
@@ -107,7 +107,7 @@ func (h *FollowHandler) Unfollow(c *gin.Context) {
 func (h *FollowHandler) IsFollowing(c *gin.Context) {
 	var req AuthorIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		appErr := apperrors.NewBadRequestError("некорректный ID автора")
+		appErr := apperrors.BadRequest("некорректный ID автора")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -116,7 +116,7 @@ func (h *FollowHandler) IsFollowing(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 	if userID == 0 {
-		appErr := apperrors.NewUnauthorizedError("требуется аутентификация")
+		appErr := apperrors.Unauthorized("требуется аутентификация")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,

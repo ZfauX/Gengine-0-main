@@ -1,6 +1,4 @@
-// static/sw.js
-
-const CACHE_NAME = 'encounter-v2';
+const CACHE_NAME = 'gengine-v2';
 const ASSETS_TO_CACHE = [
     '/',
     '/dashboard',
@@ -9,109 +7,108 @@ const ASSETS_TO_CACHE = [
     '/static/manifest.json',
     '/static/icons/icon-192x192.png',
     '/static/icons/icon-512x512.png',
-    '/static/css/app.css',      // если есть отдельный файл стилей
-    '/static/js/app.js'         // если есть отдельный скрипт
+    '/static/css/output.css',
+    '/static/js/app.js'
 ];
 
-// Установка Service Worker – кэшируем статические ресурсы
+// Установка Service Worker
 self.addEventListener('install', event => {
     event.waitUntil(
-        caches.open(CACHE_NAME).then(cache => {
-            console.log('Service Worker: кэширую ресурсы');
-            return cache.addAll(ASSETS_TO_CACHE);
-        })
+        caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS_TO_CACHE))
     );
-    // Активируем новый SW сразу, не дожидаясь закрытия старых вкладок
     self.skipWaiting();
 });
 
-// Активация – удаляем старые кэши
+// Активация — удаляем старые кэши
 self.addEventListener('activate', event => {
     event.waitUntil(
-        caches.keys().then(cacheNames => {
-            return Promise.all(
-                cacheNames.filter(name => name !== CACHE_NAME)
-                    .map(name => {
-                        console.log('Service Worker: удаляю старый кэш', name);
-                        return caches.delete(name);
-                    })
-            );
-        })
+        caches.keys().then(names =>
+            Promise.all(names.filter(n => n !== CACHE_NAME).map(n => caches.delete(n)))
+        )
     );
-    // Захватываем все вкладки под новый SW
     self.clients.claim();
 });
 
-// Стратегия: сначала кэш, потом сеть (Cache First)
+// Offline page
+const OFFLINE_PAGE = '/offline';
+
+// Стратегия кэширования
 self.addEventListener('fetch', event => {
-    // Игнорируем запросы к API и WebSocket
     const url = new URL(event.request.url);
-    if (url.pathname.startsWith('/api/') ||
-        url.pathname.startsWith('/ws') ||
-        url.pathname.startsWith('/chat/ws') ||
-        url.pathname.startsWith('/monitor/ws')) {
+
+    // Игнорируем WebSocket и API
+    if (url.pathname.startsWith('/ws') || url.pathname.startsWith('/chat/ws') ||
+        url.pathname.startsWith('/monitor/ws') || url.pathname.startsWith('/api/')) {
         return;
     }
 
-    event.respondWith(
-        caches.match(event.request).then(cachedResponse => {
-            if (cachedResponse) {
-                return cachedResponse;
-            }
-            return fetch(event.request).then(networkResponse => {
-                // Кэшируем новые страницы для будущего оффлайн-доступа
-                if (networkResponse && networkResponse.status === 200) {
-                    const clonedResponse = networkResponse.clone();
-                    caches.open(CACHE_NAME).then(cache => {
-                        cache.put(event.request, clonedResponse);
+    // HTML-страницы: Network First с fallback на кэш, затем offline
+    if (event.request.mode === 'navigate') {
+        event.respondWith(
+            fetch(event.request)
+                .then(response => {
+                    return caches.open(CACHE_NAME).then(cache => {
+                        cache.put(event.request, response.clone());
+                        return response;
                     });
+                })
+                .catch(() => {
+                    return caches.match(event.request).then(cached => {
+                        return cached || caches.match(OFFLINE_PAGE);
+                    });
+                })
+        );
+        return;
+    }
+
+    // Статика: Cache First
+    event.respondWith(
+        caches.match(event.request).then(cached => {
+            const fetchAndCache = fetch(event.request).then(response => {
+                if (response && response.status === 200) {
+                    caches.open(CACHE_NAME).then(cache => cache.put(event.request, response.clone()));
                 }
-                return networkResponse;
+                return response;
             });
-        }).catch(() => {
-            // Если ресурс не в кэше и сеть недоступна, показываем оффлайн-страницу
-            if (event.request.mode === 'navigate') {
-                return caches.match('/');
-            }
-            return new Response('Нет соединения', { status: 503 });
+            return cached || fetchAndCache;
         })
     );
 });
 
 // Push-уведомления
 self.addEventListener('push', event => {
-    let data = { title: 'Encounter Engine', body: 'Новое уведомление' };
-    if (event.data) {
-        try {
-            data = event.data.json();
-        } catch (e) {
-            data.body = event.data.text();
-        }
+    let data = {};
+    try {
+        data = event.data.json();
+    } catch (e) {
+        data = { title: 'Gengine', body: event.data.text() };
     }
+
     const options = {
-        body: data.body,
+        body: data.body || '',
         icon: '/static/icons/icon-192x192.png',
         badge: '/static/icons/icon-192x192.png',
-        data: data.url || '/',
-        requireInteraction: false
+        tag: data.tag || 'default',
+        data: data.url ? { url: data.url } : {},
+        vibrate: [200, 100, 200],
+        requireInteraction: true
     };
-    event.waitUntil(self.registration.showNotification(data.title, options));
+
+    event.waitUntil(
+        self.registration.showNotification(data.title || 'Gengine', options)
+    );
 });
 
-// Клик по уведомлению – открываем соответствующую страницу
+// Клик по уведомлению
 self.addEventListener('notificationclick', event => {
     event.notification.close();
-    const url = event.notification.data || '/';
+    const url = event.notification.data?.url || '/';
     event.waitUntil(
-        clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
-            // Если вкладка уже открыта, фокусируемся на ней
-            for (let client of windowClients) {
-                if (client.url.includes(url) && 'focus' in client) {
-                    return client.focus();
-                }
+        clients.matchAll({ type: 'window' }).then(clientList => {
+            for (const client of clientList) {
+                if (client.url === url && 'focus' in client) return client.focus();
             }
-            // Иначе открываем новую
-            return clients.openWindow(url);
+            if (clients.openWindow) return clients.openWindow(url);
         })
     );
 });

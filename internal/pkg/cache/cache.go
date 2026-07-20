@@ -10,17 +10,12 @@ import (
 	gocache "github.com/patrickmn/go-cache"
 )
 
-// Cache предоставляет общий интерфейс для кэширования с TTL.
-// Реализует интерфейс CacheStore.
 type Cache struct {
 	store      *gocache.Cache
 	prefixLock sync.RWMutex
-	prefixKeys map[string]map[string]bool // prefix -> set of keys
+	prefixKeys map[string]map[string]bool
 }
 
-var _ CacheStore = (*Cache)(nil)
-
-// NewCache создаёт новый экземпляр кэша с указанным TTL по умолчанию и интервалом очистки.
 func NewCache(defaultTTL, cleanupInterval time.Duration) *Cache {
 	return &Cache{
 		store:      gocache.New(defaultTTL, cleanupInterval),
@@ -28,29 +23,20 @@ func NewCache(defaultTTL, cleanupInterval time.Duration) *Cache {
 	}
 }
 
-// Get возвращает значение из кэша по ключу.
-// Если ключ не найден, возвращает nil и false.
-func (c *Cache) Get(key string) (interface{}, bool) {
+func (c *Cache) Get(key string) (any, bool) {
 	return c.store.Get(key)
 }
 
-// Set сохраняет значение в кэше с указанным TTL.
-// Если ttl == 0, используется TTL по умолчанию.
-// Отслеживает префиксы для быстрого DeleteByPrefix.
-func (c *Cache) Set(key string, value interface{}, ttl time.Duration) {
+func (c *Cache) Set(key string, value any, ttl time.Duration) {
 	c.store.Set(key, value, ttl)
 	c.trackPrefix(key)
 }
 
-// SetDefault сохраняет значение в кэше с TTL по умолчанию.
-// Отслеживает префиксы для быстрого DeleteByPrefix.
-func (c *Cache) SetDefault(key string, value interface{}) {
+func (c *Cache) SetDefault(key string, value any) {
 	c.store.SetDefault(key, value)
 	c.trackPrefix(key)
 }
 
-// Delete удаляет значение из кэша по ключу.
-// Удаляет ключ из индекса префиксов.
 func (c *Cache) Delete(key string) {
 	c.store.Delete(key)
 	c.prefixLock.Lock()
@@ -60,12 +46,10 @@ func (c *Cache) Delete(key string) {
 	c.prefixLock.Unlock()
 }
 
-// trackPrefix добавляет ключ в индекс префиксов.
 func (c *Cache) trackPrefix(key string) {
 	c.prefixLock.Lock()
 	defer c.prefixLock.Unlock()
 
-	// Извлекаем все возможные префиксы (до 3 уровней)
 	parts := strings.Split(key, ":")
 	for i := range parts {
 		prefix := strings.Join(parts[:i+1], ":")
@@ -76,8 +60,6 @@ func (c *Cache) trackPrefix(key string) {
 	}
 }
 
-// DeleteByPrefix удаляет все значения из кэша, ключи которых начинаются с prefix.
-// Оптимизация: использует индекс префиксов вместо полного обхода map.
 func (c *Cache) DeleteByPrefix(prefix string) {
 	c.prefixLock.RLock()
 	keys, exists := c.prefixKeys[prefix]
@@ -87,12 +69,10 @@ func (c *Cache) DeleteByPrefix(prefix string) {
 		return
 	}
 
-	// Удаляем ключи из основного кэша
 	for key := range keys {
 		c.store.Delete(key)
 	}
 
-	// Удаляем индекс префикса и все вложенные префиксы
 	c.prefixLock.Lock()
 	delete(c.prefixKeys, prefix)
 	for key := range keys {
@@ -107,39 +87,27 @@ func (c *Cache) DeleteByPrefix(prefix string) {
 	c.prefixLock.Unlock()
 }
 
-// Flush очищает весь кэш.
 func (c *Cache) Flush() {
 	c.store.Flush()
 }
 
-// GetWithCtx возвращает значение из кэша по ключу с контекстом.
-// Контекст игнорируется для in-memory кэша.
-func (c *Cache) GetWithCtx(ctx context.Context, key string) (interface{}, bool) {
+func (c *Cache) GetWithCtx(ctx context.Context, key string) (any, bool) {
 	return c.store.Get(key)
 }
 
-// SetWithCtx сохраняет значение в кэше с контекстом.
-// Контекст игнорируется для in-memory кэша.
-func (c *Cache) SetWithCtx(ctx context.Context, key string, value interface{}, ttl time.Duration) {
+func (c *Cache) SetWithCtx(ctx context.Context, key string, value any, ttl time.Duration) {
 	c.store.Set(key, value, ttl)
 }
 
-// DeleteWithCtx удаляет значение из кэша с контекстом.
-// Контекст игнорируется для in-memory кэша.
 func (c *Cache) DeleteWithCtx(ctx context.Context, key string) {
 	c.store.Delete(key)
 }
 
-// DeleteByPrefixWithCtx удаляет все ключи с префиксом с контекстом.
-// Контекст игнорируется для in-memory кэша.
 func (c *Cache) DeleteByPrefixWithCtx(ctx context.Context, prefix string) {
 	c.DeleteByPrefix(prefix)
 }
 
-// GetOrSet возвращает значение из кэша, если оно существует,
-// иначе вызывает функцию fn, сохраняет результат в кэш и возвращает его.
-// fn должна возвращать значение и ошибку.
-func (c *Cache) GetOrSet(key string, ttl time.Duration, fn func() (interface{}, error)) (interface{}, error) {
+func (c *Cache) GetOrSet(key string, ttl time.Duration, fn func() (any, error)) (any, error) {
 	if val, ok := c.Get(key); ok {
 		return val, nil
 	}
@@ -155,9 +123,8 @@ func (c *Cache) GetOrSet(key string, ttl time.Duration, fn func() (interface{}, 
 	return val, nil
 }
 
-// GetOrSetString — удобная обёртка для GetOrSet со строковым значением.
 func (c *Cache) GetOrSetString(key string, ttl time.Duration, fn func() (string, error)) (string, error) {
-	val, err := c.GetOrSet(key, ttl, func() (interface{}, error) {
+	val, err := c.GetOrSet(key, ttl, func() (any, error) {
 		return fn()
 	})
 	if err != nil {
@@ -166,9 +133,8 @@ func (c *Cache) GetOrSetString(key string, ttl time.Duration, fn func() (string,
 	return val.(string), nil
 }
 
-// GetOrSetInt — удобная обёртка для GetOrSet с int.
 func (c *Cache) GetOrSetInt(key string, ttl time.Duration, fn func() (int, error)) (int, error) {
-	val, err := c.GetOrSet(key, ttl, func() (interface{}, error) {
+	val, err := c.GetOrSet(key, ttl, func() (any, error) {
 		return fn()
 	})
 	if err != nil {
@@ -177,13 +143,17 @@ func (c *Cache) GetOrSetInt(key string, ttl time.Duration, fn func() (int, error
 	return val.(int), nil
 }
 
-// GetOrSetFloat64 — удобная обёртка для GetOrSet с float64.
 func (c *Cache) GetOrSetFloat64(key string, ttl time.Duration, fn func() (float64, error)) (float64, error) {
-	val, err := c.GetOrSet(key, ttl, func() (interface{}, error) {
+	val, err := c.GetOrSet(key, ttl, func() (any, error) {
 		return fn()
 	})
 	if err != nil {
 		return 0, err
 	}
 	return val.(float64), nil
+}
+
+func (c *Cache) Close() error {
+	c.Flush()
+	return nil
 }

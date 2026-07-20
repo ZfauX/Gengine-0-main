@@ -177,7 +177,7 @@ func TestCalendarHandler_CalendarData_Error(t *testing.T) {
 	var resp map[string]string
 	err := json.Unmarshal(w.Body.Bytes(), &resp)
 	require.NoError(t, err)
-	assert.Equal(t, "db error", resp["error"])
+	assert.Equal(t, "CalendarHandler: db error", resp["error"])
 }
 
 func TestCalendarHandler_CalendarData_WithCustomYearMonth(t *testing.T) {

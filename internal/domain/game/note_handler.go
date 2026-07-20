@@ -35,7 +35,7 @@ func (h *NoteHandler) Notes(c *gin.Context) {
 	userID := c.GetUint("userID")
 	notes, err := h.noteService.ListByGame(c.Request.Context(), uint(gameID), userID)
 	if err != nil {
-		appErr := apperr.NewForbiddenError(err.Error())
+		appErr := apperr.Forbidden(err.Error())
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -87,7 +87,7 @@ func (h *NoteHandler) CreateNote(c *gin.Context) {
 
 	note, err := h.noteService.Create(c.Request.Context(), uint(gameID), input.LevelID, userID, input.Text)
 	if err != nil {
-		appErr := apperr.NewForbiddenError(err.Error())
+		appErr := apperr.Forbidden(err.Error())
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -109,7 +109,7 @@ func (h *NoteHandler) DeleteNote(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 	if err := h.noteService.Delete(c.Request.Context(), uint(noteID), userID); err != nil {
-		appErr := apperr.NewForbiddenError(err.Error())
+		appErr := apperr.Forbidden(err.Error())
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,

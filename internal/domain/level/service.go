@@ -234,6 +234,27 @@ func (s *LevelService) Move(ctx context.Context, levelID uint, direction string,
 	}
 	tempPos := maxPos + 1
 
+	// Блокируем обе строки в фиксированном порядке (по ID) для предотвращения deadlock'а
+	if level.ID < sibling.ID {
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&Level{}, level.ID).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&Level{}, sibling.ID).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
+	} else {
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&Level{}, sibling.ID).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&Level{}, level.ID).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+
 	if err := tx.Model(level).Update("position", tempPos).Error; err != nil {
 		tx.Rollback()
 		return err

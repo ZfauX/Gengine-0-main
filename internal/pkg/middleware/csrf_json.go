@@ -9,9 +9,9 @@ import (
 	csrf "github.com/utrack/gin-csrf"
 )
 
-// CSRFJSON возвращает middleware, которое проверяет CSRF-токен для JSON-запросов.
+// CSRFJSON возвращает middleware, которое проверяет CSRF-токен для всех мутирующих запросов.
 // Для GET/HEAD/OPTIONS запросов проверка не выполняется.
-// Токен ожидается в заголовке "X-CSRF-Token".
+// Токен ожидается в заголовке "X-CSRF-Token" (для JSON) или в теле формы (для HTML-форм).
 func CSRFJSON() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Для безопасных методов CSRF не требуется
@@ -20,29 +20,32 @@ func CSRFJSON() gin.HandlerFunc {
 			return
 		}
 
-		// Проверяем Content-Type - если это JSON, используем заголовок
+		var token string
 		contentType := c.GetHeader("Content-Type")
 		if strings.Contains(contentType, "application/json") {
-			token := c.GetHeader("X-CSRF-Token")
-			if token == "" {
-				c.JSON(http.StatusForbidden, gin.H{
-					"error": "CSRF token missing",
-					"code":  "csrf_missing",
-				})
-				c.Abort()
-				return
-			}
+			token = c.GetHeader("X-CSRF-Token")
+		} else {
+			// Для form-urlencoded/multipart — токен из тела формы
+			token = c.PostForm("_csrf")
+		}
 
-			// Получаем токен из middleware
-			validToken := csrf.GetToken(c)
-			if token != validToken {
-				c.JSON(http.StatusForbidden, gin.H{
-					"error": "CSRF token mismatch",
-					"code":  "csrf_mismatch",
-				})
-				c.Abort()
-				return
-			}
+		if token == "" {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "CSRF token missing",
+				"code":  "csrf_missing",
+			})
+			c.Abort()
+			return
+		}
+
+		validToken := csrf.GetToken(c)
+		if token != validToken {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "CSRF token mismatch",
+				"code":  "csrf_mismatch",
+			})
+			c.Abort()
+			return
 		}
 
 		c.Next()

@@ -379,16 +379,21 @@ func (h *ExportHandler) ExportTeamResultsCSV(c *gin.Context) {
 	// Проверяем права: капитан или автор
 	isCaptain := false
 	var t struct{ CaptainID uint }
-	h.db.Table("teams").Select("captain_id").Where("id = ?", teamID).First(&t)
+	if err := h.db.Table("teams").Select("captain_id").Where("id = ?", teamID).First(&t).Error; err != nil {
+		log.Error().Err(err).Uint("team_id", uint(teamID)).Msg("ExportTeamResultsCSV: failed to find team")
+		render.RenderErrorPage(c, http.StatusNotFound)
+		return
+	}
 	if t.CaptainID == userID {
 		isCaptain = true
 	}
 
 	isAuthor := false
 	var g game.Game
-	h.db.WithContext(c.Request.Context()).First(&g, gameID)
-	if g.AuthorID == userID {
-		isAuthor = true
+	if err := h.db.WithContext(c.Request.Context()).First(&g, gameID).Error; err != nil {
+		log.Error().Err(err).Uint("game_id", uint(gameID)).Msg("ExportTeamResultsCSV: failed to find game")
+		render.RenderErrorPage(c, http.StatusNotFound)
+		return
 	}
 
 	if !isCaptain && !isAuthor {

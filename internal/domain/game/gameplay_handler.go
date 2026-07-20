@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -233,15 +232,8 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 		return
 	}
 
+	// Content-Type из заголовка может быть подделан — итоговая проверка в storage.Save
 	allowedTypes := []string{"image/jpeg", "image/png", "image/gif", "application/pdf", "text/plain"}
-	contentType := header.Header.Get("Content-Type")
-	if !slices.Contains(allowedTypes, contentType) {
-		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
-			"Error": "Недопустимый тип файла",
-			"csrf":  csrf.GetToken(c),
-		})
-		return
-	}
 
 	webPath, err := h.storage.Save("uploads/answers", file, header.Filename, userID, 10*1024*1024, allowedTypes)
 	if err != nil {

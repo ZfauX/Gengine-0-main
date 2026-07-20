@@ -195,7 +195,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	if err != nil || refreshToken == "" {
 		var input RefreshTokenInput
 		if bindErr := c.ShouldBindJSON(&input); bindErr != nil || input.RefreshToken == "" {
-			appErr := apperrors.NewUnauthorizedError("refresh token required")
+			appErr := apperrors.Unauthorized("refresh token required")
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 				"error": appErr.Message,
 				"code":  appErr.Code,
@@ -207,7 +207,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 
 	newAccessToken, err := h.authSvc.RefreshAccessToken(c.Request.Context(), refreshToken)
 	if err != nil {
-		appErr := apperrors.NewUnauthorizedError(err.Error())
+		appErr := apperrors.Unauthorized(err.Error())
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -599,7 +599,7 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 		Msg("UploadAvatar: received file")
 
 	if header.Size > 2*1024*1024 {
-		appErr := apperrors.NewBadRequestError("Размер файла не должен превышать 2 МБ")
+		appErr := apperrors.BadRequest("Размер файла не должен превышать 2 МБ")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -617,7 +617,7 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 		}
 	}
 	if !allowed {
-		appErr := apperrors.NewBadRequestError("Допустимы только JPEG, PNG и WebP")
+		appErr := apperrors.BadRequest("Допустимы только JPEG, PNG и WebP")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -628,7 +628,7 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 	webPath, err := h.storage.Save("uploads/avatars", file, header.Filename, userID, 2*1024*1024, allowedTypes)
 	if err != nil {
 		log.Error().Err(err).Uint("user", userID).Msg("UploadAvatar: storage save failed")
-		appErr := apperrors.NewInternalError(err)
+		appErr := apperrors.Wrap(err, "UploadAvatar: storage save failed")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -643,7 +643,7 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 		if delErr := h.storage.Delete(webPath); delErr != nil {
 			log.Error().Err(delErr).Str("path", webPath).Msg("UploadAvatar: failed to delete uploaded file")
 		}
-		appErr := apperrors.NewInternalError(err)
+		appErr := apperrors.Wrap(err, "UploadAvatar: failed to update avatar_path")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,

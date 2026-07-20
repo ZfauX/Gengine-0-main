@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"mime/multipart"
+	"sync"
 	"time"
 
 	"gengine-0/internal/config"
@@ -211,10 +212,22 @@ func (s *GameService) Delete(ctx context.Context, id uint, userID uint) error {
 	if s.photoService != nil {
 		photos, err := s.photoService.List(id)
 		if err == nil {
+			// Параллельное удаление файлов для ускорения
+			var wg sync.WaitGroup
+			errCh := make(chan error, len(photos))
 			for _, photo := range photos {
-				if delErr := s.storage.Delete(photo.Path); delErr != nil {
-					log.Error().Err(delErr).Str("path", photo.Path).Msg("Delete: failed to delete photo file")
-				}
+				wg.Add(1)
+				go func(path string) {
+					defer wg.Done()
+					if delErr := s.storage.Delete(path); delErr != nil {
+						errCh <- delErr
+					}
+				}(photo.Path)
+			}
+			wg.Wait()
+			close(errCh)
+			for delErr := range errCh {
+				log.Error().Err(delErr).Msg("Delete: failed to delete photo file")
 			}
 		}
 	}
@@ -266,8 +279,8 @@ func (s *GameService) GetAverageRating(ctx context.Context, gameID uint) (float6
 
 	if s.cache != nil {
 		if cached, ok := s.cache.GetWithCtx(ctx, cacheKey); ok {
-			// In-memory cache: may be map[string]interface{}
-			if result, ok := cached.(map[string]interface{}); ok {
+			// In-memory cache: may be map[string]any
+			if result, ok := cached.(map[string]any); ok {
 				if avg, ok := result["avg"].(float64); ok {
 					if count, ok := result["count"].(int64); ok {
 						log.Debug().Uint("game_id", gameID).Msg("GetAverageRating: cache hit")
@@ -284,7 +297,7 @@ func (s *GameService) GetAverageRating(ctx context.Context, gameID uint) (float6
 	}
 
 	if s.cache != nil {
-		s.cache.SetWithCtx(ctx, cacheKey, map[string]interface{}{
+		s.cache.SetWithCtx(ctx, cacheKey, map[string]any{
 			"avg":   avgRating,
 			"count": count,
 		}, 5*time.Minute)

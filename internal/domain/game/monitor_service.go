@@ -34,7 +34,7 @@ func NewMonitorService(db *gorm.DB) *MonitorService {
 	return &MonitorService{
 		DB:       db,
 		cache:    make(map[uint]*cachedSnapshot),
-		cacheTTL: 10 * time.Second,
+		cacheTTL: 30 * time.Second,
 	}
 }
 
@@ -66,7 +66,7 @@ func (s *MonitorService) GetOrFetchSnapshot(ctx context.Context, gameID uint) ([
 
 	// Используем singleflight для группировки одновременных запросов
 	key := fmt.Sprintf("snapshot:%d", gameID)
-	result, err, _ := s.sfGroup.Do(key, func() (interface{}, error) {
+	result, err, _ := s.sfGroup.Do(key, func() (any, error) {
 		// Повторная проверка кэша уже внутри Lock (защита от гонки)
 		s.mu.RLock()
 		if cached, ok := s.cache[gameID]; ok && time.Since(cached.timestamp) < s.cacheTTL {
@@ -81,14 +81,19 @@ func (s *MonitorService) GetOrFetchSnapshot(ctx context.Context, gameID uint) ([
 			return nil, err
 		}
 
-		// Сохраняем в кэш
+		// Сохраняем в кэш с лимитом: максимум 50 записей, вытеснение старых
 		s.mu.Lock()
-		if len(s.cache) > 100 {
-			// Удаление самых старых записей при переполнении
+		if len(s.cache) > 50 {
+			oldest := time.Now()
+			oldestID := uint(0)
 			for id, cached := range s.cache {
-				if time.Since(cached.timestamp) > 5*time.Minute {
-					delete(s.cache, id)
+				if cached.timestamp.Before(oldest) {
+					oldest = cached.timestamp
+					oldestID = id
 				}
+			}
+			if oldestID != 0 {
+				delete(s.cache, oldestID)
 			}
 		}
 		s.cache[gameID] = &cachedSnapshot{
@@ -209,7 +214,7 @@ func (s *MonitorService) GameSnapshot(ctx context.Context, gameID uint) ([]TeamP
 	}
 
 	// 5. Формируем результат
-	suspiciousMap := s.analyzeTeamsBehavior(teamData, gameID)
+	suspiciousMap := s.analyzeTeamsBehavior(teamData)
 
 	result := make([]TeamProgress, 0, len(aggregated))
 	for _, a := range aggregated {
@@ -304,7 +309,7 @@ func (s *MonitorService) CalculateResults(ctx context.Context, gameID uint) erro
 	// result_duration = CASE id WHEN ? THEN ? ... END
 	// place = CASE id WHEN ? THEN ? ... END
 	var durationWHENs []string
-	var durationArgs []interface{}
+	var durationArgs []any
 	var placeWHENs []string
 	var whereIDsStr []string
 
@@ -347,7 +352,7 @@ func (s *MonitorService) CalculateResults(ctx context.Context, gameID uint) erro
 
 // analyzeTeamsBehavior — batch-версия: проверяет все команды одним запросом.
 // Возвращает map[teamID]suspiciousReason.
-func (s *MonitorService) analyzeTeamsBehavior(teamData []teamAggregatedData, gameID uint) map[uint]string {
+func (s *MonitorService) analyzeTeamsBehavior(teamData []teamAggregatedData) map[uint]string {
 	// Собираем уникальные teamID и их passingIDs
 	type teamPassings struct {
 		TeamID     uint

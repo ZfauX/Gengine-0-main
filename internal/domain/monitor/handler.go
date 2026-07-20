@@ -412,7 +412,7 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 func (h *MonitorHandler) ChatRoomIDs(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		appErr := apperrors.NewBadRequestError("Неверный ID игры")
+		appErr := apperrors.BadRequest("Неверный ID игры")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -426,7 +426,7 @@ func (h *MonitorHandler) ChatRoomIDs(c *gin.Context) {
 	generalRoom, err := h.chatService.GetOrCreateGameRoom(ctx, gameID)
 	if err != nil {
 		log.Error().Err(err).Uint("game_id", gameID).Msg("ChatRoomIDs: failed to get general room")
-		appErr := apperrors.NewInternalError(err)
+		appErr := apperrors.Wrap(err, "MonitorHandler")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -533,7 +533,7 @@ func (h *MonitorHandler) LogsWS(c *gin.Context) {
 func (h *MonitorHandler) StartVoting(c *gin.Context) {
 	var input StartVotingInput
 	if err := c.ShouldBind(&input); err != nil {
-		appErr := apperrors.NewValidationError("Неверные данные: "+err.Error(), nil)
+		appErr := apperrors.BadRequest("Неверные данные: " + err.Error())
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -542,7 +542,7 @@ func (h *MonitorHandler) StartVoting(c *gin.Context) {
 	}
 
 	if err := validation.ValidatePositiveUint("ID прохождения", input.PassingID); err != nil {
-		appErr := apperrors.NewValidationError(err.Error(), nil)
+		appErr := apperrors.BadRequest(err.Error())
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -550,7 +550,7 @@ func (h *MonitorHandler) StartVoting(c *gin.Context) {
 		return
 	}
 	if err := validation.ValidatePositiveUint("ID уровня", input.LevelID); err != nil {
-		appErr := apperrors.NewValidationError(err.Error(), nil)
+		appErr := apperrors.BadRequest(err.Error())
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -562,11 +562,11 @@ func (h *MonitorHandler) StartVoting(c *gin.Context) {
 	if err := h.blackboxVoteService.StartVoting(c.Request.Context(), input.PassingID, input.LevelID, userID); err != nil {
 		switch err.Error() {
 		case "голосование уже активно", "голосование уже было проведено":
-			appErr := apperrors.NewBadRequestError(err.Error())
+			appErr := apperrors.BadRequest(err.Error())
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
 		default:
 			log.Error().Err(err).Uint("passing_id", input.PassingID).Uint("level_id", input.LevelID).Uint("user_id", userID).Msg("StartVoting: failed to start voting")
-			appErr := apperrors.NewInternalError(err)
+			appErr := apperrors.Wrap(err, "MonitorHandler")
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
 		}
 		return
@@ -578,7 +578,7 @@ func (h *MonitorHandler) StartVoting(c *gin.Context) {
 func (h *MonitorHandler) Vote(c *gin.Context) {
 	var input VoteInput
 	if err := c.ShouldBind(&input); err != nil {
-		appErr := apperrors.NewValidationError("Неверные данные: "+err.Error(), nil)
+		appErr := apperrors.BadRequest("Неверные данные: " + err.Error())
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -587,7 +587,7 @@ func (h *MonitorHandler) Vote(c *gin.Context) {
 	}
 
 	if err := validation.ValidatePositiveUint("ID сессии", input.SessionID); err != nil {
-		appErr := apperrors.NewValidationError(err.Error(), nil)
+		appErr := apperrors.BadRequest(err.Error())
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -595,7 +595,7 @@ func (h *MonitorHandler) Vote(c *gin.Context) {
 		return
 	}
 	if err := validation.ValidatePositiveUint("ID команды", input.TeamID); err != nil {
-		appErr := apperrors.NewValidationError(err.Error(), nil)
+		appErr := apperrors.BadRequest(err.Error())
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -603,7 +603,7 @@ func (h *MonitorHandler) Vote(c *gin.Context) {
 		return
 	}
 	if err := validation.ValidateString("Вариант ответа", input.Option, 1, 1000); err != nil {
-		appErr := apperrors.NewValidationError(err.Error(), nil)
+		appErr := apperrors.BadRequest(err.Error())
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -616,11 +616,11 @@ func (h *MonitorHandler) Vote(c *gin.Context) {
 	if err := h.blackboxVoteService.Vote(c.Request.Context(), input.SessionID, input.TeamID, cleanOption); err != nil {
 		switch err.Error() {
 		case "голосование закрыто", "недопустимый вариант ответа", "ваш голос уже учтён":
-			appErr := apperrors.NewBadRequestError(err.Error())
+			appErr := apperrors.BadRequest(err.Error())
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
 		default:
 			log.Error().Err(err).Uint("session_id", input.SessionID).Uint("team_id", input.TeamID).Str("option", cleanOption).Msg("Vote: failed to vote")
-			appErr := apperrors.NewInternalError(err)
+			appErr := apperrors.Wrap(err, "MonitorHandler")
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
 		}
 		return
@@ -632,7 +632,7 @@ func (h *MonitorHandler) Vote(c *gin.Context) {
 func (h *MonitorHandler) GetVotingResults(c *gin.Context) {
 	var req GameIDAndSessionIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		appErr := apperrors.NewBadRequestError("Неверный ID сессии")
+		appErr := apperrors.BadRequest("Неверный ID сессии")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -642,7 +642,7 @@ func (h *MonitorHandler) GetVotingResults(c *gin.Context) {
 	results, err := h.blackboxVoteService.GetVotingResults(c.Request.Context(), req.SessionID)
 	if err != nil {
 		log.Error().Err(err).Uint("session_id", req.SessionID).Msg("GetVotingResults: failed to get results")
-		appErr := apperrors.NewInternalError(err)
+		appErr := apperrors.Wrap(err, "MonitorHandler")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -656,7 +656,7 @@ func (h *MonitorHandler) GetVotingResults(c *gin.Context) {
 func (h *MonitorHandler) CloseVoting(c *gin.Context) {
 	var req GameIDAndSessionIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		appErr := apperrors.NewBadRequestError("Неверный ID сессии")
+		appErr := apperrors.BadRequest("Неверный ID сессии")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -668,7 +668,7 @@ func (h *MonitorHandler) CloseVoting(c *gin.Context) {
 	winner, err := h.blackboxVoteService.CloseVoting(c.Request.Context(), req.SessionID, userID)
 	if err != nil {
 		log.Error().Err(err).Uint("session_id", req.SessionID).Uint("user_id", userID).Msg("CloseVoting: failed to close voting")
-		appErr := apperrors.NewForbiddenError(err.Error())
+		appErr := apperrors.Forbidden(err.Error())
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,

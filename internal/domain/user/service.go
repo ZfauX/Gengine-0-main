@@ -542,7 +542,9 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 		Provider:   provider,
 		ExternalID: emailStr,
 	}
-	_ = s.extLoginRepo.FindOrCreate(ctx, extLogin)
+	if err := s.extLoginRepo.FindOrCreate(ctx, extLogin); err != nil {
+		log.Warn().Err(err).Uint("user_id", user.ID).Str("provider", provider).Msg("FindOrCreate external login: failed, continuing")
+	}
 	return user, nil
 }
 

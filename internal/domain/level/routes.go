@@ -16,7 +16,7 @@ import (
 // @tags questions
 // @tags answers
 func RegisterRoutes(
-	r *gin.Engine,
+	r *gin.RouterGroup,
 	levelService *LevelService,
 	questionService *QuestionService,
 	answerService *AnswerService,

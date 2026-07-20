@@ -84,7 +84,7 @@ func (s *BlackboxVoteService) StartVoting(ctx context.Context, gamePassingID, le
 				"Запущено голосование",
 				fmt.Sprintf("В игре «%s» запущено голосование за лучший ответ.", g.Name),
 			); err != nil {
-				log.Error().Err(err).Str("email", emailAddr).Str("game", g.Name).Msg("failed to enqueue voting start email")
+				log.Error().Err(err).Str("game", g.Name).Msg("failed to enqueue voting start email")
 			}
 		}
 	}
@@ -101,36 +101,45 @@ func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID u
 		return errors.New("голосование закрыто")
 	}
 
-	var attempts []game.Attempt
-	s.gameRepo.DB(ctx).
-		Where("level_progress_id IN (SELECT id FROM level_progresses WHERE game_passing_id = ? AND level_id = ?)",
-			session.GamePassingID, session.LevelID).
-		Find(&attempts)
-	valid := false
-	for _, a := range attempts {
-		if (a.IsFile && a.FilePath == option) || (!a.IsFile && a.Code == option) {
-			valid = true
-			break
+	// Валидация опциона внутри транзакции для избежания race condition
+	return s.gameRepo.DB(ctx).Transaction(func(tx *gorm.DB) error {
+		// Блокируем сессию для сериализации
+		var lockedSession BlackboxVotingSession
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&lockedSession, sessionID).Error; err != nil {
+			return err
 		}
-	}
-	if !valid {
-		return errors.New("недопустимый вариант ответа")
-	}
 
-	_, err = s.blackboxRepo.GetVoteBySessionAndVoter(ctx, sessionID, voterTeamID)
-	if err == nil {
-		return errors.New("ваш голос уже учтён")
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
-	}
+		var attempts []game.Attempt
+		tx.Where("level_progress_id IN (SELECT id FROM level_progresses WHERE game_passing_id = ? AND level_id = ?)",
+			lockedSession.GamePassingID, lockedSession.LevelID).
+			Find(&attempts)
+		valid := false
+		for _, a := range attempts {
+			if (a.IsFile && a.FilePath == option) || (!a.IsFile && a.Code == option) {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return errors.New("недопустимый вариант ответа")
+		}
 
-	vote := &BlackboxVote{
-		SessionID: sessionID,
-		VoterID:   voterTeamID,
-		Option:    option,
-	}
-	return s.blackboxRepo.CreateVote(ctx, vote)
+		// Проверяем существование голоса внутри транзакции
+		_, err = s.blackboxRepo.GetVoteBySessionAndVoter(ctx, sessionID, voterTeamID)
+		if err == nil {
+			return errors.New("ваш голос уже учтён")
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+
+		vote := &BlackboxVote{
+			SessionID: sessionID,
+			VoterID:   voterTeamID,
+			Option:    option,
+		}
+		return tx.Create(vote).Error
+	})
 }
 
 // GetVotingResults возвращает пары «вариант — количество голосов».
@@ -200,7 +209,7 @@ func (s *BlackboxVoteService) CloseVoting(ctx context.Context, sessionID, userID
 				"Голосование завершено",
 				fmt.Sprintf("В игре «%s» завершено голосование. Победивший вариант: %s", g.Name, winner),
 			); err != nil {
-				log.Error().Err(err).Str("email", emailAddr).Str("game", g.Name).Str("winner", winner).Msg("failed to enqueue voting end email")
+				log.Error().Err(err).Str("game", g.Name).Str("winner", winner).Msg("failed to enqueue voting end email")
 			}
 		}
 	}

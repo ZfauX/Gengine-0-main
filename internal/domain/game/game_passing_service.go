@@ -135,8 +135,8 @@ func (s *GamePassingService) UpdateStatus(ctx context.Context, passingID uint, s
 		StatusDisqualified: {},
 		StatusTesting:      {StatusFinished},
 	}
-	validFor := validTransitions[status]
-	if len(validFor) == 0 {
+	allowedCurrentStatuses := validTransitions[status]
+	if len(allowedCurrentStatuses) == 0 {
 		return errors.New("невозможно перейти в статус " + string(status))
 	}
 
@@ -163,7 +163,7 @@ func (s *GamePassingService) UpdateStatus(ctx context.Context, passingID uint, s
 
 		// Проверка допустимости перехода
 		allowed := false
-		for _, s := range validFor {
+		for _, s := range allowedCurrentStatuses {
 			if s == currentStatus {
 				allowed = true
 				break
@@ -257,7 +257,7 @@ func (s *GamePassingService) broadcastGameStart(ctx context.Context, gameID, pas
 	}
 
 	// Формируем JSON-уведомление
-	notification := map[string]interface{}{
+	notification := map[string]any{
 		"type":       "game_started",
 		"game_id":    gameID,
 		"passing_id": passingID,

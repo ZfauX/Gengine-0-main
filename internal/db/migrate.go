@@ -57,14 +57,15 @@ func MigrateFromFiles(db *gorm.DB, migrationsDir string) error {
 		return fmt.Errorf("ошибка применения миграций: %w", err)
 	}
 
-	newVersion, _, _ := m.Version()
-	log.Info().Uint("version", newVersion).Msg("Миграции успешно применены")
+	newVersion, dirtyAfter, err := m.Version()
+	if err == nil && dirtyAfter {
+		log.Warn().Uint("version", newVersion).Msg("Миграции в грязном состоянии после применения")
+	} else if err == nil {
+		log.Info().Uint("version", newVersion).Msg("Миграции успешно применены")
+	} else {
+		log.Info().Msg("Миграции успешно применены (версия неизвестна)")
+	}
 	return nil
-}
-
-// RunMigrations — обёртка для MigrateFromFiles с более простым интерфейсом.
-func RunMigrations(db *gorm.DB, migrationsDir string) error {
-	return MigrateFromFiles(db, migrationsDir)
 }
 
 // CreateMigrationFile создаёт новый файл миграции с указанным именем.

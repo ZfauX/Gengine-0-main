@@ -18,8 +18,15 @@ logs/
 
 # Local environment
 .env
+.env.local
 
-# Test files
+# Node.js (CSS build toolchain, not needed at runtime)
+node_modules/
+package.json
+package-lock.json
+tailwind.config.js
+
+# Test files — excluded from build context for Docker
 *_test.go
 testutil/
 
@@ -34,6 +41,7 @@ gengine
 coverage*
 
 # Development tools
+Makefile
 makefile
 docker-compose.yml
 Dockerfile
@@ -42,3 +50,6 @@ entrypoint.sh
 # Uploads and backups (mounted as volumes)
 uploads/
 backups/
+
+# Monitoring config
+monitoring/

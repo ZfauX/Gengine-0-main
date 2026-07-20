@@ -43,7 +43,7 @@ func checkTeamMembership(tx *gorm.DB, passingID, userID uint) error {
 func finishPassingProgress(tx *gorm.DB, passing *GamePassing, now time.Time) error {
 	result := tx.Model(&LevelProgress{}).
 		Where("game_passing_id = ? AND finished_at IS NULL", passing.ID).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"finished_at": now,
 			"updated_at":  now,
 		})

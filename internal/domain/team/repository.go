@@ -87,13 +87,19 @@ func (r *gormTeamRepo) GetByCaptainID(ctx context.Context, captainID uint) ([]Te
 func (r *gormTeamRepo) GetTeamsByUserID(ctx context.Context, userID uint) ([]Team, error) {
 	var teams []Team
 	var captainTeams []Team
-	r.db.WithContext(ctx).Where("captain_id = ?", userID).Find(&captainTeams)
+	if err := r.db.WithContext(ctx).Where("captain_id = ?", userID).Find(&captainTeams).Error; err != nil {
+		return nil, err
+	}
 	teams = append(teams, captainTeams...)
 	var memberTeamIDs []uint
-	r.db.WithContext(ctx).Table("team_members").Where("user_id = ?", userID).Pluck("team_id", &memberTeamIDs)
+	if err := r.db.WithContext(ctx).Table("team_members").Where("user_id = ?", userID).Pluck("team_id", &memberTeamIDs).Error; err != nil {
+		return teams, err
+	}
 	if len(memberTeamIDs) > 0 {
 		var memberTeams []Team
-		r.db.WithContext(ctx).Where("id IN ? AND captain_id != ?", memberTeamIDs, userID).Find(&memberTeams)
+		if err := r.db.WithContext(ctx).Where("id IN ? AND captain_id != ?", memberTeamIDs, userID).Find(&memberTeams).Error; err != nil {
+			return teams, err
+		}
 		teams = append(teams, memberTeams...)
 	}
 	return teams, nil

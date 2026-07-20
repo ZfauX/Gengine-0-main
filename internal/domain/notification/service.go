@@ -66,11 +66,35 @@ func (s *NotificationService) WithHub(hub *ws.RoomHub) *NotificationService {
 	return s
 }
 
-// Settings структура настроек, которая хранится в JSON.
+// Settings структура настроек уведомлений.
+// Поддерживает гранулярные настройки по типам событий и каналам.
 type Settings struct {
-	EmailEnabled bool `json:"email_enabled"`
-	PushEnabled  bool `json:"push_enabled"`
-	// Можно добавить другие поля
+	EmailEnabled   bool `json:"email_enabled"`   // Включить email-уведомления
+	PushEnabled    bool `json:"push_enabled"`    // Включить push-уведомления
+	BrowserEnabled bool `json:"browser_enabled"` // Включить браузерные уведомления
+
+	// Granular settings: какие события отправлять по email
+	EmailGameStarted         bool `json:"email_game_started"`
+	EmailLevelCompleted      bool `json:"email_level_completed"`
+	EmailApplicationAccepted bool `json:"email_application_accepted"`
+	EmailApplicationRejected bool `json:"email_application_rejected"`
+	EmailTimeWarning         bool `json:"email_time_warning"`
+	EmailTimeExpired         bool `json:"email_time_expired"`
+}
+
+// DefaultSettings возвращает настройки по умолчанию
+func DefaultSettings() *Settings {
+	return &Settings{
+		EmailEnabled:             true,
+		PushEnabled:              false,
+		BrowserEnabled:           true,
+		EmailGameStarted:         true,
+		EmailLevelCompleted:      true,
+		EmailApplicationAccepted: true,
+		EmailApplicationRejected: false,
+		EmailTimeWarning:         true,
+		EmailTimeExpired:         true,
+	}
 }
 
 // GetSettings возвращает настройки пользователя.
@@ -79,10 +103,7 @@ func (s *NotificationService) GetSettings(ctx context.Context, userID uint) (*Se
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			// Возвращаем настройки по умолчанию
-			return &Settings{
-				EmailEnabled: true,
-				PushEnabled:  false,
-			}, nil
+			return DefaultSettings(), nil
 		}
 		return nil, err
 	}
@@ -117,6 +138,25 @@ func (s *NotificationService) SaveSettings(ctx context.Context, userID uint, set
 	return s.repo.Save(ctx, existing)
 }
 
+// GetEmailNotificationFlags возвращает только флаги email-уведомлений для фронтенда
+func (s *NotificationService) GetEmailNotificationFlags(ctx context.Context, userID uint) (map[string]any, error) {
+	settings, err := s.GetSettings(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"email_enabled":              settings.EmailEnabled,
+		"email_game_started":         settings.EmailGameStarted,
+		"email_level_completed":      settings.EmailLevelCompleted,
+		"email_application_accepted": settings.EmailApplicationAccepted,
+		"email_application_rejected": settings.EmailApplicationRejected,
+		"email_time_warning":         settings.EmailTimeWarning,
+		"email_time_expired":         settings.EmailTimeExpired,
+		"browser_enabled":            settings.BrowserEnabled,
+		"push_enabled":               settings.PushEnabled,
+	}, nil
+}
+
 // Create создаёт новое push-уведомление
 func (s *NotificationService) Create(ctx context.Context, userID uint, ntype NotificationType, title, message, url, data string) error {
 	notification := &Notification{
@@ -146,7 +186,7 @@ func (s *NotificationService) Create(ctx context.Context, userID uint, ntype Not
 func (s *NotificationService) sendWebSocketNotification(userID uint, notification *Notification) {
 	roomID := fmt.Sprintf("user:%d", userID)
 
-	notificationData := map[string]interface{}{
+	notificationData := map[string]any{
 		"type":         string(notification.Type),
 		"id":           notification.ID,
 		"title":        notification.Title,

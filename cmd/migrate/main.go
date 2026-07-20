@@ -74,7 +74,7 @@ func main() {
 	log.Info().Msg("Подключение к БД установлено")
 
 	// Применение миграций
-	if err := db.RunMigrations(database, *migrationsDir); err != nil {
+	if err := db.MigrateFromFiles(database, *migrationsDir); err != nil {
 		log.Fatal().Err(err).Msg("Ошибка применения миграций")
 	}
 

@@ -13,7 +13,7 @@ import (
 // RegisterRoutes регистрирует маршруты социальных функций: подписки.
 // @tags social
 func RegisterRoutes(
-	router *gin.Engine,
+	router *gin.RouterGroup,
 	db *gorm.DB,
 	cfg *config.Config,
 	authService *user.AuthService,

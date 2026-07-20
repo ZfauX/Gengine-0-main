@@ -13,43 +13,37 @@ import (
 
 // CacheStore определяет общий интерфейс для кэша.
 type CacheStore interface {
-	Get(key string) (interface{}, bool)
-	Set(key string, value interface{}, ttl time.Duration)
-	SetDefault(key string, value interface{})
+	Get(key string) (any, bool)
+	Set(key string, value any, ttl time.Duration)
+	SetDefault(key string, value any)
 	Delete(key string)
 	DeleteByPrefix(prefix string)
 	Flush()
-	GetOrSet(key string, ttl time.Duration, fn func() (interface{}, error)) (interface{}, error)
+	GetOrSet(key string, ttl time.Duration, fn func() (any, error)) (any, error)
 	GetOrSetString(key string, ttl time.Duration, fn func() (string, error)) (string, error)
 	GetOrSetInt(key string, ttl time.Duration, fn func() (int, error)) (int, error)
 	GetOrSetFloat64(key string, ttl time.Duration, fn func() (float64, error)) (float64, error)
-	// Context-aware методы для graceful shutdown
-	GetWithCtx(ctx context.Context, key string) (interface{}, bool)
-	SetWithCtx(ctx context.Context, key string, value interface{}, ttl time.Duration)
+	GetWithCtx(ctx context.Context, key string) (any, bool)
+	SetWithCtx(ctx context.Context, key string, value any, ttl time.Duration)
 	DeleteWithCtx(ctx context.Context, key string)
 	DeleteByPrefixWithCtx(ctx context.Context, prefix string)
 }
 
-// ValkeyCache предоставляет интерфейс кэширования через Valkey (Redis-compatible).
-// Реализует интерфейс CacheStore.
 type ValkeyCache struct {
 	client *redis.Client
 }
 
 var _ CacheStore = (*ValkeyCache)(nil)
 
-// NewValkeyCache создаёт новый клиент Valkey.
-// Возвращает nil, если подключение невозможно.
 func NewValkeyCache(host, port, password string) CacheStore {
 	addr := fmt.Sprintf("%s:%s", host, port)
 
 	client := redis.NewClient(&redis.Options{
 		Addr:     addr,
 		Password: password,
-		DB:       0, // используем базу 0 по умолчанию
+		DB:       0,
 	})
 
-	// Проверяем подключение с таймаутом
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -65,8 +59,7 @@ func NewValkeyCache(host, port, password string) CacheStore {
 	}
 }
 
-// Get возвращает значение из кэша по ключу.
-func (c *ValkeyCache) Get(key string) (interface{}, bool) {
+func (c *ValkeyCache) Get(key string) (any, bool) {
 	if c == nil || c.client == nil {
 		return nil, false
 	}
@@ -83,17 +76,14 @@ func (c *ValkeyCache) Get(key string) (interface{}, bool) {
 		return nil, false
 	}
 
-	// Try to unmarshal as JSON first
-	var result interface{}
+	var result any
 	if err := json.Unmarshal(valBytes, &result); err == nil {
 		return result, true
 	}
-	// Fallback: return raw bytes as string
 	return string(valBytes), true
 }
 
-// Set сохраняет значение в кэше с указанным TTL.
-func (c *ValkeyCache) Set(key string, value interface{}, ttl time.Duration) {
+func (c *ValkeyCache) Set(key string, value any, ttl time.Duration) {
 	if c == nil || c.client == nil {
 		return
 	}
@@ -112,12 +102,10 @@ func (c *ValkeyCache) Set(key string, value interface{}, ttl time.Duration) {
 	}
 }
 
-// SetDefault сохраняет значение в кэше с TTL по умолчанию (5 минут).
-func (c *ValkeyCache) SetDefault(key string, value interface{}) {
+func (c *ValkeyCache) SetDefault(key string, value any) {
 	c.Set(key, value, 5*time.Minute)
 }
 
-// Delete удаляет значение из кэша по ключу.
 func (c *ValkeyCache) Delete(key string) {
 	if c == nil || c.client == nil {
 		return
@@ -131,8 +119,7 @@ func (c *ValkeyCache) Delete(key string) {
 	}
 }
 
-// GetWithCtx возвращает значение из кэша по ключу с контекстом.
-func (c *ValkeyCache) GetWithCtx(ctx context.Context, key string) (interface{}, bool) {
+func (c *ValkeyCache) GetWithCtx(ctx context.Context, key string) (any, bool) {
 	if c == nil || c.client == nil {
 		return nil, false
 	}
@@ -146,17 +133,14 @@ func (c *ValkeyCache) GetWithCtx(ctx context.Context, key string) (interface{}, 
 		return nil, false
 	}
 
-	// Try to unmarshal as JSON first
-	var result interface{}
+	var result any
 	if err := json.Unmarshal(valBytes, &result); err == nil {
 		return result, true
 	}
-	// Fallback: return raw bytes as string
 	return string(valBytes), true
 }
 
-// SetWithCtx сохраняет значение в кэше с указанным TTL и контекстом.
-func (c *ValkeyCache) SetWithCtx(ctx context.Context, key string, value interface{}, ttl time.Duration) {
+func (c *ValkeyCache) SetWithCtx(ctx context.Context, key string, value any, ttl time.Duration) {
 	if c == nil || c.client == nil {
 		return
 	}
@@ -172,7 +156,6 @@ func (c *ValkeyCache) SetWithCtx(ctx context.Context, key string, value interfac
 	}
 }
 
-// DeleteWithCtx удаляет значение из кэша по ключу с контекстом.
 func (c *ValkeyCache) DeleteWithCtx(ctx context.Context, key string) {
 	if c == nil || c.client == nil {
 		return
@@ -183,16 +166,22 @@ func (c *ValkeyCache) DeleteWithCtx(ctx context.Context, key string) {
 	}
 }
 
-// DeleteByPrefixWithCtx удаляет все значения из кэша с контекстом.
 func (c *ValkeyCache) DeleteByPrefixWithCtx(ctx context.Context, prefix string) {
 	if c == nil || c.client == nil {
 		return
 	}
 
 	var keys []string
-	iter := c.client.Scan(ctx, 0, prefix+"*", 0).Iterator()
+	const maxKeys = 10000
+	iter := c.client.Scan(ctx, 0, prefix+"*", int64(maxKeys)).Iterator()
 	for iter.Next(ctx) {
 		keys = append(keys, iter.Val())
+		if len(keys) >= 100 {
+			if err := c.client.Del(ctx, keys...).Err(); err != nil {
+				log.Warn().Err(err).Str("prefix", prefix).Msg("Valkey: DeleteByPrefixWithCtx batch error")
+			}
+			keys = keys[:0]
+		}
 	}
 	if err := iter.Err(); err != nil {
 		log.Warn().Err(err).Str("prefix", prefix).Msg("Valkey: DeleteByPrefixWithCtx scan error")
@@ -205,8 +194,6 @@ func (c *ValkeyCache) DeleteByPrefixWithCtx(ctx context.Context, prefix string) 
 	}
 }
 
-// DeleteByPrefix удаляет все значения из кэша, ключи которых начинаются с prefix.
-// Использует SCAN для безопасного перебора ключей с батч DEL.
 func (c *ValkeyCache) DeleteByPrefix(prefix string) {
 	if c == nil || c.client == nil {
 		return
@@ -219,7 +206,6 @@ func (c *ValkeyCache) DeleteByPrefix(prefix string) {
 	iter := c.client.Scan(ctx, 0, prefix+"*", 0).Iterator()
 	for iter.Next(ctx) {
 		keys = append(keys, iter.Val())
-		// Батчим DEL по 100 ключей для эффективности
 		if len(keys) >= 100 {
 			if err := c.client.Del(ctx, keys...).Err(); err != nil {
 				log.Warn().Err(err).Str("prefix", prefix).Msg("Valkey: DeleteByPrefix batch error")
@@ -231,7 +217,6 @@ func (c *ValkeyCache) DeleteByPrefix(prefix string) {
 		log.Warn().Err(err).Str("prefix", prefix).Msg("Valkey: DeleteByPrefix scan error")
 	}
 
-	// Удаляем оставшиеся ключи
 	if len(keys) > 0 {
 		if err := c.client.Del(ctx, keys...).Err(); err != nil {
 			log.Warn().Err(err).Str("prefix", prefix).Msg("Valkey: DeleteByPrefix final batch error")
@@ -239,7 +224,6 @@ func (c *ValkeyCache) DeleteByPrefix(prefix string) {
 	}
 }
 
-// Flush очищает весь кэш (используйте с осторожностью!).
 func (c *ValkeyCache) Flush() {
 	if c == nil || c.client == nil {
 		return
@@ -253,9 +237,7 @@ func (c *ValkeyCache) Flush() {
 	}
 }
 
-// GetOrSet возвращает значение из кэша, если оно существует,
-// иначе вызывает функцию fn, сохраняет результат в кэш и возвращает его.
-func (c *ValkeyCache) GetOrSet(key string, ttl time.Duration, fn func() (interface{}, error)) (interface{}, error) {
+func (c *ValkeyCache) GetOrSet(key string, ttl time.Duration, fn func() (any, error)) (any, error) {
 	if val, ok := c.Get(key); ok {
 		return val, nil
 	}
@@ -267,9 +249,8 @@ func (c *ValkeyCache) GetOrSet(key string, ttl time.Duration, fn func() (interfa
 	return val, nil
 }
 
-// GetOrSetString — удобная обёртка для GetOrSet со строковым значением.
 func (c *ValkeyCache) GetOrSetString(key string, ttl time.Duration, fn func() (string, error)) (string, error) {
-	val, err := c.GetOrSet(key, ttl, func() (interface{}, error) {
+	val, err := c.GetOrSet(key, ttl, func() (any, error) {
 		return fn()
 	})
 	if err != nil {
@@ -281,24 +262,21 @@ func (c *ValkeyCache) GetOrSetString(key string, ttl time.Duration, fn func() (s
 	return "", fmt.Errorf("unexpected type for key %s", key)
 }
 
-// GetOrSetInt — удобная обёртка для GetOrSet с int.
 func (c *ValkeyCache) GetOrSetInt(key string, ttl time.Duration, fn func() (int, error)) (int, error) {
-	val, err := c.GetOrSet(key, ttl, func() (interface{}, error) {
+	val, err := c.GetOrSet(key, ttl, func() (any, error) {
 		return fn()
 	})
 	if err != nil {
 		return 0, err
 	}
-	// JSON deserializes numbers as float64
 	if i, ok := val.(float64); ok {
 		return int(i), nil
 	}
 	return 0, fmt.Errorf("unexpected type for key %s", key)
 }
 
-// GetOrSetFloat64 — удобная обёртка для GetOrSet с float64.
 func (c *ValkeyCache) GetOrSetFloat64(key string, ttl time.Duration, fn func() (float64, error)) (float64, error) {
-	val, err := c.GetOrSet(key, ttl, func() (interface{}, error) {
+	val, err := c.GetOrSet(key, ttl, func() (any, error) {
 		return fn()
 	})
 	if err != nil {
@@ -310,7 +288,6 @@ func (c *ValkeyCache) GetOrSetFloat64(key string, ttl time.Duration, fn func() (
 	return 0, fmt.Errorf("unexpected type for key %s", key)
 }
 
-// Close закрывает соединение с Valkey.
 func (c *ValkeyCache) Close() error {
 	if c == nil || c.client == nil {
 		return nil
@@ -318,7 +295,6 @@ func (c *ValkeyCache) Close() error {
 	return c.client.Close()
 }
 
-// IsAvailable проверяет доступность кэша.
 func (c *ValkeyCache) IsAvailable() bool {
 	if c == nil || c.client == nil {
 		return false

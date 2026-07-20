@@ -64,7 +64,7 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 	games, err := h.gameRepo.ListByDateRange(ctx, startOfMonth, endOfMonth)
 	if err != nil {
 		log.Error().Err(err).Int("year", req.Year).Int("month", req.Month).Msg("CalendarData: failed to list games")
-		appErr := apperrors.NewInternalError(err)
+		appErr := apperrors.Wrap(err, "CalendarHandler")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -102,7 +102,7 @@ func (h *CalendarHandler) CalendarICal(c *gin.Context) {
 	games, err := h.gameRepo.ListByDateRange(ctx, startRange, endRange)
 	if err != nil {
 		log.Error().Err(err).Msg("CalendarICal: failed to list games")
-		appErr := apperrors.NewInternalError(err)
+		appErr := apperrors.Wrap(err, "CalendarHandler")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
