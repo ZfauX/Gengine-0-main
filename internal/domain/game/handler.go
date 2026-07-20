@@ -336,6 +336,7 @@ func (h *GameHandler) Show(c *gin.Context) {
 		"ReviewsCount":  reviewsCount,
 		"CanApply":      canApply,
 		"csrf":          csrf.GetToken(c),
+		"BaseURL":       c.Request.Host,
 	})
 }
 

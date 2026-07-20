@@ -123,7 +123,7 @@ func (h *RoomHub) cleanupInactiveClients() cleanupResult {
 }
 
 // GetHealthStatus возвращает состояние WebSocket-хаба для health-check.
-func (h *RoomHub) GetHealthStatus() map[string]interface{} {
+func (h *RoomHub) GetHealthStatus() map[string]any {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -133,7 +133,7 @@ func (h *RoomHub) GetHealthStatus() map[string]interface{} {
 		roomCount++
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"status":       "healthy",
 		"total_conns":  h.totalConns,
 		"max_total":    h.maxTotalConns,

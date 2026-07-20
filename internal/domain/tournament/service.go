@@ -135,6 +135,7 @@ func (s *TournamentService) Apply(ctx context.Context, tournamentID, teamID, use
 	games, err := s.tournamentGameRepo.ListGames(ctx, tournamentID)
 	if err != nil {
 		log.Error().Err(err).Uint("tournament_id", tournamentID).Msg("Apply: failed to list tournament games")
+		return err
 	}
 	for _, g := range games {
 		_, err := s.tournamentTeamRepo.FindByGameAndTeam(ctx, g.ID, teamID)

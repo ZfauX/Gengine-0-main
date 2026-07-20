@@ -122,7 +122,7 @@ func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 	webPath, err := h.storage.Save("uploads/photos", file, header.Filename, userID, 10*1024*1024, allowedTypes)
 	if err != nil {
 		log.Error().Err(err).Str("filename", header.Filename).Msg("UploadPhoto: failed to save file")
-		appErr := apperr.NewInternalError(err)
+		appErr := apperr.Wrap(err, "PhotoHandler")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -140,7 +140,7 @@ func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 		if delErr := h.storage.Delete(webPath); delErr != nil {
 			log.Error().Err(delErr).Str("path", webPath).Msg("UploadPhoto: failed to delete uploaded file")
 		}
-		appErr := apperr.NewInternalError(err)
+		appErr := apperr.Wrap(err, "PhotoHandler")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -172,7 +172,7 @@ func (h *PhotoHandler) DeletePhoto(c *gin.Context) {
 			})
 		} else {
 			log.Error().Err(err).Int("photo_id", photoID).Msg("DeletePhoto: failed to get photo")
-			appErr := apperr.NewInternalError(err)
+			appErr := apperr.Wrap(err, "PhotoHandler")
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 				"error": appErr.Message,
 				"code":  appErr.Code,
@@ -185,7 +185,7 @@ func (h *PhotoHandler) DeletePhoto(c *gin.Context) {
 	isManager, err := h.coAuthorSvc.IsUserManager(c.Request.Context(), photo.GameID, userID)
 	if err != nil {
 		log.Error().Err(err).Int("photo_id", photoID).Msg("DeletePhoto: failed to check manager")
-		appErr := apperr.NewInternalError(err)
+		appErr := apperr.Wrap(err, "PhotoHandler")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -203,7 +203,7 @@ func (h *PhotoHandler) DeletePhoto(c *gin.Context) {
 
 	if err := h.photoService.Delete(photo.ID, userID); err != nil {
 		log.Error().Err(err).Uint("photo_id", photo.ID).Msg("DeletePhoto: failed to delete record")
-		appErr := apperr.NewInternalError(err)
+		appErr := apperr.Wrap(err, "PhotoHandler")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,

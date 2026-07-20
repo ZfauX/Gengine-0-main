@@ -180,8 +180,8 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 	cfg.Database.SSLMode = getEnvOrDefault("DB_SSLMODE", "disable")
-	cfg.Database.MaxOpenConns = getEnvAsInt("DB_MAX_OPEN_CONNS", 25)
-	cfg.Database.MaxIdleConns = getEnvAsInt("DB_MAX_IDLE_CONNS", 10)
+	cfg.Database.MaxOpenConns = getEnvAsInt("DB_MAX_OPEN_CONNS", 50)
+	cfg.Database.MaxIdleConns = getEnvAsInt("DB_MAX_IDLE_CONNS", 25)
 	if cfg.Database.ConnMaxLifetime, err = parseDuration("DB_CONN_MAX_LIFETIME", "30m"); err != nil {
 		return nil, err
 	}

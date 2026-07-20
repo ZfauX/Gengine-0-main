@@ -23,19 +23,18 @@ type RateLimiter struct {
 	window   time.Duration
 	limit    int
 	stopCh   chan struct{}
+	once     sync.Once
 }
 
 // NewRateLimiter создаёт новый лимитер. Параметр window задаёт временное окно (например, 1 минута),
 // limit — максимальное количество запросов в этом окне.
 func NewRateLimiter(window time.Duration, limit int) *RateLimiter {
-	rl := &RateLimiter{
+	return &RateLimiter{
 		visitors: make(map[string]*visitor),
 		window:   window,
 		limit:    limit,
 		stopCh:   make(chan struct{}),
 	}
-	go rl.cleanup()
-	return rl
 }
 
 // Stop останавливает фоновую горутину очистки.
@@ -45,6 +44,11 @@ func (rl *RateLimiter) Stop() {
 
 // Allow возвращает true, если запрос с ключом key разрешён.
 func (rl *RateLimiter) Allow(key string) bool {
+	// Ленивый запуск cleanup — горутина создаётся только при первом использовании
+	rl.once.Do(func() {
+		go rl.cleanup()
+	})
+
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 

@@ -16,7 +16,7 @@ import (
 // RegisterRoutes регистрирует маршруты для экспорта и импорта данных игры.
 // @tags export
 func RegisterRoutes(
-	router *gin.Engine,
+	router *gin.RouterGroup,
 	db *gorm.DB,
 	store storage.FileStorage,
 	cfg *config.Config,

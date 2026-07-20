@@ -9,7 +9,7 @@ import (
 
 // RegisterRoutes регистрирует маршруты календаря.
 // @tags calendar
-func RegisterRoutes(router *gin.Engine, gameRepo game.GameRepository) {
+func RegisterRoutes(router *gin.RouterGroup, gameRepo game.GameRepository) {
 	calendarHandler := NewCalendarHandler(gameRepo)
 
 	// @Summary Страница календаря

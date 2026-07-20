@@ -166,7 +166,7 @@ func TestGamePlayService_UseHint(t *testing.T) {
 	updatedProgress, err = progressSvc.GetCurrentProgress(context.Background(), passing.ID)
 	require.NoError(t, err)
 	assert.Equal(t, 2, updatedProgress.HintsUsed)
-	assert.Equal(t, 300+600, updatedProgress.PenaltySeconds)
+	assert.Equal(t, 300+300, updatedProgress.PenaltySeconds)
 }
 
 func TestGamePlayService_UseHint_Disabled(t *testing.T) {

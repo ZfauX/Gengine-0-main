@@ -107,7 +107,18 @@ func (app *App) SetupRouter() (*gin.Engine, error) {
 	if err := app.setupEngine(r); err != nil {
 		return nil, err
 	}
-	if err := app.registerAllRoutes(r); err != nil {
+
+	// Создаём группу для HTML-маршрутов с CSRF-защитой
+	htmlGroup := r.Group("")
+	htmlGroup.Use(csrf.Middleware(csrf.Options{
+		Secret: app.Config.Session.Secret,
+		ErrorFunc: func(c *gin.Context) {
+			c.String(403, "CSRF token mismatch")
+			c.Abort()
+		},
+	}))
+
+	if err := app.registerAllRoutes(r, htmlGroup); err != nil {
 		return nil, err
 	}
 
@@ -130,15 +141,7 @@ func (app *App) setupEngine(r *gin.Engine) error {
 	r.Use(middleware.LoggerMiddleware())
 	r.Use(sessions.Sessions("gengine_session", store))
 
-	r.Use(csrf.Middleware(csrf.Options{
-		Secret: app.Config.Session.Secret,
-		ErrorFunc: func(c *gin.Context) {
-			c.String(403, "CSRF token mismatch")
-			c.Abort()
-		},
-	}))
-
-	// API маршруты не требуют CSRF (используют JWT)
+	// API маршруты не требуют CSRF (используют JWT + X-CSRF-Token)
 	apiGroup := r.Group("/api")
 	apiGroup.Use(middleware.CSRFJSON())
 
@@ -152,18 +155,6 @@ func (app *App) setupEngine(r *gin.Engine) error {
 	render.SetTemplate(tmpl)
 
 	r.Use(middleware.ContextTimeout(30 * time.Second))
-	r.Use(middleware.SecurityHeadersMiddleware())
-	r.Use(middleware.GzipMiddleware())
-	r.Use(middleware.StaticCacheMiddleware())
-
-	// Настройка доверенных прокси для корректного определения реальных IP клиентов
-	if app.Config.Server.TrustedProxies != "" {
-		proxies := strings.Split(app.Config.Server.TrustedProxies, ",")
-		r.Use(middleware.TrustedProxyMiddleware(proxies))
-	}
-
-	r.Static("/static", filepath.Join(app.BaseDir, app.Config.Server.StaticDir))
-	r.Static("/uploads", filepath.Join(app.BaseDir, app.Config.Server.UploadsDir))
 
 	// 🔒 Swagger и Metrics доступны только авторизованным пользователям (защита от утечки информации)
 	r.GET("/swagger/*any", middleware.OptionalAuth(app.Deps.Services.Auth), func(c *gin.Context) {
@@ -199,6 +190,50 @@ func (app *App) setupEngine(r *gin.Engine) error {
 		c.JSON(statusCode, resp)
 	})
 
+	// SEO: sitemap.xml и robots.txt
+	r.GET("/sitemap.xml", func(c *gin.Context) {
+		c.XML(http.StatusOK, gin.H{
+			"urlset": gin.H{
+				"-xmlns": "http://www.sitemaps.org/schemas/sitemap/0.9",
+				"url": []gin.H{
+					{"loc": app.Config.Server.BaseURL + "/", "changefreq": "daily", "priority": "1.0"},
+					{"loc": app.Config.Server.BaseURL + "/games", "changefreq": "hourly", "priority": "0.9"},
+					{"loc": app.Config.Server.BaseURL + "/calendar", "changefreq": "daily", "priority": "0.7"},
+				},
+			},
+		})
+	})
+	r.GET("/robots.txt", func(c *gin.Context) {
+		c.String(http.StatusOK, "User-agent: *\nAllow: /\nSitemap: "+app.Config.Server.BaseURL+"/sitemap.xml\n")
+	})
+
+	// Offline page for Service Worker
+	r.GET("/offline", func(c *gin.Context) {
+		render.Page(c, http.StatusOK, "offline.html", gin.H{"Title": "Нет соединения"})
+	})
+
+	// Настройка доверенных прокси для корректного определения реальных IP клиентов
+	// Явно указываем доверенные прокси, чтобы предотвратить IP-spoofing
+	if app.Config.Server.TrustedProxies != "" {
+		proxies := strings.Split(app.Config.Server.TrustedProxies, ",")
+		trusted := make([]string, 0, len(proxies))
+		for _, p := range proxies {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				trusted = append(trusted, p)
+			}
+		}
+		if err := r.SetTrustedProxies(trusted); err != nil {
+			return fmt.Errorf("неверные доверенные прокси: %w", err)
+		}
+	} else {
+		// Без явной конфигурации — не доверяем ни одному прокси
+		r.SetTrustedProxies(nil)
+	}
+
+	r.Static("/static", filepath.Join(app.BaseDir, app.Config.Server.StaticDir))
+	r.Static("/uploads", filepath.Join(app.BaseDir, app.Config.Server.UploadsDir))
+
 	// ============================================================
 	// ГЛАВНАЯ СТРАНИЦА — используем OptionalAuth вместо дублирования логики
 	// ============================================================
@@ -225,21 +260,21 @@ func (app *App) setupEngine(r *gin.Engine) error {
 // РЕГИСТРАЦИЯ ВСЕХ МАРШРУТОВ
 // =============================================================================
 
-func (app *App) registerAllRoutes(r *gin.Engine) error {
-	app.registerAdminRoutes(r)
-	app.registerUserRoutes(r)
-	app.registerGameRoutes(r)
-	app.registerLevelRoutes(r)
-	app.registerTeamRoutes(r)
-	app.registerTournamentRoutes(r)
-	app.registerCalendarRoutes(r)
-	app.registerMonitorRoutes(r)
-	app.registerSocialRoutes(r)
-	if err := app.registerExportRoutes(r); err != nil {
+func (app *App) registerAllRoutes(r *gin.Engine, htmlGroup *gin.RouterGroup) error {
+	app.registerAdminRoutes(htmlGroup)
+	app.registerUserRoutes(htmlGroup)
+	app.registerGameRoutes(htmlGroup)
+	app.registerLevelRoutes(htmlGroup)
+	app.registerTeamRoutes(htmlGroup)
+	app.registerTournamentRoutes(htmlGroup)
+	app.registerCalendarRoutes(htmlGroup)
+	app.registerMonitorRoutes(htmlGroup)
+	app.registerSocialRoutes(htmlGroup)
+	if err := app.registerExportRoutes(htmlGroup); err != nil {
 		return fmt.Errorf("регистрация маршрутов экспорта: %w", err)
 	}
-	app.registerGameplayRoutes(r)
-	notification.RegisterRoutes(r, app.DB, app.Deps.Services.Auth, app.Deps.Hub)
+	app.registerGameplayRoutes(htmlGroup)
+	notification.RegisterRoutes(htmlGroup, app.DB, app.Deps.Services.Auth, app.Deps.Hub)
 	return nil
 }
 
@@ -432,7 +467,7 @@ func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.
 // РЕГИСТРАЦИЯ МАРШРУТОВ — ИСПОЛЬЗУЮТ ЗАВИСИМОСТИ ИЗ App.Deps
 // =============================================================================
 
-func (app *App) registerAdminRoutes(r *gin.Engine) {
+func (app *App) registerAdminRoutes(r *gin.RouterGroup) {
 	twoFactorSvc := user.NewTwoFactorService()
 
 	// Middleware для проверки 2FA (из domain/user чтобы избежать циклического импорта)
@@ -445,7 +480,7 @@ func (app *App) registerAdminRoutes(r *gin.Engine) {
 	_ = admin.RegisterRoutes(adminGroup, app.DB, app.Config, app.Deps.Services.Auth, app.Deps.Repos.User, app.Deps.Repos.Game, app.Hub)
 }
 
-func (app *App) registerUserRoutes(r *gin.Engine) {
+func (app *App) registerUserRoutes(r *gin.RouterGroup) {
 	user.RegisterRoutes(
 		r,
 		app.Config,
@@ -460,7 +495,7 @@ func (app *App) registerUserRoutes(r *gin.Engine) {
 	)
 }
 
-func (app *App) registerGameRoutes(r *gin.Engine) {
+func (app *App) registerGameRoutes(r *gin.RouterGroup) {
 	passingSvc := game.NewGamePassingService(app.DB, app.Deps.Services.Team, app.Deps.Services.CoAuthor, app.Deps.Services.Progress).
 		WithHub(app.Hub).
 		WithMonitorService(app.Deps.Services.Monitor)
@@ -487,7 +522,7 @@ func (app *App) registerGameRoutes(r *gin.Engine) {
 	})
 }
 
-func (app *App) registerLevelRoutes(r *gin.Engine) {
+func (app *App) registerLevelRoutes(r *gin.RouterGroup) {
 	level.RegisterRoutes(
 		r,
 		app.Deps.Services.Level,
@@ -501,7 +536,7 @@ func (app *App) registerLevelRoutes(r *gin.Engine) {
 	)
 }
 
-func (app *App) registerTeamRoutes(r *gin.Engine) {
+func (app *App) registerTeamRoutes(r *gin.RouterGroup) {
 	team.RegisterRoutes(
 		r,
 		app.Deps.Services.Team,
@@ -513,15 +548,15 @@ func (app *App) registerTeamRoutes(r *gin.Engine) {
 	)
 }
 
-func (app *App) registerTournamentRoutes(r *gin.Engine) {
+func (app *App) registerTournamentRoutes(r *gin.RouterGroup) {
 	tournament.RegisterRoutes(r, app.Deps.Services.Tournament, app.Deps.Services.Team, app.Config, app.Deps.Services.Auth)
 }
 
-func (app *App) registerCalendarRoutes(r *gin.Engine) {
+func (app *App) registerCalendarRoutes(r *gin.RouterGroup) {
 	calendar.RegisterRoutes(r, app.Deps.Repos.Game)
 }
 
-func (app *App) registerMonitorRoutes(r *gin.Engine) {
+func (app *App) registerMonitorRoutes(r *gin.RouterGroup) {
 	monitor.RegisterRoutes(
 		r,
 		app.DB,
@@ -538,11 +573,11 @@ func (app *App) registerMonitorRoutes(r *gin.Engine) {
 	)
 }
 
-func (app *App) registerSocialRoutes(r *gin.Engine) {
+func (app *App) registerSocialRoutes(r *gin.RouterGroup) {
 	social.RegisterRoutes(r, app.DB, app.Config, app.Deps.Services.Auth)
 }
 
-func (app *App) registerExportRoutes(r *gin.Engine) error {
+func (app *App) registerExportRoutes(r *gin.RouterGroup) error {
 	return export.RegisterRoutes(
 		r,
 		app.DB,
@@ -554,7 +589,7 @@ func (app *App) registerExportRoutes(r *gin.Engine) error {
 	)
 }
 
-func (app *App) registerGameplayRoutes(r *gin.Engine) {
+func (app *App) registerGameplayRoutes(r *gin.RouterGroup) {
 	protected := r.Group("/")
 	protected.Use(middleware.AuthRequired(app.Deps.Services.Auth))
 	game.RegisterGameplayRoutes(protected, app.Deps.Services.GameplayHandler, app.Deps.Services.CoAuthor)

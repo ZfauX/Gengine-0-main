@@ -53,11 +53,19 @@ func (h *SettingsHandler) SettingsPage(c *gin.Context) {
 	}
 
 	var settings *GameSetting
-	settings, err = h.gameService.GetSettingsWithDefaults(c.Request.Context(), g.ID)
-	if err != nil {
-		log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.SettingsPage: failed to get settings")
-		render.RenderErrorPage(c, http.StatusInternalServerError)
-		return
+	// Игра уже загружена с Preload("GameSetting") через GetByID
+	if g.GameSetting.ID != 0 {
+		settings = &g.GameSetting
+	} else {
+		settings = &GameSetting{
+			GameID:                   g.ID,
+			AllowHints:               true,
+			HintPenaltySeconds:       300,
+			MaxHints:                 3,
+			PerLevelTimeLimit:        0,
+			HideAnswersUntilFinished: false,
+			AutoStart:                false,
+		}
 	}
 
 	isAdmin := middleware.IsAdmin(c)

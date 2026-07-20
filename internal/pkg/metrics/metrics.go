@@ -151,6 +151,10 @@ func IncGamesDeleted() {
 	GamesTotal.WithLabelValues("deleted").Inc()
 }
 
+func IncGames(status string) {
+	GamesTotal.WithLabelValues(status).Inc()
+}
+
 func SetActiveGames(count float64) {
 	ActiveGames.Set(count)
 }

@@ -4,6 +4,7 @@ package health
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"gengine-0/internal/pkg/cache"
@@ -18,7 +19,6 @@ type Checker struct {
 	db     *gorm.DB
 	hub    *ws.RoomHub
 	valkey cache.CacheStore
-	// failedEmailThreshold — порог failed email для degraded status
 	failedEmailThreshold int
 }
 
@@ -34,57 +34,61 @@ func NewCheckerWithValkey(db *gorm.DB, hub *ws.RoomHub, valkey cache.CacheStore)
 
 // Status представляет статус компонента.
 type Status struct {
-	Status  string `json:"status"`  // "ok" или "error"
-	Message string `json:"message"` // опциональное сообщение
-	Latency string `json:"latency"` // время ответа в миллисекундах
+	Status  string `json:"status"`
+	Message string `json:"message"`
+	Latency string `json:"latency"`
 }
 
 // HealthResponse общий ответ health-чека.
 type HealthResponse struct {
-	Status     string            `json:"status"`     // общий статус: "ok" или "degraded" или "error"
-	Timestamp  string            `json:"timestamp"`  // время проверки
-	Components map[string]Status `json:"components"` // статус каждого компонента
+	Status     string            `json:"status"`
+	Timestamp  string            `json:"timestamp"`
+	Components map[string]Status `json:"components"`
 }
 
-// Check выполняет проверку всех компонентов и возвращает HealthResponse.
+// Check выполняет параллельную проверку всех компонентов.
 func (c *Checker) Check(ctx context.Context) HealthResponse {
 	components := make(map[string]Status)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
 	overall := "ok"
 
-	// Проверка БД
-	dbStatus := c.checkDatabase(ctx)
-	components["database"] = dbStatus
-	if dbStatus.Status != "ok" {
-		overall = "degraded"
+	// Создаём дочерний контекст с общим таймаутом 5 секунд
+	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	// Функция для параллельного выполнения проверок
+	check := func(name string, fn func(context.Context) Status) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			status := fn(checkCtx)
+			mu.Lock()
+			components[name] = status
+			if status.Status != "ok" {
+				overall = "degraded"
+			}
+			mu.Unlock()
+		}()
 	}
 
-	// Проверка WebSocket-хаба
-	hubStatus := c.checkHub()
-	components["websocket_hub"] = hubStatus
-	if hubStatus.Status != "ok" {
-		overall = "degraded"
-	}
+	check("database", c.checkDatabase)
+	check("websocket_hub", c.checkHub)
 
-	// Проверка Valkey (если настроен)
 	if c.valkey != nil {
-		valkeyStatus := c.checkValkey(ctx)
-		components["valkey"] = valkeyStatus
-		if valkeyStatus.Status != "ok" {
-			overall = "degraded"
-		}
+		check("valkey", c.checkValkey)
 	}
 
-	// Проверка email queue (failed emails)
-	emailStatus := c.checkEmailQueue()
-	components["email_queue"] = emailStatus
-	if emailStatus.Status != "ok" {
-		overall = "degraded"
-	}
+	check("email_queue", c.checkEmailQueue)
+
+	wg.Wait()
 
 	// Если оба компонента в ошибке — ставим "error"
-	if dbStatus.Status == "error" && hubStatus.Status == "error" {
+	mu.Lock()
+	if components["database"].Status == "error" && components["websocket_hub"].Status == "error" {
 		overall = "error"
 	}
+	mu.Unlock()
 
 	return HealthResponse{
 		Status:     overall,
@@ -104,10 +108,7 @@ func (c *Checker) checkDatabase(ctx context.Context) Status {
 			Latency: time.Since(start).String(),
 		}
 	}
-	// Устанавливаем таймаут для ping
-	pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	if err := sqlDB.PingContext(pingCtx); err != nil {
+	if err := sqlDB.PingContext(ctx); err != nil {
 		return Status{
 			Status:  "error",
 			Message: "ping failed: " + err.Error(),
@@ -122,14 +123,13 @@ func (c *Checker) checkDatabase(ctx context.Context) Status {
 }
 
 // checkHub проверяет, что WebSocket-хаб работает (не закрыт).
-func (c *Checker) checkHub() Status {
+func (c *Checker) checkHub(ctx context.Context) Status {
 	if c.hub == nil {
 		return Status{
 			Status:  "error",
 			Message: "hub is nil",
 		}
 	}
-	// Проверяем, что хаб не остановлен
 	if c.hub.IsStopped() {
 		return Status{
 			Status:  "error",
@@ -145,37 +145,40 @@ func (c *Checker) checkHub() Status {
 // checkValkey проверяет соединение с Valkey (если настроен).
 func (c *Checker) checkValkey(ctx context.Context) Status {
 	if c.valkey == nil {
-		// Valkey не настроен — это не ошибка
 		return Status{
 			Status:  "ok",
 			Message: "not configured",
 		}
 	}
 	start := time.Now()
-	// Проверяем доступность через IsAvailable, если доступно
-	if vc, ok := c.valkey.(interface{ IsAvailable() bool }); ok {
-		if !vc.IsAvailable() {
+	// Используем Ping напрямую, если CacheStore её поддерживает
+	if vc, ok := c.valkey.(*cache.ValkeyCache); ok {
+		if vc.IsAvailable() {
 			return Status{
-				Status:  "error",
-				Message: "valkey connection failed",
+				Status:  "ok",
+				Message: "connected",
 				Latency: time.Since(start).String(),
 			}
 		}
+		return Status{
+			Status:  "error",
+			Message: "valkey connection failed",
+			Latency: time.Since(start).String(),
+		}
 	}
+	// Для неизвестных реализаций — считаем ok
 	return Status{
 		Status:  "ok",
-		Message: "connected",
-		Latency: time.Since(start).String(),
+		Message: "unknown cache type, assumed ok",
 	}
 }
 
 // checkEmailQueue проверяет количество failed email в очереди.
-func (c *Checker) checkEmailQueue() Status {
+func (c *Checker) checkEmailQueue(ctx context.Context) Status {
 	start := time.Now()
 
-	// Проверяем количество failed email
 	var failedCount int64
-	if err := c.db.Model(&email.QueuedEmail{}).Where("status = ?", "failed").Count(&failedCount).Error; err != nil {
+	if err := c.db.WithContext(ctx).Model(&email.QueuedEmail{}).Where("status = ?", "failed").Count(&failedCount).Error; err != nil {
 		return Status{
 			Status:  "error",
 			Message: "failed to check email queue: " + err.Error(),
@@ -183,6 +186,7 @@ func (c *Checker) checkEmailQueue() Status {
 		}
 	}
 
+	// Используем приблизительную оценку: если строк > порога — degraded
 	if failedCount > int64(c.failedEmailThreshold) {
 		return Status{
 			Status:  "degraded",

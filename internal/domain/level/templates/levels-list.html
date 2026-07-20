@@ -1,57 +1,118 @@
 {{define "levels-list.html"}}
 <div class="max-w-7xl mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 mb-6">Уровни игры</h1>
+    <h1 class="text-2xl font-bold text-gray-800 mb-6" id="page-title">Уровни игры</h1>
 
     {{if .Error}}
-    <div class="flash flash-error">{{.Error}}</div>
+    <div class="flash flash-error" role="alert">{{.Error}}</div>
     {{end}}
 
     <div class="mb-6">
-        <a href="/games/{{.GameID}}/levels/new" class="btn btn-primary text-sm">+ Добавить уровень</a>
+        <a href="/games/{{.GameID}}/levels/new" class="btn btn-primary text-sm" aria-label="Создать новый уровень">+ Добавить уровень</a>
     </div>
 
     {{if .Levels}}
-    <div class="space-y-3">
+    <div id="level-list" class="space-y-3" role="list" aria-label="Список уровней">
         {{range .Levels}}
-        <div class="card flex flex-wrap items-center gap-3 p-4 hover:shadow-md transition">
+        <div class="card flex flex-wrap items-center gap-3 p-4 hover:shadow-md transition" role="listitem" draggable="true"
+             data-level-id="{{.ID}}" data-position="{{.Position}}"
+             ondragstart="dragLevel(event)" ondragover="dragOverLevel(event)" ondrop="dropLevel(event, {{$.GameID}})"
+             aria-label="Уровень {{.Name}}, позиция {{.Position}}">
+            <div class="cursor-grab active:cursor-grabbing touch-none" aria-label="Перетащить для сортировки">
+                <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"/></svg>
+            </div>
             <div class="flex-1 min-w-[180px]">
-                <a href="/games/{{$.GameID}}/levels/{{.ID}}" class="text-blue-600 hover:underline font-medium text-gray-800">{{.Name}}</a>
-                <span class="text-sm text-gray-500 ml-2">(позиция: {{.Position}})</span>
+                <a href="/games/{{$.GameID}}/levels/{{.ID}}" class="text-blue-600 hover:underline font-medium text-gray-800" aria-label="Перейти к уровню {{.Name}}">{{.Name}}</a>
+                <span class="text-sm text-gray-500 ml-2">(позиция: <span class="position-badge">{{.Position}}</span>)</span>
             </div>
             <div class="flex flex-wrap items-center gap-2">
-                <a href="/games/{{$.GameID}}/levels/{{.ID}}/edit" class="btn btn-outline text-xs" title="Редактировать">✎</a>
+                <a href="/games/{{$.GameID}}/levels/{{.ID}}/edit" class="btn btn-outline text-xs" aria-label="Редактировать уровень {{.Name}}">✎</a>
                 <a href="/games/{{$.GameID}}/levels/{{.ID}}/questions" class="btn btn-outline text-xs">Вопросы</a>
-                <form action="/games/{{$.GameID}}/levels/{{.ID}}/duplicate" method="POST" class="inline">
-                    <input type="hidden" name="_csrf" value="{{$.csrf}}">
-                    <button type="submit" class="btn btn-primary text-xs">Дублировать</button>
-                </form>
-                <form action="/games/{{$.GameID}}/levels/{{.ID}}/move" method="POST" class="inline">
-                    <input type="hidden" name="_csrf" value="{{$.csrf}}">
-                    <input type="hidden" name="direction" value="up">
-                    <button type="submit" class="btn btn-outline text-xs px-2 py-1" title="Вверх">↑</button>
-                </form>
-                <form action="/games/{{$.GameID}}/levels/{{.ID}}/move" method="POST" class="inline">
-                    <input type="hidden" name="_csrf" value="{{$.csrf}}">
-                    <input type="hidden" name="direction" value="down">
-                    <button type="submit" class="btn btn-outline text-xs px-2 py-1" title="Вниз">↓</button>
-                </form>
-                <form action="/games/{{$.GameID}}/levels/{{.ID}}/delete" method="POST" class="inline" onsubmit="return confirm('Удалить уровень?')">
-                    <input type="hidden" name="_csrf" value="{{$.csrf}}">
-                    <button type="submit" class="btn btn-danger text-xs">Удалить</button>
-                </form>
+                <button type="button" onclick="duplicateLevel({{$.GameID}}, {{.ID}})" class="btn btn-primary text-xs" aria-label="Дублировать уровень {{.Name}}">Дублировать</button>
+                <button type="button" onclick="moveLevel({{$.GameID}}, {{.ID}}, 'up')" class="btn btn-outline text-xs px-2 py-1" aria-label="Переместить уровень {{.Name}} вверх" title="Вверх">↑</button>
+                <button type="button" onclick="moveLevel({{$.GameID}}, {{.ID}}, 'down')" class="btn btn-outline text-xs px-2 py-1" aria-label="Переместить уровень {{.Name}} вниз" title="Вниз">↓</button>
+                <button type="button" onclick="deleteLevel({{$.GameID}}, {{.ID}})" class="btn btn-danger text-xs" aria-label="Удалить уровень {{.Name}}">Удалить</button>
             </div>
         </div>
         {{end}}
     </div>
     {{else}}
-    <div class="card text-center py-12">
+    <div class="card text-center py-12" role="status">
         <p class="text-gray-500">Уровней пока нет.</p>
         <p class="mt-2 text-sm text-gray-400"><a href="/games/{{.GameID}}/levels/new" class="text-blue-600 hover:underline">Создайте первый уровень</a></p>
     </div>
     {{end}}
 
     <div class="mt-6">
-        <a href="/games/{{.GameID}}" class="btn btn-outline text-sm">← Назад к игре</a>
+        <a href="/games/{{.GameID}}" class="btn btn-outline text-sm" aria-label="Вернуться к игре">← Назад к игре</a>
     </div>
 </div>
+
+<script nonce="{{.csp_nonce}}">
+function moveLevel(gameId, levelId, direction) {
+    fetch('/games/' + gameId + '/levels/' + levelId + '/move', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: '_csrf={{.csrf}}&direction=' + direction
+    }).then(function(r) {
+        if (r.ok || r.redirected) window.location.reload();
+        else window.showToast('Ошибка перемещения', 'error');
+    }).catch(function() { window.showToast('Ошибка сети', 'error'); });
+}
+
+function deleteLevel(gameId, levelId) {
+    if (!confirm('Удалить уровень?')) return;
+    fetch('/games/' + gameId + '/levels/' + levelId + '/delete', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: '_csrf={{.csrf}}'
+    }).then(function(r) {
+        if (r.ok || r.redirected) window.location.reload();
+        else window.showToast('Ошибка удаления', 'error');
+    }).catch(function() { window.showToast('Ошибка сети', 'error'); });
+}
+
+function duplicateLevel(gameId, levelId) {
+    fetch('/games/' + gameId + '/levels/' + levelId + '/duplicate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: '_csrf={{.csrf}}'
+    }).then(function(r) {
+        if (r.ok || r.redirected) window.location.reload();
+        else window.showToast('Ошибка дублирования', 'error');
+    }).catch(function() { window.showToast('Ошибка сети', 'error'); });
+}
+
+// Drag and drop sorting
+let dragSrcEl = null;
+function dragLevel(e) {
+    dragSrcEl = e.target.closest('[draggable]');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', '');
+}
+function dragOverLevel(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    var target = e.target.closest('[draggable]');
+    if (target && target !== dragSrcEl) {
+        target.style.borderBottom = '2px solid #3B82F6';
+    }
+}
+function dropLevel(e, gameId) {
+    e.preventDefault();
+    var target = e.target.closest('[draggable]');
+    if (target && target !== dragSrcEl) {
+        target.style.borderBottom = '';
+        var fromId = dragSrcEl.dataset.levelId;
+        var toId = target.dataset.levelId;
+        fetch('/games/' + gameId + '/levels/' + fromId + '/move-to/' + toId, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: '_csrf={{.csrf}}'
+        }).then(function(r) {
+            if (r.ok || r.redirected) window.location.reload();
+            else window.showToast('Ошибка сортировки', 'error');
+        });
+    }
+}
+</script>
 {{end}}

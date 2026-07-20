@@ -105,9 +105,13 @@ func (h *RoomHub) GetStats() (total int, perIP map[string]int) {
 	return h.totalConns, perIPCopy
 }
 
-// Run запускает основной цикл обработки событий хаба.
+// Run запускает основной цикл обработки событий хаба в фоновой горутине.
 func (h *RoomHub) Run() {
 	h.wg.Add(1)
+	go h.runLoop()
+}
+
+func (h *RoomHub) runLoop() {
 	defer h.wg.Done()
 
 	for {
@@ -215,11 +219,14 @@ func (h *RoomHub) Stop() {
 	h.stopped = true
 	h.mu.Unlock()
 
-	// Отправляем CloseMessage всем клиентам и закрываем соединения
+	// Сначала закрываем h.done, чтобы Run() и cleanup завершились
+	close(h.done)
+	h.wg.Wait()
+
+	// Теперь безопасно закрываем все соединения (Run() уже не рассылает)
 	h.mu.Lock()
 	for roomID, room := range h.rooms {
 		for client := range room {
-			// Отправляем сообщение о закрытии
 			_ = client.Conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, "сервер завершает работу"))
 			client.Close()
 			delete(room, client)
@@ -228,8 +235,6 @@ func (h *RoomHub) Stop() {
 	}
 	h.mu.Unlock()
 
-	close(h.done)
-	h.wg.Wait()
 	log.Info().Msg("RoomHub: stopped")
 }
 

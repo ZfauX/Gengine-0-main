@@ -39,7 +39,7 @@ func ValidateGameDates(startsAt, registrationDeadline *time.Time) error {
 	if startsAt != nil && startsAt.Before(time.Now()) {
 		return errors.New("дата начала не может быть в прошлом")
 	}
-	if registrationDeadline != nil && startsAt != nil && registrationDeadline.After(*startsAt) {
+	if registrationDeadline != nil && startsAt != nil && !registrationDeadline.Before(*startsAt) {
 		return errors.New("крайний срок регистрации не может быть позже даты начала")
 	}
 	return nil

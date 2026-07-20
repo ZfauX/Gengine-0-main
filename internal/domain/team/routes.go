@@ -14,7 +14,7 @@ import (
 // @tags teams
 // @tags invitations
 func RegisterRoutes(
-	r *gin.Engine,
+	r *gin.RouterGroup,
 	teamService *TeamService,
 	invitationService *InvitationService,
 	cfg *config.Config,

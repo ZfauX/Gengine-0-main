@@ -1,0 +1,282 @@
+{{define "games-new-wizard.html"}}
+<div class="max-w-3xl mx-auto">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Новая игра</h1>
+
+    <!-- Breadcrumb -->
+    <nav class="flex mb-6" aria-label="Breadcrumb">
+        <ol class="inline-flex items-center space-x-1 md:space-x-3">
+            <li class="inline-flex items-center">
+                <a href="/" class="text-gray-700 hover:text-blue-600 text-sm">Главная</a>
+            </li>
+            <li>
+                <div class="flex items-center">
+                    <svg class="w-6 h-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path>
+                    </svg>
+                    <span class="ml-1 text-gray-500 text-sm md:ml-2">Создать игру</span>
+                </div>
+            </li>
+        </ol>
+    </nav>
+
+    <!-- Wizard Steps -->
+    <div class="card">
+        <!-- Progress bar -->
+        <div class="flex items-center justify-between mb-8">
+            {{range $i, $step := .WizardSteps}}
+            <div class="flex flex-col items-center flex-1 {{if gt $i 0}}border-t-2 {{if lt $i $.CurrentStep}}border-blue-600{{else}}border-gray-300{{end}} pt-4{{end}}">
+                <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold {{if lt $i $.CurrentStep}}bg-blue-600 text-white{{else if eq $i $.CurrentStep}}bg-blue-600 text-white ring-4 ring-blue-200{{else}}bg-gray-200 text-gray-500{{end}}">
+                    {{if lt $i $.CurrentStep}}✓{{else}}{{add $i 1}}{{end}}
+                </div>
+                <span class="text-xs mt-2 text-gray-600 hidden sm:block">{{.Name}}</span>
+            </div>
+            {{end}}
+        </div>
+
+        {{if .Error}}
+        <div class="flash flash-error mb-4">{{.Error}}</div>
+        {{end}}
+
+        <form id="wizardForm" action="/games/new" method="POST" enctype="multipart/form-data" class="space-y-4">
+            <input type="hidden" name="_csrf" value="{{.csrf}}">
+
+            <!-- Step 1: Основные данные -->
+            <div id="step1" class="wizard-step {{if ne $.CurrentStep 0}}hidden{{end}}">
+                <h2 class="text-lg font-semibold text-gray-800 mb-4">Основные данные</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label for="name" class="block text-sm font-medium text-gray-700 mb-1">Название игры *</label>
+                        <input type="text" name="name" id="name" value="{{.Name}}" required
+                               minlength="3" maxlength="100"
+                               class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                               placeholder="Например: Тайны старого города">
+                        {{if .Errors.Name}}<p class="text-red-500 text-xs mt-1">{{.Errors.Name}}</p>{{end}}
+                    </div>
+
+                    <div>
+                        <label for="description" class="block text-sm font-medium text-gray-700 mb-1">Описание</label>
+                        <textarea name="description" id="description" rows="4"
+                                  class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                  placeholder="Краткое описание игры, сюжет, атмосфера..."
+                                  maxlength="2000">{{.Description}}</textarea>
+                        <p class="text-xs text-gray-400 mt-1">{{.Description | len}}/2000 символов</p>
+                    </div>
+
+                    <div>
+                        <label for="max_team_number" class="block text-sm font-medium text-gray-700 mb-1">Макс. количество команд *</label>
+                        <input type="number" name="max_team_number" id="max_team_number" value="{{.MaxTeamNumber}}" min="1" max="100" required
+                               class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                        {{if .Errors.MaxTeamNumber}}<p class="text-red-500 text-xs mt-1">{{.Errors.MaxTeamNumber}}</p>{{end}}
+                    </div>
+
+                    <div>
+                        <label for="visibility" class="block text-sm font-medium text-gray-700 mb-1">Видимость *</label>
+                        <select name="visibility" id="visibility" required
+                                class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                            <option value="public" {{if eq .Visibility "public"}}selected{{end}}>Публичная (видна всем)</option>
+                            <option value="private" {{if eq .Visibility "private"}}selected{{end}}>Приватная (только по ссылке)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 2: Даты -->
+            <div id="step2" class="wizard-step {{if ne $.CurrentStep 1}}hidden{{end}}">
+                <h2 class="text-lg font-semibold text-gray-800 mb-4">Даты и сроки</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label for="starts_at" class="block text-sm font-medium text-gray-700 mb-1">Дата и время начала</label>
+                        <input type="datetime-local" name="starts_at" id="starts_at" value="{{.StartsAt}}"
+                               class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                        <p class="text-xs text-gray-400 mt-1">Оставьте пустым для игры без привязки ко времени</p>
+                        {{if .Errors.StartsAt}}<p class="text-red-500 text-xs mt-1">{{.Errors.StartsAt}}</p>{{end}}
+                    </div>
+
+                    <div>
+                        <label for="registration_deadline" class="block text-sm font-medium text-gray-700 mb-1">Крайний срок регистрации</label>
+                        <input type="datetime-local" name="registration_deadline" id="registration_deadline" value="{{.RegistrationDeadline}}"
+                               class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                        <p class="text-xs text-gray-400 mt-1">До этой даты команды могут подать заявку</p>
+                        {{if .Errors.RegistrationDeadline}}<p class="text-red-500 text-xs mt-1">{{.Errors.RegistrationDeadline}}</p>{{end}}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 3: Обложка -->
+            <div id="step3" class="wizard-step {{if ne $.CurrentStep 2}}hidden{{end}}">
+                <h2 class="text-lg font-semibold text-gray-800 mb-4">Обложка игры</h2>
+                <p class="text-sm text-gray-500 mb-4">Добавьте обложку, чтобы игра выглядела привлекательнее в списке</p>
+
+                <div id="coverDropZone" class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-500 transition cursor-pointer">
+                    <input type="file" name="cover" id="cover" accept="image/jpeg,image/png,image/webp" class="hidden">
+                    <div id="coverPlaceholder">
+                        <svg class="mx-auto h-16 w-16 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                            <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                        <p class="mt-3 text-sm text-gray-600">Перетащите изображение сюда или <span class="text-blue-600 font-medium">выберите файл</span></p>
+                        <p class="mt-1 text-xs text-gray-400">JPG, PNG или WebP (макс. 5MB)</p>
+                    </div>
+                    <div id="coverPreview" class="hidden">
+                        <img id="coverImg" class="mx-auto max-h-48 rounded-lg" alt="Preview">
+                        <p class="mt-2 text-sm text-green-600">✓ Файл выбран</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 4: Настройки -->
+            <div id="step4" class="wizard-step {{if ne $.CurrentStep 3}}hidden{{end}}">
+                <h2 class="text-lg font-semibold text-gray-800 mb-4">Настройки</h2>
+                <div class="space-y-4">
+                    <label class="flex items-center gap-3">
+                        <input type="checkbox" name="is_draft" id="is_draft" {{if .IsDraft}}checked{{end}}
+                               class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                        <div>
+                            <span class="font-medium text-gray-800">Черновик</span>
+                            <p class="text-sm text-gray-500">Сохранить как черновик (не публиковать сразу)</p>
+                        </div>
+                    </label>
+
+                    <div class="p-4 bg-blue-50 rounded-lg">
+                        <h3 class="text-sm font-medium text-blue-800 mb-2">ℹ️ Что дальше?</h3>
+                        <ul class="text-sm text-blue-700 space-y-1">
+                            <li>• После создания вы сможете добавить уровни</li>
+                            <li>• Настроить настройки игры</li>
+                            <li>• Пригласить соавторов</li>
+                            <li>• Опубликовать игру для участников</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Navigation buttons -->
+            <div class="flex flex-wrap gap-3 pt-4 border-t border-gray-200">
+                {{if gt $.CurrentStep 0}}
+                <button type="button" id="prevBtn" class="btn btn-outline text-sm">← Назад</button>
+                {{else}}
+                <a href="/games" class="btn btn-outline text-sm">Отмена</a>
+                {{end}}
+                {{if lt $.CurrentStep 3}}
+                <button type="button" id="nextBtn" class="btn btn-primary text-sm ml-auto">Далее →</button>
+                {{else}}
+                <button type="submit" class="btn btn-primary text-sm ml-auto">Создать игру</button>
+                {{end}}
+            </div>
+        </form>
+    </div>
+</div>
+
+<script nonce="{{.csp_nonce}}">
+    (function() {
+        let currentStep = parseInt('{{$.CurrentStep}}') || 0;
+        const totalSteps = 4;
+        const form = document.getElementById('wizardForm');
+        const nextBtn = document.getElementById('nextBtn');
+        const prevBtn = document.getElementById('prevBtn');
+
+        function showStep(step) {
+            document.querySelectorAll('.wizard-step').forEach(function(el, i) {
+                el.classList.toggle('hidden', i !== step);
+            });
+            if (prevBtn) prevBtn.classList.toggle('hidden', step === 0);
+            if (nextBtn) nextBtn.classList.toggle('hidden', step === totalSteps - 1);
+            currentStep = step;
+        }
+
+        if (nextBtn) {
+            nextBtn.addEventListener('click', function() {
+                if (!validateStep(currentStep)) return;
+                if (currentStep < totalSteps - 1) showStep(currentStep + 1);
+            });
+        }
+
+        if (prevBtn) {
+            prevBtn.addEventListener('click', function() {
+                if (currentStep > 0) showStep(currentStep - 1);
+            });
+        }
+
+        function validateStep(step) {
+            if (step === 0) {
+                const name = document.getElementById('name');
+                if (!name.value.trim() || name.value.trim().length < 3) {
+                    showToast('Введите название игры (минимум 3 символа)', 'error');
+                    name.focus();
+                    return false;
+                }
+                const maxTeam = document.getElementById('max_team_number');
+                if (!maxTeam.value || parseInt(maxTeam.value) < 1) {
+                    showToast('Укажите корректное количество команд', 'error');
+                    maxTeam.focus();
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // Cover upload
+        const dropZone = document.getElementById('coverDropZone');
+        const fileInput = document.getElementById('cover');
+        const placeholder = document.getElementById('coverPlaceholder');
+        const preview = document.getElementById('coverPreview');
+        const coverImg = document.getElementById('coverImg');
+
+        if (dropZone && fileInput) {
+            dropZone.addEventListener('click', function(e) {
+                if (e.target.tagName !== 'INPUT') fileInput.click();
+            });
+
+            fileInput.addEventListener('change', function() {
+                if (this.files[0]) handleFile(this.files[0]);
+            });
+
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(function(name) {
+                dropZone.addEventListener(name, function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                });
+            });
+
+            dropZone.addEventListener('dragover', function() {
+                dropZone.classList.add('border-blue-500', 'bg-blue-50');
+            });
+            dropZone.addEventListener('dragleave', function() {
+                dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+            });
+            dropZone.addEventListener('drop', function(e) {
+                dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+                if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+            });
+
+            function handleFile(file) {
+                const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
+                if (validTypes.indexOf(file.type) === -1) {
+                    showToast('Неподдерживаемый формат. Используйте JPG, PNG или WebP.', 'error');
+                    return;
+                }
+                if (file.size > 5 * 1024 * 1024) {
+                    showToast('Файл слишком большой. Максимум 5MB.', 'error');
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    coverImg.src = e.target.result;
+                    placeholder.classList.add('hidden');
+                    preview.classList.remove('hidden');
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        // Character counter for description
+        const desc = document.getElementById('description');
+        if (desc) {
+            desc.addEventListener('input', function() {
+                const counter = this.nextElementSibling;
+                if (counter && counter.classList.contains('text-xs')) {
+                    counter.textContent = this.value.length + '/2000 символов';
+                }
+            });
+        }
+    })();
+</script>
+{{end}}

@@ -1,5 +1,19 @@
--- Переименовываем колонку token в token_hash и хешируем существующие токены.
--- Это необходимо для безопасности: токены больше не хранятся в открытом виде.
+-- Хеширование существующих токенов.
+-- Zero-downtime: добавляем новую колонку, хешируем данные, затем удаляем старую.
 
-ALTER TABLE password_reset_tokens RENAME COLUMN token TO token_hash;
-ALTER TABLE email_verification_tokens RENAME COLUMN token TO token_hash;
+-- 1. Добавляем новую колонку для хеша
+ALTER TABLE password_reset_tokens ADD COLUMN IF NOT EXISTS token_hash TEXT;
+ALTER TABLE email_verification_tokens ADD COLUMN IF NOT EXISTS token_hash TEXT;
+
+-- 2. Хешируем существующие токены (в приложении)
+-- На этом этапе приложение продолжает работать со старой колонкой token,
+-- но также пишет новые токены в token_hash. Старый код читает token,
+-- новый код читает token_hash. 
+
+-- 3. Миграция на уровне приложения:
+-- После деплоя новой версии, которая пишет token_hash,
+-- запускается фоновая задача для хеширования старых токенов.
+-- Когда все старые токены обработаны, удаляем колонку token.
+
+-- Примечание: ALTER TABLE RENAME блокирует таблицу.
+-- Вместо этого используем ADD COLUMN + фоновое хеширование + DROP COLUMN.

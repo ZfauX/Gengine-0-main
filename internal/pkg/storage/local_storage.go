@@ -84,6 +84,7 @@ func (s *LocalStorage) Save(baseDir string, reader io.Reader, originalName strin
 	}
 
 	// Проверка MIME-типа, если заданы разрешённые
+	// NOTE: http.DetectContentType определяет WebP как image/webp
 	if len(allowedMIMETypes) > 0 {
 		contentType := http.DetectContentType(header[:n])
 		// Убираем параметры (charset и т.п.)

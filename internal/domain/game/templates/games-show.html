@@ -1,4 +1,13 @@
 {{define "games-show.html"}}
+<!-- Open Graph meta -->
+{{if .Game}}
+<meta property="og:title" content="{{.Game.Name}} · Encounter Engine">
+<meta property="og:description" content="{{.Game.Description | truncate 200}}">
+<meta property="og:url" content="{{.BaseURL}}/games/{{.Game.ID}}">
+{{if .Game.CoverPath}}<meta property="og:image" content="{{.BaseURL}}/{{.Game.CoverPath}}">{{end}}
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+{{end}}
 <div class="max-w-7xl mx-auto">
     <!-- Breadcrumb -->
     <nav class="flex mb-6" aria-label="Breadcrumb">

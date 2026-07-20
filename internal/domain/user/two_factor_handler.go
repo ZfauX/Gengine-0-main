@@ -103,7 +103,7 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 	}
 
 	// Сохраняем пользователя
-	if err := h.userRepo.Update(c.Request.Context(), user.ID, map[string]interface{}{
+	if err := h.userRepo.Update(c.Request.Context(), user.ID, map[string]any{
 		"two_factor_enabled":      true,
 		"two_factor_secret":       user.TwoFactorSecret,
 		"two_factor_backup_codes": user.TwoFactorBackupCodes,
@@ -181,7 +181,7 @@ func (h *TwoFactorHandler) Disable(c *gin.Context) {
 	h.twoFactorSvc.Disable2FA(user)
 
 	// Сохраняем
-	if err := h.userRepo.Update(c.Request.Context(), user.ID, map[string]interface{}{
+	if err := h.userRepo.Update(c.Request.Context(), user.ID, map[string]any{
 		"two_factor_enabled":      false,
 		"two_factor_secret":       "",
 		"two_factor_backup_codes": "",

@@ -290,7 +290,7 @@
             });
         });
 
-        // Hint button via AJAX
+        // Hint button via AJAX — показывает toast вместо редиректа
         const hintBtn = document.getElementById('hint-btn');
         if (hintBtn) {
             hintBtn.addEventListener('click', function() {
@@ -301,19 +301,32 @@
 
                 fetch('/game/' + passingId + '/hint', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: '_csrf=' + encodeURIComponent(csrfToken)
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRF-TOKEN': csrfToken
+                    }
                 })
                 .then(r => {
                     if (r.ok || r.redirected) {
-                        showMessage('Подсказка использована. Страница обновится...', 'success');
-                        setTimeout(() => window.location.reload(), 800);
+                        // Получаем hint из query param
+                        const hint = new URLSearchParams(window.location.search).get('hint');
+                        if (hint) {
+                            showToast('💡 Подсказка: ' + decodeURIComponent(hint), 'info');
+                        } else {
+                            showToast('Подсказка использована. Страница обновится...', 'success');
+                        }
+                        setTimeout(() => window.location.reload(), 1200);
                     } else {
                         return r.text().then(t => { throw new Error(t); });
                     }
                 })
                 .catch(err => {
-                    showMessage('Ошибка: ' + (err.message || 'не удалось использовать подсказку'), 'error');
+                    const errorMsg = String(err.message || '');
+                    if (errorMsg.indexOf('лимит подсказок') !== -1 || errorMsg.indexOf('subscribed') !== -1) {
+                        showToast('Лимит подсказок исчерпан', 'error');
+                    } else {
+                        showToast('Ошибка: ' + (err.message || 'не удалось использовать подсказку'), 'error');
+                    }
                     hintBtn.disabled = false;
                     hintBtn.textContent = '💡 Подсказка';
                     isSubmitting = false;
@@ -401,8 +414,70 @@
         // Show error from URL param
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('error') === 'wrong_code') {
-            showMessage('Неверный код! Попробуйте ещё раз.', 'error');
+            showToast('Неверный код! Попробуйте ещё раз.', 'error');
         }
+
+        // SSE Client — real-time updates для геймплея
+        (function() {
+            const passingId = '{{.PassingID}}';
+            const gameId = '{{.GameID}}';
+            if (!passingId || !gameId) return;
+
+            const eventSource = new EventSource('/api/games/' + gameId + '/sse');
+
+            eventSource.addEventListener('level_completed', function(e) {
+                const data = JSON.parse(e.data);
+                showToast('🎉 Уровень "' + data.data.level_name + '" пройден!', 'success', 6000);
+                // Обновляем таймер
+                const timerDisplay = document.getElementById('timer-display');
+                if (timerDisplay) {
+                    timerDisplay.textContent = '✅ Уровень завершён!';
+                    timerDisplay.classList.add('text-green-600');
+                }
+            });
+
+            eventSource.addEventListener('time_warning', function(e) {
+                const data = JSON.parse(e.data);
+                const remaining = Math.round(data.data.remaining / 60);
+                showToast('⏰ Осталось ' + remaining + ' минут!', 'warning', 5000);
+            });
+
+            eventSource.addEventListener('hint_used', function(e) {
+                const data = JSON.parse(e.data);
+                showToast('💡 Подсказка использована', 'info');
+            });
+
+            // Desktop push notification
+            eventSource.addEventListener('notification', function(e) {
+                const data = JSON.parse(e.data);
+                if ('Notification' in window && Notification.permission === 'granted') {
+                    new Notification(data.title || 'Gengine', {
+                        body: data.body || '',
+                        icon: '/static/icons/icon-192x192.png'
+                    });
+                }
+            });
+
+            eventSource.addEventListener('code_submitted', function(e) {
+                const data = JSON.parse(e.data);
+                if (data.data.success) {
+                    showToast('✅ Код принят! Проверка...', 'success', 3000);
+                } else {
+                    showToast('❌ Код не принят', 'error', 3000);
+                }
+            });
+
+            eventSource.onerror = function() {
+                // SSE connection lost — try reconnecting
+                console.log('SSE: connection lost, retrying...');
+                // EventSource auto-reconnects, but we can show a toast
+            };
+
+            // Close on page unload
+            window.addEventListener('beforeunload', function() {
+                eventSource.close();
+            });
+        })();
     })();
 </script>
 {{end}}

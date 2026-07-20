@@ -45,7 +45,8 @@ type GameDeps struct {
 // @tags passings
 // @tags gameplay
 // @tags admin
-func RegisterRoutes(r *gin.Engine, deps *GameDeps) {
+// @tags autocomplete
+func RegisterRoutes(r *gin.RouterGroup, deps *GameDeps) {
 	db := deps.DB
 	gameService := deps.GameService
 	passingService := deps.PassingService
@@ -81,7 +82,11 @@ func RegisterRoutes(r *gin.Engine, deps *GameDeps) {
 	simulateHandler := NewSimulateHandler(simulateService)
 	fullPreviewHandler := NewFullPreviewHandler(gameService, levelService)
 
-	// Создаём ReviewHandler для отзывов
+	// Autocomplete handler
+	autocompleteHandler := NewAutocompleteHandler(db)
+	gameStatsHandler := NewGameStatsHandler(gameService, deps.GamePlaySvc)
+
+	// ReviewHandler для отзывов
 	reviewHandler := NewReviewHandler(reviewService)
 
 	// ========================================================================
@@ -508,6 +513,17 @@ func RegisterRoutes(r *gin.Engine, deps *GameDeps) {
 		// @Security JWT
 		protected.POST("/:id/review", reviewHandler.Create)
 	}
+
+	// API для autocomplete поиска игр
+	api := r.Group("/api/search")
+	api.GET("/games", autocompleteHandler.Games)
+
+	// API для статистики игры (AJAX)
+	apiStats := r.Group("/api/games")
+	apiStats.Use(middleware.OptionalAuth(authService))
+	{
+		apiStats.GET("/:id/stats", gameStatsHandler.Show)
+	}
 }
 
 // RegisterGameplayRoutes регистрирует маршруты игрового процесса.
@@ -650,4 +666,13 @@ func RegisterGameplayRoutes(
 	// @Router /testing/{passing_id}/skip [post]
 	// @Security JWT
 	r.POST("/testing/:passing_id/skip", handler.SkipTestLevel)
+
+	// @Summary Server-Sent Events для реал-тайм обновлений геймплея
+	// @Description SSE-поток с событиями: level_completed, time_warning, hint_used, code_submitted
+	// @Tags gameplay
+	// @Produce text/event-stream
+	// @Param passing_id path int true "ID прохождения"
+	// @Router /game/{passing_id}/sse [get]
+	// @Security JWT
+	r.GET("/game/:passing_id/sse", SSEHandler())
 }

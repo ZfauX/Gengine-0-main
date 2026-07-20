@@ -132,7 +132,7 @@ func (s *RatingService) GetAverageRating(gameID uint) (float64, int64, error) {
 	err := s.DB.Table("reviews").
 		Select("COALESCE(AVG(rating), 0) as avg_rating, COUNT(*) as count").
 		Where("game_id = ?", gameID).
-		Scan(map[string]interface{}{"avg_rating": &avgRating, "count": &count}).Error
+		Scan(map[string]any{"avg_rating": &avgRating, "count": &count}).Error
 
 	return avgRating, count, err
 }

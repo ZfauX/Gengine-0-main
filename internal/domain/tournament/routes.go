@@ -13,7 +13,7 @@ import (
 // RegisterRoutes регистрирует маршруты турниров.
 // @tags tournaments
 func RegisterRoutes(
-	r *gin.Engine,
+	r *gin.RouterGroup,
 	tournamentService *TournamentService,
 	teamService *team.TeamService,
 	cfg *config.Config,

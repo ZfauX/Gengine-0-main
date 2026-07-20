@@ -29,7 +29,9 @@
             <div>
                 <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Пароль</label>
                 <input type="password" name="password" id="password" required minlength="6"
-                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                       aria-describedby="password-hint">
+                <p id="password-hint" class="text-xs text-gray-500 mt-1">Минимум 6 символов: буквы, цифры и спецсимволы</p>
             </div>
 
             <!-- reCAPTCHA (опционально) -->

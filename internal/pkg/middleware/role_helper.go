@@ -18,8 +18,8 @@ func GetRole(c IsAdminChecker) (string, bool) {
 // IsAdminChecker — интерфейс для получения и установки данных в gin.Context.
 // Позволяет использовать функции IsAdmin/SetIsAdmin как с *gin.Context, так и с тестовыми моками.
 type IsAdminChecker interface {
-	Get(key string) (interface{}, bool)
-	Set(key string, value interface{})
+	Get(key string) (any, bool)
+	Set(key string, value any)
 }
 
 // IsAdmin проверяет, является ли пользователь администратором.

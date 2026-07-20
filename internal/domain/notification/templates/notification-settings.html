@@ -1,0 +1,213 @@
+{{define "notification-settings.html"}}
+<div class="max-w-4xl mx-auto">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Настройки уведомлений</h1>
+
+    <!-- Breadcrumb -->
+    <nav class="flex mb-6" aria-label="Breadcrumb">
+        <ol class="inline-flex items-center space-x-1 md:space-x-3">
+            <li class="inline-flex items-center">
+                <a href="/" class="text-gray-700 hover:text-blue-600 text-sm">Главная</a>
+            </li>
+            <li>
+                <div class="flex items-center">
+                    <svg class="w-6 h-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path>
+                    </svg>
+                    <span class="ml-1 text-gray-500 text-sm md:ml-2">Настройки</span>
+                </div>
+            </li>
+            <li>
+                <div class="flex items-center">
+                    <svg class="w-6 h-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path>
+                    </svg>
+                    <span class="ml-1 text-gray-700 text-sm md:ml-2 font-medium">Уведомления</span>
+                </div>
+            </li>
+        </ol>
+    </nav>
+
+    <!-- Сообщение об успехе -->
+    {{if .Success}}
+    <div class="flash flash-success mb-6">{{.Success}}</div>
+    {{end}}
+
+    <form id="notificationForm" action="/settings/notifications" method="POST" class="space-y-6">
+        <input type="hidden" name="_csrf" value="{{.csrf}}">
+
+        <!-- Основные каналы связи -->
+        <div class="card">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <span class="text-2xl">📡</span> Каналы связи
+            </h2>
+
+            <div class="space-y-4">
+                <!-- Email -->
+                <label class="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <div class="flex items-center gap-3">
+                        <input type="checkbox" name="email_enabled" {{if .Settings.EmailEnabled}}checked{{end}}
+                               class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                        <div>
+                            <span class="font-medium text-gray-800">Email-уведомления</span>
+                            <p class="text-sm text-gray-500">Получать уведомления на почту</p>
+                        </div>
+                    </div>
+                </label>
+
+                <!-- Браузер -->
+                <label class="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <div class="flex items-center gap-3">
+                        <input type="checkbox" name="browser_enabled" {{if .Settings.BrowserEnabled}}checked{{end}}
+                               class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                        <div>
+                            <span class="font-medium text-gray-800">Браузерные уведомления</span>
+                            <p class="text-sm text-gray-500">Показывать всплывающие уведомления в браузере</p>
+                        </div>
+                    </div>
+                </label>
+
+                <!-- Push -->
+                <label class="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <div class="flex items-center gap-3">
+                        <input type="checkbox" name="push_enabled" {{if .Settings.PushEnabled}}checked{{end}}
+                               class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                        <div>
+                            <span class="font-medium text-gray-800">Push-уведомления</span>
+                            <p class="text-sm text-gray-500">Push-уведомления на устройства (требует настройки PWA)</p>
+                        </div>
+                    </div>
+                </label>
+            </div>
+        </div>
+
+        <!-- Email-события -->
+        <div class="card">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <span class="text-2xl">📧</span> События для email
+            </h2>
+            <p class="text-sm text-gray-500 mb-4">Выберите, какие события отправлять на email</p>
+
+            <div class="space-y-3">
+                <label class="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <div class="flex items-center gap-3">
+                        <input type="checkbox" name="email_game_started" {{if .Settings.EmailGameStarted}}checked{{end}}
+                               class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                        <div>
+                            <span class="font-medium text-gray-800">🎮 Игра началась</span>
+                            <p class="text-sm text-gray-500">Когда ваша заявка принята и игра запущена</p>
+                        </div>
+                    </div>
+                </label>
+
+                <label class="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <div class="flex items-center gap-3">
+                        <input type="checkbox" name="email_level_completed" {{if .Settings.EmailLevelCompleted}}checked{{end}}
+                               class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                        <div>
+                            <span class="font-medium text-gray-800">✅ Уровень пройден</span>
+                            <p class="text-sm text-gray-500">После успешного прохождения уровня</p>
+                        </div>
+                    </div>
+                </label>
+
+                <label class="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <div class="flex items-center gap-3">
+                        <input type="checkbox" name="email_application_accepted" {{if .Settings.EmailApplicationAccepted}}checked{{end}}
+                               class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                        <div>
+                            <span class="font-medium text-gray-800">📩 Заявка принята</span>
+                            <p class="text-sm text-gray-500">Когда команда принята на игру</p>
+                        </div>
+                    </div>
+                </label>
+
+                <label class="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <div class="flex items-center gap-3">
+                        <input type="checkbox" name="email_application_rejected" {{if .Settings.EmailApplicationRejected}}checked{{end}}
+                               class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                        <div>
+                            <span class="font-medium text-gray-800">❌ Заявка отклонена</span>
+                            <p class="text-sm text-gray-500">Если ваша заявка отклонена</p>
+                        </div>
+                    </div>
+                </label>
+
+                <label class="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <div class="flex items-center gap-3">
+                        <input type="checkbox" name="email_time_warning" {{if .Settings.EmailTimeWarning}}checked{{end}}
+                               class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                        <div>
+                            <span class="font-medium text-gray-800">⏰ Предупреждение о времени</span>
+                            <p class="text-sm text-gray-500">За 5 минут до истечения времени уровня</p>
+                        </div>
+                    </div>
+                </label>
+
+                <label class="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <div class="flex items-center gap-3">
+                        <input type="checkbox" name="email_time_expired" {{if .Settings.EmailTimeExpired}}checked{{end}}
+                               class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                        <div>
+                            <span class="font-medium text-gray-800">⏱️ Время вышло</span>
+                            <p class="text-sm text-gray-500">Когда время на уровень истекло</p>
+                        </div>
+                    </div>
+                </label>
+            </div>
+        </div>
+
+        <!-- Кнопки -->
+        <div class="flex flex-wrap gap-3 pt-2">
+            <button type="submit" class="btn btn-primary text-sm">Сохранить настройки</button>
+            <a href="/profile" class="btn btn-outline text-sm">Отмена</a>
+        </div>
+    </form>
+</div>
+
+<script nonce="{{.csp_nonce}}">
+    // AJAX-сохранение настроек
+    (function() {
+        const form = document.getElementById('notificationForm');
+        if (!form) return;
+
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const formData = new FormData(form);
+            const data = {
+                email_enabled: formData.get('email_enabled') === 'on',
+                browser_enabled: formData.get('browser_enabled') === 'on',
+                push_enabled: formData.get('push_enabled') === 'on',
+                email_game_started: formData.get('email_game_started') === 'on',
+                email_level_completed: formData.get('email_level_completed') === 'on',
+                email_application_accepted: formData.get('email_application_accepted') === 'on',
+                email_application_rejected: formData.get('email_application_rejected') === 'on',
+                email_time_warning: formData.get('email_time_warning') === 'on',
+                email_time_expired: formData.get('email_time_expired') === 'on',
+            };
+
+            const meta = document.querySelector('meta[name="csrf-token"]');
+            const csrf = meta ? meta.getAttribute('content') : '';
+
+            fetch('/api/settings/notifications', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrf
+                },
+                body: JSON.stringify(data)
+            })
+            .then(function(r) {
+                if (r.ok) {
+                    showToast('Настройки сохранены!', 'success');
+                } else {
+                    showToast('Ошибка сохранения настроек', 'error');
+                }
+            })
+            .catch(function() {
+                showToast('Ошибка сети', 'error');
+            });
+        });
+    })();
+</script>
+{{end}}

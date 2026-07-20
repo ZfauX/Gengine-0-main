@@ -17,6 +17,10 @@ all: build
 build:
 	$(GO) build -ldflags "-X main.version=$(shell git describe --tags --always --dirty) -X main.buildDate=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)" -o $(BINARY_NAME) $(MAIN_PATH)
 
+# Запуск миграций
+migrate:
+	$(GO) run ./cmd/migrate
+
 # Запуск приложения (сборка + запуск)
 run: build
 	./$(BINARY_NAME)

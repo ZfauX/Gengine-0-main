@@ -29,20 +29,21 @@ func NewLevelProgressService(db *gorm.DB) *LevelProgressService {
 
 // InitFirstLevel инициализирует прогресс первого уровня при старте игры.
 func (s *LevelProgressService) InitFirstLevel(ctx context.Context, gamePassingID uint) error {
-	return s.dbTransaction(ctx, s.DB, gamePassingID)
+	return s.DB.Transaction(func(tx *gorm.DB) error {
+		return s.dbTransaction(tx, gamePassingID)
+	})
 }
 
 // InitFirstLevelWithTx инициализирует прогресс первого уровня с переданной транзакцией.
 func (s *LevelProgressService) InitFirstLevelWithTx(ctx context.Context, tx *gorm.DB, gamePassingID uint) error {
-	return s.dbTransaction(ctx, tx, gamePassingID)
+	return s.dbTransaction(tx, gamePassingID)
 }
 
 // dbTransaction — общий метод инициализации первого уровня с переданным *gorm.DB.
-func (s *LevelProgressService) dbTransaction(ctx context.Context, db *gorm.DB, gamePassingID uint) error {
+func (s *LevelProgressService) dbTransaction(db *gorm.DB, gamePassingID uint) error {
 	var count int64
-	db.Model(&LevelProgress{}).Where("game_passing_id = ?", gamePassingID).Count(&count)
-	if count > 0 {
-		return nil
+	if err := db.Model(&LevelProgress{}).Where("game_passing_id = ?", gamePassingID).Count(&count).Error; err != nil {
+		return err
 	}
 
 	var passing GamePassing

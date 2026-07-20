@@ -17,11 +17,12 @@ func FuncMap() template.FuncMap {
 		"formatBytes": formatBytes,
 		"csrfToken":   csrfToken,
 		"default":     defaultValue,
+		"truncate":    truncate,
 	}
 }
 
 // defaultValue возвращает значение по умолчанию, если исходное значение nil.
-func defaultValue(defaultVal, val interface{}) interface{} {
+func defaultValue(defaultVal, val any) any {
 	if val != nil {
 		return val
 	}
@@ -75,4 +76,13 @@ func formatBytes(b int64) string {
 // В реальном использовании значение подставляется через контекст.
 func csrfToken() string {
 	return "{{ .csrf }}"
+}
+
+// truncate обрезает строку до maxLen символов.
+func truncate(s string, maxLen int) string {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	return string(runes[:maxLen]) + "..."
 }

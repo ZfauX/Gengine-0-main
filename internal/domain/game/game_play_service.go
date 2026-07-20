@@ -203,7 +203,7 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (
 		}
 
 		progress.HintsUsed++
-		penalty := settings.HintPenaltySeconds * progress.HintsUsed
+		penalty := settings.HintPenaltySeconds
 		progress.PenaltySeconds += penalty
 		if err := tx.Save(progress).Error; err != nil {
 			return err
@@ -298,6 +298,7 @@ func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, u
 	}
 
 	s.broadcastSnapshot(ctx, passingID)
+	s.broadcastSnapshot(ctx, passingID)
 	return nil
 }
 
@@ -325,8 +326,12 @@ func (s *GamePlayService) StartTesting(ctx context.Context, gameID, userID uint)
 		}
 
 		// Проверяем, не существует ли уже тестовое прохождение для этой игры и пользователя
+		// Используем FOR UPDATE для исключения race condition
 		var existing GamePassing
-		if err := tx.Where("game_id = ? AND status = ? AND team_id::text LIKE ?", gameID, StatusTesting, "_test_%").First(&existing).Error; err == nil {
+		err := tx.Set("gorm:query_option", "FOR UPDATE").
+			Where("game_id = ? AND status = ? AND team_id::text LIKE ?", gameID, StatusTesting, "_test_%").
+			First(&existing).Error
+		if err == nil {
 			return fmt.Errorf("тестовое прохождение уже существует")
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
@@ -438,7 +443,7 @@ func (s *GamePlayService) broadcastSnapshot(ctx context.Context, passingID uint)
 	default:
 	}
 
-	// Используем контекст с таймаутом для предотвращения зависания
+	// Используем контекст с таймаутом для всех операций
 	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -449,7 +454,7 @@ func (s *GamePlayService) broadcastSnapshot(ctx context.Context, passingID uint)
 	}
 	gameID := passing.GameID
 	s.monitorSvc.InvalidateCache(gameID)
-	snapshot, err := s.monitorSvc.GetOrFetchSnapshot(ctx, gameID)
+	snapshot, err := s.monitorSvc.GetOrFetchSnapshot(timeoutCtx, gameID)
 	if err != nil {
 		log.Error().Err(err).Uint("game", gameID).Msg("GamePlayService.broadcastSnapshot: GetOrFetchSnapshot error")
 		return
@@ -463,7 +468,6 @@ func (s *GamePlayService) broadcastSnapshot(ctx context.Context, passingID uint)
 }
 
 // GetGameplayData загружает все данные, необходимые для отображения страницы геймплея.
-// Оптимизация: использует Preload для объединения запросов passing/settings/progress/attempts.
 func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (*GameplayData, error) {
 	var passing GamePassing
 	if err := s.db.WithContext(ctx).
@@ -471,6 +475,11 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 		Preload("Game.GameSetting").
 		First(&passing, passingID).Error; err != nil {
 		return nil, err
+	}
+
+	// Проверяем статус прохождения: данные должны быть доступны только для активных игр
+	if passing.Status != StatusStarted && passing.Status != StatusTesting {
+		return nil, errors.New("игра не активна")
 	}
 
 	var settings GameSetting
@@ -507,13 +516,18 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 
 	timeLimitSec := 0
 	if settings.PerLevelTimeLimit > 0 {
-		elapsed := time.Since(progress.StartedAt)
-		limit := time.Duration(settings.PerLevelTimeLimit) * time.Minute
-		remaining := limit - elapsed
-		if remaining < 0 {
-			remaining = 0
+		// Защита от zero StartedAt (time.Since(zero) ~ 17000+ лет)
+		if progress.StartedAt.IsZero() {
+			timeLimitSec = int(time.Duration(settings.PerLevelTimeLimit) * time.Minute / time.Second)
+		} else {
+			elapsed := time.Since(progress.StartedAt)
+			limit := time.Duration(settings.PerLevelTimeLimit) * time.Minute
+			remaining := limit - elapsed
+			if remaining < 0 {
+				remaining = 0
+			}
+			timeLimitSec = int(remaining.Seconds())
 		}
-		timeLimitSec = int(remaining.Seconds())
 	}
 
 	return &GameplayData{

@@ -13,6 +13,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 )
 
@@ -74,39 +75,28 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 //
 // Возвращает ошибку, если не удалось выполнить операцию.
 // Вызывающий код должен проверить ошибку и завершить приложение, если это критично.
+// EnsureAdmin создаёт или обновляет учётную запись администратора.
 func EnsureAdmin(db *gorm.DB, cfg *config.Config) error {
 	hashed, err := bcrypt.GenerateFromPassword([]byte(cfg.Admin.Password), crypto.BcryptCost)
 	if err != nil {
 		return fmt.Errorf("ensureAdmin: не удалось захешировать пароль администратора: %w", err)
 	}
 
-	var adminUser user.User
-	// Ищем по email (это гарантирует, что мы не создадим дубликат)
-	result := db.Where("email = ?", cfg.Admin.Email).First(&adminUser)
-	if result.Error == nil {
-		// Пользователь с таким email уже существует — обновляем пароль и роль
-		adminUser.Password = string(hashed)
-		adminUser.Role = "admin"
-		adminUser.EmailVerified = true
-		if err := db.Save(&adminUser).Error; err != nil {
-			return fmt.Errorf("ensureAdmin: не удалось обновить администратора: %w", err)
-		}
-		log.Info().Str("email", adminUser.Email).Msg("Администратор обновлён")
-		return nil
-	}
-
-	// Если администратор не найден, создаём нового
-	adminUser = user.User{
+	// Используем OnConflict для идемпотентности (UPSERT)
+	admin := user.User{
 		Email:         cfg.Admin.Email,
 		Password:      string(hashed),
 		Name:          "Администратор",
 		Role:          "admin",
 		EmailVerified: true,
 	}
-	if err := db.Create(&adminUser).Error; err != nil {
-		return fmt.Errorf("ensureAdmin: не удалось создать администратора: %w", err)
+	if err := db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "email"}},
+		DoUpdates: clause.AssignmentColumns([]string{"password", "role", "email_verified"}),
+	}).Create(&admin).Error; err != nil {
+		return fmt.Errorf("ensureAdmin: не удалось создать/обновить администратора: %w", err)
 	}
 
-	log.Info().Str("email", adminUser.Email).Msg("Создан администратор")
+	log.Info().Str("email", admin.Email).Msg("Администратор создан/обновлён")
 	return nil
 }
