@@ -181,7 +181,7 @@ func run() error {
 	// --- Инициализация rate limiters (singleton, создаются один раз) ---
 	// Если Valkey доступен, используем его как shared backend для rate limiters между инстансами
 	if cfg.Valkey.Host != "" {
-		valkeyClient := cache.NewValkeyClient(cfg.Valkey.Host, cfg.Valkey.Port, cfg.Valkey.Password)
+		valkeyClient := cache.NewValkeyClient(cfg.Valkey.Host, cfg.Valkey.Port, cfg.Valkey.Password, cfg.Valkey.PoolSize, cfg.Valkey.MinIdleConns, cfg.Valkey.MaxRetries)
 		if valkeyClient != nil {
 			middleware.InitGlobalRateLimiterWithValkey(valkeyClient, config.RateLimitWindow, config.GlobalRateLimit)
 			middleware.InitLoginRateLimiterWithValkey(valkeyClient, config.RateLimitWindow, config.LoginRateLimit)
@@ -209,7 +209,7 @@ func run() error {
 	// --- Инициализация кэша (Valkey с fallback на in-memory, NoopCache как последний fallback) ---
 	var appCache cache.CacheStore
 	if cfg.Valkey.Host != "" {
-		appCache = cache.NewValkeyCache(cfg.Valkey.Host, cfg.Valkey.Port, cfg.Valkey.Password)
+		appCache = cache.NewValkeyCache(cfg.Valkey.Host, cfg.Valkey.Port, cfg.Valkey.Password, cfg.Valkey.PoolSize, cfg.Valkey.MinIdleConns, cfg.Valkey.MaxRetries)
 		if appCache == nil {
 			log.Warn().Msg("Valkey unavailable, using in-memory cache")
 			appCache, err = cache.NewCache(config.CacheDefaultTTL, config.CacheCleanupInterval)

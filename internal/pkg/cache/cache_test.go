@@ -349,7 +349,7 @@ func TestCache_GetWithCtx(t *testing.T) {
 	defer c.Close()
 
 	c.Set("key1", "value1", time.Minute)
-	val, ok := c.GetWithCtx(context.TODO(), "key1")
+	val, ok := c.GetWithCtx(context.Background(), "key1")
 	assert.True(t, ok)
 	assert.Equal(t, "value1", val)
 }
@@ -358,7 +358,7 @@ func TestCache_SetWithCtx(t *testing.T) {
 	c, _ := NewCache(time.Minute, 10*time.Minute)
 	defer c.Close()
 
-	c.SetWithCtx(context.TODO(), "key1", "value1", time.Minute)
+	c.SetWithCtx(context.Background(), "key1", "value1", time.Minute)
 	val, ok := c.Get("key1")
 	assert.True(t, ok)
 	assert.Equal(t, "value1", val)
@@ -369,7 +369,7 @@ func TestCache_DeleteWithCtx(t *testing.T) {
 	defer c.Close()
 
 	c.Set("key1", "value1", time.Minute)
-	c.DeleteWithCtx(context.TODO(), "key1")
+	c.DeleteWithCtx(context.Background(), "key1")
 	_, ok := c.Get("key1")
 	assert.False(t, ok)
 }
@@ -380,7 +380,7 @@ func TestCache_DeleteByPrefixWithCtx(t *testing.T) {
 
 	c.Set("prefix:key1", "value1", time.Minute)
 	c.Set("prefix:key2", "value2", time.Minute)
-	c.DeleteByPrefixWithCtx(context.TODO(), "prefix")
+	c.DeleteByPrefixWithCtx(context.Background(), "prefix")
 
 	_, ok := c.Get("prefix:key1")
 	assert.False(t, ok)

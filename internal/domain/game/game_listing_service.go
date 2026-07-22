@@ -65,8 +65,8 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 
 	if filter.Search != "" {
 		escapedSearch := escapeLike(filter.Search)
-		sql += " AND name ILIKE ?"
-		args = append(args, "%"+escapedSearch+"%")
+		sql += " AND (search_vector IS NOT NULL AND search_vector @@ plainto_tsquery('russian', ?) OR name ILIKE ?)"
+		args = append(args, filter.Search, "%"+escapedSearch+"%")
 	}
 	if filter.DateFrom != "" {
 		if dateFrom, err := time.Parse("2006-01-02", filter.DateFrom); err == nil {

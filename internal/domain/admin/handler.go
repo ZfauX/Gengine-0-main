@@ -202,6 +202,8 @@ func (h *AdminHandler) ToggleAdmin(c *gin.Context) {
 		return
 	}
 
+	adminID := c.GetUint("userID")
+	h.auditService.Log(adminID, "toggle_admin_role", "user", u.ID, "new_role: "+u.Role)
 	c.Redirect(http.StatusFound, "/admin/users")
 }
 
@@ -224,6 +226,8 @@ func (h *AdminHandler) DeleteUser(c *gin.Context) {
 		return
 	}
 
+	adminID := c.GetUint("userID")
+	h.auditService.Log(adminID, "delete_user", "user", req.ID, "")
 	c.Redirect(http.StatusFound, "/admin/users")
 }
 
@@ -315,6 +319,8 @@ func (h *AdminHandler) DeleteGame(c *gin.Context) {
 		return
 	}
 
+	adminID := c.GetUint("userID")
+	h.auditService.Log(adminID, "delete_game", "game", req.ID, "")
 	c.Redirect(http.StatusFound, "/admin/games")
 }
 

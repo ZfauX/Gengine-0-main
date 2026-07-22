@@ -82,7 +82,10 @@ func (r *gormLevelRepo) GetFullLevel(ctx context.Context, id uint) (*Level, erro
 }
 func (r *gormLevelRepo) ListByGameOrdered(ctx context.Context, gameID uint) ([]Level, error) {
 	var levels []Level
-	err := r.db.WithContext(ctx).Where("game_id = ?", gameID).Order("position ASC").Find(&levels).Error
+	err := r.db.WithContext(ctx).Preload("Questions.Answers").
+		Where("game_id = ?", gameID).
+		Order("position ASC").
+		Find(&levels).Error
 	return levels, err
 }
 func (r *gormLevelRepo) ListWithQuestions(ctx context.Context, gameID uint) ([]Level, error) {

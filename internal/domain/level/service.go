@@ -1,4 +1,6 @@
 // internal/domain/level/service.go
+//
+//go:generate mockgen -source=service.go -destination=mock_service.go -package=level
 package level
 
 import (
