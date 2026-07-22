@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -73,10 +75,19 @@ type DatabaseConfig struct {
 // Valkey полностью совместим с Redis API.
 // Если Valkey не используется, поля могут быть пустыми.
 type ValkeyConfig struct {
-	Host     string // хост Valkey
-	Port     string // порт Valkey
-	Password string // пароль (если требуется)
+	Host         string // хост Valkey
+	Port         string // порт Valkey
+	Password     string // пароль (если требуется)
+	PoolSize     int    // максимальное количество соединений в пуле
+	MinIdleConns int    // минимальное количество idle соединений
+	MaxRetries   int    // максимальное количество повторных попыток
 }
+
+const (
+	defaultValkeyPoolSize     = 20
+	defaultValkeyMinIdleConns = 5
+	defaultValkeyMaxRetries   = 3
+)
 
 // JWTConfig содержит параметры JWT-аутентификации.
 type JWTConfig struct {
@@ -196,6 +207,9 @@ func LoadConfig() (*Config, error) {
 	cfg.Valkey.Host = os.Getenv("VALKEY_HOST")
 	cfg.Valkey.Port = os.Getenv("VALKEY_PORT")
 	cfg.Valkey.Password = os.Getenv("VALKEY_PASSWORD")
+	cfg.Valkey.PoolSize = getEnvAsInt("VALKEY_POOL_SIZE", defaultValkeyPoolSize)
+	cfg.Valkey.MinIdleConns = getEnvAsInt("VALKEY_MIN_IDLE_CONNS", defaultValkeyMinIdleConns)
+	cfg.Valkey.MaxRetries = getEnvAsInt("VALKEY_MAX_RETRIES", defaultValkeyMaxRetries)
 
 	// JWT – критично, без дефолтов
 	if cfg.JWT.Secret, err = requireStrongSecret("JWT_SECRET", 32); err != nil {
@@ -326,7 +340,11 @@ func parseDuration(key, defaultVal string) (time.Duration, error) {
 // Если провайдер включён, требует наличия CLIENT_ID и CLIENT_SECRET.
 func loadOAuthProvider(prefix string) (OAuthProvider, error) {
 	enabledEnv := prefix + "_ENABLED"
-	enabled, _ := strconv.ParseBool(os.Getenv(enabledEnv))
+	enabled, err := strconv.ParseBool(os.Getenv(enabledEnv))
+	if err != nil {
+		log.Warn().Err(err).Str("env", enabledEnv).Msg("failed to parse enabled flag")
+		return OAuthProvider{Enabled: false}, nil
+	}
 	if !enabled {
 		return OAuthProvider{Enabled: false}, nil
 	}
@@ -345,7 +363,11 @@ func loadOAuthProvider(prefix string) (OAuthProvider, error) {
 // loadSMTPConfig загружает настройки SMTP, если они включены.
 // При включении требует наличия SMTP_HOST и SMTP_FROM.
 func loadSMTPConfig() (SMTPConfig, error) {
-	enabled, _ := strconv.ParseBool(os.Getenv("SMTP_ENABLED"))
+	enabled, err := strconv.ParseBool(os.Getenv("SMTP_ENABLED"))
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to parse SMTP_ENABLED")
+		return SMTPConfig{Enabled: false}, nil
+	}
 	if !enabled {
 		return SMTPConfig{Enabled: false}, nil
 	}
@@ -377,7 +399,11 @@ func loadSMTPConfig() (SMTPConfig, error) {
 // loadReCAPTCHAConfig загружает настройки reCAPTCHA, если они включены.
 // При включении требует наличия RECAPTCHA_SITE_KEY и RECAPTCHA_SECRET_KEY.
 func loadReCAPTCHAConfig() (ReCAPTCHAConfig, error) {
-	enabled, _ := strconv.ParseBool(os.Getenv("RECAPTCHA_ENABLED"))
+	enabled, err := strconv.ParseBool(os.Getenv("RECAPTCHA_ENABLED"))
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to parse RECAPTCHA_ENABLED")
+		return ReCAPTCHAConfig{Enabled: false}, nil
+	}
 	if !enabled {
 		return ReCAPTCHAConfig{Enabled: false}, nil
 	}
@@ -396,7 +422,11 @@ func loadReCAPTCHAConfig() (ReCAPTCHAConfig, error) {
 // loadSentryConfig загружает настройки Sentry, если они включены.
 // При включении требует наличия SENTRY_DSN.
 func loadSentryConfig() (SentryConfig, error) {
-	enabled, _ := strconv.ParseBool(os.Getenv("SENTRY_ENABLED"))
+	enabled, err := strconv.ParseBool(os.Getenv("SENTRY_ENABLED"))
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to parse SENTRY_ENABLED")
+		return SentryConfig{Enabled: false}, nil
+	}
 	if !enabled {
 		return SentryConfig{Enabled: false}, nil
 	}

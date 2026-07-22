@@ -290,4 +290,16 @@ func RegisterRoutes(
 		// @Router /users/{id} [get]
 		usersGroup.GET("/:id", profileHandler.PublicProfile)
 	}
+
+	// ============================================================
+	// WEB PUSH УВЕДОМЛЕНИЯ (API)
+	// ============================================================
+	pushHandler := NewPushHandler(db)
+	apiGroup := r.Group("/api/push")
+	apiGroup.Use(middleware.AuthRequired(authSvc))
+	{
+		apiGroup.POST("/subscribe", pushHandler.Subscribe)
+		apiGroup.POST("/unsubscribe", pushHandler.Unsubscribe)
+		apiGroup.GET("/vapid-public-key", pushHandler.VapidPublicKey)
+	}
 }

@@ -471,7 +471,9 @@ func SendEmail(cfg *config.Config, to, subject, body string) error {
 			return fmt.Errorf("HELO failed: %w", helloErr)
 		}
 
-		if ok, _ := conn.Extension("STARTTLS"); ok {
+		if ok, extResp := conn.Extension("STARTTLS"); extResp != "" {
+			return fmt.Errorf("failed to check STARTTLS extension: %s", extResp)
+		} else if ok {
 			tlsConfig := &tls.Config{ServerName: cfg.SMTP.Host}
 			if starttlsErr := conn.StartTLS(tlsConfig); starttlsErr != nil {
 				return fmt.Errorf("STARTTLS failed: %w", starttlsErr)
@@ -510,7 +512,130 @@ func SendEmail(cfg *config.Config, to, subject, body string) error {
 	return nil
 }
 
-// SendPasswordChangedEmail отправляет уведомление о смене пароля.
+// EmailMessage представляет одно письмо для batch-отправки.
+type EmailMessage struct {
+	To      string
+	Subject string
+	Body    string
+}
+
+// SendBatch отправляет несколько писем через один SMTP-коннект.
+// Существенно быстрее, чем SendEmail в цикле, т.к. требует только одной
+// установки соединения и одной аутентификации.
+func SendBatch(cfg *config.Config, messages []EmailMessage) error {
+	if !cfg.SMTP.Enabled {
+		return fmt.Errorf("SMTP is not enabled")
+	}
+	if len(messages) == 0 {
+		return nil
+	}
+
+	addr := fmt.Sprintf("%s:%d", cfg.SMTP.Host, cfg.SMTP.Port)
+
+	var auth smtp.Auth
+	if cfg.SMTP.User != "" && cfg.SMTP.Password != "" {
+		if strings.HasPrefix(cfg.SMTP.Host, "127.0.0.1") || cfg.SMTP.Host == "localhost" {
+			auth = smtp.PlainAuth("", cfg.SMTP.User, cfg.SMTP.Password, cfg.SMTP.Host)
+		} else {
+			auth = newLoginAuth(cfg.SMTP.User, cfg.SMTP.Password)
+		}
+	}
+
+	var client *smtp.Client
+
+	switch {
+	case cfg.SMTP.Port == 465:
+		tlsConfig := &tls.Config{ServerName: cfg.SMTP.Host}
+		tlsConn, dialErr := tls.Dial("tcp", addr, tlsConfig)
+		if dialErr != nil {
+			return fmt.Errorf("failed to connect TLS: %w", dialErr)
+		}
+		defer tlsConn.Close()
+
+		c, clientErr := smtp.NewClient(tlsConn, cfg.SMTP.Host)
+		if clientErr != nil {
+			return fmt.Errorf("failed to create SMTP client: %w", clientErr)
+		}
+		client = c
+
+	default:
+		plainConn, dialErr := smtp.Dial(addr)
+		if dialErr != nil {
+			return fmt.Errorf("failed to dial: %w", dialErr)
+		}
+		defer plainConn.Close()
+
+		client = plainConn
+
+		if helloErr := client.Hello("localhost"); helloErr != nil {
+			return fmt.Errorf("HELO failed: %w", helloErr)
+		}
+
+		if ok, extResp := client.Extension("STARTTLS"); extResp != "" {
+			return fmt.Errorf("failed to check STARTTLS extension: %s", extResp)
+		} else if ok {
+			tlsConfig := &tls.Config{ServerName: cfg.SMTP.Host}
+			if starttlsErr := client.StartTLS(tlsConfig); starttlsErr != nil {
+				return fmt.Errorf("STARTTLS failed: %w", starttlsErr)
+			}
+		} else if cfg.SMTP.User != "" && !strings.HasPrefix(cfg.SMTP.Host, "127.0.0.1") && cfg.SMTP.Host != "localhost" {
+			return fmt.Errorf("STARTTLS not supported by server, refusing to send credentials over plain connection")
+		}
+	}
+
+	defer func() {
+		if quitErr := client.Quit(); quitErr != nil {
+			log.Error().Err(quitErr).Msg("SendBatch: error quitting SMTP client")
+		}
+	}()
+
+	if auth != nil {
+		if authErr := client.Auth(auth); authErr != nil {
+			return fmt.Errorf("SMTP auth failed: %w", authErr)
+		}
+	}
+
+	for _, msg := range messages {
+		headers := make(map[string]string)
+		headers["From"] = cfg.SMTP.From
+		headers["To"] = msg.To
+		headers["Subject"] = msg.Subject
+		headers["MIME-Version"] = "1.0"
+		headers["Content-Type"] = "text/plain; charset=\"UTF-8\""
+
+		var buf strings.Builder
+		for k, v := range headers {
+			fmt.Fprintf(&buf, "%s: %s\r\n", k, v)
+		}
+		buf.WriteString("\r\n")
+		buf.WriteString(msg.Body)
+		message := buf.String()
+
+		if mailErr := client.Mail(cfg.SMTP.From); mailErr != nil {
+			return fmt.Errorf("MAIL FROM failed for %s: %w", msg.To, mailErr)
+		}
+		if rcptErr := client.Rcpt(msg.To); rcptErr != nil {
+			return fmt.Errorf("RCPT TO failed for %s: %w", msg.To, rcptErr)
+		}
+
+		w, dataErr := client.Data()
+		if dataErr != nil {
+			return fmt.Errorf("DATA command failed for %s: %w", msg.To, dataErr)
+		}
+		if _, writeErr := w.Write([]byte(message)); writeErr != nil {
+			w.Close()
+			return fmt.Errorf("write failed for %s: %w", msg.To, writeErr)
+		}
+		if closeErr := w.Close(); closeErr != nil {
+			return fmt.Errorf("close data writer failed for %s: %w", msg.To, closeErr)
+		}
+
+		log.Debug().Str("to", msg.To).Msg("SendBatch: email sent")
+	}
+
+	return nil
+}
+
 func (s *EmailService) SendPasswordChangedEmail(to, userName string) error {
 	subject := "Ваш пароль был изменён"
 	body := fmt.Sprintf("Здравствуйте, %s!\n\nВаш пароль был успешно изменён. Если это были не вы, немедленно свяжитесь с поддержкой.\n\nС уважением,\nКоманда Gengine", userName)

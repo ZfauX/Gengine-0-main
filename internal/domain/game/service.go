@@ -1,4 +1,6 @@
 // internal/domain/game/service.go
+//
+//go:generate mockgen -source=service.go -destination=mock_service.go -package=game
 package game
 
 import (

@@ -45,12 +45,12 @@ func (h *AutocompleteHandler) Games(c *gin.Context) {
 		return
 	}
 
-	// Ищем игры по названию (ILIKE) — максимум 10 результатов
+	// Ищем игры по названию (full-text + ILIKE fallback) — максимум 10 результатов
 	var results []map[string]any
 	err := h.db.Model(c).
 		Table("games").
 		Select("id, name").
-		Where("is_draft = false AND visibility = 'public' AND name ILIKE ?", "%"+escapeLike(q)+"%").
+		Where("is_draft = false AND visibility = 'public' AND (search_vector @@ plainto_tsquery('russian', ?) OR name ILIKE ?)", q, "%"+escapeLike(q)+"%").
 		Limit(maxResults).
 		Find(&results).Error
 
@@ -89,8 +89,16 @@ func (h *GameStatsHandler) Show(c *gin.Context) {
 		return
 	}
 
-	reviews, _ := h.gameService.ListReviews(c, uint(id))
-	avgRating, reviewsCount, _ := h.gameService.GetAverageRating(c, uint(id))
+	reviews, err := h.gameService.ListReviews(c, uint(id))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ошибка загрузки отзывов"})
+		return
+	}
+	avgRating, reviewsCount, err := h.gameService.GetAverageRating(c, uint(id))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ошибка расчёта рейтинга"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"id":            game.ID,

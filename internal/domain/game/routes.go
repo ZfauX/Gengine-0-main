@@ -533,6 +533,7 @@ func RegisterGameplayRoutes(
 	r *gin.RouterGroup,
 	handler *GameplayHandler,
 	coAuthorSvc *CoAuthorService,
+	sseMgr *SSEManager,
 ) {
 	// @Summary Страница прохождения уровня
 	// @Description Отображает текущий уровень для команды во время игры. Показывает вопрос, подсказки, историю попыток и таймер.
@@ -674,5 +675,5 @@ func RegisterGameplayRoutes(
 	// @Param passing_id path int true "ID прохождения"
 	// @Router /game/{passing_id}/sse [get]
 	// @Security JWT
-	r.GET("/game/:passing_id/sse", middleware.SSERateLimit(1*time.Minute, 10), SSEHandler())
+	r.GET("/game/:passing_id/sse", middleware.SSERateLimit(1*time.Minute, 10), SSEHandler(sseMgr))
 }

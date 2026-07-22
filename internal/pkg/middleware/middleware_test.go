@@ -642,22 +642,22 @@ func TestRateLimiter_AllowWithinLimit(t *testing.T) {
 	defer rl.Stop()
 
 	for i := 0; i < 3; i++ {
-		assert.True(t, rl.Allow("key1"))
+		assert.True(t, rl.Allow("key1").Allowed)
 	}
-	assert.False(t, rl.Allow("key1"))
+	assert.False(t, rl.Allow("key1").Allowed)
 }
 
 func TestRateLimiter_AllowAfterWindow(t *testing.T) {
 	rl := middleware.NewRateLimiter(100*time.Millisecond, 2)
 	defer rl.Stop()
 
-	assert.True(t, rl.Allow("key"))
-	assert.True(t, rl.Allow("key"))
-	assert.False(t, rl.Allow("key"))
+	assert.True(t, rl.Allow("key").Allowed)
+	assert.True(t, rl.Allow("key").Allowed)
+	assert.False(t, rl.Allow("key").Allowed)
 
 	// Ждём истечения окна
 	assert.Eventually(t, func() bool {
-		return rl.Allow("key")
+		return rl.Allow("key").Allowed
 	}, 500*time.Millisecond, 50*time.Millisecond)
 }
 
@@ -665,9 +665,9 @@ func TestRateLimiter_DifferentKeys(t *testing.T) {
 	rl := middleware.NewRateLimiter(1*time.Second, 1)
 	defer rl.Stop()
 
-	assert.True(t, rl.Allow("a"))
-	assert.False(t, rl.Allow("a"))
-	assert.True(t, rl.Allow("b"))
+	assert.True(t, rl.Allow("a").Allowed)
+	assert.False(t, rl.Allow("a").Allowed)
+	assert.True(t, rl.Allow("b").Allowed)
 }
 
 func TestGlobalRateLimit(t *testing.T) {

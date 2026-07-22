@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -13,8 +14,15 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+type RateLimitResult struct {
+	Allowed   bool
+	Limit     int
+	Remaining int
+	ResetUnix int64
+}
+
 type RateLimiterStore interface {
-	Allow(key string) bool
+	Allow(key string) RateLimitResult
 	Stop()
 }
 
@@ -52,7 +60,7 @@ func newInMemoryStore(window time.Duration, limit int) *inMemoryStore {
 	return s
 }
 
-func (s *inMemoryStore) Allow(key string) bool {
+func (s *inMemoryStore) Allow(key string) RateLimitResult {
 	s.once.Do(func() {
 		go s.cleanup()
 	})
@@ -66,17 +74,17 @@ func (s *inMemoryStore) Allow(key string) bool {
 
 	if !exists || now.Sub(v.lastSeen) > s.window {
 		shard.visitors[key] = &visitor{lastSeen: now, count: 1}
-		return true
+		return RateLimitResult{Allowed: true, Limit: s.limit, Remaining: s.limit - 1, ResetUnix: now.Add(s.window).Unix()}
 	}
 
 	if v.count >= s.limit {
-		return false
+		return RateLimitResult{Allowed: false, Limit: s.limit, Remaining: 0, ResetUnix: v.lastSeen.Add(s.window).Unix()}
 	}
 
 	v.lastSeen = now
 	v.count++
 
-	return true
+	return RateLimitResult{Allowed: true, Limit: s.limit, Remaining: s.limit - v.count, ResetUnix: v.lastSeen.Add(s.window).Unix()}
 }
 
 func (s *inMemoryStore) Stop() {
@@ -128,18 +136,29 @@ func newValkeyStore(client *redis.Client, window time.Duration, limit int) *valk
 	return &valkeyStore{client: client, window: window, limit: limit}
 }
 
-func (s *valkeyStore) Allow(key string) bool {
+func (s *valkeyStore) Allow(key string) RateLimitResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
+	resetUnix := time.Now().Add(s.window).Unix()
+
 	count, err := s.client.Incr(ctx, key).Result()
 	if err != nil {
 		log.Error().Err(err).Str("key", key).Msg("valkey: Allow check failed, denying request")
-		return false
+		return RateLimitResult{Allowed: false, Limit: s.limit, Remaining: 0, ResetUnix: resetUnix}
 	}
 	if count == 1 {
 		s.client.Expire(ctx, key, s.window)
 	}
-	return count <= int64(s.limit)
+	remaining := int64(s.limit) - count
+	if remaining < 0 {
+		remaining = 0
+	}
+	return RateLimitResult{
+		Allowed:   count <= int64(s.limit),
+		Limit:     s.limit,
+		Remaining: int(remaining),
+		ResetUnix: resetUnix,
+	}
 }
 
 func (s *valkeyStore) Stop() {}
@@ -156,7 +175,7 @@ func NewValkeyRateLimiter(client *redis.Client, window time.Duration, limit int)
 	return &RateLimiter{store: newValkeyStore(client, window, limit)}
 }
 
-func (rl *RateLimiter) Allow(key string) bool {
+func (rl *RateLimiter) Allow(key string) RateLimitResult {
 	return rl.store.Allow(key)
 }
 
@@ -164,7 +183,21 @@ func (rl *RateLimiter) Stop() {
 	rl.store.Stop()
 }
 
-func respondRateLimitError(c *gin.Context, message string) {
+func setRateLimitHeaders(c *gin.Context, result RateLimitResult) {
+	c.Header("X-RateLimit-Limit", strconv.Itoa(result.Limit))
+	c.Header("X-RateLimit-Remaining", strconv.Itoa(result.Remaining))
+	c.Header("X-RateLimit-Reset", strconv.FormatInt(result.ResetUnix, 10))
+	if !result.Allowed {
+		retryAfter := int(time.Until(time.Unix(result.ResetUnix, 0)).Seconds())
+		if retryAfter < 0 {
+			retryAfter = 0
+		}
+		c.Header("Retry-After", strconv.Itoa(retryAfter))
+	}
+}
+
+func respondRateLimitError(c *gin.Context, message string, result RateLimitResult) {
+	setRateLimitHeaders(c, result)
 	if strings.Contains(c.GetHeader("Accept"), "text/html") {
 		c.HTML(http.StatusTooManyRequests, "errors-429.html", gin.H{"Error": message})
 		c.Abort()
@@ -196,8 +229,10 @@ func GlobalRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 	}
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
-		if !rl.Allow("global:" + ip) {
-			respondRateLimitError(c, ErrRateLimitGlobal)
+		result := rl.Allow("global:" + ip)
+		setRateLimitHeaders(c, result)
+		if !result.Allowed {
+			respondRateLimitError(c, ErrRateLimitGlobal, result)
 			return
 		}
 		c.Next()
@@ -227,8 +262,10 @@ func LoginRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 	}
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
-		if !rl.Allow("login:" + ip) {
-			respondRateLimitError(c, ErrRateLimitLogin)
+		result := rl.Allow("login:" + ip)
+		setRateLimitHeaders(c, result)
+		if !result.Allowed {
+			respondRateLimitError(c, ErrRateLimitLogin, result)
 			return
 		}
 		c.Next()
@@ -258,8 +295,10 @@ func RegistrationRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 	}
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
-		if !rl.Allow("register:" + ip) {
-			respondRateLimitError(c, ErrRateLimitRegister)
+		result := rl.Allow("register:" + ip)
+		setRateLimitHeaders(c, result)
+		if !result.Allowed {
+			respondRateLimitError(c, ErrRateLimitRegister, result)
 			return
 		}
 		c.Next()
@@ -294,8 +333,10 @@ func CodeSubmissionRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 			return
 		}
 		key := fmt.Sprintf("code:%d", userID)
-		if !rl.Allow(key) {
-			respondRateLimitError(c, ErrRateLimitCode)
+		result := rl.Allow(key)
+		setRateLimitHeaders(c, result)
+		if !result.Allowed {
+			respondRateLimitError(c, ErrRateLimitCode, result)
 			return
 		}
 		c.Next()
@@ -325,8 +366,10 @@ func SSERateLimit(window time.Duration, limit int) gin.HandlerFunc {
 	}
 	return func(c *gin.Context) {
 		key := fmt.Sprintf("sse:%d", c.GetUint("userID"))
-		if !rl.Allow(key) {
-			respondRateLimitError(c, ErrRateLimitSSE)
+		result := rl.Allow(key)
+		setRateLimitHeaders(c, result)
+		if !result.Allowed {
+			respondRateLimitError(c, ErrRateLimitSSE, result)
 			return
 		}
 		c.Next()
@@ -361,8 +404,10 @@ func APIRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 			return
 		}
 		key := fmt.Sprintf("api:%d", userID)
-		if !rl.Allow(key) {
-			respondRateLimitError(c, ErrRateLimitGlobal)
+		result := rl.Allow(key)
+		setRateLimitHeaders(c, result)
+		if !result.Allowed {
+			respondRateLimitError(c, ErrRateLimitGlobal, result)
 			return
 		}
 		c.Next()

@@ -1,4 +1,6 @@
 // internal/domain/user/service.go
+//
+//go:generate mockgen -source=service.go -destination=mock_service.go -package=user
 package user
 
 import (
@@ -91,9 +93,29 @@ func (s *AuthService) Login(ctx context.Context, emailStr, password string) (str
 	if err != nil {
 		return "", errors.New("неверный email или пароль")
 	}
+
+	// Проверка блокировки аккаунта
+	if user.LockedUntil != nil && time.Now().Before(*user.LockedUntil) {
+		remaining := time.Until(*user.LockedUntil).Truncate(time.Second)
+		return "", fmt.Errorf("аккаунт заблокирован до %s (осталось %s)", user.LockedUntil.Format("15:04:05"), remaining)
+	}
+
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
+		user.FailedLoginAttempts++
+		if user.FailedLoginAttempts >= 5 {
+			now := time.Now()
+			lockedUntil := now.Add(30 * time.Minute)
+			_ = s.userRepo.Update(ctx, user.ID, map[string]any{"locked_until": lockedUntil, "failed_login_attempts": 0})
+			return "", fmt.Errorf("аккаунт заблокирован на 30 минут (превышено 5 неудачных попыток)")
+		}
+		_ = s.userRepo.Update(ctx, user.ID, map[string]any{"failed_login_attempts": user.FailedLoginAttempts})
 		return "", errors.New("неверный email или пароль")
 	}
+
+	if user.FailedLoginAttempts > 0 || user.LockedUntil != nil {
+		_ = s.userRepo.Update(ctx, user.ID, map[string]any{"failed_login_attempts": 0, "locked_until": nil})
+	}
+
 	return s.generateJWT(*user)
 }
 

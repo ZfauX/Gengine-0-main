@@ -72,8 +72,20 @@ func NewPassingStartedHandler() *PassingStartedHandler {
 
 // Handle обрабатывает событие PassingStarted.
 func (h *PassingStartedHandler) Handle(event Event) {
-	gameID, _ := event.Data["game_id"].(uint)
-	passingID, _ := event.Data["passing_id"].(uint)
+	gameID, ok := event.Data["game_id"].(uint)
+	if !ok {
+		logging.Error(event.Ctx).
+			Str("event", string(PassingStarted)).
+			Msg("failed to assert game_id from event data")
+		return
+	}
+	passingID, ok := event.Data["passing_id"].(uint)
+	if !ok {
+		logging.Error(event.Ctx).Uint("game_id", gameID).
+			Str("event", string(PassingStarted)).
+			Msg("failed to assert passing_id from event data")
+		return
+	}
 
 	logging.Info(event.Ctx).
 		Uint("game_id", gameID).
@@ -92,8 +104,20 @@ func NewUserRegisteredHandler() *UserRegisteredHandler {
 
 // Handle обрабатывает событие UserRegistered.
 func (h *UserRegisteredHandler) Handle(event Event) {
-	userID, _ := event.Data["user_id"].(uint)
-	email, _ := event.Data["email"].(string)
+	userID, ok := event.Data["user_id"].(uint)
+	if !ok {
+		logging.Error(event.Ctx).
+			Str("event", string(UserRegistered)).
+			Msg("failed to assert user_id from event data")
+		return
+	}
+	email, ok := event.Data["email"].(string)
+	if !ok {
+		logging.Error(event.Ctx).Uint("user_id", userID).
+			Str("event", string(UserRegistered)).
+			Msg("failed to assert email from event data")
+		return
+	}
 
 	logging.Info(event.Ctx).
 		Uint("user_id", userID).

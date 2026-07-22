@@ -21,6 +21,8 @@ type User struct {
 	TwoFactorEnabled     bool               `gorm:"default:false"`               // включена ли 2FA
 	TwoFactorSecret      string             `gorm:"default:'';size:32" json:"-"` // секрет для TOTP (Base32)
 	TwoFactorBackupCodes string             `gorm:"default:''" json:"-"`         // резервные коды (через запятую, хешированные)
+	FailedLoginAttempts  int                `gorm:"default:0"`                   // количество неудачных попыток входа
+	LockedUntil          *time.Time         `gorm:"index"`                       // блокировка до указанного времени
 	Achievements         []Achievement      `gorm:"many2many:user_achievements;"`
 	ExternalLogins       []ExternalLogin    `gorm:"foreignKey:UserID"`
 	Subscriptions        []PushSubscription `gorm:"foreignKey:UserID"`

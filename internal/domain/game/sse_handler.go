@@ -12,18 +12,18 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// sseSession хранит данные сессии SSE
-type sseSession struct {
+// SSESession хранит данные сессии SSE
+type SSESession struct {
 	w     http.ResponseWriter
 	flush http.Flusher
 	done  chan struct{}
 }
 
-// sseManager управляет SSE-подключениями для каждой игры
-type sseManager struct {
+// SSEManager управляет SSE-подключениями для каждой игры
+type SSEManager struct {
 	mu       sync.RWMutex
-	sessions map[uint][]*sseSession
-	gameMap  map[*sseSession]uint // session -> gameID mapping
+	sessions map[uint][]*SSESession
+	gameMap  map[*SSESession]uint
 	stopOnce sync.Once
 	stopCh   chan struct{}
 }
@@ -31,17 +31,16 @@ type sseManager struct {
 const sseHeartbeatInterval = 15 * time.Second
 
 // NewSSEManager создаёт новый управляемый SSE-менеджер.
-// Возвращается экземпляр, который можно замокать в тестах.
-func NewSSEManager() *sseManager {
-	return &sseManager{
-		sessions: make(map[uint][]*sseSession),
-		gameMap:  make(map[*sseSession]uint),
+func NewSSEManager() *SSEManager {
+	return &SSEManager{
+		sessions: make(map[uint][]*SSESession),
+		gameMap:  make(map[*SSESession]uint),
 		stopCh:   make(chan struct{}),
 	}
 }
 
 // Stop останавливает менеджер и закрывает все сессии.
-func (m *sseManager) Stop() {
+func (m *SSEManager) Stop() {
 	m.stopOnce.Do(func() {
 		close(m.stopCh)
 		m.mu.Lock()
@@ -50,15 +49,11 @@ func (m *sseManager) Stop() {
 				close(s.done)
 			}
 		}
-		m.sessions = make(map[uint][]*sseSession)
-		m.gameMap = make(map[*sseSession]uint)
+		m.sessions = make(map[uint][]*SSESession)
+		m.gameMap = make(map[*SSESession]uint)
 		m.mu.Unlock()
 	})
 }
-
-// sseMgr — глобальный инстанс, инициализированный при загрузке пакета.
-// Используется в бизнес-логике через SSEBroadcaster.
-var sseMgr = NewSSEManager()
 
 // toJSON сериализует значение в JSON-строку
 func toJSON(v any) string {
@@ -70,21 +65,21 @@ func toJSON(v any) string {
 }
 
 // RegisterSession добавляет новое SSE-подключение для игры
-func (m *sseManager) RegisterSession(gameID uint, w http.ResponseWriter, flush http.Flusher) *sseSession {
+func (m *SSEManager) RegisterSession(gameID uint, w http.ResponseWriter, flush http.Flusher) *SSESession {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	session := &sseSession{w: w, flush: flush, done: make(chan struct{})}
+	session := &SSESession{w: w, flush: flush, done: make(chan struct{})}
 	m.sessions[gameID] = append(m.sessions[gameID], session)
 	if m.gameMap == nil {
-		m.gameMap = make(map[*sseSession]uint)
+		m.gameMap = make(map[*SSESession]uint)
 	}
 	m.gameMap[session] = gameID
 	return session
 }
 
 // UnregisterSession удаляет SSE-подключение
-func (m *sseManager) UnregisterSession(session *sseSession) {
+func (m *SSEManager) UnregisterSession(session *SSESession) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -108,9 +103,9 @@ func (m *sseManager) UnregisterSession(session *sseSession) {
 }
 
 // Broadcast отправляет событие всем подписчикам игры
-func (m *sseManager) Broadcast(gameID uint, eventType string, data any) {
+func (m *SSEManager) Broadcast(gameID uint, eventType string, data any) {
 	m.mu.Lock()
-	sessions := make([]*sseSession, len(m.sessions[gameID]))
+	sessions := make([]*SSESession, len(m.sessions[gameID]))
 	copy(sessions, m.sessions[gameID])
 	m.mu.Unlock()
 
@@ -137,7 +132,7 @@ func (m *sseManager) Broadcast(gameID uint, eventType string, data any) {
 }
 
 // SSEHandler возвращает обработчик для SSE-эндпоинта
-func SSEHandler() gin.HandlerFunc {
+func SSEHandler(mgr *SSEManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		gameID, err := strconv.Atoi(c.Param("game_id"))
 		if err != nil || gameID <= 0 {
@@ -157,8 +152,8 @@ func SSEHandler() gin.HandlerFunc {
 		w.Header().Set("Connection", "keep-alive")
 		w.Header().Set("X-Accel-Buffering", "no")
 
-		session := sseMgr.RegisterSession(uint(gameID), w, flusher)
-		defer sseMgr.UnregisterSession(session)
+		session := mgr.RegisterSession(uint(gameID), w, flusher)
+		defer mgr.UnregisterSession(session)
 
 		ticker := time.NewTicker(sseHeartbeatInterval)
 		defer ticker.Stop()
@@ -176,9 +171,4 @@ func SSEHandler() gin.HandlerFunc {
 			}
 		}
 	}
-}
-
-// SSEBroadcaster вызывается из сервисов для отправки событий подписчикам
-func SSEBroadcaster(gameID uint, eventType string, data any) {
-	sseMgr.Broadcast(gameID, eventType, data)
 }

@@ -44,12 +44,15 @@ type ValkeyCache struct {
 
 var _ CacheStore = (*ValkeyCache)(nil)
 
-func NewValkeyClient(host, port, password string) *redis.Client {
+func NewValkeyClient(host, port, password string, poolSize, minIdleConns, maxRetries int) *redis.Client {
 	addr := fmt.Sprintf("%s:%s", host, port)
 	client := redis.NewClient(&redis.Options{
-		Addr:     addr,
-		Password: password,
-		DB:       0,
+		Addr:         addr,
+		Password:     password,
+		DB:           0,
+		PoolSize:     poolSize,
+		MinIdleConns: minIdleConns,
+		MaxRetries:   maxRetries,
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), valkeyOpTimeout)
 	defer cancel()
@@ -61,8 +64,8 @@ func NewValkeyClient(host, port, password string) *redis.Client {
 	return client
 }
 
-func NewValkeyCache(host, port, password string) CacheStore {
-	client := NewValkeyClient(host, port, password)
+func NewValkeyCache(host, port, password string, poolSize, minIdleConns, maxRetries int) CacheStore {
+	client := NewValkeyClient(host, port, password, poolSize, minIdleConns, maxRetries)
 	if client == nil {
 		return nil
 	}
