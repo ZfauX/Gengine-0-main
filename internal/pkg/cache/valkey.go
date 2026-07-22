@@ -269,11 +269,22 @@ func (c *ValkeyCache) GetOrSetString(key string, ttl time.Duration, fn func() (s
 	return "", fmt.Errorf("unexpected type for key %s", key)
 }
 
-// GetOrSetStringWithTTL — как GetOrSetString, но при cache hit НЕ перезаписывает
-// ключ в Redis. Это устраняет проблему «частой перезаписи» при малом TTL:
-// если значение в кэше, оно остаётся на месте и сохраняет свой TTL.
-//
-// Используется для hot-ключей с TTL < 30s, где каждый set «обнуляет» expiration.
+// GetOrSetStringWithTTL — атомарная операция get-or-set с Lua скриптом.
+// При cache hit НЕ перезаписывает TTL ключа, предотвращая race condition.
+const getOrSetLuaScript = `
+local key = KEYS[1]
+local ttl = tonumber(ARGV[1])
+local value = ARGV[2]
+
+local existing = redis.call('GET', key)
+if existing then
+    return {1, existing}
+else
+    redis.call('SET', key, value, 'EX', ttl)
+    return {0, value}
+end
+`
+
 func (c *ValkeyCache) GetOrSetStringWithTTL(key string, ttl time.Duration, fn func() (string, error)) (string, error) {
 	if c == nil || c.client == nil {
 		return fn()
@@ -282,13 +293,28 @@ func (c *ValkeyCache) GetOrSetStringWithTTL(key string, ttl time.Duration, fn fu
 	ctx, cancel := context.WithTimeout(context.Background(), valkeyOpTimeout)
 	defer cancel()
 
-	// Сначала читаем
-	valBytes, getErr := c.client.Get(ctx, key).Bytes()
-	if getErr == redis.Nil {
-		// Cache miss — вычисляем и сохраняем
-		str, errFn := fn()
-		if errFn != nil {
-			return "", errFn
+	script := c.client.Eval(ctx, getOrSetLuaScript, []string{key}, int(ttl.Seconds()), "")
+
+	result, err := script.Result()
+	if err != nil {
+		if err == redis.Nil {
+			str, fnErr := fn()
+			if fnErr != nil {
+				return "", fnErr
+			}
+			data, marshalErr := json.Marshal(str)
+			if marshalErr != nil {
+				return "", marshalErr
+			}
+			if setErr := c.client.Set(ctx, key, data, ttl).Err(); setErr != nil {
+				log.Warn().Err(setErr).Str("key", key).Msg("Valkey: SetWithTTL error")
+			}
+			return str, nil
+		}
+		log.Warn().Err(err).Str("key", key).Msg("Valkey: GetOrSetStringWithTTL script error")
+		str, fnErr := fn()
+		if fnErr != nil {
+			return "", fnErr
 		}
 		data, marshalErr := json.Marshal(str)
 		if marshalErr != nil {
@@ -299,19 +325,25 @@ func (c *ValkeyCache) GetOrSetStringWithTTL(key string, ttl time.Duration, fn fu
 		}
 		return str, nil
 	}
-	if getErr != nil {
-		log.Warn().Err(getErr).Str("key", key).Msg("Valkey: GetWithTTL error")
-		return fn() // fallback to compute
-	}
 
-	// Cache hit — НЕ перезаписываем, просто возвращаем
-	var result any
-	if unmarshalErr := json.Unmarshal(valBytes, &result); unmarshalErr == nil {
-		if s, ok := result.(string); ok {
+	if arr, ok := result.([]interface{}); ok && len(arr) >= 2 {
+		if s, ok := arr[1].(string); ok {
 			return s, nil
 		}
 	}
-	return string(valBytes), nil
+
+	str, err := fn()
+	if err != nil {
+		return "", err
+	}
+	data, err := json.Marshal(str)
+	if err != nil {
+		return "", err
+	}
+	if setErr := c.client.Set(ctx, key, data, ttl).Err(); setErr != nil {
+		log.Warn().Err(setErr).Str("key", key).Msg("Valkey: SetWithTTL error")
+	}
+	return str, nil
 }
 
 // ExtendTTL продлевает TTL существующего ключа. Возвращает true, если ключ найден.
@@ -340,10 +372,22 @@ func (c *ValkeyCache) GetOrSetInt(key string, ttl time.Duration, fn func() (int,
 	if err != nil {
 		return 0, err
 	}
-	if i, ok := val.(float64); ok {
+	switch v := val.(type) {
+	case int:
+		return v, nil
+	case int64:
+		return int(v), nil
+	case float64:
+		return int(v), nil
+	case json.Number:
+		i, parseErr := v.Int64()
+		if parseErr != nil {
+			return 0, fmt.Errorf("unexpected type for key %s: cannot parse json.Number", key)
+		}
 		return int(i), nil
+	default:
+		return 0, fmt.Errorf("unexpected type for key %s, got %T", key, val)
 	}
-	return 0, fmt.Errorf("unexpected type for key %s", key)
 }
 
 func (c *ValkeyCache) GetOrSetFloat64(key string, ttl time.Duration, fn func() (float64, error)) (float64, error) {
@@ -353,10 +397,22 @@ func (c *ValkeyCache) GetOrSetFloat64(key string, ttl time.Duration, fn func() (
 	if err != nil {
 		return 0, err
 	}
-	if f, ok := val.(float64); ok {
+	switch v := val.(type) {
+	case float64:
+		return v, nil
+	case int:
+		return float64(v), nil
+	case int64:
+		return float64(v), nil
+	case json.Number:
+		f, parseErr := v.Float64()
+		if parseErr != nil {
+			return 0, fmt.Errorf("unexpected type for key %s: cannot parse json.Number", key)
+		}
 		return f, nil
+	default:
+		return 0, fmt.Errorf("unexpected type for key %s, got %T", key, val)
 	}
-	return 0, fmt.Errorf("unexpected type for key %s", key)
 }
 
 func (c *ValkeyCache) Close() error {

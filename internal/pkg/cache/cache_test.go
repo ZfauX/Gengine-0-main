@@ -387,3 +387,47 @@ func TestCache_DeleteByPrefixWithCtx(t *testing.T) {
 	_, ok = c.Get("prefix:key2")
 	assert.False(t, ok)
 }
+
+func TestCache_RemoveExpired(t *testing.T) {
+	c := NewCacheWithLRU(10*time.Minute, 10*time.Minute, 100)
+	defer c.Close()
+
+	c.Set("expired1", "value1", -time.Second)
+	c.Set("expired2", "value2", -time.Second)
+	c.Set("valid", "value3", time.Minute)
+
+	time.Sleep(200 * time.Millisecond)
+
+	c.removeExpired()
+
+	_, ok := c.Get("expired1")
+	assert.False(t, ok, "expired1 should be removed")
+	_, ok = c.Get("expired2")
+	assert.False(t, ok, "expired2 should be removed")
+
+	_, ok = c.Get("valid")
+	assert.True(t, ok, "valid should still exist")
+}
+
+func TestCache_RemoveExpired_Concurrent(t *testing.T) {
+	c := NewCacheWithLRU(10*time.Minute, 10*time.Minute, 100)
+	defer c.Close()
+
+	for i := 0; i < 50; i++ {
+		c.Set("key:"+string(rune(i)), "value", -time.Second)
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			c.removeExpired()
+		}()
+		go func() {
+			defer wg.Done()
+			c.Get("key0")
+		}()
+	}
+	wg.Wait()
+}

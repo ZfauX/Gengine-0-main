@@ -93,12 +93,26 @@ func (c *Cache) startCleanup(interval time.Duration) {
 }
 
 func (c *Cache) removeExpired() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	now := time.Now()
+	var toRemove []string
+
+	c.mu.RLock()
 	for _, key := range c.lru.Keys() {
 		item, ok := c.lru.Get(key)
 		if ok && !item.expires.IsZero() && now.After(item.expires) {
+			toRemove = append(toRemove, key)
+		}
+	}
+	c.mu.RUnlock()
+
+	if len(toRemove) == 0 {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, key := range toRemove {
+		if item, ok := c.lru.Get(key); ok && !item.expires.IsZero() && now.After(item.expires) {
 			c.lru.Remove(key)
 		}
 	}
@@ -138,8 +152,10 @@ func (c *Cache) Set(key string, value any, ttl time.Duration) {
 	c.trackPrefix(key)
 }
 
+const defaultCacheTTL = 5 * time.Minute
+
 func (c *Cache) SetDefault(key string, value any) {
-	c.Set(key, value, 0)
+	c.Set(key, value, defaultCacheTTL)
 }
 
 func (c *Cache) Delete(key string) {
