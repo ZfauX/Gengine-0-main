@@ -15,6 +15,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+const defaultEventDuration = 2 * time.Hour
+
 // CalendarDataRequest используется для валидации query-параметров.
 type CalendarDataRequest struct {
 	Year  int `form:"year" binding:"omitempty,min=2000,max=2100"`
@@ -123,7 +125,7 @@ func (h *CalendarHandler) CalendarICal(c *gin.Context) {
 		}
 		start := g.StartsAt.UTC()
 		// Длительность по умолчанию — 2 часа
-		end := start.Add(2 * time.Hour)
+		end := start.Add(defaultEventDuration)
 
 		sb.WriteString("BEGIN:VEVENT\r\n")
 		fmt.Fprintf(&sb, "UID:%d-gengine@encounter\r\n", g.ID)

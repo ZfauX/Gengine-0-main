@@ -224,33 +224,16 @@ func TestInvitationService_Decline(t *testing.T) {
 
 // ---------- Вспомогательные функции ----------
 
-// gameAuthorizerStub — заглушка для middleware.GameAuthorizer.
-type gameAuthorizerStub struct {
-	db *gorm.DB
-}
-
-func (g *gameAuthorizerStub) IsUserManager(ctx context.Context, gameID, userID uint) (bool, error) {
-	var ga game.Game
-	if err := g.db.First(&ga, gameID).Error; err != nil {
-		return false, err
-	}
-	return ga.AuthorID == userID, nil
-}
-
-func (g *gameAuthorizerStub) HasPermission(ctx context.Context, gameID, userID uint, role string) (bool, error) {
-	return g.IsUserManager(ctx, gameID, userID)
-}
-
 func newTeamService(db *gorm.DB) *team.TeamService {
 	teamRepo := team.NewGormTeamRepo(db)
-	authorizer := &gameAuthorizerStub{db}
+	authorizer := testutil.NewGameAuthorizerStub(db)
 	return team.NewTeamService(teamRepo, authorizer)
 }
 
 func newTeamAndInvitationServices(db *gorm.DB) (*team.TeamService, *team.InvitationService) {
 	teamRepo := team.NewGormTeamRepo(db)
 	invRepo := team.NewGormInvitationRepo(db)
-	authorizer := &gameAuthorizerStub{db}
+	authorizer := testutil.NewGameAuthorizerStub(db)
 	cfg := &config.Config{}
 	ts := team.NewTeamService(teamRepo, authorizer)
 	invSvc := team.NewInvitationService(invRepo, teamRepo, authorizer, cfg)

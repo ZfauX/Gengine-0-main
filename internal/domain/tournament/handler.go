@@ -13,9 +13,10 @@ import (
 	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/validation"
 
+	csrf "gengine-0/internal/pkg/csrf"
+
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-	csrf "github.com/utrack/gin-csrf"
 	"gorm.io/gorm"
 )
 
@@ -151,10 +152,29 @@ func (h *TournamentHandler) Create(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	var input CreateTournamentInput
+	errs := validation.FieldErrors{}
 	if err := c.ShouldBind(&input); err != nil {
+		errs.Add("name", validation.ValidateString("Название", input.Name, 2, 200))
+		errs.Add("description", validation.ValidateString("Описание", input.Description, 0, 5000))
+		if input.PointsForFirst < 0 {
+			errs.Add("points_for_first", errors.New("очки за первое место не могут быть отрицательными"))
+		}
+		if input.PointsForSecond < 0 {
+			errs.Add("points_for_second", errors.New("очки за второе место не могут быть отрицательными"))
+		}
+		if input.PointsForThird < 0 {
+			errs.Add("points_for_third", errors.New("очки за третье место не могут быть отрицательными"))
+		}
+		if input.PointsForParticipation < 0 {
+			errs.Add("points_for_participation", errors.New("очки за участие не могут быть отрицательными"))
+		}
+		if !errs.HasErrors() {
+			errs.Add("form", err)
+		}
 		render.Page(c, http.StatusBadRequest, "tournaments-new.html", gin.H{
-			"Error": "Неверные данные: " + err.Error(),
-			"csrf":  csrf.GetToken(c),
+			"Error":  errs.Error(),
+			"Errors": errs,
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
@@ -221,10 +241,31 @@ func (h *TournamentHandler) Update(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	var input UpdateTournamentInput
+	errs := validation.FieldErrors{}
 	if err := c.ShouldBind(&input); err != nil {
+		if input.Name != "" {
+			errs.Add("name", validation.ValidateString("Название", input.Name, 2, 200))
+		}
+		errs.Add("description", validation.ValidateString("Описание", input.Description, 0, 5000))
+		if input.PointsForFirst < 0 {
+			errs.Add("points_for_first", errors.New("очки за первое место не могут быть отрицательными"))
+		}
+		if input.PointsForSecond < 0 {
+			errs.Add("points_for_second", errors.New("очки за второе место не могут быть отрицательными"))
+		}
+		if input.PointsForThird < 0 {
+			errs.Add("points_for_third", errors.New("очки за третье место не могут быть отрицательными"))
+		}
+		if input.PointsForParticipation < 0 {
+			errs.Add("points_for_participation", errors.New("очки за участие не могут быть отрицательными"))
+		}
+		if !errs.HasErrors() {
+			errs.Add("form", err)
+		}
 		render.Page(c, http.StatusBadRequest, "tournaments-edit.html", gin.H{
-			"Error": "Неверные данные: " + err.Error(),
-			"csrf":  csrf.GetToken(c),
+			"Error":  errs.Error(),
+			"Errors": errs,
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}

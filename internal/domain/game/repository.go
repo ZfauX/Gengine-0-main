@@ -31,7 +31,7 @@ type GamePassingRepository interface {
 	GetByID(ctx context.Context, id uint) (*GamePassing, error)
 	FindByGameAndTeam(ctx context.Context, gameID, teamID uint) (*GamePassing, error)
 	FindActiveByGame(ctx context.Context, gameID uint) ([]GamePassing, error)
-	UpdateStatus(ctx context.Context, id uint, status string) error
+	UpdateStatus(ctx context.Context, id uint, status GamePassingStatus) error
 	Save(ctx context.Context, passing *GamePassing) error
 }
 
@@ -115,7 +115,7 @@ func (r *gormGamePassingRepo) FindActiveByGame(ctx context.Context, gameID uint)
 	err := r.db.WithContext(ctx).Where("game_id = ? AND status = ?", gameID, StatusStarted).Find(&passings).Error
 	return passings, err
 }
-func (r *gormGamePassingRepo) UpdateStatus(ctx context.Context, id uint, status string) error {
+func (r *gormGamePassingRepo) UpdateStatus(ctx context.Context, id uint, status GamePassingStatus) error {
 	return r.db.WithContext(ctx).Model(&GamePassing{}).Where("id = ?", id).Update("status", status).Error
 }
 func (r *gormGamePassingRepo) Save(ctx context.Context, passing *GamePassing) error {

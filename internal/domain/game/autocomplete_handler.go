@@ -10,9 +10,15 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	maxQueryLength = 100
+	minQueryLength = 2
+	maxResults     = 10
+)
+
 // AutocompleteInput — входные параметры для автодополнения поиска
 type AutocompleteInput struct {
-	Q string `form:"q" binding:"omitempty,max=100"`
+	Q string `form:"q" binding:"omitempty,max=100"` // maxQueryLength
 }
 
 // AutocompleteHandler обрабатывает запросы автодополнения поиска игр
@@ -29,13 +35,13 @@ func NewAutocompleteHandler(db *gorm.DB) *AutocompleteHandler {
 func (h *AutocompleteHandler) Games(c *gin.Context) {
 	input := AutocompleteInput{}
 	if err := c.ShouldBindQuery(&input); err != nil {
-		c.JSON(400, gin.H{"error": "неверный запрос"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "неверный запрос"})
 		return
 	}
 
 	q := input.Q
-	if len(q) < 2 {
-		c.JSON(200, gin.H{"results": []map[string]any{}})
+	if len(q) < minQueryLength {
+		c.JSON(http.StatusOK, gin.H{"results": []map[string]any{}})
 		return
 	}
 
@@ -44,17 +50,17 @@ func (h *AutocompleteHandler) Games(c *gin.Context) {
 	err := h.db.Model(c).
 		Table("games").
 		Select("id, name").
-		Where("is_draft = false AND visibility = 'public' AND name ILIKE ?", "%"+q+"%").
-		Limit(10).
+		Where("is_draft = false AND visibility = 'public' AND name ILIKE ?", "%"+escapeLike(q)+"%").
+		Limit(maxResults).
 		Find(&results).Error
 
 	if err != nil {
 		log.Error().Err(err).Str("query", q).Msg("Autocomplete: failed to search games")
-		c.JSON(500, gin.H{"error": "ошибка поиска"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ошибка поиска"})
 		return
 	}
 
-	c.JSON(200, gin.H{"results": results})
+	c.JSON(http.StatusOK, gin.H{"results": results})
 }
 
 // GameStatsHandler возвращает статистику игры через API
@@ -72,14 +78,14 @@ func NewGameStatsHandler(gs GameServiceInterface, gps *GamePlayService) *GameSta
 func (h *GameStatsHandler) Show(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {
-		c.JSON(400, gin.H{"error": "неверный ID игры"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "неверный ID игры"})
 		return
 	}
 
 	userID := c.GetUint("userID")
 	game, err := h.gameService.GetByID(c, uint(id), userID)
 	if err != nil {
-		c.JSON(404, gin.H{"error": "игра не найдена"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "игра не найдена"})
 		return
 	}
 

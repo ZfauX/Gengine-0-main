@@ -5,8 +5,9 @@ import (
 	"net/http"
 	"strings"
 
+	csrf "gengine-0/internal/pkg/csrf"
+
 	"github.com/gin-gonic/gin"
-	csrf "github.com/utrack/gin-csrf"
 )
 
 // CSRFJSON возвращает middleware, которое проверяет CSRF-токен для всех мутирующих запросов.

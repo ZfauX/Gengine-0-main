@@ -6,10 +6,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -19,11 +21,10 @@ import (
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/pkg/cache"
 	"gengine-0/internal/pkg/email"
+	"gengine-0/internal/pkg/logging"
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/storage"
 	ws "gengine-0/internal/pkg/websocket"
-
-	_ "gengine-0/internal/pkg/metrics"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
@@ -32,6 +33,30 @@ import (
 	"github.com/rs/zerolog/log"
 	"gopkg.in/natefinch/lumberjack.v2"
 	"gorm.io/gorm"
+)
+
+const (
+	sentryFlushTimeout          = 2 * time.Second
+	dbRetryInitialDelay         = 2 * time.Second
+	dbMaxRetryAttempts          = 5
+	rateLimitWindow             = 1 * time.Minute
+	globalRateLimit             = 100
+	loginRateLimit              = 5
+	registrationRateLimit       = 3
+	codeSubmissionRateLimit     = 10
+	sseRateLimit                = 10
+	apiRateLimit                = 60
+	emailQueueWorkers           = 5
+	emailQueueInterval          = 10 * time.Second
+	emailQueueBatchSize         = 10
+	cacheDefaultTTL             = 10 * time.Minute
+	cacheCleanupInterval        = 5 * time.Minute
+	poolMonitorInterval         = 1 * time.Minute
+	refreshTokenCleanupInterval = 1 * time.Hour
+	serverReadTimeout           = 15 * time.Second
+	serverWriteTimeout          = 30 * time.Second
+	serverIdleTimeout           = 120 * time.Second
+	shutdownTimeout             = 10 * time.Second
 )
 
 // @title Gengine API
@@ -54,12 +79,18 @@ var (
 )
 
 func main() {
+	if err := run(); err != nil {
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	migrateFlag := flag.Bool("migrate", false, "Применить миграции и выйти")
 	flag.Parse()
 
 	if err := godotenv.Load(); err != nil {
 		if !os.IsNotExist(err) {
-			log.Fatal().Err(err).Msg("failed to load .env file")
+			return fmt.Errorf("failed to load .env file: %w", err)
 		}
 		log.Info().Msg(".env file not found, using only system environment variables")
 	}
@@ -68,24 +99,26 @@ func main() {
 
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to load configuration")
+		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
 	// ============================================================
 	// ИНИЦИАЛИЗАЦИЯ SENTRY
 	// ============================================================
+	var sentryWriter *logging.SentryWriter
 	if cfg.Sentry.Enabled && cfg.Sentry.DSN != "" {
-		err := sentry.Init(sentry.ClientOptions{
+		sentryErr := sentry.Init(sentry.ClientOptions{
 			Dsn:              cfg.Sentry.DSN,
 			TracesSampleRate: cfg.Sentry.TracingRate,
 			Release:          version,
 			Environment:      cfg.Server.GinMode,
 		})
-		if err != nil {
-			log.Warn().Err(err).Msg("Sentry: initialization failed, continuing without Sentry")
+		if sentryErr != nil {
+			log.Warn().Err(sentryErr).Msg("Sentry: initialization failed, continuing without Sentry")
 		} else {
 			log.Info().Msg("Sentry: initialized successfully")
-			defer sentry.Flush(2 * time.Second)
+			defer sentry.Flush(sentryFlushTimeout)
+			sentryWriter = logging.NewSentryWriter(sentryFlushTimeout)
 		}
 	} else {
 		log.Info().Msg("Sentry: disabled")
@@ -98,8 +131,9 @@ func main() {
 	if logFilePath == "" {
 		logFilePath = "logs/app.log"
 	}
-	if err := os.MkdirAll(filepath.Dir(logFilePath), 0755); err != nil {
-		log.Fatal().Err(err).Msg("failed to create log directory")
+	if mkdirErr := os.MkdirAll(filepath.Dir(logFilePath), 0755); mkdirErr != nil {
+		log.Error().Err(mkdirErr).Msg("failed to create log directory")
+		return fmt.Errorf("failed to create log directory: %w", mkdirErr)
 	}
 
 	logFile := &lumberjack.Logger{
@@ -110,20 +144,18 @@ func main() {
 		Compress:   cfg.Server.LogCompress,
 	}
 
+	writers := []io.Writer{os.Stderr, logFile}
+	if sentryWriter != nil {
+		writers = append(writers, sentryWriter)
+	}
+
 	var consoleWriter zerolog.ConsoleWriter
 	if cfg.Server.LogFormat == "json" {
-		multi := zerolog.MultiLevelWriter(
-			os.Stderr,
-			logFile,
-		)
-		log.Logger = zerolog.New(multi).With().Timestamp().Logger()
+		log.Logger = zerolog.New(zerolog.MultiLevelWriter(writers...)).With().Timestamp().Logger()
 	} else {
 		consoleWriter = zerolog.ConsoleWriter{Out: os.Stderr}
-		multi := zerolog.MultiLevelWriter(
-			consoleWriter,
-			logFile,
-		)
-		log.Logger = log.Output(multi)
+		writers[0] = consoleWriter
+		log.Logger = log.Output(zerolog.MultiLevelWriter(writers...))
 	}
 
 	log.Info().
@@ -142,23 +174,26 @@ func main() {
 	gin.SetMode(cfg.Server.GinMode)
 
 	// --- Подключение к БД ---
-	database, err := connectDBWithRetry(cfg, 5, 2*time.Second)
+	database, err := connectDBWithRetry(cfg, dbMaxRetryAttempts, dbRetryInitialDelay)
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to connect to DB after several attempts")
+		log.Error().Err(err).Msg("failed to connect to DB after several attempts")
+		return fmt.Errorf("failed to connect to DB after several attempts: %w", err)
 	}
 	log.Info().Msg("DB connection established")
 
 	if *migrateFlag {
 		log.Info().Msg("running migrations...")
-		if err := db.MigrateFromFiles(database, "migrations"); err != nil {
-			log.Fatal().Err(err).Msg("migration error")
+		if migrateErr := db.MigrateFromFiles(database, "migrations"); migrateErr != nil {
+			log.Error().Err(migrateErr).Msg("migration error")
+			return fmt.Errorf("migration error: %w", migrateErr)
 		}
 		log.Info().Msg("migrations applied successfully")
-		return
+		return nil
 	}
 
-	if err := db.EnsureAdmin(database, cfg); err != nil {
-		log.Fatal().Err(err).Msg("failed to create/update admin")
+	if ensureErr := db.EnsureAdmin(database, cfg); ensureErr != nil {
+		log.Error().Err(ensureErr).Msg("failed to create/update admin")
+		return fmt.Errorf("failed to create/update admin: %w", ensureErr)
 	}
 
 	localStorage := storage.NewLocalStorage().WithBaseDir(filepath.Join(".", cfg.Server.UploadsDir))
@@ -167,36 +202,58 @@ func main() {
 	go hub.Run()
 
 	// --- Инициализация rate limiters (singleton, создаются один раз) ---
-	middleware.InitGlobalRateLimiter(1*time.Minute, 100)
-	middleware.InitLoginRateLimiter(1*time.Minute, 5)
-	middleware.InitRegistrationRateLimiter(1*time.Minute, 3)
-	middleware.InitCodeSubmissionRateLimiter(1*time.Minute, 10)
+	// Если Valkey доступен, используем его как shared backend для rate limiters между инстансами
+	if cfg.Valkey.Host != "" {
+		valkeyClient := cache.NewValkeyClient(cfg.Valkey.Host, cfg.Valkey.Port, cfg.Valkey.Password)
+		if valkeyClient != nil {
+			middleware.InitGlobalRateLimiterWithValkey(valkeyClient, rateLimitWindow, globalRateLimit)
+			middleware.InitLoginRateLimiterWithValkey(valkeyClient, rateLimitWindow, loginRateLimit)
+			middleware.InitRegistrationRateLimiterWithValkey(valkeyClient, rateLimitWindow, registrationRateLimit)
+			middleware.InitCodeSubmissionRateLimiterWithValkey(valkeyClient, rateLimitWindow, codeSubmissionRateLimit)
+			middleware.InitSSERateLimiterWithValkey(valkeyClient, rateLimitWindow, sseRateLimit)
+			middleware.InitAPIRateLimiterWithValkey(valkeyClient, rateLimitWindow, apiRateLimit)
+		}
+	} else {
+		middleware.InitGlobalRateLimiter(rateLimitWindow, globalRateLimit)
+		middleware.InitLoginRateLimiter(rateLimitWindow, loginRateLimit)
+		middleware.InitRegistrationRateLimiter(rateLimitWindow, registrationRateLimit)
+		middleware.InitCodeSubmissionRateLimiter(rateLimitWindow, codeSubmissionRateLimit)
+		middleware.InitSSERateLimiter(rateLimitWindow, sseRateLimit)
+		middleware.InitAPIRateLimiter(rateLimitWindow, apiRateLimit)
+	}
 
 	// --- Инициализация persistent-очереди email (только если SMTP включён) ---
 	if cfg.SMTP.Enabled {
-		email.InitQueue(cfg, database, 5, 10*time.Second, 10)
+		email.InitQueue(cfg, database, emailQueueWorkers, emailQueueInterval, emailQueueBatchSize)
 	} else {
 		log.Info().Msg("SMTP disabled, email queue not started")
 	}
 
-	// --- Инициализация кэша (Valkey с fallback на in-memory) ---
+	// --- Инициализация кэша (Valkey с fallback на in-memory, NoopCache как последний fallback) ---
 	var appCache cache.CacheStore
 	if cfg.Valkey.Host != "" {
 		appCache = cache.NewValkeyCache(cfg.Valkey.Host, cfg.Valkey.Port, cfg.Valkey.Password)
 		if appCache == nil {
 			log.Warn().Msg("Valkey unavailable, using in-memory cache")
-			appCache = cache.NewCache(10*time.Minute, 5*time.Minute)
+			appCache, err = cache.NewCache(cacheDefaultTTL, cacheCleanupInterval)
+			if err != nil {
+				return fmt.Errorf("failed to create in-memory cache: %w", err)
+			}
 		}
 	} else {
 		log.Info().Msg("Valkey not configured, using in-memory cache")
-		appCache = cache.NewCache(10*time.Minute, 5*time.Minute)
+		appCache, err = cache.NewCache(cacheDefaultTTL, cacheCleanupInterval)
+		if err != nil {
+			return fmt.Errorf("failed to create in-memory cache: %w", err)
+		}
 	}
 
 	deps := app.NewDependencies(database, cfg, hub, localStorage, appCache)
 	appInstance := app.NewApp(database, localStorage, hub, cfg, ".", deps)
 	r, err := appInstance.SetupRouter()
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to setup routes")
+		log.Error().Err(err).Msg("failed to setup routes")
+		return fmt.Errorf("failed to setup routes: %w", err)
 	}
 
 	// Контекст для фоновых задач
@@ -212,13 +269,25 @@ func main() {
 		}
 	}
 
+	// goSafe запускает горутину с recover.
+	goSafe := func(fn func()) {
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Error().Interface("panic", r).Str("stack", string(debug.Stack())).Msg("goroutine panicked")
+				}
+			}()
+			fn()
+		}()
+	}
+
 	// Запуск фоновых задач
-	go game.CheckTimeouts(database, ctx, onGameFinished)
-	go game.CheckAutoStartGames(database, ctx)
+	goSafe(func() { game.CheckTimeouts(database, ctx, onGameFinished) })
+	goSafe(func() { game.CheckAutoStartGames(database, ctx) })
 
 	// Мониторинг connection pool (раз в минуту)
-	go func() {
-		ticker := time.NewTicker(1 * time.Minute)
+	goSafe(func() {
+		ticker := time.NewTicker(poolMonitorInterval)
 		defer ticker.Stop()
 		for {
 			select {
@@ -241,14 +310,14 @@ func main() {
 					Msg("Connection pool stats")
 			}
 		}
-	}()
+	})
 
 	// WebSocket cleanup — периодическая очистка неактивных соединений
-	go appInstance.Hub.StartCleanupPeriodic()
+	goSafe(func() { appInstance.Hub.StartCleanupPeriodic() })
 
 	// Фоновая очистка просроченных refresh-токенов (раз в час)
-	go func() {
-		ticker := time.NewTicker(1 * time.Hour)
+	goSafe(func() {
+		ticker := time.NewTicker(refreshTokenCleanupInterval)
 		defer ticker.Stop()
 		for {
 			select {
@@ -263,20 +332,19 @@ func main() {
 				}
 			}
 		}
-	}()
+	})
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Server.Port,
 		Handler:      r,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		ReadTimeout:  serverReadTimeout,
+		WriteTimeout: serverWriteTimeout,
+		IdleTimeout:  serverIdleTimeout,
 	}
 
-	go func() {
+	goSafe(func() {
 		log.Info().Str("port", cfg.Server.Port).Msg("Сервер запущен")
 		var err error
-		// Если TLS сертификаты указаны, запускаем с HTTPS
 		if cfg.TLS.CertFile != "" && cfg.TLS.KeyFile != "" {
 			err = srv.ListenAndServeTLS(cfg.TLS.CertFile, cfg.TLS.KeyFile)
 		} else {
@@ -285,7 +353,7 @@ func main() {
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error().Err(err).Msg("Ошибка работы сервера")
 		}
-	}()
+	})
 
 	// Ожидание сигналов завершения
 	quit := make(chan os.Signal, 1)
@@ -308,9 +376,11 @@ func main() {
 	middleware.StopLoginRateLimiter()
 	middleware.StopRegistrationRateLimiter()
 	middleware.StopCodeSubmissionRateLimiter()
+	middleware.StopSSERateLimiter()
+	middleware.StopAPIRateLimiter()
 
 	// 2. Останавливаем HTTP-сервер (ожидаем завершения текущих запросов)
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutdownCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
@@ -341,6 +411,7 @@ func main() {
 	}
 
 	log.Info().Msg("Сервер полностью остановлен")
+	return nil
 }
 
 func connectDBWithRetry(cfg *config.Config, maxAttempts int, initialDelay time.Duration) (*gorm.DB, error) {

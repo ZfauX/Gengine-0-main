@@ -34,6 +34,18 @@ test:
 	$(GO) test -v -race -coverprofile=coverage.out ./...
 	$(GO) tool cover -html=coverage.out -o coverage.html
 
+# Быстрые тесты без базы данных (только unit-тесты)
+test-short:
+	$(GO) test -v -short -race -cover ./...
+
+# Тесты с race detector в отдельном job
+test-race:
+	$(GO) test -v -race -count=1 ./...
+
+# Тесты с PostgreSQL (требуют running DB)
+test-integration:
+	$(GO) test -v -race -cover -tags=integration ./...
+
 # Запуск линтера
 lint:
 	$(GOLANGCI) run ./...
@@ -68,6 +80,9 @@ help:
 	@echo "  make run            - Сборка и запуск"
 	@echo "  make dev            - Запуск без сборки (go run)"
 	@echo "  make test           - Запуск тестов с покрытием"
+	@echo "  make test-short     - Быстрые тесты без DB (unit-tests)"
+	@echo "  make test-race      - Тесты с race detector"
+	@echo "  make test-integration - Тесты с PostgreSQL"
 	@echo "  make lint           - Запуск golangci-lint"
 	@echo "  make swagger        - Генерация Swagger-документации"
 	@echo "  make clean          - Очистка артефактов"

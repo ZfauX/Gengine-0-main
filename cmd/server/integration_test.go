@@ -44,6 +44,7 @@ func setupTestRouter(t *testing.T, db *gorm.DB, cfg *config.Config) *gin.Engine 
 	localStorage := storage.NewLocalStorage()
 	hub := ws.NewRoomHub()
 	go hub.Run()
+	t.Cleanup(hub.Stop)
 
 	// Создаём deps и app напрямую, без legacy-функций
 	deps := app.NewDependencies(db, cfg, hub, localStorage, nil)

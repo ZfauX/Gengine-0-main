@@ -4,14 +4,13 @@ package websocket
 import (
 	"sync"
 
-	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
 )
 
 // RoomHub управляет WebSocket-комнатами и клиентами.
 type RoomHub struct {
 	rooms      map[string]map[*Client]bool
-	mu         sync.Mutex
+	mu         sync.RWMutex
 	register   chan *Client
 	unregister chan *Client
 	broadcast  chan *Message
@@ -154,10 +153,10 @@ func (h *RoomHub) runLoop() {
 				continue
 			}
 			// Копируем список клиентов под локом, затем рассылка БЕЗ блокировки
-			h.mu.Lock()
+			h.mu.RLock()
 			room, ok := h.rooms[msg.Room]
 			if !ok {
-				h.mu.Unlock()
+				h.mu.RUnlock()
 				continue
 			}
 			// Копируем map клиентов (защита от concurrent map modifications)
@@ -165,7 +164,7 @@ func (h *RoomHub) runLoop() {
 			for client := range room {
 				clientsCopy[client] = true
 			}
-			h.mu.Unlock()
+			h.mu.RUnlock()
 
 			// Рассылка БЕЗ удержания лока
 			for client := range clientsCopy {
@@ -178,12 +177,12 @@ func (h *RoomHub) runLoop() {
 				}
 				select {
 				case client.Send <- msg.Data:
-				default:
-					client.Close()
-					// Удаляем из оригинальной map под локом
+				case <-client.Done():
 					h.mu.Lock()
 					delete(room, client)
 					h.mu.Unlock()
+				default:
+					log.Debug().Str("room", msg.Room).Msg("broadcast: client buffer full, dropping message")
 				}
 			}
 			// Проверяем, пуста ли комната (под локом)
@@ -217,17 +216,16 @@ func (h *RoomHub) Stop() {
 		return
 	}
 	h.stopped = true
-	h.mu.Unlock()
-
-	// Сначала закрываем h.done, чтобы Run() и cleanup завершились
+	// Закрываем done под тем же локом, чтобы никакой новый register
+	// не мог пройти между установкой stopped и закрытием done
 	close(h.done)
+	h.mu.Unlock()
 	h.wg.Wait()
 
 	// Теперь безопасно закрываем все соединения (Run() уже не рассылает)
 	h.mu.Lock()
 	for roomID, room := range h.rooms {
 		for client := range room {
-			_ = client.Conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, "сервер завершает работу"))
 			client.Close()
 			delete(room, client)
 		}

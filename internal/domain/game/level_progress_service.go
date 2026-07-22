@@ -7,11 +7,14 @@ import (
 	"time"
 
 	"gengine-0/internal/domain/level"
+	"gengine-0/internal/pkg/metrics"
 
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+const levelProgressBatchSize = 50
 
 // Typed errors для level progress
 var (
@@ -29,25 +32,25 @@ func NewLevelProgressService(db *gorm.DB) *LevelProgressService {
 
 // InitFirstLevel инициализирует прогресс первого уровня при старте игры.
 func (s *LevelProgressService) InitFirstLevel(ctx context.Context, gamePassingID uint) error {
-	return s.DB.Transaction(func(tx *gorm.DB) error {
-		return s.dbTransaction(tx, gamePassingID)
+	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return s.dbTransaction(ctx, tx, gamePassingID)
 	})
 }
 
 // InitFirstLevelWithTx инициализирует прогресс первого уровня с переданной транзакцией.
 func (s *LevelProgressService) InitFirstLevelWithTx(ctx context.Context, tx *gorm.DB, gamePassingID uint) error {
-	return s.dbTransaction(tx, gamePassingID)
+	return s.dbTransaction(ctx, tx, gamePassingID)
 }
 
 // dbTransaction — общий метод инициализации первого уровня с переданным *gorm.DB.
-func (s *LevelProgressService) dbTransaction(db *gorm.DB, gamePassingID uint) error {
+func (s *LevelProgressService) dbTransaction(ctx context.Context, db *gorm.DB, gamePassingID uint) error {
 	var count int64
-	if err := db.Model(&LevelProgress{}).Where("game_passing_id = ?", gamePassingID).Count(&count).Error; err != nil {
+	if err := db.WithContext(ctx).Model(&LevelProgress{}).Where("game_passing_id = ?", gamePassingID).Count(&count).Error; err != nil {
 		return err
 	}
 
 	var passing GamePassing
-	if err := db.Preload("Game.Levels", func(db *gorm.DB) *gorm.DB {
+	if err := db.WithContext(ctx).Preload("Game.Levels", func(db *gorm.DB) *gorm.DB {
 		return db.Order("position ASC")
 	}).First(&passing, gamePassingID).Error; err != nil {
 		return err
@@ -64,7 +67,7 @@ func (s *LevelProgressService) dbTransaction(db *gorm.DB, gamePassingID uint) er
 		LevelID:       firstLevel.ID,
 		StartedAt:     time.Now(),
 	}
-	return db.Create(progress).Error
+	return db.WithContext(ctx).Create(progress).Error
 }
 
 // GetCurrentProgress возвращает текущий незавершённый прогресс уровня.
@@ -97,30 +100,33 @@ func GetCurrentProgressForUpdate(tx *gorm.DB, gamePassingID uint) (*LevelProgres
 
 // CompleteLevel завершает прогресс уровня и переходит к следующему.
 // Работает с переданным *gorm.DB (может быть транзакцией).
-func CompleteLevel(db *gorm.DB, progress *LevelProgress, onGameFinished func()) error {
+// Возвращает onCommit — callback, который нужно вызвать ПОСЛЕ коммита транзакции.
+func CompleteLevel(db *gorm.DB, progress *LevelProgress, onGameFinished func()) (onCommit func(), err error) {
 	now := time.Now()
 	progress.FinishedAt = &now
-	if err := db.Save(progress).Error; err != nil {
-		return err
+	if err = db.Save(progress).Error; err != nil {
+		return nil, err
 	}
+	metrics.IncLevelProgress()
 	return AdvanceToNextLevel(db, progress.GamePassingID, progress.LevelID, onGameFinished)
 }
 
 // AdvanceToNextLevel находит следующий уровень и создаёт для него прогресс.
 // Работает с переданным *gorm.DB (может быть транзакцией).
 // onGameFinished — необязательный callback, вызывается когда завершается последний уровень (игра окончена).
-func AdvanceToNextLevel(db *gorm.DB, gamePassingID, completedLevelID uint, onGameFinished func()) error {
+// Возвращает onCommit — callback, который нужно вызвать ПОСЛЕ коммита транзакции.
+func AdvanceToNextLevel(db *gorm.DB, gamePassingID, completedLevelID uint, onGameFinished func()) (onCommit func(), err error) {
 	// Загружаем прохождение только для получения GameID и Status
 	var passing GamePassing
-	if err := db.First(&passing, gamePassingID).Error; err != nil {
-		return err
+	if err = db.First(&passing, gamePassingID).Error; err != nil {
+		return nil, err
 	}
 
 	// Загружаем все неудалённые уровни игры напрямую, без зависимости от Preload
 	var levels []level.Level
-	if err := db.Where("game_id = ? AND deleted_at IS NULL", passing.GameID).
+	if err = db.Where("game_id = ? AND deleted_at IS NULL", passing.GameID).
 		Order("position ASC").Find(&levels).Error; err != nil {
-		return err
+		return nil, err
 	}
 
 	foundCurrent := false
@@ -131,7 +137,7 @@ func AdvanceToNextLevel(db *gorm.DB, gamePassingID, completedLevelID uint, onGam
 				LevelID:       lvl.ID,
 				StartedAt:     time.Now(),
 			}
-			return db.Create(newProgress).Error
+			return nil, db.Create(newProgress).Error
 		}
 		if lvl.ID == completedLevelID {
 			foundCurrent = true
@@ -141,15 +147,15 @@ func AdvanceToNextLevel(db *gorm.DB, gamePassingID, completedLevelID uint, onGam
 	// Если нет следующего уровня, завершаем игру (кроме тестирования)
 	if passing.Status != StatusTesting {
 		passing.Status = StatusFinished
-		if err := db.Save(&passing).Error; err != nil {
-			return err
+		if err = db.Save(&passing).Error; err != nil {
+			return nil, err
 		}
-		// Вызываем callback после фиксации транзакции
+		// Возвращаем callback для вызова после коммита транзакции
 		if onGameFinished != nil {
-			onGameFinished()
+			return onGameFinished, nil
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 // periodicRunner запускает периодическую функцию с контекстом и ticker.
@@ -187,7 +193,7 @@ func CheckTimeouts(db *gorm.DB, ctx context.Context, onGameFinished GameCompleti
 }
 
 func checkTimeoutsImpl(db *gorm.DB, ctx context.Context, onGameFinished GameCompletionCallback) {
-	const batchSize = 50
+	const batchSize = levelProgressBatchSize
 
 	// Batch-загружаем active progresses с game_passings и settings в одном запросе
 	type progressWithSetting struct {
@@ -268,12 +274,17 @@ func checkTimeoutsImpl(db *gorm.DB, ctx context.Context, onGameFinished GameComp
 				log.Error().Err(err).Uint("passing_id", p.GamePassingID).Msg("CheckTimeouts: failed to fetch passing")
 				continue
 			}
-			if err := AdvanceToNextLevel(tx, p.GamePassingID, p.LevelID, func() {
+			onCommit, err := AdvanceToNextLevel(tx, p.GamePassingID, p.LevelID, func() {
 				if onGameFinished != nil {
 					onGameFinished(ctx, passing.GameID)
 				}
-			}); err != nil {
+			})
+			if err != nil {
 				log.Error().Err(err).Uint("progress_id", p.ID).Msg("CheckTimeouts: AdvanceToNextLevel failed")
+			}
+			if onCommit != nil {
+				// callback будет вызван после коммита транзакции
+				defer onCommit()
 			}
 		}
 		return nil
@@ -286,15 +297,14 @@ func checkTimeoutsImpl(db *gorm.DB, ctx context.Context, onGameFinished GameComp
 // CheckAutoStartGames автоматически запускает игры, у которых наступило время старта.
 // Запущена как горутина, останавливается через ctx.
 func CheckAutoStartGames(db *gorm.DB, ctx context.Context) {
-	progressSvc := NewLevelProgressService(db)
 	runPeriodic(db, ctx, periodicRunner{
 		interval: 30 * time.Second,
-		fn:       func(db *gorm.DB, ctx context.Context) { checkAutoStartGamesImpl(db, ctx, progressSvc) },
+		fn:       func(db *gorm.DB, ctx context.Context) { checkAutoStartGamesImpl(db, ctx) },
 	})
 }
 
-func checkAutoStartGamesImpl(db *gorm.DB, ctx context.Context, progressSvc *LevelProgressService) {
-	const batchSize = 20
+func checkAutoStartGamesImpl(db *gorm.DB, ctx context.Context) {
+	const batchSize = levelProgressBatchSize
 
 	var games []Game
 	now := time.Now()

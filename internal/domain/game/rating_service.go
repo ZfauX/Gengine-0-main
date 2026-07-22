@@ -19,6 +19,9 @@ type RatingService struct {
 }
 
 func NewRatingService(db *gorm.DB, c cache.CacheStore) *RatingService {
+	if c == nil {
+		c = &cache.NoopCache{}
+	}
 	return &RatingService{DB: db, cache: c}
 }
 
@@ -81,10 +84,7 @@ func (s *RatingService) UpdateRatingsForGame(ctx context.Context, gameID uint) e
 		}
 	}
 
-	// Инвалидируем кэш рейтинга после обновления
-	if s.cache != nil {
-		s.cache.DeleteByPrefixWithCtx(ctx, "leaderboard:")
-	}
+	s.cache.DeleteByPrefixWithCtx(ctx, "leaderboard:")
 	return nil
 }
 
@@ -102,12 +102,10 @@ func (s *RatingService) awardPoints(userID uint, points int, now time.Time) erro
 func (s *RatingService) GetLeaderboard(ctx context.Context, limit int) ([]PlayerRating, error) {
 	cacheKey := fmt.Sprintf("leaderboard:limit:%d", limit)
 
-	if s.cache != nil {
-		if cached, ok := s.cache.GetWithCtx(ctx, cacheKey); ok {
-			if ratings, ok := cached.([]PlayerRating); ok {
-				log.Debug().Msg("GetLeaderboard: cache hit")
-				return ratings, nil
-			}
+	if cached, ok := s.cache.GetWithCtx(ctx, cacheKey); ok {
+		if ratings, ok := cached.([]PlayerRating); ok {
+			log.Debug().Msg("GetLeaderboard: cache hit")
+			return ratings, nil
 		}
 	}
 
@@ -117,7 +115,7 @@ func (s *RatingService) GetLeaderboard(ctx context.Context, limit int) ([]Player
 		return nil, err
 	}
 
-	if s.cache != nil && len(ratings) > 0 {
+	if len(ratings) > 0 {
 		s.cache.SetWithCtx(ctx, cacheKey, ratings, 5*time.Minute)
 	}
 

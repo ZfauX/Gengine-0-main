@@ -9,9 +9,10 @@ import (
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
 
+	csrf "gengine-0/internal/pkg/csrf"
+
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-	csrf "github.com/utrack/gin-csrf"
 	"gorm.io/gorm"
 )
 
@@ -81,18 +82,18 @@ func (h *SettingsHandler) SettingsPage(c *gin.Context) {
 
 // SaveSettings сохраняет настройки игры.
 func (h *SettingsHandler) SaveSettings(c *gin.Context) {
-	gameID, err := strconv.Atoi(c.Param("id"))
-	if err != nil || gameID <= 0 {
+	gameID, parseErr := strconv.Atoi(c.Param("id"))
+	if parseErr != nil || gameID <= 0 {
 		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
 		return
 	}
 	userID := c.GetUint("userID")
 
-	if err := limitRequestBody(c, 1*1024*1024); err != nil {
+	if limitErr := limitRequestBody(c, 1*1024*1024); limitErr != nil {
 		g, _ := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID)
 		render.Page(c, http.StatusBadRequest, "games-settings.html", gin.H{
 			"Game":  g,
-			"Error": err.Error(),
+			"Error": limitErr.Error(),
 			"csrf":  csrf.GetToken(c),
 		})
 		return

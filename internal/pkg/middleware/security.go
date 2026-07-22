@@ -4,17 +4,22 @@ package middleware
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"sync"
+	"fmt"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
 )
 
-// noncePool — буфер предварительно сгенерированных nonce для снижения нагрузки на crypto/rand
-var noncePool = sync.Pool{
-	New: func() any {
-		b := make([]byte, 16)
-		return &b
-	},
+// generateNonce создаёт криптостойкий случайный nonce для CSP.
+// Использует crypto/rand — достаточно быстрый для per-request генерации.
+func generateNonce() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		log.Error().Err(err).Msg("crypto/rand unavailable, using fallback nonce")
+		return base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
+	}
+	return base64.RawURLEncoding.EncodeToString(b)
 }
 
 // getLeafletHash возвращает SHA-256 hash для Leaflet 1.9.4 JS.
@@ -25,24 +30,10 @@ const leafletJSHash = "'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo='"
 const leafletCSSHash = "'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY='"
 
 // SecurityHeadersMiddleware добавляет базовые защитные заголовки ко всем ответам.
-// Генерирует nonce для инлайн-скриптов и стилей.
 func SecurityHeadersMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Генерируем nonce (16 байт случайных данных, base64)
-		nonceBytes := noncePool.Get().(*[]byte)
-		if _, err := rand.Read(*nonceBytes); err != nil {
-			// При ошибке rand.Read используем fallback-nonce (безопасность снижена, но не заблокирована)
-			nonce := "fallback"
-			c.Set("csp_nonce", nonce)
-			setCSPHeaders(c, nonce)
-			noncePool.Put(nonceBytes)
-			c.Next()
-			return
-		}
-		nonce := base64.StdEncoding.EncodeToString(*nonceBytes)
-		noncePool.Put(nonceBytes)
+		nonce := generateNonce()
 
-		// Сохраняем nonce в контексте для использования в шаблонах
 		c.Set("csp_nonce", nonce)
 		setCSPHeaders(c, nonce)
 

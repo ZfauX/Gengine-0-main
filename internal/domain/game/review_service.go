@@ -35,7 +35,7 @@ func (s *ReviewService) CanReview(gameID, userID uint) (bool, error) {
 		Count(&captainCount).Error; err != nil {
 		return false, err
 	}
-	if count+int64(captainCount) == 0 {
+	if count+captainCount == 0 {
 		return false, nil
 	}
 	var reviewCount int64

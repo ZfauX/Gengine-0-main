@@ -17,11 +17,12 @@ import (
 	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/validation"
 
+	csrf "gengine-0/internal/pkg/csrf"
+
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
 	"github.com/rs/zerolog/log"
-	csrf "github.com/utrack/gin-csrf"
 	"gorm.io/gorm"
 )
 
@@ -198,6 +199,9 @@ func NewGameHandler(
 // multipartOverhead — примерный размер multipart boundary и заголовков формы.
 const multipartOverhead = 2 * 1024 // 2 КБ
 
+// gameFormMaxBodySize — максимальный размер тела запроса для форм игры (5 МБ).
+const gameFormMaxBodySize = 5 * 1024 * 1024
+
 func limitRequestBody(c *gin.Context, maxBytes int64) error {
 	// Для multipart форм добавляем overhead на boundary и заголовки
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes+multipartOverhead)
@@ -260,7 +264,7 @@ func (h *GameHandler) List(c *gin.Context) {
 		ViewerID: userID,
 	}
 	if authorIDStr := c.Query("author_id"); authorIDStr != "" {
-		if id, err := strconv.Atoi(authorIDStr); err == nil {
+		if id, idParseErr := strconv.Atoi(authorIDStr); idParseErr == nil {
 			uid := uint(id)
 			filter.AuthorID = &uid
 		}
@@ -351,29 +355,66 @@ func (h *GameHandler) NewForm(c *gin.Context) {
 func (h *GameHandler) Create(c *gin.Context) {
 	userID := c.GetUint("userID")
 
-	if err := limitRequestBody(c, 5*1024*1024); err != nil {
+	if limitErr := limitRequestBody(c, gameFormMaxBodySize); limitErr != nil {
+		errs := validation.FieldErrors{}
+		errs.Add("form", limitErr)
 		render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
-			"Error": err.Error(),
-			"csrf":  csrf.GetToken(c),
+			"Error":  errs.Error(),
+			"Errors": errs,
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
 
 	var input CreateGameInput
-	if err := c.ShouldBind(&input); err != nil {
+	if bindErr := c.ShouldBind(&input); bindErr != nil {
+		errs := validation.FieldErrors{}
+		errs.Add("name", validation.ValidateString("Название", input.Name, 3, 100))
+		errs.Add("description", validation.ValidateString("Описание", input.Description, 0, 2000))
+		if input.Visibility != "public" && input.Visibility != "private" {
+			errs.Add("visibility", errors.New("видимость должна быть public или private"))
+		}
+		if input.MaxTeamNumber < 1 || input.MaxTeamNumber > 100 {
+			errs.Add("max_team_number", errors.New("максимальное количество участников должно быть от 1 до 100"))
+		}
 		render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
-			"Error": "Неверные данные: " + err.Error(),
-			"csrf":  csrf.GetToken(c),
+			"Error":  errs.Error(),
+			"Errors": errs,
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
 
 	// Парсим и валидируем даты
-	startsAt, registrationDeadline, err := parseGameDatesFromForm(input.StartsAt, input.RegistrationDeadline)
-	if err != nil {
+	startsAt, parseErr := parseDateTime(input.StartsAt)
+	if parseErr != nil {
+		errs := validation.FieldErrors{}
+		errs.Add("starts_at", errors.New("неверный формат даты начала"))
 		render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
-			"Error": err.Error(),
-			"csrf":  csrf.GetToken(c),
+			"Error":  errs.Error(),
+			"Errors": errs,
+			"csrf":   csrf.GetToken(c),
+		})
+		return
+	}
+	registrationDeadline, deadlineErr := parseDateTime(input.RegistrationDeadline)
+	if deadlineErr != nil {
+		errs := validation.FieldErrors{}
+		errs.Add("registration_deadline", errors.New("неверный формат крайнего срока регистрации"))
+		render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
+			"Error":  errs.Error(),
+			"Errors": errs,
+			"csrf":   csrf.GetToken(c),
+		})
+		return
+	}
+	if validateErr := validation.ValidateGameDates(startsAt, registrationDeadline); validateErr != nil {
+		errs := validation.FieldErrors{}
+		errs.Add("form", validateErr)
+		render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
+			"Error":  errs.Error(),
+			"Errors": errs,
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
@@ -392,11 +433,14 @@ func (h *GameHandler) Create(c *gin.Context) {
 		createDTO.CoverFile = input.CoverFile
 	}
 
-	game, err := h.gameService.CreateGameWithCover(c.Request.Context(), createDTO, userID)
-	if err != nil {
+	game, createErr := h.gameService.CreateGameWithCover(c.Request.Context(), createDTO, userID)
+	if createErr != nil {
+		errs := validation.FieldErrors{}
+		errs.Add("form", createErr)
 		render.Page(c, http.StatusInternalServerError, "games-new.html", gin.H{
-			"Error": err.Error(),
-			"csrf":  csrf.GetToken(c),
+			"Error":  errs.Error(),
+			"Errors": errs,
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
@@ -446,48 +490,101 @@ func (h *GameHandler) EditForm(c *gin.Context) {
 
 // Update обновляет игру.
 func (h *GameHandler) Update(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil || id <= 0 {
+	id, parseErr := strconv.Atoi(c.Param("id"))
+	if parseErr != nil || id <= 0 {
 		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
 		return
 	}
 	userID := c.GetUint("userID")
 
-	if err := limitRequestBody(c, 5*1024*1024); err != nil {
+	if limitErr := limitRequestBody(c, gameFormMaxBodySize); limitErr != nil {
+		errs := validation.FieldErrors{}
+		errs.Add("form", limitErr)
 		render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
-			"Error": err.Error(),
-			"csrf":  csrf.GetToken(c),
+			"Error":  errs.Error(),
+			"Errors": errs,
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
 
 	var input UpdateGameInput
-	if err := c.ShouldBind(&input); err != nil {
+	if bindErr := c.ShouldBind(&input); bindErr != nil {
+		errs := validation.FieldErrors{}
+		errs.Add("name", validation.ValidateString("Название", input.Name, 3, 100))
+		errs.Add("description", validation.ValidateString("Описание", input.Description, 0, 2000))
+		if input.Visibility != "public" && input.Visibility != "private" {
+			errs.Add("visibility", errors.New("видимость должна быть public или private"))
+		}
+		if input.MaxTeamNumber < 1 || input.MaxTeamNumber > 100 {
+			errs.Add("max_team_number", errors.New("максимальное количество участников должно быть от 1 до 100"))
+		}
 		render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
-			"Error": "Неверные данные: " + err.Error(),
-			"csrf":  csrf.GetToken(c),
+			"Error":  errs.Error(),
+			"Errors": errs,
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
 
 	// Получаем существующую игру (для сохранения состояния IsDraft и данных формы)
-	existingGame, err := h.gameService.GetByID(c.Request.Context(), uint(id), userID)
-	if err != nil {
+	existingGame, getErr := h.gameService.GetByID(c.Request.Context(), uint(id), userID)
+	if getErr != nil {
+		errs := validation.FieldErrors{}
+		errs.Add("form", errors.New("Игра не найдена"))
 		render.Page(c, http.StatusNotFound, "games-edit.html", gin.H{
-			"Error": "Игра не найдена",
-			"csrf":  csrf.GetToken(c),
+			"Error":  errs.Error(),
+			"Errors": errs,
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
 
 	// Парсим и валидируем даты
-	startsAt, registrationDeadline, err := parseGameDatesFromForm(input.StartsAt, input.RegistrationDeadline)
-	if err != nil {
+	startsAt, parseErr := parseDateTime(input.StartsAt)
+	if parseErr != nil {
+		errs := validation.FieldErrors{}
+		errs.Add("starts_at", errors.New("неверный формат даты начала"))
 		render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
-			"Game":  existingGame,
-			"Error": err.Error(),
-			"csrf":  csrf.GetToken(c),
-			// Передаём введённые значения для сохранения в форме
+			"Game":                 existingGame,
+			"Error":                errs.Error(),
+			"Errors":               errs,
+			"csrf":                 csrf.GetToken(c),
+			"Name":                 input.Name,
+			"Description":          input.Description,
+			"MaxTeamNumber":        input.MaxTeamNumber,
+			"Visibility":           input.Visibility,
+			"StartsAt":             input.StartsAt,
+			"RegistrationDeadline": input.RegistrationDeadline,
+		})
+		return
+	}
+	registrationDeadline, deadlineErr := parseDateTime(input.RegistrationDeadline)
+	if deadlineErr != nil {
+		errs := validation.FieldErrors{}
+		errs.Add("registration_deadline", errors.New("неверный формат крайнего срока регистрации"))
+		render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
+			"Game":                 existingGame,
+			"Error":                errs.Error(),
+			"Errors":               errs,
+			"csrf":                 csrf.GetToken(c),
+			"Name":                 input.Name,
+			"Description":          input.Description,
+			"MaxTeamNumber":        input.MaxTeamNumber,
+			"Visibility":           input.Visibility,
+			"StartsAt":             input.StartsAt,
+			"RegistrationDeadline": input.RegistrationDeadline,
+		})
+		return
+	}
+	if validateErr := validation.ValidateGameDates(startsAt, registrationDeadline); validateErr != nil {
+		errs := validation.FieldErrors{}
+		errs.Add("form", validateErr)
+		render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
+			"Game":                 existingGame,
+			"Error":                errs.Error(),
+			"Errors":               errs,
+			"csrf":                 csrf.GetToken(c),
 			"Name":                 input.Name,
 			"Description":          input.Description,
 			"MaxTeamNumber":        input.MaxTeamNumber,
@@ -513,19 +610,24 @@ func (h *GameHandler) Update(c *gin.Context) {
 		updateDTO.CoverFile = input.CoverFile
 	}
 
-	if err := h.gameService.UpdateGameWithCover(c.Request.Context(), uint(id), updateDTO, userID); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+	if updateErr := h.gameService.UpdateGameWithCover(c.Request.Context(), uint(id), updateDTO, userID); updateErr != nil {
+		if errors.Is(updateErr, gorm.ErrRecordNotFound) {
+			errs := validation.FieldErrors{}
+			errs.Add("form", errors.New("Игра не найдена"))
 			render.Page(c, http.StatusNotFound, "games-edit.html", gin.H{
-				"Error": "Игра не найдена",
-				"csrf":  csrf.GetToken(c),
+				"Error":  errs.Error(),
+				"Errors": errs,
+				"csrf":   csrf.GetToken(c),
 			})
 			return
 		}
+		errs := validation.FieldErrors{}
+		errs.Add("form", updateErr)
 		render.Page(c, http.StatusForbidden, "games-edit.html", gin.H{
-			"Game":  existingGame,
-			"Error": err.Error(),
-			"csrf":  csrf.GetToken(c),
-			// Передаём введённые значения
+			"Game":                 existingGame,
+			"Error":                errs.Error(),
+			"Errors":               errs,
+			"csrf":                 csrf.GetToken(c),
 			"Name":                 input.Name,
 			"Description":          input.Description,
 			"MaxTeamNumber":        input.MaxTeamNumber,

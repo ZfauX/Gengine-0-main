@@ -11,6 +11,13 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+const (
+	valkeyOpTimeout       = 5 * time.Second
+	valkeyDefaultCacheTTL = 5 * time.Minute
+	valkeyBatchOpTimeout  = 10 * time.Second
+	valkeyQuickOpTimeout  = 2 * time.Second
+)
+
 // CacheStore определяет общий интерфейс для кэша.
 type CacheStore interface {
 	Get(key string) (any, bool)
@@ -21,6 +28,8 @@ type CacheStore interface {
 	Flush()
 	GetOrSet(key string, ttl time.Duration, fn func() (any, error)) (any, error)
 	GetOrSetString(key string, ttl time.Duration, fn func() (string, error)) (string, error)
+	GetOrSetStringWithTTL(key string, ttl time.Duration, fn func() (string, error)) (string, error)
+	ExtendTTL(key string, ttl time.Duration) bool
 	GetOrSetInt(key string, ttl time.Duration, fn func() (int, error)) (int, error)
 	GetOrSetFloat64(key string, ttl time.Duration, fn func() (float64, error)) (float64, error)
 	GetWithCtx(ctx context.Context, key string) (any, bool)
@@ -35,28 +44,29 @@ type ValkeyCache struct {
 
 var _ CacheStore = (*ValkeyCache)(nil)
 
-func NewValkeyCache(host, port, password string) CacheStore {
+func NewValkeyClient(host, port, password string) *redis.Client {
 	addr := fmt.Sprintf("%s:%s", host, port)
-
 	client := redis.NewClient(&redis.Options{
 		Addr:     addr,
 		Password: password,
 		DB:       0,
 	})
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), valkeyOpTimeout)
 	defer cancel()
-
 	if err := client.Ping(ctx).Err(); err != nil {
-		log.Warn().Err(err).Str("addr", addr).Msg("Valkey: failed to connect, cache disabled")
+		log.Warn().Err(err).Str("addr", addr).Msg("Valkey: failed to connect")
 		return nil
 	}
-
 	log.Info().Str("addr", addr).Msg("Valkey: connected successfully")
+	return client
+}
 
-	return &ValkeyCache{
-		client: client,
+func NewValkeyCache(host, port, password string) CacheStore {
+	client := NewValkeyClient(host, port, password)
+	if client == nil {
+		return nil
 	}
+	return &ValkeyCache{client: client}
 }
 
 func (c *ValkeyCache) Get(key string) (any, bool) {
@@ -64,7 +74,7 @@ func (c *ValkeyCache) Get(key string) (any, bool) {
 		return nil, false
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), valkeyOpTimeout)
 	defer cancel()
 
 	valBytes, err := c.client.Get(ctx, key).Bytes()
@@ -88,7 +98,7 @@ func (c *ValkeyCache) Set(key string, value any, ttl time.Duration) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), valkeyOpTimeout)
 	defer cancel()
 
 	data, err := json.Marshal(value)
@@ -103,7 +113,7 @@ func (c *ValkeyCache) Set(key string, value any, ttl time.Duration) {
 }
 
 func (c *ValkeyCache) SetDefault(key string, value any) {
-	c.Set(key, value, 5*time.Minute)
+	c.Set(key, value, valkeyDefaultCacheTTL)
 }
 
 func (c *ValkeyCache) Delete(key string) {
@@ -111,7 +121,7 @@ func (c *ValkeyCache) Delete(key string) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), valkeyOpTimeout)
 	defer cancel()
 
 	if err := c.client.Del(ctx, key).Err(); err != nil {
@@ -171,25 +181,22 @@ func (c *ValkeyCache) DeleteByPrefixWithCtx(ctx context.Context, prefix string) 
 		return
 	}
 
-	var keys []string
-	const maxKeys = 10000
-	iter := c.client.Scan(ctx, 0, prefix+"*", int64(maxKeys)).Iterator()
-	for iter.Next(ctx) {
-		keys = append(keys, iter.Val())
-		if len(keys) >= 100 {
-			if err := c.client.Del(ctx, keys...).Err(); err != nil {
+	var cursor uint64
+	const pageSize = 1000
+	for {
+		keys, nextCursor, err := c.client.Scan(ctx, cursor, prefix+"*", int64(pageSize)).Result()
+		if err != nil {
+			log.Warn().Err(err).Str("prefix", prefix).Msg("Valkey: DeleteByPrefixWithCtx scan error")
+			return
+		}
+		for _, key := range keys {
+			if err := c.client.Del(ctx, key).Err(); err != nil {
 				log.Warn().Err(err).Str("prefix", prefix).Msg("Valkey: DeleteByPrefixWithCtx batch error")
 			}
-			keys = keys[:0]
 		}
-	}
-	if err := iter.Err(); err != nil {
-		log.Warn().Err(err).Str("prefix", prefix).Msg("Valkey: DeleteByPrefixWithCtx scan error")
-	}
-
-	if len(keys) > 0 {
-		if err := c.client.Del(ctx, keys...).Err(); err != nil {
-			log.Warn().Err(err).Str("prefix", prefix).Msg("Valkey: DeleteByPrefixWithCtx error")
+		cursor = nextCursor
+		if cursor == 0 {
+			break
 		}
 	}
 }
@@ -199,7 +206,7 @@ func (c *ValkeyCache) DeleteByPrefix(prefix string) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), valkeyBatchOpTimeout)
 	defer cancel()
 
 	var keys []string
@@ -229,7 +236,7 @@ func (c *ValkeyCache) Flush() {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), valkeyBatchOpTimeout)
 	defer cancel()
 
 	if err := c.client.FlushDB(ctx).Err(); err != nil {
@@ -260,6 +267,70 @@ func (c *ValkeyCache) GetOrSetString(key string, ttl time.Duration, fn func() (s
 		return str, nil
 	}
 	return "", fmt.Errorf("unexpected type for key %s", key)
+}
+
+// GetOrSetStringWithTTL — как GetOrSetString, но при cache hit НЕ перезаписывает
+// ключ в Redis. Это устраняет проблему «частой перезаписи» при малом TTL:
+// если значение в кэше, оно остаётся на месте и сохраняет свой TTL.
+//
+// Используется для hot-ключей с TTL < 30s, где каждый set «обнуляет» expiration.
+func (c *ValkeyCache) GetOrSetStringWithTTL(key string, ttl time.Duration, fn func() (string, error)) (string, error) {
+	if c == nil || c.client == nil {
+		return fn()
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), valkeyOpTimeout)
+	defer cancel()
+
+	// Сначала читаем
+	valBytes, getErr := c.client.Get(ctx, key).Bytes()
+	if getErr == redis.Nil {
+		// Cache miss — вычисляем и сохраняем
+		str, errFn := fn()
+		if errFn != nil {
+			return "", errFn
+		}
+		data, marshalErr := json.Marshal(str)
+		if marshalErr != nil {
+			return "", marshalErr
+		}
+		if setErr := c.client.Set(ctx, key, data, ttl).Err(); setErr != nil {
+			log.Warn().Err(setErr).Str("key", key).Msg("Valkey: SetWithTTL error")
+		}
+		return str, nil
+	}
+	if getErr != nil {
+		log.Warn().Err(getErr).Str("key", key).Msg("Valkey: GetWithTTL error")
+		return fn() // fallback to compute
+	}
+
+	// Cache hit — НЕ перезаписываем, просто возвращаем
+	var result any
+	if unmarshalErr := json.Unmarshal(valBytes, &result); unmarshalErr == nil {
+		if s, ok := result.(string); ok {
+			return s, nil
+		}
+	}
+	return string(valBytes), nil
+}
+
+// ExtendTTL продлевает TTL существующего ключа. Возвращает true, если ключ найден.
+func (c *ValkeyCache) ExtendTTL(key string, ttl time.Duration) bool {
+	if c == nil || c.client == nil {
+		return false
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), valkeyOpTimeout)
+	defer cancel()
+
+	if err := c.client.Expire(ctx, key, ttl).Err(); err != nil {
+		if err == redis.Nil {
+			return false
+		}
+		log.Warn().Err(err).Str("key", key).Msg("Valkey: ExtendTTL error")
+		return false
+	}
+	return true
 }
 
 func (c *ValkeyCache) GetOrSetInt(key string, ttl time.Duration, fn func() (int, error)) (int, error) {
@@ -299,7 +370,7 @@ func (c *ValkeyCache) IsAvailable() bool {
 	if c == nil || c.client == nil {
 		return false
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), valkeyQuickOpTimeout)
 	defer cancel()
 	return c.client.Ping(ctx).Err() == nil
 }

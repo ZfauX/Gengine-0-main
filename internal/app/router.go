@@ -24,6 +24,7 @@ import (
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/audit"
 	"gengine-0/internal/pkg/cache"
+	"gengine-0/internal/pkg/email"
 	"gengine-0/internal/pkg/health"
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
@@ -33,13 +34,15 @@ import (
 
 	_ "gengine-0/docs"
 
+	csrf "gengine-0/internal/pkg/csrf"
+
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/rs/zerolog/log"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-	csrf "github.com/utrack/gin-csrf"
 	"gorm.io/gorm"
 )
 
@@ -108,15 +111,18 @@ func (app *App) SetupRouter() (*gin.Engine, error) {
 		return nil, err
 	}
 
-	// Создаём группу для HTML-маршрутов с CSRF-защитой
+	// HTML-маршруты — с CSRF-защитой
+	// API-маршруты (/api/*) CSRF не требуют — используют JWT-аутентификацию
+	secure := app.Config.TLS.CertFile != "" && app.Config.TLS.KeyFile != ""
+	csrfMW := csrf.Middleware(app.Config.Session.Secret, secure)
 	htmlGroup := r.Group("")
-	htmlGroup.Use(csrf.Middleware(csrf.Options{
-		Secret: app.Config.Session.Secret,
-		ErrorFunc: func(c *gin.Context) {
-			c.String(403, "CSRF token mismatch")
-			c.Abort()
-		},
-	}))
+	htmlGroup.Use(func(c *gin.Context) {
+		if strings.HasPrefix(c.Request.URL.Path, "/api") {
+			c.Next()
+			return
+		}
+		csrfMW(c)
+	})
 
 	if err := app.registerAllRoutes(r, htmlGroup); err != nil {
 		return nil, err
@@ -134,16 +140,12 @@ func (app *App) setupEngine(r *gin.Engine) error {
 	store.Options(sessions.Options{
 		Path:     "/",
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 	})
 	r.Use(gin.Recovery())
 	r.Use(middleware.ErrorHandler())
 	r.Use(middleware.LoggerMiddleware())
 	r.Use(sessions.Sessions("gengine_session", store))
-
-	// API маршруты не требуют CSRF (используют JWT + X-CSRF-Token)
-	apiGroup := r.Group("/api")
-	apiGroup.Use(middleware.CSRFJSON())
 
 	tmpl := template.New("")
 	tmpl.Funcs(templatefuncs.FuncMap())
@@ -153,6 +155,12 @@ func (app *App) setupEngine(r *gin.Engine) error {
 	}
 	r.SetHTMLTemplate(tmpl)
 	render.SetTemplate(tmpl)
+
+	if app.Config.Server.GinMode == "debug" {
+		render.EnableDevMode(app.BaseDir, templatefuncs.FuncMap(), func(t *template.Template) {
+			r.SetHTMLTemplate(t)
+		})
+	}
 
 	r.Use(middleware.ContextTimeout(30 * time.Second))
 
@@ -172,7 +180,7 @@ func (app *App) setupEngine(r *gin.Engine) error {
 		gin.WrapH(promhttp.Handler())(c)
 	})
 
-	healthChecker := health.NewCheckerWithValkey(app.DB, app.Hub, app.Deps.Cache)
+	healthChecker := health.NewCheckerWithValkey(app.DB, app.Hub, app.Deps.Cache).WithUploadsDir("uploads")
 	r.GET("/healthz", func(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
 		defer cancel()
@@ -228,7 +236,9 @@ func (app *App) setupEngine(r *gin.Engine) error {
 		}
 	} else {
 		// Без явной конфигурации — не доверяем ни одному прокси
-		r.SetTrustedProxies(nil)
+		if err := r.SetTrustedProxies(nil); err != nil {
+			log.Error().Err(err).Msg("router: SetTrustedProxies error")
+		}
 	}
 
 	r.Static("/static", filepath.Join(app.BaseDir, app.Config.Server.StaticDir))
@@ -241,10 +251,14 @@ func (app *App) setupEngine(r *gin.Engine) error {
 		var userID uint
 		var role string
 		if id, ok := c.Get("userID"); ok {
-			userID = id.(uint)
+			if v, ok := id.(uint); ok {
+				userID = v
+			}
 		}
 		if r, ok := c.Get("role"); ok {
-			role = r.(string)
+			if v, ok := r.(string); ok {
+				role = v
+			}
 		}
 		render.Page(c, http.StatusOK, "home.html", gin.H{
 			"CurrentUserID": userID,
@@ -335,6 +349,7 @@ type services struct {
 	OAuth           *user.OAuthService
 	PasswordReset   *user.PasswordResetService
 	EmailVerif      *user.EmailVerificationService
+	Email           *email.EmailService
 	Game            *game.GameService
 	GamePlay        *game.GamePlayService
 	GameAdmin       *game.GameAdminService
@@ -374,6 +389,7 @@ func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.
 	oauthSvc := user.NewOAuthService(repos.User, repos.ExtLogin, cfg)
 	passResetSvc := user.NewPasswordResetService(repos.User, repos.PassReset, cfg)
 	emailVerifSvc := user.NewEmailVerificationService(repos.User, repos.EmailVerif, cfg)
+	emailSvc := email.NewEmailService(cfg, db)
 
 	photoSvc := game.NewPhotoService(db)
 
@@ -443,6 +459,7 @@ func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.
 		OAuth:           oauthSvc,
 		PasswordReset:   passResetSvc,
 		EmailVerif:      emailVerifSvc,
+		Email:           emailSvc,
 		Game:            gameSvc,
 		GamePlay:        gamePlaySvc,
 		GameAdmin:       gameAdminSvc,
@@ -492,6 +509,7 @@ func (app *App) registerUserRoutes(r *gin.RouterGroup) {
 		app.Deps.AuditSvc,
 		app.DB,
 		app.LocalStorage,
+		app.Deps.Services.Email,
 	)
 }
 

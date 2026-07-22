@@ -6,6 +6,7 @@ import (
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/pkg/audit"
+	"gengine-0/internal/pkg/email"
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/storage"
 
@@ -29,8 +30,9 @@ func RegisterRoutes(
 	auditSvc *audit.Service,
 	db *gorm.DB,
 	localStorage storage.FileStorage,
+	emailSvc *email.EmailService,
 ) {
-	authHandler := NewAuthHandler(cfg, authSvc, userSvc, passwordResetSvc, emailVerifSvc, oauthSvc, auditSvc)
+	authHandler := NewAuthHandler(cfg, authSvc, userSvc, passwordResetSvc, emailVerifSvc, oauthSvc, auditSvc, emailSvc)
 	profileSvc := NewProfileService(db)
 	profileHandler := NewProfileHandler(db, localStorage, authSvc, profileSvc, userSvc)
 	achievementHandler := NewAchievementHandler(db)
@@ -136,14 +138,14 @@ func RegisterRoutes(
 		authGroup.POST("/forgot", authHandler.ForgotPassword)
 
 		// @Summary Показать форму сброса пароля
-		// @Description Возвращает HTML-страницу для ввода нового пароля по токену, полученному по email
+		// @Description Возвращает HTML-страницу для ввода нового пароля по коду сброса, полученному по email
 		// @Tags auth
 		// @Accept html
 		// @Produce html
-		// @Param token query string true "Токен сброса пароля"
+		// @Param resetCode path string true "Код сброса пароля"
 		// @Success 200 {string} html "Страница сброса пароля"
-		// @Router /auth/reset [get]
-		authGroup.GET("/reset", authHandler.ShowResetForm)
+		// @Router /auth/reset/{resetCode} [get]
+		authGroup.GET("/reset/:resetCode", authHandler.ShowResetForm)
 
 		// @Summary Сброс пароля
 		// @Description Устанавливает новый пароль по токену, полученному по email

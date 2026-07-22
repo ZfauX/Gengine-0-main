@@ -12,6 +12,17 @@ import (
 	"time"
 )
 
+const (
+	defaultSMTPPort        = 587
+	defaultMaxBackups      = 10
+	defaultLogMaxSizeMB    = 100
+	defaultLogMaxAgeDays   = 28
+	defaultDBMaxOpenConns  = 50
+	defaultDBMaxIdleConns  = 25
+	defaultWSMaxTotalConns = 1000
+	defaultWSMaxConnsPerIP = 50
+)
+
 // Config содержит все настройки приложения, сгруппированные по функциональным областям.
 type Config struct {
 	Server    ServerConfig    // настройки HTTP-сервера и логирования
@@ -21,7 +32,6 @@ type Config struct {
 	Session   SessionConfig   // настройки сессий (подпись cookie)
 	Admin     AdminConfig     // учётные данные администратора по умолчанию
 	OAuth     OAuthConfig     // конфигурация OAuth-провайдеров
-	Stripe    StripeConfig    // настройки Stripe (опционально)
 	SMTP      SMTPConfig      // настройки SMTP-сервера (опционально)
 	ReCAPTCHA ReCAPTCHAConfig // настройки reCAPTCHA (опционально)
 	TLS       TLSConfig       // пути к TLS-сертификатам (опционально)
@@ -100,13 +110,6 @@ type OAuthProvider struct {
 	ClientSecret string // Client Secret приложения
 }
 
-// StripeConfig содержит параметры Stripe (опционально).
-type StripeConfig struct {
-	Enabled       bool   // включена ли интеграция со Stripe
-	SecretKey     string // секретный ключ Stripe API
-	WebhookSecret string // секрет для проверки подписи вебхуков
-}
-
 // SMTPConfig содержит параметры SMTP-сервера (опционально).
 type SMTPConfig struct {
 	Enabled  bool   // включена ли отправка email
@@ -153,10 +156,10 @@ func LoadConfig() (*Config, error) {
 	cfg.Server.Port = getEnvOrDefault("PORT", "8080")
 	cfg.Server.GinMode = getEnvOrDefault("GIN_MODE", "debug")
 	cfg.Server.BaseURL = getEnvOrDefault("BASE_URL", "http://localhost:"+cfg.Server.Port)
-	cfg.Server.MaxBackups = getEnvAsInt("BACKUP_MAX_BACKUPS", 10)
+	cfg.Server.MaxBackups = getEnvAsInt("LOG_MAX_BACKUPS", defaultMaxBackups)
 	cfg.Server.LogFilePath = getEnvOrDefault("LOG_FILE_PATH", "logs/app.log")
-	cfg.Server.LogMaxSize = getEnvAsInt("LOG_MAX_SIZE", 100)
-	cfg.Server.LogMaxAge = getEnvAsInt("LOG_MAX_AGE", 28)
+	cfg.Server.LogMaxSize = getEnvAsInt("LOG_MAX_SIZE", defaultLogMaxSizeMB)
+	cfg.Server.LogMaxAge = getEnvAsInt("LOG_MAX_AGE", defaultLogMaxAgeDays)
 	cfg.Server.LogCompress = getEnvAsBool("LOG_COMPRESS", true)
 	cfg.Server.LogFormat = getEnvOrDefault("LOG_FORMAT", "console") // console или json
 	cfg.Server.StaticDir = getEnvOrDefault("STATIC_DIR", "static")
@@ -180,8 +183,8 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 	cfg.Database.SSLMode = getEnvOrDefault("DB_SSLMODE", "disable")
-	cfg.Database.MaxOpenConns = getEnvAsInt("DB_MAX_OPEN_CONNS", 50)
-	cfg.Database.MaxIdleConns = getEnvAsInt("DB_MAX_IDLE_CONNS", 25)
+	cfg.Database.MaxOpenConns = getEnvAsInt("DB_MAX_OPEN_CONNS", defaultDBMaxOpenConns)
+	cfg.Database.MaxIdleConns = getEnvAsInt("DB_MAX_IDLE_CONNS", defaultDBMaxIdleConns)
 	if cfg.Database.ConnMaxLifetime, err = parseDuration("DB_CONN_MAX_LIFETIME", "30m"); err != nil {
 		return nil, err
 	}
@@ -229,11 +232,6 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 
-	// Stripe
-	if cfg.Stripe, err = loadStripeConfig(); err != nil {
-		return nil, err
-	}
-
 	// SMTP
 	if cfg.SMTP, err = loadSMTPConfig(); err != nil {
 		return nil, err
@@ -254,8 +252,8 @@ func LoadConfig() (*Config, error) {
 	}
 
 	// WebSocket
-	cfg.WebSocket.MaxTotalConns = getEnvAsInt("WS_MAX_TOTAL_CONNS", 1000)
-	cfg.WebSocket.MaxConnsPerIP = getEnvAsInt("WS_MAX_CONNS_PER_IP", 50)
+	cfg.WebSocket.MaxTotalConns = getEnvAsInt("WS_MAX_TOTAL_CONNS", defaultWSMaxTotalConns)
+	cfg.WebSocket.MaxConnsPerIP = getEnvAsInt("WS_MAX_CONNS_PER_IP", defaultWSMaxConnsPerIP)
 
 	return cfg, nil
 }
@@ -291,7 +289,7 @@ func requireStrongSecret(key string, minLen int) (string, error) {
 	if len(value) < minLen {
 		return "", fmt.Errorf("environment variable %s must be at least %d characters long (current: %d)", key, minLen, len(value))
 	}
-	commonWeak := []string{"change-me", "secret", "password", "admin", "123456", "your-"}
+	commonWeak := []string{"change-me", "secret", "password", "admin", "123456", "your-secret"}
 	lowerValue := strings.ToLower(value)
 	for _, w := range commonWeak {
 		if strings.Contains(lowerValue, w) {
@@ -344,25 +342,6 @@ func loadOAuthProvider(prefix string) (OAuthProvider, error) {
 	}, nil
 }
 
-// loadStripeConfig загружает настройки Stripe, если они включены.
-// При включении требует наличия STRIPE_SECRET_KEY.
-func loadStripeConfig() (StripeConfig, error) {
-	enabled, _ := strconv.ParseBool(os.Getenv("STRIPE_ENABLED"))
-	if !enabled {
-		return StripeConfig{Enabled: false}, nil
-	}
-	secretKey := os.Getenv("STRIPE_SECRET_KEY")
-	if secretKey == "" {
-		return StripeConfig{}, errors.New("STRIPE_ENABLED is true but STRIPE_SECRET_KEY is not set")
-	}
-	webhookSecret := os.Getenv("STRIPE_WEBHOOK_SECRET")
-	return StripeConfig{
-		Enabled:       true,
-		SecretKey:     secretKey,
-		WebhookSecret: webhookSecret,
-	}, nil
-}
-
 // loadSMTPConfig загружает настройки SMTP, если они включены.
 // При включении требует наличия SMTP_HOST и SMTP_FROM.
 func loadSMTPConfig() (SMTPConfig, error) {
@@ -374,7 +353,7 @@ func loadSMTPConfig() (SMTPConfig, error) {
 	if host == "" {
 		return SMTPConfig{}, errors.New("SMTP_ENABLED is true but SMTP_HOST is missing")
 	}
-	portStr := getEnvOrDefault("SMTP_PORT", "587")
+	portStr := getEnvOrDefault("SMTP_PORT", strconv.Itoa(defaultSMTPPort))
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
 		return SMTPConfig{}, fmt.Errorf("invalid SMTP_PORT: %w", err)

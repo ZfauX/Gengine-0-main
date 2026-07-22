@@ -7,13 +7,15 @@ require (
 	github.com/getsentry/sentry-go v0.47.0
 	github.com/gin-contrib/sessions v1.0.2
 	github.com/gin-gonic/gin v1.10.0
+	github.com/go-pdf/fpdf v0.9.0
 	github.com/go-playground/validator/v10 v10.20.0
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/google/uuid v1.6.0
+	github.com/gorilla/csrf v1.7.3
 	github.com/gorilla/websocket v1.5.3
+	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/joho/godotenv v1.5.1
-	github.com/jung-kurt/gofpdf v1.16.2
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/pquerna/otp v1.5.0
 	github.com/prometheus/client_golang v1.23.2
@@ -23,7 +25,6 @@ require (
 	github.com/swaggo/files v1.0.1
 	github.com/swaggo/gin-swagger v1.6.1
 	github.com/swaggo/swag v1.16.6
-	github.com/utrack/gin-csrf v0.0.0-20190424104817-40fb8d2c8fca
 	golang.org/x/crypto v0.50.0
 	golang.org/x/oauth2 v0.30.0
 	golang.org/x/sync v0.20.0
@@ -33,7 +34,8 @@ require (
 )
 
 require (
-	github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc // indirect
+	github.com/boombuler/barcode v1.0.1 // indirect
+	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/richardlehane/mscfb v1.0.6 // indirect
 	github.com/richardlehane/msoleps v1.0.6 // indirect
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
@@ -53,7 +55,6 @@ require (
 	github.com/cloudwego/base64x v0.1.4 // indirect
 	github.com/cloudwego/iasm v0.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
-	github.com/dchest/uniuri v0.0.0-20160212164326-8902c56451e9 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.6 // indirect
 	github.com/gin-contrib/sse v1.0.0 // indirect
 	github.com/go-openapi/jsonpointer v0.19.6 // indirect
@@ -84,7 +85,6 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/pelletier/go-toml/v2 v2.2.2 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
@@ -98,7 +98,7 @@ require (
 	golang.org/x/arch v0.8.0 // indirect
 	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/net v0.53.0 // indirect
-	golang.org/x/sys v0.44.0 // indirect
+	golang.org/x/sys v0.44.0
 	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/tools v0.44.0 // indirect
 	google.golang.org/protobuf v1.36.8 // indirect

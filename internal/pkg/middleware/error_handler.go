@@ -17,7 +17,7 @@ func ErrorHandler() gin.HandlerFunc {
 			if r := recover(); r != nil {
 				log.Error().Interface("panic", r).Msg("Panic recovered")
 				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-					"error": "Внутренняя ошибка сервера",
+					"error": ErrInternalServer,
 					"code":  "internal_error",
 				})
 			}
@@ -38,7 +38,7 @@ func ErrorHandler() gin.HandlerFunc {
 			}
 			log.Error().Err(err).Msg("Unhandled error")
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-				"error": "Внутренняя ошибка сервера",
+				"error": ErrInternalServer,
 				"code":  "internal_error",
 			})
 		}

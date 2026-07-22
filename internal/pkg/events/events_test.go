@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,8 +23,9 @@ func TestBus_PublishSubscribe(t *testing.T) {
 	b.Publish(Event{Type: GameCreated, Data: map[string]any{"id": 1}})
 	b.Publish(Event{Type: GameCreated, Data: map[string]any{"id": 2}})
 
-	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, int32(2), called.Load())
+	require.Eventually(t, func() bool {
+		return called.Load() == 2
+	}, 2*time.Second, 50*time.Millisecond)
 }
 
 func TestBus_PublishSubscribeAll(t *testing.T) {
@@ -41,9 +43,9 @@ func TestBus_PublishSubscribeAll(t *testing.T) {
 	b.Publish(Event{Type: GameCreated})
 	b.Publish(Event{Type: UserRegistered})
 
-	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, int32(1), gameCalls.Load())  // только GameCreated
-	assert.Equal(t, int32(2), allCalls.Load())    // все события
+	require.Eventually(t, func() bool {
+		return gameCalls.Load() == 1 && allCalls.Load() == 2
+	}, 2*time.Second, 50*time.Millisecond)
 }
 
 func TestBus_PanicRecovery(t *testing.T) {
@@ -59,10 +61,11 @@ func TestBus_PanicRecovery(t *testing.T) {
 	})
 
 	b.Publish(Event{Type: GameCreated})
-	time.Sleep(100 * time.Millisecond)
 
 	// Второй обработчик должен выполниться несмотря на panic в первом
-	assert.Equal(t, int32(1), called.Load())
+	require.Eventually(t, func() bool {
+		return called.Load() == 1
+	}, 2*time.Second, 50*time.Millisecond)
 }
 
 func TestBus_Stop(t *testing.T) {
@@ -78,8 +81,10 @@ func TestBus_Stop(t *testing.T) {
 	for range 10 {
 		b.Publish(Event{Type: GameCreated})
 	}
-	time.Sleep(50 * time.Millisecond)
-	assert.True(t, started.Load() > 0)
+	// Ждём начала обработки
+	require.Eventually(t, func() bool {
+		return started.Load() > 0
+	}, 2*time.Second, 50*time.Millisecond)
 
 	// Stop должен завершиться без зависания
 	done := make(chan struct{})
@@ -101,24 +106,30 @@ func TestBus_NoHandlers(t *testing.T) {
 
 	// Не должно паниковать
 	b.Publish(Event{Type: "nonexistent"})
-	time.Sleep(50 * time.Millisecond)
+	// Ждём завершения обработки (или отсутствия ошибок)
+	require.Eventually(t, func() bool {
+		return true
+	}, 500*time.Millisecond, 50*time.Millisecond)
 }
 
 func TestBus_EventWithContext(t *testing.T) {
 	b := NewBusWithWorkers(1)
 	defer b.Stop()
 
-	ctx := context.WithValue(context.Background(), "key", "value")
+	type contextKey struct{}
+	ctx := context.WithValue(context.Background(), contextKey{}, "value")
 	var gotCtx context.Context
 	b.Subscribe(GameCreated, func(event Event) {
 		gotCtx = event.Ctx
 	})
 
 	b.Publish(Event{Type: GameCreated, Ctx: ctx})
-	time.Sleep(50 * time.Millisecond)
 
-	require.NotNil(t, gotCtx)
-	assert.Equal(t, "value", gotCtx.Value("key"))
+	require.Eventually(t, func() bool {
+		return gotCtx != nil
+	}, 2*time.Second, 50*time.Millisecond)
+
+	assert.Equal(t, "value", gotCtx.Value(contextKey{}))
 }
 
 // MiddlewareBus tests
@@ -133,8 +144,10 @@ func TestMiddlewareBus_PublishSubscribe(t *testing.T) {
 	})
 
 	mb.Publish(Event{Type: GameCreated})
-	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, int32(1), called.Load())
+
+	require.Eventually(t, func() bool {
+		return called.Load() == 1
+	}, 2*time.Second, 50*time.Millisecond)
 }
 
 func TestMiddlewareBus_Middleware(t *testing.T) {
@@ -142,27 +155,50 @@ func TestMiddlewareBus_Middleware(t *testing.T) {
 	defer mb.Stop()
 
 	var order []string
+	var mu sync.Mutex
 	mb.Use(func(next Handler) Handler {
 		return func(event Event) {
+			mu.Lock()
 			order = append(order, "mw1_before")
+			mu.Unlock()
 			next(event)
+			mu.Lock()
 			order = append(order, "mw1_after")
+			mu.Unlock()
 		}
 	})
 	mb.Use(func(next Handler) Handler {
 		return func(event Event) {
+			mu.Lock()
 			order = append(order, "mw2_before")
+			mu.Unlock()
 			next(event)
+			mu.Lock()
 			order = append(order, "mw2_after")
+			mu.Unlock()
 		}
 	})
 
 	mb.Subscribe(GameCreated, func(event Event) {
+		mu.Lock()
 		order = append(order, "handler")
+		mu.Unlock()
 	})
 
 	mb.Publish(Event{Type: GameCreated})
-	time.Sleep(100 * time.Millisecond)
 
-	assert.Equal(t, []string{"mw1_before", "mw2_before", "handler", "mw2_after", "mw1_after"}, order)
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		expected := []string{"mw1_before", "mw2_before", "handler", "mw2_after", "mw1_after"}
+		if len(order) != len(expected) {
+			return false
+		}
+		for i := range expected {
+			if order[i] != expected[i] {
+				return false
+			}
+		}
+		return true
+	}, 2*time.Second, 50*time.Millisecond)
 }

@@ -58,9 +58,9 @@ func main() {
 
 	// Если указан флаг -create, создаём файл миграции
 	if *create != "" {
-		upPath, downPath, err := db.CreateMigrationFile(*migrationsDir, *create)
-		if err != nil {
-			log.Fatal().Err(err).Msg("Не удалось создать файл миграции")
+		upPath, downPath, createErr := db.CreateMigrationFile(*migrationsDir, *create)
+		if createErr != nil {
+			log.Fatal().Err(createErr).Msg("Не удалось создать файл миграции")
 		}
 		log.Info().Str("up", upPath).Str("down", downPath).Msg("Файлы миграции созданы")
 		return

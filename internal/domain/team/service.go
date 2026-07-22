@@ -173,15 +173,15 @@ func NewInvitationService(
 }
 
 func (s *InvitationService) CreateInvitation(ctx context.Context, teamID, invitedUserID, actorID uint) (*Invitation, error) {
-	team, err := s.teamRepo.GetByID(ctx, teamID)
-	if err != nil {
-		return nil, err
+	team, getTeamErr := s.teamRepo.GetByID(ctx, teamID)
+	if getTeamErr != nil {
+		return nil, getTeamErr
 	}
 
 	isCaptain := (team.CaptainID == actorID)
 	if !isCaptain {
-		passing, err := s.teamRepo.GetPassingByTeam(ctx, teamID)
-		if err != nil {
+		passing, passingErr := s.teamRepo.GetPassingByTeam(ctx, teamID)
+		if passingErr != nil {
 			return nil, errors.New("не удалось определить игру для команды")
 		}
 		isManager, _ := s.authorizer.IsUserManager(ctx, passing.GameID, actorID)
@@ -190,9 +190,9 @@ func (s *InvitationService) CreateInvitation(ctx context.Context, teamID, invite
 		}
 	}
 
-	isMember, err := s.teamRepo.IsMember(ctx, teamID, invitedUserID)
-	if err != nil {
-		return nil, err
+	isMember, memberErr := s.teamRepo.IsMember(ctx, teamID, invitedUserID)
+	if memberErr != nil {
+		return nil, memberErr
 	}
 	if isMember || team.CaptainID == invitedUserID {
 		return nil, errors.New("пользователь уже в команде")
@@ -208,21 +208,20 @@ func (s *InvitationService) CreateInvitation(ctx context.Context, teamID, invite
 		UserID: invitedUserID,
 		Status: InvitationPending,
 	}
-	if err := s.invRepo.Create(ctx, inv); err != nil {
-		return nil, err
+	if createErr := s.invRepo.Create(ctx, inv); createErr != nil {
+		return nil, createErr
 	}
 
 	if s.cfg != nil && s.cfg.SMTP.Enabled {
-		// Используем глобальную очередь вместо локального сервиса
-		invitedUser, err := s.teamRepo.GetUserByID(ctx, invitedUserID)
-		if err == nil {
+		invitedUser, getUserErr := s.teamRepo.GetUserByID(ctx, invitedUserID)
+		if getUserErr == nil {
 			acceptLink := fmt.Sprintf("%s/invitations/%d/accept", s.cfg.Server.BaseURL, inv.ID)
-			if err := email.Enqueue(
+			if emailErr := email.Enqueue(
 				invitedUser.Email,
 				"Приглашение в команду",
 				fmt.Sprintf("Вас пригласили в команду «%s». Принять приглашение: %s", team.Name, acceptLink),
-			); err != nil {
-				log.Error().Err(err).Str("email", invitedUser.Email).Msg("failed to enqueue invitation email")
+			); emailErr != nil {
+				log.Error().Err(emailErr).Str("email", invitedUser.Email).Msg("failed to enqueue invitation email")
 			}
 		}
 	}
@@ -239,9 +238,9 @@ func (s *InvitationService) GetPendingForUser(ctx context.Context, userID uint) 
 }
 
 func (s *InvitationService) AcceptInvitation(ctx context.Context, invitationID, userID uint) error {
-	inv, err := s.invRepo.GetByID(ctx, invitationID)
-	if err != nil {
-		return err
+	inv, getErr := s.invRepo.GetByID(ctx, invitationID)
+	if getErr != nil {
+		return getErr
 	}
 	if inv.UserID != userID {
 		return errors.New("вы не можете принять это приглашение")
@@ -256,28 +255,28 @@ func (s *InvitationService) AcceptInvitation(ctx context.Context, invitationID, 
 	}
 	defer tx.Rollback()
 
-	if err := tx.Model(&Invitation{}).Where("id = ?", invitationID).Update("status", InvitationAccepted).Error; err != nil {
-		return err
+	if updateErr := tx.Model(&Invitation{}).Where("id = ?", invitationID).Update("status", InvitationAccepted).Error; updateErr != nil {
+		return updateErr
 	}
-	if err := tx.Exec("INSERT INTO team_members (team_id, user_id) VALUES (?, ?)", inv.TeamID, userID).Error; err != nil {
-		return err
-	}
-
-	if err := tx.Commit().Error; err != nil {
-		return err
+	if execErr := tx.Exec("INSERT INTO team_members (team_id, user_id) VALUES (?, ?)", inv.TeamID, userID).Error; execErr != nil {
+		return execErr
 	}
 
-	count, err := s.teamRepo.TeamMembersCount(ctx)
-	if err == nil {
+	if commitErr := tx.Commit().Error; commitErr != nil {
+		return commitErr
+	}
+
+	count, countErr := s.teamRepo.TeamMembersCount(ctx)
+	if countErr == nil {
 		metrics.SetTeamMembersTotal(float64(count))
 	}
 	return nil
 }
 
 func (s *InvitationService) DeclineInvitation(ctx context.Context, invitationID, userID uint) error {
-	inv, err := s.invRepo.GetByID(ctx, invitationID)
-	if err != nil {
-		return err
+	inv, getErr := s.invRepo.GetByID(ctx, invitationID)
+	if getErr != nil {
+		return getErr
 	}
 	if inv.UserID != userID {
 		return errors.New("вы не можете отклонить это приглашение")

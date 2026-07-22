@@ -9,17 +9,27 @@
     <div class="card">
         <form action="/auth/reset" method="POST" class="space-y-4">
             <input type="hidden" name="_csrf" value="{{.csrf}}">
-            <input type="hidden" name="token" value="{{.Token}}">
+            <input type="hidden" name="reset_code" value="{{.ResetCode}}">
 
             <div>
                 <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Новый пароль</label>
                 <input type="password" name="password" id="password" required minlength="6"
-                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Password}}border-red-500{{end}}"
                        onkeypress="if(event.key === 'Enter') this.form.submit()">
+                {{if .Errors.Password}}<p class="text-red-500 text-xs mt-1">{{.Errors.Password}}</p>{{end}}
             </div>
 
-            <button type="submit" class="w-full btn btn-primary text-sm">Установить пароль</button>
+            <button type="submit" id="resetBtn" class="w-full btn btn-primary text-sm">Установить пароль</button>
         </form>
+
+        <script>
+            document.querySelector('form').addEventListener('submit', function() {
+                const btn = document.getElementById('resetBtn');
+                btn.disabled = true;
+                btn.textContent = 'Установка...';
+                btn.classList.add('opacity-50', 'cursor-not-allowed');
+            });
+        </script>
 
         <div class="mt-4 text-center text-sm">
             <a href="/auth/login" class="text-blue-600 hover:underline">← Вернуться на страницу входа</a>

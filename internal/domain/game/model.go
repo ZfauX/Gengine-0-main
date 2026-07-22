@@ -29,10 +29,10 @@ type Game struct {
 	gorm.Model
 	Name                 string     `form:"name" binding:"required,min=2,max=100"`
 	Description          string     `form:"description" binding:"max=2000"`
-	AuthorID             uint       `gorm:"not null;index"`
+	AuthorID             uint       `gorm:"not null;index:idx_games_author"`
 	Author               user.User  `gorm:"foreignKey:AuthorID"`
 	IsDraft              bool       `gorm:"default:true"`
-	Visibility           string     `gorm:"default:'public'" form:"visibility"`
+	Visibility           string     `gorm:"default:'public';index:idx_games_visibility"`
 	StartsAt             *time.Time `form:"starts_at" time_format:"2006-01-02T15:04"`
 	RegistrationDeadline *time.Time `form:"registration_deadline" time_format:"2006-01-02T15:04"`
 	MaxTeamNumber        int        `gorm:"default:10" form:"max_team_number"`
@@ -58,9 +58,9 @@ type GameSetting struct {
 
 type GamePassing struct {
 	gorm.Model
-	GameID         uint              `gorm:"not null;index"`
-	TeamID         uint              `gorm:"not null;index"`
-	Status         GamePassingStatus `gorm:"default:'pending'"`
+	GameID         uint              `gorm:"not null;index:idx_game_passings_game"`
+	TeamID         uint              `gorm:"not null;index:idx_game_passings_team"`
+	Status         GamePassingStatus `gorm:"default:'pending';index:idx_game_passings_status"`
 	ResultDuration *time.Duration    `gorm:"type:bigint"`
 	Place          *int
 	Game           Game                        `gorm:"foreignKey:GameID"`
@@ -72,8 +72,8 @@ type GamePassing struct {
 
 type LevelProgress struct {
 	gorm.Model
-	GamePassingID  uint `gorm:"not null;index"`
-	LevelID        uint `gorm:"not null"`
+	GamePassingID  uint `gorm:"not null;index:idx_level_progress_passing"`
+	LevelID        uint `gorm:"not null;index:idx_level_progress_level"`
 	StartedAt      time.Time
 	FinishedAt     *time.Time
 	HintsUsed      int
@@ -85,7 +85,7 @@ type LevelProgress struct {
 
 type Attempt struct {
 	gorm.Model
-	LevelProgressID uint `gorm:"not null;index"`
+	LevelProgressID uint `gorm:"not null;index:idx_attempts_progress"`
 	Code            string
 	FilePath        string
 	IsFile          bool
@@ -112,7 +112,7 @@ type CoAuthor struct {
 type Note struct {
 	gorm.Model
 	GameID  uint `gorm:"not null;index"`
-	UserID  uint `gorm:"not null"`
+	UserID  uint `gorm:"not null;index"`
 	LevelID *uint
 	Text    string
 	Game    Game        `gorm:"foreignKey:GameID"`
@@ -123,7 +123,7 @@ type Note struct {
 type Review struct {
 	gorm.Model
 	GameID  uint `gorm:"not null;index"`
-	UserID  uint `gorm:"not null"`
+	UserID  uint `gorm:"not null;index"`
 	Rating  int  `gorm:"not null"`
 	Comment string
 	Game    Game      `gorm:"foreignKey:GameID"`
@@ -133,7 +133,7 @@ type Review struct {
 type Photo struct {
 	gorm.Model
 	GameID  uint `gorm:"not null;index"`
-	UserID  uint `gorm:"not null"`
+	UserID  uint `gorm:"not null;index"`
 	LevelID *uint
 	Path    string
 	Game    Game        `gorm:"foreignKey:GameID"`
@@ -150,8 +150,8 @@ type PlayerRating struct {
 
 type Log struct {
 	gorm.Model
-	GamePassingID uint `gorm:"not null;index"`
-	LevelID       uint
+	GamePassingID uint `gorm:"not null;index:idx_logs_passing"`
+	LevelID       uint `gorm:"index:idx_logs_level"`
 	Message       string
 	GamePassing   GamePassing `gorm:"foreignKey:GamePassingID"`
 	Level         level.Level `gorm:"foreignKey:LevelID"`

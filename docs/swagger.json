@@ -506,6 +506,75 @@
                     }
                 }
             }
+        },
+        "/games/{id}/teams/{team_id}/export-results": {
+            "get": {
+                "security": [
+                    {
+                        "JWT": []
+                    }
+                ],
+                "description": "Выгружает результаты конкретной команды в CSV-формат (доступно капитану или автору игры)",
+                "produces": [
+                    "text/csv"
+                ],
+                "tags": [
+                    "export"
+                ],
+                "summary": "Экспорт результатов команды в CSV",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID игры",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "ID команды",
+                        "name": "team_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "CSV-файл с результатами команды",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Неверный ID",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Требуется аутентификация",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Недостаточно прав",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Внутренняя ошибка",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
         }
     },
     "securityDefinitions": {

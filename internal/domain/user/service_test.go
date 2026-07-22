@@ -322,14 +322,13 @@ func TestPasswordResetService_GenerateToken(t *testing.T) {
 
 	user := createTestUser(t, db, "reset@example.com", "pass", "Reset")
 
-	token, err := service.GenerateToken(context.Background(), *user)
+	resetCode, err := service.GenerateToken(context.Background(), *user)
 	require.NoError(t, err)
-	assert.NotEmpty(t, token)
+	assert.NotEmpty(t, resetCode)
 
-	// Проверяем, что токен сохранён в БД (ищем по хешу)
-	tokenHash := hashToken(token)
+	// Проверяем, что токен сохранён в БД (ищем по reset_code)
 	var stored PasswordResetToken
-	err = db.Where("token_hash = ?", tokenHash).First(&stored).Error
+	err = db.Where("reset_code = ?", resetCode).First(&stored).Error
 	require.NoError(t, err)
 	assert.Equal(t, user.ID, stored.UserID)
 	assert.True(t, stored.ExpiresAt.After(time.Now()))
@@ -344,19 +343,19 @@ func TestPasswordResetService_ResetPassword(t *testing.T) {
 	user := createTestUser(t, db, "reset2@example.com", "oldpass", "Reset2")
 
 	// Генерируем токен
-	tokenStr, err := service.GenerateToken(context.Background(), *user)
+	resetCode, err := service.GenerateToken(context.Background(), *user)
 	require.NoError(t, err)
 
 	t.Run("успешный сброс пароля", func(t *testing.T) {
-		err := service.ResetPassword(context.Background(), tokenStr, "newpass")
+		err := service.ResetPassword(context.Background(), resetCode, "newpass")
 		require.NoError(t, err)
 
 		updated, _ := userRepo.GetByID(context.Background(), user.ID)
 		err = bcrypt.CompareHashAndPassword([]byte(updated.Password), []byte("newpass"))
 		assert.NoError(t, err)
 
-		// Токен должен быть удалён
-		_, err = passResetRepo.GetToken(context.Background(), tokenStr)
+		// ResetCode должен быть удалён
+		_, err = passResetRepo.GetTokenByResetCode(context.Background(), resetCode)
 		assert.Error(t, err)
 	})
 
@@ -364,17 +363,18 @@ func TestPasswordResetService_ResetPassword(t *testing.T) {
 		// Создаём просроченный токен вручную
 		expiredToken := &PasswordResetToken{
 			UserID:    user.ID,
+			ResetCode: "expired-code-123",
 			TokenHash: hashToken("expiredtoken"),
 			ExpiresAt: time.Now().Add(-time.Hour),
 		}
 		_ = passResetRepo.CreateToken(context.Background(), expiredToken)
-		err := service.ResetPassword(context.Background(), "expiredtoken", "any")
+		err := service.ResetPassword(context.Background(), "expired-code-123", "any")
 		assert.Error(t, err)
 		assert.Equal(t, "токен истёк", err.Error())
 	})
 
-	t.Run("несуществующий токен", func(t *testing.T) {
-		err := service.ResetPassword(context.Background(), "nonexistent", "any")
+	t.Run("несуществующий код", func(t *testing.T) {
+		err := service.ResetPassword(context.Background(), "nonexistent-code", "any")
 		assert.Error(t, err)
 		assert.Equal(t, "токен недействителен или истёк", err.Error())
 	})

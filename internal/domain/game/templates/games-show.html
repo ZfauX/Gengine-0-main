@@ -130,6 +130,10 @@
             <a href="/games/{{.Game.ID}}/export" class="btn btn-outline text-sm">Экспорт CSV</a>
             <a href="/games/{{.Game.ID}}/export-pdf" class="btn btn-outline text-sm">📄 PDF</a>
             <a href="/games/{{.Game.ID}}/test" class="btn btn-outline text-sm">Тест</a>
+            <form action="/games/{{.Game.ID}}/force-finish" method="POST" class="inline" onsubmit="return confirm('Вы уверены? Принудительное завершение остановит все активные прохождения.')">
+                <input type="hidden" name="_csrf" value="{{.csrf}}">
+                <button type="submit" class="btn btn-danger text-sm">Завершить игру</button>
+            </form>
             <button id="delete-btn" class="btn btn-danger text-sm" data-game-id="{{.Game.ID}}" data-game-name="{{.Game.Name}}">Удалить</button>
         {{end}}
         {{if .CanApply}}

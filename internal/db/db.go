@@ -64,25 +64,21 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 	return db, nil
 }
 
-// EnsureAdmin создаёт или обновляет учётную запись администратора в базе данных.
+// EnsureAdmin создаёт учётную запись администратора, если её ещё нет.
 // Использует учетные данные из cfg.Admin (Email и Password).
-// Алгоритм:
-//  1. Хеширует пароль с помощью bcrypt со стоимостью 12 (рекомендовано для продакшена).
-//  2. Ищет пользователя с email = cfg.Admin.Email.
-//     - Если найден, обновляет его пароль и устанавливает роль admin (если ещё не admin).
-//     - Если не найден, создаёт нового пользователя с ролью admin.
-//  3. В случае любой ошибки возвращает её, чтобы вызывающий код мог обработать.
-//
-// Возвращает ошибку, если не удалось выполнить операцию.
-// Вызывающий код должен проверить ошибку и завершить приложение, если это критично.
-// EnsureAdmin создаёт или обновляет учётную запись администратора.
+// Операция атомарна: INSERT с ON CONFLICT DO NOTHING исключает гонку.
 func EnsureAdmin(db *gorm.DB, cfg *config.Config) error {
+	var existing user.User
+	if err := db.Where("email = ?", cfg.Admin.Email).First(&existing).Error; err == nil {
+		log.Info().Str("email", cfg.Admin.Email).Msg("Администратор уже существует, пропускаем создание")
+		return nil
+	}
+
 	hashed, err := bcrypt.GenerateFromPassword([]byte(cfg.Admin.Password), crypto.BcryptCost)
 	if err != nil {
 		return fmt.Errorf("ensureAdmin: не удалось захешировать пароль администратора: %w", err)
 	}
 
-	// Используем OnConflict для идемпотентности (UPSERT)
 	admin := user.User{
 		Email:         cfg.Admin.Email,
 		Password:      string(hashed),
@@ -90,13 +86,16 @@ func EnsureAdmin(db *gorm.DB, cfg *config.Config) error {
 		Role:          "admin",
 		EmailVerified: true,
 	}
-	if err := db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "email"}},
-		DoUpdates: clause.AssignmentColumns([]string{"password", "role", "email_verified"}),
-	}).Create(&admin).Error; err != nil {
-		return fmt.Errorf("ensureAdmin: не удалось создать/обновить администратора: %w", err)
+
+	result := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&admin)
+	if result.Error != nil {
+		return fmt.Errorf("ensureAdmin: не удалось создать администратора: %w", result.Error)
 	}
 
-	log.Info().Str("email", admin.Email).Msg("Администратор создан/обновлён")
+	if result.RowsAffected > 0 {
+		log.Info().Str("email", admin.Email).Msg("Администратор создан")
+	} else {
+		log.Info().Str("email", cfg.Admin.Email).Msg("Администратор уже существует, пропускаем создание")
+	}
 	return nil
 }

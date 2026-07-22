@@ -17,7 +17,7 @@ type QueuedEmail struct {
 	Recipient   string     `gorm:"not null"` // получатель (email)
 	Subject     string     `gorm:"not null"`
 	Body        string     `gorm:"type:text;not null"`
-	Status      string     `gorm:"default:'pending';index"` // pending, sent, failed
+	Status      string     `gorm:"default:'pending';index"` // pending, retry, sent, failed
 	Attempts    int        `gorm:"default:0"`
 	LastError   string     `gorm:"type:text"`
 	ScheduledAt *time.Time `gorm:"index"`

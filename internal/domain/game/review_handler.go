@@ -2,12 +2,19 @@
 package game
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
 	"gengine-0/internal/pkg/render"
+	"gengine-0/internal/pkg/validation"
 
 	"github.com/gin-gonic/gin"
+)
+
+const (
+	maxRating              = 5
+	maxReviewCommentLength = 500
 )
 
 // ReviewHandler обрабатывает отзывы.
@@ -39,15 +46,24 @@ func (h *ReviewHandler) ShowForm(c *gin.Context) {
 func (h *ReviewHandler) Create(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("game_id"))
 	userID := c.GetUint("userID")
+
+	errs := validation.FieldErrors{}
 	rating, err := strconv.Atoi(c.PostForm("rating"))
-	if err != nil {
+	if err != nil || rating < 1 || rating > maxRating {
+		errs.Add("rating", errors.New("рейтинг должен быть от 1 до 5"))
+	}
+	comment := c.PostForm("comment")
+	if len(comment) > maxReviewCommentLength {
+		errs.Add("comment", errors.New("комментарий не может превышать 500 символов"))
+	}
+	if errs.HasErrors() {
 		render.Page(c, http.StatusOK, "reviews-new.html", gin.H{
 			"GameID": gameID,
-			"Error":  "Неверный рейтинг",
+			"Error":  errs.Error(),
+			"Errors": errs,
 		})
 		return
 	}
-	comment := c.PostForm("comment")
 
 	if err := h.reviewService.Create(uint(gameID), userID, rating, comment); err != nil {
 		render.Page(c, http.StatusOK, "reviews-new.html", gin.H{

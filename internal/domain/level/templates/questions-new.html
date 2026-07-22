@@ -13,14 +13,16 @@
         <div>
             <label for="text" class="block text-sm font-medium text-gray-700 mb-1">Текст вопроса</label>
             <input type="text" name="text" id="text" required
-                   class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                   class="w-full rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.text}}border-red-500{{else}}border-gray-300{{end}}">
+            {{if .Errors.text}}<p class="text-red-500 text-xs mt-1">{{.Errors.text}}</p>{{end}}
         </div>
 
         <!-- Подсказка -->
         <div>
             <label for="hint" class="block text-sm font-medium text-gray-700 mb-1">Подсказка</label>
             <input type="text" name="hint" id="hint"
-                   class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                   class="w-full rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.hint}}border-red-500{{else}}border-gray-300{{end}}">
+            {{if .Errors.hint}}<p class="text-red-500 text-xs mt-1">{{.Errors.hint}}</p>{{end}}
         </div>
 
         <!-- Кнопки -->

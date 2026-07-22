@@ -14,7 +14,7 @@ import (
 	"gengine-0/internal/domain/level"
 	"gengine-0/internal/pkg/util"
 
-	"github.com/jung-kurt/gofpdf"
+	"github.com/go-pdf/fpdf"
 	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
 )
@@ -53,7 +53,9 @@ func (s *ExportService) ExportGameToCSV(ctx context.Context, gameID uint, w io.W
 	csvWriter := csv.NewWriter(w)
 	defer csvWriter.Flush()
 
-	_ = csvWriter.Write([]string{"level_position", "level_name", "question_text", "hint", "answers"})
+	if err := csvWriter.Write([]string{"level_position", "level_name", "question_text", "hint", "answers"}); err != nil {
+		return fmt.Errorf("ошибка записи CSV-заголовка: %w", err)
+	}
 
 	for _, lvl := range levels {
 		for _, q := range lvl.Questions {
@@ -61,13 +63,15 @@ func (s *ExportService) ExportGameToCSV(ctx context.Context, gameID uint, w io.W
 			for _, a := range q.Answers {
 				answerCodes = append(answerCodes, a.Code)
 			}
-			_ = csvWriter.Write([]string{
+			if err := csvWriter.Write([]string{
 				strconv.Itoa(lvl.Position),
 				lvl.Name,
 				q.Text,
 				q.Hint,
 				strings.Join(answerCodes, "|"),
-			})
+			}); err != nil {
+				return fmt.Errorf("ошибка записи CSV-строки: %w", err)
+			}
 		}
 	}
 	return nil
@@ -113,6 +117,17 @@ func (s *ExportService) ExportTeamResultsToCSV(ctx context.Context, gameID, team
 
 	var results []TeamResult
 
+	progressIDs := make([]uint, len(progress))
+	for i, p := range progress {
+		progressIDs[i] = p.ID
+	}
+	var allAttempts []game.Attempt
+	db.Where("level_progress_id IN ?", progressIDs).Find(&allAttempts)
+	attemptsMap := make(map[uint]int)
+	for _, a := range allAttempts {
+		attemptsMap[a.LevelProgressID]++
+	}
+
 	for _, p := range progress {
 		lvl := levelMap[p.LevelID]
 		if lvl == nil {
@@ -131,12 +146,8 @@ func (s *ExportService) ExportTeamResultsToCSV(ctx context.Context, gameID, team
 			result.FinishedAt = p.FinishedAt.Format("2006-01-02 15:04:05")
 		}
 
-		result.Penalty = int(p.PenaltySeconds)
-
-		// Подсчитываем attempts
-		var attempts []game.Attempt
-		db.Where("level_progress_id = ?", p.ID).Find(&attempts)
-		result.Attempts = len(attempts)
+		result.Penalty = p.PenaltySeconds
+		result.Attempts = attemptsMap[p.ID]
 
 		results = append(results, result)
 	}
@@ -145,17 +156,21 @@ func (s *ExportService) ExportTeamResultsToCSV(ctx context.Context, gameID, team
 	csvWriter := csv.NewWriter(w)
 	defer csvWriter.Flush()
 
-	_ = csvWriter.Write([]string{"Уровень", "Статус", "Начало", "Завершение", "Попытки", "Штраф (сек)"})
+	if err := csvWriter.Write([]string{"Уровень", "Статус", "Начало", "Завершение", "Попытки", "Штраф (сек)"}); err != nil {
+		return fmt.Errorf("ошибка записи CSV-заголовка: %w", err)
+	}
 
 	for _, r := range results {
-		_ = csvWriter.Write([]string{
+		if err := csvWriter.Write([]string{
 			r.LevelName,
 			r.Status,
 			r.StartedAt,
 			r.FinishedAt,
 			strconv.Itoa(r.Attempts),
 			strconv.Itoa(r.Penalty),
-		})
+		}); err != nil {
+			return fmt.Errorf("ошибка записи CSV-строки: %w", err)
+		}
 	}
 
 	return nil
@@ -210,8 +225,8 @@ func (s *ExportService) ImportGameFromCSV(db *gorm.DB, gameID uint, r io.Reader)
 						Name:     levelName,
 						Position: pos,
 					}
-					if err := tx.Create(&newLevel).Error; err != nil {
-						return fmt.Errorf("не удалось создать уровень: %w", err)
+					if createErr := tx.Create(&newLevel).Error; createErr != nil {
+						return fmt.Errorf("не удалось создать уровень: %w", createErr)
 					}
 					lvl = &newLevel
 				} else {
@@ -260,7 +275,9 @@ func (s *ExportService) ExportResultsToCSV(ctx context.Context, gameID uint, w i
 	csvWriter := csv.NewWriter(w)
 	defer csvWriter.Flush()
 
-	_ = csvWriter.Write([]string{"Место", "Команда", "Общее время", "Попыток"})
+	if err := csvWriter.Write([]string{"Место", "Команда", "Общее время", "Попыток"}); err != nil {
+		return fmt.Errorf("ошибка записи CSV-заголовка: %w", err)
+	}
 
 	for _, p := range passings {
 		place := ""
@@ -275,12 +292,14 @@ func (s *ExportService) ExportResultsToCSV(ctx context.Context, gameID uint, w i
 		for _, lp := range p.Progresses {
 			attempts += len(lp.Attempts)
 		}
-		_ = csvWriter.Write([]string{
+		if err := csvWriter.Write([]string{
 			place,
 			p.Team.Name,
 			timeStr,
 			strconv.Itoa(attempts),
-		})
+		}); err != nil {
+			return fmt.Errorf("ошибка записи CSV-строки: %w", err)
+		}
 	}
 	return nil
 }
@@ -292,7 +311,7 @@ func (s *ExportService) ExportGameToPDF(ctx context.Context, gameID uint, w io.W
 		return fmt.Errorf("игра не найдена: %w", err)
 	}
 
-	pdf := gofpdf.New("P", "mm", "A4", "")
+	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.AddUTF8FontFromBytes("DejaVu", "", s.dejaVuSansFont)
 	pdf.AddUTF8FontFromBytes("DejaVu", "B", s.dejaVuSansBoldFont)
 	pdf.AddPage()
@@ -353,7 +372,7 @@ func (s *ExportService) ExportStatisticsToPDF(ctx context.Context, gameID uint, 
 		return err
 	}
 
-	pdf := gofpdf.New("P", "mm", "A4", "")
+	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.AddUTF8FontFromBytes("DejaVu", "", s.dejaVuSansFont)
 	pdf.AddUTF8FontFromBytes("DejaVu", "B", s.dejaVuSansBoldFont)
 	pdf.AddPage()
@@ -408,25 +427,29 @@ func (s *ExportService) ExportGameToExcel(ctx context.Context, gameID uint, w io
 	}
 
 	f := excelize.NewFile()
-	_ = f.DeleteSheet("Sheet1")
+	if deleteErr := f.DeleteSheet("Sheet1"); deleteErr != nil {
+		return fmt.Errorf("ошибка удаления листа: %w", deleteErr)
+	}
 
 	sheetName := "Уровни"
-	index, err := f.NewSheet(sheetName)
-	if err != nil {
-		return err
+	index, newSheetErr := f.NewSheet(sheetName)
+	if newSheetErr != nil {
+		return newSheetErr
 	}
 
 	headers := []string{"Позиция", "Название", "Описание", "Тип", "Вопрос", "Подсказка", "Ответы"}
 	for i, h := range headers {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
-		_ = f.SetCellValue(sheetName, cell, h)
+		if setErr := f.SetCellValue(sheetName, cell, h); setErr != nil {
+			return fmt.Errorf("ошибка записи заголовка Excel: %w", setErr)
+		}
 	}
 
-	style, err := f.NewStyle(&excelize.Style{
+	style, styleErr := f.NewStyle(&excelize.Style{
 		Font:      &excelize.Font{Bold: true},
 		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
 	})
-	if err == nil {
+	if styleErr == nil {
 		endCol, _ := excelize.ColumnNumberToName(len(headers))
 		_ = f.SetCellStyle(sheetName, "A1", endCol+"1", style)
 	}
@@ -434,13 +457,18 @@ func (s *ExportService) ExportGameToExcel(ctx context.Context, gameID uint, w io
 	row := 2
 	for _, lvl := range levels {
 		if len(lvl.Questions) == 0 {
-			_ = f.SetCellValue(sheetName, fmt.Sprintf("A%d", row), lvl.Position)
-			_ = f.SetCellValue(sheetName, fmt.Sprintf("B%d", row), lvl.Name)
-			_ = f.SetCellValue(sheetName, fmt.Sprintf("C%d", row), lvl.Description)
-			_ = f.SetCellValue(sheetName, fmt.Sprintf("D%d", row), lvl.Type)
-			_ = f.SetCellValue(sheetName, fmt.Sprintf("E%d", row), "")
-			_ = f.SetCellValue(sheetName, fmt.Sprintf("F%d", row), "")
-			_ = f.SetCellValue(sheetName, fmt.Sprintf("G%d", row), "")
+			if setErr := f.SetCellValue(sheetName, fmt.Sprintf("A%d", row), lvl.Position); setErr != nil {
+				return fmt.Errorf("ошибка записи уровня в Excel: %w", setErr)
+			}
+			if setErr := f.SetCellValue(sheetName, fmt.Sprintf("B%d", row), lvl.Name); setErr != nil {
+				return fmt.Errorf("ошибка записи уровня в Excel: %w", setErr)
+			}
+			if setErr := f.SetCellValue(sheetName, fmt.Sprintf("C%d", row), lvl.Description); setErr != nil {
+				return fmt.Errorf("ошибка записи уровня в Excel: %w", setErr)
+			}
+			if setErr := f.SetCellValue(sheetName, fmt.Sprintf("D%d", row), lvl.Type); setErr != nil {
+				return fmt.Errorf("ошибка записи уровня в Excel: %w", setErr)
+			}
 			row++
 		} else {
 			for _, q := range lvl.Questions {
@@ -449,13 +477,27 @@ func (s *ExportService) ExportGameToExcel(ctx context.Context, gameID uint, w io
 					answerCodes = append(answerCodes, a.Code)
 				}
 				answersStr := strings.Join(answerCodes, ", ")
-				_ = f.SetCellValue(sheetName, fmt.Sprintf("A%d", row), lvl.Position)
-				_ = f.SetCellValue(sheetName, fmt.Sprintf("B%d", row), lvl.Name)
-				_ = f.SetCellValue(sheetName, fmt.Sprintf("C%d", row), lvl.Description)
-				_ = f.SetCellValue(sheetName, fmt.Sprintf("D%d", row), lvl.Type)
-				_ = f.SetCellValue(sheetName, fmt.Sprintf("E%d", row), q.Text)
-				_ = f.SetCellValue(sheetName, fmt.Sprintf("F%d", row), q.Hint)
-				_ = f.SetCellValue(sheetName, fmt.Sprintf("G%d", row), answersStr)
+				if setErr := f.SetCellValue(sheetName, fmt.Sprintf("A%d", row), lvl.Position); setErr != nil {
+					return fmt.Errorf("ошибка записи уровня в Excel: %w", setErr)
+				}
+				if setErr := f.SetCellValue(sheetName, fmt.Sprintf("B%d", row), lvl.Name); setErr != nil {
+					return fmt.Errorf("ошибка записи уровня в Excel: %w", setErr)
+				}
+				if setErr := f.SetCellValue(sheetName, fmt.Sprintf("C%d", row), lvl.Description); setErr != nil {
+					return fmt.Errorf("ошибка записи уровня в Excel: %w", setErr)
+				}
+				if setErr := f.SetCellValue(sheetName, fmt.Sprintf("D%d", row), lvl.Type); setErr != nil {
+					return fmt.Errorf("ошибка записи уровня в Excel: %w", setErr)
+				}
+				if setErr := f.SetCellValue(sheetName, fmt.Sprintf("E%d", row), q.Text); setErr != nil {
+					return fmt.Errorf("ошибка записи вопроса в Excel: %w", setErr)
+				}
+				if setErr := f.SetCellValue(sheetName, fmt.Sprintf("F%d", row), q.Hint); setErr != nil {
+					return fmt.Errorf("ошибка записи подсказки в Excel: %w", setErr)
+				}
+				if setErr := f.SetCellValue(sheetName, fmt.Sprintf("G%d", row), answersStr); setErr != nil {
+					return fmt.Errorf("ошибка записи ответов в Excel: %w", setErr)
+				}
 				row++
 			}
 		}
@@ -463,7 +505,9 @@ func (s *ExportService) ExportGameToExcel(ctx context.Context, gameID uint, w io
 
 	for i := 1; i <= len(headers); i++ {
 		col, _ := excelize.ColumnNumberToName(i)
-		_ = f.SetColWidth(sheetName, col, col, 25)
+		if setErr := f.SetColWidth(sheetName, col, col, 25); setErr != nil {
+			return fmt.Errorf("ошибка настройки ширины столбца: %w", setErr)
+		}
 	}
 
 	f.SetActiveSheet(index)
@@ -472,30 +516,34 @@ func (s *ExportService) ExportGameToExcel(ctx context.Context, gameID uint, w io
 
 // ExportResultsToExcel генерирует Excel-файл с таблицей результатов игры.
 func (s *ExportService) ExportResultsToExcel(ctx context.Context, gameID uint, w io.Writer) error {
-	passings, err := s.exportRepo.GetFinishedPassingsWithDetails(ctx, gameID)
-	if err != nil {
-		return err
+	passings, getErr := s.exportRepo.GetFinishedPassingsWithDetails(ctx, gameID)
+	if getErr != nil {
+		return getErr
 	}
 
 	f := excelize.NewFile()
-	_ = f.DeleteSheet("Sheet1")
+	if deleteErr := f.DeleteSheet("Sheet1"); deleteErr != nil {
+		return fmt.Errorf("ошибка удаления листа: %w", deleteErr)
+	}
 	sheetName := "Результаты"
-	index, err := f.NewSheet(sheetName)
-	if err != nil {
-		return err
+	index, newSheetErr := f.NewSheet(sheetName)
+	if newSheetErr != nil {
+		return newSheetErr
 	}
 
 	headers := []string{"Место", "Команда", "Общее время", "Попыток"}
 	for i, h := range headers {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
-		_ = f.SetCellValue(sheetName, cell, h)
+		if setErr := f.SetCellValue(sheetName, cell, h); setErr != nil {
+			return fmt.Errorf("ошибка записи заголовка Excel: %w", setErr)
+		}
 	}
 
-	style, err := f.NewStyle(&excelize.Style{
+	style, styleErr := f.NewStyle(&excelize.Style{
 		Font:      &excelize.Font{Bold: true},
 		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
 	})
-	if err == nil {
+	if styleErr == nil {
 		endCol, _ := excelize.ColumnNumberToName(len(headers))
 		_ = f.SetCellStyle(sheetName, "A1", endCol+"1", style)
 	}
@@ -514,16 +562,26 @@ func (s *ExportService) ExportResultsToExcel(ctx context.Context, gameID uint, w
 		for _, lp := range p.Progresses {
 			attempts += len(lp.Attempts)
 		}
-		_ = f.SetCellValue(sheetName, fmt.Sprintf("A%d", row), place)
-		_ = f.SetCellValue(sheetName, fmt.Sprintf("B%d", row), p.Team.Name)
-		_ = f.SetCellValue(sheetName, fmt.Sprintf("C%d", row), timeStr)
-		_ = f.SetCellValue(sheetName, fmt.Sprintf("D%d", row), attempts)
+		if setErr := f.SetCellValue(sheetName, fmt.Sprintf("A%d", row), place); setErr != nil {
+			return fmt.Errorf("ошибка записи места в Excel: %w", setErr)
+		}
+		if setErr := f.SetCellValue(sheetName, fmt.Sprintf("B%d", row), p.Team.Name); setErr != nil {
+			return fmt.Errorf("ошибка записи команды в Excel: %w", setErr)
+		}
+		if setErr := f.SetCellValue(sheetName, fmt.Sprintf("C%d", row), timeStr); setErr != nil {
+			return fmt.Errorf("ошибка записи времени в Excel: %w", setErr)
+		}
+		if setErr := f.SetCellValue(sheetName, fmt.Sprintf("D%d", row), attempts); setErr != nil {
+			return fmt.Errorf("ошибка записи попыток в Excel: %w", setErr)
+		}
 		row++
 	}
 
 	for i := 1; i <= len(headers); i++ {
 		col, _ := excelize.ColumnNumberToName(i)
-		_ = f.SetColWidth(sheetName, col, col, 20)
+		if setErr := f.SetColWidth(sheetName, col, col, 20); setErr != nil {
+			return fmt.Errorf("ошибка настройки ширины столбца: %w", setErr)
+		}
 	}
 
 	f.SetActiveSheet(index)

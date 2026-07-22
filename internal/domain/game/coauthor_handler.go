@@ -9,9 +9,10 @@ import (
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/validation"
 
+	csrf "gengine-0/internal/pkg/csrf"
+
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-	csrf "github.com/utrack/gin-csrf"
 )
 
 // CoAuthorHandler обрабатывает запросы, связанные с соавторами игр.
@@ -58,6 +59,26 @@ func (h *CoAuthorHandler) ManageCoAuthors(c *gin.Context) {
 	})
 }
 
+// renderCoAuthorManagePage рендерит страницу управления соавторами с заданными данными.
+func (h *CoAuthorHandler) renderCoAuthorManagePage(c *gin.Context, gameID int, errs validation.FieldErrors) {
+	coAuthors, listErr := h.coAuthorSvc.List(uint(gameID))
+	if listErr != nil {
+		log.Error().Err(listErr).Int("game_id", gameID).Msg("AddCoAuthor: failed to list coauthors")
+	}
+	data := gin.H{
+		"GameID":        gameID,
+		"CoAuthors":     coAuthors,
+		"Error":         errs.Error(),
+		"csrf":          csrf.GetToken(c),
+		"CurrentUserID": c.GetUint("userID"),
+		"IsAdmin":       middleware.IsAdmin(c),
+	}
+	if errs.HasErrors() {
+		data["Errors"] = errs
+	}
+	render.Page(c, http.StatusBadRequest, "co_authors-manage.html", data)
+}
+
 // AddCoAuthor добавляет соавтора.
 func (h *CoAuthorHandler) AddCoAuthor(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
@@ -68,22 +89,30 @@ func (h *CoAuthorHandler) AddCoAuthor(c *gin.Context) {
 	ownerID := c.GetUint("userID")
 
 	if err := limitRequestBody(c, 1*1024*1024); err != nil {
-		render.RenderError(c, http.StatusBadRequest, err.Error())
+		errs := validation.FieldErrors{}
+		errs.Add("form", err)
+		h.renderCoAuthorManagePage(c, gameID, errs)
 		return
 	}
 
 	var input AddCoAuthorInput
 	if err := c.ShouldBind(&input); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверные данные: "+err.Error())
+		errs := validation.FieldErrors{}
+		errs.Add("user_id", err)
+		h.renderCoAuthorManagePage(c, gameID, errs)
 		return
 	}
 	if err := validation.ValidatePositiveUint("ID пользователя", input.UserID); err != nil {
-		render.RenderError(c, http.StatusBadRequest, err.Error())
+		errs := validation.FieldErrors{}
+		errs.Add("user_id", err)
+		h.renderCoAuthorManagePage(c, gameID, errs)
 		return
 	}
 
 	if err := h.coAuthorSvc.Add(uint(gameID), input.UserID, ownerID); err != nil {
-		render.RenderError(c, http.StatusForbidden, err.Error())
+		errs := validation.FieldErrors{}
+		errs.Add("form", err)
+		h.renderCoAuthorManagePage(c, gameID, errs)
 		return
 	}
 	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/co-authors")

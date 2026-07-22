@@ -29,7 +29,7 @@ func TestFilterConstants(t *testing.T) {
 // TestCreateGameDTO_defaultValues проверяет DTO по умолчанию
 func TestCreateGameDTO_defaultValues(t *testing.T) {
 	dto := &CreateGameDTO{
-		Name:      "Test",
+		Name:       "Test",
 		Visibility: "public",
 	}
 
@@ -43,7 +43,7 @@ func TestCreateGameDTO_defaultValues(t *testing.T) {
 // TestUpdateGameDTO проверяет DTO обновления
 func TestUpdateGameDTO(t *testing.T) {
 	dto := &UpdateGameDTO{
-		Name:       "Updated",
+		Name:        "Updated",
 		DeleteCover: true,
 	}
 
@@ -56,19 +56,19 @@ func TestUpdateGameDTO(t *testing.T) {
 func TestCanViewGame_logic(t *testing.T) {
 	// Публичная нечерновая игра всегда доступна
 	publicGame := &Game{
-		IsDraft:   false,
+		IsDraft:    false,
 		Visibility: "public",
 	}
 
 	// private visibility не является черновиком — доступна
 	privateGame := &Game{
-		IsDraft:   false,
+		IsDraft:    false,
 		Visibility: "private",
 	}
 
 	// Черновик доступен только автору/менеджеру
 	draftGame := &Game{
-		IsDraft:   true,
+		IsDraft:    true,
 		Visibility: "private",
 	}
 

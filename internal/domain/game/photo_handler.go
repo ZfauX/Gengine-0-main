@@ -4,18 +4,21 @@ package game
 import (
 	"errors"
 	"net/http"
-	"slices"
 	"strconv"
 
 	apperr "gengine-0/internal/pkg/errors"
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/storage"
+	"gengine-0/internal/pkg/validation"
+
+	csrf "gengine-0/internal/pkg/csrf"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-	csrf "github.com/utrack/gin-csrf"
 	"gorm.io/gorm"
 )
+
+const photoMaxSize = 10 * 1024 * 1024
 
 // PhotoHandler обрабатывает фотогалерею игр.
 type PhotoHandler struct {
@@ -73,8 +76,8 @@ func (h *PhotoHandler) PhotosPage(c *gin.Context) {
 
 // UploadPhoto загружает новое фото в галерею игры.
 func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
-	gameID, err := strconv.Atoi(c.Param("id"))
-	if err != nil || gameID <= 0 {
+	gameID, parseErr := strconv.Atoi(c.Param("id"))
+	if parseErr != nil || gameID <= 0 {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 			"error": "Неверный ID игры",
 			"code":  "bad_request",
@@ -83,16 +86,16 @@ func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 
-	if err := limitRequestBody(c, 10*1024*1024); err != nil {
+	if limitErr := limitRequestBody(c, photoMaxSize); limitErr != nil {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
+			"error": limitErr.Error(),
 			"code":  "bad_request",
 		})
 		return
 	}
 
-	file, header, err := c.Request.FormFile("photo")
-	if err != nil {
+	file, header, formErr := c.Request.FormFile("photo")
+	if formErr != nil {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 			"error": "Файл не выбран",
 			"code":  "bad_request",
@@ -101,7 +104,7 @@ func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 	}
 	defer func() { _ = file.Close() }()
 
-	if header.Size > 10*1024*1024 {
+	if header.Size > photoMaxSize {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 			"error": "Размер файла не должен превышать 10 МБ",
 			"code":  "bad_request",
@@ -109,9 +112,9 @@ func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 		return
 	}
 
-	allowedTypes := []string{"image/jpeg", "image/png", "image/webp"}
+	allowedTypes := validation.AllowedImageTypes
 	contentType := header.Header.Get("Content-Type")
-	if !slices.Contains(allowedTypes, contentType) {
+	if !validation.IsAllowedType(contentType, allowedTypes) {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 			"error": "Допустимы только JPEG, PNG и WebP",
 			"code":  "bad_request",
@@ -119,10 +122,10 @@ func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 		return
 	}
 
-	webPath, err := h.storage.Save("uploads/photos", file, header.Filename, userID, 10*1024*1024, allowedTypes)
-	if err != nil {
-		log.Error().Err(err).Str("filename", header.Filename).Msg("UploadPhoto: failed to save file")
-		appErr := apperr.Wrap(err, "PhotoHandler")
+	webPath, saveErr := h.storage.Save("uploads/photos", file, header.Filename, userID, photoMaxSize, allowedTypes)
+	if saveErr != nil {
+		log.Error().Err(saveErr).Str("filename", header.Filename).Msg("UploadPhoto: failed to save file")
+		appErr := apperr.Wrap(saveErr, "PhotoHandler")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -135,12 +138,12 @@ func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 		UserID: userID,
 		Path:   webPath,
 	}
-	if err := h.photoService.Create(photo); err != nil {
-		log.Error().Err(err).Int("game_id", gameID).Msg("UploadPhoto: failed to create photo record")
+	if createErr := h.photoService.Create(photo); createErr != nil {
+		log.Error().Err(createErr).Int("game_id", gameID).Msg("UploadPhoto: failed to create photo record")
 		if delErr := h.storage.Delete(webPath); delErr != nil {
 			log.Error().Err(delErr).Str("path", webPath).Msg("UploadPhoto: failed to delete uploaded file")
 		}
-		appErr := apperr.Wrap(err, "PhotoHandler")
+		appErr := apperr.Wrap(createErr, "PhotoHandler")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,

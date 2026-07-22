@@ -11,15 +11,17 @@ import (
 	"gengine-0/internal/pkg/email"
 	ws "gengine-0/internal/pkg/websocket"
 
+	"golang.org/x/sys/windows"
 	"gorm.io/gorm"
 )
 
 // Checker содержит зависимости для проверки здоровья.
 type Checker struct {
-	db     *gorm.DB
-	hub    *ws.RoomHub
-	valkey cache.CacheStore
+	db                   *gorm.DB
+	hub                  *ws.RoomHub
+	valkey               cache.CacheStore
 	failedEmailThreshold int
+	uploadsDir           string
 }
 
 // NewChecker создаёт новый Checker.
@@ -30,6 +32,12 @@ func NewChecker(db *gorm.DB, hub *ws.RoomHub) *Checker {
 // NewCheckerWithValkey создаёт новый Checker с Valkey.
 func NewCheckerWithValkey(db *gorm.DB, hub *ws.RoomHub, valkey cache.CacheStore) *Checker {
 	return &Checker{db: db, hub: hub, valkey: valkey}
+}
+
+// WithUploadsDir устанавливает путь к директории загрузок для проверки дискового пространства.
+func (c *Checker) WithUploadsDir(dir string) *Checker {
+	c.uploadsDir = dir
+	return c
 }
 
 // Status представляет статус компонента.
@@ -46,6 +54,8 @@ type HealthResponse struct {
 	Components map[string]Status `json:"components"`
 }
 
+const healthCheckTimeout = 5 * time.Second
+
 // Check выполняет параллельную проверку всех компонентов.
 func (c *Checker) Check(ctx context.Context) HealthResponse {
 	components := make(map[string]Status)
@@ -53,8 +63,7 @@ func (c *Checker) Check(ctx context.Context) HealthResponse {
 	var wg sync.WaitGroup
 	overall := "ok"
 
-	// Создаём дочерний контекст с общим таймаутом 5 секунд
-	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	checkCtx, cancel := context.WithTimeout(ctx, healthCheckTimeout)
 	defer cancel()
 
 	// Функция для параллельного выполнения проверок
@@ -80,6 +89,10 @@ func (c *Checker) Check(ctx context.Context) HealthResponse {
 	}
 
 	check("email_queue", c.checkEmailQueue)
+
+	if c.uploadsDir != "" {
+		check("disk_space", c.checkDiskSpace)
+	}
 
 	wg.Wait()
 
@@ -198,6 +211,38 @@ func (c *Checker) checkEmailQueue(ctx context.Context) Status {
 	return Status{
 		Status:  "ok",
 		Message: fmt.Sprintf("failed emails: %d", failedCount),
+		Latency: time.Since(start).String(),
+	}
+}
+
+// checkDiskSpace проверяет свободное место на диске для uploads.
+func (c *Checker) checkDiskSpace(ctx context.Context) Status {
+	start := time.Now()
+
+	var freeBytes uint64
+	dir := c.uploadsDir
+
+	// windows.GetDiskFreeSpaceEx работает для любых путей
+	if err := windows.GetDiskFreeSpaceEx(windows.StringToUTF16Ptr(dir), &freeBytes, nil, nil); err != nil {
+		return Status{
+			Status:  "error",
+			Message: "failed to check disk space: " + err.Error(),
+			Latency: time.Since(start).String(),
+		}
+	}
+
+	freeMB := freeBytes / (1024 * 1024)
+	if freeMB < 100 {
+		return Status{
+			Status:  "degraded",
+			Message: fmt.Sprintf("low disk space: %d MB free", freeMB),
+			Latency: time.Since(start).String(),
+		}
+	}
+
+	return Status{
+		Status:  "ok",
+		Message: fmt.Sprintf("disk space: %d MB free", freeMB),
 		Latency: time.Since(start).String(),
 	}
 }

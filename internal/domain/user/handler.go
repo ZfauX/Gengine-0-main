@@ -3,23 +3,29 @@ package user
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/pkg/audit"
+	"gengine-0/internal/pkg/email"
 	apperrors "gengine-0/internal/pkg/errors"
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/storage"
+	"gengine-0/internal/pkg/validation"
+
+	csrf "gengine-0/internal/pkg/csrf"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-	csrf "github.com/utrack/gin-csrf"
 	"gorm.io/gorm"
 )
+
+const avatarMaxSize = 2 * 1024 * 1024
 
 // isHTTPS определяет, используется ли HTTPS для текущего запроса.
 // Проверяет TLS-соединение и заголовок X-Forwarded-Proto (для прокси).
@@ -42,68 +48,67 @@ func isHTTPS(c *gin.Context) bool {
 // setSecureCookie устанавливает cookie с правильными флагами безопасности:
 // HttpOnly=true (защита от XSS), Secure=true только для HTTPS, SameSite=Lax.
 func setSecureCookie(c *gin.Context, name, value string, maxAge int, path string) {
+	c.SetSameSite(http.SameSiteStrictMode)
 	secure := isHTTPS(c)
 	c.SetCookie(name, value, maxAge, path, "", secure, true)
-	// Явно устанавливаем SameSite=Lax для защиты от CSRF
-	c.Writer.Header().Set("SameSite", "Lax")
 }
 
 // ---------- Входные структуры для валидации ----------
 
 // UserIDRequest используется для валидации ID пользователя в URL.
 type UserIDRequest struct {
-	ID uint `uri:"id" binding:"required,gt=0"`
+	ID uint `uri:"id" json:"id" binding:"required,gt=0"`
 }
 
 // OAuthProviderRequest используется для валидации провайдера в URL.
 type OAuthProviderRequest struct {
-	Provider string `uri:"provider" binding:"required,oneof=google github yandex"`
+	Provider string `uri:"provider" json:"provider" binding:"required,oneof=google github yandex"`
 }
 
 // VerifyEmailRequest используется для валидации токена в query.
 type VerifyEmailRequest struct {
-	Token string `form:"token" binding:"required"`
+	Token string `form:"token" json:"token" binding:"required"`
 }
 
 // RegisterInput – регистрация.
 type RegisterInput struct {
-	Email    string `form:"email" binding:"required,email"`
-	Password string `form:"password" binding:"required,min=8,max=72"`
-	Name     string `form:"name" binding:"required,min=2,max=50"`
+	Email    string `form:"email" json:"email" binding:"required,email"`
+	Password string `form:"password" json:"password" binding:"required,min=6,max=72"`
+	Name     string `form:"name" json:"name" binding:"required,min=2,max=50"`
 }
 
 // LoginInput – вход.
 type LoginInput struct {
-	Email    string `form:"email" binding:"required,email"`
-	Password string `form:"password" binding:"required"`
+	Email    string `form:"email" json:"email" binding:"required,email"`
+	Password string `form:"password" json:"password" binding:"required"`
 }
 
 // ForgotInput – восстановление пароля.
 type ForgotInput struct {
-	Email string `form:"email" binding:"required,email"`
+	Email string `form:"email" json:"email" binding:"required,email"`
 }
 
 // ResetInput – сброс пароля.
 type ResetInput struct {
-	Token    string `form:"token" binding:"required"`
-	Password string `form:"password" binding:"required,min=8,max=72"`
+	ResetCode string `form:"reset_code" binding:"required"`
+	Password  string `form:"password" json:"password" binding:"required,min=8,max=72"`
 }
 
 // UpdateProfileInput – обновление профиля.
 type UpdateProfileInput struct {
-	Name  string `form:"name" binding:"required,min=2,max=50"`
-	Email string `form:"email" binding:"required,email"`
+	Name  string `form:"name" json:"name" binding:"required,min=2,max=50"`
+	Email string `form:"email" json:"email" binding:"required,email"`
 }
 
 // ChangePasswordInput – смена пароля.
 type ChangePasswordInput struct {
-	OldPassword string `form:"old_password" binding:"required"`
-	NewPassword string `form:"new_password" binding:"required,min=8,max=72"`
+	OldPassword string `form:"old_password" json:"old_password" binding:"required"`
+	NewPassword string `form:"new_password" json:"new_password" binding:"required,min=8,max=72"`
 }
 
 // RefreshTokenInput – запрос на обновление access-токена.
 type RefreshTokenInput struct {
-	RefreshToken string `json:"refresh_token" binding:"required"`
+	RefreshToken string `form:"refresh_token" json:"refresh_token" binding:"required"`
 }
 
 // ---------- Обработчики ----------
@@ -117,6 +122,7 @@ type AuthHandler struct {
 	emailVerificationSvc *EmailVerificationService
 	oauthSvc             *OAuthService
 	auditSvc             *audit.Service
+	emailSvc             *email.EmailService
 }
 
 func NewAuthHandler(
@@ -127,6 +133,7 @@ func NewAuthHandler(
 	emailVerificationSvc *EmailVerificationService,
 	oauthSvc *OAuthService,
 	auditSvc *audit.Service,
+	emailSvc *email.EmailService,
 ) *AuthHandler {
 	return &AuthHandler{
 		cfg:                  cfg,
@@ -136,6 +143,7 @@ func NewAuthHandler(
 		emailVerificationSvc: emailVerificationSvc,
 		oauthSvc:             oauthSvc,
 		auditSvc:             auditSvc,
+		emailSvc:             emailSvc,
 	}
 }
 
@@ -149,10 +157,17 @@ func (h *AuthHandler) ShowLoginForm(c *gin.Context) {
 // Login обрабатывает вход пользователя.
 func (h *AuthHandler) Login(c *gin.Context) {
 	var input LoginInput
+	errs := validation.FieldErrors{}
 	if err := c.ShouldBind(&input); err != nil {
+		errs.Add("email", validation.ValidateString("Email", input.Email, 1, 255))
+		errs.Add("password", validation.ValidateString("Пароль", input.Password, 1, 128))
+		if !errs.HasErrors() {
+			errs.Add("form", fmt.Errorf("некорректные данные: %v", err))
+		}
 		render.Page(c, http.StatusBadRequest, "auth-login.html", gin.H{
-			"Error": "Некорректные данные: " + err.Error(),
-			"csrf":  csrf.GetToken(c),
+			"Errors": errs,
+			"Error":  errs.Error(),
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
@@ -160,8 +175,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	token, err := h.authSvc.Login(c.Request.Context(), input.Email, input.Password)
 	if err != nil {
 		render.Page(c, http.StatusUnauthorized, "auth-login.html", gin.H{
-			"Error": "Неверный email или пароль",
-			"csrf":  csrf.GetToken(c),
+			"Errors": validation.FieldErrors{"email": "Неверный email или пароль"},
+			"Error":  "Неверный email или пароль",
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
@@ -223,8 +239,14 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	})
 }
 
-// Logout выполняет выход из системы (удаляет куки, но не отзывает refresh-токен).
+// Logout выполняет выход из системы (отзывает refresh-токен и удаляет куки).
 func (h *AuthHandler) Logout(c *gin.Context) {
+	refreshTokenCookie, err := c.Cookie("refresh_token")
+	if err == nil && refreshTokenCookie != "" {
+		if err := h.authSvc.RevokeRefreshToken(c.Request.Context(), refreshTokenCookie); err != nil {
+			log.Warn().Err(err).Msg("Logout: failed to revoke refresh token")
+		}
+	}
 	setSecureCookie(c, "jwt", "", -1, "/")
 	setSecureCookie(c, "refresh_token", "", -1, "/auth/refresh")
 	c.Redirect(http.StatusFound, "/")
@@ -255,10 +277,18 @@ func (h *AuthHandler) ShowRegisterForm(c *gin.Context) {
 // Register обрабатывает регистрацию нового пользователя.
 func (h *AuthHandler) Register(c *gin.Context) {
 	var input RegisterInput
+	errs := validation.FieldErrors{}
 	if err := c.ShouldBind(&input); err != nil {
+		errs.Add("name", validation.ValidateString("Имя", input.Name, 1, 128))
+		errs.Add("email", validation.ValidateString("Email", input.Email, 1, 255))
+		errs.Add("password", validation.ValidateString("Пароль", input.Password, 6, 128))
+		if !errs.HasErrors() {
+			errs.Add("form", fmt.Errorf("некорректные данные: %v", err))
+		}
 		render.Page(c, http.StatusBadRequest, "auth-register.html", gin.H{
-			"Error": "Некорректные данные: " + err.Error(),
-			"csrf":  csrf.GetToken(c),
+			"Errors": errs,
+			"Error":  errs.Error(),
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
@@ -269,8 +299,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	user, err := h.authSvc.Register(c.Request.Context(), cleanEmail, input.Password, cleanName)
 	if err != nil {
 		render.Page(c, http.StatusConflict, "auth-register.html", gin.H{
-			"Error": "Email уже зарегистрирован",
-			"csrf":  csrf.GetToken(c),
+			"Errors": validation.FieldErrors{"email": "Email уже зарегистрирован"},
+			"Error":  "Email уже зарегистрирован",
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
@@ -289,10 +320,16 @@ func (h *AuthHandler) ShowForgotForm(c *gin.Context) {
 // ForgotPassword отправляет ссылку для сброса пароля.
 func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	var input ForgotInput
+	errs := validation.FieldErrors{}
 	if err := c.ShouldBind(&input); err != nil {
+		errs.Add("email", validation.ValidateString("Email", input.Email, 1, 255))
+		if !errs.HasErrors() {
+			errs.Add("email", fmt.Errorf("некорректный email"))
+		}
 		render.Page(c, http.StatusBadRequest, "auth-forgot.html", gin.H{
-			"Error": "Некорректный email",
-			"csrf":  csrf.GetToken(c),
+			"Errors": errs,
+			"Error":  errs.Error(),
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
@@ -306,44 +343,72 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 		}
 	}
 
+	message := "Инструкции отправлены на почту"
+	if !h.cfg.SMTP.Enabled {
+		message = "Функция восстановления пароля временно недоступна"
+	}
+
 	render.Page(c, http.StatusOK, "auth-forgot.html", gin.H{
-		"Message": "Инструкции отправлены на почту",
+		"Message": message,
 		"csrf":    csrf.GetToken(c),
 	})
 }
 
 // ShowResetForm отображает форму установки нового пароля.
 func (h *AuthHandler) ShowResetForm(c *gin.Context) {
-	token := sanitize.StripHTML(c.Query("token"))
+	resetCode := sanitize.StripHTML(c.Param("resetCode"))
+	if resetCode == "" {
+		render.RenderErrorPage(c, http.StatusBadRequest)
+		return
+	}
+	// Проверяем, что код существует
+	if _, err := h.passwordResetSvc.passResetRepo.GetTokenByResetCode(c.Request.Context(), resetCode); err != nil {
+		render.Page(c, http.StatusBadRequest, "auth-reset.html", gin.H{
+			"Error": "Недействительная или истёкшая ссылка для сброса пароля",
+			"csrf":  csrf.GetToken(c),
+		})
+		return
+	}
 	render.Page(c, http.StatusOK, "auth-reset.html", gin.H{
-		"Token": token,
-		"csrf":  csrf.GetToken(c),
+		"ResetCode": resetCode,
+		"csrf":      csrf.GetToken(c),
 	})
 }
 
-// ResetPassword устанавливает новый пароль по токену и отзывает все refresh-токены пользователя.
+// ResetPassword устанавливает новый пароль по коду сброса и отзывает все refresh-токены пользователя.
 func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	var input ResetInput
+	errs := validation.FieldErrors{}
 	if err := c.ShouldBind(&input); err != nil {
+		errs.Add("password", validation.ValidateString("Пароль", input.Password, 6, 128))
+		if !errs.HasErrors() {
+			errs.Add("form", fmt.Errorf("некорректные данные: %v", err))
+		}
 		render.Page(c, http.StatusBadRequest, "auth-reset.html", gin.H{
-			"Token": c.PostForm("token"),
-			"Error": "Некорректные данные: " + err.Error(),
-			"csrf":  csrf.GetToken(c),
+			"ResetCode": c.PostForm("reset_code"),
+			"Errors":    errs,
+			"Error":     errs.Error(),
+			"csrf":      csrf.GetToken(c),
 		})
 		return
 	}
 
 	var userID uint
-	token, err := h.passwordResetSvc.passResetRepo.GetToken(c.Request.Context(), input.Token)
+	token, err := h.passwordResetSvc.passResetRepo.GetTokenByResetCode(c.Request.Context(), input.ResetCode)
 	if err == nil {
 		userID = token.UserID
 	}
 
-	if err := h.passwordResetSvc.ResetPassword(c.Request.Context(), input.Token, input.Password); err != nil {
+	if err := h.passwordResetSvc.ResetPassword(c.Request.Context(), input.ResetCode, input.Password); err != nil {
+		errs.Add("password", err)
+		if !errs.HasErrors() {
+			errs.Add("token", err)
+		}
 		render.Page(c, http.StatusBadRequest, "auth-reset.html", gin.H{
-			"Token": input.Token,
-			"Error": err.Error(),
-			"csrf":  csrf.GetToken(c),
+			"ResetCode": input.ResetCode,
+			"Errors":    errs,
+			"Error":     errs.Error(),
+			"csrf":      csrf.GetToken(c),
 		})
 		return
 	}
@@ -351,6 +416,19 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	if userID != 0 {
 		if err := h.authSvc.RevokeAllUserTokens(c.Request.Context(), userID); err != nil {
 			log.Error().Err(err).Uint("user_id", userID).Msg("ResetPassword: failed to revoke refresh tokens")
+		}
+	}
+
+	// Отправляем уведомление на email пользователя о смене пароля
+	if userID != 0 {
+		if h.emailSvc != nil {
+			if user, err := h.userService.GetByID(c.Request.Context(), userID); err == nil {
+				go func() {
+					if err := h.emailSvc.SendPasswordChangedEmail(user.Email, user.Name); err != nil {
+						log.Error().Err(err).Uint("user_id", userID).Msg("ResetPassword: failed to send password changed email")
+					}
+				}()
+			}
 		}
 	}
 
@@ -503,7 +581,7 @@ func (h *ProfileHandler) Show(c *gin.Context) {
 		return
 	}
 	render.Page(c, http.StatusOK, "profile-show.html", gin.H{
-		"User":          user,
+		"User":          user.ToPublic(),
 		"Achievements":  user.Achievements,
 		"CurrentUserID": userID,
 		"csrf":          csrf.GetToken(c),
@@ -559,8 +637,9 @@ func (h *ProfileHandler) PublicProfile(c *gin.Context) {
 		recentGames = []RecentGame{}
 	}
 
+	pubUser := user.ToPublic()
 	render.Page(c, http.StatusOK, "profile-public.html", gin.H{
-		"ProfileUser":   user,
+		"ProfileUser":   &pubUser,
 		"Achievements":  user.Achievements,
 		"CurrentUserID": currentUserID,
 		"IsOwner":       currentUserID == userID,
@@ -598,7 +677,7 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 		Str("content_type", header.Header.Get("Content-Type")).
 		Msg("UploadAvatar: received file")
 
-	if header.Size > 2*1024*1024 {
+	if header.Size > avatarMaxSize {
 		appErr := apperrors.BadRequest("Размер файла не должен превышать 2 МБ")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
@@ -608,24 +687,8 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 	}
 
 	allowedTypes := []string{"image/jpeg", "image/png", "image/webp"}
-	contentType := header.Header.Get("Content-Type")
-	allowed := false
-	for _, t := range allowedTypes {
-		if contentType == t {
-			allowed = true
-			break
-		}
-	}
-	if !allowed {
-		appErr := apperrors.BadRequest("Допустимы только JPEG, PNG и WebP")
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
-		return
-	}
 
-	webPath, err := h.storage.Save("uploads/avatars", file, header.Filename, userID, 2*1024*1024, allowedTypes)
+	webPath, err := h.storage.Save("uploads/avatars", file, header.Filename, userID, avatarMaxSize, allowedTypes)
 	if err != nil {
 		log.Error().Err(err).Uint("user", userID).Msg("UploadAvatar: storage save failed")
 		appErr := apperrors.Wrap(err, "UploadAvatar: storage save failed")
@@ -660,10 +723,17 @@ func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	var input UpdateProfileInput
+	errs := validation.FieldErrors{}
 	if err := c.ShouldBind(&input); err != nil {
+		errs.Add("name", validation.ValidateString("Имя", input.Name, 1, 128))
+		errs.Add("email", validation.ValidateString("Email", input.Email, 1, 255))
+		if !errs.HasErrors() {
+			errs.Add("form", fmt.Errorf("некорректные данные: %v", err))
+		}
 		render.Page(c, http.StatusBadRequest, "profile-show.html", gin.H{
-			"Error": "Некорректные данные: " + err.Error(),
-			"csrf":  csrf.GetToken(c),
+			"Errors": errs,
+			"Error":  errs.Error(),
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
@@ -673,9 +743,14 @@ func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 
 	if err := h.profileSvc.UpdateProfile(c.Request.Context(), userID, cleanName, cleanEmail); err != nil {
 		log.Error().Err(err).Uint("user", userID).Msg("UpdateProfile: failed to update")
+		errs.Add("email", err)
+		if !errs.HasErrors() {
+			errs.Add("form", err)
+		}
 		render.Page(c, http.StatusInternalServerError, "profile-show.html", gin.H{
-			"Error": "Ошибка обновления профиля",
-			"csrf":  csrf.GetToken(c),
+			"Errors": errs,
+			"Error":  errs.Error(),
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
@@ -754,7 +829,7 @@ func NewDashboardHandler(dashboardService *UserDashboardService, db *gorm.DB) *D
 // Index отображает личный кабинет.
 func (h *DashboardHandler) Index(c *gin.Context) {
 	userID := c.GetUint("userID")
-	dash, err := h.dashboardService.GetDashboard(userID)
+	dash, err := h.dashboardService.GetDashboard(c.Request.Context(), userID)
 	if err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Msg("DashboardHandler.Index: failed to get dashboard")
 		render.RenderErrorPage(c, http.StatusInternalServerError)

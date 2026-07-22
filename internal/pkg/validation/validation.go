@@ -52,3 +52,26 @@ func ValidateStartDate(t *time.Time) bool {
 	}
 	return !t.Before(time.Now())
 }
+
+// FieldErrors хранит ошибки валидации для каждого поля формы.
+type FieldErrors map[string]string
+
+// Add добавляет ошибку для указанного поля, если err не nil.
+func (fe FieldErrors) Add(field string, err error) {
+	if err != nil {
+		fe[field] = err.Error()
+	}
+}
+
+// HasErrors возвращает true, если есть хотя бы одна ошибка.
+func (fe FieldErrors) HasErrors() bool {
+	return len(fe) > 0
+}
+
+// Error возвращает первую ошибку для отображения в общем блоке (совместимость).
+func (fe FieldErrors) Error() string {
+	for _, v := range fe {
+		return v
+	}
+	return ""
+}

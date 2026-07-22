@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
 )
 
 // sseSession хранит данные сессии SSE
@@ -20,14 +21,44 @@ type sseSession struct {
 
 // sseManager управляет SSE-подключениями для каждой игры
 type sseManager struct {
-	mu       sync.Mutex
+	mu       sync.RWMutex
 	sessions map[uint][]*sseSession
 	gameMap  map[*sseSession]uint // session -> gameID mapping
+	stopOnce sync.Once
+	stopCh   chan struct{}
 }
 
-var sseMgr = &sseManager{
-	sessions: make(map[uint][]*sseSession),
+const sseHeartbeatInterval = 15 * time.Second
+
+// NewSSEManager создаёт новый управляемый SSE-менеджер.
+// Возвращается экземпляр, который можно замокать в тестах.
+func NewSSEManager() *sseManager {
+	return &sseManager{
+		sessions: make(map[uint][]*sseSession),
+		gameMap:  make(map[*sseSession]uint),
+		stopCh:   make(chan struct{}),
+	}
 }
+
+// Stop останавливает менеджер и закрывает все сессии.
+func (m *sseManager) Stop() {
+	m.stopOnce.Do(func() {
+		close(m.stopCh)
+		m.mu.Lock()
+		for _, sessions := range m.sessions {
+			for _, s := range sessions {
+				close(s.done)
+			}
+		}
+		m.sessions = make(map[uint][]*sseSession)
+		m.gameMap = make(map[*sseSession]uint)
+		m.mu.Unlock()
+	})
+}
+
+// sseMgr — глобальный инстанс, инициализированный при загрузке пакета.
+// Используется в бизнес-логике через SSEBroadcaster.
+var sseMgr = NewSSEManager()
 
 // toJSON сериализует значение в JSON-строку
 func toJSON(v any) string {
@@ -96,7 +127,10 @@ func (m *sseManager) Broadcast(gameID uint, eventType string, data any) {
 			continue
 		default:
 			event := "event: " + eventType + "\ndata: " + toJSON(payload) + "\n\n"
-			s.w.Write([]byte(event))
+			if _, err := s.w.Write([]byte(event)); err != nil {
+				log.Debug().Err(err).Msg("SSE: write error")
+				return
+			}
 			s.flush.Flush()
 		}
 	}
@@ -107,14 +141,14 @@ func SSEHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		gameID, err := strconv.Atoi(c.Param("game_id"))
 		if err != nil || gameID <= 0 {
-			c.JSON(400, gin.H{"error": "неверный game_id"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "неверный game_id"})
 			return
 		}
 
 		w := c.Writer
 		flusher, ok := w.(http.Flusher)
 		if !ok {
-			c.JSON(500, gin.H{"error": "streaming not supported"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "streaming not supported"})
 			return
 		}
 
@@ -126,8 +160,7 @@ func SSEHandler() gin.HandlerFunc {
 		session := sseMgr.RegisterSession(uint(gameID), w, flusher)
 		defer sseMgr.UnregisterSession(session)
 
-		// Отправляем heartbeat каждые 15 секунд
-		ticker := time.NewTicker(15 * time.Second)
+		ticker := time.NewTicker(sseHeartbeatInterval)
 		defer ticker.Stop()
 
 		for {
@@ -135,7 +168,10 @@ func SSEHandler() gin.HandlerFunc {
 			case <-c.Request.Context().Done():
 				return
 			case <-ticker.C:
-				w.Write([]byte(": heartbeat\n\n"))
+				if _, err := w.Write([]byte(": heartbeat\n\n")); err != nil {
+					log.Debug().Err(err).Msg("SSE: heartbeat write error")
+					return
+				}
 				flusher.Flush()
 			}
 		}
