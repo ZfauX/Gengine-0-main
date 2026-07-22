@@ -50,6 +50,9 @@ func (h *GameFinishedHandler) processGameFinished(ctx context.Context, gameID ui
 	// if monitorSvc != nil {
 	//     _ = monitorSvc.CalculateResults(ctx, gameID)
 	// }
+	logging.Info(ctx).Uint("game_id", gameID).
+		Str("event", string(GameFinished)).
+		Msg("Обработка завершённы игры запущена")
 }
 
 // GetLastResult возвращает время последней обработки и ошибку (для тестов).

@@ -102,19 +102,19 @@ func (s *CoAuthorService) Add(gameID, newCoAuthorID, ownerID uint) error {
 
 	// Проверяем, есть ли запись (включая мягко удалённые)
 	var co CoAuthor
-	err := s.DB.Unscoped().Where("game_id = ? AND user_id = ?", gameID, newCoAuthorID).First(&co).Error
-	if err == nil {
+	findErr := s.DB.Unscoped().Where("game_id = ? AND user_id = ?", gameID, newCoAuthorID).First(&co).Error
+	if findErr == nil {
 		if co.DeletedAt.Valid {
 			// Восстанавливаем мягко удалённую запись
 			co.DeletedAt = gorm.DeletedAt{}
-			if err := s.DB.Save(&co).Error; err != nil {
-				return err
+			if saveErr := s.DB.Save(&co).Error; saveErr != nil {
+				return saveErr
 			}
 			return nil
 		}
 		return errors.New("этот пользователь уже соавтор")
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
+	} else if !errors.Is(findErr, gorm.ErrRecordNotFound) {
+		return findErr
 	}
 
 	// Нет записи — создаём новую

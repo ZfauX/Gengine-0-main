@@ -5,10 +5,12 @@ import (
 	"bytes"
 	"html/template"
 	"net/http"
+	"path/filepath"
 	"strconv"
 
 	"gengine-0/internal/pkg/middleware"
 
+	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 )
@@ -19,11 +21,24 @@ type BreadcrumbItem struct {
 	URL  string `json:"url,omitempty"`
 }
 
-var globalTemplate *template.Template
+var (
+	globalTemplate     *template.Template
+	templateDevPattern string
+	templateFuncMap    template.FuncMap
+	updateEngine       func(*template.Template)
+)
 
 // SetTemplate сохраняет общий *template.Template для использования в хелпере.
 func SetTemplate(t *template.Template) {
 	globalTemplate = t
+}
+
+// EnableDevMode включает горячую перезагрузку шаблонов для режима разработки.
+// При каждом вызове Page() шаблоны будут перечитываться с диска.
+func EnableDevMode(baseDir string, funcMap template.FuncMap, engineUpdater func(*template.Template)) {
+	templateDevPattern = filepath.Join(baseDir, "internal", "domain", "*", "templates", "*.html")
+	templateFuncMap = funcMap
+	updateEngine = engineUpdater
 }
 
 // Page рендерит указанный подшаблон в буфер, вставляет результат как ContentHTML в layout.html.
@@ -31,6 +46,19 @@ func SetTemplate(t *template.Template) {
 func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 	if data == nil {
 		data = gin.H{}
+	}
+
+	if templateDevPattern != "" {
+		tmpl := template.New("")
+		tmpl.Funcs(templateFuncMap)
+		if _, err := tmpl.ParseGlob(templateDevPattern); err != nil {
+			log.Error().Err(err).Msg("Render: hot-reload template parse error")
+		} else {
+			globalTemplate = tmpl
+			if updateEngine != nil {
+				updateEngine(tmpl)
+			}
+		}
 	}
 
 	if globalTemplate == nil {
@@ -94,6 +122,8 @@ func errorTemplateForStatus(status int) string {
 		return "errors-403.html"
 	case http.StatusNotFound:
 		return "errors-404.html"
+	case http.StatusTooManyRequests:
+		return "errors-429.html"
 	case http.StatusInternalServerError:
 		return "errors-500.html"
 	default:
@@ -131,4 +161,27 @@ func SetBreadcrumb(data gin.H, items ...BreadcrumbItem) {
 		data = gin.H{}
 	}
 	data["Breadcrumb"] = items
+}
+
+// SetFlash сохраняет flash-сообщение в сессии.
+func SetFlash(c *gin.Context, key, value string) {
+	session := sessions.Default(c)
+	session.Set(key, value)
+	if err := session.Save(); err != nil {
+		log.Error().Err(err).Str("key", key).Msg("SetFlash: failed to save session")
+	}
+}
+
+// GetFlash читает и удаляет flash-сообщение из сессии.
+func GetFlash(c *gin.Context, key string) string {
+	session := sessions.Default(c)
+	val, ok := session.Get(key).(string)
+	if !ok {
+		return ""
+	}
+	session.Delete(key)
+	if err := session.Save(); err != nil {
+		log.Error().Err(err).Str("key", key).Msg("GetFlash: failed to save session")
+	}
+	return val
 }

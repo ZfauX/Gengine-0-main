@@ -7,6 +7,10 @@ import (
 )
 
 var (
+	defaultDurationBuckets = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}
+	defaultSizeBuckets     = []float64{100, 500, 1000, 5000, 10000, 50000, 100000, 500000, 1000000}
+	gameDurationBuckets    = []float64{60, 300, 600, 1800, 3600, 7200, 14400, 28800}
+
 	// --- HTTP-метрики ---
 	RequestsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
@@ -20,7 +24,7 @@ var (
 		prometheus.HistogramOpts{
 			Name:    "gengine_http_request_duration_seconds",
 			Help:    "HTTP request duration in seconds",
-			Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
+			Buckets: defaultDurationBuckets,
 		},
 		[]string{"method", "route"},
 	)
@@ -29,7 +33,7 @@ var (
 		prometheus.HistogramOpts{
 			Name:    "gengine_http_request_size_bytes",
 			Help:    "HTTP request size in bytes",
-			Buckets: []float64{100, 500, 1000, 5000, 10000, 50000, 100000, 500000, 1000000},
+			Buckets: defaultSizeBuckets,
 		},
 		[]string{"method", "route"},
 	)
@@ -38,7 +42,7 @@ var (
 		prometheus.HistogramOpts{
 			Name:    "gengine_http_response_size_bytes",
 			Help:    "HTTP response size in bytes",
-			Buckets: []float64{100, 500, 1000, 5000, 10000, 50000, 100000, 500000, 1000000},
+			Buckets: defaultSizeBuckets,
 		},
 		[]string{"method", "route"},
 	)
@@ -91,7 +95,7 @@ var (
 	GameDurationSeconds = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "gengine_game_duration_seconds",
 		Help:    "Duration of game passings in seconds",
-		Buckets: []float64{60, 300, 600, 1800, 3600, 7200, 14400, 28800}, // 1m, 5m, 10m, 30m, 1h, 2h, 4h, 8h
+		Buckets: gameDurationBuckets,
 	})
 
 	// WebSocketConnections - текущее количество активных WebSocket-соединений

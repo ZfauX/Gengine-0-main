@@ -11,11 +11,14 @@ import (
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/storage"
 
+	csrf "gengine-0/internal/pkg/csrf"
+
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-	csrf "github.com/utrack/gin-csrf"
 	"gorm.io/gorm"
 )
+
+const importMaxFileSize = 10 * 1024 * 1024
 
 // ExportHandler управляет экспортом и импортом данных игры.
 type ExportHandler struct {
@@ -141,7 +144,7 @@ func (h *ExportHandler) ImportGame(c *gin.Context) {
 	}
 	defer func() { _ = file.Close() }()
 
-	if header.Size > 10*1024*1024 {
+	if header.Size > importMaxFileSize {
 		render.Page(c, http.StatusBadRequest, "export_import-import.html", gin.H{
 			"GameID": gameID,
 			"Error":  "Размер файла не должен превышать 10 МБ",
@@ -391,7 +394,7 @@ func (h *ExportHandler) ExportTeamResultsCSV(c *gin.Context) {
 	isAuthor := false
 	var g game.Game
 	if err := h.db.WithContext(c.Request.Context()).First(&g, gameID).Error; err != nil {
-		log.Error().Err(err).Uint("game_id", uint(gameID)).Msg("ExportTeamResultsCSV: failed to find game")
+		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportTeamResultsCSV: failed to find game")
 		render.RenderErrorPage(c, http.StatusNotFound)
 		return
 	}

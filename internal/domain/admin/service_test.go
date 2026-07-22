@@ -19,12 +19,13 @@ import (
 	"gengine-0/internal/pkg/audit"
 	"gengine-0/internal/testutil"
 
+	csrf "gengine-0/internal/pkg/csrf"
+
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	csrf "github.com/utrack/gin-csrf"
 	"gorm.io/gorm"
 )
 
@@ -196,13 +197,7 @@ func setupAdminHandlerForRedirect(t *testing.T) (*gin.Engine, *gorm.DB, *admin.A
 	sessionSecret := "test-admin-secret-key-32chr!!"
 	store := cookie.NewStore([]byte(sessionSecret))
 	r.Use(sessions.Sessions("gengine_test_session", store))
-	r.Use(csrf.Middleware(csrf.Options{
-		Secret: sessionSecret,
-		ErrorFunc: func(c *gin.Context) {
-			c.String(403, "CSRF token mismatch")
-			c.Abort()
-		},
-	}))
+	r.Use(csrf.Middleware(sessionSecret, false))
 
 	// Эмулируем авторизацию
 	r.Use(func(c *gin.Context) {

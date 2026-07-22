@@ -15,6 +15,7 @@ import (
 	"gengine-0/internal/config"
 	"gengine-0/internal/pkg/crypto"
 	"gengine-0/internal/pkg/email"
+	"gengine-0/internal/pkg/metrics"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/rs/zerolog/log"
@@ -24,6 +25,16 @@ import (
 	"golang.org/x/oauth2/google"
 	"golang.org/x/oauth2/yandex"
 	"gorm.io/gorm"
+)
+
+const (
+	refreshTokenBytes           = 32
+	oauthStateBytes             = 16
+	passwordResetTokenBytes     = 16
+	emailVerificationTokenBytes = 16
+	oauthHTTPTimeout            = 15 * time.Second
+	passwordResetExpiry         = 1 * time.Hour
+	emailVerificationExpiry     = 24 * time.Hour
 )
 
 // ---------- AuthService ----------
@@ -65,6 +76,7 @@ func (s *AuthService) Register(ctx context.Context, emailStr, password, name str
 	if err := s.userRepo.Create(ctx, &user); err != nil {
 		return nil, err
 	}
+	metrics.IncUsersTotal()
 
 	verificationService := NewEmailVerificationService(s.userRepo, s.emailVerifRepo, s.cfg)
 	if err := verificationService.SendVerificationEmail(ctx, user); err != nil {
@@ -90,7 +102,7 @@ func (s *AuthService) GenerateJWT(user User) (string, error) {
 }
 
 func (s *AuthService) GenerateRefreshToken(ctx context.Context, user User, deviceID string) (string, error) {
-	b := make([]byte, 32)
+	b := make([]byte, refreshTokenBytes)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
@@ -112,6 +124,17 @@ func (s *AuthService) GenerateRefreshToken(ctx context.Context, user User, devic
 
 func (s *AuthService) RevokeAllUserTokens(ctx context.Context, userID uint) error {
 	return s.refreshTokenRepo.RevokeAllForUser(ctx, userID)
+}
+
+func (s *AuthService) RevokeRefreshToken(ctx context.Context, refreshTokenStr string) error {
+	hash := sha256.Sum256([]byte(refreshTokenStr))
+	tokenHash := hex.EncodeToString(hash[:])
+
+	stored, err := s.refreshTokenRepo.GetByTokenHash(ctx, tokenHash)
+	if err != nil {
+		return err
+	}
+	return s.refreshTokenRepo.Revoke(ctx, stored.ID)
 }
 
 func (s *AuthService) CleanExpiredRefreshTokens(ctx context.Context) error {
@@ -232,16 +255,16 @@ func (s *UserService) UpdateAvatarPath(ctx context.Context, id uint, avatarPath 
 }
 
 func (s *UserService) ChangePassword(ctx context.Context, id uint, oldPassword, newPassword string) error {
-	user, err := s.userRepo.GetByID(ctx, id)
-	if err != nil {
-		return err
+	user, getErr := s.userRepo.GetByID(ctx, id)
+	if getErr != nil {
+		return getErr
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(oldPassword)); err != nil {
+	if bcryptErr := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(oldPassword)); bcryptErr != nil {
 		return errors.New("неверный текущий пароль")
 	}
-	hashed, err := bcrypt.GenerateFromPassword([]byte(newPassword), crypto.BcryptCost)
-	if err != nil {
-		return err
+	hashed, hashErr := bcrypt.GenerateFromPassword([]byte(newPassword), crypto.BcryptCost)
+	if hashErr != nil {
+		return hashErr
 	}
 	return s.userRepo.Update(ctx, id, map[string]any{"password": string(hashed)})
 }
@@ -305,7 +328,7 @@ func NewOAuthService(
 	extLoginRepo ExternalLoginRepository,
 	cfg *config.Config,
 ) *OAuthService {
-	httpClient := httpClientWithTimeout(15 * time.Second)
+	httpClient := httpClientWithTimeout(oauthHTTPTimeout)
 
 	configs := map[string]*oauth2.Config{
 		"google": {
@@ -345,7 +368,7 @@ func (s *OAuthService) GetAuthURL(provider string) (authURL string, state string
 	if !ok {
 		return "", "", errors.New("неподдерживаемый провайдер")
 	}
-	stateBytes := make([]byte, 16)
+	stateBytes := make([]byte, oauthStateBytes)
 	if _, err := rand.Read(stateBytes); err != nil {
 		return "", "", fmt.Errorf("не удалось сгенерировать state: %w", err)
 	}
@@ -380,7 +403,7 @@ func (s *OAuthService) ctxWithHTTPClient(ctx context.Context) context.Context {
 }
 
 func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state string) (*User, error) {
-	if len(state) != 32 {
+	if state == "" {
 		return nil, errors.New("неверный state-параметр")
 	}
 	cfg, ok := s.configs[provider]
@@ -397,17 +420,17 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 
 	client := cfg.Client(ctxWithClient, token)
 
-	var emailStr, name string
+	var emailStr, name, externalID string
 	var emailVerified bool
 	switch provider {
 	case "google":
-		req, err := http.NewRequestWithContext(ctxWithClient, "GET", "https://www.googleapis.com/oauth2/v2/userinfo", nil)
-		if err != nil {
-			return nil, fmt.Errorf("создание запроса к Google API: %w", err)
+		req, reqErr := http.NewRequestWithContext(ctxWithClient, "GET", "https://www.googleapis.com/oauth2/v2/userinfo", nil)
+		if reqErr != nil {
+			return nil, fmt.Errorf("создание запроса к Google API: %w", reqErr)
 		}
-		resp, err := client.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("запрос к Google API: %w", err)
+		resp, respErr := client.Do(req)
+		if respErr != nil {
+			return nil, fmt.Errorf("запрос к Google API: %w", respErr)
 		}
 		defer func() {
 			if closeErr := resp.Body.Close(); closeErr != nil {
@@ -415,10 +438,11 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 			}
 		}()
 		var info googleUserInfo
-		if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-			return nil, fmt.Errorf("декодирование ответа Google: %w", err)
+		if decodeErr := json.NewDecoder(resp.Body).Decode(&info); decodeErr != nil {
+			return nil, fmt.Errorf("декодирование ответа Google: %w", decodeErr)
 		}
 		emailStr = info.Email
+		externalID = info.ID
 		emailVerified = info.VerifiedEmail
 		name = info.Name
 		if emailStr == "" {
@@ -428,13 +452,13 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 			return nil, errors.New("email от Google не подтверждён")
 		}
 	case "github":
-		req, err := http.NewRequestWithContext(ctxWithClient, "GET", "https://api.github.com/user/emails", nil)
-		if err != nil {
-			return nil, fmt.Errorf("создание запроса к GitHub API: %w", err)
+		req, reqErr := http.NewRequestWithContext(ctxWithClient, "GET", "https://api.github.com/user/emails", nil)
+		if reqErr != nil {
+			return nil, fmt.Errorf("создание запроса к GitHub API: %w", reqErr)
 		}
-		resp, err := client.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("запрос к GitHub API: %w", err)
+		resp, respErr := client.Do(req)
+		if respErr != nil {
+			return nil, fmt.Errorf("запрос к GitHub API: %w", respErr)
 		}
 		defer func() {
 			if closeErr := resp.Body.Close(); closeErr != nil {
@@ -442,8 +466,8 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 			}
 		}()
 		var emails []githubEmail
-		if err := json.NewDecoder(resp.Body).Decode(&emails); err != nil {
-			return nil, fmt.Errorf("декодирование ответа GitHub: %w", err)
+		if decodeErr := json.NewDecoder(resp.Body).Decode(&emails); decodeErr != nil {
+			return nil, fmt.Errorf("декодирование ответа GitHub: %w", decodeErr)
 		}
 		var found bool
 		for _, e := range emails {
@@ -456,13 +480,13 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 		if !found {
 			return nil, errors.New("не найден верифицированный primary email от GitHub")
 		}
-		reqUser, err := http.NewRequestWithContext(ctxWithClient, "GET", "https://api.github.com/user", nil)
-		if err != nil {
-			return nil, fmt.Errorf("создание запроса к GitHub user: %w", err)
+		reqUser, reqUserErr := http.NewRequestWithContext(ctxWithClient, "GET", "https://api.github.com/user", nil)
+		if reqUserErr != nil {
+			return nil, fmt.Errorf("создание запроса к GitHub user: %w", reqUserErr)
 		}
-		respUser, err := client.Do(reqUser)
-		if err != nil {
-			log.Warn().Err(err).Msg("не удалось получить имя пользователя GitHub")
+		respUser, respUserErr := client.Do(reqUser)
+		if respUserErr != nil {
+			log.Warn().Err(respUserErr).Msg("не удалось получить имя пользователя GitHub")
 		} else {
 			defer func() {
 				if closeErr := respUser.Body.Close(); closeErr != nil {
@@ -471,19 +495,21 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 			}()
 			var userInfo struct {
 				Login string `json:"login"`
+				ID    uint   `json:"id"`
 			}
-			if err := json.NewDecoder(respUser.Body).Decode(&userInfo); err == nil {
+			if decodeErr := json.NewDecoder(respUser.Body).Decode(&userInfo); decodeErr == nil {
 				name = userInfo.Login
+				externalID = fmt.Sprintf("%d", userInfo.ID)
 			}
 		}
 	case "yandex":
-		req, err := http.NewRequestWithContext(ctxWithClient, "GET", "https://login.yandex.ru/info?format=json", nil)
-		if err != nil {
-			return nil, fmt.Errorf("создание запроса к Yandex API: %w", err)
+		req, reqErr := http.NewRequestWithContext(ctxWithClient, "GET", "https://login.yandex.ru/info?format=json", nil)
+		if reqErr != nil {
+			return nil, fmt.Errorf("создание запроса к Yandex API: %w", reqErr)
 		}
-		resp, err := client.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("запрос к Yandex API: %w", err)
+		resp, respErr := client.Do(req)
+		if respErr != nil {
+			return nil, fmt.Errorf("запрос к Yandex API: %w", respErr)
 		}
 		defer func() {
 			if closeErr := resp.Body.Close(); closeErr != nil {
@@ -491,10 +517,11 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 			}
 		}()
 		var info yandexUserInfo
-		if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-			return nil, fmt.Errorf("декодирование ответа Yandex: %w", err)
+		if decodeErr := json.NewDecoder(resp.Body).Decode(&info); decodeErr != nil {
+			return nil, fmt.Errorf("декодирование ответа Yandex: %w", decodeErr)
 		}
 		emailStr = info.Email
+		externalID = info.ID
 		emailVerified = info.IsVerified
 		if emailStr == "" {
 			return nil, errors.New("не удалось получить email от Yandex")
@@ -512,38 +539,38 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 	if name == "" {
 		name = emailStr
 	}
-	user, err := s.userRepo.GetByEmail(ctx, emailStr)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	user, getUserErr := s.userRepo.GetByEmail(ctx, emailStr)
+	if errors.Is(getUserErr, gorm.ErrRecordNotFound) {
 		user = &User{
 			Email:         emailStr,
 			Name:          name,
 			EmailVerified: true,
 			Password:      "",
 		}
-		if err := s.userRepo.Create(ctx, user); err != nil {
-			return nil, fmt.Errorf("создание пользователя: %w", err)
+		if createErr := s.userRepo.Create(ctx, user); createErr != nil {
+			return nil, fmt.Errorf("создание пользователя: %w", createErr)
 		}
-	} else if err != nil {
-		return nil, fmt.Errorf("поиск пользователя: %w", err)
+	} else if getUserErr != nil {
+		return nil, fmt.Errorf("поиск пользователя: %w", getUserErr)
 	} else {
 		if user.Name != name {
-			if err := s.userRepo.Update(ctx, user.ID, map[string]any{"name": name}); err != nil {
-				log.Warn().Err(err).Uint("user_id", user.ID).Msg("не удалось обновить имя пользователя")
+			if updateErr := s.userRepo.Update(ctx, user.ID, map[string]any{"name": name}); updateErr != nil {
+				log.Warn().Err(updateErr).Uint("user_id", user.ID).Msg("не удалось обновить имя пользователя")
 			}
 		}
 		if !user.EmailVerified {
-			if err := s.userRepo.Update(ctx, user.ID, map[string]any{"email_verified": true}); err != nil {
-				log.Warn().Err(err).Uint("user_id", user.ID).Msg("не удалось установить email_verified")
+			if updateErr := s.userRepo.Update(ctx, user.ID, map[string]any{"email_verified": true}); updateErr != nil {
+				log.Warn().Err(updateErr).Uint("user_id", user.ID).Msg("не удалось установить email_verified")
 			}
 		}
 	}
 	extLogin := &ExternalLogin{
 		UserID:     user.ID,
 		Provider:   provider,
-		ExternalID: emailStr,
+		ExternalID: externalID,
 	}
-	if err := s.extLoginRepo.FindOrCreate(ctx, extLogin); err != nil {
-		log.Warn().Err(err).Uint("user_id", user.ID).Str("provider", provider).Msg("FindOrCreate external login: failed, continuing")
+	if findErr := s.extLoginRepo.FindOrCreate(ctx, extLogin); findErr != nil {
+		log.Warn().Err(findErr).Uint("user_id", user.ID).Str("provider", provider).Msg("FindOrCreate external login: failed, continuing")
 	}
 	return user, nil
 }
@@ -569,16 +596,24 @@ func NewPasswordResetService(
 }
 
 func (s *PasswordResetService) GenerateToken(ctx context.Context, user User) (string, error) {
-	b := make([]byte, 16)
+	b := make([]byte, passwordResetTokenBytes)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("не удалось сгенерировать токен: %w", err)
 	}
 	rawToken := hex.EncodeToString(b)
 	hash := sha256.Sum256([]byte(rawToken))
+
+	codeBytes := make([]byte, 16)
+	if _, err := rand.Read(codeBytes); err != nil {
+		return "", fmt.Errorf("не удалось сгенерировать код сброса: %w", err)
+	}
+	resetCode := hex.EncodeToString(codeBytes)
+
 	token := PasswordResetToken{
 		UserID:    user.ID,
+		ResetCode: resetCode,
 		TokenHash: hex.EncodeToString(hash[:]),
-		ExpiresAt: time.Now().Add(1 * time.Hour),
+		ExpiresAt: time.Now().Add(passwordResetExpiry),
 	}
 	if err := s.passResetRepo.CreateToken(ctx, &token); err != nil {
 		return "", err
@@ -587,27 +622,34 @@ func (s *PasswordResetService) GenerateToken(ctx context.Context, user User) (st
 		if err := email.Enqueue(
 			user.Email,
 			"Сброс пароля",
-			fmt.Sprintf("Для сброса пароля перейдите по ссылке: %s/auth/reset?token=%s", s.cfg.Server.BaseURL, rawToken),
+			fmt.Sprintf("Для сброса пароля перейдите по ссылке: %s/auth/reset/%s", s.cfg.Server.BaseURL, resetCode),
 		); err != nil {
 			log.Error().Err(err).Str("email", user.Email).Msg("failed to enqueue password reset email")
 		}
 	}
-	return rawToken, nil
+	return resetCode, nil
 }
 
-func (s *PasswordResetService) ResetPassword(ctx context.Context, tokenStr, newPassword string) error {
-	token, err := s.passResetRepo.GetToken(ctx, tokenStr)
+func (s *PasswordResetService) ResetPassword(ctx context.Context, resetCode, newPassword string) error {
+	token, err := s.passResetRepo.GetTokenByResetCode(ctx, resetCode)
 	if err != nil {
 		return errors.New("токен недействителен или истёк")
 	}
 	if token.ExpiresAt.Before(time.Now()) {
 		return errors.New("токен истёк")
 	}
+	if token.UsedAt != nil {
+		return errors.New("токен уже использован")
+	}
 	hashed, err := bcrypt.GenerateFromPassword([]byte(newPassword), crypto.BcryptCost)
 	if err != nil {
 		return err
 	}
+	now := time.Now()
 	if err := s.userRepo.Update(ctx, token.UserID, map[string]any{"password": string(hashed)}); err != nil {
+		return err
+	}
+	if err := s.passResetRepo.MarkTokenUsed(ctx, token.ID, now); err != nil {
 		return err
 	}
 	return s.passResetRepo.DeleteToken(ctx, token)
@@ -639,7 +681,7 @@ func (s *EmailVerificationService) SendVerificationEmail(ctx context.Context, us
 		return nil
 	}
 
-	b := make([]byte, 16)
+	b := make([]byte, emailVerificationTokenBytes)
 	if _, err := rand.Read(b); err != nil {
 		return fmt.Errorf("не удалось сгенерировать токен верификации: %w", err)
 	}
@@ -648,7 +690,7 @@ func (s *EmailVerificationService) SendVerificationEmail(ctx context.Context, us
 	if err := s.emailVerifRepo.CreateToken(ctx, &EmailVerificationToken{
 		UserID:    user.ID,
 		TokenHash: hex.EncodeToString(hash[:]),
-		ExpiresAt: time.Now().Add(24 * time.Hour),
+		ExpiresAt: time.Now().Add(emailVerificationExpiry),
 	}); err != nil {
 		return fmt.Errorf("не удалось сохранить токен верификации: %w", err)
 	}
@@ -730,170 +772,96 @@ type DashboardInvitation struct {
 }
 
 // GetDashboard собирает данные для дашборда с оптимизированными запросами.
-// Объединяет несколько запросов в JOIN для уменьшения нагрузки на БД.
-func (s *UserDashboardService) GetDashboard(userID uint) (*UserDashboard, error) {
+// Использует 3 запроса вместо 7 за счёт JOIN.
+func (s *UserDashboardService) GetDashboard(ctx context.Context, userID uint) (*UserDashboard, error) {
 	var dash UserDashboard
 
-	// 1. Авторские игры (таблица games) — добавляем условие deleted_at IS NULL
+	// 1. Авторские игры
 	var authoredGames []struct {
 		ID      uint
 		Name    string
 		IsDraft bool
 	}
-	if err := s.DB.Table("games").
+	if err := s.DB.WithContext(ctx).Table("games").
 		Select("id, name, is_draft").
 		Where("author_id = ? AND deleted_at IS NULL", userID).
 		Find(&authoredGames).Error; err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to get authored games")
-	} else {
-		for _, g := range authoredGames {
-			dash.AuthoredGames = append(dash.AuthoredGames, DashboardGame{
-				ID:      g.ID,
-				Name:    g.Name,
-				IsDraft: g.IsDraft,
-			})
-		}
+		return &dash, fmt.Errorf("failed to get authored games: %w", err)
+	}
+	for _, g := range authoredGames {
+		dash.AuthoredGames = append(dash.AuthoredGames, DashboardGame{
+			ID:      g.ID,
+			Name:    g.Name,
+			IsDraft: g.IsDraft,
+		})
 	}
 
-	// 2. Все команды пользователя (капитанство + участие)
-	var allTeams []DashboardTeam
-	if err := s.DB.Raw(`
-		SELECT id, name FROM teams WHERE captain_id = ?
-		UNION
-		SELECT t.id, t.name FROM teams t
-		JOIN team_members tm ON tm.team_id = t.id
-		WHERE tm.user_id = ? AND t.captain_id != ?
-	`, userID, userID, userID).Scan(&allTeams).Error; err != nil {
-		log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to get teams")
-		s.loadInvitations(&dash, userID)
-		return &dash, nil
+	// 2. Единый запрос: команды + прохождения + названия игр через JOIN
+	type teamRow struct {
+		TeamID        uint
+		TeamName      string
+		CaptainID     uint
+		PassingID     uint
+		GameID        uint
+		PassingStatus string
+		GameName      string
+	}
+	var rows []teamRow
+	if err := s.DB.WithContext(ctx).Raw(`
+		SELECT t.id as team_id, t.name as team_name, t.captain_id,
+		       COALESCE(gp.id, 0) as passing_id,
+		       COALESCE(gp.game_id, 0) as game_id,
+		       COALESCE(gp.status, '') as passing_status,
+		       COALESCE(g.name, '') as game_name
+		FROM teams t
+		LEFT JOIN game_passings gp ON gp.team_id = t.id AND gp.status IN ('accepted', 'started', 'finished')
+		LEFT JOIN games g ON g.id = gp.game_id AND g.deleted_at IS NULL
+		WHERE t.id IN (
+			SELECT id FROM teams WHERE captain_id = ?
+			UNION
+			SELECT t.id FROM teams t
+			INNER JOIN team_members tm ON tm.team_id = t.id
+			WHERE tm.user_id = ? AND t.captain_id != ?
+		)
+	`, userID, userID, userID).Scan(&rows).Error; err != nil {
+		log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to get teams data")
+		return &dash, err
 	}
 
-	if len(allTeams) == 0 {
-		s.loadInvitations(&dash, userID)
-		return &dash, nil
-	}
-
-	// 3. Прохождения для всех команд пользователя
-	var passings []struct {
-		ID     uint
-		GameID uint
-		TeamID uint
-		Status string
-	}
-	teamIDs := make([]uint, len(allTeams))
-	for i, t := range allTeams {
-		teamIDs[i] = t.ID
-	}
-
-	if err := s.DB.Table("game_passings").
-		Select("id, game_id, team_id, status").
-		Where("team_id IN ? AND status IN (?, ?, ?)", teamIDs, "accepted", "started", "finished").
-		Find(&passings).Error; err != nil {
-		log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to get passings")
-	}
-
-	// 4. Собираем ID игр и команд для подгрузки названий
-	var gameIDs []uint
-	var teamIDsForGames []uint
-	for _, p := range passings {
-		gameIDs = append(gameIDs, p.GameID)
-		teamIDsForGames = append(teamIDsForGames, p.TeamID)
-	}
-	gameIDs = uniqueUintSlice(gameIDs)
-	teamIDsForGames = uniqueUintSlice(teamIDsForGames)
-
-	// 5. Оптимизация: получаем названия игр и команд отдельными запросами
-	var gamesMap = make(map[uint]DashboardGame)
-	var teamsMap = make(map[uint]DashboardTeam)
-
-	if len(gameIDs) > 0 {
-		var games []struct {
-			ID   uint
-			Name string
-		}
-		if err := s.DB.Table("games").
-			Select("id, name").
-			Where("id IN ? AND deleted_at IS NULL", gameIDs).
-			Find(&games).Error; err != nil {
-			log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to get games")
-		} else {
-			for _, g := range games {
-				gamesMap[g.ID] = DashboardGame{ID: g.ID, Name: g.Name}
-			}
-		}
-	}
-
-	if len(teamIDsForGames) > 0 {
-		var teams []struct {
-			ID   uint
-			Name string
-		}
-		if err := s.DB.Table("teams").
-			Select("id, name").
-			Where("id IN ?", teamIDsForGames).
-			Find(&teams).Error; err != nil {
-			log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to get teams")
-		} else {
-			for _, t := range teams {
-				teamsMap[t.ID] = DashboardTeam{ID: t.ID, Name: t.Name}
-			}
-		}
-	}
-
-	// 6. Определяем, в каких командах пользователь — капитан (один запрос)
-	captainTeamIDs := make(map[uint]bool)
-	var captainRows []struct {
-		ID        uint
-		CaptainID uint
-	}
-	if err := s.DB.Table("teams").Select("id, captain_id").Where("id IN ?", teamIDs).Find(&captainRows).Error; err == nil {
-		for _, row := range captainRows {
-			if row.CaptainID == userID {
-				captainTeamIDs[row.ID] = true
-			}
-		}
-	}
-
-	// 7. Формируем результат
-	for _, p := range passings {
-		game, gameOk := gamesMap[p.GameID]
-		team, teamOk := teamsMap[p.TeamID]
-		if !gameOk || !teamOk {
+	for _, r := range rows {
+		if r.PassingID == 0 || r.GameName == "" {
 			continue
 		}
-		if captainTeamIDs[p.TeamID] {
-			dash.CaptainTeams = append(dash.CaptainTeams, DashboardTeamWithGame{
-				Team: team,
-				Game: game,
-			})
+		team := DashboardTeam{ID: r.TeamID, Name: r.TeamName}
+		game := DashboardGame{ID: r.GameID, Name: r.GameName}
+		twg := DashboardTeamWithGame{Team: team, Game: game}
+		if r.CaptainID == userID {
+			dash.CaptainTeams = append(dash.CaptainTeams, twg)
 		} else {
-			dash.MemberTeams = append(dash.MemberTeams, DashboardTeamWithGame{
-				Team: team,
-				Game: game,
-			})
+			dash.MemberTeams = append(dash.MemberTeams, twg)
 		}
-		if p.Status == "started" || p.Status == "accepted" {
+		if r.PassingStatus == "started" || r.PassingStatus == "accepted" {
 			dash.ActivePassings = append(dash.ActivePassings, DashboardPassingWithGame{
-				PassingStatus: p.Status,
-				TeamName:      team.Name,
-				GameName:      game.Name,
-				GameID:        p.GameID,
-				PassingID:     p.ID,
+				PassingStatus: r.PassingStatus,
+				TeamName:      r.TeamName,
+				GameName:      r.GameName,
+				GameID:        r.GameID,
+				PassingID:     r.PassingID,
 			})
 		}
 	}
 
-	// 8. Приглашения
-	s.loadInvitations(&dash, userID)
+	// 3. Приглашения
+	s.loadInvitations(ctx, &dash, userID)
 
 	return &dash, nil
 }
 
 // loadInvitations загружает ожидающие приглашения в структуру дашборда.
-func (s *UserDashboardService) loadInvitations(dash *UserDashboard, userID uint) {
+func (s *UserDashboardService) loadInvitations(ctx context.Context, dash *UserDashboard, userID uint) {
 	var invitations []DashboardInvitation
-	if err := s.DB.Table("invitations").
+	if err := s.DB.WithContext(ctx).Table("invitations").
 		Select("invitations.id, invitations.team_id, teams.name as team_name, invitations.status").
 		Joins("JOIN teams ON teams.id = invitations.team_id").
 		Where("invitations.user_id = ? AND invitations.status = ?", userID, "pending").
@@ -902,16 +870,4 @@ func (s *UserDashboardService) loadInvitations(dash *UserDashboard, userID uint)
 	} else {
 		dash.PendingInvitations = invitations
 	}
-}
-
-func uniqueUintSlice(input []uint) []uint {
-	u := make([]uint, 0, len(input))
-	m := make(map[uint]bool)
-	for _, val := range input {
-		if _, ok := m[val]; !ok {
-			m[val] = true
-			u = append(u, val)
-		}
-	}
-	return u
 }

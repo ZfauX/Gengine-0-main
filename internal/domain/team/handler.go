@@ -12,9 +12,10 @@ import (
 	"gengine-0/internal/pkg/storage"
 	"gengine-0/internal/pkg/validation"
 
+	csrf "gengine-0/internal/pkg/csrf"
+
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-	csrf "github.com/utrack/gin-csrf"
 	"gorm.io/gorm"
 )
 
@@ -104,10 +105,16 @@ func (h *TeamHandler) NewTeamForm(c *gin.Context) {
 // CreateTeam создаёт новую команду и делает текущего пользователя капитаном.
 func (h *TeamHandler) CreateTeam(c *gin.Context) {
 	var input CreateTeamInput
+	errs := validation.FieldErrors{}
 	if err := c.ShouldBind(&input); err != nil {
+		errs.Add("name", validation.ValidateString("Название", input.Name, 2, 100))
+		if !errs.HasErrors() {
+			errs.Add("form", err)
+		}
 		render.Page(c, http.StatusBadRequest, "teams-new.html", gin.H{
-			"Error": "Название должно быть от 2 до 100 символов",
-			"csrf":  csrf.GetToken(c),
+			"Error":  errs.Error(),
+			"Errors": errs,
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
@@ -236,19 +243,31 @@ func (h *TeamHandler) AddMember(c *gin.Context) {
 	actorID := c.GetUint("userID")
 
 	var input AddMemberInput
+	errs := validation.FieldErrors{}
 	if err := c.ShouldBind(&input); err != nil {
+		errs.Add("user_id", validation.ValidatePositiveUint("ID пользователя", input.UserID))
+		if !errs.HasErrors() {
+			errs.Add("form", err)
+		}
 		render.Page(c, http.StatusBadRequest, "teams-add_member.html", gin.H{
-			"Error": "Неверные данные: " + err.Error(),
-			"csrf":  csrf.GetToken(c),
+			"GameID": c.Param("game_id"),
+			"TeamID": req.TeamID,
+			"Error":  errs.Error(),
+			"Errors": errs,
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
 
 	// Валидация ID пользователя
 	if err := validation.ValidatePositiveUint("ID пользователя", input.UserID); err != nil {
+		errs.Add("user_id", err)
 		render.Page(c, http.StatusBadRequest, "teams-add_member.html", gin.H{
-			"Error": err.Error(),
-			"csrf":  csrf.GetToken(c),
+			"GameID": c.Param("game_id"),
+			"TeamID": req.TeamID,
+			"Error":  errs.Error(),
+			"Errors": errs,
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
@@ -427,19 +446,31 @@ func (h *InvitationHandler) Create(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	var input CreateInvitationInput
+	errs := validation.FieldErrors{}
 	if err := c.ShouldBind(&input); err != nil {
+		errs.Add("user_id", validation.ValidatePositiveUint("ID пользователя", input.UserID))
+		if !errs.HasErrors() {
+			errs.Add("form", err)
+		}
 		render.Page(c, http.StatusBadRequest, "invitations-new.html", gin.H{
-			"Error": "Неверный ID пользователя",
-			"csrf":  csrf.GetToken(c),
+			"GameID": c.Param("game_id"),
+			"TeamID": req.TeamID,
+			"Error":  errs.Error(),
+			"Errors": errs,
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
 
 	// Валидация ID пользователя
 	if err := validation.ValidatePositiveUint("ID пользователя", input.UserID); err != nil {
+		errs.Add("user_id", err)
 		render.Page(c, http.StatusBadRequest, "invitations-new.html", gin.H{
-			"Error": err.Error(),
-			"csrf":  csrf.GetToken(c),
+			"GameID": c.Param("game_id"),
+			"TeamID": req.TeamID,
+			"Error":  errs.Error(),
+			"Errors": errs,
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}

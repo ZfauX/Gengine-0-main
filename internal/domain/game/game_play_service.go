@@ -27,7 +27,7 @@ type GamePlayService struct {
 	db          *gorm.DB
 	attemptSvc  *AttemptService
 	progressSvc *LevelProgressService
-	monitorSvc  *MonitorService
+	monitorSvc  MonitorServiceInterface
 	hub         *ws.RoomHub
 	coAuthorSvc *CoAuthorService
 	cfg         *config.Config
@@ -38,7 +38,7 @@ func NewGamePlayService(
 	db *gorm.DB,
 	attemptSvc *AttemptService,
 	progressSvc *LevelProgressService,
-	monitorSvc *MonitorService,
+	monitorSvc MonitorServiceInterface,
 	hub *ws.RoomHub,
 	coAuthorSvc *CoAuthorService,
 	cfg *config.Config,
@@ -60,33 +60,33 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// 1. Блокируем прогресс текущего уровня
-		progress, err := GetCurrentProgressForUpdate(tx, passingID)
-		if err != nil {
-			return err
+		progress, progressErr := GetCurrentProgressForUpdate(tx, passingID)
+		if progressErr != nil {
+			return progressErr
 		}
 
 		// 2. Проверяем членство в команде
-		if err := checkTeamMembership(tx, passingID, userID); err != nil {
-			return err
+		if checkErr := checkTeamMembership(tx, passingID, userID); checkErr != nil {
+			return checkErr
 		}
 
 		// 3. Загружаем passing для получения GameID
 		var passing GamePassing
-		if err := tx.First(&passing, passingID).Error; err != nil {
-			return err
+		if findErr := tx.First(&passing, passingID).Error; findErr != nil {
+			return findErr
 		}
 
 		// 4. Отправляем код через attemptService с передачей tx
-		att, success, err := s.attemptSvc.SubmitCodeWithTx(tx, progress, code)
-		if err != nil {
-			return err
+		att, success, submitErr := s.attemptSvc.SubmitCodeWithTx(ctx, tx, progress, code)
+		if submitErr != nil {
+			return submitErr
 		}
 
 		if success {
 			// 5. Завершаем уровень — при завершении последнего уровня вызываем расчёт результатов
 			gameID := passing.GameID
-			if err := CompleteLevel(tx, progress, nil); err != nil {
-				return err
+			if _, completeErr := CompleteLevel(tx, progress, nil); completeErr != nil {
+				return completeErr
 			}
 			// Сохраняем gameID для вызова после транзакции
 			result = &SubmitResult{Attempt: att, GameID: gameID}
@@ -112,10 +112,8 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 		s.broadcastSnapshot(ctx, passingID)
 		// Рассчитываем результаты, если игра завершена (на основе gameID)
 		if result.GameID != 0 {
-			if s.monitorSvc != nil {
-				if err := s.monitorSvc.CalculateResults(ctx, result.GameID); err != nil {
-					log.Error().Err(err).Uint("game_id", result.GameID).Msg("SubmitCode: CalculateResults failed")
-				}
+			if err := s.monitorSvc.CalculateResults(ctx, result.GameID); err != nil {
+				log.Error().Err(err).Uint("game_id", result.GameID).Msg("SubmitCode: CalculateResults failed")
 			}
 		}
 	}
@@ -127,28 +125,28 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 func (s *GamePlayService) SubmitFile(ctx context.Context, passingID, userID uint, filePath string) (*Attempt, error) {
 	var attempt *Attempt
 
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		progress, err := GetCurrentProgressForUpdate(tx, passingID)
-		if err != nil {
-			return err
+	fileErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		progress, progressErr := GetCurrentProgressForUpdate(tx, passingID)
+		if progressErr != nil {
+			return progressErr
 		}
 
-		if err := checkTeamMembership(tx, passingID, userID); err != nil {
-			return err
+		if checkErr := checkTeamMembership(tx, passingID, userID); checkErr != nil {
+			return checkErr
 		}
 
 		// Q5: Проверяем, что уровень поддерживает файловые ответы
 		var lvl level.Level
-		if err := tx.Where("id = ?", progress.LevelID).First(&lvl).Error; err != nil {
-			return err
+		if findErr := tx.Where("id = ?", progress.LevelID).First(&lvl).Error; findErr != nil {
+			return findErr
 		}
 		if lvl.Type != level.TypeFileUpload {
 			return errors.New("этот уровень не поддерживает файловые ответы")
 		}
 
-		att, err := s.attemptSvc.SubmitFileWithTx(tx, progress, filePath)
-		if err != nil {
-			return err
+		att, submitErr := s.attemptSvc.SubmitFileWithTx(ctx, tx, progress, filePath)
+		if submitErr != nil {
+			return submitErr
 		}
 		attempt = att
 
@@ -160,8 +158,8 @@ func (s *GamePlayService) SubmitFile(ctx context.Context, passingID, userID uint
 		return tx.Create(&logEntry).Error
 	})
 
-	if err != nil {
-		return nil, err
+	if fileErr != nil {
+		return nil, fileErr
 	}
 
 	if attempt != nil {
@@ -173,25 +171,25 @@ func (s *GamePlayService) SubmitFile(ctx context.Context, passingID, userID uint
 // UseHint использует подсказку с транзакцией и блокировкой.
 func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (string, error) {
 	var hintText string
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		progress, err := GetCurrentProgressForUpdate(tx, passingID)
-		if err != nil {
-			return err
+	transactionErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		progress, progressErr := GetCurrentProgressForUpdate(tx, passingID)
+		if progressErr != nil {
+			return progressErr
 		}
 
-		if err := checkTeamMembership(tx, passingID, userID); err != nil {
-			return err
+		if checkErr := checkTeamMembership(tx, passingID, userID); checkErr != nil {
+			return checkErr
 		}
 
 		var passing GamePassing
-		if err := tx.First(&passing, passingID).Error; err != nil {
-			return err
+		if findErr := tx.First(&passing, passingID).Error; findErr != nil {
+			return findErr
 		}
 		if passing.Status != StatusStarted {
 			return errors.New("игра не запущена")
 		}
 		var settings GameSetting
-		if err := tx.Where("game_id = ?", passing.GameID).First(&settings).Error; err != nil {
+		if findErr := tx.Where("game_id = ?", passing.GameID).First(&settings).Error; findErr != nil {
 			settings = GameSetting{AllowHints: true, HintPenaltySeconds: 300, MaxHints: 3}
 		}
 
@@ -205,14 +203,14 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (
 		progress.HintsUsed++
 		penalty := settings.HintPenaltySeconds
 		progress.PenaltySeconds += penalty
-		if err := tx.Save(progress).Error; err != nil {
-			return err
+		if saveErr := tx.Save(progress).Error; saveErr != nil {
+			return saveErr
 		}
 
 		// Получаем текст подсказки из вопросов уровня
 		var lvl level.Level
-		if err := tx.Where("id = ?", progress.LevelID).First(&lvl).Error; err != nil {
-			return err
+		if findErr := tx.Where("id = ?", progress.LevelID).First(&lvl).Error; findErr != nil {
+			return findErr
 		}
 		if len(lvl.Questions) > 0 {
 			hintText = lvl.Questions[0].Hint
@@ -223,15 +221,15 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (
 			LevelID:       progress.LevelID,
 			Message:       fmt.Sprintf("использована подсказка (+%d сек)", penalty),
 		}
-		if err := tx.Create(&logEntry).Error; err != nil {
-			return err
+		if createErr := tx.Create(&logEntry).Error; createErr != nil {
+			return createErr
 		}
 
 		return nil
 	})
 
-	if err != nil {
-		return "", err
+	if transactionErr != nil {
+		return "", transactionErr
 	}
 
 	// Отправляем WebSocket-обновление после фиксации транзакции
@@ -243,39 +241,39 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (
 func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, userID uint) error {
 	var gameID uint
 
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		progress, err := GetCurrentProgressForUpdate(tx, passingID)
-		if err != nil {
-			return err
+	transactionErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		progress, progressErr := GetCurrentProgressForUpdate(tx, passingID)
+		if progressErr != nil {
+			return progressErr
 		}
 
 		// Проверяем, что уровень требует подтверждения (чёрный ящик)
 		var lvl level.Level
-		if err := tx.Where("id = ?", progress.LevelID).First(&lvl).Error; err != nil {
-			return err
+		if findErr := tx.Where("id = ?", progress.LevelID).First(&lvl).Error; findErr != nil {
+			return findErr
 		}
 		if lvl.Type != level.TypeBlackbox {
 			return errors.New("подтверждение ответа доступно только для уровней типа чёрный ящик")
 		}
 
 		var passing GamePassing
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&passing, passingID).Error; err != nil {
-			return err
+		if findErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&passing, passingID).Error; findErr != nil {
+			return findErr
 		}
 		gameID = passing.GameID
 		var game Game
-		if err := tx.First(&game, passing.GameID).Error; err != nil {
-			return err
+		if findErr := tx.First(&game, passing.GameID).Error; findErr != nil {
+			return findErr
 		} else if game.AuthorID != userID {
 			return errors.New("только автор может подтвердить ответ")
 		}
 
-		if err := s.attemptSvc.AcceptPendingAttemptWithTx(tx, progress); err != nil {
-			return err
+		if acceptErr := s.attemptSvc.AcceptPendingAttemptWithTx(ctx, tx, progress); acceptErr != nil {
+			return acceptErr
 		}
 
-		if err := CompleteLevel(tx, progress, nil); err != nil {
-			return err
+		if _, completeErr := CompleteLevel(tx, progress, nil); completeErr != nil {
+			return completeErr
 		}
 
 		logEntry := Log{
@@ -286,18 +284,15 @@ func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, u
 		return tx.Create(&logEntry).Error
 	})
 
-	if err != nil {
-		return err
+	if transactionErr != nil {
+		return transactionErr
 	}
 
 	// Рассчитываем результаты ПОСЛЕ транзакции
-	if s.monitorSvc != nil {
-		if err := s.monitorSvc.CalculateResults(ctx, gameID); err != nil {
-			log.Error().Err(err).Uint("game_id", gameID).Msg("AcceptBlackboxAnswer: CalculateResults failed")
-		}
+	if calcErr := s.monitorSvc.CalculateResults(ctx, gameID); calcErr != nil {
+		log.Error().Err(calcErr).Uint("game_id", gameID).Msg("AcceptBlackboxAnswer: CalculateResults failed")
 	}
 
-	s.broadcastSnapshot(ctx, passingID)
 	s.broadcastSnapshot(ctx, passingID)
 	return nil
 }
@@ -307,19 +302,19 @@ func (s *GamePlayService) StartTesting(ctx context.Context, gameID, userID uint)
 	var passing *GamePassing
 
 	// Проверка прав: только автор или модератор может запускать тестирование
-	ok, err := s.coAuthorSvc.HasPermission(ctx, gameID, userID, RoleModerator)
-	if err != nil {
-		return nil, fmt.Errorf("ошибка проверки прав: %w", err)
+	ok, permErr := s.coAuthorSvc.HasPermission(ctx, gameID, userID, RoleModerator)
+	if permErr != nil {
+		return nil, fmt.Errorf("ошибка проверки прав: %w", permErr)
 	}
 	if !ok {
 		return nil, errors.New("только автор или модератор может запускать тестирование")
 	}
 
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	testingErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Проверяем наличие уровней в игре
 		var levelCount int64
-		if err := tx.Model(&level.Level{}).Where("game_id = ?", gameID).Count(&levelCount).Error; err != nil {
-			return err
+		if countErr := tx.Model(&level.Level{}).Where("game_id = ?", gameID).Count(&levelCount).Error; countErr != nil {
+			return countErr
 		}
 		if levelCount == 0 {
 			return errors.New("игра не содержит уровней")
@@ -328,13 +323,13 @@ func (s *GamePlayService) StartTesting(ctx context.Context, gameID, userID uint)
 		// Проверяем, не существует ли уже тестовое прохождение для этой игры и пользователя
 		// Используем FOR UPDATE для исключения race condition
 		var existing GamePassing
-		err := tx.Set("gorm:query_option", "FOR UPDATE").
+		findErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("game_id = ? AND status = ? AND team_id::text LIKE ?", gameID, StatusTesting, "_test_%").
 			First(&existing).Error
-		if err == nil {
+		if findErr == nil {
 			return fmt.Errorf("тестовое прохождение уже существует")
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
+		} else if !errors.Is(findErr, gorm.ErrRecordNotFound) {
+			return findErr
 		}
 
 		// Создаём тестовую команду
@@ -342,8 +337,8 @@ func (s *GamePlayService) StartTesting(ctx context.Context, gameID, userID uint)
 			Name:      fmt.Sprintf("_test_%d", userID),
 			CaptainID: userID,
 		}
-		if err := tx.Create(&testTeam).Error; err != nil {
-			return err
+		if createErr := tx.Create(&testTeam).Error; createErr != nil {
+			return createErr
 		}
 
 		passing = &GamePassing{
@@ -351,8 +346,8 @@ func (s *GamePlayService) StartTesting(ctx context.Context, gameID, userID uint)
 			TeamID: testTeam.ID,
 			Status: StatusTesting,
 		}
-		if err := tx.Create(passing).Error; err != nil {
-			return err
+		if createErr := tx.Create(passing).Error; createErr != nil {
+			return createErr
 		}
 		metrics.IncGamePassings(string(StatusTesting))
 
@@ -361,8 +356,8 @@ func (s *GamePlayService) StartTesting(ctx context.Context, gameID, userID uint)
 		return txProgressSvc.InitFirstLevel(ctx, passing.ID)
 	})
 
-	if err != nil {
-		return nil, err
+	if testingErr != nil {
+		return nil, testingErr
 	}
 	return passing, nil
 }
@@ -386,7 +381,7 @@ func (s *GamePlayService) SubmitTestCode(ctx context.Context, passingID, userID 
 			return err
 		}
 
-		if err := CompleteLevel(tx, progress, nil); err != nil {
+		if _, err := CompleteLevel(tx, progress, nil); err != nil {
 			return err
 		}
 		return nil
@@ -403,20 +398,20 @@ func (s *GamePlayService) SubmitTestCode(ctx context.Context, passingID, userID 
 // SkipLevelTest пропускает уровень в тестовом режиме с транзакцией.
 func (s *GamePlayService) SkipLevelTest(ctx context.Context, passingID, userID uint) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		progress, err := GetCurrentProgressForUpdate(tx, passingID)
-		if err != nil {
-			return err
+		progress, progressErr := GetCurrentProgressForUpdate(tx, passingID)
+		if progressErr != nil {
+			return progressErr
 		}
 
 		// Проверяем, что пользователь — автор или соавтор игры
 		var passing GamePassing
-		if err := tx.First(&passing, passingID).Error; err != nil {
-			return err
+		if findErr := tx.First(&passing, passingID).Error; findErr != nil {
+			return findErr
 		}
 
-		ok, err := s.coAuthorSvc.HasPermission(ctx, passing.GameID, userID, RoleModerator)
-		if err != nil {
-			return fmt.Errorf("ошибка проверки прав: %w", err)
+		ok, permErr := s.coAuthorSvc.HasPermission(ctx, passing.GameID, userID, RoleModerator)
+		if permErr != nil {
+			return fmt.Errorf("ошибка проверки прав: %w", permErr)
 		}
 		if !ok {
 			return errors.New("доступ запрещён: только автор или соавтор может пропускать уровни")
@@ -424,16 +419,18 @@ func (s *GamePlayService) SkipLevelTest(ctx context.Context, passingID, userID u
 
 		now := time.Now()
 		progress.FinishedAt = &now
-		if err := tx.Save(progress).Error; err != nil {
-			return err
+		if saveErr := tx.Save(progress).Error; saveErr != nil {
+			return saveErr
 		}
-		return AdvanceToNextLevel(tx, passingID, progress.LevelID, nil)
+
+		_, advanceErr := AdvanceToNextLevel(tx, passingID, progress.LevelID, nil)
+		return advanceErr
 	})
 }
 
 // broadcastSnapshot отправляет обновление мониторинга в WebSocket.
 func (s *GamePlayService) broadcastSnapshot(ctx context.Context, passingID uint) {
-	if s.monitorSvc == nil || s.hub == nil {
+	if s.hub == nil {
 		return
 	}
 	// Проверяем, не отменён ли контекст

@@ -105,8 +105,8 @@ func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID u
 	return s.gameRepo.DB(ctx).Transaction(func(tx *gorm.DB) error {
 		// Блокируем сессию для сериализации
 		var lockedSession BlackboxVotingSession
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&lockedSession, sessionID).Error; err != nil {
-			return err
+		if lockErr := tx.Set("gorm:query_option", "FOR UPDATE").First(&lockedSession, sessionID).Error; lockErr != nil {
+			return lockErr
 		}
 
 		var attempts []game.Attempt
@@ -125,12 +125,12 @@ func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID u
 		}
 
 		// Проверяем существование голоса внутри транзакции
-		_, err = s.blackboxRepo.GetVoteBySessionAndVoter(ctx, sessionID, voterTeamID)
-		if err == nil {
+		_, getVoteErr := s.blackboxRepo.GetVoteBySessionAndVoter(ctx, sessionID, voterTeamID)
+		if getVoteErr == nil {
 			return errors.New("ваш голос уже учтён")
 		}
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
+		if !errors.Is(getVoteErr, gorm.ErrRecordNotFound) {
+			return getVoteErr
 		}
 
 		vote := &BlackboxVote{
@@ -157,26 +157,26 @@ func (s *BlackboxVoteService) GetVotingResults(ctx context.Context, sessionID ui
 
 // CloseVoting закрывает голосование и определяет победителя.
 func (s *BlackboxVoteService) CloseVoting(ctx context.Context, sessionID, userID uint) (string, error) {
-	session, err := s.blackboxRepo.GetSessionByID(ctx, sessionID)
-	if err != nil {
-		return "", err
+	session, getSessionErr := s.blackboxRepo.GetSessionByID(ctx, sessionID)
+	if getSessionErr != nil {
+		return "", getSessionErr
 	}
 
 	var passing game.GamePassing
-	if err := s.gameRepo.DB(ctx).First(&passing, session.GamePassingID).Error; err != nil {
-		return "", err
+	if findErr := s.gameRepo.DB(ctx).First(&passing, session.GamePassingID).Error; findErr != nil {
+		return "", findErr
 	}
-	g, err := s.gameRepo.GetByID(ctx, passing.GameID)
-	if err != nil {
-		return "", err
+	g, getErr := s.gameRepo.GetByID(ctx, passing.GameID)
+	if getErr != nil {
+		return "", getErr
 	}
 	if g.AuthorID != userID {
 		return "", errors.New("только автор может завершить голосование")
 	}
 
-	results, err := s.GetVotingResults(ctx, sessionID)
-	if err != nil {
-		return "", err
+	results, getResultsErr := s.GetVotingResults(ctx, sessionID)
+	if getResultsErr != nil {
+		return "", getResultsErr
 	}
 
 	maxVotes := 0
@@ -190,8 +190,8 @@ func (s *BlackboxVoteService) CloseVoting(ctx context.Context, sessionID, userID
 
 	session.IsOpen = false
 	session.WinnerOption = winner
-	if err := s.blackboxRepo.UpdateSession(ctx, session); err != nil {
-		return "", err
+	if updateErr := s.blackboxRepo.UpdateSession(ctx, session); updateErr != nil {
+		return "", updateErr
 	}
 
 	if s.cfg != nil && s.cfg.SMTP.Enabled {
@@ -204,12 +204,12 @@ func (s *BlackboxVoteService) CloseVoting(ctx context.Context, sessionID, userID
 			Pluck("email", &captains)
 
 		for _, emailAddr := range captains {
-			if err := email.Enqueue(
+			if emailErr := email.Enqueue(
 				emailAddr,
 				"Голосование завершено",
 				fmt.Sprintf("В игре «%s» завершено голосование. Победивший вариант: %s", g.Name, winner),
-			); err != nil {
-				log.Error().Err(err).Str("game", g.Name).Str("winner", winner).Msg("failed to enqueue voting end email")
+			); emailErr != nil {
+				log.Error().Err(emailErr).Str("game", g.Name).Str("winner", winner).Msg("failed to enqueue voting end email")
 			}
 		}
 	}

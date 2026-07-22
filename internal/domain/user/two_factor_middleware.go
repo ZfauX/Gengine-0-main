@@ -32,7 +32,11 @@ func TwoFactorRequired(twoFactorSvc *TwoFactorService, userRepo UserRepository) 
 			return
 		}
 
-		userIDVal := userID.(uint)
+		userIDVal, ok := userID.(uint)
+		if !ok {
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
 
 		// Проверяем, что пользователь прошёл проверку 2FA в этой сессии
 		session := sessions.Default(c)
@@ -97,7 +101,9 @@ func TwoFactorRequired(twoFactorSvc *TwoFactorService, userRepo UserRepository) 
 
 		// Сохраняем флаг верификации в сессии (персистируется между запросами)
 		session.Set(sessionKey2FAMiddlewareVerified, true)
-		_ = session.Save()
+		if err := session.Save(); err != nil {
+			log.Warn().Err(err).Uint("user_id", userIDVal).Msg("2FA middleware: failed to save session")
+		}
 		c.Next()
 	}
 }
@@ -113,7 +119,11 @@ func TwoFactorBackupCodeRequired(twoFactorSvc *TwoFactorService, userRepo UserRe
 			return
 		}
 
-		userIDVal := userID.(uint)
+		userIDVal, ok := userID.(uint)
+		if !ok {
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
 
 		// Проверяем сессию — если уже верифицирован, пропускаем
 		session := sessions.Default(c)
@@ -144,7 +154,9 @@ func TwoFactorBackupCodeRequired(twoFactorSvc *TwoFactorService, userRepo UserRe
 
 		if !userObj.TwoFactorEnabled {
 			session.Set(sessionKey2FAMiddlewareVerified, true)
-			_ = session.Save()
+			if saveErr := session.Save(); saveErr != nil {
+				log.Warn().Err(saveErr).Uint("user_id", userIDVal).Msg("2FA middleware: failed to save session")
+			}
 			c.Next()
 			return
 		}
@@ -169,7 +181,9 @@ func TwoFactorBackupCodeRequired(twoFactorSvc *TwoFactorService, userRepo UserRe
 		}
 
 		session.Set(sessionKey2FAMiddlewareVerified, true)
-		_ = session.Save()
+		if saveErr := session.Save(); saveErr != nil {
+			log.Warn().Err(saveErr).Uint("user_id", userIDVal).Msg("2FA middleware: failed to save session")
+		}
 		c.Next()
 	}
 }

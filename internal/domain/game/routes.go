@@ -674,5 +674,5 @@ func RegisterGameplayRoutes(
 	// @Param passing_id path int true "ID прохождения"
 	// @Router /game/{passing_id}/sse [get]
 	// @Security JWT
-	r.GET("/game/:passing_id/sse", SSEHandler())
+	r.GET("/game/:passing_id/sse", middleware.SSERateLimit(1*time.Minute, 10), SSEHandler())
 }

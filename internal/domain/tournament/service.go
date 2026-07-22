@@ -120,12 +120,12 @@ func (s *TournamentService) Apply(ctx context.Context, tournamentID, teamID, use
 		return errors.New("только капитан может подать заявку")
 	}
 
-	_, err := s.tournamentTeamRepo.GetByTournamentAndTeam(ctx, tournamentID, teamID)
-	if err == nil {
+	_, getErr := s.tournamentTeamRepo.GetByTournamentAndTeam(ctx, tournamentID, teamID)
+	if getErr == nil {
 		return errors.New("команда уже участвует в турнире")
 	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
+	if !errors.Is(getErr, gorm.ErrRecordNotFound) {
+		return getErr
 	}
 
 	if err := s.tournamentTeamRepo.AddTeam(ctx, tournamentID, teamID); err != nil {
@@ -137,17 +137,29 @@ func (s *TournamentService) Apply(ctx context.Context, tournamentID, teamID, use
 		log.Error().Err(err).Uint("tournament_id", tournamentID).Msg("Apply: failed to list tournament games")
 		return err
 	}
+
+	gameIDs := make([]uint, len(games))
+	for i, g := range games {
+		gameIDs[i] = g.ID
+	}
+
+	existingPassings, _ := s.tournamentTeamRepo.FindPassingsByGamesAndTeam(ctx, gameIDs, teamID)
+	existingMap := make(map[uint]bool)
+	for _, p := range existingPassings {
+		existingMap[p.GameID] = true
+	}
+
 	for _, g := range games {
-		_, err := s.tournamentTeamRepo.FindByGameAndTeam(ctx, g.ID, teamID)
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			passing := game.GamePassing{
-				GameID: g.ID,
-				TeamID: teamID,
-				Status: game.StatusPending,
-			}
-			if err := s.tournamentTeamRepo.CreatePassing(ctx, &passing); err != nil {
-				log.Error().Err(err).Uint("game_id", g.ID).Uint("team_id", teamID).Msg("Apply: failed to create passing")
-			}
+		if existingMap[g.ID] {
+			continue
+		}
+		passing := game.GamePassing{
+			GameID: g.ID,
+			TeamID: teamID,
+			Status: game.StatusPending,
+		}
+		if err := s.tournamentTeamRepo.CreatePassing(ctx, &passing); err != nil {
+			log.Error().Err(err).Uint("game_id", g.ID).Uint("team_id", teamID).Msg("Apply: failed to create passing")
 		}
 	}
 
@@ -178,9 +190,20 @@ func (s *TournamentService) CanApply(ctx context.Context, tournamentID, userID u
 	if err != nil || len(teams) == 0 {
 		return false
 	}
+
+	teamIDs := make([]uint, len(teams))
+	for i, t := range teams {
+		teamIDs[i] = t.ID
+	}
+
+	existing, _ := s.tournamentTeamRepo.GetByTournamentAndTeamIDs(ctx, tournamentID, teamIDs)
+	existingMap := make(map[uint]bool)
+	for _, tt := range existing {
+		existingMap[tt.TeamID] = true
+	}
+
 	for _, t := range teams {
-		_, err := s.tournamentTeamRepo.GetByTournamentAndTeam(ctx, tournamentID, t.ID)
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if !existingMap[t.ID] {
 			return true
 		}
 	}
@@ -204,9 +227,25 @@ func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint
 		return
 	}
 
+	teamIDs := make([]uint, len(passings))
+	for i, p := range passings {
+		teamIDs[i] = p.TeamID
+	}
+
+	tournamentTeams, _ := s.tournamentTeamRepo.GetByTournamentAndTeamIDs(ctx, tournament.ID, teamIDs)
+	inTournament := make(map[uint]bool)
+	for _, tt := range tournamentTeams {
+		inTournament[tt.TeamID] = true
+	}
+
+	existingResults, _ := s.tournamentResultRepo.GetByTournamentAndTeamIDs(ctx, tournament.ID, teamIDs)
+	resultMap := make(map[uint]*TournamentResult)
+	for i := range existingResults {
+		resultMap[existingResults[i].TeamID] = &existingResults[i]
+	}
+
 	for _, p := range passings {
-		_, err := s.tournamentTeamRepo.GetByTournamentAndTeam(ctx, tournament.ID, p.TeamID)
-		if err != nil {
+		if !inTournament[p.TeamID] {
 			continue
 		}
 
@@ -222,19 +261,17 @@ func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint
 			}
 		}
 
-		result, err := s.tournamentResultRepo.GetByTournamentAndTeam(ctx, tournament.ID, p.TeamID)
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		result, exists := resultMap[p.TeamID]
+		if !exists {
 			result = &TournamentResult{
 				TournamentID: tournament.ID,
 				TeamID:       p.TeamID,
 				Score:        points,
 				GamesPlayed:  1,
 			}
-		} else if err == nil {
+		} else {
 			result.Score += points
 			result.GamesPlayed++
-		} else {
-			continue
 		}
 		_ = s.tournamentResultRepo.Upsert(ctx, result)
 	}

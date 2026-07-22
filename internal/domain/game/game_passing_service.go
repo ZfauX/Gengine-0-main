@@ -23,7 +23,7 @@ type GamePassingService struct {
 	coAuthor    *CoAuthorService
 	progressSvc *LevelProgressService
 	hub         *ws.RoomHub
-	monitorSvc  *MonitorService
+	monitorSvc  MonitorServiceInterface
 }
 
 func NewGamePassingService(db *gorm.DB, ts *team.TeamService, ca *CoAuthorService, progressSvc *LevelProgressService) *GamePassingService {
@@ -37,7 +37,7 @@ func (s *GamePassingService) WithHub(hub *ws.RoomHub) *GamePassingService {
 }
 
 // WithMonitorService устанавливает сервис мониторинга для инвалидации кэша.
-func (s *GamePassingService) WithMonitorService(monitorSvc *MonitorService) *GamePassingService {
+func (s *GamePassingService) WithMonitorService(monitorSvc MonitorServiceInterface) *GamePassingService {
 	s.monitorSvc = monitorSvc
 	return s
 }
@@ -163,8 +163,8 @@ func (s *GamePassingService) UpdateStatus(ctx context.Context, passingID uint, s
 
 		// Проверка допустимости перехода
 		allowed := false
-		for _, s := range allowedCurrentStatuses {
-			if s == currentStatus {
+		for _, st := range allowedCurrentStatuses {
+			if st == currentStatus {
 				allowed = true
 				break
 			}
@@ -252,9 +252,7 @@ func (s *GamePassingService) broadcastGameStart(ctx context.Context, gameID, pas
 	}
 
 	// Инвалидируем кэш мониторинга
-	if s.monitorSvc != nil {
-		s.monitorSvc.InvalidateCache(gameID)
-	}
+	s.monitorSvc.InvalidateCache(gameID)
 
 	// Формируем JSON-уведомление
 	notification := map[string]any{

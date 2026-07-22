@@ -131,7 +131,7 @@ func TestAuthRequired_API_NoCookie(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
-	assert.Contains(t, w.Body.String(), "требуется аутентификация")
+	assert.Contains(t, w.Body.String(), middleware.ErrAuthRequired)
 }
 
 func TestAuthRequired_API_InvalidToken(t *testing.T) {
@@ -149,7 +149,7 @@ func TestAuthRequired_API_InvalidToken(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
-	assert.Contains(t, w.Body.String(), "невалидный токен")
+	assert.Contains(t, w.Body.String(), middleware.ErrInvalidToken)
 }
 
 // =============================================================================
@@ -236,7 +236,7 @@ func TestAdminRequired_UserNotAdmin(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
-	assert.Contains(t, w.Body.String(), "доступ запрещён")
+	assert.Contains(t, w.Body.String(), middleware.ErrAccessDenied)
 }
 
 func TestAdminRequired_AdminUser(t *testing.T) {
@@ -275,7 +275,7 @@ func TestAdminRequired_NoUserID(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
-	assert.Contains(t, w.Body.String(), "требуется аутентификация")
+	assert.Contains(t, w.Body.String(), middleware.ErrAuthRequired)
 }
 
 // =============================================================================
@@ -403,7 +403,7 @@ func TestRequirePermission_NotAuthorized(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
-	assert.Contains(t, w.Body.String(), "недостаточно прав")
+	assert.Contains(t, w.Body.String(), middleware.ErrInsufficientRights)
 }
 
 func TestRequirePermission_NoUserID(t *testing.T) {
@@ -440,7 +440,7 @@ func TestRequirePermission_InvalidGameID(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
-	assert.Contains(t, w.Body.String(), "неверный game_id")
+	assert.Contains(t, w.Body.String(), middleware.ErrInvalidGameID)
 }
 
 // =============================================================================
@@ -655,8 +655,10 @@ func TestRateLimiter_AllowAfterWindow(t *testing.T) {
 	assert.True(t, rl.Allow("key"))
 	assert.False(t, rl.Allow("key"))
 
-	time.Sleep(150 * time.Millisecond)
-	assert.True(t, rl.Allow("key"))
+	// Ждём истечения окна
+	assert.Eventually(t, func() bool {
+		return rl.Allow("key")
+	}, 500*time.Millisecond, 50*time.Millisecond)
 }
 
 func TestRateLimiter_DifferentKeys(t *testing.T) {
@@ -689,7 +691,7 @@ func TestGlobalRateLimit(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusTooManyRequests, w.Code)
-	assert.Contains(t, w.Body.String(), "слишком много запросов")
+	assert.Contains(t, w.Body.String(), middleware.ErrRateLimitGlobal)
 }
 
 func TestLoginRateLimit(t *testing.T) {
@@ -713,7 +715,7 @@ func TestLoginRateLimit(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusTooManyRequests, w.Code)
-	assert.Contains(t, w.Body.String(), "слишком много попыток входа")
+	assert.Contains(t, w.Body.String(), middleware.ErrRateLimitLogin)
 }
 
 func TestCodeSubmissionRateLimit(t *testing.T) {
@@ -739,7 +741,7 @@ func TestCodeSubmissionRateLimit(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusTooManyRequests, w.Code)
-	assert.Contains(t, w.Body.String(), "слишком частый ввод кодов")
+	assert.Contains(t, w.Body.String(), middleware.ErrRateLimitCode)
 }
 
 func TestCodeSubmissionRateLimit_NoUserID(t *testing.T) {

@@ -13,14 +13,16 @@
         <div>
             <label for="name" class="block text-sm font-medium text-gray-700 mb-1">Название</label>
             <input type="text" name="name" id="name" required
-                   class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                   class="w-full rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.name}}border-red-500{{else}}border-gray-300{{end}}">
+            {{if .Errors.name}}<p class="text-red-500 text-xs mt-1">{{.Errors.name}}</p>{{end}}
         </div>
 
         <!-- Описание -->
         <div>
             <label for="description" class="block text-sm font-medium text-gray-700 mb-1">Описание</label>
             <textarea name="description" id="description" rows="4"
-                      class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"></textarea>
+                      class="w-full rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.description}}border-red-500{{else}}border-gray-300{{end}}"></textarea>
+            {{if .Errors.description}}<p class="text-red-500 text-xs mt-1">{{.Errors.description}}</p>{{end}}
         </div>
 
         <!-- Очки за места -->
@@ -28,22 +30,26 @@
             <div>
                 <label for="points_for_first" class="block text-sm font-medium text-gray-700 mb-1">Очки за 1 место</label>
                 <input type="number" name="points_for_first" id="points_for_first" value="10" min="0"
-                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                       class="w-full rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.points_for_first}}border-red-500{{else}}border-gray-300{{end}}">
+                {{if .Errors.points_for_first}}<p class="text-red-500 text-xs mt-1">{{.Errors.points_for_first}}</p>{{end}}
             </div>
             <div>
                 <label for="points_for_second" class="block text-sm font-medium text-gray-700 mb-1">Очки за 2 место</label>
                 <input type="number" name="points_for_second" id="points_for_second" value="7" min="0"
-                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                       class="w-full rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.points_for_second}}border-red-500{{else}}border-gray-300{{end}}">
+                {{if .Errors.points_for_second}}<p class="text-red-500 text-xs mt-1">{{.Errors.points_for_second}}</p>{{end}}
             </div>
             <div>
                 <label for="points_for_third" class="block text-sm font-medium text-gray-700 mb-1">Очки за 3 место</label>
                 <input type="number" name="points_for_third" id="points_for_third" value="5" min="0"
-                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                       class="w-full rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.points_for_third}}border-red-500{{else}}border-gray-300{{end}}">
+                {{if .Errors.points_for_third}}<p class="text-red-500 text-xs mt-1">{{.Errors.points_for_third}}</p>{{end}}
             </div>
             <div>
                 <label for="points_for_participation" class="block text-sm font-medium text-gray-700 mb-1">Очки за участие</label>
                 <input type="number" name="points_for_participation" id="points_for_participation" value="2" min="0"
-                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                       class="w-full rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.points_for_participation}}border-red-500{{else}}border-gray-300{{end}}">
+                {{if .Errors.points_for_participation}}<p class="text-red-500 text-xs mt-1">{{.Errors.points_for_participation}}</p>{{end}}
             </div>
         </div>
 

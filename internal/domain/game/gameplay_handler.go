@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -15,10 +14,17 @@ import (
 	"gengine-0/internal/pkg/validation"
 	ws "gengine-0/internal/pkg/websocket"
 
+	csrf "gengine-0/internal/pkg/csrf"
+
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-	csrf "github.com/utrack/gin-csrf"
 	"gorm.io/gorm"
+)
+
+const (
+	codeSubmitMaxBodySize = 1 * 1024 * 1024
+	codeMaxLength         = 10000
+	answerFileMaxSize     = 10 * 1024 * 1024
 )
 
 // ---------- GameplayHandler ----------
@@ -64,10 +70,10 @@ func (h *GameplayHandler) ShowGame(c *gin.Context) {
 	data, err := h.gamePlaySvc.GetGameplayData(c.Request.Context(), uint(passingID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// Нет активного уровня — игра завершена
+			gameID, _ := strconv.Atoi(c.Query("game_id"))
 			render.Page(c, http.StatusOK, "gameplay-finished.html", gin.H{
 				"PassingID": passingID,
-				"GameID":    c.Query("game_id"),
+				"GameID":    gameID,
 				"csrf":      csrf.GetToken(c),
 			})
 			return
@@ -84,6 +90,9 @@ func (h *GameplayHandler) ShowGame(c *gin.Context) {
 
 	hideAnswers := data.Settings.HideAnswersUntilFinished && data.Passing.Status != StatusFinished
 
+	flashError := render.GetFlash(c, "gameplay_error")
+	flashHint := render.GetFlash(c, "gameplay_hint")
+
 	render.Page(c, http.StatusOK, "gameplay-show.html", gin.H{
 		"PassingID":        passingID,
 		"Level":            data.Level,
@@ -93,44 +102,25 @@ func (h *GameplayHandler) ShowGame(c *gin.Context) {
 		"VotingActive":     data.VotingActive,
 		"TeamID":           data.Passing.TeamID,
 		"GameID":           data.Passing.GameID,
+		"Error":            flashError,
+		"Hint":             flashHint,
 		"csrf":             csrf.GetToken(c),
 	})
 }
 
 // renderGameplayError рендерит страницу ошибки с полными данными уровня.
 func (h *GameplayHandler) renderGameplayError(c *gin.Context, passingID uint, err_msg string) {
-	// Загружаем те же данные, что и в ShowGame
-	data, err := h.gamePlaySvc.GetGameplayData(c.Request.Context(), passingID)
-	if err != nil {
-		// Если данные не удалось загрузить — просто рендерим ошибку
-		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
-			"Error":     err_msg,
-			"csrf":      csrf.GetToken(c),
-			"PassingID": passingID,
-			"GameID":    c.Param("game_id"),
-		})
-		return
-	}
-
-	hideAnswers := data.Settings.HideAnswersUntilFinished && data.Passing.Status != StatusFinished
 	render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
-		"PassingID":        passingID,
-		"Level":            data.Level,
-		"Attempts":         data.Attempts,
-		"TimeLimitSeconds": data.TimeLimitSec,
-		"HideAnswers":      hideAnswers,
-		"VotingActive":     data.VotingActive,
-		"TeamID":           data.Passing.TeamID,
-		"GameID":           data.Passing.GameID,
-		"Error":            err_msg,
-		"csrf":             csrf.GetToken(c),
+		"PassingID": passingID,
+		"Error":     err_msg,
+		"csrf":      csrf.GetToken(c),
 	})
 }
 
 // SubmitCode обрабатывает ввод текстового кода.
 func (h *GameplayHandler) SubmitCode(c *gin.Context) {
-	passingID, err := strconv.Atoi(c.Param("passing_id"))
-	if err != nil || passingID <= 0 {
+	passingID, parseErr := strconv.Atoi(c.Param("passing_id"))
+	if parseErr != nil || passingID <= 0 {
 		render.RenderError(c, http.StatusBadRequest, "Неверный ID прохождения")
 		return
 	}
@@ -141,67 +131,80 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 		return
 	}
 
-	if err := limitRequestBody(c, 1*1024*1024); err != nil {
-		h.renderGameplayError(c, uint(passingID), err.Error())
+	if limitErr := limitRequestBody(c, codeSubmitMaxBodySize); limitErr != nil {
+		h.renderGameplayError(c, uint(passingID), limitErr.Error())
 		return
 	}
 
 	var input SubmitCodeInput
-	if err := c.ShouldBind(&input); err != nil {
-		h.renderGameplayError(c, uint(passingID), "Неверные данные: "+err.Error())
+	if bindErr := c.ShouldBind(&input); bindErr != nil {
+		errs := validation.FieldErrors{}
+		errs.Add("code", bindErr)
+		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
+			"PassingID": passingID,
+			"Error":     errs.Error(),
+			"Errors":    errs,
+			"csrf":      csrf.GetToken(c),
+		})
 		return
 	}
 
 	code := strings.TrimSpace(input.Code)
-	if err := validation.ValidateString("Код", code, 1, 10000); err != nil {
-		h.renderGameplayError(c, uint(passingID), err.Error())
+	if validateErr := validation.ValidateString("Код", code, 1, codeMaxLength); validateErr != nil {
+		errs := validation.FieldErrors{}
+		errs.Add("code", validateErr)
+		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
+			"PassingID": passingID,
+			"Error":     errs.Error(),
+			"Errors":    errs,
+			"csrf":      csrf.GetToken(c),
+		})
 		return
 	}
 
 	// Пытаемся отправить код
-	attempt, err := h.gamePlaySvc.SubmitCode(c.Request.Context(), uint(passingID), userID, code)
-	if err != nil {
+	attempt, submitErr := h.gamePlaySvc.SubmitCode(c.Request.Context(), uint(passingID), userID, code)
+	if submitErr != nil {
 		// Если ошибка говорит о том, что нет активного уровня — игра завершена
-		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, ErrNoActiveLevel) {
+		if errors.Is(submitErr, gorm.ErrRecordNotFound) || errors.Is(submitErr, ErrNoActiveLevel) {
 			// Перенаправляем на страницу завершения игры
 			c.Redirect(http.StatusFound, "/game/"+c.Param("passing_id")+"/finished")
 			return
 		}
-		h.renderGameplayError(c, uint(passingID), err.Error())
+		h.renderGameplayError(c, uint(passingID), submitErr.Error())
 		return
 	}
 
 	if attempt.Attempt.Success {
 		c.Redirect(http.StatusFound, "/game/"+c.Param("passing_id"))
 	} else {
-		c.Redirect(http.StatusFound, "/game/"+c.Param("passing_id")+"?error=wrong_code")
+		render.SetFlash(c, "gameplay_error", "Неверный код")
+		c.Redirect(http.StatusFound, "/game/"+c.Param("passing_id"))
 	}
 }
 
 // UseHint использует подсказку для текущего уровня.
 func (h *GameplayHandler) UseHint(c *gin.Context) {
-	passingID, err := strconv.Atoi(c.Param("passing_id"))
-	if err != nil || passingID <= 0 {
+	passingID, parseErr := strconv.Atoi(c.Param("passing_id"))
+	if parseErr != nil || passingID <= 0 {
 		render.RenderError(c, http.StatusBadRequest, "Неверный ID прохождения")
 		return
 	}
-	hintText, err := h.gamePlaySvc.UseHint(c.Request.Context(), uint(passingID), c.GetUint("userID"))
-	if err != nil {
-		h.renderGameplayError(c, uint(passingID), err.Error())
+	hintText, hintErr := h.gamePlaySvc.UseHint(c.Request.Context(), uint(passingID), c.GetUint("userID"))
+	if hintErr != nil {
+		h.renderGameplayError(c, uint(passingID), hintErr.Error())
 		return
 	}
-	// Если есть текст подсказки — передаём его в шаблон
 	if hintText != "" {
-		c.Redirect(http.StatusFound, "/game/"+c.Param("passing_id")+"?hint="+url.QueryEscape(hintText))
-		return
+		render.SetFlash(c, "gameplay_hint", hintText)
 	}
 	c.Redirect(http.StatusFound, "/game/"+c.Param("passing_id"))
 }
 
 // SubmitFile обрабатывает файловый ответ.
 func (h *GameplayHandler) SubmitFile(c *gin.Context) {
-	passingID, err := strconv.Atoi(c.Param("passing_id"))
-	if err != nil || passingID <= 0 {
+	passingID, parseErr := strconv.Atoi(c.Param("passing_id"))
+	if parseErr != nil || passingID <= 0 {
 		render.RenderError(c, http.StatusBadRequest, "Неверный ID прохождения")
 		return
 	}
@@ -212,19 +215,19 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 		return
 	}
 
-	if err := limitRequestBody(c, 10*1024*1024); err != nil {
-		h.renderGameplayError(c, uint(passingID), err.Error())
+	if limitErr := limitRequestBody(c, answerFileMaxSize); limitErr != nil {
+		h.renderGameplayError(c, uint(passingID), limitErr.Error())
 		return
 	}
 
-	file, header, err := c.Request.FormFile("answer_file")
-	if err != nil {
+	file, header, formErr := c.Request.FormFile("answer_file")
+	if formErr != nil {
 		h.renderGameplayError(c, uint(passingID), "Файл не выбран")
 		return
 	}
 	defer func() { _ = file.Close() }()
 
-	if header.Size > 10*1024*1024 {
+	if header.Size > answerFileMaxSize {
 		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
 			"Error": "Размер файла не должен превышать 10 МБ",
 			"csrf":  csrf.GetToken(c),
@@ -233,11 +236,11 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 	}
 
 	// Content-Type из заголовка может быть подделан — итоговая проверка в storage.Save
-	allowedTypes := []string{"image/jpeg", "image/png", "image/gif", "application/pdf", "text/plain"}
+	allowedTypes := validation.AllowedUploadTypes
 
-	webPath, err := h.storage.Save("uploads/answers", file, header.Filename, userID, 10*1024*1024, allowedTypes)
-	if err != nil {
-		log.Error().Err(err).Str("filename", filepath.Base(header.Filename)).Msg("SubmitFile: failed to save file")
+	webPath, saveErr := h.storage.Save("uploads/answers", file, header.Filename, userID, answerFileMaxSize, allowedTypes)
+	if saveErr != nil {
+		log.Error().Err(saveErr).Str("filename", filepath.Base(header.Filename)).Msg("SubmitFile: failed to save file")
 		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
 			"Error": "Ошибка сохранения файла",
 			"csrf":  csrf.GetToken(c),
@@ -245,9 +248,9 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 		return
 	}
 
-	_, err = h.gamePlaySvc.SubmitFile(c.Request.Context(), uint(passingID), userID, webPath)
-	if err != nil {
-		log.Error().Err(err).Uint("passing", uint(passingID)).Msg("SubmitFile: service error")
+	_, serviceErr := h.gamePlaySvc.SubmitFile(c.Request.Context(), uint(passingID), userID, webPath)
+	if serviceErr != nil {
+		log.Error().Err(serviceErr).Uint("passing", uint(passingID)).Msg("SubmitFile: service error")
 		if delErr := h.storage.Delete(webPath); delErr != nil {
 			log.Error().Err(delErr).Str("path", webPath).Msg("SubmitFile: failed to delete uploaded file")
 		}
@@ -262,13 +265,13 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 
 // AcceptAnswer принимает ответ (чёрный ящик).
 func (h *GameplayHandler) AcceptAnswer(c *gin.Context) {
-	passingID, err := strconv.Atoi(c.Param("passing_id"))
-	if err != nil || passingID <= 0 {
+	passingID, parseErr := strconv.Atoi(c.Param("passing_id"))
+	if parseErr != nil || passingID <= 0 {
 		render.RenderError(c, http.StatusBadRequest, "Неверный ID прохождения")
 		return
 	}
-	if err := h.gamePlaySvc.AcceptBlackboxAnswer(c.Request.Context(), uint(passingID), c.GetUint("userID")); err != nil {
-		render.RenderError(c, http.StatusForbidden, err.Error())
+	if acceptErr := h.gamePlaySvc.AcceptBlackboxAnswer(c.Request.Context(), uint(passingID), c.GetUint("userID")); acceptErr != nil {
+		render.RenderError(c, http.StatusForbidden, acceptErr.Error())
 		return
 	}
 	c.Redirect(http.StatusFound, "/games/"+c.Query("game_id")+"/monitor")
@@ -278,16 +281,16 @@ func (h *GameplayHandler) AcceptAnswer(c *gin.Context) {
 
 // StartTesting инициирует тестовое прохождение.
 func (h *GameplayHandler) StartTesting(c *gin.Context) {
-	gameID, err := strconv.Atoi(c.Param("id"))
-	if err != nil || gameID <= 0 {
+	gameID, parseErr := strconv.Atoi(c.Param("id"))
+	if parseErr != nil || gameID <= 0 {
 		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
 		return
 	}
 	userID := c.GetUint("userID")
 
-	passing, err := h.gamePlaySvc.StartTesting(c.Request.Context(), uint(gameID), userID)
-	if err != nil {
-		render.RenderError(c, http.StatusForbidden, err.Error())
+	passing, startErr := h.gamePlaySvc.StartTesting(c.Request.Context(), uint(gameID), userID)
+	if startErr != nil {
+		render.RenderError(c, http.StatusForbidden, startErr.Error())
 		return
 	}
 	c.Redirect(http.StatusFound, "/testing/"+strconv.Itoa(int(passing.ID)))
@@ -295,16 +298,16 @@ func (h *GameplayHandler) StartTesting(c *gin.Context) {
 
 // ShowTestGame отображает страницу тестового прохождения.
 func (h *GameplayHandler) ShowTestGame(c *gin.Context) {
-	passingID, err := strconv.Atoi(c.Param("passing_id"))
-	if err != nil || passingID <= 0 {
+	passingID, parseErr := strconv.Atoi(c.Param("passing_id"))
+	if parseErr != nil || passingID <= 0 {
 		render.RenderError(c, http.StatusBadRequest, "Неверный ID прохождения")
 		return
 	}
 	userID := c.GetUint("userID")
 
-	progress, err := h.progressSvc.GetCurrentProgress(c.Request.Context(), uint(passingID))
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, ErrNoActiveLevel) {
+	progress, progressErr := h.progressSvc.GetCurrentProgress(c.Request.Context(), uint(passingID))
+	if progressErr != nil {
+		if errors.Is(progressErr, gorm.ErrRecordNotFound) || errors.Is(progressErr, ErrNoActiveLevel) {
 			render.Page(c, http.StatusOK, "gameplay-test-finished.html", gin.H{
 				"PassingID": passingID,
 				"GameID":    c.Query("game_id"),
@@ -312,30 +315,30 @@ func (h *GameplayHandler) ShowTestGame(c *gin.Context) {
 			})
 			return
 		}
-		log.Error().Err(err).Int("passing_id", passingID).Msg("ShowTestGame: failed to get current progress")
+		log.Error().Err(progressErr).Int("passing_id", passingID).Msg("ShowTestGame: failed to get current progress")
 		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 
 	// Проверяем права через gameService
-	passing, err := h.gamePlaySvc.GetPassingWithGame(c.Request.Context(), uint(passingID))
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+	passing, passingErr := h.gamePlaySvc.GetPassingWithGame(c.Request.Context(), uint(passingID))
+	if passingErr != nil {
+		if errors.Is(passingErr, gorm.ErrRecordNotFound) {
 			render.RenderErrorPage(c, http.StatusNotFound)
 		} else {
-			log.Error().Err(err).Int("passing_id", passingID).Msg("ShowTestGame: failed to get passing")
+			log.Error().Err(passingErr).Int("passing_id", passingID).Msg("ShowTestGame: failed to get passing")
 			render.RenderErrorPage(c, http.StatusInternalServerError)
 		}
 		return
 	}
-	g, err := h.gameService.GetByID(c.Request.Context(), passing.GameID, userID)
-	if err != nil {
-		log.Error().Err(err).Uint("game_id", passing.GameID).Msg("ShowTestGame: failed to get game")
+	g, gameErr := h.gameService.GetByID(c.Request.Context(), passing.GameID, userID)
+	if gameErr != nil {
+		log.Error().Err(gameErr).Uint("game_id", passing.GameID).Msg("ShowTestGame: failed to get game")
 		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
-	ok, err := h.gameService.IsUserManager(c.Request.Context(), g.ID, userID)
-	if err != nil || !ok {
+	ok, permErr := h.gameService.IsUserManager(c.Request.Context(), g.ID, userID)
+	if permErr != nil || !ok {
 		render.RenderError(c, http.StatusForbidden, "Доступ запрещён")
 		return
 	}
@@ -350,8 +353,8 @@ func (h *GameplayHandler) ShowTestGame(c *gin.Context) {
 
 // SubmitTestCode обрабатывает ввод кода в тестовом режиме.
 func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
-	passingID, err := strconv.Atoi(c.Param("passing_id"))
-	if err != nil || passingID <= 0 {
+	passingID, parseErr := strconv.Atoi(c.Param("passing_id"))
+	if parseErr != nil || passingID <= 0 {
 		render.RenderError(c, http.StatusBadRequest, "Неверный ID прохождения")
 		return
 	}
@@ -359,56 +362,64 @@ func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	// Проверяем права: пользователь должен быть автором или соавтором игры
-	passing, err := h.gamePlaySvc.GetPassingWithGame(c.Request.Context(), uint(passingID))
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+	passing, passingErr := h.gamePlaySvc.GetPassingWithGame(c.Request.Context(), uint(passingID))
+	if passingErr != nil {
+		if errors.Is(passingErr, gorm.ErrRecordNotFound) {
 			render.RenderErrorPage(c, http.StatusNotFound)
 		} else {
-			log.Error().Err(err).Int("passing_id", passingID).Msg("SubmitTestCode: failed to get passing")
+			log.Error().Err(passingErr).Int("passing_id", passingID).Msg("SubmitTestCode: failed to get passing")
 			render.RenderErrorPage(c, http.StatusInternalServerError)
 		}
 		return
 	}
-	g, err := h.gameService.GetByID(c.Request.Context(), passing.GameID, userID)
-	if err != nil {
-		log.Error().Err(err).Uint("game_id", passing.GameID).Msg("SubmitTestCode: failed to get game")
+	g, gameErr := h.gameService.GetByID(c.Request.Context(), passing.GameID, userID)
+	if gameErr != nil {
+		log.Error().Err(gameErr).Uint("game_id", passing.GameID).Msg("SubmitTestCode: failed to get game")
 		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
-	ok, err := h.gameService.IsUserManager(c.Request.Context(), g.ID, userID)
-	if err != nil || !ok {
+	ok, permErr := h.gameService.IsUserManager(c.Request.Context(), g.ID, userID)
+	if permErr != nil || !ok {
 		render.RenderError(c, http.StatusForbidden, "Доступ запрещён")
 		return
 	}
 
-	if err := limitRequestBody(c, 1*1024*1024); err != nil {
+	if limitErr := limitRequestBody(c, codeSubmitMaxBodySize); limitErr != nil {
 		render.Page(c, http.StatusBadRequest, "gameplay-test.html", gin.H{
-			"Error": err.Error(),
+			"Error": limitErr.Error(),
 			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
 
 	var input SubmitTestCodeInput
-	if err := c.ShouldBind(&input); err != nil {
+	if bindErr := c.ShouldBind(&input); bindErr != nil {
+		errs := validation.FieldErrors{}
+		errs.Add("code", bindErr)
 		render.Page(c, http.StatusBadRequest, "gameplay-test.html", gin.H{
-			"Error": "Неверные данные: " + err.Error(),
-			"csrf":  csrf.GetToken(c),
+			"PassingID": passingID,
+			"Error":     errs.Error(),
+			"Errors":    errs,
+			"csrf":      csrf.GetToken(c),
 		})
 		return
 	}
 
 	code := strings.TrimSpace(input.Code)
-	if err := validation.ValidateString("Код", code, 1, 10000); err != nil {
+	if validateErr := validation.ValidateString("Код", code, 1, codeMaxLength); validateErr != nil {
+		errs := validation.FieldErrors{}
+		errs.Add("code", validateErr)
 		render.Page(c, http.StatusBadRequest, "gameplay-test.html", gin.H{
-			"Error": err.Error(),
-			"csrf":  csrf.GetToken(c),
+			"PassingID": passingID,
+			"Error":     errs.Error(),
+			"Errors":    errs,
+			"csrf":      csrf.GetToken(c),
 		})
 		return
 	}
 
-	if _, err := h.gamePlaySvc.SubmitTestCode(c.Request.Context(), uint(passingID), c.GetUint("userID"), code); err != nil {
-		log.Error().Err(err).Int("passing_id", passingID).Msg("SubmitTestCode: service error")
+	if _, submitErr := h.gamePlaySvc.SubmitTestCode(c.Request.Context(), uint(passingID), c.GetUint("userID"), code); submitErr != nil {
+		log.Error().Err(submitErr).Int("passing_id", passingID).Msg("SubmitTestCode: service error")
 		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
@@ -417,13 +428,13 @@ func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
 
 // SkipTestLevel пропускает уровень в тестовом режиме.
 func (h *GameplayHandler) SkipTestLevel(c *gin.Context) {
-	passingID, err := strconv.Atoi(c.Param("passing_id"))
-	if err != nil || passingID <= 0 {
+	passingID, parseErr := strconv.Atoi(c.Param("passing_id"))
+	if parseErr != nil || passingID <= 0 {
 		render.RenderError(c, http.StatusBadRequest, "Неверный ID прохождения")
 		return
 	}
-	if err := h.gamePlaySvc.SkipLevelTest(c.Request.Context(), uint(passingID), c.GetUint("userID")); err != nil {
-		render.RenderError(c, http.StatusForbidden, err.Error())
+	if skipErr := h.gamePlaySvc.SkipLevelTest(c.Request.Context(), uint(passingID), c.GetUint("userID")); skipErr != nil {
+		render.RenderError(c, http.StatusForbidden, skipErr.Error())
 		return
 	}
 	c.Redirect(http.StatusFound, "/testing/"+c.Param("passing_id"))
@@ -439,6 +450,9 @@ func (h *GameplayHandler) isTeamMember(ctx context.Context, teamID uint, userID 
 func (h *GameplayHandler) isUserInPassing(ctx context.Context, passingID uint, userID uint) bool {
 	passing, err := h.gamePlaySvc.GetPassingWithGame(ctx, passingID)
 	if err != nil {
+		return false
+	}
+	if passing.Status != StatusStarted && passing.Status != StatusTesting {
 		return false
 	}
 	ok, _ := h.gamePlaySvc.IsTeamMember(ctx, passing.TeamID, userID)

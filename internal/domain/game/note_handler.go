@@ -47,8 +47,8 @@ func (h *NoteHandler) Notes(c *gin.Context) {
 
 // CreateNote создаёт новую заметку.
 func (h *NoteHandler) CreateNote(c *gin.Context) {
-	gameID, err := strconv.Atoi(c.Param("id"))
-	if err != nil || gameID <= 0 {
+	gameID, parseErr := strconv.Atoi(c.Param("id"))
+	if parseErr != nil || gameID <= 0 {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 			"error": "Неверный ID игры",
 			"code":  "bad_request",
@@ -57,9 +57,9 @@ func (h *NoteHandler) CreateNote(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 
-	if err := limitRequestBody(c, 1*1024*1024); err != nil {
+	if limitErr := limitRequestBody(c, 1*1024*1024); limitErr != nil {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
+			"error": limitErr.Error(),
 			"code":  "bad_request",
 		})
 		return
@@ -69,25 +69,25 @@ func (h *NoteHandler) CreateNote(c *gin.Context) {
 		LevelID *uint  `json:"level_id"`
 		Text    string `json:"text" binding:"required"`
 	}
-	if err := c.ShouldBindJSON(&input); err != nil {
+	if bindErr := c.ShouldBindJSON(&input); bindErr != nil {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
-			"error": "Неверный формат данных: " + err.Error(),
+			"error": "Неверный формат данных: " + bindErr.Error(),
 			"code":  "validation_error",
 		})
 		return
 	}
-	if err := validation.ValidateString("Текст заметки", input.Text, 1, 1000); err != nil {
+	if validateErr := validation.ValidateString("Текст заметки", input.Text, 1, 1000); validateErr != nil {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
+			"error": validateErr.Error(),
 			"code":  "validation_error",
 		})
 		return
 	}
 	input.Text = sanitize.StripHTML(input.Text)
 
-	note, err := h.noteService.Create(c.Request.Context(), uint(gameID), input.LevelID, userID, input.Text)
-	if err != nil {
-		appErr := apperr.Forbidden(err.Error())
+	note, createErr := h.noteService.Create(c.Request.Context(), uint(gameID), input.LevelID, userID, input.Text)
+	if createErr != nil {
+		appErr := apperr.Forbidden(createErr.Error())
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,

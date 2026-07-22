@@ -13,12 +13,13 @@
             <div class="flex-1 min-w-[200px]">
                 <label for="team_id" class="block text-sm font-medium text-gray-700 mb-1">Выберите команду</label>
                 <select name="team_id" id="team_id" required
-                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.team_id}}border-red-500{{end}}">
                     <option value="">-- выберите команду --</option>
                     {{range .Teams}}
                         <option value="{{.ID}}">{{.Name}}</option>
                     {{end}}
                 </select>
+                <p class="text-red-500 text-xs mt-1">{{.Errors.team_id}}</p>
             </div>
 
             <button type="submit" class="btn btn-primary text-sm whitespace-nowrap">Подать заявку</button>

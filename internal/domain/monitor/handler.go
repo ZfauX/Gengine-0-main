@@ -20,10 +20,11 @@ import (
 	"gengine-0/internal/pkg/validation"
 	ws "gengine-0/internal/pkg/websocket"
 
+	csrf "gengine-0/internal/pkg/csrf"
+
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
-	csrf "github.com/utrack/gin-csrf"
 	"gorm.io/gorm"
 )
 
@@ -175,21 +176,21 @@ func (h *MonitorHandler) MonitorStreamSSE(c *gin.Context) {
 			snapshot, err := h.monitorService.GetOrFetchSnapshot(c.Request.Context(), req.ID)
 			if err != nil {
 				log.Error().Err(err).Uint("game_id", req.ID).Msg("MonitorStreamSSE: failed to get snapshot")
-				if _, err := fmt.Fprintf(c.Writer, "event: error\ndata: {\"error\": \"%s\"}\n\n", err.Error()); err != nil {
-					log.Error().Err(err).Uint("game_id", req.ID).Msg("MonitorStreamSSE: failed to write error event")
+				if _, writeErr := fmt.Fprintf(c.Writer, "event: error\ndata: {\"error\": \"%s\"}\n\n", err.Error()); writeErr != nil {
+					log.Error().Err(writeErr).Uint("game_id", req.ID).Msg("MonitorStreamSSE: failed to write error event")
 				}
 				c.Writer.Flush()
 				continue
 			}
 
-			data, err := json.Marshal(snapshot)
-			if err != nil {
-				log.Error().Err(err).Uint("game_id", gameID).Msg("SSE: failed to marshal snapshot")
+			data, marshalErr := json.Marshal(snapshot)
+			if marshalErr != nil {
+				log.Error().Err(marshalErr).Uint("game_id", gameID).Msg("SSE: failed to marshal snapshot")
 				continue
 			}
 
-			if _, err := fmt.Fprintf(c.Writer, "event: update\ndata: %s\n\n", data); err != nil {
-				log.Debug().Err(err).Uint("game_id", gameID).Msg("SSE write error")
+			if _, writeErr := fmt.Fprintf(c.Writer, "event: update\ndata: %s\n\n", data); writeErr != nil {
+				log.Debug().Err(writeErr).Uint("game_id", gameID).Msg("SSE write error")
 				return
 			}
 			c.Writer.Flush()
@@ -391,8 +392,8 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 				log.Error().Err(err).Str("room_id", roomID).Uint("user_id", userID).Msg("ChatWS: failed to save message")
 				continue
 			}
-			if err := h.db.Preload("User").First(&msg, msg.ID).Error; err != nil {
-				log.Error().Err(err).Uint("msg_id", msg.ID).Msg("ChatWS: failed to preload user")
+			if preloadErr := h.db.Preload("User").First(&msg, msg.ID).Error; preloadErr != nil {
+				log.Error().Err(preloadErr).Uint("msg_id", msg.ID).Msg("ChatWS: failed to preload user")
 			}
 			msg.Content = sanitize.StripHTML(msg.Content)
 			if msg.User.Name != "" {
@@ -436,21 +437,21 @@ func (h *MonitorHandler) ChatRoomIDs(c *gin.Context) {
 
 	var teamRoom *ChatRoom
 	var passing game.GamePassing
-	err = h.db.
+	findErr := h.db.
 		WithContext(ctx).
 		Joins("JOIN team_members ON team_members.team_id = game_passings.team_id").
 		Where("game_passings.game_id = ? AND game_passings.status IN (?,?) AND team_members.user_id = ?",
 			gameID, game.StatusAccepted, game.StatusStarted, userID).
 		First(&passing).Error
-	if err == nil {
-		room, err := h.chatService.GetOrCreateTeamRoom(ctx, gameID, passing.TeamID, passing.ID)
-		if err != nil {
-			log.Error().Err(err).Uint("game_id", gameID).Uint("team_id", passing.TeamID).Msg("ChatRoomIDs: failed to get team room")
+	if findErr == nil {
+		room, roomErr := h.chatService.GetOrCreateTeamRoom(ctx, gameID, passing.TeamID, passing.ID)
+		if roomErr != nil {
+			log.Error().Err(roomErr).Uint("game_id", gameID).Uint("team_id", passing.TeamID).Msg("ChatRoomIDs: failed to get team room")
 		} else {
 			teamRoom = room
 		}
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		log.Error().Err(err).Uint("game_id", gameID).Uint("user_id", userID).Msg("ChatRoomIDs: failed to find passing")
+	} else if !errors.Is(findErr, gorm.ErrRecordNotFound) {
+		log.Error().Err(findErr).Uint("game_id", gameID).Uint("user_id", userID).Msg("ChatRoomIDs: failed to find passing")
 	}
 
 	resp := gin.H{

@@ -53,11 +53,16 @@ func (s *SimulateService) Simulate(ctx context.Context, gameID, userID uint) (*S
 			code = lvl.Questions[0].Answers[0].Code
 		}
 		// Имитация задержки: 100ms на уровень вместо 5s
+		// Используем select с ctx.Done() чтобы не блокировать горутину пула при отмене
 		delay := time.Duration(i+1) * 100 * time.Millisecond
 		if delay > 500*time.Millisecond {
 			delay = 500 * time.Millisecond
 		}
-		time.Sleep(delay)
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 		step := SimulateStep{LevelName: lvl.Name, Code: code, Duration: time.Since(startTime), Success: true}
 		result.Log = append(result.Log, step)
 		result.LevelsPassed++

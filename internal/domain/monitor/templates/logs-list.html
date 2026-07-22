@@ -3,13 +3,18 @@
     <h1 class="text-2xl font-bold text-gray-800 mb-6">Логи игры</h1>
 
     <div class="card">
-        <ul id="log-list" class="divide-y divide-gray-100 max-h-[70vh] overflow-y-auto">
+        <ul id="log-list" class="divide-y divide-gray-100 max-h-[70vh] overflow-y-auto" data-total-pages="{{.TotalPages}}">
             {{range .Logs}}
             <li class="py-2 text-sm text-gray-700">{{.CreatedAt.Format "15:04:05"}} — {{.Message}}</li>
             {{else}}
             <li class="py-2 text-sm text-gray-500">Логов пока нет.</li>
             {{end}}
         </ul>
+        <div id="pagination" class="flex items-center justify-center gap-2 mt-4 text-sm {{if le .TotalPages 1}}hidden{{end}}">
+            <button id="prev-page" class="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-40" disabled>← Назад</button>
+            <span class="px-2 text-gray-600">Стр. <span id="current-page">{{.Page}}</span> из <span id="total-pages">{{.TotalPages}}</span></span>
+            <button id="next-page" class="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-40" {{if ge .Page .TotalPages}}disabled{{end}}>Вперёд →</button>
+        </div>
         <div id="connection-status" class="mt-3 text-sm text-gray-500"></div>
     </div>
 </div>
@@ -20,6 +25,34 @@
         if (!container) return;
 
         const gameID = container.dataset.gameId;
+        const totalPages = parseInt(document.getElementById('log-list')?.dataset.totalPages || '1', 10);
+        let currentPage = parseInt(document.getElementById('current-page')?.textContent || '1', 10);
+
+        // Pagination
+        const prevBtn = document.getElementById('prev-page');
+        const nextBtn = document.getElementById('next-page');
+        const paginationEl = document.getElementById('pagination');
+
+        function loadPage(page) {
+            if (page < 1 || page > totalPages) return;
+            fetch('/games/' + gameID + '/logs?page=' + page + '&per_page=50', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                .then(function(r) { return r.text(); })
+                .then(function(html) {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+                    const newList = doc.getElementById('log-list');
+                    if (newList) {
+                        document.getElementById('log-list').innerHTML = newList.innerHTML;
+                        document.getElementById('current-page').textContent = page;
+                        currentPage = page;
+                        prevBtn.disabled = page <= 1;
+                        nextBtn.disabled = page >= totalPages;
+                    }
+                });
+        }
+
+        if (prevBtn) prevBtn.addEventListener('click', function() { loadPage(currentPage - 1); });
+        if (nextBtn) nextBtn.addEventListener('click', function() { loadPage(currentPage + 1); });
         const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${wsProtocol}//${location.host}/games/${gameID}/logs/ws`;
         let socket;

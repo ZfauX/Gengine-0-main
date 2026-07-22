@@ -62,9 +62,9 @@ func (s *LevelService) Create(ctx context.Context, gameID uint, level *Level, us
 	}
 
 	if level.Position == 0 {
-		maxPos, err := s.levelRepo.GetMaxPosition(ctx, gameID)
-		if err != nil {
-			return err
+		maxPos, maxPosErr := s.levelRepo.GetMaxPosition(ctx, gameID)
+		if maxPosErr != nil {
+			return maxPosErr
 		}
 		level.Position = maxPos + 1
 	}

@@ -17,6 +17,7 @@ import (
 func TestClient_WritePump_SendMessage(t *testing.T) {
 	hub := NewRoomHub()
 	go hub.Run()
+	t.Cleanup(hub.Stop)
 
 	upgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool { return true },
@@ -60,6 +61,7 @@ func TestClient_WritePump_SendMessage(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = conn.Close() }()
 
+	// Ждём, пока writePump запустится
 	time.Sleep(100 * time.Millisecond)
 
 	msg := map[string]string{"event": "test", "data": "hello"}
@@ -81,6 +83,7 @@ func TestClient_WritePump_SendMessage(t *testing.T) {
 func TestClient_WritePump_CloseOnSendChannelClose(t *testing.T) {
 	hub := NewRoomHub()
 	go hub.Run()
+	t.Cleanup(hub.Stop)
 
 	upgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool { return true },
@@ -104,9 +107,11 @@ func TestClient_WritePump_CloseOnSendChannelClose(t *testing.T) {
 
 		go client.writePump(ctx)
 
+		// Ждём запуска writePump
 		time.Sleep(100 * time.Millisecond)
 
 		client.Close()
+		// Ждём завершения writePump
 		time.Sleep(100 * time.Millisecond)
 	}))
 	defer server.Close()
@@ -116,6 +121,7 @@ func TestClient_WritePump_CloseOnSendChannelClose(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = conn.Close() }()
 
+	// Ждём обработки закрытия
 	time.Sleep(300 * time.Millisecond)
 
 	err = conn.SetReadDeadline(time.Now().Add(1 * time.Second))
@@ -133,6 +139,7 @@ func TestClient_WritePump_CloseOnSendChannelClose(t *testing.T) {
 func TestClient_WritePump_Ping(t *testing.T) {
 	hub := NewRoomHub()
 	go hub.Run()
+	t.Cleanup(hub.Stop)
 
 	upgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool { return true },
@@ -180,15 +187,19 @@ func TestClient_WritePump_Ping(t *testing.T) {
 		return conn.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(5*time.Second))
 	})
 
-	time.Sleep(3 * time.Second)
+	// Ждём пингов (тест длится 3 секунды)
+	assert.Eventually(t, func() bool {
+		writeErr := conn.WriteMessage(websocket.TextMessage, []byte("ping"))
+		return writeErr == nil
+	}, 3*time.Second, 100*time.Millisecond)
 
-	err = conn.WriteMessage(websocket.TextMessage, []byte("ping"))
-	assert.NoError(t, err)
+	writeErr := conn.WriteMessage(websocket.TextMessage, []byte("ping"))
+	assert.NoError(t, writeErr)
 
-	err = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	require.NoError(t, err)
-	_, _, err = conn.ReadMessage()
-	if err != nil {
-		assert.Contains(t, err.Error(), "timeout")
+	setErr := conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	require.NoError(t, setErr)
+	_, _, readErr := conn.ReadMessage()
+	if readErr != nil {
+		assert.Contains(t, readErr.Error(), "timeout")
 	}
 }

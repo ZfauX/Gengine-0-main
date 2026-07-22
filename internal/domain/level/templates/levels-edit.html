@@ -13,14 +13,16 @@
         <div>
             <label for="name" class="block text-sm font-medium text-gray-700 mb-1">Название</label>
             <input type="text" name="name" id="name" value="{{.Level.Name}}" required
-                   class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                   class="w-full rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.name}}border-red-500{{else}}border-gray-300{{end}}">
+            {{if .Errors.name}}<p class="text-red-500 text-xs mt-1">{{.Errors.name}}</p>{{end}}
         </div>
 
         <!-- Описание -->
         <div>
             <label for="description" class="block text-sm font-medium text-gray-700 mb-1">Описание</label>
             <textarea name="description" id="description" rows="4"
-                      class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">{{.Level.Description}}</textarea>
+                      class="w-full rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.description}}border-red-500{{else}}border-gray-300{{end}}">{{.Level.Description}}</textarea>
+            {{if .Errors.description}}<p class="text-red-500 text-xs mt-1">{{.Errors.description}}</p>{{end}}
         </div>
 
         <!-- Позиция и тип -->
@@ -28,18 +30,20 @@
             <div>
                 <label for="position" class="block text-sm font-medium text-gray-700 mb-1">Позиция</label>
                 <input type="number" name="position" id="position" value="{{.Level.Position}}" min="1"
-                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                       class="w-full rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.position}}border-red-500{{else}}border-gray-300{{end}}">
+                {{if .Errors.position}}<p class="text-red-500 text-xs mt-1">{{.Errors.position}}</p>{{end}}
             </div>
             <div>
                 <label for="type" class="block text-sm font-medium text-gray-700 mb-1">Тип уровня</label>
                 <select name="type" id="type"
-                        class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                        class="w-full rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.type}}border-red-500{{else}}border-gray-300{{end}}">
                     <option value="single" {{if eq .Level.Type "single"}}selected{{end}}>Обычный</option>
                     <option value="checkpoint" {{if eq .Level.Type "checkpoint"}}selected{{end}}>Чекпоинт</option>
                     <option value="parallel_group" {{if eq .Level.Type "parallel_group"}}selected{{end}}>Параллельная группа</option>
                     <option value="blackbox" {{if eq .Level.Type "blackbox"}}selected{{end}}>Чёрный ящик</option>
                     <option value="file_upload" {{if eq .Level.Type "file_upload"}}selected{{end}}>Файловый ответ</option>
                 </select>
+                {{if .Errors.type}}<p class="text-red-500 text-xs mt-1">{{.Errors.type}}</p>{{end}}
             </div>
         </div>
 
@@ -47,8 +51,9 @@
         <div class="flex items-center">
             <input type="checkbox" name="requires_confirmation" id="requires_confirmation" value="true"
                    {{if .Level.RequiresConfirmation}}checked{{end}}
-                   class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500">
+                   class="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500 {{if .Errors.requires_confirmation}}border-red-500{{end}}">
             <label for="requires_confirmation" class="ml-2 text-sm text-gray-700">Требует подтверждения автором</label>
+            {{if .Errors.requires_confirmation}}<p class="text-red-500 text-xs mt-1">{{.Errors.requires_confirmation}}</p>{{end}}
         </div>
 
         <!-- Координаты -->
@@ -56,12 +61,14 @@
             <div>
                 <label for="latitude" class="block text-sm font-medium text-gray-700 mb-1">Широта (Latitude)</label>
                 <input type="text" name="latitude" id="latitude" value="{{.Level.Latitude}}" placeholder="например 55.7558"
-                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                       class="w-full rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.latitude}}border-red-500{{else}}border-gray-300{{end}}">
+                {{if .Errors.latitude}}<p class="text-red-500 text-xs mt-1">{{.Errors.latitude}}</p>{{end}}
             </div>
             <div>
                 <label for="longitude" class="block text-sm font-medium text-gray-700 mb-1">Долгота (Longitude)</label>
                 <input type="text" name="longitude" id="longitude" value="{{.Level.Longitude}}" placeholder="например 37.6173"
-                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                       class="w-full rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.longitude}}border-red-500{{else}}border-gray-300{{end}}">
+                {{if .Errors.longitude}}<p class="text-red-500 text-xs mt-1">{{.Errors.longitude}}</p>{{end}}
             </div>
         </div>
 

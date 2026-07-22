@@ -203,40 +203,6 @@ func TestLoadConfig_SMTPEnabled(t *testing.T) {
 	assert.Equal(t, "from@test.com", cfg.SMTP.From)
 }
 
-func TestLoadConfig_StripeEnabled(t *testing.T) {
-	cleanup1 := setEnv(t, "DB_HOST", "localhost")
-	defer cleanup1()
-	cleanup2 := setEnv(t, "DB_PORT", "5432")
-	defer cleanup2()
-	cleanup3 := setEnv(t, "DB_USER", "u")
-	defer cleanup3()
-	cleanup4 := setEnv(t, "DB_PASSWORD", "p")
-	defer cleanup4()
-	cleanup5 := setEnv(t, "DB_NAME", "d")
-	defer cleanup5()
-	cleanup6 := setEnv(t, "JWT_SECRET", "xK9mP2vL5nQ8wR3tY6uI0oP4sD7fG1hJ")
-	defer cleanup6()
-	cleanup7 := setEnv(t, "SESSION_SECRET", "aB3cD4eF5gH6iJ7kL8mN9oP0qR1sT2uV3wX4yZ")
-	defer cleanup7()
-	cleanup8 := setEnv(t, "ADMIN_EMAIL", "a@b.c")
-	defer cleanup8()
-	cleanup9 := setEnv(t, "ADMIN_PASSWORD", "securepassword12345")
-	defer cleanup9()
-
-	cleanup10 := setEnv(t, "STRIPE_ENABLED", "true")
-	defer cleanup10()
-	cleanup11 := setEnv(t, "STRIPE_SECRET_KEY", "sk_test_123")
-	defer cleanup11()
-	cleanup12 := setEnv(t, "STRIPE_WEBHOOK_SECRET", "wh_sec_123")
-	defer cleanup12()
-
-	cfg, err := LoadConfig()
-	require.NoError(t, err)
-	assert.True(t, cfg.Stripe.Enabled)
-	assert.Equal(t, "sk_test_123", cfg.Stripe.SecretKey)
-	assert.Equal(t, "wh_sec_123", cfg.Stripe.WebhookSecret)
-}
-
 func TestLoadConfig_ReCAPTCHAEnabled(t *testing.T) {
 	cleanup1 := setEnv(t, "DB_HOST", "localhost")
 	defer cleanup1()

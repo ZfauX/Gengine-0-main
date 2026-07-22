@@ -180,7 +180,7 @@ func (s *GameAdminService) DeleteLevelFromActiveGame(ctx context.Context, gameID
 					log.Error().Uint("progress", progress.ID).Err(err).Msg("DeleteLevelFromActiveGame: Save progress error")
 					continue
 				}
-				if err := AdvanceToNextLevel(tx, p.ID, levelID, nil); err != nil {
+				if _, err := AdvanceToNextLevel(tx, p.ID, levelID, nil); err != nil {
 					log.Error().Uint("passing", p.ID).Err(err).Msg("DeleteLevelFromActiveGame: AdvanceToNextLevel error")
 				}
 			}

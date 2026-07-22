@@ -218,6 +218,19 @@
 </head>
 <body>
 
+    <!-- Flash-сообщения -->
+    {{if .Flash}}
+    <div class="fixed top-4 right-4 z-[110] max-w-sm">
+        <div class="flash flash-success">{{.Flash}}</div>
+    </div>
+    <script>
+        setTimeout(() => {
+            const flash = document.querySelector('.flash');
+            if (flash) flash.remove();
+        }, 5000);
+    </script>
+    {{end}}
+
     <!-- Leaflet JS (локально) -->
     <script src="/static/js/leaflet.js"></script>
 

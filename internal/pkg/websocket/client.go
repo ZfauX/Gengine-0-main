@@ -12,9 +12,11 @@ import (
 )
 
 const (
-	writeWait  = 10 * time.Second
-	pongWait   = 60 * time.Second
-	pingPeriod = (pongWait * 9) / 10
+	writeWait             = 10 * time.Second
+	pongWait              = 60 * time.Second
+	pingPeriod            = (pongWait * 9) / 10
+	clientSendBufferSize  = 256
+	websocketReadDeadline = 5 * time.Second
 )
 
 type Client struct {
@@ -34,7 +36,7 @@ func NewClient(conn *websocket.Conn, roomID, remoteIP string) *Client {
 	return &Client{
 		ID:           uuid.New().String(),
 		Conn:         conn,
-		Send:         make(chan []byte, 256),
+		Send:         make(chan []byte, clientSendBufferSize),
 		RoomID:       roomID,
 		RemoteIP:     remoteIP,
 		done:         make(chan struct{}),
@@ -47,7 +49,6 @@ func (c *Client) Close() {
 	defer c.mu.Unlock()
 	if !c.closed {
 		c.closed = true
-		close(c.Send)
 		if c.done != nil {
 			close(c.done)
 		}
@@ -58,6 +59,11 @@ func (c *Client) IsClosed() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.closed
+}
+
+// Done возвращает канал, который закрывается при завершении клиента.
+func (c *Client) Done() <-chan struct{} {
+	return c.done
 }
 
 // RecordActivity обновляет время последней активности клиента.
@@ -109,23 +115,13 @@ func (c *Client) writePump(ctx context.Context) {
 	}
 }
 
-// HandleWebSocket запускает writePump и начинает чтение сообщений.
-// Устаревший метод, используйте HandleWebSocketWithContext.
-func HandleWebSocket(client *Client) {
-	ctx := context.Background()
-	HandleWebSocketWithContext(ctx, client)
-}
-
 // HandleWebSocketWithContext запускает writePump с контекстом и читает сообщения.
 func HandleWebSocketWithContext(ctx context.Context, client *Client) {
 	go client.writePump(ctx)
 
-	// Таймаут для чтения — позволяет проверять ctx.Done()
-	const readTimeout = 5 * time.Second
-
-	_ = client.Conn.SetReadDeadline(time.Now().Add(readTimeout))
+	_ = client.Conn.SetReadDeadline(time.Now().Add(websocketReadDeadline))
 	client.Conn.SetPongHandler(func(string) error {
-		_ = client.Conn.SetReadDeadline(time.Now().Add(readTimeout))
+		_ = client.Conn.SetReadDeadline(time.Now().Add(websocketReadDeadline))
 		client.RecordActivity()
 		return nil
 	})
@@ -154,12 +150,6 @@ func HandleWebSocketWithContext(ctx context.Context, client *Client) {
 		// Обновляем активность при чтении сообщения
 		client.RecordActivity()
 	}
-}
-
-// WritePump запускает writePump без контекста (устаревший метод).
-func WritePump(client *Client) {
-	ctx := context.Background()
-	WritePumpWithContext(ctx, client)
 }
 
 // WritePumpWithContext запускает writePump с поддержкой контекста.

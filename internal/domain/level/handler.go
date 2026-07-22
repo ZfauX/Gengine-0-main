@@ -11,11 +11,13 @@ import (
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/storage"
+	"gengine-0/internal/pkg/validation"
 	ws "gengine-0/internal/pkg/websocket"
+
+	csrf "gengine-0/internal/pkg/csrf"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-	csrf "github.com/utrack/gin-csrf"
 	"gorm.io/gorm"
 )
 
@@ -180,10 +182,32 @@ func (h *LevelHandler) Create(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	var input CreateLevelInput
+	errs := validation.FieldErrors{}
 	if err := c.ShouldBind(&input); err != nil {
+		errs.Add("name", validation.ValidateString("Название", input.Name, 2, 100))
+		errs.Add("description", validation.ValidateString("Описание", input.Description, 0, 5000))
+		if input.Position < 0 {
+			errs.Add("position", errors.New("позиция должна быть неотрицательным числом"))
+		}
+		if input.Type != "" && input.Type != "single" && input.Type != "checkpoint" && input.Type != "parallel_group" && input.Type != "blackbox" && input.Type != "file_upload" {
+			errs.Add("type", errors.New("неверный тип уровня"))
+		}
+		if input.MinChildren < 0 || input.MinChildren > 100 {
+			errs.Add("min_children", errors.New("минимальное количество подуровней должно быть от 0 до 100"))
+		}
+		if input.Latitude != 0 && (input.Latitude < -90 || input.Latitude > 90) {
+			errs.Add("latitude", errors.New("широта должна быть от -90 до 90"))
+		}
+		if input.Longitude != 0 && (input.Longitude < -180 || input.Longitude > 180) {
+			errs.Add("longitude", errors.New("долгота должна быть от -180 до 180"))
+		}
+		if !errs.HasErrors() {
+			errs.Add("form", err)
+		}
 		render.Page(c, http.StatusBadRequest, "levels-new.html", gin.H{
 			"GameID": gameID,
-			"Error":  "Неверные данные: " + err.Error(),
+			"Error":  errs.Error(),
+			"Errors": errs,
 			"csrf":   csrf.GetToken(c),
 		})
 		return
@@ -269,10 +293,34 @@ func (h *LevelHandler) Update(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	var input UpdateLevelInput
+	errs := validation.FieldErrors{}
 	if err := c.ShouldBind(&input); err != nil {
+		if input.Name != "" {
+			errs.Add("name", validation.ValidateString("Название", input.Name, 2, 100))
+		}
+		errs.Add("description", validation.ValidateString("Описание", input.Description, 0, 5000))
+		if input.Position < 0 {
+			errs.Add("position", errors.New("позиция должна быть неотрицательным числом"))
+		}
+		if input.Type != "" && input.Type != "single" && input.Type != "checkpoint" && input.Type != "parallel_group" && input.Type != "blackbox" && input.Type != "file_upload" {
+			errs.Add("type", errors.New("неверный тип уровня"))
+		}
+		if input.MinChildren < 0 || input.MinChildren > 100 {
+			errs.Add("min_children", errors.New("минимальное количество подуровней должно быть от 0 до 100"))
+		}
+		if input.Latitude != 0 && (input.Latitude < -90 || input.Latitude > 90) {
+			errs.Add("latitude", errors.New("широта должна быть от -90 до 90"))
+		}
+		if input.Longitude != 0 && (input.Longitude < -180 || input.Longitude > 180) {
+			errs.Add("longitude", errors.New("долгота должна быть от -180 до 180"))
+		}
+		if !errs.HasErrors() {
+			errs.Add("form", err)
+		}
 		render.Page(c, http.StatusBadRequest, "levels-edit.html", gin.H{
-			"Error": "Неверные данные: " + err.Error(),
-			"csrf":  csrf.GetToken(c),
+			"Error":  errs.Error(),
+			"Errors": errs,
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}

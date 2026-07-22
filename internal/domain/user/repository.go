@@ -40,7 +40,9 @@ type AchievementRepository interface {
 type PasswordResetRepository interface {
 	CreateToken(ctx context.Context, token *PasswordResetToken) error
 	GetToken(ctx context.Context, tokenStr string) (*PasswordResetToken, error)
+	GetTokenByResetCode(ctx context.Context, code string) (*PasswordResetToken, error)
 	DeleteToken(ctx context.Context, token *PasswordResetToken) error
+	MarkTokenUsed(ctx context.Context, id uint, usedAt time.Time) error
 }
 
 // EmailVerificationRepository — контракт для верификации email.
@@ -91,6 +93,7 @@ func (r *gormUserRepo) GetPublicProfile(ctx context.Context, id uint) (*User, er
 func (r *gormUserRepo) Update(ctx context.Context, id uint, fields map[string]any) error {
 	return r.db.WithContext(ctx).Model(&User{}).Where("id = ?", id).Updates(fields).Error
 }
+
 // GetByRole returns multiple users by role.
 func (r *gormUserRepo) GetByRole(ctx context.Context, role string) ([]User, error) {
 	var users []User
@@ -179,8 +182,16 @@ func (r *gormPasswordResetRepo) GetToken(ctx context.Context, tokenStr string) (
 	err := r.db.WithContext(ctx).Where("token_hash = ?", hex.EncodeToString(hash[:])).First(&t).Error
 	return &t, err
 }
+func (r *gormPasswordResetRepo) GetTokenByResetCode(ctx context.Context, code string) (*PasswordResetToken, error) {
+	var t PasswordResetToken
+	err := r.db.WithContext(ctx).Where("reset_code = ?", code).First(&t).Error
+	return &t, err
+}
 func (r *gormPasswordResetRepo) DeleteToken(ctx context.Context, token *PasswordResetToken) error {
 	return r.db.WithContext(ctx).Delete(token).Error
+}
+func (r *gormPasswordResetRepo) MarkTokenUsed(ctx context.Context, id uint, usedAt time.Time) error {
+	return r.db.WithContext(ctx).Model(&PasswordResetToken{}).Where("id = ?", id).Update("used_at", usedAt).Error
 }
 
 type gormEmailVerificationRepo struct{ db *gorm.DB }

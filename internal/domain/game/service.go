@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"mime/multipart"
-	"sync"
 	"time"
 
 	"gengine-0/internal/config"
@@ -16,6 +15,7 @@ import (
 	ws "gengine-0/internal/pkg/websocket"
 
 	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )
 
@@ -88,13 +88,17 @@ func NewGameService(
 	hub *ws.RoomHub,
 	cfg *config.Config,
 	storage storage.FileStorage,
-	cache cache.CacheStore,
+	cacheStore cache.CacheStore,
 	userRepo user.UserRepository,
 	ratingSvc *RatingService,
 ) *GameService {
 	crudSvc := NewGameCRUDService(gameRepo, ca, userRepo, ms, rs, ratingSvc)
 	coverSvc := NewGameCoverService(gameRepo, storage, ca)
 	listingSvc := NewGameListingService(gameRepo)
+
+	if cacheStore == nil {
+		cacheStore = &cache.NoopCache{}
+	}
 
 	return &GameService{
 		crudService:    crudSvc,
@@ -105,7 +109,7 @@ func NewGameService(
 		hub:            hub,
 		cfg:            cfg,
 		storage:        storage,
-		cache:          cache,
+		cache:          cacheStore,
 		ratingService:  ratingSvc,
 		db:             db,
 		coAuthorSvc:    ca,
@@ -135,27 +139,20 @@ func (s *GameService) Create(ctx context.Context, game *Game, authorID uint) err
 func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint) (*Game, error) {
 	cacheKey := fmt.Sprintf("game:%d:viewer:%d", id, viewerID)
 
-	if s.cache != nil {
-		if cached, ok := s.cache.GetWithCtx(ctx, cacheKey); ok {
-			if game, ok := cached.(*Game); ok {
-				canView, err := s.crudService.CanViewGame(ctx, game, viewerID, "user")
-				if err != nil {
-					return nil, err
-				}
-				if !canView {
-					if s.cache != nil {
-						s.cache.DeleteWithCtx(ctx, cacheKey)
-					}
-					return nil, errors.New("игра не найдена")
-				}
-				log.Debug().Uint("game_id", id).Msg("GetByID: cache hit")
-				return game, nil
+	if cached, ok := s.cache.GetWithCtx(ctx, cacheKey); ok {
+		if game, ok := cached.(*Game); ok {
+			canView, err := s.crudService.CanViewGame(ctx, game, viewerID, "user")
+			if err != nil {
+				return nil, err
 			}
-			// Если кэш вернул тип из Valkey (map), не используем — удаляем
-			if s.cache != nil {
+			if !canView {
 				s.cache.DeleteWithCtx(ctx, cacheKey)
+				return nil, errors.New("игра не найдена")
 			}
+			log.Debug().Uint("game_id", id).Msg("GetByID: cache hit")
+			return game, nil
 		}
+		s.cache.DeleteWithCtx(ctx, cacheKey)
 	}
 
 	game, err := s.crudService.GetByID(ctx, id)
@@ -171,10 +168,8 @@ func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint) (*Gam
 		return nil, errors.New("игра не найдена")
 	}
 
-	// Кэшируем только для не-черновиков (hasAdminRole убран — роль в JWT)
-	if s.cache != nil && !game.IsDraft {
-		ttl := 5 * time.Minute
-		s.cache.SetWithCtx(ctx, cacheKey, game, ttl)
+	if !game.IsDraft {
+		s.cache.SetWithCtx(ctx, cacheKey, game, 5*time.Minute)
 	}
 
 	return game, nil
@@ -186,10 +181,8 @@ func (s *GameService) Update(ctx context.Context, id uint, updated *Game, userID
 	if err != nil {
 		return err
 	}
-	if s.cache != nil {
-		s.cache.DeleteByPrefixWithCtx(ctx, fmt.Sprintf("game:%d:viewer:", id))
-		s.cache.DeleteByPrefixWithCtx(ctx, "games:list:")
-	}
+	s.cache.DeleteByPrefixWithCtx(ctx, fmt.Sprintf("game:%d:viewer:", id))
+	s.cache.DeleteByPrefixWithCtx(ctx, "games:list:")
 	return nil
 }
 
@@ -210,36 +203,30 @@ func (s *GameService) Delete(ctx context.Context, id uint, userID uint) error {
 	}
 
 	if s.photoService != nil {
-		photos, err := s.photoService.List(id)
-		if err == nil {
-			// Параллельное удаление файлов для ускорения
-			var wg sync.WaitGroup
-			errCh := make(chan error, len(photos))
+		photos, listErr := s.photoService.List(id)
+		if listErr == nil {
+			// Параллельное удаление файлов с errgroup для корректной обработки ошибок
+			var g errgroup.Group
 			for _, photo := range photos {
-				wg.Add(1)
-				go func(path string) {
-					defer wg.Done()
-					if delErr := s.storage.Delete(path); delErr != nil {
-						errCh <- delErr
+				photoPath := photo.Path
+				g.Go(func() error {
+					if delErr := s.storage.Delete(photoPath); delErr != nil {
+						log.Error().Err(delErr).Str("path", photoPath).Msg("Delete: failed to delete photo file")
+						return delErr
 					}
-				}(photo.Path)
+					return nil
+				})
 			}
-			wg.Wait()
-			close(errCh)
-			for delErr := range errCh {
-				log.Error().Err(delErr).Msg("Delete: failed to delete photo file")
-			}
+			_ = g.Wait()
 		}
 	}
 
-	err = s.crudService.Delete(ctx, id, userID)
-	if err != nil {
-		return err
+	deleteErr := s.crudService.Delete(ctx, id, userID)
+	if deleteErr != nil {
+		return deleteErr
 	}
-	if s.cache != nil {
-		s.cache.DeleteByPrefixWithCtx(ctx, fmt.Sprintf("game:%d:viewer:", id))
-		s.cache.DeleteByPrefixWithCtx(ctx, "games:list:")
-	}
+	s.cache.DeleteByPrefixWithCtx(ctx, fmt.Sprintf("game:%d:viewer:", id))
+	s.cache.DeleteByPrefixWithCtx(ctx, "games:list:")
 	return nil
 }
 
@@ -249,10 +236,8 @@ func (s *GameService) Publish(ctx context.Context, id uint, userID uint) error {
 	if err != nil {
 		return err
 	}
-	if s.cache != nil {
-		s.cache.DeleteByPrefixWithCtx(ctx, fmt.Sprintf("game:%d:viewer:", id))
-		s.cache.DeleteByPrefixWithCtx(ctx, "games:list:")
-	}
+	s.cache.DeleteByPrefixWithCtx(ctx, fmt.Sprintf("game:%d:viewer:", id))
+	s.cache.DeleteByPrefixWithCtx(ctx, "games:list:")
 	return nil
 }
 
@@ -277,15 +262,12 @@ func (s *GameService) GetAverageRating(ctx context.Context, gameID uint) (float6
 
 	cacheKey := fmt.Sprintf("rating:game:%d", gameID)
 
-	if s.cache != nil {
-		if cached, ok := s.cache.GetWithCtx(ctx, cacheKey); ok {
-			// In-memory cache: may be map[string]any
-			if result, ok := cached.(map[string]any); ok {
-				if avg, ok := result["avg"].(float64); ok {
-					if count, ok := result["count"].(int64); ok {
-						log.Debug().Uint("game_id", gameID).Msg("GetAverageRating: cache hit")
-						return avg, count, nil
-					}
+	if cached, ok := s.cache.GetWithCtx(ctx, cacheKey); ok {
+		if result, ok := cached.(map[string]any); ok {
+			if avg, ok := result["avg"].(float64); ok {
+				if count, ok := result["count"].(int64); ok {
+					log.Debug().Uint("game_id", gameID).Msg("GetAverageRating: cache hit")
+					return avg, count, nil
 				}
 			}
 		}
@@ -296,12 +278,10 @@ func (s *GameService) GetAverageRating(ctx context.Context, gameID uint) (float6
 		return 0, 0, err
 	}
 
-	if s.cache != nil {
-		s.cache.SetWithCtx(ctx, cacheKey, map[string]any{
-			"avg":   avgRating,
-			"count": count,
-		}, 5*time.Minute)
-	}
+	s.cache.SetWithCtx(ctx, cacheKey, map[string]any{
+		"avg":   avgRating,
+		"count": count,
+	}, 5*time.Minute)
 
 	return avgRating, count, nil
 }
@@ -332,6 +312,24 @@ func (s *GameService) GetLogsByGameID(ctx context.Context, gameID uint) ([]Log, 
 	var logs []Log
 	err := s.db.WithContext(ctx).Where("game_id = ?", gameID).Order("created_at ASC").Find(&logs).Error
 	return logs, err
+}
+
+// GetLogsByGameIDPaginated возвращает страницу логов игры.
+func (s *GameService) GetLogsByGameIDPaginated(ctx context.Context, gameID uint, page, pageSize int) ([]Log, int64, error) {
+	var total int64
+	db := s.db.WithContext(ctx).Session(&gorm.Session{NewDB: true})
+	db.Model(&Log{}).Where("game_id = ?", gameID).Count(&total)
+	if page < 1 {
+		page = 1
+	}
+	offset := (page - 1) * pageSize
+	var logs []Log
+	err := db.
+		Where("game_id = ?", gameID).
+		Order("created_at ASC").
+		Limit(pageSize).Offset(offset).
+		Find(&logs).Error
+	return logs, total, err
 }
 
 // GetSettingsWithDefaults загружает настройки игры или возвращает значения по умолчанию.

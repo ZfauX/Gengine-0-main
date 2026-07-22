@@ -20,7 +20,7 @@ func AuthRequired(parser TokenParser) gin.HandlerFunc {
 		token, err := c.Cookie("jwt")
 		if err != nil {
 			if strings.HasPrefix(c.Request.URL.Path, "/api/") {
-				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "требуется аутентификация"})
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": ErrAuthRequired})
 				return
 			}
 			c.Redirect(http.StatusFound, "/auth/login")
@@ -31,7 +31,7 @@ func AuthRequired(parser TokenParser) gin.HandlerFunc {
 		userID, role, err := parser.ParseToken(token)
 		if err != nil {
 			if strings.HasPrefix(c.Request.URL.Path, "/api/") {
-				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "невалидный токен"})
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": ErrInvalidToken})
 				return
 			}
 			c.Redirect(http.StatusFound, "/auth/login")
@@ -71,13 +71,13 @@ func AdminRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		role, exists := c.Get("role")
 		if !exists {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "требуется аутентификация"})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": ErrAuthRequired})
 			return
 		}
 
 		roleStr, ok := role.(string)
 		if !ok || roleStr != "admin" {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "доступ запрещён"})
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": ErrAccessDenied})
 			return
 		}
 

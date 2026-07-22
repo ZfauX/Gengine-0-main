@@ -41,7 +41,7 @@ func (h *TwoFactorHandler) EnableForm(c *gin.Context) {
 	if user.TwoFactorEnabled {
 		render.Page(c, http.StatusOK, "user-2fa-enabled.html", gin.H{
 			"Title": "2FA уже включена",
-			"User":  user,
+			"User":  user.ToPublic(),
 		})
 		return
 	}
@@ -52,7 +52,7 @@ func (h *TwoFactorHandler) EnableForm(c *gin.Context) {
 
 	render.Page(c, http.StatusOK, "user-2fa-enable.html", gin.H{
 		"Title":  "Включить 2FA",
-		"User":   user,
+		"User":   user.ToPublic(),
 		"Secret": secret,
 		"QRURL":  qrURL,
 	})
@@ -86,7 +86,7 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 		render.Page(c, http.StatusOK, "user-2fa-enable.html", gin.H{
 			"Title":  "Включить 2FA",
 			"Error":  "Неверный код. Попробуйте ещё раз.",
-			"User":   user,
+			"User":   user.ToPublic(),
 			"Secret": user.TwoFactorSecret,
 		})
 		return
@@ -97,7 +97,7 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 		render.Page(c, http.StatusOK, "user-2fa-enable.html", gin.H{
 			"Title": "Включить 2FA",
 			"Error": "Ошибка включения: " + err.Error(),
-			"User":  user,
+			"User":  user.ToPublic(),
 		})
 		return
 	}
@@ -111,7 +111,7 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 		render.Page(c, http.StatusOK, "user-2fa-enable.html", gin.H{
 			"Title": "Включить 2FA",
 			"Error": "Ошибка сохранения: " + err.Error(),
-			"User":  user,
+			"User":  user.ToPublic(),
 		})
 		return
 	}
@@ -140,7 +140,7 @@ func (h *TwoFactorHandler) DisableForm(c *gin.Context) {
 
 	render.Page(c, http.StatusOK, "user-2fa-disable.html", gin.H{
 		"Title": "Отключить 2FA",
-		"User":  user,
+		"User":  user.ToPublic(),
 	})
 }
 
@@ -172,7 +172,7 @@ func (h *TwoFactorHandler) Disable(c *gin.Context) {
 		render.Page(c, http.StatusOK, "user-2fa-disable.html", gin.H{
 			"Title": "Отключить 2FA",
 			"Error": "Неверный код.",
-			"User":  user,
+			"User":  user.ToPublic(),
 		})
 		return
 	}
@@ -189,7 +189,7 @@ func (h *TwoFactorHandler) Disable(c *gin.Context) {
 		render.Page(c, http.StatusOK, "user-2fa-disable.html", gin.H{
 			"Title": "Отключить 2FA",
 			"Error": "Ошибка сохранения: " + err.Error(),
-			"User":  user,
+			"User":  user.ToPublic(),
 		})
 		return
 	}

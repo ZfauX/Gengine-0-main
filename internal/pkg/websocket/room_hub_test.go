@@ -3,6 +3,8 @@ package websocket
 
 import (
 	"encoding/json"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 func TestRoomHub_RegisterClient(t *testing.T) {
 	hub := NewRoomHub()
 	go hub.Run()
+	t.Cleanup(hub.Stop)
 	client := &Client{
 		Send:   make(chan []byte, 10),
 		RoomID: "room1",
@@ -20,11 +23,10 @@ func TestRoomHub_RegisterClient(t *testing.T) {
 	}
 
 	hub.RegisterClient(client)
-	time.Sleep(10 * time.Millisecond)
 
-	hub.mu.Lock()
+	hub.mu.RLock()
 	room, ok := hub.rooms["room1"]
-	hub.mu.Unlock()
+	hub.mu.RUnlock()
 	assert.True(t, ok)
 	assert.Contains(t, room, client)
 	assert.Len(t, room, 1)
@@ -33,6 +35,7 @@ func TestRoomHub_RegisterClient(t *testing.T) {
 func TestRoomHub_RegisterClient_Multiple(t *testing.T) {
 	hub := NewRoomHub()
 	go hub.Run()
+	t.Cleanup(hub.Stop)
 	c1 := &Client{Send: make(chan []byte, 10), RoomID: "room1", done: make(chan struct{})}
 	c2 := &Client{Send: make(chan []byte, 10), RoomID: "room1", done: make(chan struct{})}
 	c3 := &Client{Send: make(chan []byte, 10), RoomID: "room2", done: make(chan struct{})}
@@ -40,10 +43,9 @@ func TestRoomHub_RegisterClient_Multiple(t *testing.T) {
 	hub.RegisterClient(c1)
 	hub.RegisterClient(c2)
 	hub.RegisterClient(c3)
-	time.Sleep(10 * time.Millisecond)
 
-	hub.mu.Lock()
-	defer hub.mu.Unlock()
+	hub.mu.RLock()
+	defer hub.mu.RUnlock()
 	assert.Len(t, hub.rooms["room1"], 2)
 	assert.Len(t, hub.rooms["room2"], 1)
 }
@@ -51,22 +53,25 @@ func TestRoomHub_RegisterClient_Multiple(t *testing.T) {
 func TestRoomHub_UnregisterClient(t *testing.T) {
 	hub := NewRoomHub()
 	go hub.Run()
+	t.Cleanup(hub.Stop)
 	client := &Client{Send: make(chan []byte, 10), RoomID: "room1", done: make(chan struct{})}
 	hub.RegisterClient(client)
-	time.Sleep(10 * time.Millisecond)
 
 	hub.UnregisterClient(client)
-	time.Sleep(10 * time.Millisecond)
 
-	hub.mu.Lock()
-	_, ok := hub.rooms["room1"]
-	hub.mu.Unlock()
-	assert.False(t, ok, "room should be removed when empty")
+	// Ждём обработки unregister
+	assert.Eventually(t, func() bool {
+		hub.mu.RLock()
+		_, ok := hub.rooms["room1"]
+		hub.mu.RUnlock()
+		return !ok
+	}, 1*time.Second, 50*time.Millisecond)
 }
 
 func TestRoomHub_UnregisterClient_NotExists(t *testing.T) {
 	hub := NewRoomHub()
 	go hub.Run()
+	t.Cleanup(hub.Stop)
 	client := &Client{Send: make(chan []byte, 10), RoomID: "room1", done: make(chan struct{})}
 	hub.UnregisterClient(client)
 }
@@ -74,49 +79,69 @@ func TestRoomHub_UnregisterClient_NotExists(t *testing.T) {
 func TestRoomHub_BroadcastToRoom(t *testing.T) {
 	hub := NewRoomHub()
 	go hub.Run()
+	t.Cleanup(hub.Stop)
 	roomID := "testroom"
 
 	c1 := &Client{Send: make(chan []byte, 10), RoomID: roomID, done: make(chan struct{})}
 	c2 := &Client{Send: make(chan []byte, 10), RoomID: roomID, done: make(chan struct{})}
 	hub.RegisterClient(c1)
 	hub.RegisterClient(c2)
-	time.Sleep(10 * time.Millisecond)
 
 	msg := map[string]string{"event": "test", "data": "hello"}
 	data, err := json.Marshal(msg)
 	require.NoError(t, err)
 	hub.BroadcastToRoom(roomID, data)
 
-	select {
-	case received := <-c1.Send:
-		var parsed map[string]string
-		err := json.Unmarshal(received, &parsed)
-		require.NoError(t, err)
-		assert.Equal(t, "hello", parsed["data"])
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("client 1 did not receive message")
-	}
+	// Ждём получения сообщений
+	var wg sync.WaitGroup
+	wg.Add(2)
+	var received1, received2 map[string]string
+	var fatalErr error
 
-	select {
-	case received := <-c2.Send:
-		var parsed map[string]string
-		err := json.Unmarshal(received, &parsed)
-		require.NoError(t, err)
-		assert.Equal(t, "hello", parsed["data"])
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("client 2 did not receive message")
-	}
+	go func() {
+		defer wg.Done()
+		select {
+		case received := <-c1.Send:
+			err := json.Unmarshal(received, &received1)
+			if err != nil {
+				fatalErr = err
+			}
+		case <-time.After(2 * time.Second):
+			fatalErr = fmt.Errorf("client 1 did not receive message")
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		select {
+		case received := <-c2.Send:
+			err := json.Unmarshal(received, &received2)
+			if err != nil {
+				fatalErr = err
+			}
+		case <-time.After(2 * time.Second):
+			fatalErr = fmt.Errorf("client 2 did not receive message")
+		}
+	}()
+
+	wg.Wait()
+
+	require.NoError(t, fatalErr)
+	assert.Equal(t, "hello", received1["data"])
+	assert.Equal(t, "hello", received2["data"])
 }
 
 func TestRoomHub_BroadcastToRoom_NoClients(t *testing.T) {
 	hub := NewRoomHub()
 	go hub.Run()
+	t.Cleanup(hub.Stop)
 	hub.BroadcastToRoom("nonexistent", []byte("test"))
 }
 
 func TestRoomHub_BroadcastToRoom_WithClosedClient(t *testing.T) {
 	hub := NewRoomHub()
 	go hub.Run()
+	t.Cleanup(hub.Stop)
 	roomID := "testroom"
 
 	c1 := &Client{
@@ -131,7 +156,6 @@ func TestRoomHub_BroadcastToRoom_WithClosedClient(t *testing.T) {
 	}
 	hub.RegisterClient(c1)
 	hub.RegisterClient(c2)
-	time.Sleep(10 * time.Millisecond)
 
 	c1.Close()
 
@@ -140,25 +164,34 @@ func TestRoomHub_BroadcastToRoom_WithClosedClient(t *testing.T) {
 	require.NoError(t, err)
 	hub.BroadcastToRoom(roomID, data)
 
-	time.Sleep(20 * time.Millisecond)
+	// Ждём обработки закрытия
+	assert.Eventually(t, func() bool {
+		hub.mu.RLock()
+		room := hub.rooms[roomID]
+		hub.mu.RUnlock()
+		_, exists := room[c1]
+		return !exists
+	}, 1*time.Second, 50*time.Millisecond)
 
-	hub.mu.Lock()
+	hub.mu.RLock()
 	room := hub.rooms[roomID]
-	hub.mu.Unlock()
+	hub.mu.RUnlock()
 	assert.NotContains(t, room, c1, "closed client should be removed")
 	assert.Contains(t, room, c2, "open client should remain")
 
+	var received bool
 	select {
 	case <-c2.Send:
-		// ok
+		received = true
 	case <-time.After(100 * time.Millisecond):
-		t.Fatal("client 2 should receive message")
 	}
+	assert.True(t, received, "client 2 should receive message")
 }
 
 func TestRoomHub_BroadcastToRoom_FullChannel(t *testing.T) {
 	hub := NewRoomHub()
 	go hub.Run()
+	t.Cleanup(hub.Stop)
 	roomID := "testroom"
 
 	c1 := &Client{
@@ -167,7 +200,6 @@ func TestRoomHub_BroadcastToRoom_FullChannel(t *testing.T) {
 		done:   make(chan struct{}),
 	}
 	hub.RegisterClient(c1)
-	time.Sleep(10 * time.Millisecond)
 
 	c1.Send <- []byte("full")
 
@@ -176,12 +208,19 @@ func TestRoomHub_BroadcastToRoom_FullChannel(t *testing.T) {
 	require.NoError(t, err)
 	hub.BroadcastToRoom(roomID, data)
 
-	time.Sleep(20 * time.Millisecond)
+	// Ждём обработки (сообщение будет отброшено, клиент не отключится)
+	assert.Eventually(t, func() bool {
+		hub.mu.RLock()
+		room := hub.rooms[roomID]
+		hub.mu.RUnlock()
+		return len(room) == 1
+	}, 500*time.Millisecond, 50*time.Millisecond)
 
-	hub.mu.Lock()
+	hub.mu.RLock()
 	room := hub.rooms[roomID]
-	hub.mu.Unlock()
-	assert.Nil(t, room, "client should be removed because channel is full")
+	hub.mu.RUnlock()
+	assert.NotNil(t, room, "client should NOT be removed - message is dropped instead of disconnecting")
+	assert.Len(t, room, 1, "client should remain connected after buffer full")
 }
 
 func TestClient_Close(t *testing.T) {
@@ -202,14 +241,22 @@ func TestClient_Close_ChannelClosedOnce(t *testing.T) {
 		done: make(chan struct{}),
 	}
 	c.Close()
-	assert.Panics(t, func() {
-		c.Send <- []byte("test")
+	// Send channel is NOT closed anymore (done is closed instead)
+	assert.NotPanics(t, func() {
+		select {
+		case c.Send <- []byte("test"):
+		default:
+		}
 	})
+	// done channel IS closed
+	_, ok := <-c.done
+	assert.False(t, ok)
 }
 
 func BenchmarkRoomHub_BroadcastToRoom(b *testing.B) {
 	hub := NewRoomHub()
 	go hub.Run()
+	b.Cleanup(hub.Stop)
 	roomID := "benchroom"
 	clients := make([]*Client, 100)
 	for i := 0; i < 100; i++ {
@@ -217,7 +264,14 @@ func BenchmarkRoomHub_BroadcastToRoom(b *testing.B) {
 		clients[i] = c
 		hub.RegisterClient(c)
 	}
-	time.Sleep(10 * time.Millisecond)
+
+	// Ждём регистрации клиентов
+	assert.Eventually(b, func() bool {
+		hub.mu.RLock()
+		room, ok := hub.rooms[roomID]
+		hub.mu.RUnlock()
+		return ok && len(room) == 100
+	}, 2*time.Second, 50*time.Millisecond)
 
 	msg := map[string]string{"event": "bench"}
 	data, err := json.Marshal(msg)

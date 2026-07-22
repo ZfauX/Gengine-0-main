@@ -45,7 +45,7 @@ func createTournamentGame(t *testing.T, db *gorm.DB, authorID uint, name string)
 
 func newTeamService(db *gorm.DB) *team.TeamService {
 	teamRepo := team.NewGormTeamRepo(db)
-	authorizer := &gameAuthorizerStub{db}
+	authorizer := testutil.NewGameAuthorizerStub(db)
 	return team.NewTeamService(teamRepo, authorizer)
 }
 
@@ -63,23 +63,6 @@ func newTournamentService(db *gorm.DB, teamSvc *team.TeamService) *tournament.To
 		teamSvc,
 		cfg,
 	)
-}
-
-// gameAuthorizerStub — заглушка для middleware.GameAuthorizer.
-type gameAuthorizerStub struct {
-	db *gorm.DB
-}
-
-func (g *gameAuthorizerStub) IsUserManager(ctx context.Context, gameID, userID uint) (bool, error) {
-	var ga game.Game
-	if err := g.db.First(&ga, gameID).Error; err != nil {
-		return false, err
-	}
-	return ga.AuthorID == userID, nil
-}
-
-func (g *gameAuthorizerStub) HasPermission(ctx context.Context, gameID, userID uint, role string) (bool, error) {
-	return g.IsUserManager(ctx, gameID, userID)
 }
 
 // ---------- Тесты ----------

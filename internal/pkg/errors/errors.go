@@ -55,12 +55,22 @@ const (
 	ErrInvalidToken       ErrorCode = "invalid_token"
 	ErrTokenExpired       ErrorCode = "token_expired"
 	ErrCSRFInvalid        ErrorCode = "csrf_invalid"
+	ErrTwoFactorRequired  ErrorCode = "two_factor_required"
 
 	// Domain: file
 	ErrFileTooLarge     ErrorCode = "file_too_large"
 	ErrFileUploadFailed ErrorCode = "file_upload_failed"
 	ErrFileNotFound     ErrorCode = "file_not_found"
 	ErrInvalidFileType  ErrorCode = "invalid_file_type"
+
+	// Domain: export
+	ErrExportNotReady ErrorCode = "export_not_ready"
+	ErrExportFailed   ErrorCode = "export_failed"
+
+	// Domain: monitor
+	ErrVotingClosed     ErrorCode = "voting_closed"
+	ErrAlreadyVoted     ErrorCode = "already_voted"
+	ErrVotingNotStarted ErrorCode = "voting_not_started"
 )
 
 // ruMessages — русскоязычные сообщения для каждого кода ошибки.
@@ -101,6 +111,12 @@ var ruMessages = map[ErrorCode]string{
 	ErrFileUploadFailed:       "Ошибка загрузки файла",
 	ErrFileNotFound:           "Файл не найден",
 	ErrInvalidFileType:        "Неподдерживаемый формат файла",
+	ErrTwoFactorRequired:      "Требуется двухфакторная аутентификация",
+	ErrExportNotReady:         "Экспорт ещё не готов",
+	ErrExportFailed:           "Ошибка экспорта данных",
+	ErrVotingClosed:           "Голосование закрыто",
+	ErrAlreadyVoted:           "Вы уже проголосовали",
+	ErrVotingNotStarted:       "Голосование ещё не началось",
 }
 
 // AppError — структурированная ошибка с кодом, HTTP-статусом и полями.
@@ -176,6 +192,12 @@ func HTTPStatusForErrorCode(code ErrorCode) int {
 		return http.StatusTooManyRequests
 	case ErrConfiguration:
 		return http.StatusServiceUnavailable
+	case ErrTwoFactorRequired:
+		return http.StatusUnauthorized
+	case ErrExportNotReady, ErrExportFailed:
+		return http.StatusServiceUnavailable
+	case ErrVotingClosed, ErrAlreadyVoted, ErrVotingNotStarted:
+		return http.StatusConflict
 	default:
 		return http.StatusInternalServerError
 	}
@@ -384,11 +406,11 @@ func GetFieldError(err error, field string) string {
 type ErrorList map[string]string
 
 // Add добавляет ошибку для поля.
-func (el ErrorList) Add(field, message string) {
-	if el == nil {
-		el = make(ErrorList)
+func (el *ErrorList) Add(field, message string) {
+	if *el == nil {
+		*el = make(ErrorList)
 	}
-	el[field] = message
+	(*el)[field] = message
 }
 
 // Has проверяет, есть ли ошибка для поля.
@@ -425,4 +447,90 @@ func SanitizeMessageForLog(msg string) string {
 		msg = replacer.Replace(msg)
 	}
 	return msg
+}
+
+// --- Helper-функции для проверки ошибок ---
+
+// IsGameError проверяет, является ли ошибка связанной с игрой.
+func IsGameError(err error) bool {
+	return IsCode(err, ErrGameNotFound) || IsCode(err, ErrNotGameAuthor) || IsCode(err, ErrNotGameManager) ||
+		IsCode(err, ErrGameDraft) || IsCode(err, ErrGameNotStarted) || IsCode(err, ErrGameFinished)
+}
+
+// IsTeamError проверяет, является ли ошибка связанной с командой.
+func IsTeamError(err error) bool {
+	return IsCode(err, ErrTeamFull) || IsCode(err, ErrAlreadyJoined) || IsCode(err, ErrNotTeamMember) || IsCode(err, ErrTeamNotFound)
+}
+
+// IsAuthError проверяет, является ли ошибка связанной с аутентификацией.
+func IsAuthError(err error) bool {
+	return IsCode(err, ErrInvalidCredentials) || IsCode(err, ErrAccountNotVerified) || IsCode(err, ErrInvalidOTP) ||
+		IsCode(err, ErrInvalidToken) || IsCode(err, ErrTokenExpired) || IsCode(err, ErrTwoFactorRequired)
+}
+
+// IsVotingError проверяет, является ли ошибка связанной с голосованием.
+func IsVotingError(err error) bool {
+	return IsCode(err, ErrVotingClosed) || IsCode(err, ErrAlreadyVoted) || IsCode(err, ErrVotingNotStarted)
+}
+
+// IsExportError проверяет, является ли ошибка связанной с экспортом.
+func IsExportError(err error) bool {
+	return IsCode(err, ErrExportNotReady) || IsCode(err, ErrExportFailed)
+}
+
+// enMessages — англоязычные сообщения для каждого кода ошибки.
+var enMessages = map[ErrorCode]string{
+	ErrInternal:               "Internal server error",
+	ErrBadRequest:             "Bad request",
+	ErrValidationError:        "Validation error",
+	ErrUnauthorized:           "Authorization required",
+	ErrForbidden:              "Access denied",
+	ErrNotFound:               "Resource not found",
+	ErrConflict:               "Data conflict",
+	ErrRateLimit:              "Too many requests. Please wait",
+	ErrConfiguration:          "Server configuration error",
+	ErrGameNotFound:           "Game not found",
+	ErrNotGameAuthor:          "You do not have permission for this action",
+	ErrNotGameManager:         "Insufficient permissions to manage the game",
+	ErrGameDraft:              "Game is a draft and not available",
+	ErrGameNotStarted:         "Game has not started yet",
+	ErrGameFinished:           "Game has finished",
+	ErrGameRegistrationClosed: "Registration is closed",
+	ErrWrongCode:              "Wrong code. Try again",
+	ErrNoAttemptsLeft:         "No attempts left",
+	ErrNoHintsLeft:            "No hints left",
+	ErrTimeExpired:            "Time expired",
+	ErrLevelNotAvailable:      "Level not available",
+	ErrTeamFull:               "Team is full",
+	ErrAlreadyJoined:          "You are already in this team",
+	ErrNotTeamMember:          "You are not a member of this team",
+	ErrTeamNotFound:           "Team not found",
+	ErrEmailAlreadyUsed:       "Email is already registered",
+	ErrInvalidCredentials:     "Invalid login or password",
+	ErrAccountNotVerified:     "Account not verified",
+	ErrInvalidOTP:             "Invalid verification code",
+	ErrInvalidToken:           "Invalid token",
+	ErrTokenExpired:           "Token expired",
+	ErrCSRFInvalid:            "CSRF token is invalid",
+	ErrFileTooLarge:           "File is too large",
+	ErrFileUploadFailed:       "File upload failed",
+	ErrFileNotFound:           "File not found",
+	ErrInvalidFileType:        "Unsupported file format",
+	ErrTwoFactorRequired:      "Two-factor authentication required",
+	ErrExportNotReady:         "Export is not ready yet",
+	ErrExportFailed:           "Data export failed",
+	ErrVotingClosed:           "Voting is closed",
+	ErrAlreadyVoted:           "You have already voted",
+	ErrVotingNotStarted:       "Voting has not started yet",
+}
+
+// ErrorText возвращает локализованное сообщение по коду ошибки.
+func ErrorText(code ErrorCode) string {
+	if msg, ok := ruMessages[code]; ok {
+		return msg
+	}
+	if msg, ok := enMessages[code]; ok {
+		return msg
+	}
+	return string(code)
 }

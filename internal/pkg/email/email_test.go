@@ -58,7 +58,15 @@ func newTestSMTPServer(t *testing.T) *testSMTPServer {
 	s.started = true
 	s.wg.Add(1)
 	go s.serve()
-	time.Sleep(50 * time.Millisecond)
+	// Ждём запуска сервера
+	assert.Eventually(t, func() bool {
+		conn, err := net.Dial("tcp", s.addr)
+		if err != nil {
+			return false
+		}
+		_ = conn.Close()
+		return true
+	}, 2*time.Second, 50*time.Millisecond)
 	return s
 }
 
@@ -546,7 +554,15 @@ func BenchmarkSendEmail(b *testing.B) {
 	server.started = true
 	server.wg.Add(1)
 	go server.serve()
-	time.Sleep(50 * time.Millisecond)
+	// Ждём запуска сервера
+	assert.Eventually(b, func() bool {
+		conn, e := net.Dial("tcp", server.addr)
+		if e != nil {
+			return false
+		}
+		_ = conn.Close()
+		return true
+	}, 2*time.Second, 50*time.Millisecond)
 	defer server.Close()
 
 	hostParts := strings.Split(server.addr, ":")

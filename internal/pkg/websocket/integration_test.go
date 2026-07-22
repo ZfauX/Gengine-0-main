@@ -18,6 +18,7 @@ func setUpWebsocketServer(t *testing.T) (*httptest.Server, *RoomHub) {
 	t.Helper()
 	hub := NewRoomHub()
 	go hub.Run()
+	t.Cleanup(hub.Stop)
 
 	upgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool { return true },
@@ -71,7 +72,13 @@ func TestWebSocket_Integration_EchoBroadcast(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = conn2.Close() }()
 
-	time.Sleep(100 * time.Millisecond)
+	// Ждём установки соединений
+	assert.Eventually(t, func() bool {
+		hub.mu.RLock()
+		defer hub.mu.RUnlock()
+		room, ok := hub.rooms["testroom"]
+		return ok && len(room) == 2
+	}, 2*time.Second, 50*time.Millisecond)
 
 	msg := map[string]string{"event": "test", "data": "hello"}
 	data, err := json.Marshal(msg)
@@ -113,7 +120,14 @@ func TestWebSocket_Integration_BroadcastToDifferentRooms(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = connB.Close() }()
 
-	time.Sleep(100 * time.Millisecond)
+	// Ждём установки соединений
+	assert.Eventually(t, func() bool {
+		hub.mu.RLock()
+		defer hub.mu.RUnlock()
+		_, okA := hub.rooms["roomA"]
+		_, okB := hub.rooms["roomB"]
+		return okA && okB
+	}, 2*time.Second, 50*time.Millisecond)
 
 	msg := map[string]string{"msg": "only A"}
 	data, err := json.Marshal(msg)
@@ -144,21 +158,33 @@ func TestWebSocket_Integration_ClientDisconnect(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = conn.Close() }()
 
-	time.Sleep(100 * time.Millisecond)
+	// Ждём установки соединения
+	assert.Eventually(t, func() bool {
+		hub.mu.RLock()
+		defer hub.mu.RUnlock()
+		room, ok := hub.rooms["testroom"]
+		return ok && len(room) == 1
+	}, 2*time.Second, 50*time.Millisecond)
 
 	hub.mu.Lock()
-	room, ok := hub.rooms["testroom"]
+	room, roomExists := hub.rooms["testroom"]
 	hub.mu.Unlock()
-	assert.True(t, ok)
+	assert.True(t, roomExists)
 	assert.Len(t, room, 1)
 
 	_ = conn.Close()
-	time.Sleep(100 * time.Millisecond)
+	// Ждём удаления комнаты
+	assert.Eventually(t, func() bool {
+		hub.mu.RLock()
+		defer hub.mu.RUnlock()
+		_, exists := hub.rooms["testroom"]
+		return !exists
+	}, 2*time.Second, 50*time.Millisecond)
 
 	hub.mu.Lock()
-	_, ok = hub.rooms["testroom"]
+	_, roomExists2 := hub.rooms["testroom"]
 	hub.mu.Unlock()
-	assert.False(t, ok, "room should be removed when empty")
+	assert.False(t, roomExists2, "room should be removed when empty")
 }
 
 func TestWebSocket_Integration_MultipleMessages(t *testing.T) {
@@ -170,24 +196,30 @@ func TestWebSocket_Integration_MultipleMessages(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = conn.Close() }()
 
-	time.Sleep(100 * time.Millisecond)
+	// Ждём установки соединения
+	assert.Eventually(t, func() bool {
+		hub.mu.RLock()
+		defer hub.mu.RUnlock()
+		room, ok := hub.rooms["multi"]
+		return ok && len(room) == 1
+	}, 2*time.Second, 50*time.Millisecond)
 
 	messages := []string{"one", "two", "three"}
 	for _, msg := range messages {
 		data := map[string]string{"data": msg}
-		b, err := json.Marshal(data)
-		require.NoError(t, err)
+		b, marshalErr := json.Marshal(data)
+		require.NoError(t, marshalErr)
 		hub.BroadcastToRoom("multi", b)
 	}
 
 	for i, expected := range messages {
-		err = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		require.NoError(t, err)
-		_, data, err := conn.ReadMessage()
-		require.NoError(t, err)
+		setErr := conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		require.NoError(t, setErr)
+		_, data, readErr := conn.ReadMessage()
+		require.NoError(t, readErr)
 		var received map[string]string
-		err = json.Unmarshal(data, &received)
-		require.NoError(t, err)
+		unmarshalErr := json.Unmarshal(data, &received)
+		require.NoError(t, unmarshalErr)
 		assert.Equal(t, expected, received["data"], "message %d", i)
 	}
 }

@@ -1,0 +1,57 @@
+# .golangci.yml — Конфигурация линтера для Gengine
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    - errcheck       # unchecked error returns
+    - govet          # Go compiler warnings
+    - staticcheck    # advanced static analysis
+    - gosimple       # simplify code
+    - unused         # unused code
+    - gofmt          # formatting
+    - goimports      # import formatting
+    - misspell       # misspellings
+    - ineffassign    # ineffective assignments
+    - typecheck      # type checking
+    - nakedret       # naked returns
+    - unconvert      # unnecessary conversions
+    - wastedassign   # wasted assignments
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: false
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment
+  staticcheck:
+    checks: ["all", "-ST1000"]
+  gofmt:
+    simplify: true
+  misspell:
+    locale: RU
+
+issues:
+  exclude-rules:
+    # Исключаем тесты из некоторых проверок
+    - path: _test\.go
+      linters:
+        - errcheck
+        - goconst
+    # Исключаем vendor и third-party
+    - path: vendor/
+      linters:
+        - all
+    # Исключаем generated файлы
+    - path: \.pb\.go$
+      linters:
+        - all
+  max-issues-per-linter: 50
+  max-same-issues: 10
+
+output:
+  formats:
+    - format: colored-line-number

@@ -22,23 +22,23 @@ type Level struct {
 	Description          string  `form:"description"`
 	Position             int     `gorm:"default:0;uniqueIndex:idx_game_position" form:"position"`
 	Type                 string  `gorm:"default:single" form:"type"`
-	ParentID             *uint   `gorm:"index"`
-	GroupID              *uint   `gorm:"index"`
+	ParentID             *uint   `gorm:"index:idx_levels_parent"`
+	GroupID              *uint   `gorm:"index:idx_levels_group"`
 	MinChildren          int     `gorm:"default:0"`
 	RequiresConfirmation bool    `gorm:"default:false" form:"requires_confirmation"`
 	Latitude             float64 `form:"latitude"`
 	Longitude            float64 `form:"longitude"`
 
-	Questions    []Question    `gorm:"foreignKey:LevelID"`
-	MiniGame     *MiniGame     `gorm:"foreignKey:LevelID"`
-	Children     []Level       `gorm:"foreignKey:ParentID"`
-	GroupMembers []Level       `gorm:"foreignKey:GroupID"`
+	Questions    []Question `gorm:"foreignKey:LevelID"`
+	MiniGame     *MiniGame  `gorm:"foreignKey:LevelID"`
+	Children     []Level    `gorm:"foreignKey:ParentID"`
+	GroupMembers []Level    `gorm:"foreignKey:GroupID"`
 }
 
 // Question — вопрос внутри уровня.
 type Question struct {
 	gorm.Model
-	LevelID uint   `gorm:"not null;index"`
+	LevelID uint   `gorm:"not null;index:idx_questions_level"`
 	Text    string `gorm:"not null" form:"text"`
 	Hint    string `form:"hint"`
 
@@ -48,7 +48,7 @@ type Question struct {
 // Answer — правильный ответ (код) для вопроса.
 type Answer struct {
 	gorm.Model
-	QuestionID uint   `gorm:"not null;index"`
+	QuestionID uint   `gorm:"not null;index:idx_answers_question"`
 	Code       string `gorm:"not null" form:"code"`
 }
 

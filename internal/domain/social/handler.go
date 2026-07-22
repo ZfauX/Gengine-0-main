@@ -8,9 +8,10 @@ import (
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
 
+	csrf "gengine-0/internal/pkg/csrf"
+
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-	csrf "github.com/utrack/gin-csrf"
 )
 
 // ---------- Входные структуры для валидации ----------

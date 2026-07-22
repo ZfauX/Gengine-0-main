@@ -12,6 +12,12 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	defaultEmailWorkers   = 5
+	defaultEmailInterval  = 10 * time.Second
+	defaultEmailBatchSize = 10
+)
+
 var (
 	globalService *EmailService
 	serviceOnce   sync.Once
@@ -23,16 +29,22 @@ var (
 func InitQueue(cfg *config.Config, db *gorm.DB, workers int, interval time.Duration, batchSize int) {
 	serviceOnce.Do(func() {
 		if workers <= 0 {
-			workers = 5
+			workers = defaultEmailWorkers
 		}
 		if interval <= 0 {
-			interval = 10 * time.Second
+			interval = defaultEmailInterval
 		}
 		if batchSize <= 0 {
-			batchSize = 10
+			batchSize = defaultEmailBatchSize
 		}
 
 		globalService = NewEmailService(cfg, db)
+
+		// Сбрасываем retry-письма обратно в pending при старте,
+		// чтобы они не потерялись после перезапуска сервера
+		if err := db.Model(&QueuedEmail{}).Where("status = ?", "retry").Update("status", "pending").Error; err != nil {
+			log.Warn().Err(err).Msg("Failed to reset retry emails to pending")
+		}
 
 		workerCtx, workerCancel = context.WithCancel(context.Background())
 		for i := 0; i < workers; i++ {

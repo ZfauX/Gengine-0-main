@@ -15,6 +15,13 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+const (
+	totpSecretBytes       = 20
+	backupCodeCount       = 10
+	backupCodeRandomBytes = 4
+	totpCodeLength        = 6
+)
+
 // TwoFactorService отвечает за управление двухфакторной аутентификацией.
 type TwoFactorService struct{}
 
@@ -25,7 +32,7 @@ func NewTwoFactorService() *TwoFactorService {
 
 // GenerateSecret генерирует новый случайный секрет для TOTP.
 func (s *TwoFactorService) GenerateSecret() (string, error) {
-	secret := make([]byte, 20)
+	secret := make([]byte, totpSecretBytes)
 	if _, err := rand.Read(secret); err != nil {
 		return "", fmt.Errorf("ошибка генерации секрета: %w", err)
 	}
@@ -62,9 +69,9 @@ func (s *TwoFactorService) GenerateTOTPCode(secret string) (string, error) {
 
 // GenerateBackupCodes генерирует 10 резервных кодов для восстановления доступа.
 func (s *TwoFactorService) GenerateBackupCodes() ([]string, error) {
-	codes := make([]string, 10)
-	for i := 0; i < 10; i++ {
-		bytes := make([]byte, 4)
+	codes := make([]string, backupCodeCount)
+	for i := 0; i < backupCodeCount; i++ {
+		bytes := make([]byte, backupCodeRandomBytes)
 		if _, err := rand.Read(bytes); err != nil {
 			return nil, fmt.Errorf("ошибка генерации резервного кода: %w", err)
 		}
@@ -164,7 +171,7 @@ func (s *TwoFactorService) Validate2FAInput(code string) error {
 	if code == "" {
 		return fmt.Errorf("введите код подтверждения")
 	}
-	if len(code) != 6 {
+	if len(code) != totpCodeLength {
 		return fmt.Errorf("код должен содержать 6 цифр")
 	}
 	if _, err := strconv.Atoi(code); err != nil {

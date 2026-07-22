@@ -14,6 +14,8 @@ import (
 type EventType string
 
 const (
+	eventBusQueueSize = 256
+
 	// Game events
 	GameCreated       EventType = "game.created"
 	GamePublished     EventType = "game.published"
@@ -22,11 +24,11 @@ const (
 	GameDisqualified  EventType = "game.disqualified"
 
 	// Passing events
-	PassingApplied    EventType = "passing.applied"
-	PassingAccepted   EventType = "passing.accepted"
-	PassingRejected   EventType = "passing.rejected"
-	PassingStarted    EventType = "passing.started"
-	PassingFinished   EventType = "passing.finished"
+	PassingApplied  EventType = "passing.applied"
+	PassingAccepted EventType = "passing.accepted"
+	PassingRejected EventType = "passing.rejected"
+	PassingStarted  EventType = "passing.started"
+	PassingFinished EventType = "passing.finished"
 
 	// User events
 	UserRegistered EventType = "user.registered"
@@ -52,8 +54,10 @@ type Bus struct {
 	workerWg sync.WaitGroup
 
 	// Метрики
-	queueDepth    int64 // атомарный счётчик глубины очереди
-	droppedEvents int64 // атомарный счётчик сброшенных событий
+	queueSize     int64 // текущая глубина очереди (публикации - обработки)
+	processed     int64 // количество обработанных событий
+	droppedEvents int64 // количество сброшенных событий при переполнении
+	totalEvents   int64 // всего событий, переданных в Publish
 }
 
 type job struct {
@@ -65,7 +69,7 @@ type job struct {
 func NewBus() *Bus {
 	b := &Bus{
 		handlers: make(map[EventType][]Handler),
-		queue:    make(chan job, 256),
+		queue:    make(chan job, eventBusQueueSize),
 	}
 	b.startWorkers(runtime.NumCPU())
 	return b
@@ -75,7 +79,7 @@ func NewBus() *Bus {
 func NewBusWithWorkers(workers int) *Bus {
 	b := &Bus{
 		handlers: make(map[EventType][]Handler),
-		queue:    make(chan job, 256),
+		queue:    make(chan job, eventBusQueueSize),
 	}
 	b.startWorkers(workers)
 	return b
@@ -87,7 +91,9 @@ func (b *Bus) startWorkers(n int) {
 		go func() {
 			defer b.workerWg.Done()
 			for j := range b.queue {
+				atomic.AddInt64(&b.queueSize, -1)
 				b.safeCall(j.handler, j.event)
+				atomic.AddInt64(&b.processed, 1)
 			}
 		}()
 	}
@@ -97,6 +103,24 @@ func (b *Bus) startWorkers(n int) {
 func (b *Bus) Stop() {
 	close(b.queue)
 	b.workerWg.Wait()
+}
+
+// Metrics возвращает текущие метрики работы Bus.
+type BusMetrics struct {
+	QueueSize     int64 `json:"queue_size"`
+	Processed     int64 `json:"processed"`
+	DroppedEvents int64 `json:"dropped_events"`
+	TotalEvents   int64 `json:"total_events"`
+}
+
+// GetMetrics возвращает копию текущих метрик.
+func (b *Bus) GetMetrics() BusMetrics {
+	return BusMetrics{
+		QueueSize:     atomic.LoadInt64(&b.queueSize),
+		Processed:     atomic.LoadInt64(&b.processed),
+		DroppedEvents: atomic.LoadInt64(&b.droppedEvents),
+		TotalEvents:   atomic.LoadInt64(&b.totalEvents),
+	}
 }
 
 // Subscribe регистрирует обработчик для определённого типа событий.
@@ -123,10 +147,12 @@ func (b *Bus) Publish(event Event) {
 	publish := func(h Handler) {
 		select {
 		case b.queue <- job{handler: h, event: event}:
-			atomic.AddInt64(&b.queueDepth, 1)
+			atomic.AddInt64(&b.queueSize, 1)
+			atomic.AddInt64(&b.totalEvents, 1)
 		default:
 			atomic.AddInt64(&b.droppedEvents, 1)
-			log.Warn().Str("event_type", string(event.Type)).Msg("events: queue full, dropping event")
+			atomic.AddInt64(&b.totalEvents, 1)
+			log.Warn().Int64("dropped", atomic.LoadInt64(&b.droppedEvents)).Str("event_type", string(event.Type)).Msg("events: queue full, dropping event")
 			go b.safeCall(h, event)
 		}
 	}
@@ -177,4 +203,9 @@ func (mb *MiddlewareBus) Subscribe(eventType EventType, handler Handler) {
 		handler = mb.middleware[i](handler)
 	}
 	mb.Bus.Subscribe(eventType, handler)
+}
+
+// GetMetrics — делегирование метрик родительскому Bus.
+func (mb *MiddlewareBus) GetMetrics() BusMetrics {
+	return mb.Bus.GetMetrics()
 }

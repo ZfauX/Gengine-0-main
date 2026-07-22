@@ -16,6 +16,13 @@ import (
 	"gorm.io/gorm"
 )
 
+// MonitorServiceInterface определяет методы мониторинга, используемые другими сервисами.
+type MonitorServiceInterface interface {
+	GetOrFetchSnapshot(ctx context.Context, gameID uint) ([]TeamProgress, error)
+	InvalidateCache(gameID uint)
+	CalculateResults(ctx context.Context, gameID uint) error
+}
+
 // MonitorService собирает сводную информацию о прохождении игры.
 type MonitorService struct {
 	DB       *gorm.DB
@@ -108,7 +115,11 @@ func (s *MonitorService) GetOrFetchSnapshot(ctx context.Context, gameID uint) ([
 	if err != nil {
 		return nil, err
 	}
-	return result.([]TeamProgress), nil
+	teamProgress, ok := result.([]TeamProgress)
+	if !ok {
+		return nil, fmt.Errorf("unexpected type for result")
+	}
+	return teamProgress, nil
 }
 
 // InvalidateCache удаляет кэшированный снимок игры (вызывается при изменениях).
@@ -311,40 +322,42 @@ func (s *MonitorService) CalculateResults(ctx context.Context, gameID uint) erro
 	var durationWHENs []string
 	var durationArgs []any
 	var placeWHENs []string
-	var whereIDsStr []string
+	var placeArgs []any
 
-	// Сортируем результаты по длительности (для корректного назначения мест)
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Duration < results[j].Duration
 	})
 
-	// Назначаем места с учётом ничьих (одинаковое время = одинаковое место)
 	lastPlace := 0
 	for i, res := range results {
-		durationWHENs = append(durationWHENs, fmt.Sprintf("WHEN %d THEN ?", res.ID))
-		durationArgs = append(durationArgs, res.Duration)
+		durationWHENs = append(durationWHENs, "WHEN ? THEN ?")
+		durationArgs = append(durationArgs, res.ID, res.Duration)
 
-		// Вычисляем место: если предыдущий результат имеет ту же длительность — то же место
 		place := i + 1
 		if i > 0 && results[i].Duration == results[i-1].Duration {
-			// Извлекаем место из предыдущего placeWHENs
-			// placeWHENs[i-1] имеет формат "WHEN X THEN Y"
 			place = lastPlace
 		}
 		lastPlace = place
-		placeWHENs = append(placeWHENs, fmt.Sprintf("WHEN %d THEN %d", res.ID, place))
-		whereIDsStr = append(whereIDsStr, fmt.Sprintf("%d", res.ID))
+		placeWHENs = append(placeWHENs, "WHEN ? THEN ?")
+		placeArgs = append(placeArgs, res.ID, place)
 	}
 
-	idList := "(" + strings.Join(whereIDsStr, ", ") + ")"
+	var idPlaceholders []string
+	for range results {
+		idPlaceholders = append(idPlaceholders, "?")
+	}
 
 	query := fmt.Sprintf(
-		"UPDATE game_passings SET result_duration = CASE id %s ELSE result_duration END, place = CASE id %s ELSE place END WHERE id IN %s",
+		"UPDATE game_passings SET result_duration = CASE id %s ELSE result_duration END, place = CASE id %s ELSE place END WHERE id IN (%s)",
 		strings.Join(durationWHENs, " "),
 		strings.Join(placeWHENs, " "),
-		idList,
+		strings.Join(idPlaceholders, ", "),
 	)
-	if err := s.DB.Exec(query, durationArgs...).Error; err != nil {
+	allArgs := append(durationArgs, placeArgs...)
+	for _, res := range results {
+		allArgs = append(allArgs, res.ID)
+	}
+	if err := s.DB.Exec(query, allArgs...).Error; err != nil {
 		return err
 	}
 	return nil

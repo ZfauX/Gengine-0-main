@@ -5,22 +5,23 @@ import (
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/user"
+
 	"gorm.io/gorm"
 )
 
 type Tournament struct {
 	gorm.Model
-	Name                 string    `form:"name" binding:"required,min=2,max=200"`
-	Description          string    `form:"description" binding:"max=5000"`
-	AuthorID             uint      `gorm:"not null;index"`
-	Author               user.User `gorm:"foreignKey:AuthorID"`
-	PointsForFirst       int       `gorm:"default:10"`
-	PointsForSecond      int       `gorm:"default:7"`
-	PointsForThird       int       `gorm:"default:5"`
-	PointsForParticipation int     `gorm:"default:2"`
-	Games                []TournamentGame   `gorm:"foreignKey:TournamentID"`
-	Teams                []TournamentTeam   `gorm:"foreignKey:TournamentID"`
-	Results              []TournamentResult `gorm:"foreignKey:TournamentID"`
+	Name                   string             `form:"name" binding:"required,min=2,max=200"`
+	Description            string             `form:"description" binding:"max=5000"`
+	AuthorID               uint               `gorm:"not null;index"`
+	Author                 user.User          `gorm:"foreignKey:AuthorID"`
+	PointsForFirst         int                `gorm:"default:10"`
+	PointsForSecond        int                `gorm:"default:7"`
+	PointsForThird         int                `gorm:"default:5"`
+	PointsForParticipation int                `gorm:"default:2"`
+	Games                  []TournamentGame   `gorm:"foreignKey:TournamentID"`
+	Teams                  []TournamentTeam   `gorm:"foreignKey:TournamentID"`
+	Results                []TournamentResult `gorm:"foreignKey:TournamentID"`
 }
 
 type TournamentGame struct {

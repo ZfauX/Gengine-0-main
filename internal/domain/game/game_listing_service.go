@@ -119,7 +119,7 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 
 	// Используем подзапрос с оконной функцией для получения total_count
 	windowSQL := `SELECT sub.*, COUNT(*) OVER() AS total_count FROM (` + sql + `) sub`
-	
+
 	type gameRow struct {
 		Game
 		TotalCount int64

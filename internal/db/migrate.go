@@ -29,9 +29,10 @@ func MigrateFromFiles(db *gorm.DB, migrationsDir string) error {
 	}
 
 	// Проверяем существование папки с миграциями
-	if _, err := os.Stat(migrationsDir); os.IsNotExist(err) {
-		if err := os.MkdirAll(migrationsDir, 0755); err != nil {
-			return fmt.Errorf("не удалось создать папку миграций: %w", err)
+	_, statErr := os.Stat(migrationsDir)
+	if os.IsNotExist(statErr) {
+		if mkdirErr := os.MkdirAll(migrationsDir, 0755); mkdirErr != nil {
+			return fmt.Errorf("не удалось создать папку миграций: %w", mkdirErr)
 		}
 		log.Warn().Str("dir", migrationsDir).Msg("Папка миграций создана, но файлы отсутствуют. Создайте их вручную.")
 		return nil
@@ -53,14 +54,14 @@ func MigrateFromFiles(db *gorm.DB, migrationsDir string) error {
 		log.Warn().Uint("version", version).Msg("Миграции в грязном состоянии. Попытка принудительного применения...")
 	}
 
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		return fmt.Errorf("ошибка применения миграций: %w", err)
+	if upErr := m.Up(); upErr != nil && upErr != migrate.ErrNoChange {
+		return fmt.Errorf("ошибка применения миграций: %w", upErr)
 	}
 
-	newVersion, dirtyAfter, err := m.Version()
-	if err == nil && dirtyAfter {
+	newVersion, dirtyAfter, versionErr := m.Version()
+	if versionErr == nil && dirtyAfter {
 		log.Warn().Uint("version", newVersion).Msg("Миграции в грязном состоянии после применения")
-	} else if err == nil {
+	} else if versionErr == nil {
 		log.Info().Uint("version", newVersion).Msg("Миграции успешно применены")
 	} else {
 		log.Info().Msg("Миграции успешно применены (версия неизвестна)")
@@ -70,7 +71,7 @@ func MigrateFromFiles(db *gorm.DB, migrationsDir string) error {
 
 // CreateMigrationFile создаёт новый файл миграции с указанным именем.
 func CreateMigrationFile(migrationsDir, name string) (upPath, downPath string, err error) {
-	if err := os.MkdirAll(migrationsDir, 0755); err != nil {
+	if err = os.MkdirAll(migrationsDir, 0755); err != nil {
 		return "", "", err
 	}
 
@@ -78,10 +79,10 @@ func CreateMigrationFile(migrationsDir, name string) (upPath, downPath string, e
 	upPath = filepath.Join(migrationsDir, fmt.Sprintf("%s_%s.up.sql", timestamp, name))
 	downPath = filepath.Join(migrationsDir, fmt.Sprintf("%s_%s.down.sql", timestamp, name))
 
-	if err := os.WriteFile(upPath, []byte("-- "+name+" up\n"), 0644); err != nil {
+	if err = os.WriteFile(upPath, []byte("-- "+name+" up\n"), 0644); err != nil {
 		return "", "", err
 	}
-	if err := os.WriteFile(downPath, []byte("-- "+name+" down\n"), 0644); err != nil {
+	if err = os.WriteFile(downPath, []byte("-- "+name+" down\n"), 0644); err != nil {
 		return "", "", err
 	}
 	return upPath, downPath, nil

@@ -90,7 +90,6 @@ func (h *RoomHub) cleanupInactiveClients() cleanupResult {
 
 		// Удаляем неактивных клиентов из комнаты
 		for _, client := range clientsToRemove {
-			_ = client.Conn.Close()
 			client.Close()
 			delete(room, client)
 			// Уменьшаем счётчики напрямую (decConnection тоже блокирует mu.Lock(), что вызовет дедлок)

@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"mime/multipart"
-	"slices"
 
 	"gengine-0/internal/pkg/storage"
+	"gengine-0/internal/pkg/validation"
 
 	"github.com/rs/zerolog/log"
 )
+
+const coverMaxSize = 5 * 1024 * 1024
 
 // GameCoverService отвечает за работу с обложками игр.
 type GameCoverService struct {
@@ -120,17 +122,17 @@ func (s *GameCoverService) saveCoverFile(fileHeader *multipart.FileHeader, userI
 	}
 	defer func() { _ = file.Close() }()
 
-	if fileHeader.Size > 5*1024*1024 {
+	if fileHeader.Size > coverMaxSize {
 		return "", errors.New("размер файла не должен превышать 5 МБ")
 	}
 
-	allowedTypes := []string{"image/jpeg", "image/png", "image/webp"}
+	allowedTypes := validation.AllowedImageTypes
 	contentType := fileHeader.Header.Get("Content-Type")
-	if !slices.Contains(allowedTypes, contentType) {
+	if !validation.IsAllowedType(contentType, allowedTypes) {
 		return "", errors.New("допустимы только JPEG, PNG и WebP")
 	}
 
-	webPath, err := s.storage.Save("uploads/covers", file, fileHeader.Filename, userID, 5*1024*1024, allowedTypes)
+	webPath, err := s.storage.Save("uploads/covers", file, fileHeader.Filename, userID, coverMaxSize, allowedTypes)
 	if err != nil {
 		return "", fmt.Errorf("ошибка сохранения обложки: %w", err)
 	}

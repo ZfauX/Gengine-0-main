@@ -13,6 +13,11 @@ import (
 	"time"
 )
 
+const (
+	fileHeaderReadBytes = 512
+	defaultMaxFileSize  = 50 * 1024 * 1024
+)
+
 // LocalStorage реализует FileStorage через локальную файловую систему.
 type LocalStorage struct {
 	baseDir string
@@ -76,11 +81,10 @@ func (s *LocalStorage) Save(baseDir string, reader io.Reader, originalName strin
 		return "", fmt.Errorf("недопустимое расширение файла: %s", ext)
 	}
 
-	// Читаем первые 512 байт для проверки MIME-типа
-	var header [512]byte
+	var header [fileHeaderReadBytes]byte
 	n, err := io.ReadFull(reader, header[:])
 	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
-		return "", fmt.Errorf("не удалось прочитать заголовок файла: %w", err)
+		return "", fmt.Errorf("не удалось прочитать заголовок файла")
 	}
 
 	// Проверка MIME-типа, если заданы разрешённые
@@ -106,13 +110,14 @@ func (s *LocalStorage) Save(baseDir string, reader io.Reader, originalName strin
 	dataReader := io.MultiReader(bytes.NewReader(header[:n]), reader)
 
 	// Ограничиваем размер на уровне reader — предотвращает переполнение диска
-	if maxSize > 0 {
-		dataReader = io.LimitReader(dataReader, maxSize+1) // +1 чтобы обнаружить превышение
+	if maxSize <= 0 {
+		maxSize = defaultMaxFileSize
 	}
+	dataReader = io.LimitReader(dataReader, maxSize+1) // +1 чтобы обнаружить превышение
 
 	// Создаём директорию
-	if err := os.MkdirAll(baseDir, 0755); err != nil {
-		return "", fmt.Errorf("не удалось создать директорию %s: %w", baseDir, err)
+	if mkdirErr := os.MkdirAll(baseDir, 0755); mkdirErr != nil {
+		return "", fmt.Errorf("не удалось создать директорию для загрузки: %w", mkdirErr)
 	}
 
 	filename := fmt.Sprintf("%d_%d%s", userID, time.Now().UnixNano(), ext)
@@ -131,14 +136,15 @@ func (s *LocalStorage) Save(baseDir string, reader io.Reader, originalName strin
 		return "", fmt.Errorf("путь файла выходит за пределы директории хранения")
 	}
 
-	dst, err := os.Create(fullPath)
-	if err != nil {
-		return "", fmt.Errorf("не удалось создать файл: %w", err)
+	dst, createErr := os.Create(fullPath)
+	if createErr != nil {
+		return "", fmt.Errorf("не удалось создать файл")
 	}
 	// Закрываем файл после записи, но если запись не удалась, удаляем его
+	fileErr := createErr
 	defer func() {
 		_ = dst.Close()
-		if err != nil {
+		if fileErr != nil {
 			_ = os.Remove(fullPath)
 		}
 	}()
@@ -146,23 +152,14 @@ func (s *LocalStorage) Save(baseDir string, reader io.Reader, originalName strin
 	var written int64
 	written, err = io.Copy(dst, dataReader)
 	if err != nil && err != io.EOF {
-		return "", fmt.Errorf("не удалось записать файл: %w", err)
+		return "", fmt.Errorf("не удалось записать файл")
 	}
 
 	// Проверяем, не превышен ли лимит (io.LimitReader может вернуть io.EOF раньше)
-	if maxSize > 0 && written > maxSize {
+	if written > maxSize {
 		_ = dst.Close()
 		_ = os.Remove(fullPath)
 		return "", fmt.Errorf("размер файла превышает допустимый лимит %d байт", maxSize)
-	} else if maxSize == 0 {
-		// Если лимит не задан, проверяем фактический размер (по умолчанию 50 MB)
-		maxSize = 50 * 1024 * 1024
-		info, err := os.Stat(fullPath)
-		if err == nil && info.Size() > maxSize {
-			_ = dst.Close()
-			_ = os.Remove(fullPath)
-			return "", fmt.Errorf("размер файла превышает допустимый лимит %d байт", maxSize)
-		}
 	}
 
 	return "/" + filepath.ToSlash(fullPath), nil

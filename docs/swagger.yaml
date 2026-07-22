@@ -343,6 +343,53 @@ paths:
       summary: Импорт игры из CSV
       tags:
       - export
+  /games/{id}/teams/{team_id}/export-results:
+    get:
+      description: Выгружает результаты конкретной команды в CSV-формат (доступно
+        капитану или автору игры)
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID команды
+        in: path
+        name: team_id
+        required: true
+        type: integer
+      produces:
+      - text/csv
+      responses:
+        "200":
+          description: CSV-файл с результатами команды
+          schema:
+            type: file
+        "400":
+          description: Неверный ID
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Недостаточно прав
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Внутренняя ошибка
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Экспорт результатов команды в CSV
+      tags:
+      - export
 securityDefinitions:
   JWT:
     in: cookie
