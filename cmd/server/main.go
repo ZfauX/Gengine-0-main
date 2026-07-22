@@ -35,30 +35,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const (
-	sentryFlushTimeout          = 2 * time.Second
-	dbRetryInitialDelay         = 2 * time.Second
-	dbMaxRetryAttempts          = 5
-	rateLimitWindow             = 1 * time.Minute
-	globalRateLimit             = 100
-	loginRateLimit              = 5
-	registrationRateLimit       = 3
-	codeSubmissionRateLimit     = 10
-	sseRateLimit                = 10
-	apiRateLimit                = 60
-	emailQueueWorkers           = 5
-	emailQueueInterval          = 10 * time.Second
-	emailQueueBatchSize         = 10
-	cacheDefaultTTL             = 10 * time.Minute
-	cacheCleanupInterval        = 5 * time.Minute
-	poolMonitorInterval         = 1 * time.Minute
-	refreshTokenCleanupInterval = 1 * time.Hour
-	serverReadTimeout           = 15 * time.Second
-	serverWriteTimeout          = 30 * time.Second
-	serverIdleTimeout           = 120 * time.Second
-	shutdownTimeout             = 10 * time.Second
-)
-
 // @title Gengine API
 // @version 1.0
 // @description API для платформы квестов Gengine
@@ -106,6 +82,7 @@ func run() error {
 	// ИНИЦИАЛИЗАЦИЯ SENTRY
 	// ============================================================
 	var sentryWriter *logging.SentryWriter
+	sentryFlushTimeout := config.SentryFlushTimeout
 	if cfg.Sentry.Enabled && cfg.Sentry.DSN != "" {
 		sentryErr := sentry.Init(sentry.ClientOptions{
 			Dsn:              cfg.Sentry.DSN,
@@ -174,7 +151,7 @@ func run() error {
 	gin.SetMode(cfg.Server.GinMode)
 
 	// --- Подключение к БД ---
-	database, err := connectDBWithRetry(cfg, dbMaxRetryAttempts, dbRetryInitialDelay)
+	database, err := connectDBWithRetry(cfg, config.DBMaxRetryAttempts, config.DBRetryInitialDelay)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to connect to DB after several attempts")
 		return fmt.Errorf("failed to connect to DB after several attempts: %w", err)
@@ -206,25 +183,25 @@ func run() error {
 	if cfg.Valkey.Host != "" {
 		valkeyClient := cache.NewValkeyClient(cfg.Valkey.Host, cfg.Valkey.Port, cfg.Valkey.Password)
 		if valkeyClient != nil {
-			middleware.InitGlobalRateLimiterWithValkey(valkeyClient, rateLimitWindow, globalRateLimit)
-			middleware.InitLoginRateLimiterWithValkey(valkeyClient, rateLimitWindow, loginRateLimit)
-			middleware.InitRegistrationRateLimiterWithValkey(valkeyClient, rateLimitWindow, registrationRateLimit)
-			middleware.InitCodeSubmissionRateLimiterWithValkey(valkeyClient, rateLimitWindow, codeSubmissionRateLimit)
-			middleware.InitSSERateLimiterWithValkey(valkeyClient, rateLimitWindow, sseRateLimit)
-			middleware.InitAPIRateLimiterWithValkey(valkeyClient, rateLimitWindow, apiRateLimit)
+			middleware.InitGlobalRateLimiterWithValkey(valkeyClient, config.RateLimitWindow, config.GlobalRateLimit)
+			middleware.InitLoginRateLimiterWithValkey(valkeyClient, config.RateLimitWindow, config.LoginRateLimit)
+			middleware.InitRegistrationRateLimiterWithValkey(valkeyClient, config.RateLimitWindow, config.RegistrationRateLimit)
+			middleware.InitCodeSubmissionRateLimiterWithValkey(valkeyClient, config.RateLimitWindow, config.CodeSubmissionRateLimit)
+			middleware.InitSSERateLimiterWithValkey(valkeyClient, config.RateLimitWindow, config.SSERateLimit)
+			middleware.InitAPIRateLimiterWithValkey(valkeyClient, config.RateLimitWindow, config.APIRateLimit)
 		}
 	} else {
-		middleware.InitGlobalRateLimiter(rateLimitWindow, globalRateLimit)
-		middleware.InitLoginRateLimiter(rateLimitWindow, loginRateLimit)
-		middleware.InitRegistrationRateLimiter(rateLimitWindow, registrationRateLimit)
-		middleware.InitCodeSubmissionRateLimiter(rateLimitWindow, codeSubmissionRateLimit)
-		middleware.InitSSERateLimiter(rateLimitWindow, sseRateLimit)
-		middleware.InitAPIRateLimiter(rateLimitWindow, apiRateLimit)
+		middleware.InitGlobalRateLimiter(config.RateLimitWindow, config.GlobalRateLimit)
+		middleware.InitLoginRateLimiter(config.RateLimitWindow, config.LoginRateLimit)
+		middleware.InitRegistrationRateLimiter(config.RateLimitWindow, config.RegistrationRateLimit)
+		middleware.InitCodeSubmissionRateLimiter(config.RateLimitWindow, config.CodeSubmissionRateLimit)
+		middleware.InitSSERateLimiter(config.RateLimitWindow, config.SSERateLimit)
+		middleware.InitAPIRateLimiter(config.RateLimitWindow, config.APIRateLimit)
 	}
 
 	// --- Инициализация persistent-очереди email (только если SMTP включён) ---
 	if cfg.SMTP.Enabled {
-		email.InitQueue(cfg, database, emailQueueWorkers, emailQueueInterval, emailQueueBatchSize)
+		email.InitQueue(cfg, database, config.EmailQueueWorkers, config.EmailQueueInterval, config.EmailQueueBatchSize)
 	} else {
 		log.Info().Msg("SMTP disabled, email queue not started")
 	}
@@ -235,14 +212,14 @@ func run() error {
 		appCache = cache.NewValkeyCache(cfg.Valkey.Host, cfg.Valkey.Port, cfg.Valkey.Password)
 		if appCache == nil {
 			log.Warn().Msg("Valkey unavailable, using in-memory cache")
-			appCache, err = cache.NewCache(cacheDefaultTTL, cacheCleanupInterval)
+			appCache, err = cache.NewCache(config.CacheDefaultTTL, config.CacheCleanupInterval)
 			if err != nil {
 				return fmt.Errorf("failed to create in-memory cache: %w", err)
 			}
 		}
 	} else {
 		log.Info().Msg("Valkey not configured, using in-memory cache")
-		appCache, err = cache.NewCache(cacheDefaultTTL, cacheCleanupInterval)
+		appCache, err = cache.NewCache(config.CacheDefaultTTL, config.CacheCleanupInterval)
 		if err != nil {
 			return fmt.Errorf("failed to create in-memory cache: %w", err)
 		}
@@ -287,7 +264,7 @@ func run() error {
 
 	// Мониторинг connection pool (раз в минуту)
 	goSafe(func() {
-		ticker := time.NewTicker(poolMonitorInterval)
+		ticker := time.NewTicker(config.PoolMonitorInterval)
 		defer ticker.Stop()
 		for {
 			select {
@@ -317,7 +294,7 @@ func run() error {
 
 	// Фоновая очистка просроченных refresh-токенов (раз в час)
 	goSafe(func() {
-		ticker := time.NewTicker(refreshTokenCleanupInterval)
+		ticker := time.NewTicker(config.RefreshTokenCleanupInterval)
 		defer ticker.Stop()
 		for {
 			select {
@@ -337,9 +314,9 @@ func run() error {
 	srv := &http.Server{
 		Addr:         ":" + cfg.Server.Port,
 		Handler:      r,
-		ReadTimeout:  serverReadTimeout,
-		WriteTimeout: serverWriteTimeout,
-		IdleTimeout:  serverIdleTimeout,
+		ReadTimeout:  config.ServerReadTimeout,
+		WriteTimeout: config.ServerWriteTimeout,
+		IdleTimeout:  config.ServerIdleTimeout,
 	}
 
 	goSafe(func() {
@@ -380,7 +357,7 @@ func run() error {
 	middleware.StopAPIRateLimiter()
 
 	// 2. Останавливаем HTTP-сервер (ожидаем завершения текущих запросов)
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), config.ShutdownTimeout)
 	defer shutdownCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {

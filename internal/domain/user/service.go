@@ -192,9 +192,28 @@ func (s *AuthService) ParseToken(tokenStr string) (uint, string, error) {
 		}
 	}
 
-	userIDFloat, ok := claims["user_id"].(float64)
+	// Проверяем user_id с проверкой типа
+	userIDFloat, ok := claims["user_id"]
 	if !ok {
-		return 0, "", errors.New("неверный ID пользователя в токене")
+		return 0, "", errors.New("отсутствует user_id в токене")
+	}
+
+	var userID uint
+	switch v := userIDFloat.(type) {
+	case float64:
+		userID = uint(v)
+	case json.Number:
+		parsed, parseErr := v.Int64()
+		if parseErr != nil {
+			return 0, "", errors.New("невалидный формат user_id в токене")
+		}
+		userID = uint(parsed)
+	default:
+		return 0, "", errors.New("неверный тип user_id в токене")
+	}
+
+	if userID == 0 {
+		return 0, "", errors.New("невалидный ID пользователя в токене")
 	}
 
 	role := "user"
@@ -202,7 +221,7 @@ func (s *AuthService) ParseToken(tokenStr string) (uint, string, error) {
 		role = roleVal
 	}
 
-	return uint(userIDFloat), role, nil
+	return userID, role, nil
 }
 
 func (s *AuthService) generateJWT(user User) (string, error) {

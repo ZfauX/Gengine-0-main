@@ -31,7 +31,7 @@ type Game struct {
 	Description          string     `form:"description" binding:"max=2000"`
 	AuthorID             uint       `gorm:"not null;index:idx_games_author"`
 	Author               user.User  `gorm:"foreignKey:AuthorID"`
-	IsDraft              bool       `gorm:"default:true"`
+	IsDraft              bool       `gorm:"index:idx_games_author_status"`
 	Visibility           string     `gorm:"default:'public';index:idx_games_visibility"`
 	StartsAt             *time.Time `form:"starts_at" time_format:"2006-01-02T15:04"`
 	RegistrationDeadline *time.Time `form:"registration_deadline" time_format:"2006-01-02T15:04"`

@@ -16,8 +16,8 @@ import (
 func generateNonce() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		log.Error().Err(err).Msg("crypto/rand unavailable, using fallback nonce")
-		return base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
+		log.Warn().Err(err).Msg("crypto/rand failed, using time-based fallback for nonce")
+		b = []byte(fmt.Sprintf("%x", time.Now().UnixNano()))
 	}
 	return base64.RawURLEncoding.EncodeToString(b)
 }
