@@ -49,7 +49,7 @@ func NewProfileHandler(db *gorm.DB, st storage.FileStorage, authSvc *AuthService
 func (h *ProfileHandler) Show(c *gin.Context) {
 	userID := c.GetUint("userID")
 	var user User
-	if err := h.db.Preload("Achievements").First(&user, userID).Error; err != nil {
+	if err := h.db.WithContext(c.Request.Context()).Preload("Achievements").First(&user, userID).Error; err != nil {
 		render.RenderErrorPage(c, http.StatusNotFound)
 		return
 	}
@@ -58,6 +58,10 @@ func (h *ProfileHandler) Show(c *gin.Context) {
 		"Achievements":  user.Achievements,
 		"CurrentUserID": userID,
 		"csrf":          csrf.GetToken(c),
+		"Breadcrumbs": []map[string]string{
+			{"name": "Главная", "url": "/"},
+			{"name": "Профиль"},
+		},
 	})
 }
 
@@ -81,7 +85,7 @@ func (h *ProfileHandler) PublicProfile(c *gin.Context) {
 	currentUserID := c.GetUint("userID")
 
 	var user User
-	if err := h.db.Preload("Achievements").First(&user, userID).Error; err != nil {
+	if err := h.db.WithContext(c.Request.Context()).Preload("Achievements").First(&user, userID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			render.RenderErrorPage(c, http.StatusNotFound)
 		} else {
@@ -128,6 +132,11 @@ func (h *ProfileHandler) PublicProfile(c *gin.Context) {
 		"IsFollowing":   isFollowing,
 		"RecentGames":   recentGames,
 		"csrf":          csrf.GetToken(c),
+		"Breadcrumbs": []map[string]string{
+			{"name": "Главная", "url": "/"},
+			{"name": "Пользователи", "url": "/users"},
+			{"name": pubUser.Name},
+		},
 	})
 }
 
@@ -157,7 +166,11 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/profile")
 		return
 	}
-	defer func() { _ = file.Close() }()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			log.Debug().Err(closeErr).Msg("profile: file close")
+		}
+	}()
 
 	log.Info().
 		Uint("user_id", userID).

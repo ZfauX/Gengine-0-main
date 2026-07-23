@@ -120,7 +120,11 @@ func (s *GameCoverService) saveCoverFile(fileHeader *multipart.FileHeader, userI
 	if err != nil {
 		return "", fmt.Errorf("не удалось открыть файл: %w", err)
 	}
-	defer func() { _ = file.Close() }()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			log.Debug().Err(closeErr).Msg("game_cover: file close")
+		}
+	}()
 
 	if fileHeader.Size > coverMaxSize {
 		return "", errors.New("размер файла не должен превышать 5 МБ")

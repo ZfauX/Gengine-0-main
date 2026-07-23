@@ -147,6 +147,9 @@ func (h *LevelHandler) ListByGame(c *gin.Context) {
 		return
 	}
 
+	var gameName string
+	h.db.Table("games").Select("name").Where("id = ?", gameID).Scan(&gameName)
+
 	isAdmin := middleware.IsAdmin(c)
 
 	data := gin.H{
@@ -159,6 +162,7 @@ func (h *LevelHandler) ListByGame(c *gin.Context) {
 	render.SetBreadcrumb(data,
 		render.BreadcrumbItem{Name: "Главная", URL: "/"},
 		render.BreadcrumbItem{Name: "Игры", URL: "/games"},
+		render.BreadcrumbItem{Name: gameName, URL: "/games/" + strconv.Itoa(gameID)},
 		render.BreadcrumbItem{Name: "Уровни"},
 	)
 
@@ -182,13 +186,25 @@ func (h *LevelHandler) NewForm(c *gin.Context) {
 		return
 	}
 	userID := c.GetUint("userID")
+
+	var gameName string
+	h.db.Table("games").Select("name").Where("id = ?", gameID).Scan(&gameName)
+
 	isAdmin := middleware.IsAdmin(c)
-	render.Page(c, http.StatusOK, "levels-new.html", gin.H{
+	data := gin.H{
 		"GameID":        gameID,
 		"csrf":          csrf.GetToken(c),
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,
-	})
+	}
+	render.SetBreadcrumb(data,
+		render.BreadcrumbItem{Name: "Главная", URL: "/"},
+		render.BreadcrumbItem{Name: "Игры", URL: "/games"},
+		render.BreadcrumbItem{Name: gameName, URL: "/games/" + strconv.Itoa(gameID)},
+		render.BreadcrumbItem{Name: "Уровни", URL: "/games/" + strconv.Itoa(gameID) + "/levels"},
+		render.BreadcrumbItem{Name: "Создание уровня"},
+	)
+	render.Page(c, http.StatusOK, "levels-new.html", data)
 }
 
 // Create создаёт новый уровень.
@@ -319,13 +335,24 @@ func (h *LevelHandler) EditForm(c *gin.Context) {
 
 	gameID := level.GameID
 
-	render.Page(c, http.StatusOK, "levels-edit.html", gin.H{
+	var gameName string
+	h.db.Table("games").Select("name").Where("id = ?", gameID).Scan(&gameName)
+
+	data := gin.H{
 		"Level":         level,
 		"GameID":        gameID,
 		"csrf":          csrf.GetToken(c),
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,
-	})
+	}
+	render.SetBreadcrumb(data,
+		render.BreadcrumbItem{Name: "Главная", URL: "/"},
+		render.BreadcrumbItem{Name: "Игры", URL: "/games"},
+		render.BreadcrumbItem{Name: gameName, URL: "/games/" + strconv.Itoa(int(gameID))},
+		render.BreadcrumbItem{Name: "Уровни", URL: "/games/" + strconv.Itoa(int(gameID)) + "/levels"},
+		render.BreadcrumbItem{Name: level.Name},
+	)
+	render.Page(c, http.StatusOK, "levels-edit.html", data)
 }
 
 // Update обновляет уровень.
@@ -569,14 +596,26 @@ func (h *LevelHandler) ListQuestions(c *gin.Context) {
 
 	isAdmin := middleware.IsAdmin(c)
 
-	render.Page(c, http.StatusOK, "questions-list.html", gin.H{
+	var gameName string
+	h.db.Table("games").Select("name").Where("id = ?", level.GameID).Scan(&gameName)
+
+	data := gin.H{
 		"LevelID":       levelID,
 		"GameID":        level.GameID,
 		"Questions":     questions,
 		"csrf":          csrf.GetToken(c),
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,
-	})
+	}
+	render.SetBreadcrumb(data,
+		render.BreadcrumbItem{Name: "Главная", URL: "/"},
+		render.BreadcrumbItem{Name: "Игры", URL: "/games"},
+		render.BreadcrumbItem{Name: gameName, URL: "/games/" + strconv.Itoa(int(level.GameID))},
+		render.BreadcrumbItem{Name: "Уровни", URL: "/games/" + strconv.Itoa(int(level.GameID)) + "/levels"},
+		render.BreadcrumbItem{Name: level.Name, URL: "/games/" + strconv.Itoa(int(level.GameID)) + "/levels/" + strconv.Itoa(levelID)},
+		render.BreadcrumbItem{Name: "Вопросы"},
+	)
+	render.Page(c, http.StatusOK, "questions-list.html", data)
 }
 
 // NewQuestionForm отображает форму создания вопроса.
@@ -879,7 +918,10 @@ func (h *LevelHandler) ListAnswers(c *gin.Context) {
 
 	isAdmin := middleware.IsAdmin(c)
 
-	render.Page(c, http.StatusOK, "answers-index.html", gin.H{
+	var gameName string
+	h.db.Table("games").Select("name").Where("id = ?", level.GameID).Scan(&gameName)
+
+	data := gin.H{
 		"QuestionID":    questionID,
 		"GameID":        level.GameID,
 		"LevelID":       question.LevelID,
@@ -887,7 +929,17 @@ func (h *LevelHandler) ListAnswers(c *gin.Context) {
 		"csrf":          csrf.GetToken(c),
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,
-	})
+	}
+	render.SetBreadcrumb(data,
+		render.BreadcrumbItem{Name: "Главная", URL: "/"},
+		render.BreadcrumbItem{Name: "Игры", URL: "/games"},
+		render.BreadcrumbItem{Name: gameName, URL: "/games/" + strconv.Itoa(int(level.GameID))},
+		render.BreadcrumbItem{Name: "Уровни", URL: "/games/" + strconv.Itoa(int(level.GameID)) + "/levels"},
+		render.BreadcrumbItem{Name: level.Name, URL: "/games/" + strconv.Itoa(int(level.GameID)) + "/levels/" + strconv.Itoa(int(level.ID))},
+		render.BreadcrumbItem{Name: "Вопросы", URL: "/games/" + strconv.Itoa(int(level.GameID)) + "/levels/" + strconv.Itoa(int(level.ID)) + "/questions"},
+		render.BreadcrumbItem{Name: "Ответы"},
+	)
+	render.Page(c, http.StatusOK, "answers-index.html", data)
 }
 
 // CreateAnswer создаёт новый ответ.

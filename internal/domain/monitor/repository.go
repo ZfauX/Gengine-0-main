@@ -83,7 +83,9 @@ func (r *gormChatRepo) SaveMessage(ctx context.Context, roomID, userID uint, con
 	if err := r.db.WithContext(ctx).Create(&msg).Error; err != nil {
 		return nil, err
 	}
-	r.db.WithContext(ctx).Preload("User").First(&msg, msg.ID)
+	if err := r.db.WithContext(ctx).Preload("User").First(&msg, msg.ID).Error; err != nil {
+		return nil, err
+	}
 	return &msg, nil
 }
 
@@ -117,13 +119,19 @@ func (r *gormBlackboxRepo) CreateSession(ctx context.Context, session *BlackboxV
 func (r *gormBlackboxRepo) GetSessionByPassingAndLevel(ctx context.Context, passingID, levelID uint) (*BlackboxVotingSession, error) {
 	var session BlackboxVotingSession
 	err := r.db.WithContext(ctx).Where("game_passing_id = ? AND level_id = ?", passingID, levelID).First(&session).Error
-	return &session, err
+	if err != nil {
+		return nil, err
+	}
+	return &session, nil
 }
 
 func (r *gormBlackboxRepo) GetSessionByID(ctx context.Context, id uint) (*BlackboxVotingSession, error) {
 	var session BlackboxVotingSession
 	err := r.db.WithContext(ctx).First(&session, id).Error
-	return &session, err
+	if err != nil {
+		return nil, err
+	}
+	return &session, nil
 }
 
 func (r *gormBlackboxRepo) UpdateSession(ctx context.Context, session *BlackboxVotingSession) error {
@@ -143,5 +151,8 @@ func (r *gormBlackboxRepo) GetVotesBySession(ctx context.Context, sessionID uint
 func (r *gormBlackboxRepo) GetVoteBySessionAndVoter(ctx context.Context, sessionID, voterID uint) (*BlackboxVote, error) {
 	var vote BlackboxVote
 	err := r.db.WithContext(ctx).Where("session_id = ? AND voter_id = ?", sessionID, voterID).First(&vote).Error
-	return &vote, err
+	if err != nil {
+		return nil, err
+	}
+	return &vote, nil
 }

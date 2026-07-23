@@ -2,6 +2,7 @@
 package game
 
 import (
+	"container/list"
 	"context"
 	"fmt"
 	"sort"
@@ -9,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"gengine-0/internal/domain/level"
 	"gengine-0/internal/pkg/util"
 
 	"golang.org/x/sync/singleflight"
@@ -25,11 +25,13 @@ type MonitorServiceInterface interface {
 
 // MonitorService собирает сводную информацию о прохождении игры.
 type MonitorService struct {
-	DB       *gorm.DB
-	cache    map[uint]*cachedSnapshot
-	cacheTTL time.Duration
-	mu       sync.RWMutex
-	sfGroup  singleflight.Group // предотвращает множественные одновременные запросы к БД
+	DB        *gorm.DB
+	cache     map[uint]*cachedSnapshot
+	cacheList *list.List
+	cacheKeys map[uint]*list.Element
+	cacheTTL  time.Duration
+	mu        sync.RWMutex
+	sfGroup   singleflight.Group
 }
 
 type cachedSnapshot struct {
@@ -38,11 +40,14 @@ type cachedSnapshot struct {
 }
 
 func NewMonitorService(db *gorm.DB) *MonitorService {
-	return &MonitorService{
+	s := &MonitorService{
 		DB:       db,
 		cache:    make(map[uint]*cachedSnapshot),
 		cacheTTL: 30 * time.Second,
 	}
+	s.cacheList = list.New()
+	s.cacheKeys = make(map[uint]*list.Element)
+	return s
 }
 
 // TeamProgress содержит агрегированные данные о прогрессе одной команды.
@@ -91,22 +96,20 @@ func (s *MonitorService) GetOrFetchSnapshot(ctx context.Context, gameID uint) ([
 		// Сохраняем в кэш с лимитом: максимум 50 записей, вытеснение старых
 		s.mu.Lock()
 		if len(s.cache) > 50 {
-			oldest := time.Now()
-			oldestID := uint(0)
-			for id, cached := range s.cache {
-				if cached.timestamp.Before(oldest) {
-					oldest = cached.timestamp
-					oldestID = id
+			front := s.cacheList.Front()
+			if front != nil {
+				if oldestID, ok := front.Value.(uint); ok {
+					delete(s.cache, oldestID)
+					delete(s.cacheKeys, oldestID)
+					s.cacheList.Remove(front)
 				}
-			}
-			if oldestID != 0 {
-				delete(s.cache, oldestID)
 			}
 		}
 		s.cache[gameID] = &cachedSnapshot{
 			data:      snapshot,
 			timestamp: time.Now(),
 		}
+		s.cacheKeys[gameID] = s.cacheList.PushBack(gameID)
 		s.mu.Unlock()
 
 		return snapshot, nil
@@ -126,6 +129,10 @@ func (s *MonitorService) GetOrFetchSnapshot(ctx context.Context, gameID uint) ([
 func (s *MonitorService) InvalidateCache(gameID uint) {
 	s.mu.Lock()
 	delete(s.cache, gameID)
+	if elem, ok := s.cacheKeys[gameID]; ok {
+		s.cacheList.Remove(elem)
+		delete(s.cacheKeys, gameID)
+	}
 	s.mu.Unlock()
 }
 
@@ -144,26 +151,21 @@ type attemptRecord struct {
 }
 
 // GameSnapshot формирует полную сводку по всем прохождениям игры.
-// Оптимизированная версия: использует агрегирующие SQL-запросы.
+// Оптимизированная версия: объединяет 3 SQL-запроса в один.
 func (s *MonitorService) GameSnapshot(ctx context.Context, gameID uint) ([]TeamProgress, error) {
-	// 1. Получаем общее количество уровней в игре
-	var totalLevels int64
-	if err := s.DB.WithContext(ctx).Model(&level.Level{}).Where("game_id = ?", gameID).Count(&totalLevels).Error; err != nil {
-		return nil, err
-	}
-
-	// 2. Получаем агрегированные данные по прохождениям
 	type AggregatedPassing struct {
 		GamePassingID  uint
 		TeamID         uint
 		TeamName       string
 		Status         string
 		Place          *int
+		TotalLevels    int
 		CompletedCount int
 		TotalAttempts  int
 		TotalPenalty   int
 		FirstStarted   *time.Time
 		LastFinished   *time.Time
+		CurrentLevelID *uint
 	}
 
 	var aggregated []AggregatedPassing
@@ -174,11 +176,13 @@ func (s *MonitorService) GameSnapshot(ctx context.Context, gameID uint) ([]TeamP
 			t.name AS team_name,
 			gp.status,
 			gp.place,
+			(SELECT COUNT(*) FROM levels WHERE game_id = ?) AS total_levels,
 			COUNT(lp.id) FILTER (WHERE lp.finished_at IS NOT NULL) AS completed_count,
 			COALESCE(ac.total_attempts, 0) AS total_attempts,
 			COALESCE(SUM(lp.penalty_seconds), 0) AS total_penalty,
 			MIN(lp.started_at) AS first_started,
-			MAX(lp.finished_at) AS last_finished
+			MAX(lp.finished_at) AS last_finished,
+			cl.level_id AS current_level_id
 		FROM game_passings gp
 		JOIN teams t ON t.id = gp.team_id
 		LEFT JOIN level_progresses lp ON lp.game_passing_id = gp.id
@@ -187,35 +191,20 @@ func (s *MonitorService) GameSnapshot(ctx context.Context, gameID uint) ([]TeamP
 			FROM attempts
 			GROUP BY level_progress_id
 		) ac ON ac.level_progress_id = lp.id
+		LEFT JOIN LATERAL (
+			SELECT level_id FROM level_progresses
+			WHERE game_passing_id = gp.id AND finished_at IS NULL
+			ORDER BY created_at DESC LIMIT 1
+		) cl ON true
 		WHERE gp.game_id = ?
-		GROUP BY gp.id, gp.team_id, t.name, gp.status, gp.place, ac.total_attempts
+		GROUP BY gp.id, gp.team_id, t.name, gp.status, gp.place, ac.total_attempts, cl.level_id
 		ORDER BY gp.place ASC
 		LIMIT 100`
-	if err := s.DB.Raw(query, gameID).Scan(&aggregated).Error; err != nil {
+	if err := s.DB.WithContext(ctx).Raw(query, gameID, gameID).Scan(&aggregated).Error; err != nil {
 		return nil, err
 	}
 
-	// 3. Определяем текущий уровень для незавершённых прохождений
-	type CurrentLevel struct {
-		GamePassingID uint
-		LevelID       uint
-	}
-	var currentLevels []CurrentLevel
-	if err := s.DB.Table("level_progresses").
-		Select("DISTINCT ON (game_passing_id) game_passing_id, level_id").
-		Where("game_passing_id IN (SELECT id FROM game_passings WHERE game_id = ? AND status = ?)", gameID, StatusStarted).
-		Order("game_passing_id, created_at DESC").
-		Scan(&currentLevels).Error; err != nil {
-		// Не фатально, просто не покажем текущий уровень
-		currentLevels = nil
-	}
-
-	currentLevelMap := make(map[uint]uint)
-	for _, cl := range currentLevels {
-		currentLevelMap[cl.GamePassingID] = cl.LevelID
-	}
-
-	// 4. Собираем данные для batch-анализа
+	// Собираем данные для batch-анализа
 	teamData := make([]teamAggregatedData, 0, len(aggregated))
 	for _, a := range aggregated {
 		teamData = append(teamData, teamAggregatedData{
@@ -224,7 +213,7 @@ func (s *MonitorService) GameSnapshot(ctx context.Context, gameID uint) ([]TeamP
 		})
 	}
 
-	// 5. Формируем результат
+	// Формируем результат
 	suspiciousMap := s.analyzeTeamsBehavior(teamData)
 
 	result := make([]TeamProgress, 0, len(aggregated))
@@ -232,7 +221,7 @@ func (s *MonitorService) GameSnapshot(ctx context.Context, gameID uint) ([]TeamP
 		tp := TeamProgress{
 			TeamID:          a.TeamID,
 			TeamName:        a.TeamName,
-			TotalLevels:     int(totalLevels),
+			TotalLevels:     a.TotalLevels,
 			CompletedLevels: a.CompletedCount,
 			Finished:        a.Status == string(StatusFinished),
 			Place:           a.Place,
@@ -247,8 +236,8 @@ func (s *MonitorService) GameSnapshot(ctx context.Context, gameID uint) ([]TeamP
 		tp.TotalTime = util.FormatDuration(totalDuration)
 
 		// Устанавливаем текущий уровень
-		if cur, ok := currentLevelMap[a.GamePassingID]; ok && !tp.Finished {
-			tp.CurrentLevel = &cur
+		if a.CurrentLevelID != nil && !tp.Finished {
+			tp.CurrentLevel = a.CurrentLevelID
 		}
 
 		// Подозрительное поведение (из batch-анализа)
@@ -357,7 +346,7 @@ func (s *MonitorService) CalculateResults(ctx context.Context, gameID uint) erro
 	for _, res := range results {
 		allArgs = append(allArgs, res.ID)
 	}
-	if err := s.DB.Exec(query, allArgs...).Error; err != nil {
+	if err := s.DB.WithContext(ctx).Exec(query, allArgs...).Error; err != nil {
 		return err
 	}
 	return nil

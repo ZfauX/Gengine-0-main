@@ -203,8 +203,8 @@ func (m *MockCoAuthorService) Remove(gameID, coAuthorUserID, ownerID uint) error
 	return args.Error(0)
 }
 
-func (m *MockCoAuthorService) List(gameID uint) ([]CoAuthor, error) {
-	args := m.Called(gameID)
+func (m *MockCoAuthorService) List(ctx context.Context, gameID uint) ([]CoAuthor, error) {
+	args := m.Called(ctx, gameID)
 	return args.Get(0).([]CoAuthor), args.Error(1)
 }
 

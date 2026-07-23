@@ -142,7 +142,11 @@ func (h *ExportHandler) ImportGame(c *gin.Context) {
 		})
 		return
 	}
-	defer func() { _ = file.Close() }()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Debug().Err(err).Msg("export: file close")
+		}
+	}()
 
 	if header.Size > importMaxFileSize {
 		render.Page(c, http.StatusBadRequest, "export_import-import.html", gin.H{

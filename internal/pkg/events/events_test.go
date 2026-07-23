@@ -74,7 +74,7 @@ func TestBus_Stop(t *testing.T) {
 	var started atomic.Int32
 	b.Subscribe(GameCreated, func(event Event) {
 		started.Add(1)
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	})
 
 	// Заполняем очередь
@@ -82,9 +82,9 @@ func TestBus_Stop(t *testing.T) {
 		b.Publish(Event{Type: GameCreated})
 	}
 	// Ждём начала обработки
-	require.Eventually(t, func() bool {
-		return started.Load() > 0
-	}, 2*time.Second, 50*time.Millisecond)
+	assert.Eventually(t, func() bool {
+		return started.Load() >= 10
+	}, 3*time.Second, 50*time.Millisecond)
 
 	// Stop должен завершиться без зависания
 	done := make(chan struct{})

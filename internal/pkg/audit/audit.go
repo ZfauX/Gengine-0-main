@@ -86,7 +86,9 @@ func (s *Service) List(ctx context.Context, userIDStr, action string, page, perP
 	}
 
 	var total int64
-	countQ.Count(&total)
+	if err := countQ.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 
 	var rows []EntryWithUser
 	offset := (page - 1) * perPage

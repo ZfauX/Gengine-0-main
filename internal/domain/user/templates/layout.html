@@ -11,6 +11,9 @@
     <meta property="og:title" content="{{.Title}} · Encounter Engine">
     <meta property="og:description" content="{{.Description | default "Платформа для создания и проведения квестов"}}">
     <meta property="og:type" content="website">
+    <meta property="og:locale" content="ru_RU">
+    <meta property="og:site_name" content="Encounter Engine">
+    <meta property="og:image" content="/static/icons/icon-512x512.png">
     <meta name="twitter:card" content="summary_large_image">
     <title>{{.Title}} · Encounter Engine</title>
     <!-- Accessibility -->
@@ -218,6 +221,10 @@
 </head>
 <body>
 
+<a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:top-0 focus:left-0 focus:z-50 focus:bg-blue-600 focus:text-white focus:px-4 focus:py-2 focus:m-2 focus:rounded">
+    Перейти к содержимому
+</a>
+
     <!-- Flash-сообщения -->
     {{if .Flash}}
     <div class="fixed top-4 right-4 z-[110] max-w-sm">
@@ -253,11 +260,11 @@
                 </div>
 
                 <!-- Desktop меню -->
-                <div class="hidden sm:flex items-center space-x-4 text-sm font-medium" role="menubar">
+                <div class="hidden sm:flex items-center space-x-4 text-sm font-medium">
                     <!-- Колокольчик уведомлений -->
                     {{if .CurrentUserID}}
                     <div class="relative">
-                        <button id="notificationBell" class="nav-link text-gray-600 hover:text-blue-600 relative" title="Уведомления" aria-label="Уведомления" role="menuitem">
+                        <button id="notificationBell" class="nav-link text-gray-600 hover:text-blue-600 relative" title="Уведомления" aria-label="Уведомления">
                             🔔
                             {{if .UnreadNotificationCount}}
                             <span class="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">{{.UnreadNotificationCount}}</span>
@@ -279,7 +286,7 @@
                     {{end}}
                     
                     <!-- Кнопка переключения темы -->
-                    <button id="themeToggle" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400" title="Переключить тему" aria-label="Переключить тему" role="menuitem">
+                    <button id="themeToggle" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400" title="Переключить тему" aria-label="Переключить тему">
                         🌙
                     </button>
                     {{if .CurrentUserID}}
@@ -298,7 +305,7 @@
                 <!-- Mobile hamburger -->
                 <div class="flex items-center space-x-3 sm:hidden">
                     <button id="themeToggleMobile" class="nav-link text-gray-600 hover:text-blue-600 text-xl" title="Переключить тему" aria-label="Переключить тему">🌙</button>
-                    <button id="hamburgerBtn" class="text-gray-600 hover:text-blue-600 focus:outline-none" aria-label="Меню" aria-expanded="false">
+                    <button id="hamburgerBtn" class="text-gray-600 hover:text-blue-600 focus:outline-none" aria-label="Меню" aria-expanded="false" aria-controls="mobileMenu">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
                     </button>
                 </div>
@@ -322,7 +329,7 @@
     </nav>
 
     <!-- Основной контент -->
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8" role="main" aria-label="Основной контент">
+    <main id="main-content" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8" role="main" aria-label="Основной контент">
         <!-- Breadcrumb навигация -->
         {{if .Breadcrumb}}
         <nav class="flex mb-6" aria-label="Breadcrumb">
@@ -347,6 +354,18 @@
             </ol>
         </nav>
         {{end}}
+        {{if .Breadcrumbs}}
+        <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-4" aria-label="Breadcrumb">
+            <ol class="inline-flex items-center space-x-1 md:space-x-3 text-sm">
+                {{range $i, $crumb := .Breadcrumbs}}
+                <li class="inline-flex items-center">
+                    {{if $i}}<svg class="w-4 h-4 text-gray-400 mx-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>{{end}}
+                    {{if $crumb.url}}<a href="{{$crumb.url}}" class="text-gray-700 hover:text-blue-600">{{$crumb.name}}</a>{{else}}<span class="text-gray-500">{{$crumb.name}}</span>{{end}}
+                </li>
+                {{end}}
+            </ol>
+        </nav>
+        {{end}}
         {{if .ContentHTML}}
             {{.ContentHTML}}
         {{else}}
@@ -355,7 +374,7 @@
     </main>
 
     <!-- Toast уведомления -->
-    <div id="toastContainer" class="fixed top-4 right-4 z-50 space-y-2"></div>
+    <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2"></div>
 
     <!-- Футер (опционально) -->
     <footer class="border-t border-gray-200 mt-12 py-6 text-center text-sm text-gray-500" role="contentinfo">
@@ -533,51 +552,8 @@
 
         // Toast уведомления
         (function() {
-            const container = document.getElementById('toastContainer');
+            const container = document.getElementById('toast-container');
             if (!container) return;
-
-            window.showToast = function(message, type) {
-                type = type || 'info';
-                var colors = {
-                    success: 'bg-green-500',
-                    error: 'bg-red-500',
-                    warning: 'bg-yellow-500',
-                    info: 'bg-blue-500'
-                };
-                var icons = {
-                    success: '✅',
-                    error: '❌',
-                    warning: '⚠️',
-                    info: 'ℹ️'
-                };
-
-                function escapeHtmlToast(text) {
-                    var map = {
-                        '&': '&amp;',
-                        '<': '&lt;',
-                        '>': '&gt;',
-                        '"': '&quot;',
-                        "'": '&#039;'
-                    };
-                    return String(text).replace(/[&<>"']/g, function(m) { return map[m]; });
-                }
-
-                var toast = document.createElement('div');
-                toast.className = `${colors[type]} text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 min-w-[250px] animate-[fadeIn_0.2s_ease-in-out]`;
-                toast.innerHTML = `<span>${icons[type]}</span><span>${escapeHtmlToast(message)}</span>`;
-
-                container.appendChild(toast);
-
-                setTimeout(function() {
-                    toast.style.opacity = '0';
-                    toast.style.transition = 'opacity 0.3s ease';
-                    setTimeout(function() {
-                        if (toast.parentNode) {
-                            toast.parentNode.removeChild(toast);
-                        }
-                    }, 300);
-                }, 3000);
-            };
 
             // Auto-hide flash messages
             const flashMessages = document.querySelectorAll('.flash');

@@ -44,10 +44,11 @@ func TestRoomHub_RegisterClient_Multiple(t *testing.T) {
 	hub.RegisterClient(c2)
 	hub.RegisterClient(c3)
 
-	hub.mu.RLock()
-	defer hub.mu.RUnlock()
-	assert.Len(t, hub.rooms["room1"], 2)
-	assert.Len(t, hub.rooms["room2"], 1)
+	assert.Eventually(t, func() bool {
+		hub.mu.RLock()
+		defer hub.mu.RUnlock()
+		return len(hub.rooms["room1"]) == 2 && len(hub.rooms["room2"]) == 1
+	}, 1*time.Second, 50*time.Millisecond)
 }
 
 func TestRoomHub_UnregisterClient(t *testing.T) {

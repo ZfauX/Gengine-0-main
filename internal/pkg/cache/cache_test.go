@@ -163,7 +163,10 @@ func TestCache_ExtendTTL(t *testing.T) {
 	assert.True(t, extended)
 
 	// Ждём, что ключ всё ещё существует (TTL продлён)
-	time.Sleep(150 * time.Millisecond)
+	assert.Eventually(t, func() bool {
+		_, ok := c.Get("key1")
+		return ok
+	}, 2*time.Second, 50*time.Millisecond)
 	val, ok := c.Get("key1")
 	assert.True(t, ok)
 	assert.Equal(t, "value1", val)
@@ -396,7 +399,10 @@ func TestCache_RemoveExpired(t *testing.T) {
 	c.Set("expired2", "value2", -time.Second)
 	c.Set("valid", "value3", time.Minute)
 
-	time.Sleep(200 * time.Millisecond)
+	assert.Eventually(t, func() bool {
+		_, ok := c.Get("expired1")
+		return !ok
+	}, 2*time.Second, 50*time.Millisecond)
 
 	c.removeExpired()
 

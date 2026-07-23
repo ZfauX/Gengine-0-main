@@ -176,7 +176,7 @@ func (s *GameCRUDService) GetGameWithStats(ctx context.Context, gameID uint) (*G
 	reviewsCount := int64(0)
 
 	if s.reviewService != nil {
-		reviews, err = s.reviewService.ListByGame(gameID)
+		reviews, err = s.reviewService.ListByGame(ctx, gameID)
 		if err != nil {
 			log.Warn().Err(err).Uint("game_id", gameID).Msg("GetGameWithStats: failed to list reviews")
 		}
@@ -197,7 +197,7 @@ func (s *GameCRUDService) ListReviews(ctx context.Context, gameID uint) ([]Revie
 	if s.reviewService == nil {
 		return []Review{}, nil
 	}
-	return s.reviewService.ListByGame(gameID)
+	return s.reviewService.ListByGame(ctx, gameID)
 }
 
 // GetAverageRating делегирует RatingService.

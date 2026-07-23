@@ -8,6 +8,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
+
+	"gengine-0/internal/pkg/sqlutil"
 )
 
 const (
@@ -50,7 +52,7 @@ func (h *AutocompleteHandler) Games(c *gin.Context) {
 	err := h.db.Model(c).
 		Table("games").
 		Select("id, name").
-		Where("is_draft = false AND visibility = 'public' AND (search_vector @@ plainto_tsquery('russian', ?) OR name ILIKE ?)", q, "%"+escapeLike(q)+"%").
+		Where("is_draft = false AND visibility = 'public' AND (search_vector @@ plainto_tsquery('russian', ?) OR name ILIKE ?)", q, "%"+sqlutil.EscapeLike(q)+"%").
 		Limit(maxResults).
 		Find(&results).Error
 

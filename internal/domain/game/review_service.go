@@ -2,6 +2,7 @@
 package game
 
 import (
+	"context"
 	"errors"
 
 	"gengine-0/internal/pkg/sanitize"
@@ -20,22 +21,15 @@ func NewReviewService(db *gorm.DB) *ReviewService {
 func (s *ReviewService) CanReview(gameID, userID uint) (bool, error) {
 	var count int64
 	err := s.DB.Model(&GamePassing{}).
-		Joins("JOIN team_members ON team_members.team_id = game_passings.team_id").
-		Where("game_passings.game_id = ? AND game_passings.status = ? AND team_members.user_id = ?",
-			gameID, StatusFinished, userID).
+		Joins("JOIN teams ON teams.id = game_passings.team_id").
+		Joins("LEFT JOIN team_members ON team_members.team_id = game_passings.team_id").
+		Where("game_passings.game_id = ? AND game_passings.status = ?", gameID, StatusFinished).
+		Where("(team_members.user_id = ? OR teams.captain_id = ?)", userID, userID).
 		Count(&count).Error
 	if err != nil {
 		return false, err
 	}
-	var captainCount int64
-	if err := s.DB.Model(&GamePassing{}).
-		Joins("JOIN teams ON teams.id = game_passings.team_id").
-		Where("game_passings.game_id = ? AND game_passings.status = ? AND teams.captain_id = ?",
-			gameID, StatusFinished, userID).
-		Count(&captainCount).Error; err != nil {
-		return false, err
-	}
-	if count+captainCount == 0 {
+	if count == 0 {
 		return false, nil
 	}
 	var reviewCount int64
@@ -62,9 +56,9 @@ func (s *ReviewService) Create(gameID, userID uint, rating int, comment string) 
 	return s.DB.Create(&review).Error
 }
 
-func (s *ReviewService) ListByGame(gameID uint) ([]Review, error) {
+func (s *ReviewService) ListByGame(ctx context.Context, gameID uint) ([]Review, error) {
 	var reviews []Review
-	err := s.DB.Preload("User").Where("game_id = ?", gameID).Order("created_at DESC").Find(&reviews).Error
+	err := s.DB.WithContext(ctx).Preload("User").Where("game_id = ?", gameID).Order("created_at DESC").Find(&reviews).Error
 	return reviews, err
 }
 

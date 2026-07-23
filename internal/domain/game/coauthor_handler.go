@@ -50,7 +50,7 @@ func (h *CoAuthorHandler) ManageCoAuthors(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 
-	coAuthors, err := h.coAuthorSvc.List(uint(gameID))
+	coAuthors, err := h.coAuthorSvc.List(c.Request.Context(), uint(gameID))
 	if err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Msg("CoAuthorHandler.ManageCoAuthors: failed to list coauthors")
 		render.RenderErrorPage(c, http.StatusInternalServerError)
@@ -70,7 +70,7 @@ func (h *CoAuthorHandler) ManageCoAuthors(c *gin.Context) {
 
 // renderCoAuthorManagePage рендерит страницу управления соавторами с заданными данными.
 func (h *CoAuthorHandler) renderCoAuthorManagePage(c *gin.Context, gameID int, errs validation.FieldErrors) {
-	coAuthors, listErr := h.coAuthorSvc.List(uint(gameID))
+	coAuthors, listErr := h.coAuthorSvc.List(c.Request.Context(), uint(gameID))
 	if listErr != nil {
 		log.Error().Err(listErr).Int("game_id", gameID).Msg("AddCoAuthor: failed to list coauthors")
 	}

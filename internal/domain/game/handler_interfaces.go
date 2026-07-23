@@ -29,7 +29,7 @@ type CoAuthorServiceInterface interface {
 	CanEditContent(ctx context.Context, gameID, userID uint) (bool, error)
 	Add(gameID, newCoAuthorID, ownerID uint) error
 	Remove(gameID, coAuthorUserID, ownerID uint) error
-	List(gameID uint) ([]CoAuthor, error)
+	List(ctx context.Context, gameID uint) ([]CoAuthor, error)
 }
 
 type AuditServiceInterface interface {

@@ -145,6 +145,10 @@ func (h *GameHandler) List(c *gin.Context) {
 		"PerPage":       perPage,
 		"TotalPages":    totalPages,
 		"Total":         total,
+		"Breadcrumbs": []map[string]string{
+			{"name": "Главная", "url": "/"},
+			{"name": "Игры"},
+		},
 	})
 }
 
@@ -206,6 +210,11 @@ func (h *GameHandler) Show(c *gin.Context) {
 		"CanApply":      canApply,
 		"csrf":          csrf.GetToken(c),
 		"BaseURL":       c.Request.Host,
+		"Breadcrumbs": []map[string]string{
+			{"name": "Главная", "url": "/"},
+			{"name": "Игры", "url": "/games"},
+			{"name": g.Name},
+		},
 	})
 }
 
@@ -220,6 +229,11 @@ func (h *GameHandler) Show(c *gin.Context) {
 func (h *GameHandler) NewForm(c *gin.Context) {
 	render.Page(c, http.StatusOK, "games-new.html", gin.H{
 		"csrf": csrf.GetToken(c),
+		"Breadcrumbs": []map[string]string{
+			{"name": "Главная", "url": "/"},
+			{"name": "Игры", "url": "/games"},
+			{"name": "Создание игры"},
+		},
 	})
 }
 
@@ -379,6 +393,12 @@ func (h *GameHandler) EditForm(c *gin.Context) {
 		"csrf":          csrf.GetToken(c),
 		"CurrentUserID": userID,
 		"IsAdmin":       middleware.IsAdmin(c),
+		"Breadcrumbs": []map[string]string{
+			{"name": "Главная", "url": "/"},
+			{"name": "Игры", "url": "/games"},
+			{"name": g.Name, "url": "/games/" + c.Param("id")},
+			{"name": "Редактирование"},
+		},
 	})
 }
 

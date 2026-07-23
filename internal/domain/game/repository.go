@@ -47,12 +47,18 @@ func (r *gormGameRepo) Create(ctx context.Context, game *Game) error {
 func (r *gormGameRepo) GetByID(ctx context.Context, id uint) (*Game, error) {
 	var g Game
 	err := r.db.WithContext(ctx).First(&g, id).Error
-	return &g, err
+	if err != nil {
+		return nil, err
+	}
+	return &g, nil
 }
 func (r *gormGameRepo) GetByIDPreloaded(ctx context.Context, id uint) (*Game, error) {
 	var g Game
 	err := r.db.WithContext(ctx).Preload("Author").Preload("GameSetting").First(&g, id).Error
-	return &g, err
+	if err != nil {
+		return nil, err
+	}
+	return &g, nil
 }
 func (r *gormGameRepo) Update(ctx context.Context, game *Game) error {
 	return r.db.WithContext(ctx).Save(game).Error
@@ -103,12 +109,18 @@ func (r *gormGamePassingRepo) Create(ctx context.Context, passing *GamePassing) 
 func (r *gormGamePassingRepo) GetByID(ctx context.Context, id uint) (*GamePassing, error) {
 	var p GamePassing
 	err := r.db.WithContext(ctx).First(&p, id).Error
-	return &p, err
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
 }
 func (r *gormGamePassingRepo) FindByGameAndTeam(ctx context.Context, gameID, teamID uint) (*GamePassing, error) {
 	var p GamePassing
 	err := r.db.WithContext(ctx).Where("game_id = ? AND team_id = ?", gameID, teamID).First(&p).Error
-	return &p, err
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
 }
 func (r *gormGamePassingRepo) FindActiveByGame(ctx context.Context, gameID uint) ([]GamePassing, error) {
 	var passings []GamePassing

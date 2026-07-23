@@ -25,7 +25,7 @@ func (s *NoteService) ListByGame(ctx context.Context, gameID, userID uint) ([]No
 		return nil, errors.New("только автор или соавтор может видеть заметки")
 	}
 	var notes []Note
-	err = s.DB.Preload("User").Where("game_id = ?", gameID).Order("created_at DESC").Find(&notes).Error
+	err = s.DB.WithContext(ctx).Preload("User").Where("game_id = ?", gameID).Order("created_at DESC").Find(&notes).Error
 	return notes, err
 }
 
@@ -41,7 +41,7 @@ func (s *NoteService) Create(ctx context.Context, gameID uint, levelID *uint, us
 	if err := s.DB.Create(&note).Error; err != nil {
 		return nil, err
 	}
-	if err := s.DB.Preload("User").First(&note, note.ID).Error; err != nil {
+	if err := s.DB.WithContext(ctx).Preload("User").First(&note, note.ID).Error; err != nil {
 		return nil, err
 	}
 	return &note, nil

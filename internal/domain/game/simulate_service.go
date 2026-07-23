@@ -58,9 +58,11 @@ func (s *SimulateService) Simulate(ctx context.Context, gameID, userID uint) (*S
 		if delay > 500*time.Millisecond {
 			delay = 500 * time.Millisecond
 		}
+		timer := time.NewTimer(delay)
 		select {
-		case <-time.After(delay):
+		case <-timer.C:
 		case <-ctx.Done():
+			timer.Stop()
 			return nil, ctx.Err()
 		}
 		step := SimulateStep{LevelName: lvl.Name, Code: code, Duration: time.Since(startTime), Success: true}

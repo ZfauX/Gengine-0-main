@@ -52,6 +52,8 @@ type Bus struct {
 	handlers map[EventType][]Handler
 	queue    chan job
 	workerWg sync.WaitGroup
+	stopOnce sync.Once
+	stopped  bool
 
 	// Метрики
 	queueSize     int64 // текущая глубина очереди (публикации - обработки)
@@ -99,12 +101,6 @@ func (b *Bus) startWorkers(n int) {
 	}
 }
 
-// Stop завершает работу воркеров (ожидает завершения всех задач в очереди).
-func (b *Bus) Stop() {
-	close(b.queue)
-	b.workerWg.Wait()
-}
-
 // Metrics возвращает текущие метрики работы Bus.
 type BusMetrics struct {
 	QueueSize     int64 `json:"queue_size"`
@@ -140,6 +136,10 @@ func (b *Bus) SubscribeAll(handler Handler) {
 // Publish отправляет событие всем подписчикам через worker pool.
 func (b *Bus) Publish(event Event) {
 	b.mu.RLock()
+	if b.stopped {
+		b.mu.RUnlock()
+		return
+	}
 	handlers := b.handlers[event.Type]
 	allHandlers := b.handlers["*"]
 	b.mu.RUnlock()
@@ -153,7 +153,6 @@ func (b *Bus) Publish(event Event) {
 			atomic.AddInt64(&b.droppedEvents, 1)
 			atomic.AddInt64(&b.totalEvents, 1)
 			log.Warn().Int64("dropped", atomic.LoadInt64(&b.droppedEvents)).Str("event_type", string(event.Type)).Msg("events: queue full, dropping event")
-			go b.safeCall(h, event)
 		}
 	}
 
@@ -163,6 +162,17 @@ func (b *Bus) Publish(event Event) {
 	for _, h := range allHandlers {
 		publish(h)
 	}
+}
+
+// Stop завершает работу воркеров (ожидает завершения всех задач в очереди).
+func (b *Bus) Stop() {
+	b.stopOnce.Do(func() {
+		b.mu.Lock()
+		b.stopped = true
+		b.mu.Unlock()
+		close(b.queue)
+		b.workerWg.Wait()
+	})
 }
 
 // safeCall вызывает обработчик с recover для предотвращения panic.

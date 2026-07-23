@@ -32,6 +32,9 @@ var allModels = []interface{}{
 	&level.Question{},
 	&level.Answer{},
 	&team.Team{},
+	&game.Note{},
+	&game.Photo{},
+	&game.Review{},
 }
 
 // createUser создаёт тестового пользователя
