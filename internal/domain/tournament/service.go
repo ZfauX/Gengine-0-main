@@ -3,13 +3,14 @@ package tournament
 
 import (
 	"context"
-	"errors"
+	stderrors "errors"
 	"fmt"
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/pkg/email"
+	"gengine-0/internal/pkg/errors"
 
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
@@ -60,7 +61,7 @@ func (s *TournamentService) Update(ctx context.Context, id uint, updated *Tourna
 		return err
 	}
 	if t.AuthorID != userID {
-		return errors.New("только автор может редактировать турнир")
+		return stderrors.New("только автор может редактировать турнир")
 	}
 	t.Name = updated.Name
 	t.Description = updated.Description
@@ -79,7 +80,7 @@ func (s *TournamentService) AddGame(ctx context.Context, tournamentID, gameID, u
 		return err
 	}
 	if t.AuthorID != userID {
-		return errors.New("только автор турнира может добавлять игры")
+		return stderrors.New("только автор турнира может добавлять игры")
 	}
 	games, err := s.tournamentGameRepo.ListGames(ctx, tournamentID)
 	if err != nil {
@@ -87,7 +88,7 @@ func (s *TournamentService) AddGame(ctx context.Context, tournamentID, gameID, u
 	}
 	for _, g := range games {
 		if g.ID == gameID {
-			return errors.New("игра уже в турнире")
+			return stderrors.New("игра уже в турнире")
 		}
 	}
 	order := len(games)
@@ -100,7 +101,7 @@ func (s *TournamentService) RemoveGame(ctx context.Context, tournamentID, gameID
 		return err
 	}
 	if t.AuthorID != userID {
-		return errors.New("только автор турнира может удалять игры")
+		return stderrors.New("только автор турнира может удалять игры")
 	}
 	return s.tournamentGameRepo.RemoveGame(ctx, tournamentID, gameID)
 }
@@ -117,14 +118,14 @@ func (s *TournamentService) GetAvailableGames(ctx context.Context, tournamentID,
 
 func (s *TournamentService) Apply(ctx context.Context, tournamentID, teamID, userID uint) error {
 	if !s.teamService.CanManageTeam(ctx, teamID, userID) {
-		return errors.New("только капитан может подать заявку")
+		return stderrors.New("только капитан может подать заявку")
 	}
 
 	_, getErr := s.tournamentTeamRepo.GetByTournamentAndTeam(ctx, tournamentID, teamID)
 	if getErr == nil {
-		return errors.New("команда уже участвует в турнире")
+		return stderrors.New("команда уже участвует в турнире")
 	}
-	if !errors.Is(getErr, gorm.ErrRecordNotFound) {
+	if !stderrors.Is(getErr, gorm.ErrRecordNotFound) {
 		return getErr
 	}
 
@@ -273,7 +274,7 @@ func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint
 			result.Score += points
 			result.GamesPlayed++
 		}
-		_ = s.tournamentResultRepo.Upsert(ctx, result)
+		errors.LogSilently(s.tournamentResultRepo.Upsert(ctx, result), "Upsert tournament result failed")
 	}
 }
 

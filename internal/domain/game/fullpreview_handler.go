@@ -32,6 +32,17 @@ func NewFullPreviewHandler(
 }
 
 // FullPreview возвращает полную структуру игры для быстрого просмотра.
+// FullPreview возвращает полную структуру игры в JSON-формате.
+// @Summary Полный просмотр игры (JSON)
+// @Tags games
+// @Produce json
+// @Param id path int true "ID игры"
+// @Success 200 {object} map[string]interface{} "Полная структура игры"
+// @Failure 400 {object} map[string]interface{} "Неверный ID"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/full-preview [get]
+// @Security JWT
 func (h *FullPreviewHandler) FullPreview(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {

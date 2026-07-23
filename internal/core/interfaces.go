@@ -16,6 +16,7 @@ type CacheStore interface {
 	GetOrSet(key string, ttl time.Duration, fn func() (any, error)) (any, error)
 	GetOrSetString(key string, ttl time.Duration, fn func() (string, error)) (string, error)
 	GetOrSetStringWithTTL(key string, ttl time.Duration, fn func() (string, error)) (string, error)
+	GetOrSetStringWithTTLWithCtx(ctx context.Context, key string, ttl time.Duration, fn func() (string, error)) (string, error)
 	ExtendTTL(key string, ttl time.Duration) bool
 	GetOrSetInt(key string, ttl time.Duration, fn func() (int, error)) (int, error)
 	GetOrSetFloat64(key string, ttl time.Duration, fn func() (float64, error)) (float64, error)
@@ -23,6 +24,11 @@ type CacheStore interface {
 	SetWithCtx(ctx context.Context, key string, value any, ttl time.Duration)
 	DeleteWithCtx(ctx context.Context, key string)
 	DeleteByPrefixWithCtx(ctx context.Context, prefix string)
+	GetOrSetWithCtx(ctx context.Context, key string, ttl time.Duration, fn func() (any, error)) (any, error)
+	GetOrSetIntWithCtx(ctx context.Context, key string, ttl time.Duration, fn func() (int, error)) (int, error)
+	GetOrSetFloat64WithCtx(ctx context.Context, key string, ttl time.Duration, fn func() (float64, error)) (float64, error)
+	ExtendTTLWithCtx(ctx context.Context, key string, ttl time.Duration) bool
+	FlushWithCtx(ctx context.Context)
 }
 
 type Database interface {

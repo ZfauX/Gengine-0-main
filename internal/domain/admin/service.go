@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gengine-0/internal/config"
+	"gengine-0/internal/pkg/errors"
 
 	"github.com/rs/zerolog/log"
 )
@@ -133,7 +134,7 @@ func (s *BackupService) RotateBackups(ctx context.Context) error {
 
 	toDelete := len(backups) - s.MaxBackups
 	for i := range toDelete {
-		_ = os.Remove(backups[i].FilePath)
+		errors.LogSilently(os.Remove(backups[i].FilePath), "RotateBackups: failed to remove old backup file")
 		if err := s.backupRepo.Delete(ctx, backups[i].ID); err != nil {
 			log.Error().Err(err).Uint("backup", backups[i].ID).Msg("RotateBackups: failed to delete record")
 		}

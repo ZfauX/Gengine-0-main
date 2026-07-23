@@ -73,6 +73,14 @@ func NewTeamHandler(teamService *TeamService, st storage.FileStorage) *TeamHandl
 }
 
 // MyTeams отображает список команд текущего пользователя (капитанство + участие).
+// MyTeams отображает список команд текущего пользователя.
+// @Summary Список моих команд
+// @Tags teams
+// @Produce html
+// @Success 200 {string} html "Список команд"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /teams [get]
+// @Security JWT
 func (h *TeamHandler) MyTeams(c *gin.Context) {
 	userID := c.GetUint("userID")
 	teams, err := h.teamService.GetMyTeams(c.Request.Context(), userID)
@@ -92,6 +100,14 @@ func (h *TeamHandler) MyTeams(c *gin.Context) {
 }
 
 // NewTeamForm показывает форму создания команды.
+// NewTeamForm отображает форму создания команды.
+// @Summary Форма создания команды
+// @Tags teams
+// @Produce html
+// @Success 200 {string} html "Форма создания"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /teams/new [get]
+// @Security JWT
 func (h *TeamHandler) NewTeamForm(c *gin.Context) {
 	userID := c.GetUint("userID")
 	isAdmin := middleware.IsAdmin(c)
@@ -103,6 +119,17 @@ func (h *TeamHandler) NewTeamForm(c *gin.Context) {
 }
 
 // CreateTeam создаёт новую команду и делает текущего пользователя капитаном.
+// CreateTeam создаёт новую команду.
+// @Summary Создание команды
+// @Tags teams
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param name formData string true "Название команды"
+// @Success 302 {string} string "Перенаправление на страницу команды"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /teams [post]
+// @Security JWT
 func (h *TeamHandler) CreateTeam(c *gin.Context) {
 	var input CreateTeamInput
 	errs := validation.FieldErrors{}
@@ -136,6 +163,16 @@ func (h *TeamHandler) CreateTeam(c *gin.Context) {
 }
 
 // ViewTeam отображает состав команды вне контекста игры (по прямой ссылке /teams/:team_id).
+// ViewTeam отображает страницу команды.
+// @Summary Просмотр команды
+// @Tags teams
+// @Produce html
+// @Param team_id path int true "ID команды"
+// @Success 200 {string} html "Страница команды"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 404 {object} map[string]interface{} "Команда не найдена"
+// @Router /teams/{team_id} [get]
+// @Security JWT
 func (h *TeamHandler) ViewTeam(c *gin.Context) {
 	var req TeamIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -488,6 +525,14 @@ func (h *InvitationHandler) Create(c *gin.Context) {
 }
 
 // MyInvitations отображает мои приглашения.
+// MyInvitations отображает список приглашений текущего пользователя.
+// @Summary Мои приглашения
+// @Tags invitations
+// @Produce html
+// @Success 200 {string} html "Список приглашений"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /invitations/my [get]
+// @Security JWT
 func (h *InvitationHandler) MyInvitations(c *gin.Context) {
 	userID := c.GetUint("userID")
 	invitations, err := h.invitationService.GetPendingForUser(c.Request.Context(), userID)
@@ -507,6 +552,15 @@ func (h *InvitationHandler) MyInvitations(c *gin.Context) {
 }
 
 // Accept принимает приглашение.
+// Accept принимает приглашение в команду.
+// @Summary Принять приглашение
+// @Tags invitations
+// @Param id path int true "ID приглашения"
+// @Success 302 {string} string "Перенаправление на страницу команды"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /invitations/{id}/accept [post]
+// @Security JWT
 func (h *InvitationHandler) Accept(c *gin.Context) {
 	var req InvitationIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -524,6 +578,15 @@ func (h *InvitationHandler) Accept(c *gin.Context) {
 }
 
 // Decline отклоняет приглашение.
+// Decline отклоняет приглашение в команду.
+// @Summary Отклонить приглашение
+// @Tags invitations
+// @Param id path int true "ID приглашения"
+// @Success 302 {string} string "Перенаправление на /invitations/my"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /invitations/{id}/decline [post]
+// @Security JWT
 func (h *InvitationHandler) Decline(c *gin.Context) {
 	var req InvitationIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {

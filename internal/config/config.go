@@ -55,6 +55,7 @@ type ServerConfig struct {
 	StaticDir      string // путь к статическим файлам (по умолчанию "static")
 	UploadsDir     string // путь к загружаемым файлам (по умолчанию "uploads")
 	TrustedProxies string // доверенные прокси через запятую (например: 127.0.0.1,192.168.0.0/24)
+	StrictMode     bool   // строгий режим: неверные переменные окружения вызывают ошибку вместо fallback
 }
 
 // DatabaseConfig содержит параметры подключения к PostgreSQL.
@@ -175,6 +176,7 @@ func LoadConfig() (*Config, error) {
 	cfg.Server.LogFormat = getEnvOrDefault("LOG_FORMAT", "console") // console или json
 	cfg.Server.StaticDir = getEnvOrDefault("STATIC_DIR", "static")
 	cfg.Server.UploadsDir = getEnvOrDefault("UPLOADS_DIR", "uploads")
+	cfg.Server.StrictMode = os.Getenv("STRICT_CONFIG") == "true"
 
 	// База данных (обязательные параметры)
 	var err error
@@ -236,23 +238,23 @@ func LoadConfig() (*Config, error) {
 	}
 
 	// OAuth провайдеры – каждый со своим флагом включения
-	if cfg.OAuth.Google, err = loadOAuthProvider("GOOGLE"); err != nil {
+	if cfg.OAuth.Google, err = loadOAuthProvider("GOOGLE", cfg.Server.StrictMode); err != nil {
 		return nil, err
 	}
-	if cfg.OAuth.GitHub, err = loadOAuthProvider("GITHUB"); err != nil {
+	if cfg.OAuth.GitHub, err = loadOAuthProvider("GITHUB", cfg.Server.StrictMode); err != nil {
 		return nil, err
 	}
-	if cfg.OAuth.Yandex, err = loadOAuthProvider("YANDEX"); err != nil {
+	if cfg.OAuth.Yandex, err = loadOAuthProvider("YANDEX", cfg.Server.StrictMode); err != nil {
 		return nil, err
 	}
 
 	// SMTP
-	if cfg.SMTP, err = loadSMTPConfig(); err != nil {
+	if cfg.SMTP, err = loadSMTPConfig(cfg.Server.StrictMode); err != nil {
 		return nil, err
 	}
 
 	// reCAPTCHA
-	if cfg.ReCAPTCHA, err = loadReCAPTCHAConfig(); err != nil {
+	if cfg.ReCAPTCHA, err = loadReCAPTCHAConfig(cfg.Server.StrictMode); err != nil {
 		return nil, err
 	}
 
@@ -261,7 +263,7 @@ func LoadConfig() (*Config, error) {
 	cfg.TLS.KeyFile = os.Getenv("TLS_KEY_FILE")
 
 	// Sentry
-	if cfg.Sentry, err = loadSentryConfig(); err != nil {
+	if cfg.Sentry, err = loadSentryConfig(cfg.Server.StrictMode); err != nil {
 		return nil, err
 	}
 
@@ -338,12 +340,11 @@ func parseDuration(key, defaultVal string) (time.Duration, error) {
 
 // loadOAuthProvider загружает настройки OAuth-провайдера по префиксу.
 // Если провайдер включён, требует наличия CLIENT_ID и CLIENT_SECRET.
-func loadOAuthProvider(prefix string) (OAuthProvider, error) {
+func loadOAuthProvider(prefix string, strictMode bool) (OAuthProvider, error) {
 	enabledEnv := prefix + "_ENABLED"
-	enabled, err := strconv.ParseBool(os.Getenv(enabledEnv))
+	enabled, err := parseBoolStrict(enabledEnv, strictMode)
 	if err != nil {
-		log.Warn().Err(err).Str("env", enabledEnv).Msg("failed to parse enabled flag")
-		return OAuthProvider{Enabled: false}, nil
+		return OAuthProvider{}, err
 	}
 	if !enabled {
 		return OAuthProvider{Enabled: false}, nil
@@ -362,11 +363,10 @@ func loadOAuthProvider(prefix string) (OAuthProvider, error) {
 
 // loadSMTPConfig загружает настройки SMTP, если они включены.
 // При включении требует наличия SMTP_HOST и SMTP_FROM.
-func loadSMTPConfig() (SMTPConfig, error) {
-	enabled, err := strconv.ParseBool(os.Getenv("SMTP_ENABLED"))
+func loadSMTPConfig(strictMode bool) (SMTPConfig, error) {
+	enabled, err := parseBoolStrict("SMTP_ENABLED", strictMode)
 	if err != nil {
-		log.Warn().Err(err).Msg("failed to parse SMTP_ENABLED")
-		return SMTPConfig{Enabled: false}, nil
+		return SMTPConfig{}, err
 	}
 	if !enabled {
 		return SMTPConfig{Enabled: false}, nil
@@ -398,11 +398,10 @@ func loadSMTPConfig() (SMTPConfig, error) {
 
 // loadReCAPTCHAConfig загружает настройки reCAPTCHA, если они включены.
 // При включении требует наличия RECAPTCHA_SITE_KEY и RECAPTCHA_SECRET_KEY.
-func loadReCAPTCHAConfig() (ReCAPTCHAConfig, error) {
-	enabled, err := strconv.ParseBool(os.Getenv("RECAPTCHA_ENABLED"))
+func loadReCAPTCHAConfig(strictMode bool) (ReCAPTCHAConfig, error) {
+	enabled, err := parseBoolStrict("RECAPTCHA_ENABLED", strictMode)
 	if err != nil {
-		log.Warn().Err(err).Msg("failed to parse RECAPTCHA_ENABLED")
-		return ReCAPTCHAConfig{Enabled: false}, nil
+		return ReCAPTCHAConfig{}, err
 	}
 	if !enabled {
 		return ReCAPTCHAConfig{Enabled: false}, nil
@@ -421,11 +420,10 @@ func loadReCAPTCHAConfig() (ReCAPTCHAConfig, error) {
 
 // loadSentryConfig загружает настройки Sentry, если они включены.
 // При включении требует наличия SENTRY_DSN.
-func loadSentryConfig() (SentryConfig, error) {
-	enabled, err := strconv.ParseBool(os.Getenv("SENTRY_ENABLED"))
+func loadSentryConfig(strictMode bool) (SentryConfig, error) {
+	enabled, err := parseBoolStrict("SENTRY_ENABLED", strictMode)
 	if err != nil {
-		log.Warn().Err(err).Msg("failed to parse SENTRY_ENABLED")
-		return SentryConfig{Enabled: false}, nil
+		return SentryConfig{}, err
 	}
 	if !enabled {
 		return SentryConfig{Enabled: false}, nil
@@ -440,6 +438,26 @@ func loadSentryConfig() (SentryConfig, error) {
 		DSN:         dsn,
 		TracingRate: tracingRate,
 	}, nil
+}
+
+// parseBoolStrict парсит булево значение переменной окружения.
+// Если переменная не установлена, возвращает false без ошибки.
+// Если значение неверное и strictMode=true, возвращает ошибку.
+// Если значение неверное и strictMode=false, логирует предупреждение и возвращает false.
+func parseBoolStrict(envName string, strictMode bool) (bool, error) {
+	val := os.Getenv(envName)
+	if val == "" {
+		return false, nil
+	}
+	parsed, err := strconv.ParseBool(val)
+	if err != nil {
+		if strictMode {
+			return false, fmt.Errorf("неверное значение %s=%q: %w", envName, val, err)
+		}
+		log.Warn().Err(err).Str("env", envName).Str("value", val).Msg("неверное значение bool, используется false")
+		return false, nil
+	}
+	return parsed, nil
 }
 
 // getEnvAsInt возвращает значение переменной окружения как целое число или fallback при ошибке.

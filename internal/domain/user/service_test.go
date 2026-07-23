@@ -228,7 +228,7 @@ func TestUserService_GetPublicProfile(t *testing.T) {
 	achievRepo := NewGormAchievementRepo(db)
 	achievSvc := NewAchievementService(achievRepo)
 	achievSvc.SeedAchievements(context.Background())
-	_ = achievSvc.AwardAchievement(context.Background(), user.ID, "first_level_created")
+	require.NoError(t, achievSvc.AwardAchievement(context.Background(), user.ID, "first_level_created"))
 
 	t.Run("профиль с достижениями", func(t *testing.T) {
 		profile, err := service.GetPublicProfile(context.Background(), user.ID)
@@ -303,7 +303,7 @@ func TestAchievementService_AwardAndGet(t *testing.T) {
 	})
 
 	t.Run("получение всех достижений пользователя", func(t *testing.T) {
-		_ = service.AwardAchievement(context.Background(), user.ID, "five_games_hosted")
+		require.NoError(t, service.AwardAchievement(context.Background(), user.ID, "five_games_hosted"))
 		achievements, err := service.GetUserAchievements(context.Background(), user.ID)
 		require.NoError(t, err)
 		assert.GreaterOrEqual(t, len(achievements), 2)
@@ -367,7 +367,7 @@ func TestPasswordResetService_ResetPassword(t *testing.T) {
 			TokenHash: hashToken("expiredtoken"),
 			ExpiresAt: time.Now().Add(-time.Hour),
 		}
-		_ = passResetRepo.CreateToken(context.Background(), expiredToken)
+		require.NoError(t, passResetRepo.CreateToken(context.Background(), expiredToken))
 		err := service.ResetPassword(context.Background(), "expired-code-123", "any")
 		assert.Error(t, err)
 		assert.Equal(t, "токен истёк", err.Error())
@@ -398,7 +398,7 @@ func TestEmailVerificationService_VerifyToken(t *testing.T) {
 		TokenHash: hashToken("validtoken"),
 		ExpiresAt: time.Now().Add(time.Hour),
 	}
-	_ = emailVerifRepo.CreateToken(context.Background(), token)
+	require.NoError(t, emailVerifRepo.CreateToken(context.Background(), token))
 
 	t.Run("успешная верификация", func(t *testing.T) {
 		verifiedUser, err := service.VerifyToken(context.Background(), "validtoken")
@@ -415,7 +415,7 @@ func TestEmailVerificationService_VerifyToken(t *testing.T) {
 			TokenHash: hashToken("expiredverif"),
 			ExpiresAt: time.Now().Add(-time.Hour),
 		}
-		_ = emailVerifRepo.CreateToken(context.Background(), expired)
+		require.NoError(t, emailVerifRepo.CreateToken(context.Background(), expired))
 		_, err := service.VerifyToken(context.Background(), "expiredverif")
 		assert.Error(t, err)
 		assert.Equal(t, "токен истёк", err.Error())

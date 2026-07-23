@@ -24,6 +24,7 @@ type GamePassingService struct {
 	progressSvc *LevelProgressService
 	hub         *ws.RoomHub
 	monitorSvc  MonitorServiceInterface
+	sseMgr      *SSEManager
 }
 
 func NewGamePassingService(db *gorm.DB, ts *team.TeamService, ca *CoAuthorService, progressSvc *LevelProgressService) *GamePassingService {
@@ -39,6 +40,12 @@ func (s *GamePassingService) WithHub(hub *ws.RoomHub) *GamePassingService {
 // WithMonitorService устанавливает сервис мониторинга для инвалидации кэша.
 func (s *GamePassingService) WithMonitorService(monitorSvc MonitorServiceInterface) *GamePassingService {
 	s.monitorSvc = monitorSvc
+	return s
+}
+
+// WithSSEManager устанавливает SSE-менеджер для broadcast-уведомлений.
+func (s *GamePassingService) WithSSEManager(sseMgr *SSEManager) *GamePassingService {
+	s.sseMgr = sseMgr
 	return s
 }
 
@@ -234,6 +241,13 @@ func (s *GamePassingService) StartGame(ctx context.Context, passingID, userID ui
 	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	s.broadcastGameStart(timeoutCtx, gameID, passingID, teamName)
+	// L6: Отправляем SSE-уведомление о старте игры
+	s.broadcastSSEEvent(gameID, "game_started", map[string]any{
+		"game_id":    gameID,
+		"passing_id": passingID,
+		"team_name":  teamName,
+		"timestamp":  time.Now().UTC().Format("2006-01-02T15:04:05Z"),
+	})
 
 	return nil
 }
@@ -273,6 +287,14 @@ func (s *GamePassingService) broadcastGameStart(ctx context.Context, gameID, pas
 	roomID := strconv.Itoa(int(gameID))
 	s.hub.BroadcastToRoom(roomID, data)
 	log.Info().Uint("game", gameID).Uint("passing", passingID).Str("team", teamName).Msg("GamePassingService: game started notification broadcast")
+}
+
+// broadcastSSEEvent отправляет SSE-уведомление всем подписчикам игры.
+func (s *GamePassingService) broadcastSSEEvent(gameID uint, eventType string, data any) {
+	if s.sseMgr == nil {
+		return
+	}
+	s.sseMgr.Broadcast(gameID, eventType, data)
 }
 
 // GetTeamsByCaptain возвращает команды, где пользователь является капитаном.

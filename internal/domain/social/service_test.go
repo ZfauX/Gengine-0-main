@@ -138,8 +138,8 @@ func TestFollowService_GetSubscriptions(t *testing.T) {
 	author1 := createUser(t, db, "a1@test.com", "pass")
 	author2 := createUser(t, db, "a2@test.com", "pass")
 
-	_ = fs.Follow(ctx, follower.ID, author1.ID)
-	_ = fs.Follow(ctx, follower.ID, author2.ID)
+	require.NoError(t, fs.Follow(ctx, follower.ID, author1.ID))
+	require.NoError(t, fs.Follow(ctx, follower.ID, author2.ID))
 
 	authors, err := fs.GetSubscriptions(ctx, follower.ID)
 	require.NoError(t, err)

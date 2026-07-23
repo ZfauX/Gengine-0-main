@@ -107,6 +107,6 @@ func (app *App) registerAllRoutes(r *gin.Engine, htmlGroup *gin.RouterGroup) err
 		return fmt.Errorf("регистрация маршрутов экспорта: %w", err)
 	}
 	app.registerGameplayRoutes(htmlGroup)
-	notification.RegisterRoutes(htmlGroup, app.DB, app.Deps.Services.Auth, app.Deps.Hub)
+	notification.RegisterRoutes(htmlGroup, app.DB, app.Deps.Services.Auth, app.Deps.Hub, app.Deps.Services.SSEMgr)
 	return nil
 }

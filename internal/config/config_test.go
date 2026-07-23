@@ -306,15 +306,15 @@ func TestLoadConfig_InvalidDuration(t *testing.T) {
 // =============================================================================
 
 func BenchmarkLoadConfig(b *testing.B) {
-	_ = os.Setenv("DB_HOST", "localhost")
-	_ = os.Setenv("DB_PORT", "5432")
-	_ = os.Setenv("DB_USER", "user")
-	_ = os.Setenv("DB_PASSWORD", "pass")
-	_ = os.Setenv("DB_NAME", "db")
-	_ = os.Setenv("JWT_SECRET", "xK9mP2vL5nQ8wR3tY6uI0oP4sD7fG1hJ")
-	_ = os.Setenv("SESSION_SECRET", "aB3cD4eF5gH6iJ7kL8mN9oP0qR1sT2uV3wX4yZ")
-	_ = os.Setenv("ADMIN_EMAIL", "a@b.c")
-	_ = os.Setenv("ADMIN_PASSWORD", "securepassword12345")
+	require.NoError(b, os.Setenv("DB_HOST", "localhost"))
+	require.NoError(b, os.Setenv("DB_PORT", "5432"))
+	require.NoError(b, os.Setenv("DB_USER", "user"))
+	require.NoError(b, os.Setenv("DB_PASSWORD", "pass"))
+	require.NoError(b, os.Setenv("DB_NAME", "db"))
+	require.NoError(b, os.Setenv("JWT_SECRET", "xK9mP2vL5nQ8wR3tY6uI0oP4sD7fG1hJ"))
+	require.NoError(b, os.Setenv("SESSION_SECRET", "aB3cD4eF5gH6iJ7kL8mN9oP0qR1sT2uV3wX4yZ"))
+	require.NoError(b, os.Setenv("ADMIN_EMAIL", "a@b.c"))
+	require.NoError(b, os.Setenv("ADMIN_PASSWORD", "securepassword12345"))
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

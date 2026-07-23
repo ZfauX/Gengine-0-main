@@ -88,6 +88,16 @@ func parseGameDatesFromForm(startsAtStr, registrationDeadlineStr string) (*time.
 	return startsAt, registrationDeadline, nil
 }
 
+// List отображает список игр.
+// @Summary Список игр
+// @Description Возвращает страницу со списком игр с фильтрацией по статусу, поиском и пагинацией
+// @Tags games
+// @Produce html
+// @Param status query string false "Статус игры (draft, published, started, finished)"
+// @Param search query string false "Поиск по названию"
+// @Param page query int false "Номер страницы" default(1)
+// @Success 200 {string} html "Список игр"
+// @Router /games [get]
 func (h *GameHandler) List(c *gin.Context) {
 	userID := c.GetUint("userID")
 
@@ -138,6 +148,15 @@ func (h *GameHandler) List(c *gin.Context) {
 	})
 }
 
+// Show отображает детальную информацию об игре.
+// @Summary Детали игры
+// @Tags games
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Страница игры"
+// @Failure 404 {object} map[string]interface{} "Игра не найдена"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id} [get]
 func (h *GameHandler) Show(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {
@@ -190,12 +209,34 @@ func (h *GameHandler) Show(c *gin.Context) {
 	})
 }
 
+// NewForm отображает форму создания игры.
+// @Summary Форма создания игры
+// @Tags games
+// @Produce html
+// @Success 200 {string} html "Форма создания"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /games/new [get]
+// @Security JWT
 func (h *GameHandler) NewForm(c *gin.Context) {
 	render.Page(c, http.StatusOK, "games-new.html", gin.H{
 		"csrf": csrf.GetToken(c),
 	})
 }
 
+// Create создаёт новую игру.
+// @Summary Создание игры
+// @Tags games
+// @Accept multipart/form-data
+// @Produce html
+// @Param name formData string true "Название игры"
+// @Param description formData string false "Описание игры"
+// @Param category formData string false "Категория"
+// @Param cover_image formData file false "Изображение обложки"
+// @Success 302 {string} string "Перенаправление на страницу игры"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /games/new [post]
+// @Security JWT
 func (h *GameHandler) Create(c *gin.Context) {
 	userID := c.GetUint("userID")
 
@@ -292,6 +333,17 @@ func (h *GameHandler) Create(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/games")
 }
 
+// EditForm отображает форму редактирования игры.
+// @Summary Форма редактирования игры
+// @Tags games
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Форма редактирования"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 404 {object} map[string]interface{} "Игра не найдена"
+// @Router /games/{id}/edit [get]
+// @Security JWT
 func (h *GameHandler) EditForm(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {
@@ -330,6 +382,22 @@ func (h *GameHandler) EditForm(c *gin.Context) {
 	})
 }
 
+// Update обновляет игру.
+// @Summary Обновление игры
+// @Tags games
+// @Accept multipart/form-data
+// @Produce html
+// @Param id path int true "ID игры"
+// @Param name formData string false "Название игры"
+// @Param description formData string false "Описание игры"
+// @Param category formData string false "Категория"
+// @Param cover_image formData file false "Изображение обложки"
+// @Success 302 {string} string "Перенаправление на страницу игры"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/edit [post]
+// @Security JWT
 func (h *GameHandler) Update(c *gin.Context) {
 	id, parseErr := strconv.Atoi(c.Param("id"))
 	if parseErr != nil || id <= 0 {
@@ -473,6 +541,17 @@ func (h *GameHandler) Update(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/games/"+c.Param("id"))
 }
 
+// Delete удаляет игру.
+// @Summary Удаление игры
+// @Tags games
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 302 {string} string "Перенаправление на /games"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/delete [post]
+// @Security JWT
 func (h *GameHandler) Delete(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {
@@ -494,6 +573,18 @@ func (h *GameHandler) Delete(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/games")
 }
 
+// Publish публикует игру.
+// @Summary Публикация игры
+// @Tags games
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 302 {string} string "Перенаправление на страницу игры"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/publish [post]
+// @Security JWT
 func (h *GameHandler) Publish(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {

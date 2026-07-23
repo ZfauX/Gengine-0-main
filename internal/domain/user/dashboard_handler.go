@@ -22,6 +22,15 @@ func NewDashboardHandler(dashboardService *UserDashboardService, db *gorm.DB) *D
 	return &DashboardHandler{dashboardService: dashboardService, db: db}
 }
 
+// Index отображает личный кабинет пользователя.
+// @Summary Личный кабинет
+// @Description Отображает главную страницу личного кабинета пользователя
+// @Tags dashboard
+// @Produce html
+// @Success 200 {string} html "Личный кабинет"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /dashboard [get]
+// @Security JWT
 func (h *DashboardHandler) Index(c *gin.Context) {
 	userID := c.GetUint("userID")
 	dash, err := h.dashboardService.GetDashboard(c.Request.Context(), userID)

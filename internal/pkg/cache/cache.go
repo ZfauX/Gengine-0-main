@@ -343,6 +343,96 @@ func (c *Cache) GetOrSetStringWithTTL(key string, ttl time.Duration, fn func() (
 	return c.GetOrSetString(key, ttl, fn)
 }
 
+// GetOrSetStringWithTTLWithCtx — контекстно-ориентированная версия GetOrSetStringWithTTL.
+func (c *Cache) GetOrSetStringWithTTLWithCtx(ctx context.Context, key string, ttl time.Duration, fn func() (string, error)) (string, error) {
+	val, err := c.GetOrSetWithCtx(ctx, key, ttl, func() (any, error) {
+		return fn()
+	})
+	if err != nil {
+		return "", err
+	}
+	if str, ok := val.(string); ok {
+		return str, nil
+	}
+	return "", fmt.Errorf("unexpected type for key %s, got %T", key, val)
+}
+
+// GetOrSetWithCtx — контекстно-ориентированная версия GetOrSet.
+func (c *Cache) GetOrSetWithCtx(ctx context.Context, key string, ttl time.Duration, fn func() (any, error)) (any, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+	if val, ok := c.Get(key); ok {
+		return val, nil
+	}
+	val, err := fn()
+	if err != nil {
+		return nil, err
+	}
+	c.Set(key, val, ttl)
+	return val, nil
+}
+
+// GetOrSetIntWithCtx — контекстно-ориентированная версия GetOrSetInt.
+func (c *Cache) GetOrSetIntWithCtx(ctx context.Context, key string, ttl time.Duration, fn func() (int, error)) (int, error) {
+	select {
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	default:
+	}
+	val, err := c.GetOrSetWithCtx(ctx, key, ttl, func() (any, error) {
+		return fn()
+	})
+	if err != nil {
+		return 0, err
+	}
+	if v, ok := val.(int); ok {
+		return v, nil
+	}
+	return 0, fmt.Errorf("unexpected type for key %s, got %T", key, val)
+}
+
+// GetOrSetFloat64WithCtx — контекстно-ориентированная версия GetOrSetFloat64.
+func (c *Cache) GetOrSetFloat64WithCtx(ctx context.Context, key string, ttl time.Duration, fn func() (float64, error)) (float64, error) {
+	select {
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	default:
+	}
+	val, err := c.GetOrSetWithCtx(ctx, key, ttl, func() (any, error) {
+		return fn()
+	})
+	if err != nil {
+		return 0, err
+	}
+	if v, ok := val.(float64); ok {
+		return v, nil
+	}
+	return 0, fmt.Errorf("unexpected type for key %s, got %T", key, val)
+}
+
+// ExtendTTLWithCtx — продлевает TTL с проверкой контекста.
+func (c *Cache) ExtendTTLWithCtx(ctx context.Context, key string, ttl time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	default:
+	}
+	return c.ExtendTTL(key, ttl)
+}
+
+// FlushWithCtx — очистка кеша с проверкой контекста.
+func (c *Cache) FlushWithCtx(ctx context.Context) {
+	select {
+	case <-ctx.Done():
+		return
+	default:
+	}
+	c.Flush()
+}
+
 type NoopCache struct{}
 
 func NewNoopCache() *NoopCache { return &NoopCache{} }
@@ -362,6 +452,9 @@ func (NoopCache) GetOrSetString(_ string, _ time.Duration, fn func() (string, er
 func (NoopCache) GetOrSetStringWithTTL(_ string, _ time.Duration, fn func() (string, error)) (string, error) {
 	return fn()
 }
+func (NoopCache) GetOrSetStringWithTTLWithCtx(_ context.Context, _ string, _ time.Duration, fn func() (string, error)) (string, error) {
+	return fn()
+}
 func (NoopCache) ExtendTTL(_ string, _ time.Duration) bool { return false }
 func (NoopCache) GetOrSetInt(_ string, _ time.Duration, fn func() (int, error)) (int, error) {
 	return fn()
@@ -373,4 +466,15 @@ func (NoopCache) GetWithCtx(_ context.Context, _ string) (any, bool)            
 func (NoopCache) SetWithCtx(_ context.Context, _ string, _ any, _ time.Duration) {}
 func (NoopCache) DeleteWithCtx(_ context.Context, _ string)                      {}
 func (NoopCache) DeleteByPrefixWithCtx(_ context.Context, _ string)              {}
-func (NoopCache) Close() error                                                   { return nil }
+func (NoopCache) GetOrSetWithCtx(_ context.Context, _ string, _ time.Duration, fn func() (any, error)) (any, error) {
+	return fn()
+}
+func (NoopCache) GetOrSetIntWithCtx(_ context.Context, _ string, _ time.Duration, fn func() (int, error)) (int, error) {
+	return fn()
+}
+func (NoopCache) GetOrSetFloat64WithCtx(_ context.Context, _ string, _ time.Duration, fn func() (float64, error)) (float64, error) {
+	return fn()
+}
+func (NoopCache) ExtendTTLWithCtx(_ context.Context, _ string, _ time.Duration) bool { return false }
+func (NoopCache) FlushWithCtx(_ context.Context)                                     {}
+func (NoopCache) Close() error                                                       { return nil }

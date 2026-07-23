@@ -9,7 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
+	stderrors "errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -17,6 +17,7 @@ import (
 	"gengine-0/internal/config"
 	"gengine-0/internal/pkg/crypto"
 	"gengine-0/internal/pkg/email"
+	errspkg "gengine-0/internal/pkg/errors"
 	"gengine-0/internal/pkg/metrics"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -91,7 +92,7 @@ func (s *AuthService) Register(ctx context.Context, emailStr, password, name str
 func (s *AuthService) Login(ctx context.Context, emailStr, password string) (string, error) {
 	user, err := s.userRepo.GetByEmail(ctx, emailStr)
 	if err != nil {
-		return "", errors.New("неверный email или пароль")
+		return "", stderrors.New("неверный email или пароль")
 	}
 
 	// Проверка блокировки аккаунта
@@ -101,19 +102,33 @@ func (s *AuthService) Login(ctx context.Context, emailStr, password string) (str
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
-		user.FailedLoginAttempts++
-		if user.FailedLoginAttempts >= 5 {
+		// Атомарный инкремент счётчика неудачных попыток (без race condition)
+		newAttempts, err := s.userRepo.AtomicIncrementFailedAttempts(ctx, user.ID)
+		if err != nil {
+			log.Error().Err(err).Uint("user_id", user.ID).Msg("Login: atomic increment failed")
+			return "", stderrors.New("внутренняя ошибка сервера")
+		}
+
+		if newAttempts >= 5 {
 			now := time.Now()
 			lockedUntil := now.Add(30 * time.Minute)
-			_ = s.userRepo.Update(ctx, user.ID, map[string]any{"locked_until": lockedUntil, "failed_login_attempts": 0})
+			if err := s.userRepo.Update(ctx, user.ID, map[string]any{
+				"locked_until":          lockedUntil,
+				"failed_login_attempts": 0,
+			}); err != nil {
+				log.Error().Err(err).Uint("user_id", user.ID).Msg("Login: failed to lock account")
+				return "", stderrors.New("внутренняя ошибка сервера")
+			}
 			return "", fmt.Errorf("аккаунт заблокирован на 30 минут (превышено 5 неудачных попыток)")
 		}
-		_ = s.userRepo.Update(ctx, user.ID, map[string]any{"failed_login_attempts": user.FailedLoginAttempts})
-		return "", errors.New("неверный email или пароль")
+		return "", stderrors.New("неверный email или пароль")
 	}
 
+	// Успешный вход — сброс счётчика (с проверкой ошибки)
 	if user.FailedLoginAttempts > 0 || user.LockedUntil != nil {
-		_ = s.userRepo.Update(ctx, user.ID, map[string]any{"failed_login_attempts": 0, "locked_until": nil})
+		if err := s.userRepo.Update(ctx, user.ID, map[string]any{"failed_login_attempts": 0, "locked_until": nil}); err != nil {
+			log.Error().Err(err).Uint("user_id", user.ID).Msg("Login: failed to reset failed_login_attempts")
+		}
 	}
 
 	return s.generateJWT(*user)
@@ -169,15 +184,15 @@ func (s *AuthService) RefreshAccessToken(ctx context.Context, refreshTokenStr st
 
 	stored, err := s.refreshTokenRepo.GetByTokenHash(ctx, tokenHash)
 	if err != nil {
-		return "", errors.New("невалидный или отозванный refresh-токен")
+		return "", stderrors.New("невалидный или отозванный refresh-токен")
 	}
 	if stored.ExpiresAt.Before(time.Now()) {
-		return "", errors.New("refresh-токен истёк")
+		return "", stderrors.New("refresh-токен истёк")
 	}
 
 	user, err := s.userRepo.GetByID(ctx, stored.UserID)
 	if err != nil {
-		return "", errors.New("пользователь не найден")
+		return "", stderrors.New("пользователь не найден")
 	}
 
 	return s.generateJWT(*user)
@@ -187,37 +202,37 @@ func (s *AuthService) ParseToken(tokenStr string) (uint, string, error) {
 	claims := jwt.MapClaims{}
 	token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, errors.New("неверный метод подписи")
+			return nil, stderrors.New("неверный метод подписи")
 		}
 		return []byte(s.cfg.JWT.Secret), nil
 	})
 	if err != nil || token == nil || !token.Valid {
-		return 0, "", errors.New("невалидный токен")
+		return 0, "", stderrors.New("невалидный токен")
 	}
 
 	// Проверяем, что токен не refresh-токен
 	if isRefresh, ok := claims["refresh"].(bool); ok && isRefresh {
-		return 0, "", errors.New("использование refresh-токена как access запрещено")
+		return 0, "", stderrors.New("использование refresh-токена как access запрещено")
 	}
 
 	// Проверяем nbf (not before) — jwt.ParseWithClaims с MapClaims не проверяет автоматически
 	if nbf, ok := claims["nbf"].(float64); ok {
 		if time.Now().Unix() < int64(nbf) {
-			return 0, "", errors.New("токен ещё не действителен")
+			return 0, "", stderrors.New("токен ещё не действителен")
 		}
 	}
 
 	// Проверяем iat (issued at) — токен не должен быть выдан в будущем
 	if iat, ok := claims["iat"].(float64); ok {
 		if time.Now().Unix() < int64(iat) {
-			return 0, "", errors.New("неверная дата выдачи токена")
+			return 0, "", stderrors.New("неверная дата выдачи токена")
 		}
 	}
 
 	// Проверяем user_id с проверкой типа
 	userIDFloat, ok := claims["user_id"]
 	if !ok {
-		return 0, "", errors.New("отсутствует user_id в токене")
+		return 0, "", stderrors.New("отсутствует user_id в токене")
 	}
 
 	var userID uint
@@ -227,15 +242,15 @@ func (s *AuthService) ParseToken(tokenStr string) (uint, string, error) {
 	case json.Number:
 		parsed, parseErr := v.Int64()
 		if parseErr != nil {
-			return 0, "", errors.New("невалидный формат user_id в токене")
+			return 0, "", stderrors.New("невалидный формат user_id в токене")
 		}
 		userID = uint(parsed)
 	default:
-		return 0, "", errors.New("неверный тип user_id в токене")
+		return 0, "", stderrors.New("неверный тип user_id в токене")
 	}
 
 	if userID == 0 {
-		return 0, "", errors.New("невалидный ID пользователя в токене")
+		return 0, "", stderrors.New("невалидный ID пользователя в токене")
 	}
 
 	role := "user"
@@ -301,7 +316,7 @@ func (s *UserService) ChangePassword(ctx context.Context, id uint, oldPassword, 
 		return getErr
 	}
 	if bcryptErr := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(oldPassword)); bcryptErr != nil {
-		return errors.New("неверный текущий пароль")
+		return stderrors.New("неверный текущий пароль")
 	}
 	hashed, hashErr := bcrypt.GenerateFromPassword([]byte(newPassword), crypto.BcryptCost)
 	if hashErr != nil {
@@ -407,7 +422,7 @@ func NewOAuthService(
 func (s *OAuthService) GetAuthURL(provider string) (authURL string, state string, err error) {
 	cfg, ok := s.configs[provider]
 	if !ok {
-		return "", "", errors.New("неподдерживаемый провайдер")
+		return "", "", stderrors.New("неподдерживаемый провайдер")
 	}
 	stateBytes := make([]byte, oauthStateBytes)
 	if _, err := rand.Read(stateBytes); err != nil {
@@ -445,11 +460,11 @@ func (s *OAuthService) ctxWithHTTPClient(ctx context.Context) context.Context {
 
 func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state string) (*User, error) {
 	if state == "" {
-		return nil, errors.New("неверный state-параметр")
+		return nil, stderrors.New("неверный state-параметр")
 	}
 	cfg, ok := s.configs[provider]
 	if !ok {
-		return nil, errors.New("неподдерживаемый провайдер")
+		return nil, stderrors.New("неподдерживаемый провайдер")
 	}
 
 	ctxWithClient := s.ctxWithHTTPClient(ctx)
@@ -487,10 +502,10 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 		emailVerified = info.VerifiedEmail
 		name = info.Name
 		if emailStr == "" {
-			return nil, errors.New("не удалось получить email от Google")
+			return nil, stderrors.New("не удалось получить email от Google")
 		}
 		if !emailVerified {
-			return nil, errors.New("email от Google не подтверждён")
+			return nil, stderrors.New("email от Google не подтверждён")
 		}
 	case "github":
 		req, reqErr := http.NewRequestWithContext(ctxWithClient, "GET", "https://api.github.com/user/emails", nil)
@@ -519,7 +534,7 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 			}
 		}
 		if !found {
-			return nil, errors.New("не найден верифицированный primary email от GitHub")
+			return nil, stderrors.New("не найден верифицированный primary email от GitHub")
 		}
 		reqUser, reqUserErr := http.NewRequestWithContext(ctxWithClient, "GET", "https://api.github.com/user", nil)
 		if reqUserErr != nil {
@@ -565,23 +580,23 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 		externalID = info.ID
 		emailVerified = info.IsVerified
 		if emailStr == "" {
-			return nil, errors.New("не удалось получить email от Yandex")
+			return nil, stderrors.New("не удалось получить email от Yandex")
 		}
 		if !emailVerified {
-			return nil, errors.New("email от Yandex не подтверждён")
+			return nil, stderrors.New("email от Yandex не подтверждён")
 		}
 		name = info.FirstName
 		if name == "" {
 			name = info.LastName
 		}
 	default:
-		return nil, errors.New("неподдерживаемый провайдер для получения информации")
+		return nil, stderrors.New("неподдерживаемый провайдер для получения информации")
 	}
 	if name == "" {
 		name = emailStr
 	}
 	user, getUserErr := s.userRepo.GetByEmail(ctx, emailStr)
-	if errors.Is(getUserErr, gorm.ErrRecordNotFound) {
+	if stderrors.Is(getUserErr, gorm.ErrRecordNotFound) {
 		user = &User{
 			Email:         emailStr,
 			Name:          name,
@@ -674,13 +689,13 @@ func (s *PasswordResetService) GenerateToken(ctx context.Context, user User) (st
 func (s *PasswordResetService) ResetPassword(ctx context.Context, resetCode, newPassword string) error {
 	token, err := s.passResetRepo.GetTokenByResetCode(ctx, resetCode)
 	if err != nil {
-		return errors.New("токен недействителен или истёк")
+		return stderrors.New("токен недействителен или истёк")
 	}
 	if token.ExpiresAt.Before(time.Now()) {
-		return errors.New("токен истёк")
+		return stderrors.New("токен истёк")
 	}
 	if token.UsedAt != nil {
-		return errors.New("токен уже использован")
+		return stderrors.New("токен уже использован")
 	}
 	hashed, err := bcrypt.GenerateFromPassword([]byte(newPassword), crypto.BcryptCost)
 	if err != nil {
@@ -742,7 +757,7 @@ func (s *EmailVerificationService) SendVerificationEmail(ctx context.Context, us
 	); err != nil {
 		log.Error().Err(err).Str("email", user.Email).Msg("SendVerificationEmail: failed to enqueue email")
 		// Удаляем токен, так как письмо не ушло
-		_ = s.emailVerifRepo.DeleteToken(ctx, &EmailVerificationToken{TokenHash: hex.EncodeToString(hash[:])})
+		errspkg.LogSilently(s.emailVerifRepo.DeleteToken(ctx, &EmailVerificationToken{TokenHash: hex.EncodeToString(hash[:])}), "SendVerificationEmail: cleanup failed")
 		return fmt.Errorf("не удалось отправить письмо: %w", err)
 	}
 	return nil
@@ -751,15 +766,15 @@ func (s *EmailVerificationService) SendVerificationEmail(ctx context.Context, us
 func (s *EmailVerificationService) VerifyToken(ctx context.Context, tokenStr string) (*User, error) {
 	token, err := s.emailVerifRepo.GetToken(ctx, tokenStr)
 	if err != nil {
-		return nil, errors.New("токен недействителен или истёк")
+		return nil, stderrors.New("токен недействителен или истёк")
 	}
 	if token.ExpiresAt.Before(time.Now()) {
-		return nil, errors.New("токен истёк")
+		return nil, stderrors.New("токен истёк")
 	}
 	if err := s.userRepo.Update(ctx, token.UserID, map[string]any{"email_verified": true}); err != nil {
 		return nil, err
 	}
-	_ = s.emailVerifRepo.DeleteToken(ctx, token)
+	errspkg.LogSilently(s.emailVerifRepo.DeleteToken(ctx, token), "VerifyToken: cleanup failed")
 	return s.userRepo.GetByID(ctx, token.UserID)
 }
 

@@ -132,6 +132,14 @@ func (m *SSEManager) Broadcast(gameID uint, eventType string, data any) {
 }
 
 // SSEHandler возвращает обработчик для SSE-эндпоинта
+// SSEHandler возвращает handler для Server-Sent Events.
+// @Summary Server-Sent Events для реал-тайм обновлений прохождения
+// @Description Подключается к SSE-потоку для получения реал-тайм обновлений статуса прохождения, новых подсказок и завершения уровня
+// @Tags gameplay
+// @Produce text/event-stream
+// @Param passing_id path int true "ID прохождения"
+// @Router /game/{passing_id}/sse [get]
+// @Security JWT
 func SSEHandler(mgr *SSEManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		gameID, err := strconv.Atoi(c.Param("game_id"))

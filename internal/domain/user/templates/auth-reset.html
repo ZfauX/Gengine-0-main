@@ -22,7 +22,7 @@
             <button type="submit" id="resetBtn" class="w-full btn btn-primary text-sm">Установить пароль</button>
         </form>
 
-        <script>
+        <script nonce="{{.csp_nonce}}">
             document.querySelector('form').addEventListener('submit', function() {
                 const btn = document.getElementById('resetBtn');
                 btn.disabled = true;

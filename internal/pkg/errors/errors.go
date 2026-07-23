@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/rs/zerolog/log"
 )
 
 // ErrorCode — уникальный код ошибки для логирования и локализации.
@@ -533,4 +535,34 @@ func ErrorText(code ErrorCode) string {
 		return msg
 	}
 	return string(code)
+}
+
+// ─── Helper-функции для логирования ──────────────────────────────
+
+// LogIfError логирует ошибку и возвращает её.
+// Используется когда ошибка должна быть возвращена вызывающему,
+// но также нужна запись в лог для отладки в production.
+func LogIfError(err error, msg string) error {
+	if err != nil {
+		log.Err(err).Msg(msg)
+	}
+	return err
+}
+
+// LogSilently логирует ошибку без возврата.
+// Используется в cleanup-коде, где ошибка не критична.
+func LogSilently(err error, msg string) {
+	if err != nil {
+		log.Err(err).Msg(msg)
+	}
+}
+
+// LogAndReturn логирует ошибку и возвращает обёрнутую ошибку.
+// Полезно когда нужно добавить контекст к существующей ошибке.
+func LogAndReturn(err error, msg string) error {
+	if err != nil {
+		log.Err(err).Msg(msg)
+		return fmt.Errorf("%s: %w", msg, err)
+	}
+	return nil
 }

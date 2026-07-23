@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -143,9 +145,13 @@ func (s *LocalStorage) Save(baseDir string, reader io.Reader, originalName strin
 	// Закрываем файл после записи, но если запись не удалась, удаляем его
 	fileErr := createErr
 	defer func() {
-		_ = dst.Close()
+		if closeErr := dst.Close(); closeErr != nil && fileErr == nil {
+			log.Error().Err(closeErr).Str("path", fullPath).Msg("Save: file close failed")
+		}
 		if fileErr != nil {
-			_ = os.Remove(fullPath)
+			if removeErr := os.Remove(fullPath); removeErr != nil {
+				log.Warn().Err(removeErr).Str("path", fullPath).Msg("Save: cleanup file failed")
+			}
 		}
 	}()
 
@@ -157,8 +163,12 @@ func (s *LocalStorage) Save(baseDir string, reader io.Reader, originalName strin
 
 	// Проверяем, не превышен ли лимит (io.LimitReader может вернуть io.EOF раньше)
 	if written > maxSize {
-		_ = dst.Close()
-		_ = os.Remove(fullPath)
+		if err := dst.Close(); err != nil {
+			log.Error().Err(err).Str("path", fullPath).Msg("Save: file close failed on size limit")
+		}
+		if err := os.Remove(fullPath); err != nil {
+			log.Warn().Err(err).Str("path", fullPath).Msg("Save: cleanup file failed on size limit")
+		}
 		return "", fmt.Errorf("размер файла превышает допустимый лимит %d байт", maxSize)
 	}
 

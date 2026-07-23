@@ -13,6 +13,7 @@ import (
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/cache"
+	errspkg "gengine-0/internal/pkg/errors"
 	"gengine-0/internal/pkg/storage"
 	ws "gengine-0/internal/pkg/websocket"
 
@@ -219,7 +220,7 @@ func (s *GameService) Delete(ctx context.Context, id uint, userID uint) error {
 					return nil
 				})
 			}
-			_ = g.Wait()
+			errspkg.LogSilently(g.Wait(), "Delete: parallel photo cleanup failed")
 		}
 	}
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/user"
 	ws "gengine-0/internal/pkg/websocket"
 
@@ -47,9 +48,10 @@ func (Notification) TableName() string {
 
 // NotificationService отвечает за работу с настройками и push-уведомлениями.
 type NotificationService struct {
-	repo NotificationRepository
-	db   *gorm.DB
-	hub  *ws.RoomHub
+	db     *gorm.DB
+	hub    *ws.RoomHub
+	repo   NotificationRepository
+	sseMgr *game.SSEManager
 }
 
 func NewNotificationService(db *gorm.DB, hub *ws.RoomHub) *NotificationService {
@@ -63,6 +65,12 @@ func NewNotificationService(db *gorm.DB, hub *ws.RoomHub) *NotificationService {
 // WithHub устанавливает WebSocket-хаб для push-уведомлений
 func (s *NotificationService) WithHub(hub *ws.RoomHub) *NotificationService {
 	s.hub = hub
+	return s
+}
+
+// WithSSEManager устанавливает SSE-менеджер для broadcast-уведомлений.
+func (s *NotificationService) WithSSEManager(sseMgr *game.SSEManager) *NotificationService {
+	s.sseMgr = sseMgr
 	return s
 }
 
@@ -271,7 +279,25 @@ func (s *NotificationService) SendTimeWarning(ctx context.Context, userID uint, 
 	message := fmt.Sprintf("До завершения уровня осталось %d секунд", remainingSeconds)
 	url := fmt.Sprintf("/game/%d", passingID)
 
-	return s.Create(ctx, userID, NotificationTypeTimeWarning, title, message, url, fmt.Sprintf(`{"passing_id":%d,"remaining":%d}`, passingID, remainingSeconds))
+	err := s.Create(ctx, userID, NotificationTypeTimeWarning, title, message, url, fmt.Sprintf(`{"passing_id":%d,"remaining":%d}`, passingID, remainingSeconds))
+	if err != nil {
+		return err
+	}
+
+	// Отправляем SSE-уведомление
+	if s.sseMgr != nil {
+		var passing game.GamePassing
+		if err := s.db.First(&passing, passingID).Error; err == nil {
+			s.sseMgr.Broadcast(passing.GameID, "time_warning", map[string]any{
+				"game_id":           passing.GameID,
+				"passing_id":        passingID,
+				"remaining_seconds": remainingSeconds,
+				"remaining_minutes": remainingSeconds / 60,
+			})
+		}
+	}
+
+	return nil
 }
 
 // SendTimeExpired отправляет уведомление об истечении времени

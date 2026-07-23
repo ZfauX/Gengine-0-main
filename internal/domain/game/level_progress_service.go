@@ -23,11 +23,25 @@ var (
 )
 
 type LevelProgressService struct {
-	DB *gorm.DB
+	DB          *gorm.DB
+	sseMgr      *SSEManager
+	gameService *GameService
 }
 
 func NewLevelProgressService(db *gorm.DB) *LevelProgressService {
 	return &LevelProgressService{DB: db}
+}
+
+// WithSSEManager устанавливает SSE-менеджер для broadcast-уведомлений.
+func (s *LevelProgressService) WithSSEManager(sseMgr *SSEManager) *LevelProgressService {
+	s.sseMgr = sseMgr
+	return s
+}
+
+// WithGameService устанавливает сервис игр для получения ID игры.
+func (s *LevelProgressService) WithGameService(gameService *GameService) *LevelProgressService {
+	s.gameService = gameService
+	return s
 }
 
 // InitFirstLevel инициализирует прогресс первого уровня при старте игры.
@@ -100,15 +114,48 @@ func GetCurrentProgressForUpdate(tx *gorm.DB, gamePassingID uint) (*LevelProgres
 
 // CompleteLevel завершает прогресс уровня и переходит к следующему.
 // Работает с переданным *gorm.DB (может быть транзакцией).
-// Возвращает onCommit — callback, который нужно вызвать ПОСЛЕ коммита транзакции.
-func CompleteLevel(db *gorm.DB, progress *LevelProgress, onGameFinished func()) (onCommit func(), err error) {
+// onGameFinished — необязательный callback, вызывается когда завершается последний уровень.
+// onCommit — callback, который нужно вызвать ПОСЛЕ коммита транзакции (для SSE broadcast).
+func CompleteLevel(db *gorm.DB, progress *LevelProgress, onGameFinished func(), onCommit func()) (err error) {
 	now := time.Now()
 	progress.FinishedAt = &now
 	if err = db.Save(progress).Error; err != nil {
-		return nil, err
+		return err
 	}
 	metrics.IncLevelProgress()
-	return AdvanceToNextLevel(db, progress.GamePassingID, progress.LevelID, onGameFinished)
+	_, err = AdvanceToNextLevel(db, progress.GamePassingID, progress.LevelID, onGameFinished)
+	if err != nil {
+		return err
+	}
+	// Вызываем onCommit ПОСЛЕ коммита транзакции
+	if onCommit != nil {
+		onCommit()
+	}
+	return nil
+}
+
+// CompleteLevelWithSSE — расширенная версия CompleteLevel с SSE broadcast.
+func CompleteLevelWithSSE(db *gorm.DB, progress *LevelProgress, sseMgr *SSEManager, onGameFinished func()) (err error) {
+	if sseMgr == nil {
+		return CompleteLevel(db, progress, onGameFinished, nil)
+	}
+
+	gameID := progress.GamePassingID // Need to get gameID from passing
+	var passing GamePassing
+	if err = db.First(&passing, progress.GamePassingID).Error; err != nil {
+		return err
+	}
+	gameID = passing.GameID
+
+	return CompleteLevel(db, progress, onGameFinished, func() {
+		sseMgr.Broadcast(gameID, "level_completed", map[string]any{
+			"game_id":      gameID,
+			"passing_id":   progress.GamePassingID,
+			"level_id":     progress.LevelID,
+			"team_id":      passing.TeamID,
+			"completed_at": time.Now().UTC().Format("2006-01-02T15:04:05Z"),
+		})
+	})
 }
 
 // AdvanceToNextLevel находит следующий уровень и создаёт для него прогресс.
@@ -156,6 +203,33 @@ func AdvanceToNextLevel(db *gorm.DB, gamePassingID, completedLevelID uint, onGam
 		}
 	}
 	return nil, nil
+}
+
+// AdvanceToNextLevelWithSSE — расширенная версия с SSE broadcast.
+func AdvanceToNextLevelWithSSE(db *gorm.DB, gamePassingID, completedLevelID uint, onGameFinished func(), sseMgr *SSEManager) (onCommit func(), err error) {
+	if sseMgr == nil {
+		return AdvanceToNextLevel(db, gamePassingID, completedLevelID, onGameFinished)
+	}
+
+	var passing GamePassing
+	if err = db.First(&passing, gamePassingID).Error; err != nil {
+		return nil, err
+	}
+	gameID := passing.GameID
+
+	return AdvanceToNextLevel(db, gamePassingID, completedLevelID, func() {
+		if onGameFinished != nil {
+			onGameFinished()
+		}
+		// После завершения игры отправляем SSE-уведомление
+		if sseMgr != nil {
+			sseMgr.Broadcast(gameID, "game_finished", map[string]any{
+				"game_id":     gameID,
+				"passing_id":  gamePassingID,
+				"finished_at": time.Now().UTC().Format("2006-01-02T15:04:05Z"),
+			})
+		}
+	})
 }
 
 // periodicRunner запускает периодическую функцию с контекстом и ticker.

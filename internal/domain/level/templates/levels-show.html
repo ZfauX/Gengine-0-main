@@ -29,7 +29,7 @@
         <div class="mt-4">
             <div id="level-map" class="map-container" style="height: 300px;"></div>
         </div>
-        <script>
+        <script nonce="{{.csp_nonce}}">
             (function() {
                 const lat = {{.Level.Latitude}};
                 const lng = {{.Level.Longitude}};

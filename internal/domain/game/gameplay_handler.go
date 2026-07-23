@@ -58,6 +58,17 @@ func NewGameplayHandler(
 }
 
 // ShowGame отображает страницу прохождения уровня для команды.
+// ShowGame отображает страницу прохождения уровня.
+// @Summary Страница прохождения уровня
+// @Tags gameplay
+// @Produce html
+// @Param passing_id path int true "ID прохождения"
+// @Success 200 {string} html "Страница прохождения"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 404 {object} map[string]interface{} "Прохождение не найдено"
+// @Router /game/{passing_id} [get]
+// @Security JWT
 func (h *GameplayHandler) ShowGame(c *gin.Context) {
 	passingID, err := strconv.Atoi(c.Param("passing_id"))
 	if err != nil || passingID <= 0 {
@@ -118,6 +129,20 @@ func (h *GameplayHandler) renderGameplayError(c *gin.Context, passingID uint, er
 }
 
 // SubmitCode обрабатывает ввод текстового кода.
+// SubmitCode отправляет код ответа на уровень.
+// @Summary Отправка кода
+// @Tags gameplay
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param passing_id path int true "ID прохождения"
+// @Param code formData string true "Код ответа"
+// @Success 302 {string} string "Перенаправление на страницу прохождения"
+// @Failure 400 {object} map[string]interface{} "Неверный код"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 429 {object} map[string]interface{} "Слишком много попыток"
+// @Router /game/{passing_id}/submit [post]
+// @Security JWT
 func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 	passingID, parseErr := strconv.Atoi(c.Param("passing_id"))
 	if parseErr != nil || passingID <= 0 {
@@ -184,6 +209,16 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 }
 
 // UseHint использует подсказку для текущего уровня.
+// UseHint запрашивает подсказку для уровня.
+// @Summary Использование подсказки
+// @Tags gameplay
+// @Param passing_id path int true "ID прохождения"
+// @Success 302 {string} string "Перенаправление на страницу прохождения"
+// @Failure 400 {object} map[string]interface{} "Ошибка"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /game/{passing_id}/hint [post]
+// @Security JWT
 func (h *GameplayHandler) UseHint(c *gin.Context) {
 	passingID, parseErr := strconv.Atoi(c.Param("passing_id"))
 	if parseErr != nil || passingID <= 0 {
@@ -202,6 +237,18 @@ func (h *GameplayHandler) UseHint(c *gin.Context) {
 }
 
 // SubmitFile обрабатывает файловый ответ.
+// SubmitFile загружает файл ответа.
+// @Summary Загрузка файла ответа
+// @Tags gameplay
+// @Accept multipart/form-data
+// @Param passing_id path int true "ID прохождения"
+// @Param file formData file true "Файл ответа"
+// @Success 302 {string} string "Перенаправление на страницу прохождения"
+// @Failure 400 {object} map[string]interface{} "Ошибка"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /game/{passing_id}/file [post]
+// @Security JWT
 func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 	passingID, parseErr := strconv.Atoi(c.Param("passing_id"))
 	if parseErr != nil || passingID <= 0 {
@@ -264,6 +311,15 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 }
 
 // AcceptAnswer принимает ответ (чёрный ящик).
+// AcceptAnswer подтверждает ответ (только для чёрного ящика).
+// @Summary Подтверждение ответа (только для чёрного ящика)
+// @Tags gameplay
+// @Param passing_id path int true "ID прохождения"
+// @Success 302 {string} string "Перенаправление на страницу прохождения"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /game/{passing_id}/accept [post]
+// @Security JWT
 func (h *GameplayHandler) AcceptAnswer(c *gin.Context) {
 	passingID, parseErr := strconv.Atoi(c.Param("passing_id"))
 	if parseErr != nil || passingID <= 0 {
@@ -280,6 +336,16 @@ func (h *GameplayHandler) AcceptAnswer(c *gin.Context) {
 // ---------- Тестовое прохождение ----------
 
 // StartTesting инициирует тестовое прохождение.
+// StartTesting запускает тестовое прохождение.
+// @Summary Запуск тестового прохождения
+// @Tags games
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 302 {string} string "Перенаправление на страницу тестового прохождения"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/testing/start [get]
+// @Security JWT
 func (h *GameplayHandler) StartTesting(c *gin.Context) {
 	gameID, parseErr := strconv.Atoi(c.Param("id"))
 	if parseErr != nil || gameID <= 0 {
@@ -297,6 +363,17 @@ func (h *GameplayHandler) StartTesting(c *gin.Context) {
 }
 
 // ShowTestGame отображает страницу тестового прохождения.
+// ShowTestGame отображает страницу тестового прохождения.
+// @Summary Страница тестового прохождения
+// @Tags testing
+// @Produce html
+// @Param passing_id path int true "ID прохождения"
+// @Success 200 {string} html "Страница тестового прохождения"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 404 {object} map[string]interface{} "Прохождение не найдено"
+// @Router /testing/{passing_id} [get]
+// @Security JWT
 func (h *GameplayHandler) ShowTestGame(c *gin.Context) {
 	passingID, parseErr := strconv.Atoi(c.Param("passing_id"))
 	if parseErr != nil || passingID <= 0 {
@@ -352,6 +429,18 @@ func (h *GameplayHandler) ShowTestGame(c *gin.Context) {
 }
 
 // SubmitTestCode обрабатывает ввод кода в тестовом режиме.
+// SubmitTestCode отправляет код ответа в тестовом режиме.
+// @Summary Отправка кода в тестовом режиме
+// @Tags testing
+// @Param passing_id path int true "ID прохождения"
+// @Param code formData string true "Код ответа"
+// @Success 302 {string} string "Перенаправление на страницу тестового прохождения"
+// @Failure 400 {object} map[string]interface{} "Неверный код"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 429 {object} map[string]interface{} "Слишком много попыток"
+// @Router /testing/{passing_id}/submit [post]
+// @Security JWT
 func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
 	passingID, parseErr := strconv.Atoi(c.Param("passing_id"))
 	if parseErr != nil || passingID <= 0 {
@@ -427,6 +516,15 @@ func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
 }
 
 // SkipTestLevel пропускает уровень в тестовом режиме.
+// SkipTestLevel пропускает уровень в тестовом режиме.
+// @Summary Пропуск уровня в тестовом режиме
+// @Tags testing
+// @Param passing_id path int true "ID прохождения"
+// @Success 302 {string} string "Перенаправление на страницу тестового прохождения"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /testing/{passing_id}/skip [post]
+// @Security JWT
 func (h *GameplayHandler) SkipTestLevel(c *gin.Context) {
 	passingID, parseErr := strconv.Atoi(c.Param("passing_id"))
 	if parseErr != nil || passingID <= 0 {

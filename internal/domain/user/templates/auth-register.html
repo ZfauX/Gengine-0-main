@@ -48,7 +48,7 @@
             <button type="submit" id="registerBtn" class="w-full btn btn-primary text-sm">Зарегистрироваться</button>
         </form>
 
-        <script>
+        <script nonce="{{.csp_nonce}}">
             document.querySelector('form').addEventListener('submit', function() {
                 const btn = document.getElementById('registerBtn');
                 btn.disabled = true;

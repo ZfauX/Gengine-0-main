@@ -79,7 +79,9 @@ func (c *Client) writePump(ctx context.Context) {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
-		_ = c.Conn.Close()
+		if err := c.Conn.Close(); err != nil {
+			log.Debug().Err(err).Str("client_id", c.ID).Msg("writePump: conn close failed")
+		}
 		if c.Hub != nil {
 			c.Hub.UnregisterClient(c)
 		}
@@ -95,17 +97,23 @@ func (c *Client) writePump(ctx context.Context) {
 			return
 		case message, ok := <-c.Send:
 			if !ok {
-				_ = c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+				if err := c.Conn.WriteMessage(websocket.CloseMessage, []byte{}); err != nil {
+					log.Debug().Err(err).Str("client_id", c.ID).Msg("writePump: close message failed")
+				}
 				return
 			}
-			_ = c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := c.Conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+				log.Debug().Err(err).Str("client_id", c.ID).Msg("writePump: set write deadline failed")
+			}
 			if err := c.Conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				log.Error().Err(err).Str("client_id", c.ID).Msg("writePump: write error")
 				c.Close()
 				return
 			}
 		case <-ticker.C:
-			_ = c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := c.Conn.SetWriteDeadline(time.Now().Add(writeWait)); err != nil {
+				log.Debug().Err(err).Str("client_id", c.ID).Msg("writePump: set write deadline failed")
+			}
 			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				log.Error().Err(err).Str("client_id", c.ID).Msg("writePump: ping error")
 				c.Close()
@@ -119,9 +127,13 @@ func (c *Client) writePump(ctx context.Context) {
 func HandleWebSocketWithContext(ctx context.Context, client *Client) {
 	go client.writePump(ctx)
 
-	_ = client.Conn.SetReadDeadline(time.Now().Add(websocketReadDeadline))
+	if err := client.Conn.SetReadDeadline(time.Now().Add(websocketReadDeadline)); err != nil {
+		log.Debug().Err(err).Str("client_id", client.ID).Msg("HandleWebSocket: set read deadline failed")
+	}
 	client.Conn.SetPongHandler(func(string) error {
-		_ = client.Conn.SetReadDeadline(time.Now().Add(websocketReadDeadline))
+		if err := client.Conn.SetReadDeadline(time.Now().Add(websocketReadDeadline)); err != nil {
+			log.Debug().Err(err).Str("client_id", client.ID).Msg("HandleWebSocket: set read deadline failed")
+		}
 		client.RecordActivity()
 		return nil
 	})

@@ -74,7 +74,7 @@ func TestTeamService_RemoveMember(t *testing.T) {
 	cap := createUser(t, db, "cap@test.com", "pass")
 	member := createUser(t, db, "mem@test.com", "pass")
 	tm, _ := ts.CreateTeam(context.Background(), "Test", cap.ID)
-	_ = ts.AddMember(context.Background(), tm.ID, member.ID, cap.ID)
+	require.NoError(t, ts.AddMember(context.Background(), tm.ID, member.ID, cap.ID))
 
 	err := ts.RemoveMember(context.Background(), tm.ID, member.ID, cap.ID)
 	require.NoError(t, err)
@@ -102,7 +102,7 @@ func TestTeamService_ChangeCaptain(t *testing.T) {
 	oldCap := createUser(t, db, "old@test.com", "pass")
 	newCap := createUser(t, db, "new@test.com", "pass")
 	tm, _ := ts.CreateTeam(context.Background(), "Test", oldCap.ID)
-	_ = ts.AddMember(context.Background(), tm.ID, newCap.ID, oldCap.ID)
+	require.NoError(t, ts.AddMember(context.Background(), tm.ID, newCap.ID, oldCap.ID))
 
 	err := ts.ChangeCaptain(context.Background(), tm.ID, newCap.ID, oldCap.ID)
 	require.NoError(t, err)
@@ -131,7 +131,7 @@ func TestTeamService_CanManageTeam(t *testing.T) {
 	cap := createUser(t, db, "cap@test.com", "pass")
 	member := createUser(t, db, "mem@test.com", "pass")
 	tm, _ := ts.CreateTeam(context.Background(), "Test", cap.ID)
-	_ = ts.AddMember(context.Background(), tm.ID, member.ID, cap.ID)
+	require.NoError(t, ts.AddMember(context.Background(), tm.ID, member.ID, cap.ID))
 
 	assert.True(t, ts.CanManageTeam(context.Background(), tm.ID, cap.ID))
 	assert.False(t, ts.CanManageTeam(context.Background(), tm.ID, member.ID))
@@ -146,7 +146,7 @@ func TestTeamService_GetMyTeams(t *testing.T) {
 
 	tmA, _ := ts.CreateTeam(context.Background(), "Team A", u1.ID)
 	tmB, _ := ts.CreateTeam(context.Background(), "Team B", u2.ID)
-	_ = ts.AddMember(context.Background(), tmB.ID, u1.ID, u2.ID)
+	require.NoError(t, ts.AddMember(context.Background(), tmB.ID, u1.ID, u2.ID))
 
 	teams, err := ts.GetMyTeams(context.Background(), u1.ID)
 	require.NoError(t, err)

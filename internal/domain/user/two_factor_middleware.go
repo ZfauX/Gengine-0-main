@@ -132,16 +132,7 @@ func TwoFactorBackupCodeRequired(twoFactorSvc *TwoFactorService, userRepo UserRe
 			return
 		}
 
-		backupCode := c.PostForm("backup_code")
-		if backupCode == "" {
-			render.Page(c, http.StatusOK, "admin-2fa-backup.html", gin.H{
-				"Title": "Резервный код 2FA",
-				"Error": "Введите резервный код",
-			})
-			c.Abort()
-			return
-		}
-
+		// Получаем пользователя для проверки статуса 2FA
 		userObj, err := userRepo.GetByID(c.Request.Context(), userIDVal)
 		if err != nil {
 			render.Page(c, http.StatusOK, "admin-2fa-backup.html", gin.H{
@@ -152,12 +143,27 @@ func TwoFactorBackupCodeRequired(twoFactorSvc *TwoFactorService, userRepo UserRe
 			return
 		}
 
+		// Если 2FA не включена — пропускаем
 		if !userObj.TwoFactorEnabled {
 			session.Set(sessionKey2FAMiddlewareVerified, true)
 			if saveErr := session.Save(); saveErr != nil {
 				log.Warn().Err(saveErr).Uint("user_id", userIDVal).Msg("2FA middleware: failed to save session")
 			}
 			c.Next()
+			return
+		}
+
+		// Проверяем наличие резервного кода в запросе
+		backupCode := c.Query("backup_code")
+		if backupCode == "" {
+			backupCode = c.PostForm("backup_code")
+		}
+		if backupCode == "" {
+			render.Page(c, http.StatusOK, "admin-2fa-backup.html", gin.H{
+				"Title": "Резервный код 2FA",
+				"Error": "Введите резервный код",
+			})
+			c.Abort()
 			return
 		}
 

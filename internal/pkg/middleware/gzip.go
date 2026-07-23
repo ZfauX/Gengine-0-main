@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
 )
 
 // gzipResponseWriter реализует io.Writer поверх ResponseWriter для потокового сжатия.
@@ -57,6 +58,8 @@ func GzipMiddleware() gin.HandlerFunc {
 		c.Next()
 
 		// Закрываем gzip-writer (записывает trailer и flush)
-		_ = gz.Close()
+		if err := gz.Close(); err != nil {
+			log.Debug().Err(err).Msg("GzipMiddleware: gzip close failed")
+		}
 	}
 }

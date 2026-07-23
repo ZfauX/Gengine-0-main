@@ -44,6 +44,15 @@ func NewPhotoHandler(
 }
 
 // PhotosPage отображает страницу фотогалереи.
+// PhotosPage отображает фотогалерею игры.
+// @Summary Фотогалерея игры
+// @Tags games
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Фотогалерея"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /games/{id}/photos [get]
+// @Security JWT
 func (h *PhotoHandler) PhotosPage(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
@@ -75,6 +84,18 @@ func (h *PhotoHandler) PhotosPage(c *gin.Context) {
 }
 
 // UploadPhoto загружает новое фото в галерею игры.
+// UploadPhoto загружает фото в галерею игры.
+// @Summary Загрузка фото
+// @Tags games
+// @Accept multipart/form-data
+// @Produce json
+// @Param id path int true "ID игры"
+// @Param file formData file true "Файл изображения"
+// @Success 200 {object} map[string]interface{} "Фото загружено"
+// @Failure 400 {object} map[string]interface{} "Ошибка загрузки"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /games/{id}/photos [post]
+// @Security JWT
 func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 	gameID, parseErr := strconv.Atoi(c.Param("id"))
 	if parseErr != nil || gameID <= 0 {
@@ -155,6 +176,18 @@ func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 }
 
 // DeletePhoto удаляет фото из галереи.
+// DeletePhoto удаляет фото из галереи.
+// @Summary Удаление фото
+// @Tags games
+// @Produce json
+// @Param id path int true "ID игры"
+// @Param photo_id path int true "ID фото"
+// @Success 200 {object} map[string]interface{} "Фото удалено"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 404 {object} map[string]interface{} "Фото не найдено"
+// @Router /games/{id}/photos/{photo_id} [delete]
+// @Security JWT
 func (h *PhotoHandler) DeletePhoto(c *gin.Context) {
 	photoID, err := strconv.Atoi(c.Param("photo_id"))
 	if err != nil || photoID <= 0 {
