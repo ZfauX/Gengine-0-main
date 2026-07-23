@@ -4,7 +4,7 @@ package export
 import (
 	"context"
 	"encoding/csv"
-	"errors"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -12,6 +12,7 @@ import (
 
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/level"
+	"gengine-0/internal/pkg/errors"
 	"gengine-0/internal/pkg/util"
 
 	"github.com/go-pdf/fpdf"
@@ -219,7 +220,7 @@ func (s *ExportService) ImportGameFromCSV(db *gorm.DB, gameID uint, r io.Reader)
 				err := tx.Where("game_id = ? AND position = ?", gameID, pos).First(&existing).Error
 				if err == nil {
 					lvl = &existing
-				} else if errors.Is(err, gorm.ErrRecordNotFound) {
+				} else if stderrors.Is(err, gorm.ErrRecordNotFound) {
 					newLevel := level.Level{
 						GameID:   gameID,
 						Name:     levelName,
@@ -451,7 +452,7 @@ func (s *ExportService) ExportGameToExcel(ctx context.Context, gameID uint, w io
 	})
 	if styleErr == nil {
 		endCol, _ := excelize.ColumnNumberToName(len(headers))
-		_ = f.SetCellStyle(sheetName, "A1", endCol+"1", style)
+		errors.LogSilently(f.SetCellStyle(sheetName, "A1", endCol+"1", style), "Export: failed to set header style")
 	}
 
 	row := 2
@@ -545,7 +546,7 @@ func (s *ExportService) ExportResultsToExcel(ctx context.Context, gameID uint, w
 	})
 	if styleErr == nil {
 		endCol, _ := excelize.ColumnNumberToName(len(headers))
-		_ = f.SetCellStyle(sheetName, "A1", endCol+"1", style)
+		errors.LogSilently(f.SetCellStyle(sheetName, "A1", endCol+"1", style), "Export: failed to set header style")
 	}
 
 	row := 2

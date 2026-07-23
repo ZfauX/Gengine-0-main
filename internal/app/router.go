@@ -173,7 +173,7 @@ func (app *App) registerAdminRoutes(r *gin.RouterGroup) {
 	twoFactorRequired := user.TwoFactorRequired(twoFactorSvc, app.Deps.Repos.User)
 	adminGroup := r.Group("/admin")
 	adminGroup.Use(twoFactorRequired)
-	_ = admin.RegisterRoutes(adminGroup, app.DB, app.Config, app.Deps.Services.Auth, app.Deps.Repos.User, app.Deps.Repos.Game, app.Hub)
+	admin.RegisterRoutes(adminGroup, app.DB, app.Config, app.Deps.Services.Auth, app.Deps.Repos.User, app.Deps.Repos.Game, app.Hub)
 }
 
 func (app *App) registerUserRoutes(r *gin.RouterGroup) {
@@ -183,7 +183,8 @@ func (app *App) registerUserRoutes(r *gin.RouterGroup) {
 func (app *App) registerGameRoutes(r *gin.RouterGroup) {
 	passingSvc := game.NewGamePassingService(app.DB, app.Deps.Services.Team, app.Deps.Services.CoAuthor, app.Deps.Services.Progress).
 		WithHub(app.Hub).
-		WithMonitorService(app.Deps.Services.Monitor)
+		WithMonitorService(app.Deps.Services.Monitor).
+		WithSSEManager(app.Deps.Services.SSEMgr)
 	game.RegisterRoutes(r, &game.GameDeps{
 		DB: app.DB, GameService: app.Deps.Services.Game, PassingService: passingSvc,
 		CoAuthorSvc: app.Deps.Services.CoAuthor, AttemptSvc: app.Deps.Services.Attempt,

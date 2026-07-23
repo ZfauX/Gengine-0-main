@@ -34,6 +34,16 @@ func NewSettingsHandler(
 }
 
 // SettingsPage отображает страницу настроек игры.
+// @Summary Настройки игры
+// @Tags games
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Страница настроек"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 404 {object} map[string]interface{} "Игра не найдена"
+// @Router /games/{id}/settings [get]
+// @Security JWT
 func (h *SettingsHandler) SettingsPage(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
@@ -81,6 +91,15 @@ func (h *SettingsHandler) SettingsPage(c *gin.Context) {
 }
 
 // SaveSettings сохраняет настройки игры.
+// @Summary Сохранение настроек
+// @Tags games
+// @Param id path int true "ID игры"
+// @Success 302 {string} string "Перенаправление на /games/{id}/settings"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/settings [post]
+// @Security JWT
 func (h *SettingsHandler) SaveSettings(c *gin.Context) {
 	gameID, parseErr := strconv.Atoi(c.Param("id"))
 	if parseErr != nil || gameID <= 0 {

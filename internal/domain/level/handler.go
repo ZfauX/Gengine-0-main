@@ -111,6 +111,16 @@ func NewLevelHandler(
 // ----- Уровни -----
 
 // ListByGame отображает список уровней игры.
+// @Summary Список уровней игры
+// @Description Возвращает HTML-страницу со списком уровней игры, отсортированных по позиции
+// @Tags levels
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Список уровней"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/levels [get]
+// @Security JWT
 func (h *LevelHandler) ListByGame(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
@@ -156,6 +166,15 @@ func (h *LevelHandler) ListByGame(c *gin.Context) {
 }
 
 // NewForm отображает форму создания уровня.
+// @Summary Форма создания уровня
+// @Tags levels
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Форма создания уровня"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/levels/new [get]
+// @Security JWT
 func (h *LevelHandler) NewForm(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
@@ -173,6 +192,21 @@ func (h *LevelHandler) NewForm(c *gin.Context) {
 }
 
 // Create создаёт новый уровень.
+// @Summary Создание уровня
+// @Tags levels
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID игры"
+// @Param name formData string true "Название уровня"
+// @Param description formData string false "Описание уровня"
+// @Param position formData int false "Позиция уровня"
+// @Param type formData string false "Тип уровня (single, checkpoint, parallel_group, blackbox, file_upload)"
+// @Success 302 {string} string "Перенаправление на /games/{id}/levels"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/levels [post]
+// @Security JWT
 func (h *LevelHandler) Create(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
@@ -240,6 +274,17 @@ func (h *LevelHandler) Create(c *gin.Context) {
 }
 
 // EditForm отображает форму редактирования уровня.
+// @Summary Страница просмотра/редактирования уровня
+// @Tags levels
+// @Produce html
+// @Param id path int true "ID игры"
+// @Param level_id path int true "ID уровня"
+// @Success 200 {string} html "Форма редактирования уровня"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 404 {object} map[string]interface{} "Уровень не найден"
+// @Router /games/{id}/levels/{level_id} [get]
+// @Security JWT
 func (h *LevelHandler) EditForm(c *gin.Context) {
 	levelID, err := strconv.Atoi(c.Param("level_id"))
 	if err != nil || levelID <= 0 {
@@ -284,6 +329,21 @@ func (h *LevelHandler) EditForm(c *gin.Context) {
 }
 
 // Update обновляет уровень.
+// @Summary Обновление уровня
+// @Tags levels
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID игры"
+// @Param level_id path int true "ID уровня"
+// @Param name formData string false "Название уровня"
+// @Param description formData string false "Описание уровня"
+// @Param type formData string false "Тип уровня"
+// @Success 302 {string} string "Перенаправление на /games/{id}/levels"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/levels/{level_id} [put]
+// @Security JWT
 func (h *LevelHandler) Update(c *gin.Context) {
 	levelID, err := strconv.Atoi(c.Param("level_id"))
 	if err != nil || levelID <= 0 {
@@ -360,6 +420,17 @@ func (h *LevelHandler) Update(c *gin.Context) {
 }
 
 // Delete удаляет уровень (вызов через ActiveGameManager).
+// @Summary Удаление уровня
+// @Tags levels
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID игры"
+// @Param level_id path int true "ID уровня"
+// @Success 302 {string} string "Перенаправление на /games/{id}/levels"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/levels/{level_id}/delete [post]
+// @Security JWT
 func (h *LevelHandler) Delete(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
@@ -382,6 +453,15 @@ func (h *LevelHandler) Delete(c *gin.Context) {
 }
 
 // Duplicate дублирует уровень.
+// @Summary Дублирование уровня
+// @Tags levels
+// @Param id path int true "ID игры"
+// @Param level_id path int true "ID уровня"
+// @Success 302 {string} string "Перенаправление на /games/{id}/levels"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/levels/{level_id}/duplicate [post]
+// @Security JWT
 func (h *LevelHandler) Duplicate(c *gin.Context) {
 	levelID, err := strconv.Atoi(c.Param("level_id"))
 	if err != nil || levelID <= 0 {
@@ -402,6 +482,17 @@ func (h *LevelHandler) Duplicate(c *gin.Context) {
 }
 
 // Move перемещает уровень.
+// @Summary Перемещение уровня
+// @Tags levels
+// @Param id path int true "ID игры"
+// @Param level_id path int true "ID уровня"
+// @Param direction formData string true "Направление (up/down)"
+// @Success 302 {string} string "Перенаправление на /games/{id}/levels"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/levels/{level_id}/move [post]
+// @Security JWT
 func (h *LevelHandler) Move(c *gin.Context) {
 	levelID, err := strconv.Atoi(c.Param("level_id"))
 	if err != nil || levelID <= 0 {
@@ -429,6 +520,16 @@ func (h *LevelHandler) Move(c *gin.Context) {
 // ----- Вопросы -----
 
 // ListQuestions отображает список вопросов уровня.
+// @Summary Список вопросов уровня
+// @Tags questions
+// @Produce html
+// @Param id path int true "ID игры"
+// @Param level_id path int true "ID уровня"
+// @Success 200 {string} html "Список вопросов"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/levels/{level_id}/questions [get]
+// @Security JWT
 func (h *LevelHandler) ListQuestions(c *gin.Context) {
 	levelID, err := strconv.Atoi(c.Param("level_id"))
 	if err != nil || levelID <= 0 {
@@ -479,6 +580,16 @@ func (h *LevelHandler) ListQuestions(c *gin.Context) {
 }
 
 // NewQuestionForm отображает форму создания вопроса.
+// @Summary Форма создания вопроса
+// @Tags questions
+// @Produce html
+// @Param id path int true "ID игры"
+// @Param level_id path int true "ID уровня"
+// @Success 200 {string} html "Форма создания вопроса"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/levels/{level_id}/questions/new [get]
+// @Security JWT
 func (h *LevelHandler) NewQuestionForm(c *gin.Context) {
 	levelID, err := strconv.Atoi(c.Param("level_id"))
 	if err != nil || levelID <= 0 {
@@ -510,6 +621,18 @@ func (h *LevelHandler) NewQuestionForm(c *gin.Context) {
 }
 
 // CreateQuestion создаёт новый вопрос.
+// @Summary Создание вопроса
+// @Tags questions
+// @Param id path int true "ID игры"
+// @Param level_id path int true "ID уровня"
+// @Param text formData string true "Текст вопроса"
+// @Param hint formData string false "Подсказка"
+// @Success 302 {string} string "Перенаправление на /games/{id}/levels/{level_id}/questions"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/levels/{level_id}/questions [post]
+// @Security JWT
 func (h *LevelHandler) CreateQuestion(c *gin.Context) {
 	levelID, err := strconv.Atoi(c.Param("level_id"))
 	if err != nil || levelID <= 0 {
@@ -548,6 +671,18 @@ func (h *LevelHandler) CreateQuestion(c *gin.Context) {
 }
 
 // EditQuestionForm отображает форму редактирования вопроса.
+// @Summary Форма редактирования вопроса
+// @Tags questions
+// @Produce html
+// @Param id path int true "ID игры"
+// @Param level_id path int true "ID уровня"
+// @Param question_id path int true "ID вопроса"
+// @Success 200 {string} html "Форма редактирования вопроса"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 404 {object} map[string]interface{} "Вопрос не найден"
+// @Router /games/{id}/levels/{level_id}/questions/{question_id}/edit [get]
+// @Security JWT
 func (h *LevelHandler) EditQuestionForm(c *gin.Context) {
 	questionID, err := strconv.Atoi(c.Param("question_id"))
 	if err != nil || questionID <= 0 {
@@ -602,6 +737,19 @@ func (h *LevelHandler) EditQuestionForm(c *gin.Context) {
 }
 
 // UpdateQuestion обновляет вопрос.
+// @Summary Обновление вопроса
+// @Tags questions
+// @Param id path int true "ID игры"
+// @Param level_id path int true "ID уровня"
+// @Param question_id path int true "ID вопроса"
+// @Param text formData string true "Текст вопроса"
+// @Param hint formData string false "Подсказка"
+// @Success 302 {string} string "Перенаправление на /games/{id}/levels/{level_id}/questions"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/levels/{level_id}/questions/{question_id} [put]
+// @Security JWT
 func (h *LevelHandler) UpdateQuestion(c *gin.Context) {
 	questionID, err := strconv.Atoi(c.Param("question_id"))
 	if err != nil || questionID <= 0 {
@@ -639,6 +787,16 @@ func (h *LevelHandler) UpdateQuestion(c *gin.Context) {
 }
 
 // DeleteQuestion удаляет вопрос.
+// @Summary Удаление вопроса
+// @Tags questions
+// @Param id path int true "ID игры"
+// @Param level_id path int true "ID уровня"
+// @Param question_id path int true "ID вопроса"
+// @Success 302 {string} string "Перенаправление на /games/{id}/levels/{level_id}/questions"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/levels/{level_id}/questions/{question_id}/delete [post]
+// @Security JWT
 func (h *LevelHandler) DeleteQuestion(c *gin.Context) {
 	questionID, err := strconv.Atoi(c.Param("question_id"))
 	if err != nil || questionID <= 0 {
@@ -660,6 +818,17 @@ func (h *LevelHandler) DeleteQuestion(c *gin.Context) {
 // ----- Ответы -----
 
 // ListAnswers отображает список ответов вопроса.
+// @Summary Список ответов
+// @Tags answers
+// @Produce html
+// @Param id path int true "ID игры"
+// @Param level_id path int true "ID уровня"
+// @Param question_id path int true "ID вопроса"
+// @Success 200 {string} html "Список ответов"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/levels/{level_id}/questions/{question_id}/answers [get]
+// @Security JWT
 func (h *LevelHandler) ListAnswers(c *gin.Context) {
 	questionID, err := strconv.Atoi(c.Param("question_id"))
 	if err != nil || questionID <= 0 {
@@ -722,6 +891,18 @@ func (h *LevelHandler) ListAnswers(c *gin.Context) {
 }
 
 // CreateAnswer создаёт новый ответ.
+// @Summary Создание ответа
+// @Tags answers
+// @Param id path int true "ID игры"
+// @Param level_id path int true "ID уровня"
+// @Param question_id path int true "ID вопроса"
+// @Param code formData string true "Код ответа"
+// @Success 302 {string} string "Перенаправление на /games/{id}/levels/{level_id}/questions/{question_id}/answers"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/levels/{level_id}/questions/{question_id}/answers [post]
+// @Security JWT
 func (h *LevelHandler) CreateAnswer(c *gin.Context) {
 	questionID, err := strconv.Atoi(c.Param("question_id"))
 	if err != nil || questionID <= 0 {
@@ -759,6 +940,18 @@ func (h *LevelHandler) CreateAnswer(c *gin.Context) {
 }
 
 // DeleteAnswer удаляет ответ.
+// @Summary Удаление ответа
+// @Tags answers
+// @Param id path int true "ID игры"
+// @Param level_id path int true "ID уровня"
+// @Param question_id path int true "ID вопроса"
+// @Param answer_id path int true "ID ответа"
+// @Success 302 {string} string "Перенаправление на /games/{id}/levels/{level_id}/questions/{question_id}/answers"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/levels/{level_id}/questions/{question_id}/answers/{answer_id}/delete [post]
+// @Security JWT
 func (h *LevelHandler) DeleteAnswer(c *gin.Context) {
 	answerID, err := strconv.Atoi(c.Param("answer_id"))
 	if err != nil || answerID <= 0 {

@@ -36,6 +36,16 @@ func NewProfileHandler(db *gorm.DB, st storage.FileStorage, authSvc *AuthService
 	}
 }
 
+// Show отображает страницу профиля пользователя.
+// @Summary Личный профиль
+// @Description Отображает страницу профиля текущего пользователя с возможностью редактирования
+// @Tags profile
+// @Produce html
+// @Success 200 {string} html "Страница профиля"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 404 {object} map[string]interface{} "Пользователь не найден"
+// @Router /profile [get]
+// @Security JWT
 func (h *ProfileHandler) Show(c *gin.Context) {
 	userID := c.GetUint("userID")
 	var user User
@@ -51,6 +61,15 @@ func (h *ProfileHandler) Show(c *gin.Context) {
 	})
 }
 
+// PublicProfile отображает публичный профиль пользователя.
+// @Summary Публичный профиль пользователя
+// @Description Отображает публичный профиль пользователя по ID
+// @Tags profile
+// @Produce html
+// @Param id path int true "ID пользователя"
+// @Success 200 {string} html "Публичный профиль"
+// @Failure 404 {object} map[string]interface{} "Пользователь не найден"
+// @Router /users/{id} [get]
 func (h *ProfileHandler) PublicProfile(c *gin.Context) {
 	var req UserIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -112,6 +131,18 @@ func (h *ProfileHandler) PublicProfile(c *gin.Context) {
 	})
 }
 
+// UploadAvatar загружает новый аватар.
+// @Summary Загрузка аватара
+// @Description Загружает новый аватар пользователя (изображение до 5 МБ)
+// @Tags profile
+// @Accept multipart/form-data
+// @Produce html
+// @Param avatar formData file true "Файл изображения"
+// @Success 302 {string} string "Перенаправление на /profile"
+// @Failure 400 {object} map[string]interface{} "Ошибка загрузки"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /profile/avatar [post]
+// @Security JWT
 func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 	userID := c.GetUint("userID")
 	if userID == 0 {
@@ -176,6 +207,19 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/profile")
 }
 
+// UpdateProfile обновляет имя и email пользователя.
+// @Summary Обновление профиля
+// @Description Изменяет имя и email текущего пользователя
+// @Tags profile
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param name formData string true "Новое имя"
+// @Param email formData string true "Новый email"
+// @Success 302 {string} string "Перенаправление на /profile"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /profile/update [post]
+// @Security JWT
 func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 	userID := c.GetUint("userID")
 
@@ -214,6 +258,19 @@ func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/profile")
 }
 
+// ChangePassword изменяет пароль пользователя.
+// @Summary Смена пароля
+// @Description Изменяет пароль текущего пользователя после проверки старого пароля
+// @Tags profile
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param old_password formData string true "Старый пароль"
+// @Param new_password formData string true "Новый пароль"
+// @Success 302 {string} string "Перенаправление на /profile"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /profile/change-password [post]
+// @Security JWT
 func (h *ProfileHandler) ChangePassword(c *gin.Context) {
 	userID := c.GetUint("userID")
 

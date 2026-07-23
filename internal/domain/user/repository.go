@@ -26,6 +26,10 @@ type UserRepository interface {
 	List(ctx context.Context, role string) ([]User, error)
 	ListPaginated(ctx context.Context, role string, offset, limit int) ([]User, error)
 	Delete(ctx context.Context, id uint) error
+
+	// AtomicIncrementFailedAttempts атомарно инкрементирует failed_login_attempts
+	// и возвращает новое значение.
+	AtomicIncrementFailedAttempts(ctx context.Context, userID uint) (int, error)
 }
 
 // AchievementRepository определяет контракт для работы с достижениями.
@@ -146,6 +150,16 @@ func (r *gormUserRepo) ListPaginated(ctx context.Context, role string, offset, l
 
 func (r *gormUserRepo) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&User{}, id).Error
+}
+
+// AtomicIncrementFailedAttempts атомарно инкрементирует failed_login_attempts
+// и возвращает новое значение.
+func (r *gormUserRepo) AtomicIncrementFailedAttempts(ctx context.Context, userID uint) (int, error) {
+	var attempts int
+	err := r.db.WithContext(ctx).
+		Raw("UPDATE users SET failed_login_attempts = failed_login_attempts + 1 WHERE id = ? RETURNING failed_login_attempts", userID).
+		Scan(&attempts).Error
+	return attempts, err
 }
 
 type gormAchievementRepo struct{ db *gorm.DB }

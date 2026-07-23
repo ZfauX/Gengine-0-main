@@ -282,7 +282,7 @@ func TestAdminHandler_RotateBackups(t *testing.T) {
 		fname := filepath.Join(tmpDir, "backup"+strconv.Itoa(i)+".sql")
 		require.NoError(t, os.WriteFile(fname, []byte("dummy"), 0644))
 		b := &admin.Backup{FilePath: fname, CreatedAt: time.Now().Add(time.Duration(i) * time.Hour)}
-		_ = backupRepo.Create(context.Background(), b)
+		require.NoError(t, backupRepo.Create(context.Background(), b))
 	}
 
 	// Создаём новый сервис с ограничением в 3 бекапа

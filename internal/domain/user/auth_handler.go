@@ -55,12 +55,32 @@ func NewAuthHandler(
 	}
 }
 
+// ShowLoginForm отображает форму входа.
+// @Summary Показать форму входа
+// @Description Возвращает HTML-страницу с формой входа в систему
+// @Tags auth
+// @Accept html
+// @Produce html
+// @Success 200 {string} html "Страница входа"
+// @Router /auth/login [get]
 func (h *AuthHandler) ShowLoginForm(c *gin.Context) {
 	render.Page(c, http.StatusOK, "auth-login.html", gin.H{
 		"csrf": csrf.GetToken(c),
 	})
 }
 
+// Login аутентифицирует пользователя.
+// @Summary Аутентификация пользователя
+// @Description Вход в систему по email и паролю. При успехе устанавливает JWT-куку
+// @Tags auth
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param email formData string true "Email пользователя"
+// @Param password formData string true "Пароль"
+// @Success 302 {string} string "Перенаправление на /dashboard"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Неверный email или пароль"
+// @Router /auth/login [post]
 func (h *AuthHandler) Login(c *gin.Context) {
 	var input LoginInput
 	errs := validation.FieldErrors{}
@@ -111,6 +131,16 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/dashboard")
 }
 
+// RefreshToken обновляет access-токен.
+// @Summary Обновление access-токена
+// @Description Получает новый access-токен по refresh-токену
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param refresh_token body string true "Refresh-токен"
+// @Success 200 {object} map[string]interface{} "Новый access-токен и время жизни"
+// @Failure 401 {object} map[string]interface{} "Невалидный refresh-токен"
+// @Router /auth/refresh [post]
 func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	refreshToken, err := c.Cookie("refresh_token")
 	if err != nil || refreshToken == "" {
@@ -144,6 +174,13 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	})
 }
 
+// Logout выполняет выход из системы.
+// @Summary Выход из системы
+// @Description Удаляет JWT-куку и завершает сессию
+// @Tags auth
+// @Produce html
+// @Success 302 {string} string "Перенаправление на /"
+// @Router /auth/logout [get]
 func (h *AuthHandler) Logout(c *gin.Context) {
 	refreshTokenCookie, err := c.Cookie("refresh_token")
 	if err == nil && refreshTokenCookie != "" {
@@ -156,6 +193,15 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/")
 }
 
+// LogoutAll выполняет выход со всех устройств.
+// @Summary Выход со всех устройств
+// @Description Отзывает все refresh-токены пользователя
+// @Tags auth
+// @Produce html
+// @Success 302 {string} string "Перенаправление на /"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /auth/logout-all [post]
+// @Security JWT
 func (h *AuthHandler) LogoutAll(c *gin.Context) {
 	userID := c.GetUint("userID")
 	if userID == 0 {
@@ -170,12 +216,34 @@ func (h *AuthHandler) LogoutAll(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/")
 }
 
+// ShowRegisterForm отображает форму регистрации.
+// @Summary Показать форму регистрации
+// @Description Возвращает HTML-страницу с формой регистрации нового пользователя
+// @Tags auth
+// @Accept html
+// @Produce html
+// @Success 200 {string} html "Страница регистрации"
+// @Router /auth/register [get]
 func (h *AuthHandler) ShowRegisterForm(c *gin.Context) {
 	render.Page(c, http.StatusOK, "auth-register.html", gin.H{
 		"csrf": csrf.GetToken(c),
 	})
 }
 
+// Register регистрирует нового пользователя.
+// @Summary Регистрация пользователя
+// @Description Создаёт нового пользователя с указанными email, паролем и именем. Требуется подтверждение email
+// @Tags auth
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param email formData string true "Email"
+// @Param password formData string true "Пароль (минимум 8 символов)"
+// @Param name formData string true "Имя пользователя"
+// @Success 302 {string} string "Перенаправление на /auth/login"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 409 {object} map[string]interface{} "Email уже занят"
+// @Failure 429 {object} map[string]interface{} "Слишком много запросов"
+// @Router /auth/register [post]
 func (h *AuthHandler) Register(c *gin.Context) {
 	var input RegisterInput
 	errs := validation.FieldErrors{}
@@ -211,12 +279,30 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/auth/login")
 }
 
+// ShowForgotForm отображает форму восстановления пароля.
+// @Summary Показать форму восстановления пароля
+// @Description Возвращает HTML-страницу с формой запроса на сброс пароля
+// @Tags auth
+// @Accept html
+// @Produce html
+// @Success 200 {string} html "Форма восстановления"
+// @Router /auth/forgot [get]
 func (h *AuthHandler) ShowForgotForm(c *gin.Context) {
 	render.Page(c, http.StatusOK, "auth-forgot.html", gin.H{
 		"csrf": csrf.GetToken(c),
 	})
 }
 
+// ForgotPassword отправляет ссылку на сброс пароля.
+// @Summary Запрос на сброс пароля
+// @Description Отправляет на email ссылку для сброса пароля
+// @Tags auth
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param email formData string true "Email"
+// @Success 200 {string} html "Страница с сообщением об отправке"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Router /auth/forgot [post]
 func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	var input ForgotInput
 	errs := validation.FieldErrors{}
@@ -253,6 +339,15 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	})
 }
 
+// ShowResetForm отображает форму сброса пароля.
+// @Summary Показать форму сброса пароля
+// @Description Возвращает HTML-страницу с формой установки нового пароля по коду сброса
+// @Tags auth
+// @Accept html
+// @Produce html
+// @Param resetCode path string true "Код сброса пароля"
+// @Success 200 {string} html "Форма сброса пароля"
+// @Router /auth/reset/{resetCode} [get]
 func (h *AuthHandler) ShowResetForm(c *gin.Context) {
 	resetCode := sanitize.StripHTML(c.Param("resetCode"))
 	if resetCode == "" {
@@ -272,6 +367,17 @@ func (h *AuthHandler) ShowResetForm(c *gin.Context) {
 	})
 }
 
+// ResetPassword устанавливает новый пароль.
+// @Summary Сброс пароля
+// @Description Устанавливает новый пароль по токену сброса
+// @Tags auth
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param token formData string true "Токен сброса"
+// @Param password formData string true "Новый пароль"
+// @Success 302 {string} string "Перенаправление на /auth/login"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Router /auth/reset [post]
 func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	var input ResetInput
 	errs := validation.FieldErrors{}
@@ -330,6 +436,15 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/auth/login")
 }
 
+// VerifyEmail подтверждает email пользователя.
+// @Summary Подтверждение email
+// @Description Активирует email пользователя по токену из письма
+// @Tags auth
+// @Produce html
+// @Param token query string true "Токен подтверждения"
+// @Success 200 {string} html "Страница подтверждения"
+// @Failure 400 {object} map[string]interface{} "Неверный или просроченный токен"
+// @Router /auth/verify [get]
 func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 	var req VerifyEmailRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
@@ -348,6 +463,14 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 	render.Page(c, http.StatusOK, "auth-verify_success.html", gin.H{})
 }
 
+// OAuthLogin перенаправляет на страницу OAuth-провайдера.
+// @Summary Начало OAuth-авторизации
+// @Description Перенаправляет на страницу авторизации OAuth-провайдера (VK, Yandex, Google)
+// @Tags auth
+// @Param provider path string true "Провайдер (vk, yandex, google)"
+// @Success 302 {string} string "Перенаправление на OAuth-провайдера"
+// @Failure 400 {object} map[string]interface{} "Неизвестный провайдер"
+// @Router /auth/oauth/{provider} [get]
 func (h *AuthHandler) OAuthLogin(c *gin.Context) {
 	var req OAuthProviderRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -372,6 +495,16 @@ func (h *AuthHandler) OAuthLogin(c *gin.Context) {
 	c.Redirect(http.StatusFound, url)
 }
 
+// OAuthCallback обрабатывает callback от OAuth-провайдера.
+// @Summary Обработка callback OAuth
+// @Description Завершает OAuth-авторизацию, создаёт или связывает пользователя
+// @Tags auth
+// @Param provider path string true "Провайдер (vk, yandex, google)"
+// @Param code query string true "Код авторизации"
+// @Param state query string true "State-параметр"
+// @Success 302 {string} string "Перенаправление на /dashboard"
+// @Failure 400 {object} map[string]interface{} "Ошибка авторизации"
+// @Router /auth/oauth/{provider}/callback [get]
 func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 	var req OAuthProviderRequest
 	if err := c.ShouldBindUri(&req); err != nil {

@@ -31,6 +31,7 @@ type GamePlayService struct {
 	hub         *ws.RoomHub
 	coAuthorSvc *CoAuthorService
 	cfg         *config.Config
+	sseMgr      *SSEManager
 }
 
 // NewGamePlayService создаёт новый экземпляр GamePlayService.
@@ -52,6 +53,12 @@ func NewGamePlayService(
 		coAuthorSvc: coAuthorSvc,
 		cfg:         cfg,
 	}
+}
+
+// WithSSEManager устанавливает SSE-менеджер для broadcast-уведомлений.
+func (s *GamePlayService) WithSSEManager(sseMgr *SSEManager) *GamePlayService {
+	s.sseMgr = sseMgr
+	return s
 }
 
 // SubmitCode обрабатывает отправку текстового кода с транзакцией и блокировкой.
@@ -85,10 +92,15 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 		if success {
 			// 5. Завершаем уровень — при завершении последнего уровня вызываем расчёт результатов
 			gameID := passing.GameID
-			if _, completeErr := CompleteLevel(tx, progress, nil); completeErr != nil {
+			var levelCompleted bool
+			onCommit := func() { levelCompleted = true }
+			if completeErr := CompleteLevel(tx, progress, nil, onCommit); completeErr != nil {
 				return completeErr
 			}
 			// Сохраняем gameID для вызова после транзакции
+			if levelCompleted {
+				s.broadcastLevelComplete(gameID, passingID, progress.LevelID)
+			}
 			result = &SubmitResult{Attempt: att, GameID: gameID}
 		} else {
 			result = &SubmitResult{Attempt: att, GameID: 0}
@@ -171,6 +183,10 @@ func (s *GamePlayService) SubmitFile(ctx context.Context, passingID, userID uint
 // UseHint использует подсказку с транзакцией и блокировкой.
 func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (string, error) {
 	var hintText string
+	var gameID uint
+	var levelID uint
+	var hintsUsed int
+
 	transactionErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		progress, progressErr := GetCurrentProgressForUpdate(tx, passingID)
 		if progressErr != nil {
@@ -185,6 +201,9 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (
 		if findErr := tx.First(&passing, passingID).Error; findErr != nil {
 			return findErr
 		}
+		gameID = passing.GameID
+		levelID = progress.LevelID
+
 		if passing.Status != StatusStarted {
 			return errors.New("игра не запущена")
 		}
@@ -201,6 +220,7 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (
 		}
 
 		progress.HintsUsed++
+		hintsUsed = progress.HintsUsed
 		penalty := settings.HintPenaltySeconds
 		progress.PenaltySeconds += penalty
 		if saveErr := tx.Save(progress).Error; saveErr != nil {
@@ -234,6 +254,15 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (
 
 	// Отправляем WebSocket-обновление после фиксации транзакции
 	s.broadcastSnapshot(ctx, passingID)
+	// Отправляем SSE-уведомление о доступной подсказке
+	if s.sseMgr != nil {
+		s.sseMgr.Broadcast(gameID, "hint_available", map[string]any{
+			"game_id":    gameID,
+			"passing_id": passingID,
+			"level_id":   levelID,
+			"hints_used": hintsUsed,
+		})
+	}
 	return hintText, nil
 }
 
@@ -272,7 +301,9 @@ func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, u
 			return acceptErr
 		}
 
-		if _, completeErr := CompleteLevel(tx, progress, nil); completeErr != nil {
+		var levelCompleted bool
+		onCommit := func() { levelCompleted = true }
+		if completeErr := CompleteLevel(tx, progress, nil, onCommit); completeErr != nil {
 			return completeErr
 		}
 
@@ -281,7 +312,13 @@ func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, u
 			LevelID:       progress.LevelID,
 			Message:       "автор принял ответ",
 		}
-		return tx.Create(&logEntry).Error
+		if err := tx.Create(&logEntry).Error; err != nil {
+			return err
+		}
+		if levelCompleted {
+			s.broadcastLevelComplete(gameID, passingID, progress.LevelID)
+		}
+		return nil
 	})
 
 	if transactionErr != nil {
@@ -365,12 +402,20 @@ func (s *GamePlayService) StartTesting(ctx context.Context, gameID, userID uint)
 // SubmitTestCode отправляет код в тестовом режиме с транзакцией.
 func (s *GamePlayService) SubmitTestCode(ctx context.Context, passingID, userID uint, code string) (*Attempt, error) {
 	var attempt *Attempt
+	var gameID uint
+	var levelCompleted bool
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		progress, err := GetCurrentProgressForUpdate(tx, passingID)
 		if err != nil {
 			return err
 		}
+
+		var passing GamePassing
+		if err := tx.First(&passing, passingID).Error; err != nil {
+			return err
+		}
+		gameID = passing.GameID
 
 		attempt = &Attempt{
 			LevelProgressID: progress.ID,
@@ -381,7 +426,8 @@ func (s *GamePlayService) SubmitTestCode(ctx context.Context, passingID, userID 
 			return err
 		}
 
-		if _, err := CompleteLevel(tx, progress, nil); err != nil {
+		onCommit := func() { levelCompleted = true }
+		if err := CompleteLevel(tx, progress, nil, onCommit); err != nil {
 			return err
 		}
 		return nil
@@ -389,6 +435,10 @@ func (s *GamePlayService) SubmitTestCode(ctx context.Context, passingID, userID 
 
 	if err != nil {
 		return nil, err
+	}
+
+	if attempt != nil && levelCompleted {
+		s.broadcastLevelComplete(gameID, passingID, attempt.LevelProgressID)
 	}
 
 	s.broadcastSnapshot(ctx, passingID)
@@ -560,4 +610,17 @@ func (s *GamePlayService) IsTeamMember(ctx context.Context, teamID, userID uint)
 		return false, err
 	}
 	return count > 0, nil
+}
+
+// broadcastLevelComplete отправляет SSE-уведомление о завершении уровня.
+func (s *GamePlayService) broadcastLevelComplete(gameID, passingID, levelID uint) {
+	if s.sseMgr == nil {
+		return
+	}
+	s.sseMgr.Broadcast(gameID, "level_completed", map[string]any{
+		"game_id":      gameID,
+		"passing_id":   passingID,
+		"level_id":     levelID,
+		"completed_at": time.Now().UTC().Format("2006-01-02T15:04:05Z"),
+	})
 }

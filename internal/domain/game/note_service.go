@@ -41,7 +41,9 @@ func (s *NoteService) Create(ctx context.Context, gameID uint, levelID *uint, us
 	if err := s.DB.Create(&note).Error; err != nil {
 		return nil, err
 	}
-	s.DB.Preload("User").First(&note, note.ID)
+	if err := s.DB.Preload("User").First(&note, note.ID).Error; err != nil {
+		return nil, err
+	}
 	return &note, nil
 }
 

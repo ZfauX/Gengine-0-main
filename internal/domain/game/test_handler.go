@@ -34,6 +34,16 @@ func NewTestHandler(
 }
 
 // TestPage отображает страницу управления тестовыми прохождениями.
+// TestPage отображает страницу тестовых прохождений.
+// @Summary Тестовые прохождения
+// @Tags games
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Страница тестов"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/test [get]
+// @Security JWT
 func (h *TestHandler) TestPage(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {

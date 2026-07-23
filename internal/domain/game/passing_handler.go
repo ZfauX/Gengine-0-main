@@ -43,7 +43,16 @@ func NewPassingHandler(
 	}
 }
 
-// ListPassings отображает все заявки и прохождения игры.
+// ListPassings отображает список заявок и прохождений.
+// @Summary Список заявок и прохождений
+// @Tags passings
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Список прохождений"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/passings [get]
+// @Security JWT
 func (h *PassingHandler) ListPassings(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
@@ -71,7 +80,15 @@ func (h *PassingHandler) ListPassings(c *gin.Context) {
 	})
 }
 
-// ApplyForm отображает форму подачи заявки.
+// ApplyForm отображает форму подачи заявки на игру.
+// @Summary Подача заявки на игру (форма)
+// @Tags passings
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Форма заявки"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /games/{id}/apply [get]
+// @Security JWT
 func (h *PassingHandler) ApplyForm(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
@@ -97,7 +114,17 @@ func (h *PassingHandler) ApplyForm(c *gin.Context) {
 	})
 }
 
-// Apply подаёт заявку на игру.
+// Apply подаёт заявку на участие в игре.
+// @Summary Подача заявки на игру
+// @Tags passings
+// @Param id path int true "ID игры"
+// @Param team_id formData int true "ID команды"
+// @Success 302 {string} string "Перенаправление на /games/{id}"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/apply [post]
+// @Security JWT
 func (h *PassingHandler) Apply(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
@@ -143,7 +170,18 @@ func (h *PassingHandler) Apply(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/games/"+c.Param("id"))
 }
 
-// UpdatePassingStatus изменяет статус заявки (принять/отклонить).
+// UpdatePassingStatus изменяет статус заявки на участие.
+// @Summary Изменение статуса заявки
+// @Tags passings
+// @Param id path int true "ID игры"
+// @Param passing_id path int true "ID прохождения"
+// @Param status formData string true "Статус (approved, rejected)"
+// @Success 302 {string} string "Перенаправление на /games/{id}/passings"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/passings/{passing_id}/status [post]
+// @Security JWT
 func (h *PassingHandler) UpdatePassingStatus(c *gin.Context) {
 	passingID, err := strconv.Atoi(c.Param("passing_id"))
 	if err != nil || passingID <= 0 {
@@ -164,7 +202,17 @@ func (h *PassingHandler) UpdatePassingStatus(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/passings")
 }
 
-// StartGame запускает игру для конкретного прохождения.
+// StartGame запускает игру для команды.
+// @Summary Запуск игры
+// @Tags passings
+// @Param id path int true "ID игры"
+// @Param passing_id path int true "ID прохождения"
+// @Success 302 {string} string "Перенаправление на /games/{id}/passings"
+// @Failure 400 {object} map[string]interface{} "Ошибка"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/passings/{passing_id}/start [post]
+// @Security JWT
 func (h *PassingHandler) StartGame(c *gin.Context) {
 	passingID, err := strconv.Atoi(c.Param("passing_id"))
 	if err != nil || passingID <= 0 {
@@ -180,7 +228,18 @@ func (h *PassingHandler) StartGame(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/monitor")
 }
 
-// ForceFinish принудительно завершает игру.
+// ForceFinish принудительно завершает игру для команды.
+// @Summary Принудительное завершение игры
+// @Tags admin
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 302 {string} string "Перенаправление на /games/{id}/passings"
+// @Failure 400 {object} map[string]interface{} "Ошибка"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/force-finish [post]
+// @Security JWT
 func (h *PassingHandler) ForceFinish(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
@@ -198,6 +257,17 @@ func (h *PassingHandler) ForceFinish(c *gin.Context) {
 }
 
 // DisqualifyTeam дисквалифицирует команду.
+// @Summary Дисквалификация команды
+// @Tags admin
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 302 {string} string "Перенаправление на /games/{id}/passings"
+// @Failure 400 {object} map[string]interface{} "Ошибка"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/disqualify [post]
+// @Security JWT
 func (h *PassingHandler) DisqualifyTeam(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {

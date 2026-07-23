@@ -72,6 +72,15 @@ func NewAdminHandler(
 // ---------- Пользователи ----------
 
 // Dashboard отображает главную страницу админ-панели.
+// @Summary Панель управления администратора
+// @Description Отображает главную страницу админ-панели с общей статистикой (пользователи, игры, аудит, бэкапы)
+// @Tags admin
+// @Produce html
+// @Success 200 {string} html "Страница админ-панели"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён (не администратор)"
+// @Router /admin [get]
+// @Security JWT
 func (h *AdminHandler) Dashboard(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -110,7 +119,19 @@ func (h *AdminHandler) Dashboard(c *gin.Context) {
 	})
 }
 
-// ListUsers отображает список всех пользователей с возможностью фильтрации по роли и пагинацией.
+// ListUsers отображает список пользователей.
+// @Summary Список пользователей
+// @Description Отображает список всех пользователей с фильтром по роли и пагинацией
+// @Tags admin
+// @Produce html
+// @Param role query string false "Роль пользователя (user, admin)"
+// @Param page query int false "Номер страницы" default(1)
+// @Param per_page query int false "Количество записей на странице" default(20)
+// @Success 200 {string} html "Страница со списком пользователей"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /admin/users [get]
+// @Security JWT
 func (h *AdminHandler) ListUsers(c *gin.Context) {
 	var req ListUsersRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
@@ -170,7 +191,18 @@ func (h *AdminHandler) ListUsers(c *gin.Context) {
 	})
 }
 
-// ToggleAdmin переключает роль пользователя между user и admin.
+// ToggleAdmin переключает роль пользователя между admin и user.
+// @Summary Переключение роли пользователя
+// @Description Делает пользователя администратором или обычным пользователем
+// @Tags admin
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID пользователя"
+// @Success 302 {string} string "Перенаправление на /admin/users"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /admin/users/{id}/toggle-admin [post]
+// @Security JWT
 func (h *AdminHandler) ToggleAdmin(c *gin.Context) {
 	var req IDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -208,6 +240,17 @@ func (h *AdminHandler) ToggleAdmin(c *gin.Context) {
 }
 
 // DeleteUser удаляет пользователя.
+// @Summary Удаление пользователя
+// @Description Безвозвратно удаляет пользователя (административное действие)
+// @Tags admin
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID пользователя"
+// @Success 302 {string} string "Перенаправление на /admin/users"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /admin/users/{id}/delete [post]
+// @Security JWT
 func (h *AdminHandler) DeleteUser(c *gin.Context) {
 	var req IDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -233,7 +276,19 @@ func (h *AdminHandler) DeleteUser(c *gin.Context) {
 
 // ---------- Игры ----------
 
-// ListGames отображает все игры (включая черновики) с фильтрацией и пагинацией.
+// ListGames отображает список игр (административный).
+// @Summary Список игр (административный)
+// @Description Отображает все игры с фильтром по статусу (черновик / опубликована) и пагинацией
+// @Tags admin
+// @Produce html
+// @Param status query string false "Статус игры (draft, published)"
+// @Param page query int false "Номер страницы" default(1)
+// @Param per_page query int false "Количество записей на странице" default(20)
+// @Success 200 {string} html "Страница со списком игр"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /admin/games [get]
+// @Security JWT
 func (h *AdminHandler) ListGames(c *gin.Context) {
 	var req ListGamesRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
@@ -300,7 +355,18 @@ func (h *AdminHandler) ListGames(c *gin.Context) {
 	})
 }
 
-// DeleteGame удаляет любую игру (административное действие).
+// DeleteGame удаляет игру (административное действие).
+// @Summary Удаление игры (административное)
+// @Description Безвозвратно удаляет игру (доступно только администратору)
+// @Tags admin
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 302 {string} string "Перенаправление на /admin/games"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /admin/games/{id}/delete [post]
+// @Security JWT
 func (h *AdminHandler) DeleteGame(c *gin.Context) {
 	var req IDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -326,7 +392,20 @@ func (h *AdminHandler) DeleteGame(c *gin.Context) {
 
 // ---------- Аудит ----------
 
-// AuditLog отображает страницу с записями аудита (с пагинацией и фильтрацией).
+// AuditLog отображает журнал аудита.
+// @Summary Журнал аудита
+// @Description Отображает записи аудита с возможностью фильтрации по пользователю и действию, с пагинацией
+// @Tags admin
+// @Produce html
+// @Param page query int false "Номер страницы" default(1)
+// @Param per_page query int false "Количество записей на странице" default(20)
+// @Param user_id query string false "ID пользователя"
+// @Param action query string false "Действие (create, update, delete, login и т.д.)"
+// @Success 200 {string} html "Страница аудита"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /admin/audit [get]
+// @Security JWT
 func (h *AdminHandler) AuditLog(c *gin.Context) {
 	var req AuditLogRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
@@ -376,7 +455,16 @@ func (h *AdminHandler) AuditLog(c *gin.Context) {
 
 // ---------- Бекапы ----------
 
-// ListBackups отображает страницу с историей резервных копий.
+// ListBackups отображает список резервных копий.
+// @Summary Список бекапов
+// @Description Отображает список созданных резервных копий базы данных
+// @Tags admin
+// @Produce html
+// @Success 200 {string} html "Страница бекапов"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /admin/backups [get]
+// @Security JWT
 func (h *AdminHandler) ListBackups(c *gin.Context) {
 	backups, err := h.backupService.List(c.Request.Context())
 	if err != nil {
@@ -395,7 +483,18 @@ func (h *AdminHandler) ListBackups(c *gin.Context) {
 	})
 }
 
-// CreateBackup запускает ручное создание бекапа.
+// CreateBackup создаёт новую резервную копию базы данных с помощью pg_dump.
+// @Summary Создание бекапа
+// @Description Создаёт новую резервную копию базы данных с помощью pg_dump
+// @Tags admin
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Success 302 {string} string "Перенаправление на /admin/backups"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 500 {object} map[string]interface{} "Ошибка создания бекапа"
+// @Router /admin/backups/create [post]
+// @Security JWT
 func (h *AdminHandler) CreateBackup(c *gin.Context) {
 	if err := h.backupService.CreateNow(c.Request.Context()); err != nil {
 		log.Error().Err(err).Msg("CreateBackup failed")

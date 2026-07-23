@@ -29,6 +29,7 @@ type CacheStore interface {
 	GetOrSet(key string, ttl time.Duration, fn func() (any, error)) (any, error)
 	GetOrSetString(key string, ttl time.Duration, fn func() (string, error)) (string, error)
 	GetOrSetStringWithTTL(key string, ttl time.Duration, fn func() (string, error)) (string, error)
+	GetOrSetStringWithTTLWithCtx(ctx context.Context, key string, ttl time.Duration, fn func() (string, error)) (string, error)
 	ExtendTTL(key string, ttl time.Duration) bool
 	GetOrSetInt(key string, ttl time.Duration, fn func() (int, error)) (int, error)
 	GetOrSetFloat64(key string, ttl time.Duration, fn func() (float64, error)) (float64, error)
@@ -36,6 +37,11 @@ type CacheStore interface {
 	SetWithCtx(ctx context.Context, key string, value any, ttl time.Duration)
 	DeleteWithCtx(ctx context.Context, key string)
 	DeleteByPrefixWithCtx(ctx context.Context, prefix string)
+	GetOrSetWithCtx(ctx context.Context, key string, ttl time.Duration, fn func() (any, error)) (any, error)
+	GetOrSetIntWithCtx(ctx context.Context, key string, ttl time.Duration, fn func() (int, error)) (int, error)
+	GetOrSetFloat64WithCtx(ctx context.Context, key string, ttl time.Duration, fn func() (float64, error)) (float64, error)
+	ExtendTTLWithCtx(ctx context.Context, key string, ttl time.Duration) bool
+	FlushWithCtx(ctx context.Context)
 }
 
 type ValkeyCache struct {
@@ -289,12 +295,15 @@ end
 `
 
 func (c *ValkeyCache) GetOrSetStringWithTTL(key string, ttl time.Duration, fn func() (string, error)) (string, error) {
+	return c.GetOrSetStringWithTTLWithCtx(context.Background(), key, ttl, fn)
+}
+
+// GetOrSetStringWithTTLWithCtx — атомарная операция get-or-set с Lua скриптом и контекстом.
+// При cache hit НЕ перезаписывает TTL ключа, предотвращая race condition.
+func (c *ValkeyCache) GetOrSetStringWithTTLWithCtx(ctx context.Context, key string, ttl time.Duration, fn func() (string, error)) (string, error) {
 	if c == nil || c.client == nil {
 		return fn()
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), valkeyOpTimeout)
-	defer cancel()
 
 	script := c.client.Eval(ctx, getOrSetLuaScript, []string{key}, int(ttl.Seconds()), "")
 
@@ -415,6 +424,112 @@ func (c *ValkeyCache) GetOrSetFloat64(key string, ttl time.Duration, fn func() (
 		return f, nil
 	default:
 		return 0, fmt.Errorf("unexpected type for key %s, got %T", key, val)
+	}
+}
+
+// GetOrSetWithCtx — контекстно-ориентированная версия GetOrSet с таймаутом.
+func (c *ValkeyCache) GetOrSetWithCtx(ctx context.Context, key string, ttl time.Duration, fn func() (any, error)) (any, error) {
+	valBytes, err := c.client.Get(ctx, key).Bytes()
+	if err == nil {
+		var result any
+		if jsonErr := json.Unmarshal(valBytes, &result); jsonErr == nil {
+			return result, nil
+		}
+		return string(valBytes), nil
+	}
+	if err != redis.Nil {
+		log.Warn().Err(err).Str("key", key).Msg("Valkey: GetOrSetWithCtx Get error")
+		return fn()
+	}
+
+	val, err := fn()
+	if err != nil {
+		return nil, err
+	}
+	data, marshalErr := json.Marshal(val)
+	if marshalErr != nil {
+		return nil, marshalErr
+	}
+	if setErr := c.client.Set(ctx, key, data, ttl).Err(); setErr != nil {
+		log.Warn().Err(setErr).Str("key", key).Msg("Valkey: GetOrSetWithCtx Set error")
+	}
+	return val, nil
+}
+
+// GetOrSetIntWithCtx — контекстно-ориентированная версия GetOrSetInt.
+func (c *ValkeyCache) GetOrSetIntWithCtx(ctx context.Context, key string, ttl time.Duration, fn func() (int, error)) (int, error) {
+	val, err := c.GetOrSetWithCtx(ctx, key, ttl, func() (any, error) {
+		return fn()
+	})
+	if err != nil {
+		return 0, err
+	}
+	switch v := val.(type) {
+	case int:
+		return v, nil
+	case int64:
+		return int(v), nil
+	case float64:
+		return int(v), nil
+	case json.Number:
+		i, parseErr := v.Int64()
+		if parseErr != nil {
+			return 0, fmt.Errorf("unexpected type for key %s: cannot parse json.Number", key)
+		}
+		return int(i), nil
+	default:
+		return 0, fmt.Errorf("unexpected type for key %s, got %T", key, val)
+	}
+}
+
+// GetOrSetFloat64WithCtx — контекстно-ориентированная версия GetOrSetFloat64.
+func (c *ValkeyCache) GetOrSetFloat64WithCtx(ctx context.Context, key string, ttl time.Duration, fn func() (float64, error)) (float64, error) {
+	val, err := c.GetOrSetWithCtx(ctx, key, ttl, func() (any, error) {
+		return fn()
+	})
+	if err != nil {
+		return 0, err
+	}
+	switch v := val.(type) {
+	case float64:
+		return v, nil
+	case int:
+		return float64(v), nil
+	case int64:
+		return float64(v), nil
+	case json.Number:
+		f, parseErr := v.Float64()
+		if parseErr != nil {
+			return 0, fmt.Errorf("unexpected type for key %s: cannot parse json.Number", key)
+		}
+		return f, nil
+	default:
+		return 0, fmt.Errorf("unexpected type for key %s, got %T", key, val)
+	}
+}
+
+// ExtendTTLWithCtx — продлевает TTL с контекстом.
+func (c *ValkeyCache) ExtendTTLWithCtx(ctx context.Context, key string, ttl time.Duration) bool {
+	if c == nil || c.client == nil {
+		return false
+	}
+	if err := c.client.Expire(ctx, key, ttl).Err(); err != nil {
+		if err == redis.Nil {
+			return false
+		}
+		log.Warn().Err(err).Str("key", key).Msg("Valkey: ExtendTTLWithCtx error")
+		return false
+	}
+	return true
+}
+
+// FlushWithCtx — очистка кеша с контекстом.
+func (c *ValkeyCache) FlushWithCtx(ctx context.Context) {
+	if c == nil || c.client == nil {
+		return
+	}
+	if err := c.client.FlushDB(ctx).Err(); err != nil {
+		log.Error().Err(err).Msg("Valkey: FlushWithCtx error")
 	}
 }
 

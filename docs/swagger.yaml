@@ -12,6 +12,1466 @@ info:
   title: Gengine API
   version: "1.0"
 paths:
+  /achievements:
+    get:
+      description: Отображает все достижения текущего пользователя
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница достижений
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Список достижений
+      tags:
+      - achievements
+  /admin:
+    get:
+      description: Отображает главную страницу админ-панели с общей статистикой (пользователи,
+        игры, аудит, бэкапы)
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница админ-панели
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён (не администратор)
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Панель управления администратора
+      tags:
+      - admin
+  /admin/audit:
+    get:
+      description: Отображает записи аудита с возможностью фильтрации по пользователю
+        и действию, с пагинацией
+      parameters:
+      - default: 1
+        description: Номер страницы
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Количество записей на странице
+        in: query
+        name: per_page
+        type: integer
+      - description: ID пользователя
+        in: query
+        name: user_id
+        type: string
+      - description: Действие (create, update, delete, login и т.д.)
+        in: query
+        name: action
+        type: string
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница аудита
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Журнал аудита
+      tags:
+      - admin
+  /admin/backups:
+    get:
+      description: Отображает список созданных резервных копий базы данных
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница бекапов
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Список бекапов
+      tags:
+      - admin
+  /admin/backups/create:
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      description: Создаёт новую резервную копию базы данных с помощью pg_dump
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на /admin/backups
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Ошибка создания бекапа
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Создание бекапа
+      tags:
+      - admin
+  /admin/games:
+    get:
+      description: Отображает все игры с фильтром по статусу (черновик / опубликована)
+        и пагинацией
+      parameters:
+      - description: Статус игры (draft, published)
+        in: query
+        name: status
+        type: string
+      - default: 1
+        description: Номер страницы
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Количество записей на странице
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница со списком игр
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Список игр (административный)
+      tags:
+      - admin
+  /admin/games/{id}/delete:
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      description: Безвозвратно удаляет игру (доступно только администратору)
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на /admin/games
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Удаление игры (административное)
+      tags:
+      - admin
+  /admin/users:
+    get:
+      description: Отображает список всех пользователей с фильтром по роли и пагинацией
+      parameters:
+      - description: Роль пользователя (user, admin)
+        in: query
+        name: role
+        type: string
+      - default: 1
+        description: Номер страницы
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Количество записей на странице
+        in: query
+        name: per_page
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница со списком пользователей
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Список пользователей
+      tags:
+      - admin
+  /admin/users/{id}/delete:
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      description: Безвозвратно удаляет пользователя (административное действие)
+      parameters:
+      - description: ID пользователя
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на /admin/users
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Удаление пользователя
+      tags:
+      - admin
+  /admin/users/{id}/toggle-admin:
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      description: Делает пользователя администратором или обычным пользователем
+      parameters:
+      - description: ID пользователя
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на /admin/users
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Переключение роли пользователя
+      tags:
+      - admin
+  /api/settings/notifications:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Флаги уведомлений
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Получить флаги email-уведомлений
+      tags:
+      - notifications
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Настройки уведомлений
+        in: body
+        name: settings
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Настройки сохранены
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Сохранить флаги email-уведомлений
+      tags:
+      - notifications
+  /api/v1/calendar:
+    get:
+      description: Возвращает список игр за указанный месяц в формате JSON для отображения
+        в календаре
+      parameters:
+      - description: Год
+        in: query
+        name: year
+        type: integer
+      - description: Месяц (1-12)
+        in: query
+        name: month
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: События календаря (ключ — дата, значение — массив игр)
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Внутренняя ошибка
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Данные календаря
+      tags:
+      - calendar
+  /auth/forgot:
+    get:
+      consumes:
+      - text/html
+      description: Возвращает HTML-страницу с формой запроса на сброс пароля
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Форма восстановления
+          schema:
+            type: string
+      summary: Показать форму восстановления пароля
+      tags:
+      - auth
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      description: Отправляет на email ссылку для сброса пароля
+      parameters:
+      - description: Email
+        in: formData
+        name: email
+        required: true
+        type: string
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница с сообщением об отправке
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Запрос на сброс пароля
+      tags:
+      - auth
+  /auth/login:
+    get:
+      consumes:
+      - text/html
+      description: Возвращает HTML-страницу с формой входа в систему
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница входа
+          schema:
+            type: string
+      summary: Показать форму входа
+      tags:
+      - auth
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      description: Вход в систему по email и паролю. При успехе устанавливает JWT-куку
+      parameters:
+      - description: Email пользователя
+        in: formData
+        name: email
+        required: true
+        type: string
+      - description: Пароль
+        in: formData
+        name: password
+        required: true
+        type: string
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на /dashboard
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Неверный email или пароль
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Аутентификация пользователя
+      tags:
+      - auth
+  /auth/logout:
+    get:
+      description: Удаляет JWT-куку и завершает сессию
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на /
+          schema:
+            type: string
+      summary: Выход из системы
+      tags:
+      - auth
+  /auth/logout-all:
+    post:
+      description: Отзывает все refresh-токены пользователя
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на /
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Выход со всех устройств
+      tags:
+      - auth
+  /auth/oauth/{provider}:
+    get:
+      description: Перенаправляет на страницу авторизации OAuth-провайдера (VK, Yandex,
+        Google)
+      parameters:
+      - description: Провайдер (vk, yandex, google)
+        in: path
+        name: provider
+        required: true
+        type: string
+      responses:
+        "302":
+          description: Перенаправление на OAuth-провайдера
+          schema:
+            type: string
+        "400":
+          description: Неизвестный провайдер
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Начало OAuth-авторизации
+      tags:
+      - auth
+  /auth/oauth/{provider}/callback:
+    get:
+      description: Завершает OAuth-авторизацию, создаёт или связывает пользователя
+      parameters:
+      - description: Провайдер (vk, yandex, google)
+        in: path
+        name: provider
+        required: true
+        type: string
+      - description: Код авторизации
+        in: query
+        name: code
+        required: true
+        type: string
+      - description: State-параметр
+        in: query
+        name: state
+        required: true
+        type: string
+      responses:
+        "302":
+          description: Перенаправление на /dashboard
+          schema:
+            type: string
+        "400":
+          description: Ошибка авторизации
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Обработка callback OAuth
+      tags:
+      - auth
+  /auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Получает новый access-токен по refresh-токену
+      parameters:
+      - description: Refresh-токен
+        in: body
+        name: refresh_token
+        required: true
+        schema:
+          type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Новый access-токен и время жизни
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Невалидный refresh-токен
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Обновление access-токена
+      tags:
+      - auth
+  /auth/register:
+    get:
+      consumes:
+      - text/html
+      description: Возвращает HTML-страницу с формой регистрации нового пользователя
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница регистрации
+          schema:
+            type: string
+      summary: Показать форму регистрации
+      tags:
+      - auth
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      description: Создаёт нового пользователя с указанными email, паролем и именем.
+        Требуется подтверждение email
+      parameters:
+      - description: Email
+        in: formData
+        name: email
+        required: true
+        type: string
+      - description: Пароль (минимум 8 символов)
+        in: formData
+        name: password
+        required: true
+        type: string
+      - description: Имя пользователя
+        in: formData
+        name: name
+        required: true
+        type: string
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на /auth/login
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Email уже занят
+          schema:
+            additionalProperties: true
+            type: object
+        "429":
+          description: Слишком много запросов
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Регистрация пользователя
+      tags:
+      - auth
+  /auth/reset:
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      description: Устанавливает новый пароль по токену сброса
+      parameters:
+      - description: Токен сброса
+        in: formData
+        name: token
+        required: true
+        type: string
+      - description: Новый пароль
+        in: formData
+        name: password
+        required: true
+        type: string
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на /auth/login
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Сброс пароля
+      tags:
+      - auth
+  /auth/reset/{resetCode}:
+    get:
+      consumes:
+      - text/html
+      description: Возвращает HTML-страницу с формой установки нового пароля по коду
+        сброса
+      parameters:
+      - description: Код сброса пароля
+        in: path
+        name: resetCode
+        required: true
+        type: string
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Форма сброса пароля
+          schema:
+            type: string
+      summary: Показать форму сброса пароля
+      tags:
+      - auth
+  /auth/verify:
+    get:
+      description: Активирует email пользователя по токену из письма
+      parameters:
+      - description: Токен подтверждения
+        in: query
+        name: token
+        required: true
+        type: string
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница подтверждения
+          schema:
+            type: string
+        "400":
+          description: Неверный или просроченный токен
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Подтверждение email
+      tags:
+      - auth
+  /calendar:
+    get:
+      description: Возвращает HTML-страницу с календарём игр, где отображаются опубликованные
+        игры по месяцам
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница календаря
+          schema:
+            type: string
+      summary: Страница календаря
+      tags:
+      - calendar
+  /calendar/export.ics:
+    get:
+      description: Возвращает .ics файл с предстоящими играми для импорта в внешние
+        календари (Google Calendar, Apple Calendar и др.)
+      produces:
+      - text/calendar
+      responses:
+        "200":
+          description: iCalendar файл
+          schema:
+            type: string
+        "500":
+          description: Внутренняя ошибка
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Экспорт календаря в iCal
+      tags:
+      - calendar
+  /dashboard:
+    get:
+      description: Отображает главную страницу личного кабинета пользователя
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Личный кабинет
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Личный кабинет
+      tags:
+      - dashboard
+  /follow/{id}:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: ID автора
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Успешная отписка
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Неверный запрос
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Отписаться от автора
+      tags:
+      - social
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: ID автора
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Успешная подписка
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Неверный запрос
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Подписаться на автора
+      tags:
+      - social
+  /follow/{id}/check:
+    get:
+      parameters:
+      - description: ID автора
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Результат проверки
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Неверный запрос
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Проверить подписку
+      tags:
+      - social
+  /game/{passing_id}:
+    get:
+      parameters:
+      - description: ID прохождения
+        in: path
+        name: passing_id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница прохождения
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Прохождение не найдено
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Страница прохождения уровня
+      tags:
+      - gameplay
+  /game/{passing_id}/accept:
+    post:
+      parameters:
+      - description: ID прохождения
+        in: path
+        name: passing_id
+        required: true
+        type: integer
+      responses:
+        "302":
+          description: Перенаправление на страницу прохождения
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Подтверждение ответа (только для чёрного ящика)
+      tags:
+      - gameplay
+  /game/{passing_id}/file:
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: ID прохождения
+        in: path
+        name: passing_id
+        required: true
+        type: integer
+      - description: Файл ответа
+        in: formData
+        name: file
+        required: true
+        type: file
+      responses:
+        "302":
+          description: Перенаправление на страницу прохождения
+          schema:
+            type: string
+        "400":
+          description: Ошибка
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Загрузка файла ответа
+      tags:
+      - gameplay
+  /game/{passing_id}/hint:
+    post:
+      parameters:
+      - description: ID прохождения
+        in: path
+        name: passing_id
+        required: true
+        type: integer
+      responses:
+        "302":
+          description: Перенаправление на страницу прохождения
+          schema:
+            type: string
+        "400":
+          description: Ошибка
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Использование подсказки
+      tags:
+      - gameplay
+  /game/{passing_id}/sse:
+    get:
+      description: Подключается к SSE-потоку для получения реал-тайм обновлений статуса
+        прохождения, новых подсказок и завершения уровня
+      parameters:
+      - description: ID прохождения
+        in: path
+        name: passing_id
+        required: true
+        type: integer
+      produces:
+      - text/event-stream
+      responses: {}
+      security:
+      - JWT: []
+      summary: Server-Sent Events для реал-тайм обновлений прохождения
+      tags:
+      - gameplay
+  /game/{passing_id}/submit:
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      parameters:
+      - description: ID прохождения
+        in: path
+        name: passing_id
+        required: true
+        type: integer
+      - description: Код ответа
+        in: formData
+        name: code
+        required: true
+        type: string
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на страницу прохождения
+          schema:
+            type: string
+        "400":
+          description: Неверный код
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+        "429":
+          description: Слишком много попыток
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Отправка кода
+      tags:
+      - gameplay
+  /games:
+    get:
+      description: Возвращает страницу со списком игр с фильтрацией по статусу, поиском
+        и пагинацией
+      parameters:
+      - description: Статус игры (draft, published, started, finished)
+        in: query
+        name: status
+        type: string
+      - description: Поиск по названию
+        in: query
+        name: search
+        type: string
+      - default: 1
+        description: Номер страницы
+        in: query
+        name: page
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Список игр
+          schema:
+            type: string
+      summary: Список игр
+      tags:
+      - games
+  /games/{id}:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница игры
+          schema:
+            type: string
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Игра не найдена
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Детали игры
+      tags:
+      - games
+  /games/{id}/apply:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Форма заявки
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Подача заявки на игру (форма)
+      tags:
+      - passings
+    post:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID команды
+        in: formData
+        name: team_id
+        required: true
+        type: integer
+      responses:
+        "302":
+          description: Перенаправление на /games/{id}
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Подача заявки на игру
+      tags:
+      - passings
+  /games/{id}/co-authors:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница соавторов
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Управление соавторами
+      tags:
+      - coauthors
+    post:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID пользователя
+        in: formData
+        name: user_id
+        required: true
+        type: integer
+      responses:
+        "302":
+          description: Перенаправление на /games/{id}/co-authors
+          schema:
+            type: string
+        "400":
+          description: Ошибка
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Добавление соавтора
+      tags:
+      - coauthors
+  /games/{id}/co-authors/{user_id}/delete:
+    post:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID пользователя
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      responses:
+        "302":
+          description: Перенаправление на /games/{id}/co-authors
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Удаление соавтора
+      tags:
+      - coauthors
+  /games/{id}/delete:
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на /games
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Удаление игры
+      tags:
+      - games
+  /games/{id}/disqualify:
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на /games/{id}/passings
+          schema:
+            type: string
+        "400":
+          description: Ошибка
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Дисквалификация команды
+      tags:
+      - admin
+  /games/{id}/edit:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Форма редактирования
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Игра не найдена
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Форма редактирования игры
+      tags:
+      - games
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Название игры
+        in: formData
+        name: name
+        type: string
+      - description: Описание игры
+        in: formData
+        name: description
+        type: string
+      - description: Категория
+        in: formData
+        name: category
+        type: string
+      - description: Изображение обложки
+        in: formData
+        name: cover_image
+        type: file
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на страницу игры
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Обновление игры
+      tags:
+      - games
   /games/{id}/export:
     get:
       description: Выгружает уровни, вопросы и ответы игры в CSV-формат для редактирования
@@ -263,6 +1723,79 @@ paths:
       summary: Экспорт статистики в PDF
       tags:
       - export
+  /games/{id}/force-finish:
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на /games/{id}/passings
+          schema:
+            type: string
+        "400":
+          description: Ошибка
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Принудительное завершение игры
+      tags:
+      - admin
+  /games/{id}/full-preview:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Полная структура игры
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Неверный ID
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Полный просмотр игры (JSON)
+      tags:
+      - games
   /games/{id}/import:
     get:
       description: Возвращает HTML-страницу с формой для загрузки CSV-файла для импорта
@@ -343,6 +1876,1137 @@ paths:
       summary: Импорт игры из CSV
       tags:
       - export
+  /games/{id}/levels:
+    get:
+      description: Возвращает HTML-страницу со списком уровней игры, отсортированных
+        по позиции
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Список уровней
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Список уровней игры
+      tags:
+      - levels
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Название уровня
+        in: formData
+        name: name
+        required: true
+        type: string
+      - description: Описание уровня
+        in: formData
+        name: description
+        type: string
+      - description: Позиция уровня
+        in: formData
+        name: position
+        type: integer
+      - description: Тип уровня (single, checkpoint, parallel_group, blackbox, file_upload)
+        in: formData
+        name: type
+        type: string
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на /games/{id}/levels
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Создание уровня
+      tags:
+      - levels
+  /games/{id}/levels/{level_id}:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID уровня
+        in: path
+        name: level_id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Форма редактирования уровня
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Уровень не найден
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Страница просмотра/редактирования уровня
+      tags:
+      - levels
+    put:
+      consumes:
+      - application/x-www-form-urlencoded
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID уровня
+        in: path
+        name: level_id
+        required: true
+        type: integer
+      - description: Название уровня
+        in: formData
+        name: name
+        type: string
+      - description: Описание уровня
+        in: formData
+        name: description
+        type: string
+      - description: Тип уровня
+        in: formData
+        name: type
+        type: string
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на /games/{id}/levels
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Обновление уровня
+      tags:
+      - levels
+  /games/{id}/levels/{level_id}/delete:
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID уровня
+        in: path
+        name: level_id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на /games/{id}/levels
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Удаление уровня
+      tags:
+      - levels
+  /games/{id}/levels/{level_id}/duplicate:
+    post:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID уровня
+        in: path
+        name: level_id
+        required: true
+        type: integer
+      responses:
+        "302":
+          description: Перенаправление на /games/{id}/levels
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Дублирование уровня
+      tags:
+      - levels
+  /games/{id}/levels/{level_id}/move:
+    post:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID уровня
+        in: path
+        name: level_id
+        required: true
+        type: integer
+      - description: Направление (up/down)
+        in: formData
+        name: direction
+        required: true
+        type: string
+      responses:
+        "302":
+          description: Перенаправление на /games/{id}/levels
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Перемещение уровня
+      tags:
+      - levels
+  /games/{id}/levels/{level_id}/questions:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID уровня
+        in: path
+        name: level_id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Список вопросов
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Список вопросов уровня
+      tags:
+      - questions
+    post:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID уровня
+        in: path
+        name: level_id
+        required: true
+        type: integer
+      - description: Текст вопроса
+        in: formData
+        name: text
+        required: true
+        type: string
+      - description: Подсказка
+        in: formData
+        name: hint
+        type: string
+      responses:
+        "302":
+          description: Перенаправление на /games/{id}/levels/{level_id}/questions
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Создание вопроса
+      tags:
+      - questions
+  /games/{id}/levels/{level_id}/questions/{question_id}:
+    put:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID уровня
+        in: path
+        name: level_id
+        required: true
+        type: integer
+      - description: ID вопроса
+        in: path
+        name: question_id
+        required: true
+        type: integer
+      - description: Текст вопроса
+        in: formData
+        name: text
+        required: true
+        type: string
+      - description: Подсказка
+        in: formData
+        name: hint
+        type: string
+      responses:
+        "302":
+          description: Перенаправление на /games/{id}/levels/{level_id}/questions
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Обновление вопроса
+      tags:
+      - questions
+  /games/{id}/levels/{level_id}/questions/{question_id}/answers:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID уровня
+        in: path
+        name: level_id
+        required: true
+        type: integer
+      - description: ID вопроса
+        in: path
+        name: question_id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Список ответов
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Список ответов
+      tags:
+      - answers
+    post:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID уровня
+        in: path
+        name: level_id
+        required: true
+        type: integer
+      - description: ID вопроса
+        in: path
+        name: question_id
+        required: true
+        type: integer
+      - description: Код ответа
+        in: formData
+        name: code
+        required: true
+        type: string
+      responses:
+        "302":
+          description: Перенаправление на /games/{id}/levels/{level_id}/questions/{question_id}/answers
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Создание ответа
+      tags:
+      - answers
+  /games/{id}/levels/{level_id}/questions/{question_id}/answers/{answer_id}/delete:
+    post:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID уровня
+        in: path
+        name: level_id
+        required: true
+        type: integer
+      - description: ID вопроса
+        in: path
+        name: question_id
+        required: true
+        type: integer
+      - description: ID ответа
+        in: path
+        name: answer_id
+        required: true
+        type: integer
+      responses:
+        "302":
+          description: Перенаправление на /games/{id}/levels/{level_id}/questions/{question_id}/answers
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Удаление ответа
+      tags:
+      - answers
+  /games/{id}/levels/{level_id}/questions/{question_id}/delete:
+    post:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID уровня
+        in: path
+        name: level_id
+        required: true
+        type: integer
+      - description: ID вопроса
+        in: path
+        name: question_id
+        required: true
+        type: integer
+      responses:
+        "302":
+          description: Перенаправление на /games/{id}/levels/{level_id}/questions
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Удаление вопроса
+      tags:
+      - questions
+  /games/{id}/levels/{level_id}/questions/{question_id}/edit:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID уровня
+        in: path
+        name: level_id
+        required: true
+        type: integer
+      - description: ID вопроса
+        in: path
+        name: question_id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Форма редактирования вопроса
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Вопрос не найден
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Форма редактирования вопроса
+      tags:
+      - questions
+  /games/{id}/levels/{level_id}/questions/new:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID уровня
+        in: path
+        name: level_id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Форма создания вопроса
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Форма создания вопроса
+      tags:
+      - questions
+  /games/{id}/levels/new:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Форма создания уровня
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Форма создания уровня
+      tags:
+      - levels
+  /games/{id}/passings:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Список прохождений
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Список заявок и прохождений
+      tags:
+      - passings
+  /games/{id}/passings/{passing_id}/start:
+    post:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID прохождения
+        in: path
+        name: passing_id
+        required: true
+        type: integer
+      responses:
+        "302":
+          description: Перенаправление на /games/{id}/passings
+          schema:
+            type: string
+        "400":
+          description: Ошибка
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Запуск игры
+      tags:
+      - passings
+  /games/{id}/passings/{passing_id}/status:
+    post:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID прохождения
+        in: path
+        name: passing_id
+        required: true
+        type: integer
+      - description: Статус (approved, rejected)
+        in: formData
+        name: status
+        required: true
+        type: string
+      responses:
+        "302":
+          description: Перенаправление на /games/{id}/passings
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Изменение статуса заявки
+      tags:
+      - passings
+  /games/{id}/photos:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Фотогалерея
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Фотогалерея игры
+      tags:
+      - games
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Файл изображения
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Фото загружено
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Ошибка загрузки
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Загрузка фото
+      tags:
+      - games
+  /games/{id}/photos/{photo_id}:
+    delete:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID фото
+        in: path
+        name: photo_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Фото удалено
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Фото не найдено
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Удаление фото
+      tags:
+      - games
+  /games/{id}/publish:
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на страницу игры
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Публикация игры
+      tags:
+      - games
+  /games/{id}/review:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Форма отзыва
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Форма для отзыва
+      tags:
+      - games
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Оценка (1-5)
+        in: formData
+        name: rating
+        required: true
+        type: integer
+      - description: Текст отзыва
+        in: formData
+        name: text
+        required: true
+        type: string
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на /games/{id}
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Отправка отзыва
+      tags:
+      - games
+  /games/{id}/settings:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница настроек
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Игра не найдена
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Настройки игры
+      tags:
+      - games
+    post:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "302":
+          description: Перенаправление на /games/{id}/settings
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Сохранение настроек
+      tags:
+      - games
+  /games/{id}/simulate:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница симуляции
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Симуляция прохождения
+      tags:
+      - games
   /games/{id}/teams/{team_id}/export-results:
     get:
       description: Выгружает результаты конкретной команды в CSV-формат (доступно
@@ -390,6 +3054,980 @@ paths:
       summary: Экспорт результатов команды в CSV
       tags:
       - export
+  /games/{id}/test:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница тестов
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Тестовые прохождения
+      tags:
+      - games
+  /games/{id}/testing/start:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на страницу тестового прохождения
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Запуск тестового прохождения
+      tags:
+      - games
+  /games/new:
+    get:
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Форма создания
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Форма создания игры
+      tags:
+      - games
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: Название игры
+        in: formData
+        name: name
+        required: true
+        type: string
+      - description: Описание игры
+        in: formData
+        name: description
+        type: string
+      - description: Категория
+        in: formData
+        name: category
+        type: string
+      - description: Изображение обложки
+        in: formData
+        name: cover_image
+        type: file
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на страницу игры
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Создание игры
+      tags:
+      - games
+  /invitations/{id}/accept:
+    post:
+      parameters:
+      - description: ID приглашения
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "302":
+          description: Перенаправление на страницу команды
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Принять приглашение
+      tags:
+      - invitations
+  /invitations/{id}/decline:
+    post:
+      parameters:
+      - description: ID приглашения
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "302":
+          description: Перенаправление на /invitations/my
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Отклонить приглашение
+      tags:
+      - invitations
+  /invitations/my:
+    get:
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Список приглашений
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Мои приглашения
+      tags:
+      - invitations
+  /profile:
+    get:
+      description: Отображает страницу профиля текущего пользователя с возможностью
+        редактирования
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница профиля
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Пользователь не найден
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Личный профиль
+      tags:
+      - profile
+  /profile/avatar:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Загружает новый аватар пользователя (изображение до 5 МБ)
+      parameters:
+      - description: Файл изображения
+        in: formData
+        name: avatar
+        required: true
+        type: file
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на /profile
+          schema:
+            type: string
+        "400":
+          description: Ошибка загрузки
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Загрузка аватара
+      tags:
+      - profile
+  /profile/change-password:
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      description: Изменяет пароль текущего пользователя после проверки старого пароля
+      parameters:
+      - description: Старый пароль
+        in: formData
+        name: old_password
+        required: true
+        type: string
+      - description: Новый пароль
+        in: formData
+        name: new_password
+        required: true
+        type: string
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на /profile
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Смена пароля
+      tags:
+      - profile
+  /profile/update:
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      description: Изменяет имя и email текущего пользователя
+      parameters:
+      - description: Новое имя
+        in: formData
+        name: name
+        required: true
+        type: string
+      - description: Новый email
+        in: formData
+        name: email
+        required: true
+        type: string
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на /profile
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Обновление профиля
+      tags:
+      - profile
+  /settings/notifications:
+    get:
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница настроек
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Страница настроек уведомлений
+      tags:
+      - notifications
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на /settings/notifications
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Сохранить настройки уведомлений
+      tags:
+      - notifications
+  /subscriptions:
+    get:
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница подписок
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Список подписок
+      tags:
+      - social
+  /teams:
+    get:
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Список команд
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Список моих команд
+      tags:
+      - teams
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      parameters:
+      - description: Название команды
+        in: formData
+        name: name
+        required: true
+        type: string
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на страницу команды
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Создание команды
+      tags:
+      - teams
+  /teams/{team_id}:
+    get:
+      parameters:
+      - description: ID команды
+        in: path
+        name: team_id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница команды
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Команда не найдена
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Просмотр команды
+      tags:
+      - teams
+  /teams/new:
+    get:
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Форма создания
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Форма создания команды
+      tags:
+      - teams
+  /testing/{passing_id}:
+    get:
+      parameters:
+      - description: ID прохождения
+        in: path
+        name: passing_id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница тестового прохождения
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Прохождение не найдено
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Страница тестового прохождения
+      tags:
+      - testing
+  /testing/{passing_id}/skip:
+    post:
+      parameters:
+      - description: ID прохождения
+        in: path
+        name: passing_id
+        required: true
+        type: integer
+      responses:
+        "302":
+          description: Перенаправление на страницу тестового прохождения
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Пропуск уровня в тестовом режиме
+      tags:
+      - testing
+  /testing/{passing_id}/submit:
+    post:
+      parameters:
+      - description: ID прохождения
+        in: path
+        name: passing_id
+        required: true
+        type: integer
+      - description: Код ответа
+        in: formData
+        name: code
+        required: true
+        type: string
+      responses:
+        "302":
+          description: Перенаправление на страницу тестового прохождения
+          schema:
+            type: string
+        "400":
+          description: Неверный код
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+        "429":
+          description: Слишком много попыток
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Отправка кода в тестовом режиме
+      tags:
+      - testing
+  /tournaments:
+    get:
+      description: Возвращает HTML-страницу со списком всех турниров с пагинацией
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница списка турниров
+          schema:
+            type: string
+      summary: Список турниров
+      tags:
+      - tournaments
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      parameters:
+      - description: Название турнира
+        in: formData
+        name: name
+        required: true
+        type: string
+      - description: Описание турнира
+        in: formData
+        name: description
+        type: string
+      - description: Дата начала
+        in: formData
+        name: starts_at
+        required: true
+        type: string
+      - description: Дата окончания
+        in: formData
+        name: ends_at
+        required: true
+        type: string
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на страницу турнира
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Создание турнира
+      tags:
+      - tournaments
+  /tournaments/{id}:
+    get:
+      description: 'Отображает информацию о турнире: описание, даты, список игр, заявки'
+      parameters:
+      - description: ID турнира
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница турнира
+          schema:
+            type: string
+        "404":
+          description: Турнир не найден
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Детали турнира
+      tags:
+      - tournaments
+    put:
+      consumes:
+      - application/x-www-form-urlencoded
+      parameters:
+      - description: ID турнира
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Название турнира
+        in: formData
+        name: name
+        type: string
+      - description: Описание турнира
+        in: formData
+        name: description
+        type: string
+      - description: Дата начала
+        in: formData
+        name: starts_at
+        type: string
+      - description: Дата окончания
+        in: formData
+        name: ends_at
+        type: string
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на страницу турнира
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Обновление турнира
+      tags:
+      - tournaments
+  /tournaments/{id}/apply:
+    get:
+      parameters:
+      - description: ID турнира
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Форма заявки
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Форма подачи заявки на турнир
+      tags:
+      - tournaments
+    post:
+      parameters:
+      - description: ID турнира
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID команды
+        in: formData
+        name: team_id
+        required: true
+        type: integer
+      responses:
+        "302":
+          description: Перенаправление на страницу турнира
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Подача заявки на турнир
+      tags:
+      - tournaments
+  /tournaments/{id}/edit:
+    get:
+      parameters:
+      - description: ID турнира
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Форма редактирования
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Турнир не найден
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Форма редактирования турнира
+      tags:
+      - tournaments
+  /tournaments/{id}/games:
+    get:
+      parameters:
+      - description: ID турнира
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Список игр турнира
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Список игр турнира
+      tags:
+      - tournaments
+    post:
+      parameters:
+      - description: ID турнира
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID игры
+        in: formData
+        name: game_id
+        required: true
+        type: integer
+      responses:
+        "302":
+          description: Перенаправление на /tournaments/{id}/games
+          schema:
+            type: string
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Добавление игры в турнир
+      tags:
+      - tournaments
+  /tournaments/{id}/games/{game_id}:
+    delete:
+      parameters:
+      - description: ID турнира
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: ID игры
+        in: path
+        name: game_id
+        required: true
+        type: integer
+      responses:
+        "302":
+          description: Перенаправление на /tournaments/{id}/games
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Удаление игры из турнира
+      tags:
+      - tournaments
+  /tournaments/new:
+    get:
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Форма создания
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Форма создания турнира
+      tags:
+      - tournaments
+  /users/{id}:
+    get:
+      description: Отображает публичный профиль пользователя по ID
+      parameters:
+      - description: ID пользователя
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Публичный профиль
+          schema:
+            type: string
+        "404":
+          description: Пользователь не найден
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Публичный профиль пользователя
+      tags:
+      - profile
 securityDefinitions:
   JWT:
     in: cookie

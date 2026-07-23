@@ -33,6 +33,15 @@ func NewCoAuthorHandler(
 }
 
 // ManageCoAuthors отображает страницу управления соавторами.
+// @Summary Управление соавторами
+// @Tags coauthors
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Страница соавторов"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/co-authors [get]
+// @Security JWT
 func (h *CoAuthorHandler) ManageCoAuthors(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
@@ -79,7 +88,17 @@ func (h *CoAuthorHandler) renderCoAuthorManagePage(c *gin.Context, gameID int, e
 	render.Page(c, http.StatusBadRequest, "co_authors-manage.html", data)
 }
 
-// AddCoAuthor добавляет соавтора.
+// AddCoAuthor добавляет соавтора к игре.
+// @Summary Добавление соавтора
+// @Tags coauthors
+// @Param id path int true "ID игры"
+// @Param user_id formData int true "ID пользователя"
+// @Success 302 {string} string "Перенаправление на /games/{id}/co-authors"
+// @Failure 400 {object} map[string]interface{} "Ошибка"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/co-authors [post]
+// @Security JWT
 func (h *CoAuthorHandler) AddCoAuthor(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
@@ -118,7 +137,16 @@ func (h *CoAuthorHandler) AddCoAuthor(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/co-authors")
 }
 
-// RemoveCoAuthor удаляет соавтора.
+// RemoveCoAuthor удаляет соавтора из игры.
+// @Summary Удаление соавтора
+// @Tags coauthors
+// @Param id path int true "ID игры"
+// @Param user_id path int true "ID пользователя"
+// @Success 302 {string} string "Перенаправление на /games/{id}/co-authors"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/co-authors/{user_id}/delete [post]
+// @Security JWT
 func (h *CoAuthorHandler) RemoveCoAuthor(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {

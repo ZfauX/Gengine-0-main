@@ -23,6 +23,7 @@ type GameAdminService struct {
 	db          *gorm.DB
 	coAuthorSvc *CoAuthorService
 	cfg         *config.Config
+	sseMgr      *SSEManager
 }
 
 // NewGameAdminService создаёт новый экземпляр GameAdminService.
@@ -32,6 +33,12 @@ func NewGameAdminService(db *gorm.DB, coAuthorSvc *CoAuthorService, cfg *config.
 		coAuthorSvc: coAuthorSvc,
 		cfg:         cfg,
 	}
+}
+
+// WithSSEManager устанавливает SSE-менеджер для broadcast-уведомлений.
+func (s *GameAdminService) WithSSEManager(sseMgr *SSEManager) *GameAdminService {
+	s.sseMgr = sseMgr
+	return s
 }
 
 // GameAdminService принудительно завершает игру с транзакцией и блокировками.
@@ -137,6 +144,14 @@ func (s *GameAdminService) DisqualifyTeam(ctx context.Context, gameID, teamID, u
 
 	// Отправляем уведомление после фиксации транзакции
 	s.notifyCaptainAboutDisqualification(teamID, &game)
+	// Отправляем SSE-уведомление о дисквалификации
+	if s.sseMgr != nil {
+		s.sseMgr.Broadcast(gameID, "team_disqualified", map[string]any{
+			"game_id":         gameID,
+			"team_id":         teamID,
+			"disqualified_at": time.Now().UTC().Format("2006-01-02T15:04:05Z"),
+		})
+	}
 	return nil
 }
 

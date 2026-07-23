@@ -19,7 +19,14 @@ func NewSettingsHandler(svc *NotificationService) *SettingsHandler {
 	return &SettingsHandler{svc: svc}
 }
 
-// ShowForm отображает страницу настроек уведомлений
+// ShowForm отображает страницу настроек уведомлений.
+// @Summary Страница настроек уведомлений
+// @Tags notifications
+// @Produce html
+// @Success 200 {string} html "Страница настроек"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /settings/notifications [get]
+// @Security JWT
 func (h *SettingsHandler) ShowForm(c *gin.Context) {
 	userID := c.GetUint("userID")
 
@@ -37,7 +44,16 @@ func (h *SettingsHandler) ShowForm(c *gin.Context) {
 	})
 }
 
-// Save сохраняет настройки уведомлений
+// Save сохраняет настройки уведомлений.
+// @Summary Сохранить настройки уведомлений
+// @Tags notifications
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Success 302 {string} string "Перенаправление на /settings/notifications"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /settings/notifications [post]
+// @Security JWT
 func (h *SettingsHandler) Save(c *gin.Context) {
 	userID := c.GetUint("userID")
 
@@ -78,7 +94,12 @@ func (h *SettingsHandler) Save(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/settings/notifications")
 }
 
-// APIEmailFlags возвращает флаги email-уведомлений через API (для AJAX)
+// APIEmailFlags возвращает флаги email-уведомлений для текущего пользователя.
+// @Summary Получить флаги email-уведомлений
+// @Tags notifications
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Флаги уведомлений"
+// @Router /api/settings/notifications [get]
 func (h *SettingsHandler) APIEmailFlags(c *gin.Context) {
 	userID := c.GetUint("userID")
 
@@ -91,7 +112,14 @@ func (h *SettingsHandler) APIEmailFlags(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"settings": flags})
 }
 
-// APIEmailSave сохраняет флаги email-уведомлений через API (для AJAX)
+// APIEmailSave сохраняет флаги email-уведомлений.
+// @Summary Сохранить флаги email-уведомлений
+// @Tags notifications
+// @Accept json
+// @Produce json
+// @Param settings body map[string]interface{} true "Настройки уведомлений"
+// @Success 200 {object} map[string]interface{} "Настройки сохранены"
+// @Router /api/settings/notifications [post]
 func (h *SettingsHandler) APIEmailSave(c *gin.Context) {
 	userID := c.GetUint("userID")
 

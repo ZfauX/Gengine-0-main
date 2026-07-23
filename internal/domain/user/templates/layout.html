@@ -223,7 +223,7 @@
     <div class="fixed top-4 right-4 z-[110] max-w-sm">
         <div class="flash flash-success">{{.Flash}}</div>
     </div>
-    <script>
+    <script nonce="{{.csp_nonce}}">
         setTimeout(() => {
             const flash = document.querySelector('.flash');
             if (flash) flash.remove();

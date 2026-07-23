@@ -32,11 +32,26 @@ func NewCalendarHandler(gameRepo game.GameRepository) *CalendarHandler {
 }
 
 // CalendarPage отображает HTML-страницу календаря.
+// @Summary Страница календаря
+// @Description Возвращает HTML-страницу с календарём игр, где отображаются опубликованные игры по месяцам
+// @Tags calendar
+// @Produce html
+// @Success 200 {string} html "Страница календаря"
+// @Router /calendar [get]
 func (h *CalendarHandler) CalendarPage(c *gin.Context) {
 	render.Page(c, http.StatusOK, "calendar-page.html", gin.H{})
 }
 
 // CalendarData возвращает события календаря в JSON-формате.
+// @Summary Данные календаря
+// @Description Возвращает список игр за указанный месяц в формате JSON для отображения в календаре
+// @Tags calendar
+// @Produce json
+// @Param year query int false "Год" default(текущий)
+// @Param month query int false "Месяц (1-12)" default(текущий)
+// @Success 200 {object} map[string]interface{} "События календаря (ключ — дата, значение — массив игр)"
+// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+// @Router /api/v1/calendar [get]
 func (h *CalendarHandler) CalendarData(c *gin.Context) {
 	var req CalendarDataRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
@@ -95,6 +110,13 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 }
 
 // CalendarICal экспортирует предстоящие игры в формате iCalendar (.ics).
+// @Summary Экспорт календаря в iCal
+// @Description Возвращает .ics файл с предстоящими играми для импорта в внешние календари (Google Calendar, Apple Calendar и др.)
+// @Tags calendar
+// @Produce text/calendar
+// @Success 200 {string} string "iCalendar файл"
+// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+// @Router /calendar/export.ics [get]
 func (h *CalendarHandler) CalendarICal(c *gin.Context) {
 	now := time.Now()
 	startRange := now

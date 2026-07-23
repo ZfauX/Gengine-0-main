@@ -16,8 +16,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// GameDeps содержит все зависимости для регистрации маршрутов игрового домена.
-// Позволяет избежать передачи 16+ параметров в RegisterRoutes.
+// GameDeps СЃРѕРґРµСЂР¶РёС‚ РІСЃРµ Р·Р°РІРёСЃРёРјРѕСЃС‚Рё РґР»СЏ СЂРµРіРёСЃС‚СЂР°С†РёРё РјР°СЂС€СЂСѓС‚РѕРІ РёРіСЂРѕРІРѕРіРѕ РґРѕРјРµРЅР°.
+// РџРѕР·РІРѕР»СЏРµС‚ РёР·Р±РµР¶Р°С‚СЊ РїРµСЂРµРґР°С‡Рё 16+ РїР°СЂР°РјРµС‚СЂРѕРІ РІ RegisterRoutes.
 type GameDeps struct {
 	DB              *gorm.DB
 	GameService     *GameService
@@ -39,13 +39,7 @@ type GameDeps struct {
 	LevelService    *level.LevelService
 }
 
-// RegisterRoutes регистрирует маршруты для игр, используя готовые обработчики.
-// @tags games
-// @tags coauthors
-// @tags passings
-// @tags gameplay
-// @tags admin
-// @tags autocomplete
+// RegisterRoutes СЂРµРіРёСЃС‚СЂРёСЂСѓРµС‚ РјР°СЂС€СЂСѓС‚С‹ РґР»СЏ РёРіСЂ, РёСЃРїРѕР»СЊР·СѓСЏ РіРѕС‚РѕРІС‹Рµ РѕР±СЂР°Р±РѕС‚С‡РёРєРё.
 func RegisterRoutes(r *gin.RouterGroup, deps *GameDeps) {
 	db := deps.DB
 	gameService := deps.GameService
@@ -67,7 +61,7 @@ func RegisterRoutes(r *gin.RouterGroup, deps *GameDeps) {
 		auditSvc,
 	)
 
-	// Создаём специализированные обработчики для каждого поддомена
+	// РЎРѕР·РґР°С‘Рј СЃРїРµС†РёР°Р»РёР·РёСЂРѕРІР°РЅРЅС‹Рµ РѕР±СЂР°Р±РѕС‚С‡РёРєРё РґР»СЏ РєР°Р¶РґРѕРіРѕ РїРѕРґРґРѕРјРµРЅР°
 	passingHandler := NewPassingHandler(
 		passingService,
 		gameAdminSvc,
@@ -86,439 +80,90 @@ func RegisterRoutes(r *gin.RouterGroup, deps *GameDeps) {
 	autocompleteHandler := NewAutocompleteHandler(db)
 	gameStatsHandler := NewGameStatsHandler(gameService, deps.GamePlaySvc)
 
-	// ReviewHandler для отзывов
+	// ReviewHandler РґР»СЏ РѕС‚Р·С‹РІРѕРІ
 	reviewHandler := NewReviewHandler(reviewService)
 
 	// ========================================================================
-	// Публичные маршруты с ОПЦИОНАЛЬНОЙ аутентификацией
+	// РџСѓР±Р»РёС‡РЅС‹Рµ РјР°СЂС€СЂСѓС‚С‹ СЃ РћРџР¦РРћРќРђР›Р¬РќРћР™ Р°СѓС‚РµРЅС‚РёС„РёРєР°С†РёРµР№
 	// ========================================================================
 	optionalAuth := r.Group("/games")
 	optionalAuth.Use(middleware.OptionalAuth(authService))
 	{
-		// @Summary Список игр
-		// @Description Возвращает страницу со списком игр с фильтрацией и пагинацией.
-		// @Tags games
-		// @Produce html
-		// @Param status query string false "Статус игры (draft, published)"
-		// @Param search query string false "Поиск по названию"
-		// @Param sort query string false "Поле сортировки (created_at, name, starts_at, rating, participants)" default(created_at)
-		// @Param order query string false "Порядок сортировки (asc, desc)" default(desc)
-		// @Param page query int false "Номер страницы" default(1)
-		// @Param per_page query int false "Количество на странице" default(20) maximum(100)
-		// @Param author_id query int false "ID автора"
-		// @Param date_from query string false "Дата начала (с) в формате YYYY-MM-DD"
-		// @Param date_to query string false "Дата начала (по) в формате YYYY-MM-DD"
-		// @Success 200 {string} html "Страница со списком игр"
-		// @Router /games [get]
 		optionalAuth.GET("/", gameHandler.List)
 
-		// @Summary Детали игры
-		// @Description Показывает полную информацию об игре: название, описание, автор, даты, рейтинг, отзывы, уровни.
-		// @Tags games
-		// @Produce html
-		// @Param id path int true "ID игры"
-		// @Success 200 {string} html "Страница игры"
-		// @Failure 404 {object} map[string]interface{} "Игра не найдена"
-		// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
-		// @Router /games/{id} [get]
 		optionalAuth.GET("/:id", gameHandler.Show)
 	}
 
 	// ========================================================================
-	// Защищённые маршруты (требуют обязательной аутентификации)
+	// Р—Р°С‰РёС‰С‘РЅРЅС‹Рµ РјР°СЂС€СЂСѓС‚С‹ (С‚СЂРµР±СѓСЋС‚ РѕР±СЏР·Р°С‚РµР»СЊРЅРѕР№ Р°СѓС‚РµРЅС‚РёС„РёРєР°С†РёРё)
 	// ========================================================================
 	protected := r.Group("/games")
 	protected.Use(middleware.AuthRequired(authService))
 	{
-		// @Summary Полный просмотр игры (JSON)
-		// @Description Возвращает все уровни с вопросами и ответами для быстрого просмотра (JSON)
-		// @Tags games
-		// @Produce json
-		// @Param id path int true "ID игры"
-		// @Success 200 {object} map[string]interface{} "Структура игры"
-		// @Failure 400 {object} map[string]interface{} "Неверный ID игры"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Failure 403 {object} map[string]interface{} "Нет доступа"
-		// @Router /games/{id}/full-preview [get]
-		// @Security JWT
 		protected.GET("/:id/full-preview", fullPreviewHandler.FullPreview)
 
-		// @Summary Форма создания игры
-		// @Description Возвращает HTML-страницу с формой для создания новой игры
-		// @Tags games
-		// @Produce html
-		// @Success 200 {string} html "Форма создания игры"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Router /games/new [get]
-		// @Security JWT
 		protected.GET("/new", gameHandler.NewForm)
 
-		// @Summary Создание игры
-		// @Description Создаёт новую игру как черновик. Автоматически назначает текущего пользователя автором.
-		// @Tags games
-		// @Accept multipart/form-data
-		// @Produce html
-		// @Param name formData string true "Название игры (3-100 символов)"
-		// @Param description formData string false "Описание игры (до 2000 символов)"
-		// @Param max_team_number formData int true "Максимальное количество команд (1-100)"
-		// @Param visibility formData string true "Видимость: public или private"
-		// @Param starts_at formData string false "Дата и время начала (RFC3339)"
-		// @Param registration_deadline formData string false "Крайний срок регистрации"
-		// @Param cover formData file false "Обложка игры (jpeg, png, webp, до 5 МБ)"
-		// @Success 302 {string} string "Перенаправление на /games"
-		// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Router /games/new [post]
-		// @Security JWT
 		protected.POST("/new", gameHandler.Create)
 
-		// @Summary Форма редактирования игры
-		// @Description Возвращает HTML-страницу с формой для редактирования игры (доступно автору или контент-менеджеру)
-		// @Tags games
-		// @Produce html
-		// @Param id path int true "ID игры"
-		// @Success 200 {string} html "Форма редактирования игры"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-		// @Failure 404 {object} map[string]interface{} "Игра не найдена"
-		// @Router /games/{id}/edit [get]
-		// @Security JWT
 		protected.GET("/:id/edit", gameHandler.EditForm)
 
-		// @Summary Обновление игры
-		// @Description Обновляет данные игры (доступно автору или контент-менеджеру)
-		// @Tags games
-		// @Accept multipart/form-data
-		// @Produce html
-		// @Param id path int true "ID игры"
-		// @Param name formData string false "Название игры (3-100 символов)"
-		// @Param description formData string false "Описание игры (до 2000 символов)"
-		// @Param max_team_number formData int false "Максимальное количество команд (1-100)"
-		// @Param visibility formData string false "Видимость: public или private"
-		// @Param starts_at formData string false "Дата и время начала (RFC3339)"
-		// @Param registration_deadline formData string false "Крайний срок регистрации"
-		// @Param cover formData file false "Обложка игры (jpeg, png, webp, до 5 МБ)"
-		// @Param delete_cover formData string false "Удалить обложку (1)"
-		// @Success 302 {string} string "Перенаправление на /games/{id}"
-		// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-		// @Router /games/{id}/edit [post]
-		// @Security JWT
 		protected.POST("/:id/edit", gameHandler.Update)
 
-		// @Summary Удаление игры
-		// @Description Удаляет игру (доступно только владельцу)
-		// @Tags games
-		// @Accept x-www-form-urlencoded
-		// @Produce html
-		// @Param id path int true "ID игры"
-		// @Success 302 {string} string "Перенаправление на /games"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Failure 403 {object} map[string]interface{} "Недостаточно прав (только владелец)"
-		// @Router /games/{id}/delete [post]
-		// @Security JWT
 		protected.POST("/:id/delete", gameHandler.Delete)
 
-		// @Summary Публикация игры
-		// @Description Публикует черновик игры (доступно автору или контент-менеджеру). Игра должна содержать хотя бы один уровень.
-		// @Tags games
-		// @Accept x-www-form-urlencoded
-		// @Produce html
-		// @Param id path int true "ID игры"
-		// @Success 302 {string} string "Перенаправление на /games/{id}"
-		// @Failure 400 {object} map[string]interface{} "Нет уровней или уже опубликована"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-		// @Router /games/{id}/publish [post]
-		// @Security JWT
 		protected.POST("/:id/publish", gameHandler.Publish)
 
-		// @Summary Принудительное завершение игры
-		// @Description Завершает все активные прохождения игры (доступно автору или модератору)
-		// @Tags admin
-		// @Accept x-www-form-urlencoded
-		// @Produce html
-		// @Param id path int true "ID игры"
-		// @Success 302 {string} string "Перенаправление на /games/{id}/results"
-		// @Failure 400 {object} map[string]interface{} "Нет активных прохождений"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-		// @Router /games/{id}/force-finish [post]
-		// @Security JWT
 		protected.POST("/:id/force-finish", passingHandler.ForceFinish)
 
-		// @Summary Дисквалификация команды
-		// @Description Дисквалифицирует команду в игре (доступно автору или модератору)
-		// @Tags admin
-		// @Accept x-www-form-urlencoded
-		// @Produce html
-		// @Param id path int true "ID игры"
-		// @Param team_id formData uint true "ID команды"
-		// @Success 302 {string} string "Перенаправление на /games/{id}/monitor"
-		// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-		// @Router /games/{id}/disqualify [post]
-		// @Security JWT
 		protected.POST("/:id/disqualify", passingHandler.DisqualifyTeam)
 
-		// @Summary Управление соавторами
-		// @Description Отображает страницу управления соавторами игры (доступно владельцу)
-		// @Tags coauthors
-		// @Produce html
-		// @Param id path int true "ID игры"
-		// @Success 200 {string} html "Страница управления соавторами"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-		// @Router /games/{id}/co-authors [get]
-		// @Security JWT
 		protected.GET("/:id/co-authors", coAuthorHandler.ManageCoAuthors)
 
-		// @Summary Добавление соавтора
-		// @Description Добавляет нового соавтора к игре (доступно владельцу)
-		// @Tags coauthors
-		// @Accept x-www-form-urlencoded
-		// @Produce html
-		// @Param id path int true "ID игры"
-		// @Param user_id formData uint true "ID пользователя"
-		// @Success 302 {string} string "Перенаправление на /games/{id}/co-authors"
-		// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-		// @Router /games/{id}/co-authors [post]
-		// @Security JWT
 		protected.POST("/:id/co-authors", coAuthorHandler.AddCoAuthor)
 
-		// @Summary Удаление соавтора
-		// @Description Удаляет соавтора из игры (доступно владельцу)
-		// @Tags coauthors
-		// @Accept x-www-form-urlencoded
-		// @Produce html
-		// @Param id path int true "ID игры"
-		// @Param user_id path int true "ID соавтора"
-		// @Success 302 {string} string "Перенаправление на /games/{id}/co-authors"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-		// @Router /games/{id}/co-authors/{user_id}/delete [post]
-		// @Security JWT
 		protected.POST("/:id/co-authors/:user_id/delete", coAuthorHandler.RemoveCoAuthor)
 
-		// @Summary Список заявок и прохождений
-		// @Description Отображает все заявки и текущие прохождения игры (доступно автору или модератору)
-		// @Tags passings
-		// @Produce html
-		// @Param id path int true "ID игры"
-		// @Success 200 {string} html "Страница с прохождениями"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-		// @Router /games/{id}/passings [get]
-		// @Security JWT
 		protected.GET("/:id/passings", passingHandler.ListPassings)
 
-		// @Summary Изменение статуса заявки
-		// @Description Принимает или отклоняет заявку команды на участие в игре (доступно автору или модератору)
-		// @Tags passings
-		// @Accept x-www-form-urlencoded
-		// @Produce html
-		// @Param id path int true "ID игры"
-		// @Param passing_id path int true "ID заявки"
-		// @Param status formData string true "Новый статус (accepted / rejected)"
-		// @Success 302 {string} string "Перенаправление на /games/{id}/passings"
-		// @Failure 400 {object} map[string]interface{} "Недопустимый статус"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-		// @Router /games/{id}/passings/{passing_id}/status [post]
-		// @Security JWT
 		protected.POST("/:id/passings/:passing_id/status", passingHandler.UpdatePassingStatus)
 
-		// @Summary Запуск игры
-		// @Description Запускает игру для конкретного прохождения (доступно капитану команды или автору/модератору)
-		// @Tags passings
-		// @Accept x-www-form-urlencoded
-		// @Produce html
-		// @Param id path int true "ID игры"
-		// @Param passing_id path int true "ID прохождения"
-		// @Success 302 {string} string "Перенаправление на /games/{id}/monitor"
-		// @Failure 400 {object} map[string]interface{} "Игра не принята или уже началась"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-		// @Router /games/{id}/passings/{passing_id}/start [post]
-		// @Security JWT
 		protected.POST("/:id/passings/:passing_id/start", passingHandler.StartGame)
 
-		// @Summary Подача заявки на игру (форма)
-		// @Description Возвращает страницу выбора команды для подачи заявки на участие в игре
-		// @Tags passings
-		// @Produce html
-		// @Param id path int true "ID игры"
-		// @Success 200 {string} html "Форма подачи заявки"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Router /games/{id}/apply [get]
-		// @Security JWT
 		protected.GET("/:id/apply", passingHandler.ApplyForm)
 
-		// @Summary Подача заявки на игру
-		// @Description Подаёт заявку от команды на участие в игре (доступно капитану команды)
-		// @Tags passings
-		// @Accept x-www-form-urlencoded
-		// @Produce html
-		// @Param id path int true "ID игры"
-		// @Param team_id formData uint true "ID команды"
-		// @Success 302 {string} string "Перенаправление на /games/{id}"
-		// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Failure 403 {object} map[string]interface{} "Недостаточно прав (только капитан)"
-		// @Router /games/{id}/apply [post]
-		// @Security JWT
 		protected.POST("/:id/apply", passingHandler.Apply)
 
-		// @Summary Симуляция прохождения
-		// @Description Запускает симуляцию игры для проверки логики (доступно автору или соавтору)
-		// @Tags games
-		// @Produce html
-		// @Param id path int true "ID игры"
-		// @Success 200 {string} html "Результаты симуляции"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-		// @Router /games/{id}/simulate [get]
-		// @Security JWT
 		protected.GET("/:id/simulate", simulateHandler.Simulate)
 
-		// @Summary Настройки игры
-		// @Description Отображает страницу с настройками игры (доступно автору или контент-менеджеру)
-		// @Tags games
-		// @Produce html
-		// @Param id path int true "ID игры"
-		// @Success 200 {string} html "Страница настроек"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-		// @Failure 404 {object} map[string]interface{} "Игра не найдена"
-		// @Router /games/{id}/settings [get]
-		// @Security JWT
 		protected.GET("/:id/settings", settingsHandler.SettingsPage)
 
-		// @Summary Сохранение настроек
-		// @Description Сохраняет настройки игры (доступно автору или контент-менеджеру)
-		// @Tags games
-		// @Accept x-www-form-urlencoded
-		// @Produce html
-		// @Param id path int true "ID игры"
-		// @Param allow_hints formData bool false "Разрешить подсказки"
-		// @Param hint_penalty_seconds formData int false "Штраф за подсказку (секунд)"
-		// @Param max_hints formData int false "Максимальное количество подсказок"
-		// @Param per_level_time_limit formData int false "Лимит времени на уровень (минут, 0 - без ограничения)"
-		// @Param hide_answers_until_finished formData bool false "Скрывать ответы до финиша"
-		// @Param auto_start formData bool false "Автоматический старт в указанное время"
-		// @Success 302 {string} string "Перенаправление на /games/{id}/settings"
-		// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-		// @Router /games/{id}/settings [post]
-		// @Security JWT
 		protected.POST("/:id/settings", settingsHandler.SaveSettings)
 
-		// @Summary Тестовые прохождения
-		// @Description Отображает страницу управления тестовыми прохождениями игры (доступно автору или соавтору)
-		// @Tags games
-		// @Produce html
-		// @Param id path int true "ID игры"
-		// @Success 200 {string} html "Страница тестовых прохождений"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-		// @Router /games/{id}/test [get]
-		// @Security JWT
 		protected.GET("/:id/test", testHandler.TestPage)
 
-		// @Summary Запуск тестового прохождения
-		// @Description Создаёт тестовое прохождение для игры и перенаправляет на страницу тестового прохождения (доступно автору или соавтору)
-		// @Tags games
-		// @Produce html
-		// @Param id path int true "ID игры"
-		// @Success 302 {string} string "Перенаправление на /testing/{passing_id}"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-		// @Router /games/{id}/testing/start [get]
-		// @Security JWT
 		protected.GET("/:id/testing/start", gameplayHandler.StartTesting)
 
-		// @Summary Фотогалерея игры
-		// @Description Отображает страницу с фотографиями игры
-		// @Tags games
-		// @Produce html
-		// @Param id path int true "ID игры"
-		// @Success 200 {string} html "Страница фотогалереи"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Router /games/{id}/photos [get]
-		// @Security JWT
 		protected.GET("/:id/photos", photoHandler.PhotosPage)
 
-		// @Summary Загрузка фото
-		// @Description Загружает новое фото в галерею игры (до 10 МБ, поддерживаются JPEG, PNG, WebP)
-		// @Tags games
-		// @Accept multipart/form-data
-		// @Produce json
-		// @Param id path int true "ID игры"
-		// @Param photo formData file true "Файл фотографии"
-		// @Success 200 {object} map[string]interface{} "Загруженное фото"
-		// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Router /games/{id}/photos [post]
-		// @Security JWT
 		protected.POST("/:id/photos", photoHandler.UploadPhoto)
 
-		// @Summary Удаление фото
-		// @Description Удаляет фото из галереи (доступно автору фото или автору/соавтору игры)
-		// @Tags games
-		// @Produce json
-		// @Param id path int true "ID игры"
-		// @Param photo_id path int true "ID фото"
-		// @Success 200 {object} map[string]interface{} "Статус удаления"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-		// @Failure 404 {object} map[string]interface{} "Фото не найдено"
-		// @Router /games/{id}/photos/{photo_id} [delete]
-		// @Security JWT
 		protected.DELETE("/:id/photos/:photo_id", photoHandler.DeletePhoto)
 
 		// ============================================================
-		// ОТЗЫВЫ
+		// РћРўР—Р«Р’Р«
 		// ============================================================
 
-		// @Summary Форма для отзыва
-		// @Description Отображает страницу для оставления отзыва об игре (доступно участникам завершённой игры)
-		// @Tags games
-		// @Produce html
-		// @Param id path int true "ID игры"
-		// @Success 200 {string} html "Страница отзыва"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Failure 403 {object} map[string]interface{} "Недостаточно прав (не участник или игра не завершена)"
-		// @Router /games/{id}/review [get]
-		// @Security JWT
 		protected.GET("/:id/review", reviewHandler.ShowForm)
 
-		// @Summary Отправка отзыва
-		// @Description Сохраняет отзыв пользователя об игре
-		// @Tags games
-		// @Accept x-www-form-urlencoded
-		// @Produce html
-		// @Param id path int true "ID игры"
-		// @Param rating formData int true "Оценка (1-10)"
-		// @Param comment formData string false "Комментарий"
-		// @Success 302 {string} string "Перенаправление на /games/{id}"
-		// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-		// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-		// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-		// @Router /games/{id}/review [post]
-		// @Security JWT
 		protected.POST("/:id/review", reviewHandler.Create)
 	}
 
-	// API для autocomplete поиска игр
+	// API РґР»СЏ autocomplete РїРѕРёСЃРєР° РёРіСЂ
 	api := r.Group("/api/search")
 	api.GET("/games", autocompleteHandler.Games)
 
-	// API для статистики игры (AJAX)
+	// API РґР»СЏ СЃС‚Р°С‚РёСЃС‚РёРєРё РёРіСЂС‹ (AJAX)
 	apiStats := r.Group("/api/games")
 	apiStats.Use(middleware.OptionalAuth(authService))
 	{
@@ -526,154 +171,34 @@ func RegisterRoutes(r *gin.RouterGroup, deps *GameDeps) {
 	}
 }
 
-// RegisterGameplayRoutes регистрирует маршруты игрового процесса.
-// @tags gameplay
-// @tags testing
+// RegisterGameplayRoutes СЂРµРіРёСЃС‚СЂРёСЂСѓРµС‚ РјР°СЂС€СЂСѓС‚С‹ РёРіСЂРѕРІРѕРіРѕ РїСЂРѕС†РµСЃСЃР°.
 func RegisterGameplayRoutes(
 	r *gin.RouterGroup,
 	handler *GameplayHandler,
 	coAuthorSvc *CoAuthorService,
 	sseMgr *SSEManager,
 ) {
-	// @Summary Страница прохождения уровня
-	// @Description Отображает текущий уровень для команды во время игры. Показывает вопрос, подсказки, историю попыток и таймер.
-	// @Tags gameplay
-	// @Produce html
-	// @Param passing_id path int true "ID прохождения"
-	// @Success 200 {string} html "Страница уровня"
-	// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-	// @Failure 403 {object} map[string]interface{} "Доступ запрещён (не участник команды)"
-	// @Failure 404 {object} map[string]interface{} "Уровень не найден"
-	// @Router /game/{passing_id} [get]
-	// @Security JWT
 	r.GET("/game/:passing_id", handler.ShowGame)
 
-	// @Summary Отправка кода
-	// @Description Отправляет текстовый код для проверки на текущем уровне с ограничением частоты запросов (10 попыток за минуту на пользователя)
-	// @Tags gameplay
-	// @Accept x-www-form-urlencoded
-	// @Produce html
-	// @Param passing_id path int true "ID прохождения"
-	// @Param code formData string true "Код для проверки (1-10000 символов)"
-	// @Success 302 {string} string "Перенаправление на /game/{passing_id}"
-	// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-	// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-	// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
-	// @Failure 429 {object} map[string]interface{} "Слишком частый ввод кодов"
-	// @Router /game/{passing_id}/submit [post]
-	// @Security JWT
 	r.POST("/game/:passing_id/submit", middleware.CodeSubmissionRateLimit(1*time.Minute, 10), handler.SubmitCode)
 
-	// @Summary Использование подсказки
-	// @Description Запрашивает подсказку для текущего уровня (увеличивает штрафное время). Лимит подсказок задаётся в настройках игры.
-	// @Tags gameplay
-	// @Accept x-www-form-urlencoded
-	// @Produce html
-	// @Param passing_id path int true "ID прохождения"
-	// @Success 302 {string} string "Перенаправление на /game/{passing_id}"
-	// @Failure 400 {object} map[string]interface{} "Подсказки запрещены или лимит исчерпан"
-	// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-	// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
-	// @Router /game/{passing_id}/hint [post]
-	// @Security JWT
 	r.POST("/game/:passing_id/hint", middleware.CodeSubmissionRateLimit(1*time.Minute, 30), handler.UseHint)
 
-	// @Summary Загрузка файла ответа
-	// @Description Загружает файл в качестве ответа на текущий уровень (до 10 МБ, поддерживаются JPEG, PNG, GIF, PDF, TXT)
-	// @Tags gameplay
-	// @Accept multipart/form-data
-	// @Produce html
-	// @Param passing_id path int true "ID прохождения"
-	// @Param answer_file formData file true "Файл ответа"
-	// @Success 302 {string} string "Перенаправление на /game/{passing_id}"
-	// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-	// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-	// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
-	// @Router /game/{passing_id}/file [post]
-	// @Security JWT
 	r.POST("/game/:passing_id/file", middleware.CodeSubmissionRateLimit(1*time.Minute, 10), handler.SubmitFile)
 
-	// @Summary Подтверждение ответа (только для чёрного ящика)
-	// @Description Автор игры подтверждает ответ команды на уровне "чёрный ящик"
-	// @Tags gameplay
-	// @Accept x-www-form-urlencoded
-	// @Produce html
-	// @Param passing_id path int true "ID прохождения"
-	// @Success 302 {string} string "Перенаправление на /games/{game_id}/monitor"
-	// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-	// @Failure 403 {object} map[string]interface{} "Только автор может подтвердить"
-	// @Router /game/{passing_id}/accept [post]
-	// @Security JWT
 	r.POST("/game/:passing_id/accept", middleware.CodeSubmissionRateLimit(1*time.Minute, 20), handler.AcceptAnswer)
 
 	// ============================================================
-	// ТЕСТОВЫЕ МАРШРУТЫ
+	// РўР•РЎРўРћР’Р«Р• РњРђР РЁР РЈРўР«
 	// ============================================================
 
-	// @Summary Страница тестового прохождения
-	// @Description Отображает текущий уровень в тестовом режиме (виден автору или соавтору)
-	// @Tags testing
-	// @Produce html
-	// @Param passing_id path int true "ID прохождения"
-	// @Success 200 {string} html "Страница тестового уровня"
-	// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-	// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-	// @Failure 404 {object} map[string]interface{} "Уровень не найден"
-	// @Router /testing/{passing_id} [get]
-	// @Security JWT
 	r.GET("/testing/:passing_id", handler.ShowTestGame)
 
-	// @Summary Отправка кода в тестовом режиме (основной маршрут)
-	// @Description Отправляет код для проверки в тестовом режиме (всегда успешно) с ограничением частоты (10 попыток за минуту на пользователя)
-	// @Tags testing
-	// @Accept x-www-form-urlencoded
-	// @Produce html
-	// @Param passing_id path int true "ID прохождения"
-	// @Param code formData string true "Код для проверки (1-10000 символов)"
-	// @Success 302 {string} string "Перенаправление на /testing/{passing_id}"
-	// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-	// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-	// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-	// @Failure 429 {object} map[string]interface{} "Слишком частый ввод кодов"
-	// @Router /testing/{passing_id}/submit [post]
-	// @Security JWT
 	r.POST("/testing/:passing_id/submit", middleware.CodeSubmissionRateLimit(1*time.Minute, 10), handler.SubmitTestCode)
 
-	// @Summary Отправка кода в тестовом режиме (альтернативный маршрут для формы)
-	// @Description Дублирует /submit, но без суффикса, чтобы формы с action="/testing/{id}" работали.
-	// @Tags testing
-	// @Accept x-www-form-urlencoded
-	// @Produce html
-	// @Param passing_id path int true "ID прохождения"
-	// @Param code formData string true "Код для проверки (1-10000 символов)"
-	// @Success 302 {string} string "Перенаправление на /testing/{passing_id}"
-	// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-	// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-	// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-	// @Failure 429 {object} map[string]interface{} "Слишком частый ввод кодов"
-	// @Router /testing/{passing_id} [post]
-	// @Security JWT
 	r.POST("/testing/:passing_id", middleware.CodeSubmissionRateLimit(1*time.Minute, 10), handler.SubmitTestCode)
 
-	// @Summary Пропуск уровня в тестовом режиме
-	// @Description Пропускает текущий уровень в тестовом режиме (доступно автору или соавтору)
-	// @Tags testing
-	// @Accept x-www-form-urlencoded
-	// @Produce html
-	// @Param passing_id path int true "ID прохождения"
-	// @Success 302 {string} string "Перенаправление на /testing/{passing_id}"
-	// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-	// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-	// @Router /testing/{passing_id}/skip [post]
-	// @Security JWT
 	r.POST("/testing/:passing_id/skip", handler.SkipTestLevel)
 
-	// @Summary Server-Sent Events для реал-тайм обновлений геймплея
-	// @Description SSE-поток с событиями: level_completed, time_warning, hint_used, code_submitted
-	// @Tags gameplay
-	// @Produce text/event-stream
-	// @Param passing_id path int true "ID прохождения"
-	// @Router /game/{passing_id}/sse [get]
-	// @Security JWT
 	r.GET("/game/:passing_id/sse", middleware.SSERateLimit(1*time.Minute, 10), SSEHandler(sseMgr))
 }

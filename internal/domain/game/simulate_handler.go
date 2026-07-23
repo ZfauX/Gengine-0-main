@@ -21,6 +21,16 @@ func NewSimulateHandler(simulateService *SimulateService) *SimulateHandler {
 }
 
 // Simulate запускает симуляцию прохождения игры.
+// Simulate отображает страницу симуляции прохождения.
+// @Summary Симуляция прохождения
+// @Tags games
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Страница симуляции"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/simulate [get]
+// @Security JWT
 func (h *SimulateHandler) Simulate(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {

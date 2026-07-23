@@ -19,6 +19,15 @@ func NewAchievementHandler(db *gorm.DB) *AchievementHandler {
 	return &AchievementHandler{db: db}
 }
 
+// List отображает список достижений пользователя.
+// @Summary Список достижений
+// @Description Отображает все достижения текущего пользователя
+// @Tags achievements
+// @Produce html
+// @Success 200 {string} html "Страница достижений"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /achievements [get]
+// @Security JWT
 func (h *AchievementHandler) List(c *gin.Context) {
 	userID := c.GetUint("userID")
 	var achievements []Achievement

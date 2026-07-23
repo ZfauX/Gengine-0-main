@@ -32,7 +32,17 @@ func NewFollowHandler(followService *FollowService) *FollowHandler {
 	return &FollowHandler{followService: followService}
 }
 
-// Follow подписывает текущего пользователя на автора.
+// Follow подписывается на автора.
+// @Summary Подписаться на автора
+// @Tags social
+// @Accept json
+// @Produce json
+// @Param id path int true "ID автора"
+// @Success 200 {object} map[string]interface{} "Успешная подписка"
+// @Failure 400 {object} map[string]interface{} "Неверный запрос"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /follow/{id} [post]
+// @Security JWT
 func (h *FollowHandler) Follow(c *gin.Context) {
 	var req AuthorIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -68,7 +78,17 @@ func (h *FollowHandler) Follow(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "followed"})
 }
 
-// Unfollow отменяет подписку.
+// Unfollow отписывается от автора.
+// @Summary Отписаться от автора
+// @Tags social
+// @Accept json
+// @Produce json
+// @Param id path int true "ID автора"
+// @Success 200 {object} map[string]interface{} "Успешная отписка"
+// @Failure 400 {object} map[string]interface{} "Неверный запрос"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /follow/{id} [delete]
+// @Security JWT
 func (h *FollowHandler) Unfollow(c *gin.Context) {
 	var req AuthorIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -104,7 +124,16 @@ func (h *FollowHandler) Unfollow(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "unfollowed"})
 }
 
-// IsFollowing проверяет статус подписки.
+// IsFollowing проверяет, подписан ли текущий пользователь на автора.
+// @Summary Проверить подписку
+// @Tags social
+// @Produce json
+// @Param id path int true "ID автора"
+// @Success 200 {object} map[string]interface{} "Результат проверки"
+// @Failure 400 {object} map[string]interface{} "Неверный запрос"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /follow/{id}/check [get]
+// @Security JWT
 func (h *FollowHandler) IsFollowing(c *gin.Context) {
 	var req AuthorIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -129,7 +158,14 @@ func (h *FollowHandler) IsFollowing(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"following": following})
 }
 
-// Subscriptions отображает список подписок текущего пользователя.
+// Subscriptions возвращает список подписок текущего пользователя.
+// @Summary Список подписок
+// @Tags social
+// @Produce html
+// @Success 200 {string} html "Страница подписок"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /subscriptions [get]
+// @Security JWT
 func (h *FollowHandler) Subscriptions(c *gin.Context) {
 	userID := c.GetUint("userID")
 	if userID == 0 {

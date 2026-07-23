@@ -439,3 +439,180 @@ function initInlineValidation() {
         }
     }
 }
+
+// =============================================================================
+// UX8: SSE game status notifications
+// =============================================================================
+function initSSEGameNotifications(gameId) {
+    if (!gameId) return;
+
+    var eventSource = null;
+
+    function connectSSE() {
+        try {
+            eventSource = new EventSource('/game/' + gameId + '/sse');
+
+            eventSource.onopen = function() {
+                console.log('SSE connected for game', gameId);
+            };
+
+            eventSource.addEventListener('game_started', function(e) {
+                var data = JSON.parse(e.data);
+                showToast('🎮 Игра начата! Удачи всем командам!', 'success', 5000);
+            });
+
+            eventSource.addEventListener('game_finished', function(e) {
+                var data = JSON.parse(e.data);
+                showToast('🏁 Игра завершена! Результаты обновлены.', 'info', 8000);
+            });
+
+            eventSource.addEventListener('team_disqualified', function(e) {
+                var data = JSON.parse(e.data);
+                if (data && data.team_id) {
+                    showToast('⚠️ Команда дисквалифицирована!', 'error', 10000);
+                }
+            });
+
+            eventSource.addEventListener('level_completed', function(e) {
+                var data = JSON.parse(e.data);
+                if (data && data.team_id) {
+                    showToast('✅ Уровень пройден! Отличная работа!', 'success', 4000);
+                }
+            });
+
+            eventSource.addEventListener('time_warning', function(e) {
+                var data = JSON.parse(e.data);
+                if (data && data.remaining_minutes) {
+                    showToast('⏰ Осталось ' + data.remaining_minutes + ' минут до завершения!', 'warning', 5000);
+                }
+            });
+
+            eventSource.addEventListener('hint_available', function(e) {
+                var data = JSON.parse(e.data);
+                if (data && data.level_number) {
+                    showToast('💡 Подсказка доступна для уровня ' + data.level_number, 'info', 4000);
+                }
+            });
+
+            eventSource.onerror = function(err) {
+                console.warn('SSE error, reconnecting in 5s...', err);
+                eventSource.close();
+                setTimeout(connectSSE, 5000);
+            };
+        } catch (e) {
+            console.warn('SSE not supported, notifications disabled:', e);
+        }
+    }
+
+    connectSSE();
+
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', function() {
+        if (eventSource) {
+            eventSource.close();
+        }
+    });
+}
+
+// =============================================================================
+// UX9: Team rating indicators in lobby
+// =============================================================================
+function initTeamRatingIndicators() {
+    var teamRows = document.querySelectorAll('.team-row');
+    if (!teamRows.length) return;
+
+    teamRows.forEach(function(row) {
+        var placeEl = row.querySelector('[data-place]');
+        var ratingEl = row.querySelector('[data-rating]');
+        var scoreEl = row.querySelector('[data-score]');
+
+        if (!placeEl && !ratingEl && !scoreEl) return;
+
+        var place = placeEl ? parseInt(placeEl.textContent) || 0 : 0;
+        var rating = ratingEl ? parseFloat(ratingEl.textContent) || 0 : 0;
+        var score = scoreEl ? parseInt(scoreEl.textContent) || 0 : 0;
+
+        // Place indicator
+        if (place > 0) {
+            var placeBadge = document.createElement('span');
+            placeBadge.className = 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium';
+            if (place === 1) {
+                placeBadge.classList.add('bg-yellow-100', 'text-yellow-800');
+                placeBadge.textContent = '🥇 1-е';
+            } else if (place === 2) {
+                placeBadge.classList.add('bg-gray-100', 'text-gray-800');
+                placeBadge.textContent = '🥈 2-е';
+            } else if (place === 3) {
+                placeBadge.classList.add('bg-orange-100', 'text-orange-800');
+                placeBadge.textContent = '🥉 3-е';
+            } else {
+                placeBadge.classList.add('bg-blue-100', 'text-blue-800');
+                placeBadge.textContent = '#' + place;
+            }
+
+            var placeContainer = row.querySelector('.team-place-indicator');
+            if (!placeContainer) {
+                placeContainer = document.createElement('span');
+                placeContainer.className = 'team-place-indicator ml-2';
+                row.insertBefore(placeContainer, row.firstChild);
+            }
+            placeContainer.innerHTML = '';
+            placeContainer.appendChild(placeBadge);
+        }
+
+        // Rating stars
+        if (rating > 0) {
+            var starsContainer = document.createElement('span');
+            starsContainer.className = 'team-rating-indicator ml-2 flex items-center';
+            var fullStars = Math.floor(rating / 20);
+            var hasHalfStar = (rating % 20) >= 10;
+            var starHTML = '';
+            for (var i = 0; i < fullStars; i++) {
+                starHTML += '⭐';
+            }
+            if (hasHalfStar) {
+                starHTML += '🌤️';
+            }
+            starsContainer.textContent = starHTML;
+            starsContainer.title = 'Рейтинг: ' + rating.toFixed(1);
+
+            var ratingContainer = row.querySelector('.team-rating-container');
+            if (!ratingContainer) {
+                ratingContainer = document.createElement('span');
+                ratingContainer.className = 'team-rating-container ml-2';
+                row.insertBefore(ratingContainer, row.firstChild);
+            }
+            ratingContainer.innerHTML = '';
+            ratingContainer.appendChild(starsContainer);
+        }
+
+        // Score highlight for top teams
+        if (score > 0 && place <= 3) {
+            row.classList.add('bg-blue-50');
+        }
+    });
+}
+
+// =============================================================================
+// Initialize on DOM ready
+// =============================================================================
+document.addEventListener('DOMContentLoaded', function() {
+    initToast();
+    initFormLoading();
+    initConfirmDialogs();
+    initInlineValidation();
+    initOfflineDetector();
+    initFileUploadProgress();
+    initAutoSaveDrafts();
+    initPushSubscription();
+    initSSEGameNotificationsFromPage();
+    initTeamRatingIndicators();
+});
+
+// Auto-detect game ID from page for SSE notifications
+function initSSEGameNotificationsFromPage() {
+    var gameIdEl = document.querySelector('[data-game-id]');
+    if (gameIdEl) {
+        initSSEGameNotifications(parseInt(gameIdEl.dataset.gameId));
+    }
+}

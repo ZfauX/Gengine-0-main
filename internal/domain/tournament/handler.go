@@ -84,6 +84,13 @@ func NewTournamentHandler(
 }
 
 // List отображает список турниров.
+// List отображает список турниров.
+// @Summary Список турниров
+// @Description Возвращает HTML-страницу со списком всех турниров с пагинацией
+// @Tags tournaments
+// @Produce html
+// @Success 200 {string} html "Страница списка турниров"
+// @Router /tournaments [get]
 func (h *TournamentHandler) List(c *gin.Context) {
 	tournaments, err := h.tournamentService.List(c.Request.Context())
 	if err != nil {
@@ -96,7 +103,16 @@ func (h *TournamentHandler) List(c *gin.Context) {
 	})
 }
 
+// Show отображает детальную информацию о турнире.
 // Show отображает один турнир с таблицей лидеров.
+// @Summary Детали турнира
+// @Description Отображает информацию о турнире: описание, даты, список игр, заявки
+// @Tags tournaments
+// @Produce html
+// @Param id path int true "ID турнира"
+// @Success 200 {string} html "Страница турнира"
+// @Failure 404 {object} map[string]interface{} "Турнир не найден"
+// @Router /tournaments/{id} [get]
 func (h *TournamentHandler) Show(c *gin.Context) {
 	var req TournamentIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -141,6 +157,14 @@ func (h *TournamentHandler) Show(c *gin.Context) {
 }
 
 // NewForm отображает форму создания турнира.
+// NewForm отображает форму создания турнира.
+// @Summary Форма создания турнира
+// @Tags tournaments
+// @Produce html
+// @Success 200 {string} html "Форма создания"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /tournaments/new [get]
+// @Security JWT
 func (h *TournamentHandler) NewForm(c *gin.Context) {
 	render.Page(c, http.StatusOK, "tournaments-new.html", gin.H{
 		"csrf": csrf.GetToken(c),
@@ -148,6 +172,20 @@ func (h *TournamentHandler) NewForm(c *gin.Context) {
 }
 
 // Create создаёт новый турнир.
+// Create создаёт новый турнир.
+// @Summary Создание турнира
+// @Tags tournaments
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param name formData string true "Название турнира"
+// @Param description formData string false "Описание турнира"
+// @Param starts_at formData string true "Дата начала"
+// @Param ends_at formData string true "Дата окончания"
+// @Success 302 {string} string "Перенаправление на страницу турнира"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /tournaments [post]
+// @Security JWT
 func (h *TournamentHandler) Create(c *gin.Context) {
 	userID := c.GetUint("userID")
 
@@ -202,6 +240,17 @@ func (h *TournamentHandler) Create(c *gin.Context) {
 }
 
 // EditForm отображает форму редактирования турнира.
+// EditForm отображает форму редактирования турнира.
+// @Summary Форма редактирования турнира
+// @Tags tournaments
+// @Produce html
+// @Param id path int true "ID турнира"
+// @Success 200 {string} html "Форма редактирования"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 404 {object} map[string]interface{} "Турнир не найден"
+// @Router /tournaments/{id}/edit [get]
+// @Security JWT
 func (h *TournamentHandler) EditForm(c *gin.Context) {
 	var req TournamentIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -232,6 +281,22 @@ func (h *TournamentHandler) EditForm(c *gin.Context) {
 }
 
 // Update обновляет турнир.
+// Update обновляет турнир.
+// @Summary Обновление турнира
+// @Tags tournaments
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param id path int true "ID турнира"
+// @Param name formData string false "Название турнира"
+// @Param description formData string false "Описание турнира"
+// @Param starts_at formData string false "Дата начала"
+// @Param ends_at formData string false "Дата окончания"
+// @Success 302 {string} string "Перенаправление на страницу турнира"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /tournaments/{id} [put]
+// @Security JWT
 func (h *TournamentHandler) Update(c *gin.Context) {
 	var req TournamentIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -292,6 +357,16 @@ func (h *TournamentHandler) Update(c *gin.Context) {
 }
 
 // Games отображает список игр турнира.
+// Games отображает список игр турнира.
+// @Summary Список игр турнира
+// @Tags tournaments
+// @Produce html
+// @Param id path int true "ID турнира"
+// @Success 200 {string} html "Список игр турнира"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /tournaments/{id}/games [get]
+// @Security JWT
 func (h *TournamentHandler) Games(c *gin.Context) {
 	var req TournamentIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -322,6 +397,17 @@ func (h *TournamentHandler) Games(c *gin.Context) {
 }
 
 // AddGame добавляет игру в турнир.
+// AddGame добавляет игру в турнир.
+// @Summary Добавление игры в турнир
+// @Tags tournaments
+// @Param id path int true "ID турнира"
+// @Param game_id formData int true "ID игры"
+// @Success 302 {string} string "Перенаправление на /tournaments/{id}/games"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /tournaments/{id}/games [post]
+// @Security JWT
 func (h *TournamentHandler) AddGame(c *gin.Context) {
 	var req TournamentGameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -352,6 +438,16 @@ func (h *TournamentHandler) AddGame(c *gin.Context) {
 }
 
 // RemoveGame удаляет игру из турнира.
+// RemoveGame удаляет игру из турнира.
+// @Summary Удаление игры из турнира
+// @Tags tournaments
+// @Param id path int true "ID турнира"
+// @Param game_id path int true "ID игры"
+// @Success 302 {string} string "Перенаправление на /tournaments/{id}/games"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /tournaments/{id}/games/{game_id} [delete]
+// @Security JWT
 func (h *TournamentHandler) RemoveGame(c *gin.Context) {
 	var req TournamentGameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -370,6 +466,15 @@ func (h *TournamentHandler) RemoveGame(c *gin.Context) {
 }
 
 // ApplyForm отображает форму подачи заявки на турнир.
+// ApplyForm отображает форму подачи заявки на турнир.
+// @Summary Форма подачи заявки на турнир
+// @Tags tournaments
+// @Produce html
+// @Param id path int true "ID турнира"
+// @Success 200 {string} html "Форма заявки"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /tournaments/{id}/apply [get]
+// @Security JWT
 func (h *TournamentHandler) ApplyForm(c *gin.Context) {
 	var req TournamentIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -391,7 +496,18 @@ func (h *TournamentHandler) ApplyForm(c *gin.Context) {
 	})
 }
 
+// Apply подаёт заявку на участие в турнире.
 // Apply подаёт заявку на турнир.
+// @Summary Подача заявки на турнир
+// @Tags tournaments
+// @Param id path int true "ID турнира"
+// @Param team_id formData int true "ID команды"
+// @Success 302 {string} string "Перенаправление на страницу турнира"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /tournaments/{id}/apply [post]
+// @Security JWT
 func (h *TournamentHandler) Apply(c *gin.Context) {
 	var req TournamentIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {

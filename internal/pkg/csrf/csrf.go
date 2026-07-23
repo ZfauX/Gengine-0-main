@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	gocsrf "github.com/gorilla/csrf"
+	"github.com/rs/zerolog/log"
 )
 
 const tokenKey = "_csrfToken"
@@ -36,7 +37,9 @@ func Middleware(secret string, secure bool) gin.HandlerFunc {
 			c.Next()
 		})).ServeHTTP(c.Writer, c.Request)
 		if handled {
-			_ = c.Request.ParseForm()
+			if err := c.Request.ParseForm(); err != nil {
+				log.Debug().Err(err).Msg("CSRF: ParseForm failed")
+			}
 		} else {
 			c.Abort()
 		}
