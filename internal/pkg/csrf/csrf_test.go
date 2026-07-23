@@ -30,7 +30,7 @@ func setupHandler() http.Handler {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(plaintextMiddleware())
-	r.Use(Middleware(testSecret, false))
+	r.Use(Middleware(testSecret, false, nil))
 	r.GET("/token", func(c *gin.Context) {
 		c.String(http.StatusOK, GetToken(c))
 	})
@@ -63,7 +63,7 @@ func TestMiddleware_GET_SetsCookie(t *testing.T) {
 
 	found := false
 	for _, c := range resp.Cookies() {
-		if c.Name == "_gorilla_csrf" {
+		if c.Name == "_csrf_token" {
 			found = true
 			assert.True(t, c.HttpOnly)
 			break
@@ -86,7 +86,7 @@ func TestMiddleware_POST_ValidToken(t *testing.T) {
 	cookies := getResp.Cookies()
 	require.NotEmpty(t, cookies)
 
-	form := url.Values{"gorilla.csrf.Token": {string(token)}}
+	form := url.Values{"_csrf": {string(token)}}
 	req, _ := http.NewRequest("POST", s.URL+"/submit", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Referer", s.URL+"/token")
@@ -127,7 +127,7 @@ func TestMiddleware_POST_WrongToken(t *testing.T) {
 
 	cookies := getResp.Cookies()
 
-	form := url.Values{"gorilla.csrf.Token": {"invalid-token"}}
+	form := url.Values{"_csrf": {"invalid-token"}}
 	req, _ := http.NewRequest("POST", s.URL+"/submit", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Referer", s.URL+"/token")
@@ -184,14 +184,14 @@ func TestMiddleware_DifferentSecrets(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	r2 := gin.New()
-	r2.Use(Middleware("different-secret-key-32-bytes-long!!", false))
+	r2.Use(Middleware("different-secret-key-32-bytes-long!!", false, nil))
 	r2.POST("/submit", func(c *gin.Context) {
 		c.String(http.StatusOK, "ok")
 	})
 	s2 := httptest.NewServer(r2)
 	defer s2.Close()
 
-	form := url.Values{"gorilla.csrf.Token": {string(token)}}
+	form := url.Values{"_csrf": {string(token)}}
 	req, _ := http.NewRequest("POST", s2.URL+"/submit", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Referer", s2.URL+"/token")
@@ -247,7 +247,7 @@ func TestGetToken_BeforeMiddleware(t *testing.T) {
 func TestMiddleware_SafeMethods(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	r.Use(Middleware(testSecret, false))
+	r.Use(Middleware(testSecret, false, nil))
 	r.GET("/safe", func(c *gin.Context) {
 		c.Status(http.StatusOK)
 	})

@@ -538,6 +538,7 @@ func (h *GameHandler) Update(c *gin.Context) {
 	if updateErr := h.gameService.UpdateGameWithCover(c.Request.Context(), uint(id), updateDTO, userID); updateErr != nil {
 		if errors.Is(updateErr, gorm.ErrRecordNotFound) {
 			render.RenderErrorPage(c, http.StatusNotFound)
+			return
 		} else {
 			errs := validation.FieldErrors{}
 			errs.Add("form", updateErr)

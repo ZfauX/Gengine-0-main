@@ -197,7 +197,7 @@ func setupAdminHandlerForRedirect(t *testing.T) (*gin.Engine, *gorm.DB, *admin.A
 	sessionSecret := "test-admin-secret-key-32chr!!"
 	store := cookie.NewStore([]byte(sessionSecret))
 	r.Use(sessions.Sessions("gengine_test_session", store))
-	r.Use(csrf.Middleware(sessionSecret, false))
+	r.Use(csrf.Middleware(sessionSecret, false, nil))
 
 	// Эмулируем авторизацию
 	r.Use(func(c *gin.Context) {

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gengine-v2';
+const CACHE_NAME = 'gengine-v3';
 const ASSETS_TO_CACHE = [
     '/',
     '/dashboard',
@@ -42,24 +42,17 @@ self.addEventListener('fetch', event => {
         return;
     }
 
-    // HTML-страницы: Network First с fallback на кэш, затем offline
-    if (event.request.mode === 'navigate') {
-        event.respondWith(
-            fetch(event.request)
-                .then(response => {
-                    return caches.open(CACHE_NAME).then(cache => {
-                        cache.put(event.request, response.clone());
-                        return response;
-                    });
-                })
-                .catch(() => {
-                    return caches.match(event.request).then(cached => {
-                        return cached || caches.match(OFFLINE_PAGE);
-                    });
-                })
-        );
-        return;
-    }
+	// HTML-страницы: только сеть (не кешировать)
+	if (event.request.mode === 'navigate') {
+		event.respondWith(
+			fetch(event.request).catch(() => {
+				return caches.match(event.request).then(cached => {
+					return cached || caches.match(OFFLINE_PAGE);
+				});
+			})
+		);
+		return;
+	}
 
     // Статика: Cache First
     event.respondWith(
