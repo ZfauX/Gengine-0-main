@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"sync"
 
 	"gengine-0/internal/pkg/middleware"
 
@@ -22,6 +23,7 @@ type BreadcrumbItem struct {
 }
 
 var (
+	mu                 sync.RWMutex
 	globalTemplate     *template.Template
 	templateDevPattern string
 	templateFuncMap    template.FuncMap
@@ -30,15 +32,19 @@ var (
 
 // SetTemplate сохраняет общий *template.Template для использования в хелпере.
 func SetTemplate(t *template.Template) {
+	mu.Lock()
 	globalTemplate = t
+	mu.Unlock()
 }
 
 // EnableDevMode включает горячую перезагрузку шаблонов для режима разработки.
 // При каждом вызове Page() шаблоны будут перечитываться с диска.
 func EnableDevMode(baseDir string, funcMap template.FuncMap, engineUpdater func(*template.Template)) {
+	mu.Lock()
 	templateDevPattern = filepath.Join(baseDir, "internal", "domain", "*", "templates", "*.html")
 	templateFuncMap = funcMap
 	updateEngine = engineUpdater
+	mu.Unlock()
 }
 
 // Page рендерит указанный подшаблон в буфер, вставляет результат как ContentHTML в layout.html.
@@ -48,20 +54,30 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 		data = gin.H{}
 	}
 
+	var tmpl *template.Template
+
 	if templateDevPattern != "" {
-		tmpl := template.New("")
-		tmpl.Funcs(templateFuncMap)
-		if _, err := tmpl.ParseGlob(templateDevPattern); err != nil {
+		mu.Lock()
+		t := template.New("")
+		t.Funcs(templateFuncMap)
+		if _, err := t.ParseGlob(templateDevPattern); err != nil {
 			log.Error().Err(err).Msg("Render: hot-reload template parse error")
+			tmpl = globalTemplate
 		} else {
-			globalTemplate = tmpl
+			globalTemplate = t
+			tmpl = t
 			if updateEngine != nil {
-				updateEngine(tmpl)
+				updateEngine(t)
 			}
 		}
+		mu.Unlock()
+	} else {
+		mu.RLock()
+		tmpl = globalTemplate
+		mu.RUnlock()
 	}
 
-	if globalTemplate == nil {
+	if tmpl == nil {
 		c.String(http.StatusInternalServerError, "Template engine not initialized")
 		return
 	}
@@ -71,7 +87,7 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 	data["csp_nonce"] = nonce
 
 	var buf bytes.Buffer
-	if err := globalTemplate.ExecuteTemplate(&buf, contentTemplate, data); err != nil {
+	if err := tmpl.ExecuteTemplate(&buf, contentTemplate, data); err != nil {
 		log.Error().Err(err).Msg("Render: template execution error")
 		c.String(http.StatusInternalServerError, "Внутренняя ошибка сервера")
 		return

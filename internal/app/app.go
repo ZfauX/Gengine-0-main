@@ -76,13 +76,22 @@ func (app *App) SetupRouter() (*gin.Engine, error) {
 	// HTML-маршруты — с CSRF-защитой
 	// API-маршруты (/api/*) CSRF не требуют — используют JWT-аутентификацию
 	secure := app.Config.TLS.CertFile != "" && app.Config.TLS.KeyFile != ""
-	csrfMW := csrf.Middleware(app.Config.Session.Secret, secure)
+	csrfMW := csrf.Middleware(app.Config.Session.Secret, secure, []string{app.Config.Server.BaseURL})
 	htmlGroup := r.Group("")
 	htmlGroup.Use(func(c *gin.Context) {
 		if strings.HasPrefix(c.Request.URL.Path, "/api") {
 			c.Next()
 			return
 		}
+		if strings.HasPrefix(c.Request.URL.Path, "/static") {
+			c.Next()
+			return
+		}
+		if strings.HasPrefix(c.Request.URL.Path, "/uploads") {
+			c.Next()
+			return
+		}
+		c.Header("Cache-Control", "no-store, must-revalidate")
 		csrfMW(c)
 	})
 

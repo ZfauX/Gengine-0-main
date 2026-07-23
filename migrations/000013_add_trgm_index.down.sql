@@ -1,4 +1,4 @@
--- 000005_add_trgm_index.down.sql
+-- 000013_add_trgm_index.down.sql
 -- Откат: удаление индекса и расширения
 
 DROP INDEX IF EXISTS idx_games_name_trgm;

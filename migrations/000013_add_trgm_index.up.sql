@@ -1,4 +1,4 @@
--- 000005_add_trgm_index.up.sql
+-- 000013_add_trgm_index.up.sql
 -- Добавление расширения pg_trgm и GIN-индекса для полнотекстового поиска по названию игр
 
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
