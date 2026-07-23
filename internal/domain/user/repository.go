@@ -82,17 +82,26 @@ func (r *gormUserRepo) Create(ctx context.Context, user *User) error {
 func (r *gormUserRepo) GetByID(ctx context.Context, id uint) (*User, error) {
 	var u User
 	err := r.db.WithContext(ctx).First(&u, id).Error
-	return &u, err
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
 }
 func (r *gormUserRepo) GetByEmail(ctx context.Context, email string) (*User, error) {
 	var u User
 	err := r.db.WithContext(ctx).Where("email = ?", email).First(&u).Error
-	return &u, err
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
 }
 func (r *gormUserRepo) GetPublicProfile(ctx context.Context, id uint) (*User, error) {
 	var u User
 	err := r.db.WithContext(ctx).Preload("Achievements").First(&u, id).Error
-	return &u, err
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
 }
 func (r *gormUserRepo) Update(ctx context.Context, id uint, fields map[string]any) error {
 	return r.db.WithContext(ctx).Model(&User{}).Where("id = ?", id).Updates(fields).Error
@@ -194,12 +203,18 @@ func (r *gormPasswordResetRepo) GetToken(ctx context.Context, tokenStr string) (
 	hash := sha256.Sum256([]byte(tokenStr))
 	var t PasswordResetToken
 	err := r.db.WithContext(ctx).Where("token_hash = ?", hex.EncodeToString(hash[:])).First(&t).Error
-	return &t, err
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
 }
 func (r *gormPasswordResetRepo) GetTokenByResetCode(ctx context.Context, code string) (*PasswordResetToken, error) {
 	var t PasswordResetToken
 	err := r.db.WithContext(ctx).Where("reset_code = ?", code).First(&t).Error
-	return &t, err
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
 }
 func (r *gormPasswordResetRepo) DeleteToken(ctx context.Context, token *PasswordResetToken) error {
 	return r.db.WithContext(ctx).Delete(token).Error
@@ -220,7 +235,10 @@ func (r *gormEmailVerificationRepo) GetToken(ctx context.Context, tokenStr strin
 	hash := sha256.Sum256([]byte(tokenStr))
 	var t EmailVerificationToken
 	err := r.db.WithContext(ctx).Where("token_hash = ?", hex.EncodeToString(hash[:])).First(&t).Error
-	return &t, err
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
 }
 func (r *gormEmailVerificationRepo) DeleteToken(ctx context.Context, token *EmailVerificationToken) error {
 	return r.db.WithContext(ctx).Delete(token).Error
@@ -251,7 +269,10 @@ func (r *gormRefreshTokenRepo) GetByTokenHash(ctx context.Context, tokenHash str
 	err := r.db.WithContext(ctx).
 		Where("token_hash = ? AND revoked_at IS NULL", tokenHash).
 		First(&token).Error
-	return &token, err
+	if err != nil {
+		return nil, err
+	}
+	return &token, nil
 }
 
 func (r *gormRefreshTokenRepo) Revoke(ctx context.Context, id uint) error {

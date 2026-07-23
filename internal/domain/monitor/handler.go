@@ -392,7 +392,7 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 				log.Error().Err(err).Str("room_id", roomID).Uint("user_id", userID).Msg("ChatWS: failed to save message")
 				continue
 			}
-			if preloadErr := h.db.Preload("User").First(&msg, msg.ID).Error; preloadErr != nil {
+			if preloadErr := h.db.WithContext(c.Request.Context()).Preload("User").First(&msg, msg.ID).Error; preloadErr != nil {
 				log.Error().Err(preloadErr).Uint("msg_id", msg.ID).Msg("ChatWS: failed to preload user")
 			}
 			msg.Content = sanitize.StripHTML(msg.Content)
@@ -567,8 +567,7 @@ func (h *MonitorHandler) StartVoting(c *gin.Context) {
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
 		default:
 			log.Error().Err(err).Uint("passing_id", input.PassingID).Uint("level_id", input.LevelID).Uint("user_id", userID).Msg("StartVoting: failed to start voting")
-			appErr := apperrors.Wrap(err, "MonitorHandler")
-			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка", "code": "INTERNAL_ERROR"})
 		}
 		return
 	}

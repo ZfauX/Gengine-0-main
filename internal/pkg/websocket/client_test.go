@@ -62,7 +62,9 @@ func TestClient_WritePump_SendMessage(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	// Ждём, пока writePump запустится
-	time.Sleep(100 * time.Millisecond)
+	assert.Eventually(t, func() bool {
+		return true
+	}, 1*time.Second, 50*time.Millisecond)
 
 	msg := map[string]string{"event": "test", "data": "hello"}
 	data, err := json.Marshal(msg)
@@ -89,6 +91,8 @@ func TestClient_WritePump_CloseOnSendChannelClose(t *testing.T) {
 		CheckOrigin: func(r *http.Request) bool { return true },
 	}
 
+	var client *Client
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -98,7 +102,7 @@ func TestClient_WritePump_CloseOnSendChannelClose(t *testing.T) {
 		if roomID == "" {
 			roomID = "default"
 		}
-		client := NewClient(conn, roomID, "127.0.0.1")
+		client = NewClient(conn, roomID, "127.0.0.1")
 		hub.RegisterClient(client)
 		defer hub.UnregisterClient(client)
 
@@ -108,11 +112,11 @@ func TestClient_WritePump_CloseOnSendChannelClose(t *testing.T) {
 		go client.writePump(ctx)
 
 		// Ждём запуска writePump
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 
 		client.Close()
 		// Ждём завершения writePump
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}))
 	defer server.Close()
 
@@ -122,7 +126,9 @@ func TestClient_WritePump_CloseOnSendChannelClose(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	// Ждём обработки закрытия
-	time.Sleep(300 * time.Millisecond)
+	assert.Eventually(t, func() bool {
+		return client.IsClosed()
+	}, 2*time.Second, 50*time.Millisecond)
 
 	err = conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 	require.NoError(t, err)

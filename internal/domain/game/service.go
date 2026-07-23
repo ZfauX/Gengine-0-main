@@ -1,6 +1,6 @@
 // internal/domain/game/service.go
 //
-//go:generate mockgen -source=service.go -destination=mock_service.go -package=game
+//go:generate go run go.uber.org/mock/mockgen -source=service.go -destination=mock_service.go -package=game
 package game
 
 import (
@@ -206,7 +206,7 @@ func (s *GameService) Delete(ctx context.Context, id uint, userID uint) error {
 	}
 
 	if s.photoService != nil {
-		photos, listErr := s.photoService.List(id)
+		photos, listErr := s.photoService.List(ctx, id)
 		if listErr == nil {
 			// Параллельное удаление файлов с errgroup для корректной обработки ошибок
 			var g errgroup.Group
@@ -254,7 +254,7 @@ func (s *GameService) ListReviews(ctx context.Context, gameID uint) ([]Review, e
 	if s.reviewService == nil {
 		return []Review{}, nil
 	}
-	return s.reviewService.ListByGame(gameID)
+	return s.reviewService.ListByGame(ctx, gameID)
 }
 
 // GetAverageRating делегирует RatingService.
@@ -321,7 +321,9 @@ func (s *GameService) GetLogsByGameID(ctx context.Context, gameID uint) ([]Log, 
 func (s *GameService) GetLogsByGameIDPaginated(ctx context.Context, gameID uint, page, pageSize int) ([]Log, int64, error) {
 	var total int64
 	db := s.db.WithContext(ctx).Session(&gorm.Session{NewDB: true})
-	db.Model(&Log{}).Where("game_id = ?", gameID).Count(&total)
+	if err := db.Model(&Log{}).Where("game_id = ?", gameID).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 	if page < 1 {
 		page = 1
 	}

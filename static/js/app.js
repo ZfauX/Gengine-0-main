@@ -1,17 +1,6 @@
 // static/js/app.js
 // Loading indicators, autocomplete, inline validation, toast notifications, offline detection, push subscriptions, file upload progress, auto-save drafts
 
-document.addEventListener('DOMContentLoaded', function() {
-    initToast();
-    initFormLoading();
-    initConfirmDialogs();
-    initInlineValidation();
-    initOfflineDetector();
-    initFileUploadProgress();
-    initAutoSaveDrafts();
-    initPushSubscription();
-});
-
 // =============================================================================
 // UX1: Global online/offline detector with toast notification
 // =============================================================================
@@ -31,7 +20,6 @@ function initOfflineDetector() {
 // =============================================================================
 // Toast notification system
 // =============================================================================
-var TOAST_KEYS = {};
 function initToast() {
     var container = document.getElementById('toast-container');
     if (!container) {
@@ -84,7 +72,7 @@ function initFormLoading() {
             var btn = this.querySelector('button[type="submit"]');
             if (btn && !btn.dataset.noLoading) {
                 btn.disabled = true;
-                btn.innerHTML = '<span class="inline-block animate-spin mr-1">⟳</span> ' + (btn.dataset.loadingText || 'Отправка...');
+                btn.innerHTML = '<span class="inline-block animate-spin mr-1">\u27F3</span> ' + (btn.dataset.loadingText || 'Отправка...');
                 btn.classList.add('opacity-70', 'cursor-not-allowed');
             }
         });
@@ -97,12 +85,19 @@ function initFormLoading() {
 function initConfirmDialogs() {
     var confirmButtons = document.querySelectorAll('[data-confirm]');
     confirmButtons.forEach(function(button) {
-        button.addEventListener('click', function(e) {
+        button.addEventListener('click', async function(e) {
             var message = this.getAttribute('data-confirm');
-            var hasHtmx = this.hasAttribute('hx-delete') || this.hasAttribute('hx-post');
+            if (this.dataset.__confirming) {
+                delete this.dataset.__confirming;
+                return;
+            }
+            var hasHtmx = this.hasAttribute('hx-delete') || this.hasAttribute('hx-post') || this.hasAttribute('hx-put');
             if (hasHtmx) {
-                if (!showModalConfirm(message, this)) {
-                    e.preventDefault();
+                e.preventDefault();
+                var confirmed = await showModalConfirm(message, this);
+                if (confirmed) {
+                    this.dataset.__confirming = '1';
+                    this.click();
                 }
             } else {
                 if (!confirm(message)) {
@@ -453,7 +448,8 @@ function initSSEGameNotifications(gameId) {
             eventSource = new EventSource('/game/' + gameId + '/sse');
 
             eventSource.onopen = function() {
-                console.log('SSE connected for game', gameId);
+                console.debug('SSE connected for game', gameId);
+                document.body.setAttribute('data-sse-active', 'true');
             };
 
             eventSource.addEventListener('game_started', function(e) {
@@ -497,6 +493,7 @@ function initSSEGameNotifications(gameId) {
             eventSource.onerror = function(err) {
                 console.warn('SSE error, reconnecting in 5s...', err);
                 eventSource.close();
+                document.body.removeAttribute('data-sse-active');
                 setTimeout(connectSSE, 5000);
             };
         } catch (e) {
@@ -594,6 +591,125 @@ function initTeamRatingIndicators() {
 }
 
 // =============================================================================
+// UX10: SSE connection loading indicator
+// =============================================================================
+function initSSEIndicator() {
+    var indicator = document.getElementById('sse-status');
+    if (!indicator) return;
+
+    var gameId = indicator.dataset.sseGameId;
+    if (!gameId) return;
+
+    indicator.className = 'inline-flex items-center text-sm text-yellow-600';
+    indicator.innerHTML = '<span class="animate-spin h-3 w-3 mr-1 border-2 border-yellow-600 border-t-transparent rounded-full"></span> Подключение...';
+
+    // The SSE function will update the indicator on connect/error
+    var originalConnect = window.initSSEGameNotifications;
+    if (originalConnect) {
+        window.initSSEGameNotifications = function(id) {
+            var es = null;
+            var origOnOpen = null;
+            var origOnError = null;
+
+            // Patch EventSource to detect connection state changes
+            var origEventSource = EventSource;
+            if (parseInt(id) === parseInt(gameId)) {
+                indicator.className = 'inline-flex items-center text-sm text-green-600';
+                indicator.innerHTML = '<span class="h-2 w-2 mr-1 bg-green-500 rounded-full"></span> Подключено';
+            }
+
+            originalConnect(id);
+
+            // Override the SSE reconnect to show connecting state
+            var checkInterval = setInterval(function() {
+                var esCheck = document.querySelector('[data-sse-active]');
+                if (!esCheck) {
+                    indicator.className = 'inline-flex items-center text-sm text-yellow-600';
+                    indicator.innerHTML = '<span class="animate-spin h-3 w-3 mr-1 border-2 border-yellow-600 border-t-transparent rounded-full"></span> Переподключение...';
+                } else {
+                    clearInterval(checkInterval);
+                }
+            }, 1000);
+
+            setTimeout(function() { clearInterval(checkInterval); }, 30000);
+        };
+    }
+}
+
+// =============================================================================
+// UX12: Save state indicator for admin forms
+// =============================================================================
+function initAutoSaveIndicator() {
+    var forms = document.querySelectorAll('[data-autosave]');
+    if (!forms.length) return;
+
+    forms.forEach(function(form) {
+        var indicator = document.createElement('div');
+        indicator.className = 'text-xs text-gray-400 mt-1';
+        indicator.textContent = '✓ Сохранено';
+        form.appendChild(indicator);
+
+        var inputs = form.querySelectorAll('input, textarea, select');
+        var saveTimer = null;
+
+        inputs.forEach(function(input) {
+            input.addEventListener('input', function() {
+                indicator.textContent = '✎ Не сохранено';
+                indicator.className = 'text-xs text-orange-500 mt-1';
+
+                if (saveTimer) clearTimeout(saveTimer);
+                saveTimer = setTimeout(function() {
+                    indicator.textContent = '✓ Сохранено';
+                    indicator.className = 'text-xs text-gray-400 mt-1';
+                }, 2000);
+            });
+        });
+    });
+}
+
+// =============================================================================
+// UX13: Copy code to clipboard on click
+// =============================================================================
+function initCodeCopy() {
+    var codeBlocks = document.querySelectorAll('[data-copy]');
+    if (!codeBlocks.length) return;
+
+    codeBlocks.forEach(function(el) {
+        el.addEventListener('click', function() {
+            var text = el.getAttribute('data-copy') || el.textContent;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(function() {
+                    showToast('📋 Скопировано', 'success', 2000);
+                }).catch(function() {
+                    fallbackCopy(text);
+                });
+            } else {
+                fallbackCopy(text);
+            }
+        });
+
+        el.style.cursor = 'pointer';
+        el.title = 'Нажмите, чтобы скопировать';
+    });
+
+    function fallbackCopy(text) {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        try {
+            document.execCommand('copy');
+            showToast('📋 Скопировано', 'success', 2000);
+        } catch (e) {
+            showToast('Не удалось скопировать', 'error', 3000);
+        }
+        document.body.removeChild(ta);
+    }
+}
+
+// =============================================================================
 // Initialize on DOM ready
 // =============================================================================
 document.addEventListener('DOMContentLoaded', function() {
@@ -607,12 +723,19 @@ document.addEventListener('DOMContentLoaded', function() {
     initPushSubscription();
     initSSEGameNotificationsFromPage();
     initTeamRatingIndicators();
+    initCodeCopy();
+    initAutoSaveIndicator();
+    initSSEIndicator();
+    initSearchAutocomplete();
 });
 
 // Auto-detect game ID from page for SSE notifications
 function initSSEGameNotificationsFromPage() {
     var gameIdEl = document.querySelector('[data-game-id]');
     if (gameIdEl) {
-        initSSEGameNotifications(parseInt(gameIdEl.dataset.gameId));
+        var gameId = parseInt(gameIdEl.dataset.gameId);
+        if (!isNaN(gameId)) {
+            initSSEGameNotifications(gameId);
+        }
     }
 }

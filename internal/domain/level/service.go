@@ -1,6 +1,6 @@
 // internal/domain/level/service.go
 //
-//go:generate mockgen -source=service.go -destination=mock_service.go -package=level
+//go:generate go run go.uber.org/mock/mockgen -source=service.go -destination=mock_service.go -package=level
 package level
 
 import (

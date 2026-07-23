@@ -78,7 +78,7 @@ func (s *BackupService) CreateNow(ctx context.Context) error {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("pg_dump failed: %v, output: %s", err, string(output))
+		return fmt.Errorf("pg_dump failed: %w, output: %s", err, string(output))
 	}
 
 	info, err := os.Stat(filepath)

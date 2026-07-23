@@ -56,7 +56,10 @@ func (r *gormBackupRepo) Create(ctx context.Context, backup *Backup) error {
 func (r *gormBackupRepo) GetByID(ctx context.Context, id uint) (*Backup, error) {
 	var b Backup
 	err := r.db.WithContext(ctx).First(&b, id).Error
-	return &b, err
+	if err != nil {
+		return nil, err
+	}
+	return &b, nil
 }
 
 func (r *gormBackupRepo) List(ctx context.Context) ([]Backup, error) {

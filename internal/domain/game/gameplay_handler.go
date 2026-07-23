@@ -272,7 +272,11 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 		h.renderGameplayError(c, uint(passingID), "Файл не выбран")
 		return
 	}
-	defer func() { _ = file.Close() }()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Debug().Err(err).Msg("gameplay: file close")
+		}
+	}()
 
 	if header.Size > answerFileMaxSize {
 		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{

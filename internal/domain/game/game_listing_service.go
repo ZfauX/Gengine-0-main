@@ -5,23 +5,9 @@ import (
 	"context"
 	"strings"
 	"time"
-)
 
-// escapeLike экранирует спецсимволы LIKE (% и _) для корректного поиска.
-func escapeLike(s string) string {
-	var b strings.Builder
-	b.Grow(len(s) + 10)
-	for _, char := range s {
-		switch char {
-		case '%', '_':
-			b.WriteByte(92)
-			b.WriteRune(char)
-		default:
-			b.WriteRune(char)
-		}
-	}
-	return b.String()
-}
+	"gengine-0/internal/pkg/sqlutil"
+)
 
 // GameListingService отвечает за списки игр, фильтрацию и сортировку.
 type GameListingService struct {
@@ -61,10 +47,12 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 		args = append(args, filter.ViewerID)
 	case filterPublished:
 		sql += " AND is_draft = false"
+	default:
+		// неизвестный статус — без фильтрации
 	}
 
 	if filter.Search != "" {
-		escapedSearch := escapeLike(filter.Search)
+		escapedSearch := sqlutil.EscapeLike(filter.Search)
 		sql += " AND (search_vector IS NOT NULL AND search_vector @@ plainto_tsquery('russian', ?) OR name ILIKE ?)"
 		args = append(args, filter.Search, "%"+escapedSearch+"%")
 	}
@@ -85,56 +73,59 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 		args = append(args, *filter.AuthorID)
 	}
 
-	// Определяем ORDER BY
+	// Определяем ORDER BY через белый список колонок
 	orderClause := "games.created_at DESC"
 	if sort != nil {
-		field := sort.Field
-		if !allowedSortFields[field] {
-			field = "created_at"
-		}
 		sortDir := strings.ToUpper(string(sort.Order))
 		if sortDir != "ASC" && sortDir != "DESC" {
 			sortDir = "DESC"
 		}
-		switch field {
+
+		var sortColumn string
+		switch sort.Field {
 		case "name":
-			orderClause = "games.name " + sortDir + ", games.created_at DESC"
+			sortColumn = "games.name"
 		case "starts_at":
-			orderClause = "games.starts_at " + sortDir + ", games.created_at DESC"
+			sortColumn = "games.starts_at"
 		case "rating":
-			orderClause = "rating_value " + sortDir + ", games.created_at DESC"
+			sortColumn = "rating_value"
 		case "participants":
-			orderClause = "participant_count " + sortDir + ", games.created_at DESC"
+			sortColumn = "participant_count"
 		default:
-			orderClause = "games.created_at " + sortDir
+			sortColumn = "games.created_at"
+		}
+
+		if sort.Field == "name" || sort.Field == "starts_at" {
+			orderClause = sortColumn + " " + sortDir + ", games.created_at DESC"
+		} else {
+			orderClause = sortColumn + " " + sortDir
 		}
 	}
 
 	sql += " ORDER BY " + orderClause
 
-	// Один запрос с оконной функцией COUNT(*) OVER() для получения total и данных
 	offset := (page - 1) * perPage
-	sql += " LIMIT ? OFFSET ?"
-	args = append(args, perPage, offset)
+	countSQL := `SELECT COUNT(*) AS total FROM (` + sql + `) cnt`
+	paginatedArgs := make([]any, len(args))
+	copy(paginatedArgs, args)
+	paginatedArgs = append(paginatedArgs, perPage, offset)
+	paginatedSQL := sql + " LIMIT ? OFFSET ?"
 
-	// Используем подзапрос с оконной функцией для получения total_count
-	windowSQL := `SELECT sub.*, COUNT(*) OVER() AS total_count FROM (` + sql + `) sub`
-
-	type gameRow struct {
-		Game
-		TotalCount int64
-	}
-	var rows []gameRow
-	if err := s.gameRepo.Model(ctx).Raw(windowSQL, args...).Scan(&rows).Error; err != nil {
+	var total int64
+	if err := s.gameRepo.Model(ctx).Raw(countSQL, args...).Scan(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	var total int64
+	type gameRow struct {
+		Game
+	}
+	var rows []gameRow
+	if err := s.gameRepo.Model(ctx).Raw(paginatedSQL, paginatedArgs...).Scan(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+
 	var games []Game
 	for _, row := range rows {
-		if total == 0 {
-			total = row.TotalCount
-		}
 		games = append(games, row.Game)
 	}
 

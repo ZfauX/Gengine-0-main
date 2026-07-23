@@ -52,12 +52,18 @@ func (r *gormLevelRepo) Create(ctx context.Context, level *Level) error {
 func (r *gormLevelRepo) GetByID(ctx context.Context, id uint) (*Level, error) {
 	var l Level
 	err := r.db.WithContext(ctx).First(&l, id).Error
-	return &l, err
+	if err != nil {
+		return nil, err
+	}
+	return &l, nil
 }
 func (r *gormLevelRepo) GetByIDWithQuestions(ctx context.Context, id uint) (*Level, error) {
 	var l Level
 	err := r.db.WithContext(ctx).Preload("Questions.Answers").First(&l, id).Error
-	return &l, err
+	if err != nil {
+		return nil, err
+	}
+	return &l, nil
 }
 func (r *gormLevelRepo) GetByGameID(ctx context.Context, gameID uint) ([]Level, error) {
 	var levels []Level
@@ -78,7 +84,10 @@ func (r *gormLevelRepo) GetMaxPosition(ctx context.Context, gameID uint) (int, e
 func (r *gormLevelRepo) GetFullLevel(ctx context.Context, id uint) (*Level, error) {
 	var l Level
 	err := r.db.WithContext(ctx).Preload("Questions.Answers").First(&l, id).Error
-	return &l, err
+	if err != nil {
+		return nil, err
+	}
+	return &l, nil
 }
 func (r *gormLevelRepo) ListByGameOrdered(ctx context.Context, gameID uint) ([]Level, error) {
 	var levels []Level
@@ -101,13 +110,19 @@ func (r *gormLevelRepo) FindPrevLevel(ctx context.Context, gameID uint, position
 	var l Level
 	err := r.db.WithContext(ctx).Where("game_id = ? AND position < ?", gameID, position).
 		Order("position DESC").First(&l).Error
-	return &l, err
+	if err != nil {
+		return nil, err
+	}
+	return &l, nil
 }
 func (r *gormLevelRepo) FindNextLevel(ctx context.Context, gameID uint, position int) (*Level, error) {
 	var l Level
 	err := r.db.WithContext(ctx).Where("game_id = ? AND position > ?", gameID, position).
 		Order("position ASC").First(&l).Error
-	return &l, err
+	if err != nil {
+		return nil, err
+	}
+	return &l, nil
 }
 func (r *gormLevelRepo) BeginTransaction(ctx context.Context) *gorm.DB {
 	return r.db.WithContext(ctx).Begin()
@@ -136,12 +151,18 @@ func (r *gormQuestionRepo) Create(ctx context.Context, question *Question) error
 func (r *gormQuestionRepo) GetByID(ctx context.Context, id uint) (*Question, error) {
 	var q Question
 	err := r.db.WithContext(ctx).First(&q, id).Error
-	return &q, err
+	if err != nil {
+		return nil, err
+	}
+	return &q, nil
 }
 func (r *gormQuestionRepo) GetByIDWithAnswers(ctx context.Context, id uint) (*Question, error) {
 	var q Question
 	err := r.db.WithContext(ctx).Preload("Answers").First(&q, id).Error
-	return &q, err
+	if err != nil {
+		return nil, err
+	}
+	return &q, nil
 }
 func (r *gormQuestionRepo) Update(ctx context.Context, question *Question) error {
 	return r.db.WithContext(ctx).Save(question).Error
@@ -165,7 +186,10 @@ func (r *gormAnswerRepo) Create(ctx context.Context, answer *Answer) error {
 func (r *gormAnswerRepo) GetByID(ctx context.Context, id uint) (*Answer, error) {
 	var a Answer
 	err := r.db.WithContext(ctx).First(&a, id).Error
-	return &a, err
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
 }
 func (r *gormAnswerRepo) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&Answer{}, id).Error

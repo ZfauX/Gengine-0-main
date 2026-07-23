@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,9 +15,10 @@ import (
 
 // SSESession хранит данные сессии SSE
 type SSESession struct {
-	w     http.ResponseWriter
-	flush http.Flusher
-	done  chan struct{}
+	w         http.ResponseWriter
+	flush     http.Flusher
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 // SSEManager управляет SSE-подключениями для каждой игры
@@ -59,6 +61,7 @@ func (m *SSEManager) Stop() {
 func toJSON(v any) string {
 	data, err := json.Marshal(v)
 	if err != nil {
+		log.Debug().Err(err).Msg("SSE: toJSON marshal error")
 		return "{}"
 	}
 	return string(data)
@@ -93,7 +96,7 @@ func (m *SSEManager) UnregisterSession(session *SSESession) {
 	for i, s := range sessions {
 		if s == session {
 			m.sessions[gameID] = append(sessions[:i], sessions[i+1:]...)
-			close(session.done)
+			session.closeOnce.Do(func() { close(session.done) })
 			break
 		}
 	}
@@ -124,7 +127,7 @@ func (m *SSEManager) Broadcast(gameID uint, eventType string, data any) {
 			event := "event: " + eventType + "\ndata: " + toJSON(payload) + "\n\n"
 			if _, err := s.w.Write([]byte(event)); err != nil {
 				log.Debug().Err(err).Msg("SSE: write error")
-				return
+				continue
 			}
 			s.flush.Flush()
 		}
@@ -146,6 +149,18 @@ func SSEHandler(mgr *SSEManager) gin.HandlerFunc {
 		if err != nil || gameID <= 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "неверный game_id"})
 			return
+		}
+
+		origin := c.Request.Header.Get("Origin")
+		if origin != "" {
+			allowed := false
+			if c.Request.Host != "" {
+				allowed = strings.HasPrefix(origin, "http://"+c.Request.Host) || strings.HasPrefix(origin, "https://"+c.Request.Host)
+			}
+			if !allowed {
+				c.JSON(http.StatusForbidden, gin.H{"error": "origin not allowed"})
+				return
+			}
 		}
 
 		w := c.Writer

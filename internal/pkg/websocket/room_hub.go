@@ -238,15 +238,11 @@ func (h *RoomHub) Stop() {
 
 // RegisterClient регистрирует клиента в хабе.
 func (h *RoomHub) RegisterClient(client *Client) {
-	if h.isStopped() {
-		log.Warn().Msg("RoomHub: register failed, hub is stopped")
-		client.Close()
-		return
-	}
 	select {
 	case h.register <- client:
 	case <-h.done:
 		log.Warn().Msg("RoomHub: register failed, hub is stopped")
+		client.Close()
 	}
 }
 
@@ -261,10 +257,6 @@ func (h *RoomHub) UnregisterClient(client *Client) {
 
 // BroadcastToRoom отправляет сообщение всем клиентам в комнате.
 func (h *RoomHub) BroadcastToRoom(roomID string, data []byte) {
-	if h.isStopped() {
-		log.Warn().Str("room", roomID).Msg("RoomHub: broadcast skipped, hub is stopped")
-		return
-	}
 	select {
 	case h.broadcast <- &Message{Room: roomID, Data: data}:
 	case <-h.done:

@@ -136,8 +136,8 @@ func (s *CoAuthorService) Remove(gameID, coAuthorUserID, ownerID uint) error {
 }
 
 // List возвращает список соавторов игры.
-func (s *CoAuthorService) List(gameID uint) ([]CoAuthor, error) {
+func (s *CoAuthorService) List(ctx context.Context, gameID uint) ([]CoAuthor, error) {
 	var coAuthors []CoAuthor
-	err := s.DB.Preload("User").Where("game_id = ?", gameID).Find(&coAuthors).Error
+	err := s.DB.WithContext(ctx).Preload("User").Where("game_id = ?", gameID).Find(&coAuthors).Error
 	return coAuthors, err
 }

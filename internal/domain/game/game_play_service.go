@@ -64,6 +64,8 @@ func (s *GamePlayService) WithSSEManager(sseMgr *SSEManager) *GamePlayService {
 // SubmitCode обрабатывает отправку текстового кода с транзакцией и блокировкой.
 func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint, code string) (*SubmitResult, error) {
 	var result *SubmitResult
+	var savedGameID uint
+	var savedLevelID uint
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// 1. Блокируем прогресс текущего уровня
@@ -90,17 +92,17 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 		}
 
 		if success {
-			// 5. Завершаем уровень — при завершении последнего уровня вызываем расчёт результатов
+			// 5. Завершаем уровень
 			gameID := passing.GameID
-			var levelCompleted bool
-			onCommit := func() { levelCompleted = true }
-			if completeErr := CompleteLevel(tx, progress, nil, onCommit); completeErr != nil {
+			onCommit, completeErr := CompleteLevel(tx, progress, nil)
+			if completeErr != nil {
 				return completeErr
 			}
-			// Сохраняем gameID для вызова после транзакции
-			if levelCompleted {
-				s.broadcastLevelComplete(gameID, passingID, progress.LevelID)
+			if onCommit != nil {
+				onCommit()
 			}
+			savedGameID = gameID
+			savedLevelID = progress.LevelID
 			result = &SubmitResult{Attempt: att, GameID: gameID}
 		} else {
 			result = &SubmitResult{Attempt: att, GameID: 0}
@@ -119,10 +121,12 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 		return nil, err
 	}
 
-	// Отправляем WebSocket-обновления и рассчитываем результаты ПОСЛЕ транзакции
+	// Отправляем обновления ПОСЛЕ коммита транзакции
 	if result != nil && result.Attempt != nil {
+		if result.GameID != 0 {
+			s.broadcastLevelComplete(savedGameID, passingID, savedLevelID)
+		}
 		s.broadcastSnapshot(ctx, passingID)
-		// Рассчитываем результаты, если игра завершена (на основе gameID)
 		if result.GameID != 0 {
 			if err := s.monitorSvc.CalculateResults(ctx, result.GameID); err != nil {
 				log.Error().Err(err).Uint("game_id", result.GameID).Msg("SubmitCode: CalculateResults failed")
@@ -269,6 +273,7 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (
 // AcceptBlackboxAnswer подтверждает ответ на уровне "чёрный ящик" с транзакцией и блокировкой.
 func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, userID uint) error {
 	var gameID uint
+	var savedLevelID uint
 
 	transactionErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		progress, progressErr := GetCurrentProgressForUpdate(tx, passingID)
@@ -301,11 +306,14 @@ func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, u
 			return acceptErr
 		}
 
-		var levelCompleted bool
-		onCommit := func() { levelCompleted = true }
-		if completeErr := CompleteLevel(tx, progress, nil, onCommit); completeErr != nil {
+		onCommit, completeErr := CompleteLevel(tx, progress, nil)
+		if completeErr != nil {
 			return completeErr
 		}
+		if onCommit != nil {
+			onCommit()
+		}
+		savedLevelID = progress.LevelID
 
 		logEntry := Log{
 			GamePassingID: passingID,
@@ -315,9 +323,6 @@ func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, u
 		if err := tx.Create(&logEntry).Error; err != nil {
 			return err
 		}
-		if levelCompleted {
-			s.broadcastLevelComplete(gameID, passingID, progress.LevelID)
-		}
 		return nil
 	})
 
@@ -325,7 +330,8 @@ func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, u
 		return transactionErr
 	}
 
-	// Рассчитываем результаты ПОСЛЕ транзакции
+	// Рассчитываем результаты и шлём обновления ПОСЛЕ транзакции
+	s.broadcastLevelComplete(gameID, passingID, savedLevelID)
 	if calcErr := s.monitorSvc.CalculateResults(ctx, gameID); calcErr != nil {
 		log.Error().Err(calcErr).Uint("game_id", gameID).Msg("AcceptBlackboxAnswer: CalculateResults failed")
 	}
@@ -403,7 +409,7 @@ func (s *GamePlayService) StartTesting(ctx context.Context, gameID, userID uint)
 func (s *GamePlayService) SubmitTestCode(ctx context.Context, passingID, userID uint, code string) (*Attempt, error) {
 	var attempt *Attempt
 	var gameID uint
-	var levelCompleted bool
+	var savedLevelID uint
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		progress, err := GetCurrentProgressForUpdate(tx, passingID)
@@ -426,10 +432,14 @@ func (s *GamePlayService) SubmitTestCode(ctx context.Context, passingID, userID 
 			return err
 		}
 
-		onCommit := func() { levelCompleted = true }
-		if err := CompleteLevel(tx, progress, nil, onCommit); err != nil {
-			return err
+		onCommit, completeErr := CompleteLevel(tx, progress, nil)
+		if completeErr != nil {
+			return completeErr
 		}
+		if onCommit != nil {
+			onCommit()
+		}
+		savedLevelID = progress.LevelID
 		return nil
 	})
 
@@ -437,8 +447,8 @@ func (s *GamePlayService) SubmitTestCode(ctx context.Context, passingID, userID 
 		return nil, err
 	}
 
-	if attempt != nil && levelCompleted {
-		s.broadcastLevelComplete(gameID, passingID, attempt.LevelProgressID)
+	if attempt != nil && savedLevelID != 0 {
+		s.broadcastLevelComplete(gameID, passingID, savedLevelID)
 	}
 
 	s.broadcastSnapshot(ctx, passingID)
@@ -539,7 +549,9 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 
 	var progress LevelProgress
 	err := s.db.WithContext(ctx).
-		Preload("Level.Questions.Answers").
+		Preload("Level", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id, game_id, name, description, type, hint, position")
+		}).
 		Where("game_passing_id = ? AND finished_at IS NULL", passingID).
 		First(&progress).Error
 	if err != nil {

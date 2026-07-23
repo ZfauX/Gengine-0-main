@@ -110,7 +110,7 @@ func (s *RatingService) GetLeaderboard(ctx context.Context, limit int) ([]Player
 	}
 
 	var ratings []PlayerRating
-	err := s.DB.Preload("User").Order("score DESC").Limit(limit).Find(&ratings).Error
+	err := s.DB.WithContext(ctx).Preload("User").Order("score DESC").Limit(limit).Find(&ratings).Error
 	if err != nil {
 		return nil, err
 	}

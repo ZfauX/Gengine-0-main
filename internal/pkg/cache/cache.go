@@ -96,14 +96,14 @@ func (c *Cache) removeExpired() {
 	now := time.Now()
 	var toRemove []string
 
-	c.mu.RLock()
+	c.mu.Lock()
 	for _, key := range c.lru.Keys() {
 		item, ok := c.lru.Get(key)
 		if ok && !item.expires.IsZero() && now.After(item.expires) {
 			toRemove = append(toRemove, key)
 		}
 	}
-	c.mu.RUnlock()
+	c.mu.Unlock()
 
 	if len(toRemove) == 0 {
 		return
@@ -119,14 +119,14 @@ func (c *Cache) removeExpired() {
 }
 
 func (c *Cache) Get(key string) (any, bool) {
-	c.mu.RLock()
+	c.mu.Lock()
 	item, ok := c.lru.Get(key)
 	if !ok {
-		c.mu.RUnlock()
+		c.mu.Unlock()
 		return nil, false
 	}
 	if item.expired() {
-		c.mu.RUnlock()
+		c.mu.Unlock()
 		c.mu.Lock()
 		item, ok = c.lru.Get(key)
 		if ok {
@@ -141,7 +141,7 @@ func (c *Cache) Get(key string) (any, bool) {
 		c.mu.Unlock()
 		return nil, false
 	}
-	c.mu.RUnlock()
+	c.mu.Unlock()
 	return item.value, true
 }
 

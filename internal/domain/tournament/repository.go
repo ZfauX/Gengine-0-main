@@ -58,7 +58,10 @@ func (r *gormTournamentRepo) Create(ctx context.Context, t *Tournament) error {
 func (r *gormTournamentRepo) GetByID(ctx context.Context, id uint) (*Tournament, error) {
 	var t Tournament
 	err := r.db.WithContext(ctx).Preload("Author").First(&t, id).Error
-	return &t, err
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
 }
 func (r *gormTournamentRepo) Update(ctx context.Context, t *Tournament) error {
 	return r.db.WithContext(ctx).Save(t).Error
@@ -106,7 +109,10 @@ func (r *gormTournamentGameRepo) GetAvailableGames(ctx context.Context, tourname
 func (r *gormTournamentGameRepo) FindByGameID(ctx context.Context, gameID uint) (*TournamentGame, error) {
 	var tg TournamentGame
 	err := r.db.WithContext(ctx).Where("game_id = ?", gameID).First(&tg).Error
-	return &tg, err
+	if err != nil {
+		return nil, err
+	}
+	return &tg, nil
 }
 func (r *gormTournamentGameRepo) ListFinishedPassings(ctx context.Context, gameID uint, status game.GamePassingStatus) ([]game.GamePassing, error) {
 	var passings []game.GamePassing
@@ -140,7 +146,10 @@ func (r *gormTournamentTeamRepo) ListTeams(ctx context.Context, tournamentID uin
 func (r *gormTournamentTeamRepo) GetByTournamentAndTeam(ctx context.Context, tournamentID, teamID uint) (*TournamentTeam, error) {
 	var tt TournamentTeam
 	err := r.db.WithContext(ctx).Where("tournament_id = ? AND team_id = ?", tournamentID, teamID).First(&tt).Error
-	return &tt, err
+	if err != nil {
+		return nil, err
+	}
+	return &tt, nil
 }
 func (r *gormTournamentTeamRepo) GetByTournamentAndTeamIDs(ctx context.Context, tournamentID uint, teamIDs []uint) ([]TournamentTeam, error) {
 	var teams []TournamentTeam
@@ -150,7 +159,10 @@ func (r *gormTournamentTeamRepo) GetByTournamentAndTeamIDs(ctx context.Context, 
 func (r *gormTournamentTeamRepo) FindByGameAndTeam(ctx context.Context, gameID, teamID uint) (*game.GamePassing, error) {
 	var passing game.GamePassing
 	err := r.db.WithContext(ctx).Where("game_id = ? AND team_id = ?", gameID, teamID).First(&passing).Error
-	return &passing, err
+	if err != nil {
+		return nil, err
+	}
+	return &passing, nil
 }
 func (r *gormTournamentTeamRepo) FindPassingsByGamesAndTeam(ctx context.Context, gameIDs []uint, teamID uint) ([]game.GamePassing, error) {
 	var passings []game.GamePassing
@@ -163,12 +175,18 @@ func (r *gormTournamentTeamRepo) CreatePassing(ctx context.Context, passing *gam
 func (r *gormTournamentTeamRepo) GetTeam(ctx context.Context, teamID uint) (*team.Team, error) {
 	var t team.Team
 	err := r.db.WithContext(ctx).First(&t, teamID).Error
-	return &t, err
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
 }
 func (r *gormTournamentTeamRepo) GetCaptain(ctx context.Context, captainID uint) (*user.User, error) {
 	var captain user.User
 	err := r.db.WithContext(ctx).First(&captain, captainID).Error
-	return &captain, err
+	if err != nil {
+		return nil, err
+	}
+	return &captain, nil
 }
 
 type gormTournamentResultRepo struct{ db *gorm.DB }
@@ -191,7 +209,10 @@ func (r *gormTournamentResultRepo) GetLeaderboard(ctx context.Context, tournamen
 func (r *gormTournamentResultRepo) GetByTournamentAndTeam(ctx context.Context, tournamentID, teamID uint) (*TournamentResult, error) {
 	var res TournamentResult
 	err := r.db.WithContext(ctx).Where("tournament_id = ? AND team_id = ?", tournamentID, teamID).First(&res).Error
-	return &res, err
+	if err != nil {
+		return nil, err
+	}
+	return &res, nil
 }
 func (r *gormTournamentResultRepo) GetByTournamentAndTeamIDs(ctx context.Context, tournamentID uint, teamIDs []uint) ([]TournamentResult, error) {
 	var results []TournamentResult

@@ -72,12 +72,18 @@ func (r *gormTeamRepo) Create(ctx context.Context, team *Team) error {
 func (r *gormTeamRepo) GetByID(ctx context.Context, id uint) (*Team, error) {
 	var t Team
 	err := r.db.WithContext(ctx).First(&t, id).Error
-	return &t, err
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
 }
 func (r *gormTeamRepo) GetByIDWithMembers(ctx context.Context, id uint) (*Team, error) {
 	var t Team
 	err := r.db.WithContext(ctx).Preload("Captain").Preload("Members").First(&t, id).Error
-	return &t, err
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
 }
 func (r *gormTeamRepo) GetByCaptainID(ctx context.Context, captainID uint) ([]Team, error) {
 	var teams []Team
@@ -127,17 +133,26 @@ func (r *gormTeamRepo) IsMember(ctx context.Context, teamID, userID uint) (bool,
 func (r *gormTeamRepo) GetPassingByTeam(ctx context.Context, teamID uint) (*teamGamePassing, error) {
 	var passing teamGamePassing
 	err := r.db.WithContext(ctx).Where("team_id = ?", teamID).First(&passing).Error
-	return &passing, err
+	if err != nil {
+		return nil, err
+	}
+	return &passing, nil
 }
 func (r *gormTeamRepo) GetUserByID(ctx context.Context, userID uint) (*userUser, error) {
 	var u userUser
 	err := r.db.WithContext(ctx).First(&u, userID).Error
-	return &u, err
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
 }
 func (r *gormTeamRepo) GetGameByID(ctx context.Context, gameID uint) (*teamGameModel, error) {
 	var g teamGameModel
 	err := r.db.WithContext(ctx).First(&g, gameID).Error
-	return &g, err
+	if err != nil {
+		return nil, err
+	}
+	return &g, nil
 }
 func (r *gormTeamRepo) TeamMembersCount(ctx context.Context) (int64, error) {
 	var count int64
@@ -167,12 +182,18 @@ func (r *gormInvitationRepo) Create(ctx context.Context, inv *Invitation) error 
 func (r *gormInvitationRepo) GetByID(ctx context.Context, id uint) (*Invitation, error) {
 	var inv Invitation
 	err := r.db.WithContext(ctx).First(&inv, id).Error
-	return &inv, err
+	if err != nil {
+		return nil, err
+	}
+	return &inv, nil
 }
 func (r *gormInvitationRepo) GetByTeamAndUser(ctx context.Context, teamID, userID uint) (*Invitation, error) {
 	var inv Invitation
 	err := r.db.WithContext(ctx).Where("team_id = ? AND user_id = ?", teamID, userID).First(&inv).Error
-	return &inv, err
+	if err != nil {
+		return nil, err
+	}
+	return &inv, nil
 }
 func (r *gormInvitationRepo) ListByTeam(ctx context.Context, teamID uint) ([]Invitation, error) {
 	var invs []Invitation

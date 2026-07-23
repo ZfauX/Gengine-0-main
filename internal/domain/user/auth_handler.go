@@ -2,6 +2,7 @@
 package user
 
 import (
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"net/http"
@@ -402,14 +403,11 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	}
 
 	if err := h.passwordResetSvc.ResetPassword(c.Request.Context(), input.ResetCode, input.Password); err != nil {
-		errs.Add("password", err)
-		if !errs.HasErrors() {
-			errs.Add("token", err)
-		}
+		log.Warn().Err(err).Msg("ResetPassword: failed")
 		render.Page(c, http.StatusBadRequest, "auth-reset.html", gin.H{
 			"ResetCode": input.ResetCode,
-			"Errors":    errs,
-			"Error":     errs.Error(),
+			"Errors":    validation.FieldErrors{},
+			"Error":     "Не удалось сбросить пароль. Проверьте ссылку и попробуйте снова.",
 			"csrf":      csrf.GetToken(c),
 		})
 		return
@@ -527,7 +525,8 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 
 	session := sessions.Default(c)
 	savedState := session.Get("oauth_state")
-	if savedState == nil || savedState != state {
+	savedStateStr, ok := savedState.(string)
+	if !ok || subtle.ConstantTimeCompare([]byte(savedStateStr), []byte(state)) != 1 {
 		log.Warn().Str("provider", req.Provider).Str("state", state).Msg("OAuthCallback: state mismatch")
 		render.Page(c, http.StatusBadRequest, "auth-login.html", gin.H{
 			"Error": "Ошибка авторизации: неверный параметр state",

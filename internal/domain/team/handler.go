@@ -96,6 +96,10 @@ func (h *TeamHandler) MyTeams(c *gin.Context) {
 		"Teams":         teams,
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,
+		"Breadcrumbs": []map[string]string{
+			{"name": "Главная", "url": "/"},
+			{"name": "Команды"},
+		},
 	})
 }
 
@@ -203,6 +207,11 @@ func (h *TeamHandler) ViewTeam(c *gin.Context) {
 		"IsCaptain":     team.CaptainID == userID,
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,
+		"Breadcrumbs": []map[string]string{
+			{"name": "Главная", "url": "/"},
+			{"name": "Команды", "url": "/teams"},
+			{"name": team.Name},
+		},
 	})
 }
 
@@ -239,6 +248,11 @@ func (h *TeamHandler) Members(c *gin.Context) {
 		"IsCaptain":     team.CaptainID == userID,
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,
+		"Breadcrumbs": []map[string]string{
+			{"name": "Главная", "url": "/"},
+			{"name": "Команды", "url": "/teams"},
+			{"name": team.Name},
+		},
 	})
 }
 

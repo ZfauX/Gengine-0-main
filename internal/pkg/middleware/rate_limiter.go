@@ -88,7 +88,7 @@ func (s *inMemoryStore) Allow(key string) RateLimitResult {
 }
 
 func (s *inMemoryStore) Stop() {
-	close(s.stopCh)
+	s.once.Do(func() { close(s.stopCh) })
 }
 
 func (s *inMemoryStore) cleanup() {
@@ -147,7 +147,9 @@ func (s *valkeyStore) Allow(key string) RateLimitResult {
 		return RateLimitResult{Allowed: false, Limit: s.limit, Remaining: 0, ResetUnix: resetUnix}
 	}
 	if count == 1 {
-		s.client.Expire(ctx, key, s.window)
+		if err := s.client.Expire(ctx, key, s.window).Err(); err != nil {
+			log.Warn().Err(err).Str("key", key).Msg("rate_limiter: failed to set TTL")
+		}
 	}
 	remaining := int64(s.limit) - count
 	if remaining < 0 {

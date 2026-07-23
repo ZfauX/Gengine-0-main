@@ -63,7 +63,7 @@ func (h *PhotoHandler) PhotosPage(c *gin.Context) {
 
 	var photos []Photo
 	if h.photoService != nil {
-		photos, err = h.photoService.List(uint(gameID))
+		photos, err = h.photoService.List(c.Request.Context(), uint(gameID))
 		if err != nil {
 			log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.PhotosPage: failed to list photos")
 		}
@@ -123,7 +123,11 @@ func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 		})
 		return
 	}
-	defer func() { _ = file.Close() }()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Debug().Err(err).Msg("photo: file close")
+		}
+	}()
 
 	if header.Size > photoMaxSize {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{

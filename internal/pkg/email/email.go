@@ -96,10 +96,12 @@ func (s *EmailService) StartWorker(ctx context.Context, interval time.Duration, 
 		case retry := <-s.retryQueue:
 			// Async retry: если ещё рано — перепланируем без блокировки
 			if remaining := time.Until(retry.scheduled); remaining > 0 {
+				timer := time.NewTimer(remaining)
 				select {
-				case <-time.After(remaining):
+				case <-timer.C:
 					s.processRetryJob(ctx, retry)
 				case <-ctx.Done():
+					timer.Stop()
 					return
 				}
 			} else {
@@ -123,7 +125,10 @@ func (s *EmailService) Stop() {
 // Считает письма со статусами 'pending' и 'retry'.
 func (s *EmailService) GetQueueSize(ctx context.Context) int64 {
 	var count int64
-	s.db.WithContext(ctx).Model(&QueuedEmail{}).Where("status IN (?, ?)", "pending", "retry").Count(&count)
+	if err := s.db.WithContext(ctx).Model(&QueuedEmail{}).Where("status IN (?, ?)", "pending", "retry").Count(&count).Error; err != nil {
+		log.Error().Err(err).Msg("GetQueueSize: failed to count emails")
+		return 0
+	}
 	return count
 }
 
@@ -471,15 +476,15 @@ func SendEmail(cfg *config.Config, to, subject, body string) error {
 			return fmt.Errorf("HELO failed: %w", helloErr)
 		}
 
-		if ok, extResp := conn.Extension("STARTTLS"); extResp != "" {
-			return fmt.Errorf("failed to check STARTTLS extension: %s", extResp)
-		} else if ok {
+		if ok, _ := conn.Extension("STARTTLS"); !ok {
+			if cfg.SMTP.User != "" && !strings.HasPrefix(cfg.SMTP.Host, "127.0.0.1") && cfg.SMTP.Host != "localhost" {
+				return fmt.Errorf("STARTTLS not supported by server, refusing to send credentials over plain connection")
+			}
+		} else {
 			tlsConfig := &tls.Config{ServerName: cfg.SMTP.Host}
 			if starttlsErr := conn.StartTLS(tlsConfig); starttlsErr != nil {
 				return fmt.Errorf("STARTTLS failed: %w", starttlsErr)
 			}
-		} else if cfg.SMTP.User != "" && !strings.HasPrefix(cfg.SMTP.Host, "127.0.0.1") && cfg.SMTP.Host != "localhost" {
-			return fmt.Errorf("STARTTLS not supported by server, refusing to send credentials over plain connection")
 		}
 
 		if auth != nil {
@@ -571,15 +576,15 @@ func SendBatch(cfg *config.Config, messages []EmailMessage) error {
 			return fmt.Errorf("HELO failed: %w", helloErr)
 		}
 
-		if ok, extResp := client.Extension("STARTTLS"); extResp != "" {
-			return fmt.Errorf("failed to check STARTTLS extension: %s", extResp)
-		} else if ok {
+		if ok, _ := client.Extension("STARTTLS"); !ok {
+			if cfg.SMTP.User != "" && !strings.HasPrefix(cfg.SMTP.Host, "127.0.0.1") && cfg.SMTP.Host != "localhost" {
+				return fmt.Errorf("STARTTLS not supported by server, refusing to send credentials over plain connection")
+			}
+		} else {
 			tlsConfig := &tls.Config{ServerName: cfg.SMTP.Host}
 			if starttlsErr := client.StartTLS(tlsConfig); starttlsErr != nil {
 				return fmt.Errorf("STARTTLS failed: %w", starttlsErr)
 			}
-		} else if cfg.SMTP.User != "" && !strings.HasPrefix(cfg.SMTP.Host, "127.0.0.1") && cfg.SMTP.Host != "localhost" {
-			return fmt.Errorf("STARTTLS not supported by server, refusing to send credentials over plain connection")
 		}
 	}
 
