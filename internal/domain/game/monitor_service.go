@@ -301,26 +301,25 @@ func (s *MonitorService) CalculateResults(ctx context.Context, gameID uint) erro
 		results = append(results, passingResult{ID: p.ID, Duration: total})
 	}
 
-	// Batch update durations и места через UPDATE с CASE
+	// Batch update durations и места через отдельные UPDATE (проще и безопаснее)
 	if len(results) == 0 {
 		return nil
 	}
-
-	// Формируем SQL UPDATE с CASE для каждого passing
-	// result_duration = CASE id WHEN ? THEN ? ... END
-	// place = CASE id WHEN ? THEN ? ... END
-	var durationWHENs []string
-	var durationArgs []any
-	var placeWHENs []string
-	var placeArgs []any
 
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Duration < results[j].Duration
 	})
 
+	// Строим оба CASE и список ID в одном цикле (гарантирует синхронный порядок)
+	var durationCases []string
+	var durationArgs []any
+	var placeCases []string
+	var placeArgs []any
+	var ids []uint
+
 	lastPlace := 0
 	for i, res := range results {
-		durationWHENs = append(durationWHENs, "WHEN ? THEN ?")
+		durationCases = append(durationCases, "WHEN ? THEN ?")
 		durationArgs = append(durationArgs, res.ID, res.Duration)
 
 		place := i + 1
@@ -328,29 +327,56 @@ func (s *MonitorService) CalculateResults(ctx context.Context, gameID uint) erro
 			place = lastPlace
 		}
 		lastPlace = place
-		placeWHENs = append(placeWHENs, "WHEN ? THEN ?")
+
+		placeCases = append(placeCases, "WHEN ? THEN ?")
 		placeArgs = append(placeArgs, res.ID, place)
+		ids = append(ids, res.ID)
 	}
 
-	var idPlaceholders []string
-	for range results {
-		idPlaceholders = append(idPlaceholders, "?")
-	}
+	idPlaceholders := joinPlaceholders(len(results))
 
-	query := fmt.Sprintf(
-		"UPDATE game_passings SET result_duration = CASE id %s ELSE result_duration END, place = CASE id %s ELSE place END WHERE id IN (%s)",
-		strings.Join(durationWHENs, " "),
-		strings.Join(placeWHENs, " "),
-		strings.Join(idPlaceholders, ", "),
+	// Первый UPDATE: длительность
+	durQuery := fmt.Sprintf(
+		"UPDATE game_passings SET result_duration = CASE id %s ELSE result_duration END WHERE id IN (%s)",
+		strings.Join(durationCases, " "),
+		idPlaceholders,
 	)
-	allArgs := append(durationArgs, placeArgs...)
-	for _, res := range results {
-		allArgs = append(allArgs, res.ID)
+	allDurationArgs := append(durationArgs, toAnySlice(ids)...)
+	if err := s.DB.WithContext(ctx).Exec(durQuery, allDurationArgs...).Error; err != nil {
+		return fmt.Errorf("обновление длительности: %w", err)
 	}
-	if err := s.DB.WithContext(ctx).Exec(query, allArgs...).Error; err != nil {
-		return err
+
+	// Второй UPDATE: места
+	placeQuery := fmt.Sprintf(
+		"UPDATE game_passings SET place = CASE id %s ELSE place END WHERE id IN (%s)",
+		strings.Join(placeCases, " "),
+		idPlaceholders,
+	)
+	allPlaceArgs := append(placeArgs, toAnySlice(ids)...)
+	if err := s.DB.WithContext(ctx).Exec(placeQuery, allPlaceArgs...).Error; err != nil {
+		return fmt.Errorf("обновление места: %w", err)
 	}
+
 	return nil
+}
+
+func joinPlaceholders(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	parts := make([]string, n)
+	for i := range parts {
+		parts[i] = "?"
+	}
+	return strings.Join(parts, ", ")
+}
+
+func toAnySlice[T any](s []T) []any {
+	result := make([]any, len(s))
+	for i, v := range s {
+		result[i] = v
+	}
+	return result
 }
 
 // analyzeTeamsBehavior — batch-версия: проверяет все команды одним запросом.

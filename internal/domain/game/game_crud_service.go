@@ -71,6 +71,21 @@ func (s *GameCRUDService) Update(ctx context.Context, id uint, updated *Game, us
 	if !isManager {
 		return errors.New("только автор или контент-менеджер может редактировать игру")
 	}
+
+	// Если игра опубликована, проверяем наличие активных прохождений
+	if !game.IsDraft {
+		var activePassings int64
+		if err := s.gameRepo.Model(ctx).
+			Model(&GamePassing{}).
+			Where("game_id = ? AND status IN ?", id, []GamePassingStatus{StatusStarted, StatusTesting}).
+			Count(&activePassings).Error; err != nil {
+			return fmt.Errorf("ошибка проверки активных прохождений: %w", err)
+		}
+		if activePassings > 0 {
+			return errors.New("нельзя редактировать игру с активными прохождениями")
+		}
+	}
+
 	game.Name = updated.Name
 	game.Description = updated.Description
 	game.StartsAt = updated.StartsAt
