@@ -20,28 +20,11 @@ const (
 
 // CacheStore определяет общий интерфейс для кэша.
 type CacheStore interface {
-	Get(key string) (any, bool)
-	Set(key string, value any, ttl time.Duration)
-	SetDefault(key string, value any)
-	Delete(key string)
-	DeleteByPrefix(prefix string)
-	Flush()
-	GetOrSet(key string, ttl time.Duration, fn func() (any, error)) (any, error)
-	GetOrSetString(key string, ttl time.Duration, fn func() (string, error)) (string, error)
-	GetOrSetStringWithTTL(key string, ttl time.Duration, fn func() (string, error)) (string, error)
-	GetOrSetStringWithTTLWithCtx(ctx context.Context, key string, ttl time.Duration, fn func() (string, error)) (string, error)
-	ExtendTTL(key string, ttl time.Duration) bool
-	GetOrSetInt(key string, ttl time.Duration, fn func() (int, error)) (int, error)
-	GetOrSetFloat64(key string, ttl time.Duration, fn func() (float64, error)) (float64, error)
-	GetWithCtx(ctx context.Context, key string) (any, bool)
-	SetWithCtx(ctx context.Context, key string, value any, ttl time.Duration)
-	DeleteWithCtx(ctx context.Context, key string)
-	DeleteByPrefixWithCtx(ctx context.Context, prefix string)
-	GetOrSetWithCtx(ctx context.Context, key string, ttl time.Duration, fn func() (any, error)) (any, error)
-	GetOrSetIntWithCtx(ctx context.Context, key string, ttl time.Duration, fn func() (int, error)) (int, error)
-	GetOrSetFloat64WithCtx(ctx context.Context, key string, ttl time.Duration, fn func() (float64, error)) (float64, error)
-	ExtendTTLWithCtx(ctx context.Context, key string, ttl time.Duration) bool
-	FlushWithCtx(ctx context.Context)
+	Getter
+	Setter
+	Deleter
+	GetOrSetter
+	Extender
 }
 
 type ValkeyCache struct {
@@ -305,33 +288,26 @@ func (c *ValkeyCache) GetOrSetStringWithTTLWithCtx(ctx context.Context, key stri
 		return fn()
 	}
 
-	script := c.client.Eval(ctx, getOrSetLuaScript, []string{key}, int(ttl.Seconds()), "")
+	str, fnErr := fn()
+	if fnErr != nil {
+		return "", fnErr
+	}
+	data, marshalErr := json.Marshal(str)
+	if marshalErr != nil {
+		return "", marshalErr
+	}
+
+	script := c.client.Eval(ctx, getOrSetLuaScript, []string{key}, int(ttl.Seconds()), string(data))
 
 	result, err := script.Result()
 	if err != nil {
 		if err == redis.Nil {
-			str, fnErr := fn()
-			if fnErr != nil {
-				return "", fnErr
-			}
-			data, marshalErr := json.Marshal(str)
-			if marshalErr != nil {
-				return "", marshalErr
-			}
 			if setErr := c.client.Set(ctx, key, data, ttl).Err(); setErr != nil {
 				log.Warn().Err(setErr).Str("key", key).Msg("Valkey: SetWithTTL error")
 			}
 			return str, nil
 		}
 		log.Warn().Err(err).Str("key", key).Msg("Valkey: GetOrSetStringWithTTL script error")
-		str, fnErr := fn()
-		if fnErr != nil {
-			return "", fnErr
-		}
-		data, marshalErr := json.Marshal(str)
-		if marshalErr != nil {
-			return "", marshalErr
-		}
 		if setErr := c.client.Set(ctx, key, data, ttl).Err(); setErr != nil {
 			log.Warn().Err(setErr).Str("key", key).Msg("Valkey: SetWithTTL error")
 		}
@@ -344,14 +320,6 @@ func (c *ValkeyCache) GetOrSetStringWithTTLWithCtx(ctx context.Context, key stri
 		}
 	}
 
-	str, err := fn()
-	if err != nil {
-		return "", err
-	}
-	data, err := json.Marshal(str)
-	if err != nil {
-		return "", err
-	}
 	if setErr := c.client.Set(ctx, key, data, ttl).Err(); setErr != nil {
 		log.Warn().Err(setErr).Str("key", key).Msg("Valkey: SetWithTTL error")
 	}
@@ -429,6 +397,9 @@ func (c *ValkeyCache) GetOrSetFloat64(key string, ttl time.Duration, fn func() (
 
 // GetOrSetWithCtx — контекстно-ориентированная версия GetOrSet с таймаутом.
 func (c *ValkeyCache) GetOrSetWithCtx(ctx context.Context, key string, ttl time.Duration, fn func() (any, error)) (any, error) {
+	if c == nil || c.client == nil {
+		return fn()
+	}
 	valBytes, err := c.client.Get(ctx, key).Bytes()
 	if err == nil {
 		var result any

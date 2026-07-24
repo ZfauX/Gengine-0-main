@@ -71,14 +71,12 @@ func (s *LevelService) Create(ctx context.Context, gameID uint, level *Level, us
 		level.Position = maxPos + 1
 	}
 
-	existing, err := s.levelRepo.GetByGameID(ctx, gameID)
+	exists, err := s.levelRepo.ExistsByPosition(ctx, gameID, level.Position, 0)
 	if err != nil {
 		return err
 	}
-	for _, l := range existing {
-		if l.Position == level.Position {
-			return fmt.Errorf("уровень с позицией %d уже существует в этой игре", level.Position)
-		}
+	if exists {
+		return fmt.Errorf("уровень с позицией %d уже существует в этой игре", level.Position)
 	}
 
 	level.GameID = gameID
@@ -99,14 +97,12 @@ func (s *LevelService) Update(ctx context.Context, levelID uint, updated *Level,
 	}
 
 	if updated.Position != 0 && updated.Position != level.Position {
-		existing, err := s.levelRepo.GetByGameID(ctx, level.GameID)
+		exists, err := s.levelRepo.ExistsByPosition(ctx, level.GameID, updated.Position, levelID)
 		if err != nil {
 			return err
 		}
-		for _, l := range existing {
-			if l.Position == updated.Position && l.ID != levelID {
-				return fmt.Errorf("уровень с позицией %d уже существует в этой игре", updated.Position)
-			}
+		if exists {
+			return fmt.Errorf("уровень с позицией %d уже существует в этой игре", updated.Position)
 		}
 	}
 

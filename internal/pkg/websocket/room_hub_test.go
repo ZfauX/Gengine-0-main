@@ -24,12 +24,17 @@ func TestRoomHub_RegisterClient(t *testing.T) {
 
 	hub.RegisterClient(client)
 
-	hub.mu.RLock()
-	room, ok := hub.rooms["room1"]
-	hub.mu.RUnlock()
-	assert.True(t, ok)
-	assert.Contains(t, room, client)
-	assert.Len(t, room, 1)
+	assert.Eventually(t, func() bool {
+		hub.mu.RLock()
+		room, ok := hub.rooms["room1"]
+		hub.mu.RUnlock()
+		return ok && len(room) == 1 && func() bool {
+			for c := range room {
+				return c == client
+			}
+			return false
+		}()
+	}, time.Second, 50*time.Millisecond)
 }
 
 func TestRoomHub_RegisterClient_Multiple(t *testing.T) {

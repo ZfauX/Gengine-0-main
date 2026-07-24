@@ -233,7 +233,7 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (
 
 		// Получаем текст подсказки из вопросов уровня
 		var lvl level.Level
-		if findErr := tx.Where("id = ?", progress.LevelID).First(&lvl).Error; findErr != nil {
+		if findErr := tx.Preload("Questions").Where("id = ?", progress.LevelID).First(&lvl).Error; findErr != nil {
 			return findErr
 		}
 		if len(lvl.Questions) > 0 {
@@ -367,7 +367,8 @@ func (s *GamePlayService) StartTesting(ctx context.Context, gameID, userID uint)
 		// Используем FOR UPDATE для исключения race condition
 		var existing GamePassing
 		findErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("game_id = ? AND status = ? AND team_id::text LIKE ?", gameID, StatusTesting, "_test_%").
+			Joins("JOIN teams ON teams.id = game_passings.team_id").
+			Where("game_passings.game_id = ? AND game_passings.status = ? AND teams.name LIKE ?", gameID, StatusTesting, "_test_%").
 			First(&existing).Error
 		if findErr == nil {
 			return fmt.Errorf("тестовое прохождение уже существует")
@@ -569,9 +570,16 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 	}
 
 	var votingSession gameBlackboxVotingSession
-	votingActive := s.db.WithContext(ctx).
+	votingActive := false
+	if err := s.db.WithContext(ctx).
 		Where("game_passing_id = ? AND level_id = ? AND is_open = true", passingID, progress.LevelID).
-		First(&votingSession).Error == nil
+		First(&votingSession).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Error().Err(err).Uint("passing_id", passingID).Uint("level_id", progress.LevelID).Msg("GetGameplayData: voting session query failed")
+		}
+	} else {
+		votingActive = true
+	}
 
 	timeLimitSec := 0
 	if settings.PerLevelTimeLimit > 0 {

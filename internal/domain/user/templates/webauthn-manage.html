@@ -1,0 +1,99 @@
+{{define "webauthn-manage.html"}}
+<div class="max-w-4xl mx-auto">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Управление Passkey</h1>
+
+    <div class="card mb-6">
+        <p class="text-sm text-gray-600 mb-4">Passkey (ключи доступа) позволяют входить в систему без пароля, используя биометрию или PIN-код вашего устройства.</p>
+        <button id="add-passkey-btn" class="btn btn-primary text-sm" onclick="registerPasskey()">Добавить Passkey</button>
+    </div>
+
+    {{if .Credentials}}
+    <div class="card">
+        <h3 class="text-lg font-semibold text-gray-700 mb-3">Сохранённые ключи</h3>
+        <div class="space-y-3">
+            {{range .Credentials}}
+            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                <div>
+                    <div class="font-medium text-gray-800">
+                        {{if .Name}}{{.Name}}{{else}}Passkey #{{.ID}}{{end}}
+                    </div>
+                    <div class="text-xs text-gray-500">
+                        Добавлен: {{.CreatedAt.Format "02.01.2006 15:04"}}
+                    </div>
+                </div>
+                <form action="/profile/webauthn-keys/delete/{{.ID}}" method="POST" onsubmit="return confirm('Удалить этот ключ?')">
+                    <input type="hidden" name="_csrf" value="{{$.csrf}}">
+                    <button type="submit" class="btn btn-danger text-xs">Удалить</button>
+                </form>
+            </div>
+            {{end}}
+        </div>
+    </div>
+    {{else}}
+    <div class="card">
+        <p class="text-gray-500 text-sm">У вас ещё нет сохранённых Passkey.</p>
+    </div>
+    {{end}}
+</div>
+
+<script nonce="{{.csp_nonce}}">
+function registerPasskey() {
+    const btn = document.getElementById('add-passkey-btn');
+    btn.disabled = true;
+    btn.textContent = 'Регистрация...';
+
+    fetch('/auth/webauthn/register/begin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: '' })
+    })
+    .then(r => r.json())
+    .then(creation => {
+        return navigator.credentials.create({ publicKey: creation.publicKey ?? creation });
+    })
+    .then(credential => {
+        const body = {
+            id: credential.id,
+            type: credential.type,
+            rawId: arrayBufferToBase64(credential.rawId),
+            response: {
+                clientDataJSON: arrayBufferToBase64(credential.response.clientDataJSON),
+                attestationObject: arrayBufferToBase64(credential.response.attestationObject),
+                transports: credential.response.getTransports ? credential.response.getTransports() : []
+            },
+            clientExtensionResults: credential.getClientExtensionResults ? credential.getClientExtensionResults() : {}
+        };
+        return fetch('/auth/webauthn/register/finish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'ok') {
+            location.reload();
+        } else {
+            alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'));
+            btn.disabled = false;
+            btn.textContent = 'Добавить Passkey';
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        alert('Ошибка: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = 'Добавить Passkey';
+    });
+}
+
+function arrayBufferToBase64(buf) {
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+}
+</script>
+{{end}}

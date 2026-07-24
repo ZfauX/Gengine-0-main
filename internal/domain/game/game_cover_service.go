@@ -13,13 +13,14 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-const coverMaxSize = 5 * 1024 * 1024
+const defaultCoverMaxSize = 5 * 1024 * 1024
 
 // GameCoverService отвечает за работу с обложками игр.
 type GameCoverService struct {
-	gameRepo GameRepository
-	storage  storage.FileStorage
-	coAuthor *CoAuthorService
+	gameRepo      GameRepository
+	storage       storage.FileStorage
+	coAuthor      *CoAuthorService
+	maxUploadSize int64
 }
 
 // NewGameCoverService создаёт новый сервис обложек.
@@ -27,11 +28,16 @@ func NewGameCoverService(
 	gameRepo GameRepository,
 	storage storage.FileStorage,
 	coAuthor *CoAuthorService,
+	maxUploadSize int64,
 ) *GameCoverService {
+	if maxUploadSize <= 0 {
+		maxUploadSize = defaultCoverMaxSize
+	}
 	return &GameCoverService{
-		gameRepo: gameRepo,
-		storage:  storage,
-		coAuthor: coAuthor,
+		gameRepo:      gameRepo,
+		storage:       storage,
+		coAuthor:      coAuthor,
+		maxUploadSize: maxUploadSize,
 	}
 }
 
@@ -126,8 +132,8 @@ func (s *GameCoverService) saveCoverFile(fileHeader *multipart.FileHeader, userI
 		}
 	}()
 
-	if fileHeader.Size > coverMaxSize {
-		return "", errors.New("размер файла не должен превышать 5 МБ")
+	if fileHeader.Size > s.maxUploadSize {
+		return "", fmt.Errorf("размер файла не должен превышать %d МБ", s.maxUploadSize/(1024*1024))
 	}
 
 	allowedTypes := validation.AllowedImageTypes
@@ -136,7 +142,7 @@ func (s *GameCoverService) saveCoverFile(fileHeader *multipart.FileHeader, userI
 		return "", errors.New("допустимы только JPEG, PNG и WebP")
 	}
 
-	webPath, err := s.storage.Save("uploads/covers", file, fileHeader.Filename, userID, coverMaxSize, allowedTypes)
+	webPath, err := s.storage.Save("uploads/covers", file, fileHeader.Filename, userID, s.maxUploadSize, allowedTypes)
 	if err != nil {
 		return "", fmt.Errorf("ошибка сохранения обложки: %w", err)
 	}

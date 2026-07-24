@@ -142,10 +142,9 @@ type Photo struct {
 }
 
 type PlayerRating struct {
-	gorm.Model
-	UserID uint      `gorm:"uniqueIndex"`
-	Score  int       `gorm:"default:0"`
-	User   user.User `gorm:"foreignKey:UserID"`
+	UserID    uint      `gorm:"primaryKey"`
+	Score     int       `gorm:"default:0"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime"`
 }
 
 type Log struct {

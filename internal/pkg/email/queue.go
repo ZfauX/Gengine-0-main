@@ -42,7 +42,8 @@ func InitQueue(cfg *config.Config, db *gorm.DB, workers int, interval time.Durat
 
 		// Сбрасываем retry-письма обратно в pending при старте,
 		// чтобы они не потерялись после перезапуска сервера
-		if err := db.Model(&QueuedEmail{}).Where("status = ?", "retry").Update("status", "pending").Error; err != nil {
+		// TODO: use a status constant instead of raw strings
+		if err := db.Model(&QueuedEmail{}).Where("status IN ?", []string{"retry", "sending"}).Update("status", "pending").Error; err != nil {
 			log.Warn().Err(err).Msg("Failed to reset retry emails to pending")
 		}
 

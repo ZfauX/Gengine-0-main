@@ -36,13 +36,14 @@ func (s *LocalStorage) WithBaseDir(baseDir string) *LocalStorage {
 	return s
 }
 
+var safeFilenameRE = regexp.MustCompile(`[^a-zA-Z0-9.\-]`)
+
 // sanitizeFilename очищает имя файла, оставляя только безопасные символы.
 func sanitizeFilename(name string) string {
 	if name == "" {
 		return ""
 	}
-	reg := regexp.MustCompile(`[^a-zA-Z0-9.\-]`)
-	clean := reg.ReplaceAllString(name, "_")
+	clean := safeFilenameRE.ReplaceAllString(name, "_")
 	clean = filepath.Base(clean)
 	if clean == "." || clean == "" {
 		return ""

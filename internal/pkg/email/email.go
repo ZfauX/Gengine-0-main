@@ -310,13 +310,9 @@ func (s *EmailService) scheduleRetry(ctx context.Context, emailID uint, currentA
 			Dur("delay", delay).
 			Msg("Email retry scheduled")
 	default:
-		// Очередь переполнена — фоллбэк на немедленную обработку
-		log.Warn().Uint("email_id", emailID).Msg("Retry queue full, immediate retry fallback")
-		s.processRetryJob(ctx, retryJob{
-			emailID:   emailID,
-			attempt:   currentAttempt + 1,
-			scheduled: time.Now(),
-		})
+		// Очередь переполнена — дропаем, письмо останется в 'retry' в БД
+		// и будет подхвачено следующим batch-циклом в processPendingEmails
+		log.Warn().Uint("email_id", emailID).Msg("Retry queue full, dropping retry — will be picked up by next batch")
 	}
 }
 

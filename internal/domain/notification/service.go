@@ -216,7 +216,9 @@ func (s *NotificationService) sendWebSocketNotification(userID uint, notificatio
 // getUnreadCount возвращает количество непрочитанных уведомлений
 func (s *NotificationService) getUnreadCount(userID uint) int {
 	var count int64
-	s.db.Model(&Notification{}).Where("user_id = ? AND read = ?", userID, false).Count(&count)
+	if err := s.db.Model(&Notification{}).WithContext(context.Background()).Where("user_id = ? AND read = ?", userID, false).Count(&count).Error; err != nil {
+		log.Error().Err(err).Msg("getUnreadCount: failed")
+	}
 	return int(count)
 }
 

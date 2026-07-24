@@ -1,0 +1,71 @@
+{{define "webauthn-login-button.html"}}
+<button id="passkey-login-btn" type="button" onclick="loginWithPasskey()"
+        class="w-full btn text-sm bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md">
+    Войти с Passkey
+</button>
+
+<script nonce="{{.csp_nonce}}">
+function loginWithPasskey() {
+    const btn = document.getElementById('passkey-login-btn');
+    btn.disabled = true;
+    btn.textContent = 'Ожидание аутентификации...';
+
+    if (!navigator.credentials || !navigator.credentials.get) {
+        alert('WebAuthn не поддерживается вашим браузером');
+        btn.disabled = false;
+        btn.textContent = 'Войти с Passkey';
+        return;
+    }
+
+    fetch('/auth/webauthn/login/begin', { method: 'POST' })
+    .then(r => r.json())
+    .then(assertion => {
+        return navigator.credentials.get({ publicKey: assertion.publicKey ?? assertion });
+    })
+    .then(credential => {
+        const body = {
+            id: credential.id,
+            type: credential.type,
+            rawId: arrayBufferToBase64(credential.rawId),
+            response: {
+                clientDataJSON: arrayBufferToBase64(credential.response.clientDataJSON),
+                authenticatorData: arrayBufferToBase64(credential.response.authenticatorData),
+                signature: arrayBufferToBase64(credential.response.signature),
+                userHandle: credential.response.userHandle ? arrayBufferToBase64(credential.response.userHandle) : null
+            },
+            clientExtensionResults: credential.getClientExtensionResults ? credential.getClientExtensionResults() : {}
+        };
+        return fetch('/auth/webauthn/login/finish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'ok' && data.redirect) {
+            window.location.href = data.redirect;
+        } else {
+            alert('Ошибка входа: ' + (data.error || 'Неизвестная ошибка'));
+            btn.disabled = false;
+            btn.textContent = 'Войти с Passkey';
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        alert('Ошибка: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = 'Войти с Passkey';
+    });
+}
+
+function arrayBufferToBase64(buf) {
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+}
+</script>
+{{end}}

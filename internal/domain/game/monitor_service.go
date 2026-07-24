@@ -97,7 +97,7 @@ func (s *MonitorService) GetOrFetchSnapshot(ctx context.Context, gameID uint) ([
 
 		// Сохраняем в кэш с лимитом: максимум maxMonitorCacheSize, вытеснение старых
 		s.mu.Lock()
-		if len(s.cache) > maxMonitorCacheSize {
+		if len(s.cache) >= maxMonitorCacheSize {
 			front := s.cacheList.Front()
 			if front != nil {
 				if oldestID, ok := front.Value.(uint); ok {
@@ -172,13 +172,16 @@ func (s *MonitorService) GameSnapshot(ctx context.Context, gameID uint) ([]TeamP
 
 	var aggregated []AggregatedPassing
 	query := `
+		WITH total_levels_cte AS (
+			SELECT COUNT(*) AS cnt FROM levels WHERE game_id = ?
+		)
 		SELECT
 			gp.id AS game_passing_id,
 			gp.team_id,
 			t.name AS team_name,
 			gp.status,
 			gp.place,
-			(SELECT COUNT(*) FROM levels WHERE game_id = ?) AS total_levels,
+			tl.cnt AS total_levels,
 			COUNT(lp.id) FILTER (WHERE lp.finished_at IS NOT NULL) AS completed_count,
 			COALESCE(ac.total_attempts, 0) AS total_attempts,
 			COALESCE(SUM(lp.penalty_seconds), 0) AS total_penalty,
@@ -187,6 +190,7 @@ func (s *MonitorService) GameSnapshot(ctx context.Context, gameID uint) ([]TeamP
 			cl.level_id AS current_level_id
 		FROM game_passings gp
 		JOIN teams t ON t.id = gp.team_id
+		CROSS JOIN total_levels_cte tl
 		LEFT JOIN level_progresses lp ON lp.game_passing_id = gp.id
 		LEFT JOIN (
 			SELECT level_progress_id, COUNT(*) AS total_attempts
@@ -199,7 +203,7 @@ func (s *MonitorService) GameSnapshot(ctx context.Context, gameID uint) ([]TeamP
 			ORDER BY created_at DESC LIMIT 1
 		) cl ON true
 		WHERE gp.game_id = ?
-		GROUP BY gp.id, gp.team_id, t.name, gp.status, gp.place, ac.total_attempts, cl.level_id
+		GROUP BY gp.id, gp.team_id, t.name, gp.status, gp.place, tl.cnt, ac.total_attempts, cl.level_id
 		ORDER BY gp.place ASC`
 	if err := s.DB.WithContext(ctx).Raw(query, gameID, gameID).Scan(&aggregated).Error; err != nil {
 		return nil, err

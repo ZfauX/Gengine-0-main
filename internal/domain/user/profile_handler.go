@@ -134,8 +134,7 @@ func (h *ProfileHandler) PublicProfile(c *gin.Context) {
 		"csrf":          csrf.GetToken(c),
 		"Breadcrumbs": []map[string]string{
 			{"name": "Главная", "url": "/"},
-			{"name": "Пользователи", "url": "/users"},
-			{"name": pubUser.Name},
+			{"name": "Пользователь " + pubUser.Name},
 		},
 	})
 }

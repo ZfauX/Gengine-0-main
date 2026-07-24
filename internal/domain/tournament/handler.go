@@ -100,6 +100,10 @@ func (h *TournamentHandler) List(c *gin.Context) {
 	}
 	render.Page(c, http.StatusOK, "tournaments-list.html", gin.H{
 		"Tournaments": tournaments,
+		"Breadcrumbs": []map[string]string{
+			{"name": "Главная", "url": "/"},
+			{"name": "Турниры"},
+		},
 	})
 }
 
@@ -153,6 +157,11 @@ func (h *TournamentHandler) Show(c *gin.Context) {
 		"CanApply":      canApply,
 		"CurrentUserID": userID,
 		"csrf":          csrf.GetToken(c),
+		"Breadcrumbs": []map[string]string{
+			{"name": "Главная", "url": "/"},
+			{"name": "Турниры", "url": "/tournaments"},
+			{"name": t.Name},
+		},
 	})
 }
 
@@ -168,6 +177,11 @@ func (h *TournamentHandler) Show(c *gin.Context) {
 func (h *TournamentHandler) NewForm(c *gin.Context) {
 	render.Page(c, http.StatusOK, "tournaments-new.html", gin.H{
 		"csrf": csrf.GetToken(c),
+		"Breadcrumbs": []map[string]string{
+			{"name": "Главная", "url": "/"},
+			{"name": "Турниры", "url": "/tournaments"},
+			{"name": "Создание турнира"},
+		},
 	})
 }
 
@@ -277,6 +291,12 @@ func (h *TournamentHandler) EditForm(c *gin.Context) {
 	render.Page(c, http.StatusOK, "tournaments-edit.html", gin.H{
 		"Tournament": t,
 		"csrf":       csrf.GetToken(c),
+		"Breadcrumbs": []map[string]string{
+			{"name": "Главная", "url": "/"},
+			{"name": "Турниры", "url": "/tournaments"},
+			{"name": t.Name, "url": "/tournaments/" + strconv.Itoa(int(t.ID))},
+			{"name": "Редактирование"},
+		},
 	})
 }
 

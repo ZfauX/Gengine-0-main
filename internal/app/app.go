@@ -7,6 +7,7 @@ import (
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/notification"
+	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/audit"
 	"gengine-0/internal/pkg/cache"
 	csrf "gengine-0/internal/pkg/csrf"
@@ -21,6 +22,7 @@ type Dependencies struct {
 	Repos    *repositories
 	Services *services
 	AuditSvc *audit.Service
+	WebAuthn *user.WebAuthnHandler
 	Cache    cache.CacheStore
 	Hub      *ws.RoomHub
 }
@@ -29,11 +31,16 @@ func NewDependencies(db *gorm.DB, cfg *config.Config, hub *ws.RoomHub, localStor
 	repos := initRepositories(db)
 	services := initServices(db, repos, cfg, hub, localStorage, appCache)
 	auditSvc := audit.NewService(db)
+	webauthnHandler, err := user.NewWebAuthnHandler(cfg, services.Auth, repos.User, repos.WebAuthn, auditSvc)
+	if err != nil {
+		panic(err)
+	}
 
 	return &Dependencies{
 		Repos:    repos,
 		Services: services,
 		AuditSvc: auditSvc,
+		WebAuthn: webauthnHandler,
 		Cache:    appCache,
 		Hub:      hub,
 	}

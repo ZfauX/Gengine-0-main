@@ -63,19 +63,14 @@ func (s *LevelProgressService) dbTransaction(ctx context.Context, db *gorm.DB, g
 		return err
 	}
 
-	var passing GamePassing
-	if err := db.WithContext(ctx).Preload("Game.Levels", func(db *gorm.DB) *gorm.DB {
-		return db.Order("position ASC")
-	}).First(&passing, gamePassingID).Error; err != nil {
+	var firstLevel level.Level
+	if err := db.WithContext(ctx).Where("game_id = (SELECT game_id FROM game_passings WHERE id = ?)", gamePassingID).Order("position ASC").Limit(1).First(&firstLevel).Error; err != nil {
 		return err
 	}
 
-	levels := passing.Game.Levels
-	if len(levels) == 0 {
+	if firstLevel.ID == 0 {
 		return ErrNoLevels
 	}
-
-	firstLevel := levels[0]
 	progress := &LevelProgress{
 		GamePassingID: gamePassingID,
 		LevelID:       firstLevel.ID,
@@ -356,7 +351,8 @@ func checkTimeoutsImpl(db *gorm.DB, ctx context.Context, onGameFinished GameComp
 			}
 			if onCommit != nil {
 				// callback будет вызван после коммита транзакции
-				defer onCommit()
+				onCommitCopy := onCommit
+				defer onCommitCopy()
 			}
 		}
 		return nil

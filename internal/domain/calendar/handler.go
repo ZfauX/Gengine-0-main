@@ -171,7 +171,7 @@ func (h *CalendarHandler) CalendarICal(c *gin.Context) {
 
 // escapeICalText экранирует спецсимволы для формата iCalendar.
 func escapeICalText(text string) string {
-	text = strings.ReplaceAll(text, `\`, `\`)
+	text = strings.ReplaceAll(text, `\\`, `\\\\`)
 	text = strings.ReplaceAll(text, ";", `\;`)
 	text = strings.ReplaceAll(text, ",", `\,`)
 	text = strings.ReplaceAll(text, "\n", `\n`)

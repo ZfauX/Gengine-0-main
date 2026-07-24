@@ -11,7 +11,6 @@ import (
 	"gengine-0/internal/pkg/email"
 	ws "gengine-0/internal/pkg/websocket"
 
-	"golang.org/x/sys/windows"
 	"gorm.io/gorm"
 )
 
@@ -219,11 +218,10 @@ func (c *Checker) checkEmailQueue(ctx context.Context) Status {
 func (c *Checker) checkDiskSpace(ctx context.Context) Status {
 	start := time.Now()
 
-	var freeBytes uint64
 	dir := c.uploadsDir
 
-	// windows.GetDiskFreeSpaceEx работает для любых путей
-	if err := windows.GetDiskFreeSpaceEx(windows.StringToUTF16Ptr(dir), &freeBytes, nil, nil); err != nil {
+	freeBytes, err := freeDiskSpace(dir)
+	if err != nil {
 		return Status{
 			Status:  "error",
 			Message: "failed to check disk space: " + err.Error(),

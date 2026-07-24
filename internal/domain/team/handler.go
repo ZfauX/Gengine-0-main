@@ -119,6 +119,11 @@ func (h *TeamHandler) NewTeamForm(c *gin.Context) {
 		"csrf":          csrf.GetToken(c),
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,
+		"Breadcrumbs": []map[string]string{
+			{"name": "Главная", "url": "/"},
+			{"name": "Команды", "url": "/teams"},
+			{"name": "Создание команды"},
+		},
 	})
 }
 
@@ -251,7 +256,8 @@ func (h *TeamHandler) Members(c *gin.Context) {
 		"Breadcrumbs": []map[string]string{
 			{"name": "Главная", "url": "/"},
 			{"name": "Команды", "url": "/teams"},
-			{"name": team.Name},
+			{"name": team.Name, "url": "/teams/" + strconv.Itoa(int(team.ID))},
+			{"name": "Участники"},
 		},
 	})
 }

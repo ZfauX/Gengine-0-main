@@ -25,6 +25,7 @@ type repositories struct {
 	EmailVerif   user.EmailVerificationRepository
 	ExtLogin     user.ExternalLoginRepository
 	RefreshToken user.RefreshTokenRepository
+	WebAuthn     user.WebAuthnRepository
 	Game         game.GameRepository
 	GamePassing  game.GamePassingRepository
 	Level        level.LevelRepository

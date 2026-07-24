@@ -34,7 +34,7 @@ func (s *AttemptService) SubmitCodeWithTx(ctx context.Context, tx *gorm.DB, prog
 	}
 
 	if lvl.Type == level.TypeFileUpload {
-		return nil, false, errors.New("на这个 уровне ожидается файл, а не текстовый код")
+		return nil, false, errors.New("на этом уровне ожидается файл, а не текстовый код")
 	}
 
 	if lvl.Type == level.TypeBlackbox || lvl.RequiresConfirmation {

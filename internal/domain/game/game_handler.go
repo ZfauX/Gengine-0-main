@@ -198,7 +198,9 @@ func (h *GameHandler) Show(c *gin.Context) {
 		reviewsCount = 0
 	}
 
-	canApply := !g.IsDraft && (g.StartsAt == nil || g.StartsAt.After(time.Now()))
+	canApply := !g.IsDraft &&
+		(g.StartsAt == nil || g.StartsAt.After(time.Now())) &&
+		(g.RegistrationDeadline == nil || g.RegistrationDeadline.After(time.Now()))
 
 	render.Page(c, http.StatusOK, "games-show.html", gin.H{
 		"Game":          g,

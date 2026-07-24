@@ -127,6 +127,9 @@ func TestClient_WritePump_CloseOnSendChannelClose(t *testing.T) {
 
 	// Ждём обработки закрытия
 	assert.Eventually(t, func() bool {
+		if client == nil {
+			return false
+		}
 		return client.IsClosed()
 	}, 2*time.Second, 50*time.Millisecond)
 

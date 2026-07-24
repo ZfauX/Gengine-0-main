@@ -4,14 +4,20 @@ package game
 import (
 	"context"
 	"strings"
+	"sync"
 	"time"
 
 	"gengine-0/internal/pkg/sqlutil"
+
+	"github.com/rs/zerolog/log"
 )
 
 // GameListingService отвечает за списки игр, фильтрацию и сортировку.
 type GameListingService struct {
-	gameRepo GameRepository
+	gameRepo        GameRepository
+	searchVectorOk  bool
+	searchVectorMu  sync.RWMutex
+	searchVectorSet bool
 }
 
 // NewGameListingService создаёт новый сервис списков.
@@ -53,8 +59,13 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 
 	if filter.Search != "" {
 		escapedSearch := sqlutil.EscapeLike(filter.Search)
-		sql += " AND (search_vector IS NOT NULL AND search_vector @@ plainto_tsquery('russian', ?) OR name ILIKE ?)"
-		args = append(args, filter.Search, "%"+escapedSearch+"%")
+		if s.useSearchVector(ctx) {
+			sql += " AND (search_vector IS NOT NULL AND search_vector @@ plainto_tsquery('russian', ?) OR name ILIKE ?)"
+			args = append(args, filter.Search, "%"+escapedSearch+"%")
+		} else {
+			sql += " AND name ILIKE ?"
+			args = append(args, "%"+escapedSearch+"%")
+		}
 	}
 	if filter.DateFrom != "" {
 		if dateFrom, err := time.Parse("2006-01-02", filter.DateFrom); err == nil {
@@ -135,4 +146,43 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 // ListByDateRange возвращает опубликованные публичные игры за указанный период (для календаря).
 func (s *GameListingService) ListByDateRange(ctx context.Context, from, to time.Time) ([]Game, error) {
 	return s.gameRepo.ListByDateRange(ctx, from, to)
+}
+
+// useSearchVector проверяет, существует ли столбец search_vector в таблице games.
+// Результат кэшируется на время жизни сервиса.
+func (s *GameListingService) useSearchVector(ctx context.Context) bool {
+	s.searchVectorMu.RLock()
+	if s.searchVectorSet {
+		ok := s.searchVectorOk
+		s.searchVectorMu.RUnlock()
+		return ok
+	}
+	s.searchVectorMu.RUnlock()
+
+	s.searchVectorMu.Lock()
+	defer s.searchVectorMu.Unlock()
+
+	if s.searchVectorSet {
+		return s.searchVectorOk
+	}
+
+	var exists bool
+	err := s.gameRepo.Model(ctx).
+		Raw("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='games' AND column_name='search_vector')").
+		Scan(&exists).Error
+	if err != nil || !exists {
+		log.Warn().Err(err).Bool("exists", exists).Msg("GameListingService: search_vector column not found, falling back to ILIKE")
+		s.searchVectorOk = false
+	} else {
+		s.searchVectorOk = true
+	}
+	s.searchVectorSet = true
+	return s.searchVectorOk
+}
+
+// ResetSearchVectorCheck сбрасывает кэш проверки search_vector (для тестов).
+func (s *GameListingService) ResetSearchVectorCheck() {
+	s.searchVectorMu.Lock()
+	defer s.searchVectorMu.Unlock()
+	s.searchVectorSet = false
 }

@@ -58,31 +58,10 @@ func TestCreateMigrationFile_Timestamp(t *testing.T) {
 	assert.Regexp(t, `^\d{14}_migration\.up\.sql$`, base)
 }
 
-func TestEnsureAdmin_AlreadyExists(t *testing.T) {
-	db, mock := newMockDB(t)
-	rows := sqlmock.NewRows([]string{"id", "email", "password", "name", "role"}).
-		AddRow(1, "admin@test.com", "hashed", "Admin", "admin")
-	mock.ExpectQuery(`SELECT \* FROM "users" WHERE email = \$1 AND "users"."deleted_at" IS NULL ORDER BY "users"."id" LIMIT \$2`).
-		WithArgs("admin@test.com", 1).
-		WillReturnRows(rows)
-
-	cfg := &config.Config{
-		Admin: config.AdminConfig{Email: "admin@test.com", Password: "secret"},
-	}
-
-	err := EnsureAdmin(db, cfg)
-	assert.NoError(t, err)
-	assert.NoError(t, mock.ExpectationsWereMet())
-}
-
 func TestEnsureAdmin_CreatesNew(t *testing.T) {
 	db, mock := newMockDB(t)
-	mock.ExpectQuery(`SELECT \* FROM "users" WHERE email = \$1 AND "users"."deleted_at" IS NULL ORDER BY "users"."id" LIMIT \$2`).
-		WithArgs("admin@test.com", 1).
-		WillReturnError(gorm.ErrRecordNotFound)
-
 	mock.ExpectBegin()
-	mock.ExpectQuery(`INSERT INTO "users"`).
+	mock.ExpectQuery(`INSERT INTO "users" .+ ON CONFLICT \("email"\) DO UPDATE SET "password"=.+`).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
 	mock.ExpectCommit()
 
@@ -97,12 +76,8 @@ func TestEnsureAdmin_CreatesNew(t *testing.T) {
 
 func TestEnsureAdmin_DBCreateError(t *testing.T) {
 	db, mock := newMockDB(t)
-	mock.ExpectQuery(`SELECT \* FROM "users" WHERE email = \$1 AND "users"."deleted_at" IS NULL ORDER BY "users"."id" LIMIT \$2`).
-		WithArgs("admin@test.com", 1).
-		WillReturnError(gorm.ErrRecordNotFound)
-
 	mock.ExpectBegin()
-	mock.ExpectQuery(`INSERT INTO "users"`).
+	mock.ExpectQuery(`INSERT INTO "users" .+ ON CONFLICT \("email"\) DO UPDATE SET "password"=.+`).
 		WillReturnError(assert.AnError)
 	mock.ExpectRollback()
 
@@ -117,14 +92,9 @@ func TestEnsureAdmin_DBCreateError(t *testing.T) {
 
 func TestEnsureAdmin_ConcurrentCreate(t *testing.T) {
 	db, mock := newMockDB(t)
-	mock.ExpectQuery(`SELECT \* FROM "users" WHERE email = \$1 AND "users"."deleted_at" IS NULL ORDER BY "users"."id" LIMIT \$2`).
-		WithArgs("admin@test.com", 1).
-		WillReturnError(gorm.ErrRecordNotFound)
-
-	// Second instance already created it — ON CONFLICT DO NOTHING returns 0 rows
 	mock.ExpectBegin()
-	mock.ExpectQuery(`INSERT INTO "users"`).
-		WillReturnRows(sqlmock.NewRows([]string{"id"})) // no rows = conflict
+	mock.ExpectQuery(`INSERT INTO "users" .+ ON CONFLICT \("email"\) DO UPDATE SET "password"=.+`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"})) // no rows = conflict, RowsAffected = 0
 	mock.ExpectCommit()
 
 	cfg := &config.Config{

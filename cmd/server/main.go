@@ -244,6 +244,9 @@ func run() error {
 				log.Error().Err(err).Uint("game_id", gameID).Msg("onGameFinished: CalculateResults failed")
 			}
 		}
+		if deps.Services.Tournament != nil {
+			deps.Services.Tournament.UpdateScoresForGame(ctx, gameID)
+		}
 	}
 
 	// goSafe запускает горутину с recover.
@@ -369,6 +372,12 @@ func run() error {
 	hub.Stop()
 	log.Info().Msg("WebSocket-хаб остановлен")
 
+	// Останавливаем SSE-менеджер
+	if deps.Services.SSEMgr != nil {
+		deps.Services.SSEMgr.Stop()
+		log.Info().Msg("SSE-менеджер остановлен")
+	}
+
 	// 4. Отменяем контекст фоновых задач
 	cancel()
 	log.Info().Msg("Контекст отменён, фоновые задачи останавливаются")
@@ -384,6 +393,15 @@ func run() error {
 			log.Warn().Err(err).Msg("Ошибка закрытия кэша")
 		} else {
 			log.Info().Msg("Кэш закрыт")
+		}
+	}
+
+	// 7. Закрываем соединение с БД
+	if sqlDB, err := database.DB(); err == nil {
+		if closeErr := sqlDB.Close(); closeErr != nil {
+			log.Warn().Err(closeErr).Msg("Ошибка закрытия БД")
+		} else {
+			log.Info().Msg("Соединение с БД закрыто")
 		}
 	}
 

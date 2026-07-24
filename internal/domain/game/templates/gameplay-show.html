@@ -433,7 +433,7 @@
             const gameId = '{{.GameID}}';
             if (!passingId || !gameId) return;
 
-            const eventSource = new EventSource('/api/games/' + gameId + '/sse');
+            const eventSource = new EventSource('/game/' + passingId + '/sse');
 
             eventSource.addEventListener('level_completed', function(e) {
                 const data = JSON.parse(e.data);

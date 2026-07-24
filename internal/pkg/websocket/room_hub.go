@@ -171,6 +171,10 @@ func (h *RoomHub) runLoop() {
 				if client.IsClosed() {
 					// Удаляем из оригинальной map под локом
 					h.mu.Lock()
+					if h.rooms[msg.Room] == nil {
+						h.mu.Unlock()
+						continue
+					}
 					delete(room, client)
 					h.mu.Unlock()
 					continue
@@ -179,15 +183,19 @@ func (h *RoomHub) runLoop() {
 				case client.Send <- msg.Data:
 				case <-client.Done():
 					h.mu.Lock()
+					if h.rooms[msg.Room] == nil {
+						h.mu.Unlock()
+						continue
+					}
 					delete(room, client)
 					h.mu.Unlock()
 				default:
 					log.Debug().Str("room", msg.Room).Msg("broadcast: client buffer full, dropping message")
 				}
 			}
-			// Проверяем, пуста ли комната (под локом)
+			// Перечитываем комнату под lock — локальная room могла стать stale
 			h.mu.Lock()
-			if len(room) == 0 {
+			if current, exists := h.rooms[msg.Room]; exists && len(current) == 0 {
 				delete(h.rooms, msg.Room)
 				log.Debug().Str("room", msg.Room).Msg("Room removed (empty)")
 			}

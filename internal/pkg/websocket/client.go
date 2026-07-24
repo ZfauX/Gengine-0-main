@@ -16,7 +16,7 @@ const (
 	pongWait              = 60 * time.Second
 	pingPeriod            = (pongWait * 9) / 10
 	clientSendBufferSize  = 256
-	websocketReadDeadline = 5 * time.Second
+	websocketReadDeadline = pongWait
 )
 
 type Client struct {

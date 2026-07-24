@@ -177,12 +177,13 @@ func RegisterGameplayRoutes(
 	handler *GameplayHandler,
 	coAuthorSvc *CoAuthorService,
 	sseMgr *SSEManager,
+	db *gorm.DB,
 ) {
 	r.GET("/game/:passing_id", handler.ShowGame)
 
 	r.POST("/game/:passing_id/submit", middleware.CodeSubmissionRateLimit(1*time.Minute, 10), handler.SubmitCode)
 
-	r.POST("/game/:passing_id/hint", middleware.CodeSubmissionRateLimit(1*time.Minute, 30), handler.UseHint)
+	r.POST("/game/:passing_id/hint", middleware.CodeSubmissionRateLimit(1*time.Minute, 10), handler.UseHint)
 
 	r.POST("/game/:passing_id/file", middleware.CodeSubmissionRateLimit(1*time.Minute, 10), handler.SubmitFile)
 
@@ -200,5 +201,6 @@ func RegisterGameplayRoutes(
 
 	r.POST("/testing/:passing_id/skip", handler.SkipTestLevel)
 
-	r.GET("/game/:passing_id/sse", middleware.SSERateLimit(1*time.Minute, 10), SSEHandler(sseMgr))
+	r.GET("/game/:passing_id/sse", middleware.SSERateLimit(1*time.Minute, 10), SSEHandler(sseMgr, db))
+	r.GET("/game/sse/:game_id", middleware.SSERateLimit(1*time.Minute, 10), SSEGameHandler(sseMgr))
 }

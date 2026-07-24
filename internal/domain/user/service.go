@@ -124,11 +124,9 @@ func (s *AuthService) Login(ctx context.Context, emailStr, password string) (str
 		return "", stderrors.New("неверный email или пароль")
 	}
 
-	// Успешный вход — сброс счётчика (с проверкой ошибки)
-	if user.FailedLoginAttempts > 0 || user.LockedUntil != nil {
-		if err := s.userRepo.Update(ctx, user.ID, map[string]any{"failed_login_attempts": 0, "locked_until": nil}); err != nil {
-			log.Error().Err(err).Uint("user_id", user.ID).Msg("Login: failed to reset failed_login_attempts")
-		}
+	// Успешный вход — безусловный сброс счётчика
+	if err := s.userRepo.Update(ctx, user.ID, map[string]any{"failed_login_attempts": 0, "locked_until": nil}); err != nil {
+		log.Error().Err(err).Uint("user_id", user.ID).Msg("Login: failed to reset failed_login_attempts")
 	}
 
 	return s.generateJWT(*user)
@@ -737,30 +735,59 @@ func (s *EmailVerificationService) SendVerificationEmail(ctx context.Context, us
 		return nil
 	}
 
+	// Удаляем предыдущий токен, если есть (теперь UserID не uniqueIndex)
+	errspkg.LogSilently(s.emailVerifRepo.DeleteByUserID(ctx, user.ID), "SendVerificationEmail: old token cleanup")
+
 	b := make([]byte, emailVerificationTokenBytes)
 	if _, err := rand.Read(b); err != nil {
 		return fmt.Errorf("не удалось сгенерировать токен верификации: %w", err)
 	}
 	token := hex.EncodeToString(b)
 	hash := sha256.Sum256([]byte(token))
+
+	// Короткий одноразовый код (8 символов) для ссылки — без токена в URL
+	codeBytes := make([]byte, 4)
+	if _, err := rand.Read(codeBytes); err != nil {
+		return fmt.Errorf("не удалось сгенерировать код верификации: %w", err)
+	}
+	verificationCode := hex.EncodeToString(codeBytes)
+
 	if err := s.emailVerifRepo.CreateToken(ctx, &EmailVerificationToken{
-		UserID:    user.ID,
-		TokenHash: hex.EncodeToString(hash[:]),
-		ExpiresAt: time.Now().Add(emailVerificationExpiry),
+		UserID:           user.ID,
+		TokenHash:        hex.EncodeToString(hash[:]),
+		VerificationCode: verificationCode,
+		ExpiresAt:        time.Now().Add(emailVerificationExpiry),
 	}); err != nil {
 		return fmt.Errorf("не удалось сохранить токен верификации: %w", err)
 	}
 	if err := email.Enqueue(
 		user.Email,
 		"Подтверждение email",
-		fmt.Sprintf("Перейдите по ссылке для подтверждения: %s/auth/verify?token=%s", s.cfg.Server.BaseURL, token),
+		fmt.Sprintf("Код подтверждения: %s\n\nПерейдите по ссылке: %s/auth/verify?code=%s",
+			verificationCode, s.cfg.Server.BaseURL, verificationCode),
 	); err != nil {
 		log.Error().Err(err).Str("email", user.Email).Msg("SendVerificationEmail: failed to enqueue email")
-		// Удаляем токен, так как письмо не ушло
-		errspkg.LogSilently(s.emailVerifRepo.DeleteToken(ctx, &EmailVerificationToken{TokenHash: hex.EncodeToString(hash[:])}), "SendVerificationEmail: cleanup failed")
+		// Удаляем токен по хешу, так как письмо не ушло
+		tokenHash := hex.EncodeToString(hash[:])
+		errspkg.LogSilently(s.emailVerifRepo.DeleteByTokenHash(ctx, tokenHash), "SendVerificationEmail: cleanup failed")
 		return fmt.Errorf("не удалось отправить письмо: %w", err)
 	}
 	return nil
+}
+
+func (s *EmailVerificationService) VerifyByCode(ctx context.Context, code string) (*User, error) {
+	token, err := s.emailVerifRepo.GetTokenByCode(ctx, code)
+	if err != nil {
+		return nil, stderrors.New("код недействителен или истёк")
+	}
+	if token.ExpiresAt.Before(time.Now()) {
+		return nil, stderrors.New("код истёк")
+	}
+	if err := s.userRepo.Update(ctx, token.UserID, map[string]any{"email_verified": true}); err != nil {
+		return nil, err
+	}
+	errspkg.LogSilently(s.emailVerifRepo.DeleteToken(ctx, token), "VerifyByCode: cleanup failed")
+	return s.userRepo.GetByID(ctx, token.UserID)
 }
 
 func (s *EmailVerificationService) VerifyToken(ctx context.Context, tokenStr string) (*User, error) {
