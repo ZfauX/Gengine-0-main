@@ -392,7 +392,7 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 				log.Error().Err(err).Str("room_id", roomID).Uint("user_id", userID).Msg("ChatWS: failed to save message")
 				continue
 			}
-			if preloadErr := h.db.WithContext(c.Request.Context()).Preload("User").First(&msg, msg.ID).Error; preloadErr != nil {
+			if preloadErr := h.db.WithContext(c.Request.Context()).First(&msg, msg.ID).Error; preloadErr != nil {
 				log.Error().Err(preloadErr).Uint("msg_id", msg.ID).Msg("ChatWS: failed to preload user")
 			}
 			msg.Content = sanitize.StripHTML(msg.Content)

@@ -3,10 +3,12 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -29,16 +31,18 @@ type RateLimiterStore interface {
 type inMemoryShard struct {
 	mu       sync.Mutex
 	visitors map[string]*visitor
+	dirty    int32
 }
 
 const shardCount = 16
 
 type inMemoryStore struct {
-	shards [shardCount]*inMemoryShard
-	window time.Duration
-	limit  int
-	stopCh chan struct{}
-	once   sync.Once
+	shards      [shardCount]*inMemoryShard
+	window      time.Duration
+	limit       int
+	stopCh      chan struct{}
+	cleanupOnce sync.Once
+	stopOnce    sync.Once
 }
 
 type visitor struct {
@@ -61,8 +65,8 @@ func newInMemoryStore(window time.Duration, limit int) *inMemoryStore {
 }
 
 func (s *inMemoryStore) Allow(key string) RateLimitResult {
-	s.once.Do(func() {
-		go s.cleanup()
+	s.cleanupOnce.Do(func() {
+		go s.cleanupLoop()
 	})
 
 	shard := s.getShard(key)
@@ -74,6 +78,7 @@ func (s *inMemoryStore) Allow(key string) RateLimitResult {
 
 	if !exists || now.Sub(v.lastSeen) > s.window {
 		shard.visitors[key] = &visitor{lastSeen: now, count: 1}
+		atomic.StoreInt32(&shard.dirty, 1)
 		return RateLimitResult{Allowed: true, Limit: s.limit, Remaining: s.limit - 1, ResetUnix: now.Add(s.window).Unix()}
 	}
 
@@ -88,10 +93,10 @@ func (s *inMemoryStore) Allow(key string) RateLimitResult {
 }
 
 func (s *inMemoryStore) Stop() {
-	s.once.Do(func() { close(s.stopCh) })
+	s.stopOnce.Do(func() { close(s.stopCh) })
 }
 
-func (s *inMemoryStore) cleanup() {
+func (s *inMemoryStore) cleanupLoop() {
 	interval := time.Minute
 	if s.window > 0 && s.window/4 < interval {
 		interval = s.window / 4
@@ -104,12 +109,18 @@ func (s *inMemoryStore) cleanup() {
 			return
 		case <-ticker.C:
 			for _, shard := range s.shards {
+				if atomic.LoadInt32(&shard.dirty) == 0 {
+					continue
+				}
 				shard.mu.Lock()
 				now := time.Now()
 				for key, v := range shard.visitors {
 					if now.Sub(v.lastSeen) > s.window {
 						delete(shard.visitors, key)
 					}
+				}
+				if len(shard.visitors) == 0 {
+					atomic.StoreInt32(&shard.dirty, 0)
 				}
 				shard.mu.Unlock()
 			}
@@ -118,12 +129,9 @@ func (s *inMemoryStore) cleanup() {
 }
 
 func (s *inMemoryStore) getShard(key string) *inMemoryShard {
-	var h uint32
-	for i := 0; i < len(key); i++ {
-		h ^= uint32(key[i])
-		h *= 16777619
-	}
-	return s.shards[h%shardCount]
+	f := fnv.New32a()
+	f.Write([]byte(key))
+	return s.shards[f.Sum32()%shardCount]
 }
 
 var rateLimitLua = redis.NewScript(`

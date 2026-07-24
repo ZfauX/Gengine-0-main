@@ -71,6 +71,9 @@ func (s *GamePassingService) Apply(ctx context.Context, gameID, teamID, userID u
 		if game.RegistrationDeadline != nil && game.RegistrationDeadline.Before(time.Now()) {
 			return errors.New("регистрация завершена")
 		}
+		if game.StartsAt != nil && game.StartsAt.Before(time.Now()) {
+			return errors.New("игра уже началась")
+		}
 		var acceptedCount int64
 		if err := tx.Model(&GamePassing{}).Where("game_id = ? AND status IN (?, ?)", gameID, StatusAccepted, StatusStarted).Count(&acceptedCount).Error; err != nil {
 			return err
@@ -93,7 +96,7 @@ func (s *GamePassingService) Apply(ctx context.Context, gameID, teamID, userID u
 	})
 }
 
-// ListByGame возвращает все прохождения для игры.
+// Deprecated: Use ListByGamePaginated instead (this method loads all records without limit).
 func (s *GamePassingService) ListByGame(ctx context.Context, gameID uint) ([]GamePassing, error) {
 	var passings []GamePassing
 	err := s.DB.WithContext(ctx).Preload("Team.Captain").Where("game_id = ?", gameID).Find(&passings).Error

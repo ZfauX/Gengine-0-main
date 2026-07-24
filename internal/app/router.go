@@ -21,11 +21,14 @@ import (
 	"gengine-0/internal/domain/tournament"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/health"
+	"gengine-0/internal/pkg/i18n"
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/templatefuncs"
 
 	_ "gengine-0/docs"
+
+	corsLib "github.com/gin-contrib/cors"
 
 	csrf "gengine-0/internal/pkg/csrf"
 
@@ -44,11 +47,36 @@ func (app *App) setupEngine(r *gin.Engine) error {
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
+		Secure:   app.Config.TLS.CertFile != "",
 	})
 	r.Use(gin.Recovery())
 	r.Use(middleware.ErrorHandler())
 	r.Use(middleware.LoggerMiddleware())
 	r.Use(sessions.Sessions("gengine_session", store))
+	r.Use(i18n.Middleware(i18n.LangRU))
+	r.Use(middleware.GzipMiddleware())
+
+	if app.Config.Server.CORSOrigins != "" {
+		origins := strings.Split(app.Config.Server.CORSOrigins, ",")
+		trimmed := make([]string, 0, len(origins))
+		for _, o := range origins {
+			o = strings.TrimSpace(o)
+			if o != "" {
+				trimmed = append(trimmed, o)
+			}
+		}
+		if len(trimmed) > 0 {
+			r.Use(corsLib.New(corsLib.Config{
+				AllowOrigins:     trimmed,
+				AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+				AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-CSRF-Token"},
+				ExposeHeaders:    []string{"Content-Length", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"},
+				AllowCredentials: true,
+				MaxAge:           12 * time.Hour,
+			}))
+			log.Info().Strs("origins", trimmed).Msg("CORS middleware enabled")
+		}
+	}
 
 	tmpl := template.New("")
 	tmpl.Funcs(templatefuncs.FuncMap())
@@ -63,24 +91,25 @@ func (app *App) setupEngine(r *gin.Engine) error {
 		render.EnableDevMode(app.BaseDir, templatefuncs.FuncMap())
 	}
 
+	r.Use(middleware.MaxBodySize(int64(app.Config.Server.MaxBodySize)))
 	r.Use(middleware.ContextTimeout(30 * time.Second))
 
 	r.GET("/swagger/*any", middleware.OptionalAuth(app.Deps.Services.Auth), func(c *gin.Context) {
 		if c.GetUint("userID") == 0 {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "доступно только авторизованным пользователям"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": i18n.T("generic.auth_required")})
 			return
 		}
 		ginSwagger.WrapHandler(swaggerFiles.Handler)(c)
 	})
 	r.GET("/metrics", middleware.OptionalAuth(app.Deps.Services.Auth), func(c *gin.Context) {
 		if c.GetUint("userID") == 0 {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "доступно только авторизованным пользователям"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": i18n.T("generic.auth_required")})
 			return
 		}
 		gin.WrapH(promhttp.Handler())(c)
 	})
 
-	healthChecker := health.NewCheckerWithValkey(app.DB, app.Hub, app.Deps.Cache).WithUploadsDir("uploads")
+	healthChecker := health.NewCheckerWithValkey(app.DB, app.Hub, app.Deps.Cache).WithUploadsDir(app.Config.Server.UploadsDir)
 	r.GET("/healthz", func(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
 		defer cancel()
@@ -180,7 +209,7 @@ func (app *App) registerAdminRoutes(r *gin.RouterGroup) {
 }
 
 func (app *App) registerUserRoutes(r *gin.RouterGroup) {
-	user.RegisterRoutes(r, app.Config, app.Deps.Services.Auth, app.Deps.Services.User, app.Deps.Services.PasswordReset, app.Deps.Services.EmailVerif, app.Deps.Services.OAuth, app.Deps.AuditSvc, app.DB, app.LocalStorage, app.Deps.Services.Email)
+	user.RegisterRoutes(r, app.Config, app.Deps.Services.Auth, app.Deps.Services.User, app.Deps.Services.PasswordReset, app.Deps.Services.EmailVerif, app.Deps.Services.OAuth, app.Deps.AuditSvc, app.DB, app.LocalStorage, app.Deps.Services.Email, app.Deps.WebAuthn)
 }
 
 func (app *App) registerGameRoutes(r *gin.RouterGroup) {
@@ -231,5 +260,5 @@ func (app *App) registerExportRoutes(r *gin.RouterGroup) error {
 func (app *App) registerGameplayRoutes(r *gin.RouterGroup) {
 	protected := r.Group("/")
 	protected.Use(middleware.AuthRequired(app.Deps.Services.Auth))
-	game.RegisterGameplayRoutes(protected, app.Deps.Services.GameplayHandler, app.Deps.Services.CoAuthor, app.Deps.Services.SSEMgr)
+	game.RegisterGameplayRoutes(protected, app.Deps.Services.GameplayHandler, app.Deps.Services.CoAuthor, app.Deps.Services.SSEMgr, app.DB)
 }

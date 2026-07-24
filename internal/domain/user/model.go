@@ -62,10 +62,11 @@ type PasswordResetToken struct {
 
 // EmailVerificationToken хранит токен для подтверждения email.
 type EmailVerificationToken struct {
-	ID        uint      `gorm:"primaryKey"`
-	UserID    uint      `gorm:"not null;uniqueIndex"`
-	TokenHash string    `gorm:"uniqueIndex;not null"` // SHA256 хеш токена
-	ExpiresAt time.Time `gorm:"not null"`
+	ID               uint      `gorm:"primaryKey"`
+	UserID           uint      `gorm:"not null;index"`
+	TokenHash        string    `gorm:"uniqueIndex;not null"`         // SHA256 хеш токена
+	VerificationCode string    `gorm:"uniqueIndex;not null;size:12"` // короткий код для URL (8 символов)
+	ExpiresAt        time.Time `gorm:"not null"`
 }
 
 // PublicUser — безопасное представление пользователя для публичного API и шаблонов.

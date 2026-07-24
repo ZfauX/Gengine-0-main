@@ -5,6 +5,7 @@ package game
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"mime/multipart"
@@ -20,6 +21,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Константы для фильтрации статусов игр (чтобы избежать магических строк)
@@ -96,7 +98,7 @@ func NewGameService(
 	ratingSvc *RatingService,
 ) *GameService {
 	crudSvc := NewGameCRUDService(gameRepo, ca, userRepo, ms, rs, ratingSvc)
-	coverSvc := NewGameCoverService(gameRepo, storage, ca)
+	coverSvc := NewGameCoverService(gameRepo, storage, ca, int64(cfg.Server.MaxUploadSize))
 	listingSvc := NewGameListingService(gameRepo)
 
 	if cacheStore == nil {
@@ -138,24 +140,46 @@ func (s *GameService) Create(ctx context.Context, game *Game, authorID uint) err
 	return s.crudService.Create(ctx, game, authorID)
 }
 
+// cacheGetGame пытается получить Game из кэша, поддерживая как in-memory (сохранение типа),
+// так и Valkey (JSON → map[string]any → обратная конверсия через json.Marshal/Unmarshal).
+func cacheGetGame(store cache.CacheStore, ctx context.Context, key string) (*Game, bool) {
+	cached, ok := store.GetWithCtx(ctx, key)
+	if !ok {
+		return nil, false
+	}
+	switch v := cached.(type) {
+	case *Game:
+		return v, true
+	default:
+		data, err := json.Marshal(cached)
+		if err != nil {
+			store.DeleteWithCtx(ctx, key)
+			return nil, false
+		}
+		var game Game
+		if err := json.Unmarshal(data, &game); err != nil {
+			store.DeleteWithCtx(ctx, key)
+			return nil, false
+		}
+		return &game, true
+	}
+}
+
 // GetByID возвращает игру по ID с кэшированием.
 func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint) (*Game, error) {
 	cacheKey := fmt.Sprintf("game:%d:viewer:%d", id, viewerID)
 
-	if cached, ok := s.cache.GetWithCtx(ctx, cacheKey); ok {
-		if game, ok := cached.(*Game); ok {
-			canView, err := s.crudService.CanViewGame(ctx, game, viewerID, "user")
-			if err != nil {
-				return nil, err
-			}
-			if !canView {
-				s.cache.DeleteWithCtx(ctx, cacheKey)
-				return nil, errors.New("игра не найдена")
-			}
-			log.Debug().Uint("game_id", id).Msg("GetByID: cache hit")
-			return game, nil
+	if game, ok := cacheGetGame(s.cache, ctx, cacheKey); ok {
+		canView, err := s.crudService.CanViewGame(ctx, game, viewerID, "user")
+		if err != nil {
+			return nil, err
 		}
-		s.cache.DeleteWithCtx(ctx, cacheKey)
+		if !canView {
+			s.cache.DeleteWithCtx(ctx, cacheKey)
+			return nil, errors.New("игра не найдена")
+		}
+		log.Debug().Uint("game_id", id).Msg("GetByID: cache hit")
+		return game, nil
 	}
 
 	game, err := s.crudService.GetByID(ctx, id)
@@ -257,6 +281,36 @@ func (s *GameService) ListReviews(ctx context.Context, gameID uint) ([]Review, e
 	return s.reviewService.ListByGame(ctx, gameID)
 }
 
+// cacheGetRating пытается получить рейтинг из кэша, поддерживая как in-memory, так и Valkey.
+func cacheGetRating(store cache.CacheStore, ctx context.Context, key string) (float64, int64, bool) {
+	cached, ok := store.GetWithCtx(ctx, key)
+	if !ok {
+		return 0, 0, false
+	}
+	switch v := cached.(type) {
+	case map[string]any:
+		avg, avgOk := v["avg"].(float64)
+		if !avgOk {
+			return 0, 0, false
+		}
+		var count int64
+		switch cv := v["count"].(type) {
+		case int64:
+			count = cv
+		case float64:
+			count = int64(cv)
+		case int:
+			count = int64(cv)
+		default:
+			return 0, 0, false
+		}
+		return avg, count, true
+	default:
+		// Valkey path: JSON → map[string]any, handled above
+		return 0, 0, false
+	}
+}
+
 // GetAverageRating делегирует RatingService.
 func (s *GameService) GetAverageRating(ctx context.Context, gameID uint) (float64, int64, error) {
 	if s.reviewService == nil {
@@ -265,15 +319,9 @@ func (s *GameService) GetAverageRating(ctx context.Context, gameID uint) (float6
 
 	cacheKey := fmt.Sprintf("rating:game:%d", gameID)
 
-	if cached, ok := s.cache.GetWithCtx(ctx, cacheKey); ok {
-		if result, ok := cached.(map[string]any); ok {
-			if avg, ok := result["avg"].(float64); ok {
-				if count, ok := result["count"].(int64); ok {
-					log.Debug().Uint("game_id", gameID).Msg("GetAverageRating: cache hit")
-					return avg, count, nil
-				}
-			}
-		}
+	if avg, count, ok := cacheGetRating(s.cache, ctx, cacheKey); ok {
+		log.Debug().Uint("game_id", gameID).Msg("GetAverageRating: cache hit")
+		return avg, count, nil
 	}
 
 	avgRating, count, err := s.ratingService.GetAverageRating(gameID)
@@ -313,7 +361,11 @@ func (s *GameService) GetPassingByUser(ctx context.Context, gameID, userID uint)
 // GetLogsByGameID возвращает логи игры, отсортированные по времени создания.
 func (s *GameService) GetLogsByGameID(ctx context.Context, gameID uint) ([]Log, error) {
 	var logs []Log
-	err := s.db.WithContext(ctx).Where("game_id = ?", gameID).Order("created_at ASC").Find(&logs).Error
+	err := s.db.WithContext(ctx).
+		Joins("JOIN game_passings ON game_passings.id = logs.game_passing_id").
+		Where("game_passings.game_id = ?", gameID).
+		Order("logs.created_at ASC").
+		Find(&logs).Error
 	return logs, err
 }
 
@@ -321,7 +373,10 @@ func (s *GameService) GetLogsByGameID(ctx context.Context, gameID uint) ([]Log, 
 func (s *GameService) GetLogsByGameIDPaginated(ctx context.Context, gameID uint, page, pageSize int) ([]Log, int64, error) {
 	var total int64
 	db := s.db.WithContext(ctx).Session(&gorm.Session{NewDB: true})
-	if err := db.Model(&Log{}).Where("game_id = ?", gameID).Count(&total).Error; err != nil {
+	if err := db.Model(&Log{}).
+		Joins("JOIN game_passings ON game_passings.id = logs.game_passing_id").
+		Where("game_passings.game_id = ?", gameID).
+		Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 	if page < 1 {
@@ -330,8 +385,9 @@ func (s *GameService) GetLogsByGameIDPaginated(ctx context.Context, gameID uint,
 	offset := (page - 1) * pageSize
 	var logs []Log
 	err := db.
-		Where("game_id = ?", gameID).
-		Order("created_at ASC").
+		Joins("JOIN game_passings ON game_passings.id = logs.game_passing_id").
+		Where("game_passings.game_id = ?", gameID).
+		Order("logs.created_at ASC").
 		Limit(pageSize).Offset(offset).
 		Find(&logs).Error
 	return logs, total, err
@@ -360,29 +416,37 @@ func (s *GameService) GetSettingsWithDefaults(ctx context.Context, gameID uint) 
 
 // SaveSettings сохраняет или обновляет настройки игры.
 func (s *GameService) SaveSettings(ctx context.Context, gameID uint, input GameSetting) (*GameSetting, error) {
-	var existing GameSetting
-	err := s.db.WithContext(ctx).Where("game_id = ?", gameID).First(&existing).Error
-	if err == nil {
-		// Обновляем существующие
-		existing.AllowHints = input.AllowHints
-		existing.HintPenaltySeconds = input.HintPenaltySeconds
-		existing.MaxHints = input.MaxHints
-		existing.PerLevelTimeLimit = input.PerLevelTimeLimit
-		existing.HideAnswersUntilFinished = input.HideAnswersUntilFinished
-		existing.AutoStart = input.AutoStart
-		return &existing, s.db.WithContext(ctx).Save(&existing).Error
-	} else if errors.Is(err, gorm.ErrRecordNotFound) {
-		// Создаём новую запись
-		newSettings := GameSetting{
-			GameID:                   gameID,
-			AllowHints:               input.AllowHints,
-			HintPenaltySeconds:       input.HintPenaltySeconds,
-			MaxHints:                 input.MaxHints,
-			PerLevelTimeLimit:        input.PerLevelTimeLimit,
-			HideAnswersUntilFinished: input.HideAnswersUntilFinished,
-			AutoStart:                input.AutoStart,
+	var result GameSetting
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing GameSetting
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("game_id = ?", gameID).First(&existing).Error
+		if err == nil {
+			existing.AllowHints = input.AllowHints
+			existing.HintPenaltySeconds = input.HintPenaltySeconds
+			existing.MaxHints = input.MaxHints
+			existing.PerLevelTimeLimit = input.PerLevelTimeLimit
+			existing.HideAnswersUntilFinished = input.HideAnswersUntilFinished
+			existing.AutoStart = input.AutoStart
+			result = existing
+			return tx.Save(&existing).Error
+		} else if errors.Is(err, gorm.ErrRecordNotFound) {
+			newSettings := GameSetting{
+				GameID:                   gameID,
+				AllowHints:               input.AllowHints,
+				HintPenaltySeconds:       input.HintPenaltySeconds,
+				MaxHints:                 input.MaxHints,
+				PerLevelTimeLimit:        input.PerLevelTimeLimit,
+				HideAnswersUntilFinished: input.HideAnswersUntilFinished,
+				AutoStart:                input.AutoStart,
+			}
+			result = newSettings
+			return tx.Create(&newSettings).Error
 		}
-		return &newSettings, s.db.WithContext(ctx).Create(&newSettings).Error
+		return err
+	})
+	if err != nil {
+		return nil, err
 	}
-	return nil, err
+	return &result, nil
 }

@@ -68,12 +68,6 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 // Использует учетные данные из cfg.Admin (Email и Password).
 // Операция атомарна: INSERT с ON CONFLICT DO NOTHING исключает гонку.
 func EnsureAdmin(db *gorm.DB, cfg *config.Config) error {
-	var existing user.User
-	if err := db.Where("email = ?", cfg.Admin.Email).First(&existing).Error; err == nil {
-		log.Info().Str("email", cfg.Admin.Email).Msg("Администратор уже существует, пропускаем создание")
-		return nil
-	}
-
 	hashed, err := bcrypt.GenerateFromPassword([]byte(cfg.Admin.Password), crypto.BcryptCost)
 	if err != nil {
 		return fmt.Errorf("ensureAdmin: не удалось захешировать пароль администратора: %w", err)
@@ -87,15 +81,18 @@ func EnsureAdmin(db *gorm.DB, cfg *config.Config) error {
 		EmailVerified: true,
 	}
 
-	result := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&admin)
+	result := db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "email"}},
+		DoUpdates: clause.Assignments(map[string]interface{}{"password": string(hashed)}),
+	}).Create(&admin)
 	if result.Error != nil {
-		return fmt.Errorf("ensureAdmin: не удалось создать администратора: %w", result.Error)
+		return fmt.Errorf("ensureAdmin: не удалось создать/обновить администратора: %w", result.Error)
 	}
 
 	if result.RowsAffected > 0 {
 		log.Info().Str("email", admin.Email).Msg("Администратор создан")
 	} else {
-		log.Info().Str("email", cfg.Admin.Email).Msg("Администратор уже существует, пропускаем создание")
+		log.Info().Str("email", cfg.Admin.Email).Msg("Администратор уже существует, обновлён пароль")
 	}
 	return nil
 }

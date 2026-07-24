@@ -1,9 +1,8 @@
-const CACHE_NAME = 'gengine-v3';
-const ASSETS_TO_CACHE = [
-    '/',
-    '/dashboard',
-    '/games',
-    '/calendar',
+const CACHE_NAME = 'gengine-v5';
+const OFFLINE_PAGE = '/offline';
+
+const STATIC_ASSETS = [
+    '/offline',
     '/static/manifest.json',
     '/static/icons/icon-192x192.png',
     '/static/icons/icon-512x512.png',
@@ -11,10 +10,16 @@ const ASSETS_TO_CACHE = [
     '/static/js/app.js'
 ];
 
-// Установка Service Worker
+// Установка — кэшируем статику (только гарантированно доступные URL)
 self.addEventListener('install', event => {
     event.waitUntil(
-        caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS_TO_CACHE))
+        caches.open(CACHE_NAME).then(cache =>
+            Promise.allSettled(
+                STATIC_ASSETS.map(url =>
+                    cache.add(url).catch(err => console.warn('SW: failed to cache', url, err))
+                )
+            )
+        )
     );
     self.skipWaiting();
 });
@@ -24,37 +29,38 @@ self.addEventListener('activate', event => {
     event.waitUntil(
         caches.keys().then(names =>
             Promise.all(names.filter(n => n !== CACHE_NAME).map(n => caches.delete(n)))
-        )
+        ).then(() => self.clients.claim())
     );
-    self.clients.claim();
 });
 
-// Offline page
-const OFFLINE_PAGE = '/offline';
-
-// Стратегия кэширования
+// Стратегии кэширования
 self.addEventListener('fetch', event => {
     const url = new URL(event.request.url);
 
-    // Игнорируем WebSocket и API
-    if (url.pathname.startsWith('/ws') || url.pathname.startsWith('/chat/ws') ||
-        url.pathname.startsWith('/monitor/ws') || url.pathname.startsWith('/api/')) {
+    // Пропускаем WebSocket, API, SSE
+    if (url.pathname.startsWith('/ws') || url.pathname.startsWith('/api/') ||
+        url.pathname.startsWith('/game/') && url.pathname.endsWith('/sse')) {
         return;
     }
 
-	// HTML-страницы: только сеть (не кешировать)
-	if (event.request.mode === 'navigate') {
-		event.respondWith(
-			fetch(event.request).catch(() => {
-				return caches.match(event.request).then(cached => {
-					return cached || caches.match(OFFLINE_PAGE);
-				});
-			})
-		);
-		return;
-	}
+    // HTML-страницы: Stale-while-revalidate
+    if (event.request.mode === 'navigate') {
+        event.respondWith(
+            caches.match(event.request).then(cached => {
+                const fetchPromise = fetch(event.request).then(response => {
+                    if (response && response.status === 200) {
+                        const copy = response.clone();
+                        caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
+                    }
+                    return response;
+                }).catch(() => cached);
+                return cached || fetchPromise;
+            }).catch(() => caches.match(OFFLINE_PAGE))
+        );
+        return;
+    }
 
-    // Статика: Cache First
+    // Статика: Cache First + фоновая синхронизация
     event.respondWith(
         caches.match(event.request).then(cached => {
             const fetchAndCache = fetch(event.request).then(response => {

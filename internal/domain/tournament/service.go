@@ -144,7 +144,10 @@ func (s *TournamentService) Apply(ctx context.Context, tournamentID, teamID, use
 		gameIDs[i] = g.ID
 	}
 
-	existingPassings, _ := s.tournamentTeamRepo.FindPassingsByGamesAndTeam(ctx, gameIDs, teamID)
+	existingPassings, err := s.tournamentTeamRepo.FindPassingsByGamesAndTeam(ctx, gameIDs, teamID)
+	if err != nil {
+		log.Error().Err(err).Uint("team_id", teamID).Msg("Apply: FindPassingsByGamesAndTeam failed")
+	}
 	existingMap := make(map[uint]bool)
 	for _, p := range existingPassings {
 		existingMap[p.GameID] = true

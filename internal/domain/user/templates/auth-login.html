@@ -43,6 +43,12 @@
         </div>
     </div>
 
+    <!-- Passkey -->
+    <div class="card mt-6">
+        <p class="text-sm text-gray-600 text-center mb-3">Войти без пароля:</p>
+        {{template "webauthn-login-button.html" .}}
+    </div>
+
     <!-- OAuth-провайдеры -->
     <div class="card mt-6">
         <p class="text-sm text-gray-600 text-center mb-3">Или войдите через:</p>

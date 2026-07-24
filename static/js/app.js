@@ -147,12 +147,25 @@ function showModalConfirm(message, element) {
 }
 
 // =============================================================================
-// UX6: File upload progress bar
+// UX6: File upload progress bar + image preview
 // =============================================================================
 function initFileUploadProgress() {
     var fileInputs = document.querySelectorAll('input[type="file"][data-progress]');
     fileInputs.forEach(function(input) {
         input.addEventListener('change', function() {
+            var file = this.files[0];
+            if (!file) return;
+
+            // Image preview
+            var previewContainer = document.getElementById(this.dataset.previewId);
+            if (previewContainer && file.type.startsWith('image/')) {
+                var reader = new FileReader();
+                reader.onload = function(e) {
+                    previewContainer.innerHTML = '<img src="' + e.target.result + '" class="max-h-48 rounded-lg shadow-md mt-2" alt="preview">';
+                };
+                reader.readAsDataURL(file);
+            }
+
             var form = this.closest('form');
             if (!form) return;
 
@@ -445,7 +458,7 @@ function initSSEGameNotifications(gameId) {
 
     function connectSSE() {
         try {
-            eventSource = new EventSource('/game/' + gameId + '/sse');
+            eventSource = new EventSource('/game/sse/' + gameId);
 
             eventSource.onopen = function() {
                 console.debug('SSE connected for game', gameId);
@@ -710,6 +723,29 @@ function initCodeCopy() {
 }
 
 // =============================================================================
+// HTMX loading indicator — спиннер на кнопках при hx-запросах
+// =============================================================================
+function initHTMXLoading() {
+    document.addEventListener('htmx:beforeRequest', function(e) {
+        var btn = e.detail.elt.querySelector('button[type="submit"]') || e.detail.elt;
+        if (btn && btn.tagName === 'BUTTON' && !btn.dataset.noLoading) {
+            btn.disabled = true;
+            btn.dataset.originalText = btn.innerHTML;
+            btn.innerHTML = '<span class="inline-block animate-spin mr-1">\u27F3</span> ' + (btn.dataset.loadingText || 'Отправка...');
+            btn.classList.add('opacity-70', 'cursor-not-allowed');
+        }
+    });
+    document.addEventListener('htmx:afterRequest', function(e) {
+        var btn = e.detail.elt.querySelector('button[type="submit"]') || e.detail.elt;
+        if (btn && btn.tagName === 'BUTTON') {
+            btn.disabled = false;
+            btn.innerHTML = btn.dataset.originalText || btn.textContent;
+            btn.classList.remove('opacity-70', 'cursor-not-allowed');
+        }
+    });
+}
+
+// =============================================================================
 // Initialize on DOM ready
 // =============================================================================
 document.addEventListener('DOMContentLoaded', function() {
@@ -727,6 +763,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initAutoSaveIndicator();
     initSSEIndicator();
     initSearchAutocomplete();
+    initHTMXLoading();
 });
 
 // Auto-detect game ID from page for SSE notifications

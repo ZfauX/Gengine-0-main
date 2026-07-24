@@ -148,7 +148,9 @@ func (h *LevelHandler) ListByGame(c *gin.Context) {
 	}
 
 	var gameName string
-	h.db.Table("games").Select("name").Where("id = ?", gameID).Scan(&gameName)
+	if err := h.db.Table("games").Select("name").Where("id = ?", gameID).Scan(&gameName).Error; err != nil {
+		gameName = "Игра"
+	}
 
 	isAdmin := middleware.IsAdmin(c)
 
@@ -188,7 +190,9 @@ func (h *LevelHandler) NewForm(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	var gameName string
-	h.db.Table("games").Select("name").Where("id = ?", gameID).Scan(&gameName)
+	if err := h.db.Table("games").Select("name").Where("id = ?", gameID).Scan(&gameName).Error; err != nil {
+		gameName = "Игра"
+	}
 
 	isAdmin := middleware.IsAdmin(c)
 	data := gin.H{
@@ -336,7 +340,9 @@ func (h *LevelHandler) EditForm(c *gin.Context) {
 	gameID := level.GameID
 
 	var gameName string
-	h.db.Table("games").Select("name").Where("id = ?", gameID).Scan(&gameName)
+	if err := h.db.Table("games").Select("name").Where("id = ?", gameID).Scan(&gameName).Error; err != nil {
+		gameName = "Игра"
+	}
 
 	data := gin.H{
 		"Level":         level,
@@ -597,7 +603,9 @@ func (h *LevelHandler) ListQuestions(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	var gameName string
-	h.db.Table("games").Select("name").Where("id = ?", level.GameID).Scan(&gameName)
+	if err := h.db.Table("games").Select("name").Where("id = ?", level.GameID).Scan(&gameName).Error; err != nil {
+		gameName = "Игра"
+	}
 
 	data := gin.H{
 		"LevelID":       levelID,
@@ -919,7 +927,9 @@ func (h *LevelHandler) ListAnswers(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	var gameName string
-	h.db.Table("games").Select("name").Where("id = ?", level.GameID).Scan(&gameName)
+	if err := h.db.Table("games").Select("name").Where("id = ?", level.GameID).Scan(&gameName).Error; err != nil {
+		gameName = "Игра"
+	}
 
 	data := gin.H{
 		"QuestionID":    questionID,

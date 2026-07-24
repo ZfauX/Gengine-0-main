@@ -49,8 +49,7 @@ func (h *AutocompleteHandler) Games(c *gin.Context) {
 
 	// Ищем игры по названию (full-text + ILIKE fallback) — максимум 10 результатов
 	var results []map[string]any
-	err := h.db.Model(c).
-		Table("games").
+	err := h.db.Table("games").
 		Select("id, name").
 		Where("is_draft = false AND visibility = 'public' AND (search_vector @@ plainto_tsquery('russian', ?) OR name ILIKE ?)", q, "%"+sqlutil.EscapeLike(q)+"%").
 		Limit(maxResults).

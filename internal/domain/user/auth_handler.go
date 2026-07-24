@@ -67,6 +67,10 @@ func NewAuthHandler(
 func (h *AuthHandler) ShowLoginForm(c *gin.Context) {
 	render.Page(c, http.StatusOK, "auth-login.html", gin.H{
 		"csrf": csrf.GetToken(c),
+		"Breadcrumbs": []map[string]string{
+			{"name": "Главная", "url": "/"},
+			{"name": "Вход"},
+		},
 	})
 }
 
@@ -228,6 +232,10 @@ func (h *AuthHandler) LogoutAll(c *gin.Context) {
 func (h *AuthHandler) ShowRegisterForm(c *gin.Context) {
 	render.Page(c, http.StatusOK, "auth-register.html", gin.H{
 		"csrf": csrf.GetToken(c),
+		"Breadcrumbs": []map[string]string{
+			{"name": "Главная", "url": "/"},
+			{"name": "Регистрация"},
+		},
 	})
 }
 
@@ -333,28 +341,17 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	if err != nil {
 		log.Debug().Str("email", input.Email).Msg("ForgotPassword: user not found")
 	} else {
-		resetCode, err := h.passwordResetSvc.GenerateToken(c.Request.Context(), *user)
-		if err != nil {
-			log.Error().Err(err).Str("email", input.Email).Msg("ForgotPassword: failed to generate token")
+		resetCode, genErr := h.passwordResetSvc.GenerateToken(c.Request.Context(), *user)
+		if genErr != nil {
+			log.Error().Err(genErr).Str("email", input.Email).Msg("ForgotPassword: failed to generate token")
 		} else if !h.cfg.SMTP.Enabled {
-			link := fmt.Sprintf("%s/auth/reset/%s", h.cfg.Server.BaseURL, resetCode)
-			log.Info().Str("email", input.Email).Str("link", link).Msg("ForgotPassword: reset link (SMTP disabled)")
-			message := fmt.Sprintf("Ссылка для сброса пароля: %s", link)
-			render.Page(c, http.StatusOK, "auth-forgot.html", gin.H{
-				"Message": message,
-				"csrf":    csrf.GetToken(c),
-			})
-			return
+			log.Info().Str("email", input.Email).Str("reset_code", resetCode).Msg("ForgotPassword: reset link (SMTP disabled, see log)")
 		}
 	}
 
-	message := "Инструкции отправлены на почту"
-	if !h.cfg.SMTP.Enabled {
-		message = "Функция восстановления пароля временно недоступна"
-	}
-
+	// Всегда показываем одинаковое сообщение — не раскрываем, существует ли email
 	render.Page(c, http.StatusOK, "auth-forgot.html", gin.H{
-		"Message": message,
+		"Message": "Если указанный email зарегистрирован, мы отправили инструкции по восстановлению пароля",
 		"csrf":    csrf.GetToken(c),
 	})
 }
@@ -465,23 +462,23 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 
 // VerifyEmail подтверждает email пользователя.
 // @Summary Подтверждение email
-// @Description Активирует email пользователя по токену из письма
+// @Description Активирует email пользователя по коду из письма
 // @Tags auth
 // @Produce html
-// @Param token query string true "Токен подтверждения"
+// @Param code query string true "Код подтверждения"
 // @Success 200 {string} html "Страница подтверждения"
-// @Failure 400 {object} map[string]interface{} "Неверный или просроченный токен"
+// @Failure 400 {object} map[string]interface{} "Неверный или просроченный код"
 // @Router /auth/verify [get]
 func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 	var req VerifyEmailRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
 		render.Page(c, http.StatusBadRequest, "auth-verify_error.html", gin.H{
-			"Error": "Неверный или отсутствующий токен",
+			"Error": "Неверный или отсутствующий код подтверждения",
 		})
 		return
 	}
 
-	if _, err := h.emailVerificationSvc.VerifyToken(c.Request.Context(), req.Token); err != nil {
+	if _, err := h.emailVerificationSvc.VerifyByCode(c.Request.Context(), req.Code); err != nil {
 		render.Page(c, http.StatusBadRequest, "auth-verify_error.html", gin.H{
 			"Error": err.Error(),
 		})

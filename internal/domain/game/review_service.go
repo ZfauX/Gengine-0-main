@@ -22,9 +22,8 @@ func (s *ReviewService) CanReview(gameID, userID uint) (bool, error) {
 	var count int64
 	err := s.DB.Model(&GamePassing{}).
 		Joins("JOIN teams ON teams.id = game_passings.team_id").
-		Joins("LEFT JOIN team_members ON team_members.team_id = game_passings.team_id").
 		Where("game_passings.game_id = ? AND game_passings.status = ?", gameID, StatusFinished).
-		Where("(team_members.user_id = ? OR teams.captain_id = ?)", userID, userID).
+		Where("(teams.captain_id = ? OR EXISTS (SELECT 1 FROM team_members WHERE team_members.team_id = game_passings.team_id AND team_members.user_id = ?))", userID, userID).
 		Count(&count).Error
 	if err != nil {
 		return false, err

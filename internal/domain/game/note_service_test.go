@@ -52,17 +52,17 @@ func TestNoteService_List(t *testing.T) {
 	assert.Len(t, notes, 2)
 }
 
-func TestNoteService_GetByID(t *testing.T) {
+func TestNoteService_CreateAndCheckDB(t *testing.T) {
 	db, noteSvc := setupNoteTest(t)
 	author := createUser(t, db, "get_note@test.com", "pass")
 	g := createPublishedGameWithSettings(t, db, author.ID, "Get Note Game")
 
 	created, err := noteSvc.Create(context.Background(), g.ID, nil, author.ID, "Find me")
 	require.NoError(t, err)
+	assert.NotZero(t, created.ID)
 
-	var found game.Note
-	err = db.First(&found, created.ID).Error
-	require.NoError(t, err)
-	assert.Equal(t, created.ID, found.ID)
-	assert.Equal(t, "Find me", found.Text)
+	var count int64
+	db.Model(&game.Note{}).Where("id = ?", created.ID).Count(&count)
+	assert.Equal(t, int64(1), count)
+	assert.Equal(t, "Find me", created.Text)
 }

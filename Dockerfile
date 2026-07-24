@@ -21,7 +21,7 @@ FROM alpine:3.20
 
 WORKDIR /app
 
-RUN apk add --no-cache ca-certificates tzdata postgresql17-client
+RUN apk add --no-cache ca-certificates tzdata postgresql18-client
 
 # Бинарник
 COPY --from=builder /app/gengine .
@@ -33,7 +33,15 @@ COPY --from=builder /app/migrations ./migrations
 COPY --from=builder /app/static ./static
 
 # HTML-шаблоны (нужны для рендеринга — ParseGlob использует "internal/domain/*/templates/")
-COPY --from=builder /app/internal ./internal
+RUN mkdir -p /app/internal
+COPY --from=builder /app/internal /tmp/internal
+RUN for dir in /tmp/internal/domain/*/templates; do \
+      if [ -d "$dir" ]; then \
+        target="/app/internal/domain/$(basename $(dirname $dir))/templates"; \
+        mkdir -p "$target"; \
+        cp -r "$dir"/* "$target"/; \
+      fi; \
+    done && rm -rf /tmp/internal
 
 # Директории для runtime-данных
 RUN mkdir -p logs uploads backups

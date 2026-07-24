@@ -3,6 +3,7 @@ package game
 
 import (
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,9 +22,12 @@ func (m *mockFlusher) Flush() {
 
 func newTestSSEMgr() *SSEManager {
 	return &SSEManager{
-		sessions: make(map[uint][]*SSESession),
-		gameMap:  make(map[*SSESession]uint),
-		stopCh:   make(chan struct{}),
+		sessions:      make(map[uint][]*SSESession),
+		gameMap:       make(map[*SSESession]uint),
+		stopCh:        make(chan struct{}),
+		maxTotalConns: 1000,
+		maxConnsPerIP: 100,
+		connsPerIP:    make(map[string]int),
 	}
 }
 
@@ -33,7 +37,7 @@ func TestSSEHandler_Broadcast(t *testing.T) {
 	w := httptest.NewRecorder()
 	flusher := &mockFlusher{recorder: w}
 
-	session := mgr.RegisterSession(1, w, flusher)
+	session := mgr.RegisterSession(1, "127.0.0.1", w, flusher)
 	require.NotNil(t, session)
 
 	mgr.Broadcast(1, "test_event", map[string]any{"key": "value"})
@@ -58,8 +62,8 @@ func TestSSEHandler_Broadcast_MultipleSessions(t *testing.T) {
 	flusher1 := &mockFlusher{recorder: w1}
 	flusher2 := &mockFlusher{recorder: w2}
 
-	mgr.RegisterSession(2, w1, flusher1)
-	mgr.RegisterSession(2, w2, flusher2)
+	mgr.RegisterSession(2, "127.0.0.1", w1, flusher1)
+	mgr.RegisterSession(2, "127.0.0.1", w2, flusher2)
 
 	mgr.Broadcast(2, "multi_event", nil)
 
@@ -79,12 +83,30 @@ func TestToJSON(t *testing.T) {
 	assert.Equal(t, "null", toJSON(nil))
 }
 
+func TestSSEHandler_ConcurrentBroadcast(t *testing.T) {
+	mgr := newTestSSEMgr()
+
+	w := httptest.NewRecorder()
+	flusher := &mockFlusher{recorder: w}
+	session := mgr.RegisterSession(4, "127.0.0.1", w, flusher)
+	defer mgr.UnregisterSession(session)
+
+	for i := 0; i < 10; i++ {
+		mgr.Broadcast(4, "concurrent_event", map[string]any{"i": i})
+	}
+
+	assert.Eventually(t, func() bool {
+		body := w.Body.String()
+		return strings.Count(body, "event: concurrent_event") >= 10
+	}, 2*time.Second, 50*time.Millisecond)
+}
+
 func TestSSEHandler_ConnectionClose(t *testing.T) {
 	mgr := newTestSSEMgr()
 
 	w := httptest.NewRecorder()
 	flusher := &mockFlusher{recorder: w}
-	session := mgr.RegisterSession(3, w, flusher)
+	session := mgr.RegisterSession(3, "127.0.0.1", w, flusher)
 
 	mgr.Broadcast(3, "before_close", map[string]any{"status": "ok"})
 

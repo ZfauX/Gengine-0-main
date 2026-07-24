@@ -53,7 +53,10 @@ type PasswordResetRepository interface {
 type EmailVerificationRepository interface {
 	CreateToken(ctx context.Context, token *EmailVerificationToken) error
 	GetToken(ctx context.Context, tokenStr string) (*EmailVerificationToken, error)
+	GetTokenByCode(ctx context.Context, code string) (*EmailVerificationToken, error)
 	DeleteToken(ctx context.Context, token *EmailVerificationToken) error
+	DeleteByTokenHash(ctx context.Context, tokenHash string) error
+	DeleteByUserID(ctx context.Context, userID uint) error
 }
 
 // ExternalLoginRepository — контракт для OAuth-привязок.
@@ -242,6 +245,20 @@ func (r *gormEmailVerificationRepo) GetToken(ctx context.Context, tokenStr strin
 }
 func (r *gormEmailVerificationRepo) DeleteToken(ctx context.Context, token *EmailVerificationToken) error {
 	return r.db.WithContext(ctx).Delete(token).Error
+}
+func (r *gormEmailVerificationRepo) GetTokenByCode(ctx context.Context, code string) (*EmailVerificationToken, error) {
+	var t EmailVerificationToken
+	err := r.db.WithContext(ctx).Where("verification_code = ?", code).First(&t).Error
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+func (r *gormEmailVerificationRepo) DeleteByTokenHash(ctx context.Context, tokenHash string) error {
+	return r.db.WithContext(ctx).Where("token_hash = ?", tokenHash).Delete(&EmailVerificationToken{}).Error
+}
+func (r *gormEmailVerificationRepo) DeleteByUserID(ctx context.Context, userID uint) error {
+	return r.db.WithContext(ctx).Where("user_id = ?", userID).Delete(&EmailVerificationToken{}).Error
 }
 
 type gormExternalLoginRepo struct{ db *gorm.DB }

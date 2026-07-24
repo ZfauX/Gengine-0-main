@@ -41,7 +41,7 @@ type OAuthProviderRequest struct {
 }
 
 type VerifyEmailRequest struct {
-	Token string `form:"token" json:"token" binding:"required"`
+	Code string `form:"code" json:"code" binding:"required,len=8"`
 }
 
 type RegisterInput struct {

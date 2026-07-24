@@ -32,6 +32,7 @@ func initializeRepositories(db *gorm.DB) *repositories {
 	emailVerificationRepository := user.NewGormEmailVerificationRepo(db)
 	externalLoginRepository := user.NewGormExternalLoginRepo(db)
 	refreshTokenRepository := user.NewGormRefreshTokenRepo(db)
+	webAuthnRepository := user.NewGormWebAuthnRepo(db)
 	gameRepository := game.NewGormGameRepo(db)
 	gamePassingRepository := game.NewGormGamePassingRepo(db)
 	levelRepository := level.NewGormLevelRepo(db)
@@ -50,6 +51,7 @@ func initializeRepositories(db *gorm.DB) *repositories {
 		EmailVerif:   emailVerificationRepository,
 		ExtLogin:     externalLoginRepository,
 		RefreshToken: refreshTokenRepository,
+		WebAuthn:     webAuthnRepository,
 		Game:         gameRepository,
 		GamePassing:  gamePassingRepository,
 		Level:        levelRepository,

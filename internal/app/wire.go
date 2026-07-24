@@ -27,6 +27,7 @@ func initializeRepositories(db *gorm.DB) *repositories {
 		user.NewGormEmailVerificationRepo,
 		user.NewGormExternalLoginRepo,
 		user.NewGormRefreshTokenRepo,
+		user.NewGormWebAuthnRepo,
 		game.NewGormGameRepo,
 		game.NewGormGamePassingRepo,
 		level.NewGormLevelRepo,

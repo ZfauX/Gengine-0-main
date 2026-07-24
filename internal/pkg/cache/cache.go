@@ -93,26 +93,13 @@ func (c *Cache) startCleanup(interval time.Duration) {
 }
 
 func (c *Cache) removeExpired() {
-	now := time.Now()
-	var toRemove []string
-
 	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	now := time.Now()
 	for _, key := range c.lru.Keys() {
 		item, ok := c.lru.Get(key)
 		if ok && !item.expires.IsZero() && now.After(item.expires) {
-			toRemove = append(toRemove, key)
-		}
-	}
-	c.mu.Unlock()
-
-	if len(toRemove) == 0 {
-		return
-	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for _, key := range toRemove {
-		if item, ok := c.lru.Get(key); ok && !item.expires.IsZero() && now.After(item.expires) {
 			c.lru.Remove(key)
 		}
 	}
@@ -121,28 +108,16 @@ func (c *Cache) removeExpired() {
 func (c *Cache) Get(key string) (any, bool) {
 	c.mu.RLock()
 	item, ok := c.lru.Get(key)
+	c.mu.RUnlock()
 	if !ok {
-		c.mu.RUnlock()
 		return nil, false
 	}
 	if item.expired() {
-		// Элемент истёк — переподнимаем блокировку до полной для удаления
-		c.mu.RUnlock()
 		c.mu.Lock()
-		// Повторная проверка под полной блокировкой (другая горутина могла уже удалить)
-		item, ok = c.lru.Get(key)
-		if ok && item.expired() {
-			c.lru.Remove(key)
-			c.mu.Unlock()
-			return nil, false
-		}
+		c.lru.Remove(key)
 		c.mu.Unlock()
-		if !ok {
-			return nil, false
-		}
-		return item.value, true
+		return nil, false
 	}
-	c.mu.RUnlock()
 	return item.value, true
 }
 
@@ -212,6 +187,7 @@ func (c *Cache) DeleteByPrefix(prefix string) {
 		c.lru.Remove(key)
 	}
 
+	c.prefixLock.Lock()
 	delete(c.prefixKeys, prefix)
 	for _, key := range keysCopy {
 		if keyPrefixes, ok := c.keyPrefixes[key]; ok {
@@ -221,6 +197,7 @@ func (c *Cache) DeleteByPrefix(prefix string) {
 			}
 		}
 	}
+	c.prefixLock.Unlock()
 }
 
 func (c *Cache) Flush() {

@@ -2,6 +2,7 @@
 package social
 
 import (
+	"errors"
 	"net/http"
 
 	apperrors "gengine-0/internal/pkg/errors"
@@ -110,11 +111,10 @@ func (h *FollowHandler) Unfollow(c *gin.Context) {
 	}
 
 	if err := h.followService.Unfollow(c.Request.Context(), userID, req.ID); err != nil {
-		switch err.Error() {
-		case "не подписан":
+		if errors.Is(err, ErrNotFollowing) {
 			appErr := apperrors.BadRequest(err.Error())
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
-		default:
+		} else {
 			log.Error().Err(err).Uint("user_id", userID).Uint("author_id", req.ID).Msg("Unfollow: failed to unfollow author")
 			appErr := apperrors.Wrap(err, "Unfollow: failed to unfollow author")
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})

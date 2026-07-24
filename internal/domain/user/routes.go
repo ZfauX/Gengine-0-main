@@ -27,6 +27,7 @@ func RegisterRoutes(
 	db *gorm.DB,
 	localStorage storage.FileStorage,
 	emailSvc *email.EmailService,
+	webauthnHandler *WebAuthnHandler,
 ) {
 	authHandler := NewAuthHandler(cfg, authSvc, userSvc, passwordResetSvc, emailVerifSvc, oauthSvc, auditSvc, emailSvc)
 	profileSvc := NewProfileService(db)
@@ -65,6 +66,14 @@ func RegisterRoutes(
 		authGroup.GET("/oauth/:provider", oauthRateLimit, authHandler.OAuthLogin)
 
 		authGroup.GET("/oauth/:provider/callback", oauthRateLimit, authHandler.OAuthCallback)
+
+		// WebAuthn registration (authenticated)
+		authGroup.POST("/webauthn/register/begin", middleware.AuthRequired(authSvc), webauthnHandler.BeginRegistration)
+		authGroup.POST("/webauthn/register/finish", middleware.AuthRequired(authSvc), webauthnHandler.FinishRegistration)
+
+		// WebAuthn login (public)
+		authGroup.POST("/webauthn/login/begin", webauthnHandler.BeginLogin)
+		authGroup.POST("/webauthn/login/finish", webauthnHandler.FinishLogin)
 	}
 
 	profileGroup := r.Group("/profile")
@@ -77,6 +86,9 @@ func RegisterRoutes(
 		profileGroup.POST("/update", profileHandler.UpdateProfile)
 
 		profileGroup.POST("/change-password", profileHandler.ChangePassword)
+
+		profileGroup.GET("/webauthn-keys", webauthnHandler.ListKeys)
+		profileGroup.POST("/webauthn-keys/delete/:id", webauthnHandler.DeleteKey)
 	}
 
 	achievementGroup := r.Group("/achievements")

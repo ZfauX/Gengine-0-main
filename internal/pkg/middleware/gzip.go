@@ -42,7 +42,7 @@ func GzipMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		if c.Request.URL.Path == "/metrics" {
+		if c.Request.URL.Path == "/metrics" || strings.HasPrefix(c.Request.URL.Path, "/game/") {
 			c.Next()
 			return
 		}

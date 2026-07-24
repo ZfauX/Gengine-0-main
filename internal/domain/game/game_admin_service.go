@@ -217,13 +217,15 @@ func (s *GameAdminService) notifyCaptainAboutFinish(teamID uint, game *Game) {
 	if s.cfg == nil || !s.cfg.SMTP.Enabled {
 		return
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	var t team.Team
-	if err := s.db.First(&t, teamID).Error; err != nil {
+	if err := s.db.WithContext(ctx).First(&t, teamID).Error; err != nil {
 		log.Error().Err(err).Uint("team", teamID).Msg("notifyCaptainAboutFinish: failed to get team")
 		return
 	}
 	var captain user.User
-	if err := s.db.First(&captain, t.CaptainID).Error; err != nil {
+	if err := s.db.WithContext(ctx).First(&captain, t.CaptainID).Error; err != nil {
 		log.Error().Err(err).Uint("captain", t.CaptainID).Msg("notifyCaptainAboutFinish: failed to get captain")
 		return
 	}
@@ -241,13 +243,15 @@ func (s *GameAdminService) notifyCaptainAboutDisqualification(teamID uint, game 
 	if s.cfg == nil || !s.cfg.SMTP.Enabled {
 		return
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	var t team.Team
-	if err := s.db.First(&t, teamID).Error; err != nil {
+	if err := s.db.WithContext(ctx).First(&t, teamID).Error; err != nil {
 		log.Error().Err(err).Uint("team", teamID).Msg("notifyCaptainAboutDisqualification: failed to get team")
 		return
 	}
 	var captain user.User
-	if err := s.db.First(&captain, t.CaptainID).Error; err != nil {
+	if err := s.db.WithContext(ctx).First(&captain, t.CaptainID).Error; err != nil {
 		log.Error().Err(err).Uint("captain", t.CaptainID).Msg("notifyCaptainAboutDisqualification: failed to get captain")
 		return
 	}

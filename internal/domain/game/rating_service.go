@@ -98,28 +98,42 @@ func (s *RatingService) awardPoints(userID uint, points int, now time.Time) erro
 	}).Create(&PlayerRating{UserID: userID, Score: points}).Error
 }
 
+// LeaderboardEntry represents a player on the leaderboard with user details.
+type LeaderboardEntry struct {
+	UserID     uint
+	Score      int
+	Name       string
+	AvatarPath string
+}
+
 // GetLeaderboard возвращает топ игроков с кэшированием.
-func (s *RatingService) GetLeaderboard(ctx context.Context, limit int) ([]PlayerRating, error) {
+func (s *RatingService) GetLeaderboard(ctx context.Context, limit int) ([]LeaderboardEntry, error) {
 	cacheKey := fmt.Sprintf("leaderboard:limit:%d", limit)
 
 	if cached, ok := s.cache.GetWithCtx(ctx, cacheKey); ok {
-		if ratings, ok := cached.([]PlayerRating); ok {
+		if entries, ok := cached.([]LeaderboardEntry); ok {
 			log.Debug().Msg("GetLeaderboard: cache hit")
-			return ratings, nil
+			return entries, nil
 		}
 	}
 
-	var ratings []PlayerRating
-	err := s.DB.WithContext(ctx).Preload("User").Order("score DESC").Limit(limit).Find(&ratings).Error
+	var entries []LeaderboardEntry
+	err := s.DB.WithContext(ctx).
+		Table("player_ratings").
+		Select("player_ratings.user_id, player_ratings.score, users.name, users.avatar_path").
+		Joins("JOIN users ON users.id = player_ratings.user_id").
+		Order("score DESC").
+		Limit(limit).
+		Scan(&entries).Error
 	if err != nil {
 		return nil, err
 	}
 
-	if len(ratings) > 0 {
-		s.cache.SetWithCtx(ctx, cacheKey, ratings, 5*time.Minute)
+	if len(entries) > 0 {
+		s.cache.SetWithCtx(ctx, cacheKey, entries, 5*time.Minute)
 	}
 
-	return ratings, nil
+	return entries, nil
 }
 
 // GetAverageRating возвращает средний рейтинг и количество отзывов для игры.

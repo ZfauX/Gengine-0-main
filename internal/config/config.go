@@ -56,7 +56,10 @@ type ServerConfig struct {
 	LogFormat      string // формат вывода логов: "console" или "json" (по умолчанию "console")
 	StaticDir      string // путь к статическим файлам (по умолчанию "static")
 	UploadsDir     string // путь к загружаемым файлам (по умолчанию "uploads")
+	MaxUploadSize  int    // максимальный размер загружаемого файла в байтах (по умолчанию 5MB)
+	MaxBodySize    int    // максимальный размер тела запроса в байтах (по умолчанию 10MB)
 	TrustedProxies string // доверенные прокси через запятую (например: 127.0.0.1,192.168.0.0/24)
+	CORSOrigins    string // разрешённые CORS-источники через запятую (например: https://example.com,http://localhost:3000)
 	StrictMode     bool   // строгий режим: неверные переменные окружения вызывают ошибку вместо fallback
 }
 
@@ -184,6 +187,9 @@ func LoadConfig() (*Config, error) {
 	cfg.Server.LogFormat = getEnvOrDefault("LOG_FORMAT", "console") // console или json
 	cfg.Server.StaticDir = getEnvOrDefault("STATIC_DIR", "static")
 	cfg.Server.UploadsDir = getEnvOrDefault("UPLOADS_DIR", "uploads")
+	cfg.Server.MaxUploadSize = getEnvAsInt("MAX_UPLOAD_SIZE", 5<<20)
+	cfg.Server.MaxBodySize = getEnvAsInt("MAX_BODY_SIZE", 10<<20)
+	cfg.Server.CORSOrigins = os.Getenv("CORS_ORIGINS")
 	cfg.Server.StrictMode = os.Getenv("STRICT_CONFIG") == "true"
 
 	// База данных (обязательные параметры)
@@ -321,7 +327,7 @@ func requireStrongSecret(key string, minLen int) (string, error) {
 	commonWeak := []string{"change-me", "secret", "password", "admin", "123456", "your-secret"}
 	lowerValue := strings.ToLower(value)
 	for _, w := range commonWeak {
-		if strings.Contains(lowerValue, w) {
+		if strings.EqualFold(value, w) || strings.HasPrefix(lowerValue, w) {
 			return "", fmt.Errorf("environment variable %s appears to be a weak/default value, please change it", key)
 		}
 	}

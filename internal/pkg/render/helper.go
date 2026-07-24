@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"sync"
 
+	"gengine-0/internal/pkg/i18n"
 	"gengine-0/internal/pkg/middleware"
 
 	"github.com/gin-contrib/sessions"
@@ -55,17 +56,24 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 	var tmpl *template.Template
 
 	if templateDevPattern != "" {
-		mu.Lock()
+		mu.RLock()
+		pattern := templateDevPattern
+		funcs := templateFuncMap
+		mu.RUnlock()
+
 		t := template.New("")
-		t.Funcs(templateFuncMap)
-		if _, err := t.ParseGlob(templateDevPattern); err != nil {
+		t.Funcs(funcs)
+		if _, err := t.ParseGlob(pattern); err != nil {
 			log.Error().Err(err).Msg("Render: hot-reload template parse error")
+			mu.RLock()
 			tmpl = globalTemplate
+			mu.RUnlock()
 		} else {
+			mu.Lock()
 			globalTemplate = t
 			tmpl = t
+			mu.Unlock()
 		}
-		mu.Unlock()
 	} else {
 		mu.RLock()
 		tmpl = globalTemplate
@@ -112,15 +120,15 @@ func RenderErrorPage(c *gin.Context, status int) {
 func defaultErrorMessage(status int) string {
 	switch status {
 	case http.StatusBadRequest:
-		return "Неверный запрос"
+		return i18n.T("generic.bad_request")
 	case http.StatusForbidden:
-		return "Доступ запрещён"
+		return i18n.T("generic.forbidden")
 	case http.StatusNotFound:
-		return "Не найдено"
+		return i18n.T("generic.not_found")
 	case http.StatusInternalServerError:
-		return "Внутренняя ошибка сервера"
+		return i18n.T("generic.server_error")
 	default:
-		return "Ошибка"
+		return i18n.T("generic.error")
 	}
 }
 

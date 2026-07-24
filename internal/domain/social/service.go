@@ -8,6 +8,8 @@ import (
 	"gengine-0/internal/domain/user"
 )
 
+var ErrNotFollowing = errors.New("не подписан")
+
 // ---------- FollowService ----------
 
 type FollowService struct {

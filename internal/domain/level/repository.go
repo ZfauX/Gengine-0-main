@@ -12,6 +12,7 @@ type LevelRepository interface {
 	GetByID(ctx context.Context, id uint) (*Level, error)
 	GetByIDWithQuestions(ctx context.Context, id uint) (*Level, error)
 	GetByGameID(ctx context.Context, gameID uint) ([]Level, error)
+	ExistsByPosition(ctx context.Context, gameID uint, position int, excludeID uint) (bool, error)
 	Update(ctx context.Context, level *Level) error
 	Delete(ctx context.Context, id uint) error
 	GetMaxPosition(ctx context.Context, gameID uint) (int, error)
@@ -75,6 +76,15 @@ func (r *gormLevelRepo) Update(ctx context.Context, level *Level) error {
 }
 func (r *gormLevelRepo) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&Level{}, id).Error
+}
+func (r *gormLevelRepo) ExistsByPosition(ctx context.Context, gameID uint, position int, excludeID uint) (bool, error) {
+	var count int64
+	query := r.db.WithContext(ctx).Model(&Level{}).Where("game_id = ? AND position = ?", gameID, position)
+	if excludeID > 0 {
+		query = query.Where("id != ?", excludeID)
+	}
+	err := query.Count(&count).Error
+	return count > 0, err
 }
 func (r *gormLevelRepo) GetMaxPosition(ctx context.Context, gameID uint) (int, error) {
 	var maxPos int

@@ -72,9 +72,15 @@ func (s *BackupService) CreateNow(ctx context.Context) error {
 		"-d", s.dbName,
 		"-f", filepath,
 	)
-	// Используем .pgpass файл вместо PGPASSWORD (безопаснее — не виден в ps aux)
-	// Пароль передаётся через переменную окружения, видимую только процессу
-	cmd.Env = append(os.Environ(), fmt.Sprintf("PGPASSWORD=%s", s.dbPassword))
+	// Пароль и параметры подключения передаются через переменные окружения
+	cmd.Env = []string{
+		"PGPASSWORD=" + s.dbPassword,
+		"PGHOST=" + s.dbHost,
+		"PGPORT=" + s.dbPort,
+		"PGUSER=" + s.dbUser,
+		"PGDATABASE=" + s.dbName,
+		"PATH=" + os.Getenv("PATH"),
+	}
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
