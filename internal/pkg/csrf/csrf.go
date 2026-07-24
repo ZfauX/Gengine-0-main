@@ -37,6 +37,12 @@ func Middleware(secret string, secure bool, trustedOrigins []string) gin.Handler
 
 	return func(c *gin.Context) {
 		var handled bool
+
+		// Парсим форму заранее, чтобы PostForm был заполнен на c.Request.
+		// Без этого gin.ShouldBind не видит поля формы, т.к. gorilla/csrf
+		// через PlaintextHTTPRequest создаёт копию запроса и парсит форму на ней.
+		_ = c.Request.ParseForm()
+
 		r := c.Request
 		if !secure {
 			r = gocsrf.PlaintextHTTPRequest(r)

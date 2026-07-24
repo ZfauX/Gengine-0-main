@@ -266,6 +266,15 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	cleanName := sanitize.StripHTML(input.Name)
 	cleanEmail := sanitize.StripHTML(input.Email)
 
+	if err := validation.ValidatePasswordStrength(input.Password); err != nil {
+		render.Page(c, http.StatusBadRequest, "auth-register.html", gin.H{
+			"Errors": validation.FieldErrors{"password": err.Error()},
+			"Error":  err.Error(),
+			"csrf":   csrf.GetToken(c),
+		})
+		return
+	}
+
 	user, err := h.authSvc.Register(c.Request.Context(), cleanEmail, input.Password, cleanName)
 	if err != nil {
 		render.Page(c, http.StatusConflict, "auth-register.html", gin.H{
@@ -324,8 +333,18 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	if err != nil {
 		log.Debug().Str("email", input.Email).Msg("ForgotPassword: user not found")
 	} else {
-		if _, err := h.passwordResetSvc.GenerateToken(c.Request.Context(), *user); err != nil {
+		resetCode, err := h.passwordResetSvc.GenerateToken(c.Request.Context(), *user)
+		if err != nil {
 			log.Error().Err(err).Str("email", input.Email).Msg("ForgotPassword: failed to generate token")
+		} else if !h.cfg.SMTP.Enabled {
+			link := fmt.Sprintf("%s/auth/reset/%s", h.cfg.Server.BaseURL, resetCode)
+			log.Info().Str("email", input.Email).Str("link", link).Msg("ForgotPassword: reset link (SMTP disabled)")
+			message := fmt.Sprintf("Ссылка для сброса пароля: %s", link)
+			render.Page(c, http.StatusOK, "auth-forgot.html", gin.H{
+				"Message": message,
+				"csrf":    csrf.GetToken(c),
+			})
+			return
 		}
 	}
 
@@ -400,6 +419,16 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	token, err := h.passwordResetSvc.passResetRepo.GetTokenByResetCode(c.Request.Context(), input.ResetCode)
 	if err == nil {
 		userID = token.UserID
+	}
+
+	if err := validation.ValidatePasswordStrength(input.Password); err != nil {
+		render.Page(c, http.StatusBadRequest, "auth-reset.html", gin.H{
+			"ResetCode": input.ResetCode,
+			"Errors":    validation.FieldErrors{"password": err.Error()},
+			"Error":     err.Error(),
+			"csrf":      csrf.GetToken(c),
+		})
+		return
 	}
 
 	if err := h.passwordResetSvc.ResetPassword(c.Request.Context(), input.ResetCode, input.Password); err != nil {

@@ -27,6 +27,10 @@ func ErrorHandler() gin.HandlerFunc {
 
 		// Проверяем, есть ли ошибка в контексте
 		if len(c.Errors) > 0 {
+			if c.Writer.Written() {
+				log.Warn().Err(c.Errors.Last().Err).Msg("ErrorHandler: headers already sent, skipping")
+				return
+			}
 			err := c.Errors.Last().Err
 			if appErr, ok := err.(*errors.AppError); ok {
 				c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{

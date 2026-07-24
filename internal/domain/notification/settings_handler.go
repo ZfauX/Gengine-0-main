@@ -4,6 +4,7 @@ package notification
 import (
 	"net/http"
 
+	"gengine-0/internal/config"
 	"gengine-0/internal/pkg/render"
 
 	"github.com/gin-gonic/gin"
@@ -11,12 +12,13 @@ import (
 
 // SettingsHandler обрабатывает настройки уведомлений пользователя
 type SettingsHandler struct {
-	svc *NotificationService
+	svc      *NotificationService
+	vapidCfg config.VAPIDConfig
 }
 
 // NewSettingsHandler создаёт обработчик настроек
-func NewSettingsHandler(svc *NotificationService) *SettingsHandler {
-	return &SettingsHandler{svc: svc}
+func NewSettingsHandler(svc *NotificationService, vapidCfg config.VAPIDConfig) *SettingsHandler {
+	return &SettingsHandler{svc: svc, vapidCfg: vapidCfg}
 }
 
 // ShowForm отображает страницу настроек уведомлений.
@@ -37,10 +39,11 @@ func (h *SettingsHandler) ShowForm(c *gin.Context) {
 	}
 
 	render.Page(c, http.StatusOK, "notification-settings.html", gin.H{
-		"Settings":      settings,
-		"CurrentUserID": userID,
-		"Title":         "Настройки уведомлений",
-		"Description":   "Управление email и push-уведомлениями",
+		"Settings":       settings,
+		"CurrentUserID":  userID,
+		"Title":          "Настройки уведомлений",
+		"Description":    "Управление email и push-уведомлениями",
+		"VapidPublicKey": h.vapidCfg.PublicKey,
 	})
 }
 

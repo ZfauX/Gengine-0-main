@@ -47,6 +47,91 @@
             --border-color: #334155;
             --nav-bg: #1e293b;
         }
+        /* Навбар в тёмной теме */
+        [data-theme="dark"] nav,
+        [data-theme="dark"] .nav-link,
+        [data-theme="dark"] #notificationDropdown,
+        [data-theme="dark"] #mobileMenu a {
+            background: var(--nav-bg) !important;
+            border-color: var(--border-color) !important;
+            color: var(--text-secondary) !important;
+        }
+        [data-theme="dark"] nav a:not(.btn),
+        [data-theme="dark"] .nav-link {
+            color: var(--text-secondary) !important;
+        }
+        [data-theme="dark"] nav a:not(.btn):hover,
+        [data-theme="dark"] .nav-link:hover {
+            color: var(--text-primary) !important;
+        }
+        [data-theme="dark"] nav .text-red-500,
+        [data-theme="dark"] nav a.text-red-500 {
+            color: #f87171 !important;
+        }
+        [data-theme="dark"] nav .text-red-500:hover,
+        [data-theme="dark"] nav a.text-red-500:hover {
+            color: #fca5a5 !important;
+        }
+        [data-theme="dark"] #mobileMenu a:hover {
+            background: #334155 !important;
+        }
+        [data-theme="dark"] #notificationDropdown h3 {
+            color: var(--text-primary) !important;
+        }
+        /* Текст в карточках и формах */
+        [data-theme="dark"] .card h1,
+        [data-theme="dark"] .card h2,
+        [data-theme="dark"] .card h3,
+        [data-theme="dark"] .card label,
+        [data-theme="dark"] h1.text-gray-800,
+        [data-theme="dark"] h2.text-gray-800 {
+            color: var(--text-primary) !important;
+        }
+        [data-theme="dark"] .text-gray-700,
+        [data-theme="dark"] .text-gray-600 {
+            color: var(--text-secondary) !important;
+        }
+        [data-theme="dark"] .text-gray-500 {
+            color: #64748b !important;
+        }
+        /* Поля ввода */
+        [data-theme="dark"] input[type="text"],
+        [data-theme="dark"] input[type="email"],
+        [data-theme="dark"] input[type="password"],
+        [data-theme="dark"] textarea,
+        [data-theme="dark"] select {
+            background: #334155 !important;
+            border-color: #475569 !important;
+            color: var(--text-primary) !important;
+        }
+        [data-theme="dark"] input:focus,
+        [data-theme="dark"] textarea:focus,
+        [data-theme="dark"] select:focus {
+            border-color: #3b82f6 !important;
+        }
+        /* Кнопка GitHub в тёмной теме */
+        [data-theme="dark"] .bg-gray-800:not(nav *) {
+            background: #334155 !important;
+            border: 1px solid #475569 !important;
+        }
+        [data-theme="dark"] .bg-gray-800:not(nav *):hover {
+            background: #475569 !important;
+        }
+        /* Формы фильтрации */
+        [data-theme="dark"] form.bg-white,
+        [data-theme="dark"] .filter-form {
+            background: var(--bg-card) !important;
+            border-color: var(--border-color) !important;
+        }
+        [data-theme="dark"] .btn-outline {
+            background: var(--bg-card) !important;
+            border-color: var(--border-color) !important;
+            color: var(--text-secondary) !important;
+        }
+        [data-theme="dark"] .btn-outline:hover {
+            background: #334155 !important;
+            color: var(--text-primary) !important;
+        }
         /* View Transitions API */
         @view-transition { navigation: auto; }
         ::view-transition-old(root) { animation: fade-out 0.2s ease; }
@@ -104,6 +189,7 @@
             padding: 0.75rem 1rem;
             border-radius: 0.5rem;
             margin-bottom: 1rem;
+            word-break: break-all;
         }
         .flash-error {
             background: #fee2e2;
@@ -221,10 +307,6 @@
 </head>
 <body>
 
-<a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:top-0 focus:left-0 focus:z-50 focus:bg-blue-600 focus:text-white focus:px-4 focus:py-2 focus:m-2 focus:rounded">
-    Перейти к содержимому
-</a>
-
     <!-- Flash-сообщения -->
     {{if .Flash}}
     <div class="fixed top-4 right-4 z-[110] max-w-sm">
@@ -276,7 +358,6 @@
                                 <h3 class="font-semibold text-gray-800">Уведомления</h3>
                             </div>
                             <div id="notificationList" class="max-h-96 overflow-y-auto">
-                                <div class="p-4 text-center text-gray-500">Загрузка...</div>
                             </div>
                             <div class="p-3 border-t border-gray-200 text-center">
                                 <a href="/notifications" class="text-sm text-blue-600 hover:text-blue-700">Все уведомления</a>
@@ -660,7 +741,7 @@
 
             // Инициализация
             updateNotificationBadge({{.UnreadNotificationCount | default 0}});
-            if ({% if .CurrentUserID %}true{% else %}false{% endif %}) {
+            if ({{if .CurrentUserID}}true{{else}}false{{end}}) {
                 initWebSocket();
             }
         })();

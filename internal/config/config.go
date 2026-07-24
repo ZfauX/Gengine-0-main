@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SherClockHolmes/webpush-go"
 	"github.com/rs/zerolog/log"
 )
 
@@ -38,6 +39,7 @@ type Config struct {
 	ReCAPTCHA ReCAPTCHAConfig // настройки reCAPTCHA (опционально)
 	TLS       TLSConfig       // пути к TLS-сертификатам (опционально)
 	Sentry    SentryConfig    // настройки Sentry (опционально)
+	VAPID     VAPIDConfig     // VAPID-ключи для Web Push (автогенерация при отсутствии)
 	WebSocket WebSocketConfig // настройки WebSocket-соединений
 }
 
@@ -159,6 +161,12 @@ type WebSocketConfig struct {
 	MaxConnsPerIP int // максимальное количество соединений с одного IP (0 = без ограничения)
 }
 
+// VAPIDConfig содержит VAPID-ключи для Web Push.
+type VAPIDConfig struct {
+	PublicKey  string // публичный ключ (для браузера)
+	PrivateKey string // приватный ключ (для подписи push)
+}
+
 // LoadConfig загружает конфигурацию из переменных окружения с жёсткой проверкой обязательных секретов.
 // Выполняет проверки и возвращает конфигурацию или ошибку.
 func LoadConfig() (*Config, error) {
@@ -270,6 +278,11 @@ func LoadConfig() (*Config, error) {
 	// WebSocket
 	cfg.WebSocket.MaxTotalConns = getEnvAsInt("WS_MAX_TOTAL_CONNS", defaultWSMaxTotalConns)
 	cfg.WebSocket.MaxConnsPerIP = getEnvAsInt("WS_MAX_CONNS_PER_IP", defaultWSMaxConnsPerIP)
+
+	// VAPID
+	if err := loadVAPIDConfig(&cfg.VAPID); err != nil {
+		return nil, err
+	}
 
 	return cfg, nil
 }
@@ -488,4 +501,21 @@ func getEnvAsFloat(key string, fallback float64) float64 {
 		}
 	}
 	return fallback
+}
+
+// loadVAPIDConfig загружает VAPID-ключи из env или генерирует новые.
+func loadVAPIDConfig(cfg *VAPIDConfig) error {
+	cfg.PublicKey = os.Getenv("VAPID_PUBLIC_KEY")
+	cfg.PrivateKey = os.Getenv("VAPID_PRIVATE_KEY")
+	if cfg.PublicKey != "" && cfg.PrivateKey != "" {
+		return nil
+	}
+	log.Warn().Msg("VAPID keys not found in env, generating new ones — push notifications will reset on restart")
+	privateKey, publicKey, err := webpush.GenerateVAPIDKeys()
+	if err != nil {
+		return fmt.Errorf("failed to generate VAPID keys: %w", err)
+	}
+	cfg.PrivateKey = privateKey
+	cfg.PublicKey = publicKey
+	return nil
 }
