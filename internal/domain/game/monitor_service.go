@@ -39,6 +39,8 @@ type cachedSnapshot struct {
 	timestamp time.Time
 }
 
+const maxMonitorCacheSize = 1000
+
 func NewMonitorService(db *gorm.DB) *MonitorService {
 	s := &MonitorService{
 		DB:       db,
@@ -93,9 +95,9 @@ func (s *MonitorService) GetOrFetchSnapshot(ctx context.Context, gameID uint) ([
 			return nil, err
 		}
 
-		// Сохраняем в кэш с лимитом: максимум 50 записей, вытеснение старых
+		// Сохраняем в кэш с лимитом: максимум maxMonitorCacheSize, вытеснение старых
 		s.mu.Lock()
-		if len(s.cache) > 50 {
+		if len(s.cache) > maxMonitorCacheSize {
 			front := s.cacheList.Front()
 			if front != nil {
 				if oldestID, ok := front.Value.(uint); ok {
@@ -198,8 +200,7 @@ func (s *MonitorService) GameSnapshot(ctx context.Context, gameID uint) ([]TeamP
 		) cl ON true
 		WHERE gp.game_id = ?
 		GROUP BY gp.id, gp.team_id, t.name, gp.status, gp.place, ac.total_attempts, cl.level_id
-		ORDER BY gp.place ASC
-		LIMIT 100`
+		ORDER BY gp.place ASC`
 	if err := s.DB.WithContext(ctx).Raw(query, gameID, gameID).Scan(&aggregated).Error; err != nil {
 		return nil, err
 	}

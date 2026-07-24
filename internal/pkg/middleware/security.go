@@ -4,8 +4,6 @@ package middleware
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"fmt"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -13,11 +11,11 @@ import (
 
 // generateNonce создаёт криптостойкий случайный nonce для CSP.
 // Использует crypto/rand — достаточно быстрый для per-request генерации.
+// При отказе crypto/rand паникуем, так как небезопасный nonce хуже его отсутствия.
 func generateNonce() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		log.Warn().Err(err).Msg("crypto/rand failed, using time-based fallback for nonce")
-		b = []byte(fmt.Sprintf("%x", time.Now().UnixNano()))
+		log.Panic().Err(err).Msg("crypto/rand failed, cannot generate secure nonce")
 	}
 	return base64.RawURLEncoding.EncodeToString(b)
 }
@@ -53,7 +51,12 @@ func setCSPHeaders(c *gin.Context, nonce string) {
 	c.Header("X-Frame-Options", "DENY")
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
-	c.Header("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
+
+	// HSTS только если запрос пришёл по HTTPS (проверяем X-Forwarded-Proto или scheme)
+	if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
+		c.Header("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
+	}
+
 	c.Header("Permissions-Policy", "geolocation=(), microphone=(), camera=(), payment=(), usb=(), fullscreen=(self), sync-xhr=(self), accelerometer=(), gyroscope=(), magnetometer=()")
 }
 

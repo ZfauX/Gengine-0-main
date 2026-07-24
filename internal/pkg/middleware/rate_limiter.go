@@ -126,6 +126,25 @@ func (s *inMemoryStore) getShard(key string) *inMemoryShard {
 	return s.shards[h%shardCount]
 }
 
+var rateLimitLua = redis.NewScript(`
+	local key = KEYS[1]
+	local limit = tonumber(ARGV[1])
+	local window = tonumber(ARGV[2])
+
+	local count = redis.call('INCR', key)
+	if count == 1 then
+		redis.call('EXPIRE', key, window)
+	end
+
+	if count <= limit then
+		return {1, count, limit - count}
+	else
+		local ttl = redis.call('TTL', key)
+		if ttl < 0 then ttl = 0 end
+		return {0, count, 0, ttl}
+	end
+`)
+
 type valkeyStore struct {
 	client *redis.Client
 	window time.Duration
@@ -139,24 +158,33 @@ func newValkeyStore(client *redis.Client, window time.Duration, limit int) *valk
 func (s *valkeyStore) Allow(key string) RateLimitResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
+
+	windowSec := int64(s.window.Seconds())
+	if windowSec < 1 {
+		windowSec = 1
+	}
 	resetUnix := time.Now().Add(s.window).Unix()
 
-	count, err := s.client.Incr(ctx, key).Result()
+	result, err := rateLimitLua.Run(ctx, s.client, []string{key}, s.limit, windowSec).Result()
 	if err != nil {
 		log.Error().Err(err).Str("key", key).Msg("valkey: Allow check failed, denying request")
 		return RateLimitResult{Allowed: false, Limit: s.limit, Remaining: 0, ResetUnix: resetUnix}
 	}
-	if count == 1 {
-		if err := s.client.Expire(ctx, key, s.window).Err(); err != nil {
-			log.Warn().Err(err).Str("key", key).Msg("rate_limiter: failed to set TTL")
-		}
+
+	vals, ok := result.([]any)
+	if !ok || len(vals) < 3 {
+		log.Error().Str("key", key).Interface("result", result).Msg("valkey: unexpected script result, denying request")
+		return RateLimitResult{Allowed: false, Limit: s.limit, Remaining: 0, ResetUnix: resetUnix}
 	}
-	remaining := int64(s.limit) - count
+
+	allowed, _ := vals[0].(int64)
+	remaining, _ := vals[2].(int64)
 	if remaining < 0 {
 		remaining = 0
 	}
+
 	return RateLimitResult{
-		Allowed:   count <= int64(s.limit),
+		Allowed:   allowed == 1,
 		Limit:     s.limit,
 		Remaining: int(remaining),
 		ResetUnix: resetUnix,

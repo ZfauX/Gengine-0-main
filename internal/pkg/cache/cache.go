@@ -119,29 +119,30 @@ func (c *Cache) removeExpired() {
 }
 
 func (c *Cache) Get(key string) (any, bool) {
-	c.mu.Lock()
+	c.mu.RLock()
 	item, ok := c.lru.Get(key)
 	if !ok {
-		c.mu.Unlock()
+		c.mu.RUnlock()
 		return nil, false
 	}
 	if item.expired() {
-		c.mu.Unlock()
+		// Элемент истёк — переподнимаем блокировку до полной для удаления
+		c.mu.RUnlock()
 		c.mu.Lock()
+		// Повторная проверка под полной блокировкой (другая горутина могла уже удалить)
 		item, ok = c.lru.Get(key)
-		if ok {
-			if item.expired() {
-				c.lru.Remove(key)
-				c.mu.Unlock()
-				return nil, false
-			}
+		if ok && item.expired() {
+			c.lru.Remove(key)
 			c.mu.Unlock()
-			return item.value, true
+			return nil, false
 		}
 		c.mu.Unlock()
-		return nil, false
+		if !ok {
+			return nil, false
+		}
+		return item.value, true
 	}
-	c.mu.Unlock()
+	c.mu.RUnlock()
 	return item.value, true
 }
 

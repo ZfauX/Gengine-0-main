@@ -2,6 +2,7 @@ package csrf
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	gocsrf "github.com/gorilla/csrf"
@@ -38,10 +39,14 @@ func Middleware(secret string, secure bool, trustedOrigins []string) gin.Handler
 	return func(c *gin.Context) {
 		var handled bool
 
-		// Парсим форму заранее, чтобы PostForm был заполнен на c.Request.
+		// Парсим форму только для запросов с form Content-Type.
 		// Без этого gin.ShouldBind не видит поля формы, т.к. gorilla/csrf
 		// через PlaintextHTTPRequest создаёт копию запроса и парсит форму на ней.
-		_ = c.Request.ParseForm()
+		ct := c.Request.Header.Get("Content-Type")
+		if strings.HasPrefix(ct, "application/x-www-form-urlencoded") ||
+			strings.HasPrefix(ct, "multipart/form-data") {
+			_ = c.Request.ParseMultipartForm(32 << 20) // 32MB max memory
+		}
 
 		r := c.Request
 		if !secure {
