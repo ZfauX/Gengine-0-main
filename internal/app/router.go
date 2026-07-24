@@ -60,9 +60,7 @@ func (app *App) setupEngine(r *gin.Engine) error {
 	render.SetTemplate(tmpl)
 
 	if app.Config.Server.GinMode == "debug" {
-		render.EnableDevMode(app.BaseDir, templatefuncs.FuncMap(), func(t *template.Template) {
-			r.SetHTMLTemplate(t)
-		})
+		render.EnableDevMode(app.BaseDir, templatefuncs.FuncMap())
 	}
 
 	r.Use(middleware.ContextTimeout(30 * time.Second))
@@ -117,6 +115,11 @@ func (app *App) setupEngine(r *gin.Engine) error {
 
 	r.GET("/offline", func(c *gin.Context) {
 		render.Page(c, http.StatusOK, "offline.html", gin.H{"Title": "Нет соединения"})
+	})
+
+	// Chrome DevTools запрашивает этот путь при открытой панели разработчика
+	r.GET("/.well-known/appspecific/com.chrome.devtools.json", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{})
 	})
 
 	if app.Config.Server.TrustedProxies != "" {

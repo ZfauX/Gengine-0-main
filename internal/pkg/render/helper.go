@@ -27,7 +27,6 @@ var (
 	globalTemplate     *template.Template
 	templateDevPattern string
 	templateFuncMap    template.FuncMap
-	updateEngine       func(*template.Template)
 )
 
 // SetTemplate сохраняет общий *template.Template для использования в хелпере.
@@ -39,11 +38,10 @@ func SetTemplate(t *template.Template) {
 
 // EnableDevMode включает горячую перезагрузку шаблонов для режима разработки.
 // При каждом вызове Page() шаблоны будут перечитываться с диска.
-func EnableDevMode(baseDir string, funcMap template.FuncMap, engineUpdater func(*template.Template)) {
+func EnableDevMode(baseDir string, funcMap template.FuncMap) {
 	mu.Lock()
 	templateDevPattern = filepath.Join(baseDir, "internal", "domain", "*", "templates", "*.html")
 	templateFuncMap = funcMap
-	updateEngine = engineUpdater
 	mu.Unlock()
 }
 
@@ -66,9 +64,6 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 		} else {
 			globalTemplate = t
 			tmpl = t
-			if updateEngine != nil {
-				updateEngine(t)
-			}
 		}
 		mu.Unlock()
 	} else {

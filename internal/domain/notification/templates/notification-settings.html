@@ -48,10 +48,19 @@
                                class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
                         <div>
                             <span class="font-medium text-gray-800">Push-уведомления</span>
-                            <p class="text-sm text-gray-500">Push-уведомления на устройства (требует настройки PWA)</p>
+                            <p class="text-sm text-gray-500">Push-уведомления на устройства</p>
                         </div>
                     </div>
                 </label>
+
+                {{if .VapidPublicKey}}
+                <div class="ml-8 mt-2">
+                    <button id="enable-push" data-vapid-key="{{.VapidPublicKey}}"
+                            class="btn btn-primary text-sm">
+                        Включить уведомления в браузере
+                    </button>
+                </div>
+                {{end}}
             </div>
         </div>
 

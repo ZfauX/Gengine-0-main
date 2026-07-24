@@ -103,7 +103,7 @@ func RegisterRoutes(
 	// ============================================================
 	// WEB PUSH РЈР’Р•Р”РћРњР›Р•РќРРЇ (API)
 	// ============================================================
-	pushHandler := NewPushHandler(db)
+	pushHandler := NewPushHandler(db, cfg.VAPID)
 	apiGroup := r.Group("/api/push")
 	apiGroup.Use(middleware.AuthRequired(authSvc))
 	{

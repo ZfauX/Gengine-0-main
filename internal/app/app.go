@@ -91,6 +91,10 @@ func (app *App) SetupRouter() (*gin.Engine, error) {
 			c.Next()
 			return
 		}
+		if strings.HasPrefix(c.Request.URL.Path, "/ws") {
+			c.Next()
+			return
+		}
 		c.Header("Cache-Control", "no-store, must-revalidate")
 		csrfMW(c)
 	})
@@ -116,6 +120,6 @@ func (app *App) registerAllRoutes(r *gin.Engine, htmlGroup *gin.RouterGroup) err
 		return fmt.Errorf("регистрация маршрутов экспорта: %w", err)
 	}
 	app.registerGameplayRoutes(htmlGroup)
-	notification.RegisterRoutes(htmlGroup, app.DB, app.Deps.Services.Auth, app.Deps.Hub, app.Deps.Services.SSEMgr)
+	notification.RegisterRoutes(htmlGroup, app.Config, app.DB, app.Deps.Services.Auth, app.Deps.Hub, app.Deps.Services.SSEMgr)
 	return nil
 }

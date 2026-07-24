@@ -160,7 +160,7 @@ func run() error {
 
 	if *migrateFlag {
 		log.Info().Msg("running migrations...")
-		if migrateErr := db.MigrateFromFiles(database, "migrations"); migrateErr != nil {
+		if migrateErr := db.RunMigrations(database); migrateErr != nil {
 			log.Error().Err(migrateErr).Msg("migration error")
 			return fmt.Errorf("migration error: %w", migrateErr)
 		}

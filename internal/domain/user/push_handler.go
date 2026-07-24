@@ -3,17 +3,20 @@ package user
 import (
 	"net/http"
 
+	"gengine-0/internal/config"
+
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
 
 type PushHandler struct {
-	db *gorm.DB
+	db       *gorm.DB
+	vapidCfg config.VAPIDConfig
 }
 
-func NewPushHandler(db *gorm.DB) *PushHandler {
-	return &PushHandler{db: db}
+func NewPushHandler(db *gorm.DB, vapidCfg config.VAPIDConfig) *PushHandler {
+	return &PushHandler{db: db, vapidCfg: vapidCfg}
 }
 
 func (h *PushHandler) Subscribe(c *gin.Context) {
@@ -80,6 +83,6 @@ func (h *PushHandler) Unsubscribe(c *gin.Context) {
 
 func (h *PushHandler) VapidPublicKey(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"public_key": "",
+		"public_key": h.vapidCfg.PublicKey,
 	})
 }

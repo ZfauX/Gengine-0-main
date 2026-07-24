@@ -296,6 +296,14 @@ func (h *ProfileHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
+	if err := validation.ValidatePasswordStrength(input.NewPassword); err != nil {
+		render.Page(c, http.StatusBadRequest, "profile-show.html", gin.H{
+			"Error": err.Error(),
+			"csrf":  csrf.GetToken(c),
+		})
+		return
+	}
+
 	if err := h.userSvc.ChangePassword(c.Request.Context(), userID, input.OldPassword, input.NewPassword); err != nil {
 		log.Error().Err(err).Uint("user", userID).Msg("ChangePassword: failed to update")
 		render.Page(c, http.StatusBadRequest, "profile-show.html", gin.H{

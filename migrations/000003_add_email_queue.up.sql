@@ -14,6 +14,6 @@ CREATE TABLE IF NOT EXISTS email_queues (
     sent_at TIMESTAMP WITH TIME ZONE
 );
 
-CREATE INDEX idx_email_queues_status_created ON email_queues(status, created_at);
-CREATE INDEX idx_email_queues_scheduled_at ON email_queues(scheduled_at);
-CREATE INDEX idx_email_queues_deleted_at ON email_queues(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_email_queues_status_created ON email_queues(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_email_queues_scheduled_at ON email_queues(scheduled_at);
+CREATE INDEX IF NOT EXISTS idx_email_queues_deleted_at ON email_queues(deleted_at);
