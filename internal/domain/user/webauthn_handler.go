@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/pkg/audit"
@@ -43,7 +44,12 @@ func NewWebAuthnHandler(
 		return nil, err
 	}
 	rpID := baseURL.Hostname()
-	rpOrigins := []string{cfg.Server.BaseURL}
+	rpOrigin := strings.TrimRight(cfg.Server.BaseURL, "/")
+	rpOrigins := []string{rpOrigin}
+	// Для localhost добавляем origin без порта (браузер может отправлять http://localhost)
+	if rpID == "localhost" || rpID == "127.0.0.1" {
+		rpOrigins = append(rpOrigins, "http://"+rpID)
+	}
 
 	wcfg := &gowebauthn.Config{
 		RPDisplayName: "Encounter Engine",
