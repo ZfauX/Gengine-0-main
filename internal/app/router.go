@@ -209,7 +209,7 @@ func (app *App) registerAdminRoutes(r *gin.RouterGroup) {
 	twoFactorRequired := user.TwoFactorRequired(twoFactorSvc, app.Deps.Repos.User)
 	adminGroup := r.Group("/admin")
 	adminGroup.Use(twoFactorRequired)
-	admin.RegisterRoutes(adminGroup, app.DB, app.Config, app.Deps.Services.Auth, app.Deps.Repos.User, app.Deps.Repos.Game, app.Hub)
+	admin.RegisterRoutes(adminGroup, app.DB, app.Config, app.Deps.Services.Auth, app.Deps.Repos.User, app.Deps.Repos.Game, app.Hub, app.Deps.AuditSvc)
 }
 
 func (app *App) registerUserRoutes(r *gin.RouterGroup) {

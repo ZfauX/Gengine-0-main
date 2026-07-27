@@ -25,8 +25,11 @@ func RegisterRoutes(
 	userRepo user.UserRepository,
 	gameRepo game.GameRepository,
 	hub *websocket.RoomHub,
-) *audit.Service {
-	auditService := audit.NewService(db)
+	auditService *audit.Service,
+) {
+	if auditService == nil {
+		auditService = audit.NewService(db)
+	}
 
 	backupRepo := NewGormBackupRepo(db)
 	backupService := NewBackupService(backupRepo, "backups", cfg.Server.MaxBackups, cfg.Database)
@@ -71,8 +74,6 @@ func RegisterRoutes(
 			c.JSON(http.StatusOK, stats)
 		})
 	}
-
-	return auditService
 }
 
 // adminOnlyMiddleware РїСЂРѕРІРµСЂСЏРµС‚, С‡С‚Рѕ РїРѕР»СЊР·РѕРІР°С‚РµР»СЊ СЏРІР»СЏРµС‚СЃСЏ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂРѕРј, РёСЃРїРѕР»СЊР·СѓСЏ СЂРѕР»СЊ РёР· РєРѕРЅС‚РµРєСЃС‚Р° (РёР· JWT).

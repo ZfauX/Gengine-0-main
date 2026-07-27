@@ -119,6 +119,28 @@
         </div>
     </div>
 
+    <!-- Двухфакторная аутентификация -->
+    <div class="card mb-6">
+        <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">Двухфакторная аутентификация</h3>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">
+            {{if .User.TwoFactorEnabled}}
+                Защита аккаунта включена. При входе потребуется код из приложения-аутентификатора.
+            {{else}}
+                Добавьте дополнительный уровень защиты вашего аккаунта.
+            {{end}}
+        </p>
+        {{if .User.TwoFactorEnabled}}
+        <div class="flex flex-wrap gap-2">
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                ✅ Включена
+            </span>
+            <a href="/user/2fa/disable" class="btn btn-outline text-sm">Отключить</a>
+        </div>
+        {{else}}
+        <a href="/user/2fa/enable" class="btn btn-primary text-sm">Включить 2FA</a>
+        {{end}}
+    </div>
+
     <!-- Действия -->
     <div class="flex flex-wrap gap-3">
         <a href="/dashboard" class="btn btn-outline text-sm">← Назад в личный кабинет</a>

@@ -394,9 +394,10 @@ func TestEmailVerificationService_VerifyToken(t *testing.T) {
 
 	// Создаём токен вручную (в реальности он создаётся при регистрации)
 	token := &EmailVerificationToken{
-		UserID:    user.ID,
-		TokenHash: hashToken("validtoken"),
-		ExpiresAt: time.Now().Add(time.Hour),
+		UserID:           user.ID,
+		TokenHash:        hashToken("validtoken"),
+		VerificationCode: "abcdef12",
+		ExpiresAt:        time.Now().Add(time.Hour),
 	}
 	require.NoError(t, emailVerifRepo.CreateToken(context.Background(), token))
 
@@ -411,9 +412,10 @@ func TestEmailVerificationService_VerifyToken(t *testing.T) {
 
 	t.Run("истекший токен", func(t *testing.T) {
 		expired := &EmailVerificationToken{
-			UserID:    user.ID,
-			TokenHash: hashToken("expiredverif"),
-			ExpiresAt: time.Now().Add(-time.Hour),
+			UserID:           user.ID,
+			TokenHash:        hashToken("expiredverif"),
+			VerificationCode: "deadbeef",
+			ExpiresAt:        time.Now().Add(-time.Hour),
 		}
 		require.NoError(t, emailVerifRepo.CreateToken(context.Background(), expired))
 		_, err := service.VerifyToken(context.Background(), "expiredverif")

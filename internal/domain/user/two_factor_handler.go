@@ -5,6 +5,8 @@ import (
 	"gengine-0/internal/pkg/render"
 	"net/http"
 
+	csrf "gengine-0/internal/pkg/csrf"
+
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -51,6 +53,7 @@ func (h *TwoFactorHandler) EnableForm(c *gin.Context) {
 		render.Page(c, http.StatusOK, "user-2fa-enabled.html", gin.H{
 			"Title": "2FA уже включена",
 			"User":  user.ToPublic(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -72,6 +75,7 @@ func (h *TwoFactorHandler) EnableForm(c *gin.Context) {
 		"User":   user.ToPublic(),
 		"Secret": secret,
 		"QRURL":  qrURL,
+		"csrf":   csrf.GetToken(c),
 	})
 }
 
@@ -115,6 +119,7 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 			"Title": "Включить 2FA",
 			"Error": "Сессия истекла. Начните настройку 2FA заново.",
 			"User":  user.ToPublic(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -126,6 +131,7 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 			"Title": "Включить 2FA",
 			"Error": "Неверный код. Попробуйте ещё раз.",
 			"User":  user.ToPublic(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -137,6 +143,7 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 			"Title": "Включить 2FA",
 			"Error": "Ошибка генерации резервных кодов: " + err.Error(),
 			"User":  user.ToPublic(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -147,6 +154,7 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 			"Title": "Включить 2FA",
 			"Error": "Ошибка хеширования резервных кодов: " + err.Error(),
 			"User":  user.ToPublic(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -166,6 +174,7 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 			"Title": "Включить 2FA",
 			"Error": "Ошибка сохранения: " + err.Error(),
 			"User":  user.ToPublic(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -182,6 +191,7 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 		"Title":       "2FA включена",
 		"User":        user.ToPublic(),
 		"BackupCodes": backupCodes,
+		"csrf":        csrf.GetToken(c),
 	})
 }
 
@@ -214,6 +224,7 @@ func (h *TwoFactorHandler) DisableForm(c *gin.Context) {
 	render.Page(c, http.StatusOK, "user-2fa-disable.html", gin.H{
 		"Title": "Отключить 2FA",
 		"User":  user.ToPublic(),
+		"csrf":  csrf.GetToken(c),
 	})
 }
 
@@ -236,9 +247,10 @@ func (h *TwoFactorHandler) Disable(c *gin.Context) {
 	}
 
 	var input struct {
-		Code string `form:"code" binding:"required"`
+		Password string `form:"password" binding:"required"`
 	}
 	if err := c.ShouldBind(&input); err != nil {
+		render.SetFlash(c, "error", "Введите текущий пароль")
 		c.Redirect(http.StatusFound, "/user/2fa/disable")
 		return
 	}
@@ -249,13 +261,14 @@ func (h *TwoFactorHandler) Disable(c *gin.Context) {
 		return
 	}
 
-	// Проверяем TOTP-код
-	valid, err := h.twoFactorSvc.VerifyCode(user.TwoFactorSecret, input.Code)
-	if err != nil || !valid {
+	// Проверяем пароль перед отключением 2FA
+	_, authErr := h.authService.Login(c.Request.Context(), user.Email, input.Password)
+	if authErr != nil {
 		render.Page(c, http.StatusOK, "user-2fa-disable.html", gin.H{
 			"Title": "Отключить 2FA",
-			"Error": "Неверный код.",
+			"Error": "Неверный пароль.",
 			"User":  user.ToPublic(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
@@ -273,9 +286,11 @@ func (h *TwoFactorHandler) Disable(c *gin.Context) {
 			"Title": "Отключить 2FA",
 			"Error": "Ошибка сохранения: " + err.Error(),
 			"User":  user.ToPublic(),
+			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/user/profile?2fa_disabled=1")
+	render.SetFlash(c, "success", "2FA отключена")
+	c.Redirect(http.StatusFound, "/profile")
 }

@@ -302,10 +302,7 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 	}()
 
 	if header.Size > answerFileMaxSize {
-		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
-			"Error": "Размер файла не должен превышать 10 МБ",
-			"csrf":  csrf.GetToken(c),
-		})
+		h.renderGameplayError(c, uint(passingID), "Размер файла не должен превышать 10 МБ")
 		return
 	}
 
@@ -315,10 +312,7 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 	webPath, saveErr := h.storage.Save("uploads/answers", file, header.Filename, userID, answerFileMaxSize, allowedTypes)
 	if saveErr != nil {
 		log.Error().Err(saveErr).Str("filename", filepath.Base(header.Filename)).Msg("SubmitFile: failed to save file")
-		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
-			"Error": "Ошибка сохранения файла",
-			"csrf":  csrf.GetToken(c),
-		})
+		h.renderGameplayError(c, uint(passingID), "Ошибка сохранения файла")
 		return
 	}
 
@@ -328,10 +322,7 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 		if delErr := h.storage.Delete(webPath); delErr != nil {
 			log.Error().Err(delErr).Str("path", webPath).Msg("SubmitFile: failed to delete uploaded file")
 		}
-		render.Page(c, http.StatusInternalServerError, "gameplay-show.html", gin.H{
-			"Error": "Не удалось сохранить попытку",
-			"csrf":  csrf.GetToken(c),
-		})
+		h.renderGameplayError(c, uint(passingID), "Не удалось сохранить попытку")
 		return
 	}
 	c.Redirect(http.StatusFound, "/game/"+c.Param("passing_id"))
