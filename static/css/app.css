@@ -56,7 +56,6 @@
    ============================================================
 @layer base {
   body {
-    background: var(--color-bg-primary);
     font-family: var(--font-sans);
     color: var(--color-text-primary);
     transition: background-color 0.2s ease, color 0.2s ease;
@@ -78,11 +77,6 @@
     --color-border-light: #334155;
     --color-nav-bg: #1e293b;
   }
-}
-
-/* Прямой оверрайд фона — вне @layer, гарантированно поверх всего Tailwind */
-.dark body {
-  background: #0f172a !important;
 }
 
 /* ============================================================
