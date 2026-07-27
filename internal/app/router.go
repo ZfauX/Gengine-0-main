@@ -61,20 +61,30 @@ func (app *App) setupEngine(r *gin.Engine) error {
 		trimmed := make([]string, 0, len(origins))
 		for _, o := range origins {
 			o = strings.TrimSpace(o)
-			if o != "" {
+			if o == "*" || strings.HasPrefix(o, "http://") || strings.HasPrefix(o, "https://") {
 				trimmed = append(trimmed, o)
+			} else if o != "" {
+				log.Warn().Str("origin", o).Msg("CORS: skipping invalid origin (must start with http:// or https://)")
 			}
 		}
 		if len(trimmed) > 0 {
+			allowAll := false
+			for _, o := range trimmed {
+				if o == "*" {
+					allowAll = true
+					break
+				}
+			}
 			r.Use(corsLib.New(corsLib.Config{
 				AllowOrigins:     trimmed,
+				AllowAllOrigins:  allowAll,
 				AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 				AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-CSRF-Token"},
 				ExposeHeaders:    []string{"Content-Length", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"},
-				AllowCredentials: true,
+				AllowCredentials: !allowAll,
 				MaxAge:           12 * time.Hour,
 			}))
-			log.Info().Strs("origins", trimmed).Msg("CORS middleware enabled")
+			log.Info().Strs("origins", trimmed).Bool("allow_all", allowAll).Msg("CORS middleware enabled")
 		}
 	}
 
