@@ -40,6 +40,10 @@ func NewWebAuthnHandler(
 	auditSvc *audit.Service,
 ) (*WebAuthnHandler, error) {
 	rpID := cfg.Server.WebAuthnRPID
+	if strings.Contains(rpID, ",") {
+		log.Warn().Str("rpID", rpID).Msg("WebAuthn RPID contains comma, using first value")
+		rpID = strings.TrimSpace(strings.SplitN(rpID, ",", 2)[0])
+	}
 	rpOriginsList := cfg.Server.WebAuthnOrigins
 
 	// Если RPID не задан в конфиге — берём из BaseURL
