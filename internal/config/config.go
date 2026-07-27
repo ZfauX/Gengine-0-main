@@ -200,8 +200,8 @@ func LoadConfig() (*Config, error) {
 	cfg.Server.UploadsDir = getEnvOrDefault("UPLOADS_DIR", "uploads")
 	cfg.Server.MaxUploadSize = getEnvAsInt("MAX_UPLOAD_SIZE", 5<<20)
 	cfg.Server.MaxBodySize = getEnvAsInt("MAX_BODY_SIZE", 10<<20)
-	cfg.Server.CORSOrigins = os.Getenv("CORS_ORIGINS")
-	cfg.Server.TrustedProxies = os.Getenv("TRUSTED_PROXIES")
+	cfg.Server.CORSOrigins = getEnvOrDefault("CORS_ORIGINS", "")
+	cfg.Server.TrustedProxies = getEnvOrDefault("TRUSTED_PROXIES", "")
 	cfg.Server.StrictMode = os.Getenv("STRICT_CONFIG") == "true"
 
 	// Rate limits
@@ -321,10 +321,18 @@ func LoadConfig() (*Config, error) {
 // Вспомогательные функции (не экспортируются)
 // =============================================================================
 
+// stripComments удаляет inline-комментарии (# ...) и обрезает пробелы.
+func stripComments(s string) string {
+	if idx := strings.Index(s, "#"); idx >= 0 {
+		s = s[:idx]
+	}
+	return strings.TrimSpace(s)
+}
+
 // getEnvOrDefault возвращает значение переменной окружения или fallback, если переменная не установлена.
 func getEnvOrDefault(key, fallback string) string {
 	if value, ok := os.LookupEnv(key); ok {
-		return value
+		return stripComments(value)
 	}
 	return fallback
 }
