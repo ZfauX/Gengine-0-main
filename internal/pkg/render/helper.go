@@ -141,7 +141,7 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 	var buf bytes.Buffer
 	if err := tmpl.ExecuteTemplate(&buf, contentTemplate, data); err != nil {
 		log.Error().Err(err).Msg("Render: template execution error")
-		c.String(http.StatusInternalServerError, "Внутренняя ошибка сервера")
+		c.String(http.StatusInternalServerError, i18n.T("generic.server_error"))
 		return
 	}
 
@@ -205,7 +205,7 @@ func ParseID(c *gin.Context, paramName string) (uint, bool) {
 	idStr := c.Param(paramName)
 	id, err := strconv.Atoi(idStr)
 	if err != nil || id <= 0 {
-		Page(c, http.StatusBadRequest, "errors-400.html", gin.H{"Error": "Неверный ID"})
+		Page(c, http.StatusBadRequest, "errors-400.html", gin.H{"Error": i18n.T("generic.invalid_id")})
 		return 0, false
 	}
 	return uint(id), true
@@ -216,7 +216,7 @@ func ParseIDQuery(c *gin.Context, paramName string) (uint, bool) {
 	idStr := c.Query(paramName)
 	id, err := strconv.Atoi(idStr)
 	if err != nil || id <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID", "code": "bad_request"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": i18n.T("generic.invalid_id"), "code": "bad_request"})
 		return 0, false
 	}
 	return uint(id), true

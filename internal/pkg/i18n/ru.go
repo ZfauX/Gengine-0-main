@@ -98,6 +98,8 @@ var ruMessages = map[string]string{
 	"twofa.qr_generation_failed":     "Ошибка генерации QR-кода: %w",
 	"twofa.backup_code_failed":       "Ошибка генерации резервного кода: %w",
 	"twofa.backup_hash_failed":       "Ошибка хеширования резервного кода: %w",
+	"twofa.enter_password":           "Введите текущий пароль",
+	"twofa.success_disabled":         "2FA отключена",
 
 	// ── Push ──
 	"push.invalid_subscription": "Неверный формат подписки",
@@ -305,10 +307,14 @@ var ruMessages = map[string]string{
 	"notification.internal_error":       "Внутренняя ошибка",
 
 	// ── Admin / Backup ──
-	"admin.backup_dir_failed":     "Не удалось создать директорию бекапов: %w",
-	"admin.pg_dump_not_found":     "pg_dump не найден в PATH: %w — убедитесь, что PostgreSQL установлен и pg_dump доступен",
-	"admin.pg_dump_failed":        "pg_dump не удался: %w, вывод: %s",
-	"admin.backup_file_not_found": "Файл бекапа не найден",
+	"admin.backup_dir_failed":      "Не удалось создать директорию бекапов: %w",
+	"admin.pg_dump_not_found":      "pg_dump не найден в PATH: %w — убедитесь, что PostgreSQL установлен и pg_dump доступен",
+	"admin.pg_dump_failed":         "pg_dump не удался: %w, вывод: %s",
+	"admin.backup_file_not_found":  "Файл бекапа не найден",
+	"admin.user_get_error":         "Ошибка получения пользователя",
+	"admin.user_role_update_error": "Ошибка обновления роли пользователя",
+	"admin.user_delete_error":      "Ошибка удаления пользователя",
+	"admin.game_delete_error":      "Ошибка удаления игры",
 
 	// ── Export ──
 	"export.empty_id":               "Пустой параметр id",

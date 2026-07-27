@@ -143,13 +143,13 @@ func (s *LocalStorage) Save(baseDir string, reader io.Reader, originalName strin
 	if createErr != nil {
 		return "", fmt.Errorf("не удалось создать файл")
 	}
-	// Закрываем файл после записи, но если запись не удалась, удаляем его
-	fileErr := createErr
+
+	var writeErr error
 	defer func() {
-		if closeErr := dst.Close(); closeErr != nil && fileErr == nil {
+		if closeErr := dst.Close(); closeErr != nil && writeErr == nil && createErr == nil {
 			log.Error().Err(closeErr).Str("path", fullPath).Msg("Save: file close failed")
 		}
-		if fileErr != nil {
+		if writeErr != nil || createErr != nil {
 			if removeErr := os.Remove(fullPath); removeErr != nil {
 				log.Warn().Err(removeErr).Str("path", fullPath).Msg("Save: cleanup file failed")
 			}
@@ -159,6 +159,7 @@ func (s *LocalStorage) Save(baseDir string, reader io.Reader, originalName strin
 	var written int64
 	written, err = io.Copy(dst, dataReader)
 	if err != nil && err != io.EOF {
+		writeErr = err
 		return "", fmt.Errorf("не удалось записать файл")
 	}
 

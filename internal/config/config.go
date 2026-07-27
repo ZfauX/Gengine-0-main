@@ -61,6 +61,17 @@ type ServerConfig struct {
 	TrustedProxies string // доверенные прокси через запятую (например: 127.0.0.1,192.168.0.0/24)
 	CORSOrigins    string // разрешённые CORS-источники через запятую (например: https://example.com,http://localhost:3000)
 	StrictMode     bool   // строгий режим: неверные переменные окружения вызывают ошибку вместо fallback
+
+	// Rate limiting — настраиваются через env с дефолтами из constants.go
+	RateLimitWindow         time.Duration // окно rate limiter (по умолчанию 1m)
+	RateLimitGlobalRequests int           // глобальный лимит запросов в минуту (по умолчанию 100)
+	RateLimitLoginRequests  int           // лимит попыток входа в минуту (по умолчанию 5)
+	RateLimitRegistration   int           // лимит регистраций в минуту (по умолчанию 3)
+	RateLimitCodeSubmission int           // лимит отправки кода в минуту (по умолчанию 10)
+	RateLimitSSE            int           // лимит SSE-соединений в минуту (по умолчанию 10)
+	RateLimitAPI            int           // лимит API-запросов в минуту (по умолчанию 60)
+
+	LogLevel string // уровень логирования: debug, info, warn, error (по умолчанию info)
 }
 
 // DatabaseConfig содержит параметры подключения к PostgreSQL.
@@ -190,7 +201,20 @@ func LoadConfig() (*Config, error) {
 	cfg.Server.MaxUploadSize = getEnvAsInt("MAX_UPLOAD_SIZE", 5<<20)
 	cfg.Server.MaxBodySize = getEnvAsInt("MAX_BODY_SIZE", 10<<20)
 	cfg.Server.CORSOrigins = os.Getenv("CORS_ORIGINS")
+	cfg.Server.TrustedProxies = os.Getenv("TRUSTED_PROXIES")
 	cfg.Server.StrictMode = os.Getenv("STRICT_CONFIG") == "true"
+
+	// Rate limits
+	cfg.Server.RateLimitWindow = getEnvAsDuration("RATE_LIMIT_WINDOW", RateLimitWindow)
+	cfg.Server.RateLimitGlobalRequests = getEnvAsInt("RATE_LIMIT_GLOBAL", GlobalRateLimit)
+	cfg.Server.RateLimitLoginRequests = getEnvAsInt("RATE_LIMIT_LOGIN", LoginRateLimit)
+	cfg.Server.RateLimitRegistration = getEnvAsInt("RATE_LIMIT_REGISTRATION", RegistrationRateLimit)
+	cfg.Server.RateLimitCodeSubmission = getEnvAsInt("RATE_LIMIT_CODE_SUBMISSION", CodeSubmissionRateLimit)
+	cfg.Server.RateLimitSSE = getEnvAsInt("RATE_LIMIT_SSE", SSERateLimit)
+	cfg.Server.RateLimitAPI = getEnvAsInt("RATE_LIMIT_API", APIRateLimit)
+
+	// Log level
+	cfg.Server.LogLevel = getEnvOrDefault("LOG_LEVEL", "info")
 
 	// База данных (обязательные параметры)
 	var err error
@@ -476,6 +500,16 @@ func parseBoolStrict(envName string, strictMode bool) (bool, error) {
 		return false, nil
 	}
 	return parsed, nil
+}
+
+// getEnvAsDuration возвращает значение переменной окружения как time.Duration или fallback при ошибке.
+func getEnvAsDuration(key string, fallback time.Duration) time.Duration {
+	if value, ok := os.LookupEnv(key); ok {
+		if d, err := time.ParseDuration(value); err == nil {
+			return d
+		}
+	}
+	return fallback
 }
 
 // getEnvAsInt возвращает значение переменной окружения как целое число или fallback при ошибке.

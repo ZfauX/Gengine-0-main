@@ -42,7 +42,7 @@ type TournamentTeamRepository interface {
 }
 
 type TournamentResultRepository interface {
-	Upsert(ctx context.Context, result *TournamentResult) error
+	Upsert(tx *gorm.DB, result *TournamentResult) error
 	GetLeaderboard(ctx context.Context, tournamentID uint) ([]TournamentResult, error)
 	GetByTournamentAndTeam(ctx context.Context, tournamentID, teamID uint) (*TournamentResult, error)
 	GetByTournamentAndTeamIDs(ctx context.Context, tournamentID uint, teamIDs []uint) ([]TournamentResult, error)
@@ -195,8 +195,8 @@ func NewGormTournamentResultRepo(db *gorm.DB) TournamentResultRepository {
 	return &gormTournamentResultRepo{db}
 }
 
-func (r *gormTournamentResultRepo) Upsert(ctx context.Context, result *TournamentResult) error {
-	return r.db.WithContext(ctx).Save(result).Error
+func (r *gormTournamentResultRepo) Upsert(tx *gorm.DB, result *TournamentResult) error {
+	return tx.Save(result).Error
 }
 func (r *gormTournamentResultRepo) GetLeaderboard(ctx context.Context, tournamentID uint) ([]TournamentResult, error) {
 	var results []TournamentResult

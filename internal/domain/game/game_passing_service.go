@@ -110,6 +110,8 @@ func (s *GamePassingService) ListByGamePaginated(ctx context.Context, gameID uin
 	}
 	if perPage < 1 {
 		perPage = 20
+	} else if perPage > 100 {
+		perPage = 100
 	}
 
 	var total int64

@@ -8,6 +8,7 @@ import (
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/audit"
+	"gengine-0/internal/pkg/i18n"
 	"gengine-0/internal/pkg/render"
 
 	csrf "gengine-0/internal/pkg/csrf"
@@ -210,7 +211,7 @@ func (h *AdminHandler) ToggleAdmin(c *gin.Context) {
 	var req IDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
 		log.Warn().Err(err).Msg("ToggleAdmin: invalid user ID")
-		render.SetFlash(c, "error", "Неверный ID пользователя")
+		render.SetFlash(c, "error", i18n.T("generic.invalid_user_id"))
 		c.Redirect(http.StatusFound, "/admin/users")
 		return
 	}
@@ -220,10 +221,10 @@ func (h *AdminHandler) ToggleAdmin(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			log.Warn().Uint("user_id", req.ID).Msg("ToggleAdmin: user not found")
-			render.SetFlash(c, "error", "Пользователь не найден")
+			render.SetFlash(c, "error", i18n.T("auth.user_not_found"))
 		} else {
 			log.Error().Err(err).Uint("user_id", req.ID).Msg("ToggleAdmin: failed to get user")
-			render.SetFlash(c, "error", "Ошибка получения пользователя")
+			render.SetFlash(c, "error", i18n.T("admin.user_get_error"))
 		}
 		c.Redirect(http.StatusFound, "/admin/users")
 		return
@@ -236,7 +237,7 @@ func (h *AdminHandler) ToggleAdmin(c *gin.Context) {
 	}
 	if err := h.userRepo.Update(ctx, u.ID, map[string]any{"role": u.Role}); err != nil {
 		log.Error().Err(err).Uint("user", u.ID).Msg("ToggleAdmin: failed to update role")
-		render.SetFlash(c, "error", "Ошибка обновления роли пользователя")
+		render.SetFlash(c, "error", i18n.T("admin.user_role_update_error"))
 		c.Redirect(http.StatusFound, "/admin/users")
 		return
 	}
@@ -262,7 +263,7 @@ func (h *AdminHandler) DeleteUser(c *gin.Context) {
 	var req IDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
 		log.Warn().Err(err).Msg("DeleteUser: invalid user ID")
-		render.SetFlash(c, "error", "Неверный ID пользователя")
+		render.SetFlash(c, "error", i18n.T("generic.invalid_user_id"))
 		c.Redirect(http.StatusFound, "/admin/users")
 		return
 	}
@@ -270,10 +271,10 @@ func (h *AdminHandler) DeleteUser(c *gin.Context) {
 	if err := h.userRepo.Delete(c.Request.Context(), req.ID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			log.Warn().Uint("user_id", req.ID).Msg("DeleteUser: user not found")
-			render.SetFlash(c, "error", "Пользователь не найден")
+			render.SetFlash(c, "error", i18n.T("auth.user_not_found"))
 		} else {
 			log.Error().Err(err).Uint("user_id", req.ID).Msg("DeleteUser: failed to delete user")
-			render.SetFlash(c, "error", "Ошибка удаления пользователя")
+			render.SetFlash(c, "error", i18n.T("admin.user_delete_error"))
 		}
 		c.Redirect(http.StatusFound, "/admin/users")
 		return
@@ -384,7 +385,7 @@ func (h *AdminHandler) DeleteGame(c *gin.Context) {
 	var req IDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
 		log.Warn().Err(err).Msg("DeleteGame: invalid game ID")
-		render.SetFlash(c, "error", "Неверный ID игры")
+		render.SetFlash(c, "error", i18n.T("generic.invalid_game_id"))
 		c.Redirect(http.StatusFound, "/admin/games")
 		return
 	}
@@ -392,10 +393,10 @@ func (h *AdminHandler) DeleteGame(c *gin.Context) {
 	if err := h.gameRepo.Delete(c.Request.Context(), req.ID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			log.Warn().Uint("game_id", req.ID).Msg("DeleteGame: game not found")
-			render.SetFlash(c, "error", "Игра не найдена")
+			render.SetFlash(c, "error", i18n.T("game.not_found"))
 		} else {
 			log.Error().Err(err).Uint("game_id", req.ID).Msg("DeleteGame: failed to delete game")
-			render.SetFlash(c, "error", "Ошибка удаления игры")
+			render.SetFlash(c, "error", i18n.T("admin.game_delete_error"))
 		}
 		c.Redirect(http.StatusFound, "/admin/games")
 		return

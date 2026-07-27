@@ -2,6 +2,7 @@
 package user
 
 import (
+	"gengine-0/internal/pkg/i18n"
 	"gengine-0/internal/pkg/render"
 	"net/http"
 
@@ -250,7 +251,7 @@ func (h *TwoFactorHandler) Disable(c *gin.Context) {
 		Password string `form:"password" binding:"required"`
 	}
 	if err := c.ShouldBind(&input); err != nil {
-		render.SetFlash(c, "error", "Введите текущий пароль")
+		render.SetFlash(c, "error", i18n.T("twofa.enter_password"))
 		c.Redirect(http.StatusFound, "/user/2fa/disable")
 		return
 	}
@@ -291,6 +292,6 @@ func (h *TwoFactorHandler) Disable(c *gin.Context) {
 		return
 	}
 
-	render.SetFlash(c, "success", "2FA отключена")
+	render.SetFlash(c, "success", i18n.T("twofa.success_disabled"))
 	c.Redirect(http.StatusFound, "/profile")
 }

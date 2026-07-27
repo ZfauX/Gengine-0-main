@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 	"syscall"
 	"time"
 
@@ -159,6 +160,21 @@ func run() error {
 		Bool("compress", cfg.Server.LogCompress).
 		Msg("Ротация логов включена")
 
+	// H1: Устанавливаем уровень логирования из конфига
+	switch strings.ToLower(cfg.Server.LogLevel) {
+	case "debug":
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	case "info":
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	case "warn":
+		zerolog.SetGlobalLevel(zerolog.WarnLevel)
+	case "error":
+		zerolog.SetGlobalLevel(zerolog.ErrorLevel)
+	default:
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	}
+	log.Debug().Str("level", cfg.Server.LogLevel).Msg("Уровень логирования установлен")
+
 	gin.SetMode(cfg.Server.GinMode)
 
 	// --- Подключение к БД ---
@@ -191,23 +207,26 @@ func run() error {
 
 	// --- Инициализация rate limiters (singleton, создаются один раз) ---
 	// Если Valkey доступен, используем его как shared backend для rate limiters между инстансами
+	rateLimitWindow := cfg.Server.RateLimitWindow
 	if cfg.Valkey.Host != "" {
 		valkeyClient := cache.NewValkeyClient(cfg.Valkey.Host, cfg.Valkey.Port, cfg.Valkey.Password, cfg.Valkey.PoolSize, cfg.Valkey.MinIdleConns, cfg.Valkey.MaxRetries)
 		if valkeyClient != nil {
-			middleware.InitGlobalRateLimiterWithValkey(valkeyClient, config.RateLimitWindow, config.GlobalRateLimit)
-			middleware.InitLoginRateLimiterWithValkey(valkeyClient, config.RateLimitWindow, config.LoginRateLimit)
-			middleware.InitRegistrationRateLimiterWithValkey(valkeyClient, config.RateLimitWindow, config.RegistrationRateLimit)
-			middleware.InitCodeSubmissionRateLimiterWithValkey(valkeyClient, config.RateLimitWindow, config.CodeSubmissionRateLimit)
-			middleware.InitSSERateLimiterWithValkey(valkeyClient, config.RateLimitWindow, config.SSERateLimit)
-			middleware.InitAPIRateLimiterWithValkey(valkeyClient, config.RateLimitWindow, config.APIRateLimit)
+			middleware.InitGlobalRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitGlobalRequests)
+			middleware.InitLoginRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitLoginRequests)
+			middleware.InitRegistrationRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitRegistration)
+			middleware.InitCodeSubmissionRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitCodeSubmission)
+			middleware.InitSSERateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitSSE)
+			middleware.InitAPIRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitAPI)
+			middleware.InitPasswordResetRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitLoginRequests)
 		}
 	} else {
-		middleware.InitGlobalRateLimiter(config.RateLimitWindow, config.GlobalRateLimit)
-		middleware.InitLoginRateLimiter(config.RateLimitWindow, config.LoginRateLimit)
-		middleware.InitRegistrationRateLimiter(config.RateLimitWindow, config.RegistrationRateLimit)
-		middleware.InitCodeSubmissionRateLimiter(config.RateLimitWindow, config.CodeSubmissionRateLimit)
-		middleware.InitSSERateLimiter(config.RateLimitWindow, config.SSERateLimit)
-		middleware.InitAPIRateLimiter(config.RateLimitWindow, config.APIRateLimit)
+		middleware.InitGlobalRateLimiter(rateLimitWindow, cfg.Server.RateLimitGlobalRequests)
+		middleware.InitLoginRateLimiter(rateLimitWindow, cfg.Server.RateLimitLoginRequests)
+		middleware.InitRegistrationRateLimiter(rateLimitWindow, cfg.Server.RateLimitRegistration)
+		middleware.InitCodeSubmissionRateLimiter(rateLimitWindow, cfg.Server.RateLimitCodeSubmission)
+		middleware.InitSSERateLimiter(rateLimitWindow, cfg.Server.RateLimitSSE)
+		middleware.InitAPIRateLimiter(rateLimitWindow, cfg.Server.RateLimitAPI)
+		middleware.InitPasswordResetRateLimiter(rateLimitWindow, cfg.Server.RateLimitLoginRequests)
 	}
 
 	// --- Инициализация persistent-очереди email (только если SMTP включён) ---
@@ -367,6 +386,7 @@ func run() error {
 	middleware.StopLoginRateLimiter()
 	middleware.StopRegistrationRateLimiter()
 	middleware.StopCodeSubmissionRateLimiter()
+	middleware.StopPasswordResetRateLimiter()
 	middleware.StopSSERateLimiter()
 	middleware.StopAPIRateLimiter()
 

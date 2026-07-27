@@ -94,6 +94,8 @@ var enMessages = map[string]string{
 	"twofa.qr_generation_failed":     "Failed to generate QR code: %w",
 	"twofa.backup_code_failed":       "Failed to generate backup code: %w",
 	"twofa.backup_hash_failed":       "Failed to hash backup code: %w",
+	"twofa.enter_password":           "Enter current password",
+	"twofa.success_disabled":         "2FA disabled",
 
 	// ── Push ──
 	"push.invalid_subscription": "Invalid subscription format",
@@ -301,10 +303,14 @@ var enMessages = map[string]string{
 	"notification.internal_error":       "Internal error",
 
 	// ── Admin / Backup ──
-	"admin.backup_dir_failed":     "Failed to create backup directory: %w",
-	"admin.pg_dump_not_found":     "pg_dump not found in PATH: %w — make sure PostgreSQL is installed and pg_dump is available",
-	"admin.pg_dump_failed":        "pg_dump failed: %w, output: %s",
-	"admin.backup_file_not_found": "Backup file not found",
+	"admin.backup_dir_failed":      "Failed to create backup directory: %w",
+	"admin.pg_dump_not_found":      "pg_dump not found in PATH: %w — make sure PostgreSQL is installed and pg_dump is available",
+	"admin.pg_dump_failed":         "pg_dump failed: %w, output: %s",
+	"admin.backup_file_not_found":  "Backup file not found",
+	"admin.user_get_error":         "Failed to get user",
+	"admin.user_role_update_error": "Failed to update user role",
+	"admin.user_delete_error":      "Failed to delete user",
+	"admin.game_delete_error":      "Failed to delete game",
 
 	// ── Export ──
 	"export.empty_id":               "Empty id parameter",

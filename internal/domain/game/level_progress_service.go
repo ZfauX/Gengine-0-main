@@ -184,7 +184,13 @@ func AdvanceToNextLevel(db *gorm.DB, gamePassingID, completedLevelID uint, onGam
 		}
 	}
 
-	// Если нет следующего уровня, завершаем игру (кроме тестирования)
+	// Если завершённый уровень не найден среди неудалённых (возможно, удалён), не завершаем игру
+	if !foundCurrent {
+		log.Warn().Uint("game_passing_id", gamePassingID).Uint("level_id", completedLevelID).Msg("AdvanceToNextLevel: completed level not found (possibly deleted)")
+		return nil, errors.New("завершённый уровень не найден")
+	}
+
+	// Если нет следующего уровня после найденного, завершаем игру (кроме тестирования)
 	if passing.Status != StatusTesting {
 		passing.Status = StatusFinished
 		if err = db.Save(&passing).Error; err != nil {

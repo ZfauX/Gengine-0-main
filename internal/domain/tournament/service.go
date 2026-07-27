@@ -105,7 +105,58 @@ func (s *TournamentService) RemoveGame(ctx context.Context, tournamentID, gameID
 	if t.AuthorID != userID {
 		return stderrors.New("только автор турнира может удалять игры")
 	}
-	return s.tournamentGameRepo.RemoveGame(ctx, tournamentID, gameID)
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Get all finished passings for this game — read inside the transaction
+		var passings []game.GamePassing
+		if err := tx.Where("game_id = ? AND status = ?", gameID, game.StatusFinished).Find(&passings).Error; err != nil {
+			return err
+		}
+
+		// Deduct points from tournament results for each team that finished this game
+		for _, p := range passings {
+			var result TournamentResult
+			err := tx.Where("tournament_id = ? AND team_id = ?", tournamentID, p.TeamID).First(&result).Error
+			if err != nil {
+				if stderrors.Is(err, gorm.ErrRecordNotFound) {
+					continue
+				}
+				return err
+			}
+
+			points := t.PointsForParticipation
+			if p.Place != nil {
+				switch *p.Place {
+				case 1:
+					points = t.PointsForFirst
+				case 2:
+					points = t.PointsForSecond
+				case 3:
+					points = t.PointsForThird
+				}
+			}
+
+			result.Score -= points
+			result.GamesPlayed--
+
+			if result.GamesPlayed <= 0 {
+				result.Score = 0
+				if err := tx.Delete(&result).Error; err != nil {
+					return err
+				}
+			} else {
+				if result.Score < 0 {
+					result.Score = 0
+				}
+				if err := s.tournamentResultRepo.Upsert(tx, &result); err != nil {
+					return err
+				}
+			}
+		}
+
+		// Remove the game from the tournament
+		return tx.Where("tournament_id = ? AND game_id = ?", tournamentID, gameID).Delete(&TournamentGame{}).Error
+	})
 }
 
 func (s *TournamentService) ListGames(ctx context.Context, tournamentID uint) ([]game.Game, error) {
@@ -249,17 +300,17 @@ func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint
 		inTournament[tt.TeamID] = true
 	}
 
-	existingResults, err := s.tournamentResultRepo.GetByTournamentAndTeamIDs(ctx, tournament.ID, teamIDs)
-	if err != nil {
-		log.Error().Err(err).Uint("tournament_id", tournament.ID).Msg("UpdateScoresForGame: failed to get existing results")
-		return
-	}
-	resultMap := make(map[uint]*TournamentResult)
-	for i := range existingResults {
-		resultMap[existingResults[i].TeamID] = &existingResults[i]
-	}
-
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Read existing results inside the transaction to prevent concurrent read races
+		var existingResults []TournamentResult
+		if findErr := tx.Where("tournament_id = ? AND team_id IN ?", tournament.ID, teamIDs).Find(&existingResults).Error; findErr != nil {
+			return findErr
+		}
+		resultMap := make(map[uint]*TournamentResult)
+		for i := range existingResults {
+			resultMap[existingResults[i].TeamID] = &existingResults[i]
+		}
+
 		for _, p := range passings {
 			if !inTournament[p.TeamID] {
 				continue
@@ -289,7 +340,7 @@ func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint
 				result.Score += points
 				result.GamesPlayed++
 			}
-			if upsErr := s.tournamentResultRepo.Upsert(ctx, result); upsErr != nil {
+			if upsErr := s.tournamentResultRepo.Upsert(tx, result); upsErr != nil {
 				return upsErr
 			}
 		}

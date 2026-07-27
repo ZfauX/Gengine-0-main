@@ -135,6 +135,9 @@ func HandleWebSocketWithContext(ctx context.Context, client *Client) {
 		return nil
 	})
 
+	// Ограничение размера входящих сообщений (32KB)
+	client.Conn.SetReadLimit(32 * 1024)
+
 	// Цикл чтения с поддержкой отмены контекста
 	for {
 		select {
