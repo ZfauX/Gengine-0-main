@@ -80,7 +80,6 @@ func (s *EmailService) Send(to, subject, body string) error {
 //  1. processPendingEmails — обработка pending-писем из БД
 //  2. retryQueue — обработка retry-задач (async, без блокировки)
 func (s *EmailService) StartWorker(ctx context.Context, interval time.Duration, batchSize int) {
-	s.wg.Add(1)
 	defer s.wg.Done()
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -101,7 +100,9 @@ func (s *EmailService) StartWorker(ctx context.Context, interval time.Duration, 
 				case <-timer.C:
 					s.processRetryJob(ctx, retry)
 				case <-ctx.Done():
-					timer.Stop()
+					if !timer.Stop() {
+						<-timer.C
+					}
 					return
 				}
 			} else {
@@ -199,23 +200,13 @@ func (s *EmailService) processPendingEmails(ctx context.Context, batchSize int) 
 		go func(e *QueuedEmail) {
 			defer wg.Done()
 
-			// Проверяем контекст до захвата семафора
 			select {
+			case sem <- struct{}{}:
 			case <-ctx.Done():
 				log.Warn().Uint("email_id", e.ID).Msg("processPendingEmails goroutine: context cancelled before semaphore")
 				return
-			default:
 			}
-
-			sem <- struct{}{}        // acquire semaphore
 			defer func() { <-sem }() // release semaphore
-
-			select {
-			case <-ctx.Done():
-				log.Warn().Uint("email_id", e.ID).Msg("processPendingEmails goroutine: context cancelled")
-				return
-			default:
-			}
 
 			s.sendEmailWithRetry(ctx, e)
 		}(&emails[i])

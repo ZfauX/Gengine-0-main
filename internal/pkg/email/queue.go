@@ -40,6 +40,11 @@ func InitQueue(cfg *config.Config, db *gorm.DB, workers int, interval time.Durat
 
 		globalService = NewEmailService(cfg, db)
 
+		// AutoMigrate для таблицы queued_emails (fallback, если миграции не были применены)
+		if err := db.AutoMigrate(&QueuedEmail{}); err != nil {
+			log.Warn().Err(err).Msg("Failed to auto-migrate queued_emails table")
+		}
+
 		// Сбрасываем retry-письма обратно в pending при старте,
 		// чтобы они не потерялись после перезапуска сервера
 		// TODO: use a status constant instead of raw strings
@@ -48,6 +53,7 @@ func InitQueue(cfg *config.Config, db *gorm.DB, workers int, interval time.Durat
 		}
 
 		workerCtx, workerCancel = context.WithCancel(context.Background())
+		globalService.wg.Add(workers)
 		for i := 0; i < workers; i++ {
 			go func() {
 				globalService.StartWorker(workerCtx, interval, batchSize)

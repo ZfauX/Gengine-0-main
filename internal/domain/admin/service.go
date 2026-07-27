@@ -75,10 +75,8 @@ func (s *BackupService) CreateNow(ctx context.Context) error {
 	// Пароль и параметры подключения передаются через переменные окружения
 	cmd.Env = []string{
 		"PGPASSWORD=" + s.dbPassword,
-		"PGHOST=" + s.dbHost,
-		"PGPORT=" + s.dbPort,
-		"PGUSER=" + s.dbUser,
-		"PGDATABASE=" + s.dbName,
+		"PGHOST=localhost",
+		"PGPORT=5432",
 		"PATH=" + os.Getenv("PATH"),
 	}
 

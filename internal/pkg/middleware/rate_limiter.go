@@ -234,14 +234,14 @@ func setRateLimitHeaders(c *gin.Context, result RateLimitResult) {
 	}
 }
 
-func respondRateLimitError(c *gin.Context, message string, result RateLimitResult) {
+func respondRateLimitError(c *gin.Context, message error, result RateLimitResult) {
 	setRateLimitHeaders(c, result)
 	if strings.Contains(c.GetHeader("Accept"), "text/html") {
-		c.HTML(http.StatusTooManyRequests, "errors-429.html", gin.H{"Error": message})
+		c.HTML(http.StatusTooManyRequests, "errors-429.html", gin.H{"Error": message.Error()})
 		c.Abort()
 		return
 	}
-	c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": message})
+	c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": message.Error()})
 }
 
 var globalRateLimiter *RateLimiter

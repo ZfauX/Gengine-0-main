@@ -249,7 +249,12 @@ func (h *PassingHandler) ForceFinish(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	if err := h.gameAdminSvc.ForceFinishGame(c.Request.Context(), uint(gameID), userID); err != nil {
-		render.RenderError(c, http.StatusForbidden, err.Error())
+		ok, checkErr := h.coAuthorSvc.IsUserManager(c.Request.Context(), uint(gameID), userID)
+		if checkErr == nil && ok {
+			render.RenderError(c, http.StatusBadRequest, err.Error())
+		} else {
+			render.RenderError(c, http.StatusForbidden, err.Error())
+		}
 		return
 	}
 

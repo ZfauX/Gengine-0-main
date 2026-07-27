@@ -27,7 +27,7 @@ func TestErrorHandler_PanicRecovery(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 	var resp map[string]string
 	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-	assert.Equal(t, ErrInternalServer, resp["error"])
+	assert.Equal(t, ErrInternalServer.Error(), resp["error"])
 	assert.Equal(t, "internal_error", resp["code"])
 }
 

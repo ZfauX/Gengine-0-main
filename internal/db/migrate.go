@@ -55,8 +55,22 @@ func MigrateFromDir(gdb *gorm.DB, migrationsDir string) error {
 		if mkdirErr := os.MkdirAll(migrationsDir, 0755); mkdirErr != nil {
 			return fmt.Errorf("не удалось создать папку миграций: %w", mkdirErr)
 		}
-		log.Warn().Str("dir", migrationsDir).Msg("Папка миграций создана, но файлы отсутствуют")
-		return nil
+		// Если папка только что создана и пуста — используем миграции из individual-директории
+		if migrationsDir == "migrations_squashed" {
+			log.Warn().Msg("migrations_squashed не найдены, переключаемся на individual migrations/")
+			migrationsDir = "migrations"
+			// Повторная проверка existence
+			if _, statErr2 := os.Stat(migrationsDir); os.IsNotExist(statErr2) {
+				log.Warn().Str("dir", migrationsDir).Msg("Папки с миграциями нет, создаём пустую")
+				if mkdirErr2 := os.MkdirAll(migrationsDir, 0755); mkdirErr2 != nil {
+					return fmt.Errorf("не удалось создать папку миграций: %w", mkdirErr2)
+				}
+				return nil
+			}
+		} else {
+			log.Warn().Str("dir", migrationsDir).Msg("Папка миграций создана, но файлы отсутствуют")
+			return nil
+		}
 	}
 
 	m, err := migrate.NewWithDatabaseInstance(

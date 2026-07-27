@@ -3,12 +3,14 @@
 ## Commands
 
 ```bash
-make build          # go build -ldflags (...) -o gengine ./cmd/server
+make build          # CSS + go build -ldflags (...) -o gengine ./cmd/server
 make dev            # go run ./cmd/server
 make test           # go test -v -race -coverprofile=coverage.out ./...
 make test-short     # go test -v -short -race -cover ./...  (no DB needed)
+make test-integration # go test -v -race -tags=integration ./...  (requires PostgreSQL)
 make lint           # golangci-lint run ./...
 make swagger        # swag init -g ./cmd/server/main.go -o ./docs
+make css            # tailwindcss -i ./static/css/app.css -o ./static/css/output.css --minify
 go generate ./...   # re-run google/wire DI codegen (needed after constructor changes)
 ```
 
@@ -59,7 +61,7 @@ storage.FileStorage        ← filesystem abstraction
 - JWT in httpOnly cookie named `jwt`; refresh token in `refresh_token` cookie
 - Middleware: `AuthRequired` (redirects to `/auth/login`), `OptionalAuth` (passthrough)
 - OAuth state validated via session (`subtle.ConstantTimeCompare`)
-- CSRF via `gorilla/csrf` on HTML forms; skipped for `/api/`, `/static/`, `/uploads/`, `/ws/`
+- CSRF via `gorilla/csrf` on HTML forms; skipped for `/api/`, `/static/`, `/uploads/`, `/ws/`, `/auth/webauthn`
 - Rate limiters: global(100/min), login(5/min), register(3/min), code_submission(10/min)
 - 2FA enforced only on `/admin/*` routes
 
@@ -89,3 +91,86 @@ storage.FileStorage        ← filesystem abstraction
 - `GamePassing.ResultDuration` stored as `bigint` nanoseconds in DB
 - `EmailVerificationToken.UserID` has regular index (not unique) — old tokens deleted before creating new ones
 - `DeleteByUserID` available on `EmailVerificationRepository` for cleanup
+
+## Proactive Skills
+
+Загружай следующие навыки через `skill("<name>")` автоматически при начале соответствующих задач:
+
+### Всегда (любая задача с Go-кодом)
+- `go-code-style` — форматирование, early-return, switch вместо if-else
+- `go-error-handling` — wrapping, errors.Is/As, sentinel-ошибки
+- `go-naming` — MixedCaps, no-Get, -er интерфейсы
+- `go-declarations` — var vs :=, iota, struct/map литералы
+- `go-functions` — порядок функций, pointer-vs-value receivers
+- `go-control-flow` — guard clauses, if-with-init, range
+- `go-packages` — структура пакетов, imports, blank-imports
+
+### Архитектура и проектирование
+- `go-clean-architecture` — domain/service/handler слои, dependency rule
+- `go-interfaces` — CacheStore, сервисные интерфейсы, DI через wire
+- `go-functional-options` — With* method-chaining паттерн (широко используется)
+- `go-defensive` — копирование слайсов/мапов, defer, crypto/rand, clock injection
+
+### База данных
+- `go-database` — GORM, PostgreSQL, транзакции, миграции, N+1
+- `postgres-pro` — продвинутые PostgreSQL паттерны, оптимизация запросов
+
+### Контекст и конкурентность
+- `go-context` — context.Context как первый параметр, дедлайны, отмена
+- `go-concurrency` — goroutines, errgroup, sync.RWMutex/Mutex, каналы
+
+### Фронтенд: JavaScript, HTML, CSS
+- `tailwind-patterns` — Tailwind CSS классы, кастомные компоненты, dark mode, responsive
+- `frontend-design` — UI/UX дизайн, визуальная композиция, типографика, цветовые схемы
+- `ui-ux-pro-max` — продвинутый UX, взаимодействие, анимации, доступность (a11y)
+- `web-design-guidelines` — веб-дизайн гайдлайны, семантическая вёрстка
+- `javascript-pro` — Vanilla JS паттерны (ES5/6), DOM API, fetch, async, события
+- `websocket-engineer` — WebSocket паттерны (reconnecting, комнаты, heartbeat)
+- `fullstack-guardian` — fullstack разработка, связь фронтенда и бэка
+- `webapp-testing` — тестирование веб-приложений (Playwright, E2E)
+
+### Локализация
+- `i18n-localization` — интернационализация, русский/английский, плюрализация
+
+### Тестирование
+- `go-testing` — table-driven тесты, go.uber.org/mock, go-sqlmock, fuzz
+- `testing-patterns` — общие паттерны тестирования
+- `test-master` — мастер тестирования, покрытие, интеграционные тесты
+
+### Качество кода
+- `go-code-review` — систематический ревью diff перед merge
+- `code-reviewer` — ревью кода, поиск багов и анти-паттернов
+- `go-linting` — golangci-lint, //nolint директивы
+- `clean-code` — чистый код, рефакторинг, устрашение сложности
+
+### Отладка
+- `systematic-debugging` — систематическая отладка, трассировка, профилирование
+
+### Документация
+- `go-documentation` — godoc, Example-тесты
+- `go-swagger` — swaggo/swag аннотации (@Summary, @Param, @Router)
+
+### Производительность
+- `go-performance` — pprof, бенчмарки, аллокации
+- `go-data-structures` — слайсы, мапы, LRU-кэш
+- `performance-profiling` — профилирование производительности, бутылочные горлышки
+
+### Observability
+- `go-observability` — Prometheus метрики, Sentry
+- `go-logging` — zerolog, структурированное логирование
+
+### Не загружать
+- `go-graphql` — в проекте не используется
+- `go-grpc` — в проекте не используется
+- `customize-opencode` — только при редактировании конфигурации opencode
+
+## Quality checklist before responding
+- [ ] Code compiles (`make build` succeeds)
+- [ ] All errors are handled (no `_` ignored)
+- [ ] No hardcoded secrets or debug prints
+- [ ] New methods have unit tests (if logic)
+- [ ] Changes in constructors are followed by `go generate`
+
+- For unit tests (no DB): `go test -short ./...`
+- For integration tests: `go test -tags=integration -v ./...`
+- Always mock dependencies using `go.uber.org/mock`; use `//go:generate` directive.

@@ -1,7 +1,7 @@
 {
     "name": "Encounter Engine",
     "short_name": "Encounter",
-    "start_url": "/",
+    "start_url": "/dashboard?source=pwa",
     "display": "standalone",
     "background_color": "#f0f2f5",
     "theme_color": "#2563eb",

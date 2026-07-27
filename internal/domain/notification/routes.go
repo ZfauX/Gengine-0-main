@@ -105,11 +105,11 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *gorm.DB, authSer
 	apiNotifs := r.Group("/api/notifications")
 	apiNotifs.Use(middleware.AuthRequired(authService))
 	{
-		api.GET("/settings", func(c *gin.Context) {
+		apiNotifs.GET("/settings", func(c *gin.Context) {
 			userID := c.GetUint("userID")
 			if userID == 0 {
 				c.JSON(http.StatusUnauthorized, gin.H{
-					"error": "РўСЂРµР±СѓРµС‚СЃСЏ Р°СѓС‚РµРЅС‚РёС„РёРєР°С†РёСЏ",
+					"error": "Требуется аутентификация",
 					"code":  "unauthorized",
 				})
 				return
@@ -118,7 +118,7 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *gorm.DB, authSer
 			if err != nil {
 				log.Error().Err(err).Uint("user_id", userID).Msg("Failed to get notification settings")
 				c.JSON(http.StatusInternalServerError, gin.H{
-					"error": "Р’РЅСѓС‚СЂРµРЅРЅСЏСЏ РѕС€РёР±РєР°",
+					"error": "Внутренняя ошибка",
 					"code":  "internal_error",
 				})
 				return
@@ -126,7 +126,7 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *gorm.DB, authSer
 			c.JSON(http.StatusOK, settings)
 		})
 
-		api.PUT("/settings", func(c *gin.Context) {
+		apiNotifs.PUT("/settings", func(c *gin.Context) {
 			userID := c.GetUint("userID")
 			if userID == 0 {
 				c.JSON(http.StatusUnauthorized, gin.H{

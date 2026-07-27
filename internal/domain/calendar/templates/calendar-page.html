@@ -1,6 +1,6 @@
 {{define "calendar-page.html"}}
 <div class="max-w-7xl mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 mb-6">Календарь игр</h1>
+    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Календарь игр</h1>
 
     <!-- Скрытый CSRF-токен для AJAX-запросов -->
     <meta name="csrf-token" content="{{.csrf}}">
@@ -9,7 +9,7 @@
         <!-- Управление месяцем -->
         <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
             <button id="prev-month" class="btn btn-outline text-sm">← Предыдущий</button>
-            <h2 id="month-year" class="text-xl font-semibold text-gray-800 m-0"></h2>
+            <h2 id="month-year" class="text-xl font-semibold text-gray-800 dark:text-gray-100 m-0"></h2>
             <div class="flex gap-2">
                 <a href="/calendar/export.ics" class="btn btn-outline text-sm" title="Экспорт в iCal">📅 Экспорт .ics</a>
                 <button id="next-month" class="btn btn-outline text-sm">Следующий →</button>
@@ -20,14 +20,14 @@
         <div id="calendar-container" class="overflow-x-auto">
             <table class="w-full text-center border-collapse">
                 <thead>
-                    <tr class="bg-gray-100">
-                        <th class="p-2 text-sm font-medium text-gray-500">Пн</th>
-                        <th class="p-2 text-sm font-medium text-gray-500">Вт</th>
-                        <th class="p-2 text-sm font-medium text-gray-500">Ср</th>
-                        <th class="p-2 text-sm font-medium text-gray-500">Чт</th>
-                        <th class="p-2 text-sm font-medium text-gray-500">Пт</th>
-                        <th class="p-2 text-sm font-medium text-gray-500">Сб</th>
-                        <th class="p-2 text-sm font-medium text-gray-500">Вс</th>
+                    <tr class="bg-gray-100 dark:bg-gray-800">
+                        <th class="p-2 text-sm font-medium text-gray-500 dark:text-gray-400">Пн</th>
+                        <th class="p-2 text-sm font-medium text-gray-500 dark:text-gray-400">Вт</th>
+                        <th class="p-2 text-sm font-medium text-gray-500 dark:text-gray-400">Ср</th>
+                        <th class="p-2 text-sm font-medium text-gray-500 dark:text-gray-400">Чт</th>
+                        <th class="p-2 text-sm font-medium text-gray-500 dark:text-gray-400">Пт</th>
+                        <th class="p-2 text-sm font-medium text-gray-500 dark:text-gray-400">Сб</th>
+                        <th class="p-2 text-sm font-medium text-gray-500 dark:text-gray-400">Вс</th>
                     </tr>
                 </thead>
                 <tbody id="calendar-body">
@@ -38,7 +38,7 @@
 
     <!-- Список игр для выбранного дня -->
     <div id="selected-day-games" class="card mt-6 hidden">
-        <h3 id="selected-date-title" class="text-lg font-semibold text-gray-800"></h3>
+        <h3 id="selected-date-title" class="text-lg font-semibold text-gray-800 dark:text-gray-100"></h3>
         <ul id="selected-games-list" class="mt-2 space-y-1"></ul>
     </div>
 </div>
@@ -106,7 +106,7 @@
 
             // День месяца
             const daySpan = document.createElement('div');
-            daySpan.className = 'font-bold text-gray-700 mb-1';
+            daySpan.className = 'font-bold text-gray-700 dark:text-gray-300 mb-1';
             daySpan.textContent = day;
 
             // Подсветка сегодняшнего дня
@@ -157,12 +157,12 @@
         list.innerHTML = '';
 
         if (games.length === 0) {
-            list.innerHTML = '<li class="text-gray-500">Нет запланированных игр</li>';
+            list.innerHTML = '<li class="text-gray-500 dark:text-gray-400">Нет запланированных игр</li>';
         } else {
             games.forEach(game => {
                 const li = document.createElement('li');
                 li.className = 'text-sm';
-                li.innerHTML = `<a href="/games/${game.id}" class="text-blue-600 hover:underline">${escapeHtml(game.name)}</a> — начало в ${escapeHtml(game.time || 'не указано')}`;
+                li.innerHTML = `<a href="/games/${game.id}" class="text-blue-600 dark:text-blue-400 hover:underline">${escapeHtml(game.name)}</a> — начало в ${escapeHtml(game.time || 'не указано')}`;
                 list.appendChild(li);
             });
         }

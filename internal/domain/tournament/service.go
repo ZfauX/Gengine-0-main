@@ -10,13 +10,13 @@ import (
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/pkg/email"
-	"gengine-0/internal/pkg/errors"
 
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
 
 type TournamentService struct {
+	db                   *gorm.DB
 	tournamentRepo       TournamentRepository
 	tournamentGameRepo   TournamentGameRepository
 	tournamentTeamRepo   TournamentTeamRepository
@@ -26,6 +26,7 @@ type TournamentService struct {
 }
 
 func NewTournamentService(
+	db *gorm.DB,
 	tournamentRepo TournamentRepository,
 	tournamentGameRepo TournamentGameRepository,
 	tournamentTeamRepo TournamentTeamRepository,
@@ -34,6 +35,7 @@ func NewTournamentService(
 	cfg *config.Config,
 ) *TournamentService {
 	return &TournamentService{
+		db:                   db,
 		tournamentRepo:       tournamentRepo,
 		tournamentGameRepo:   tournamentGameRepo,
 		tournamentTeamRepo:   tournamentTeamRepo,
@@ -164,6 +166,7 @@ func (s *TournamentService) Apply(ctx context.Context, tournamentID, teamID, use
 		}
 		if err := s.tournamentTeamRepo.CreatePassing(ctx, &passing); err != nil {
 			log.Error().Err(err).Uint("game_id", g.ID).Uint("team_id", teamID).Msg("Apply: failed to create passing")
+			return err
 		}
 	}
 
@@ -236,48 +239,64 @@ func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint
 		teamIDs[i] = p.TeamID
 	}
 
-	tournamentTeams, _ := s.tournamentTeamRepo.GetByTournamentAndTeamIDs(ctx, tournament.ID, teamIDs)
+	tournamentTeams, err := s.tournamentTeamRepo.GetByTournamentAndTeamIDs(ctx, tournament.ID, teamIDs)
+	if err != nil {
+		log.Error().Err(err).Uint("tournament_id", tournament.ID).Msg("UpdateScoresForGame: failed to get tournament teams")
+		return
+	}
 	inTournament := make(map[uint]bool)
 	for _, tt := range tournamentTeams {
 		inTournament[tt.TeamID] = true
 	}
 
-	existingResults, _ := s.tournamentResultRepo.GetByTournamentAndTeamIDs(ctx, tournament.ID, teamIDs)
+	existingResults, err := s.tournamentResultRepo.GetByTournamentAndTeamIDs(ctx, tournament.ID, teamIDs)
+	if err != nil {
+		log.Error().Err(err).Uint("tournament_id", tournament.ID).Msg("UpdateScoresForGame: failed to get existing results")
+		return
+	}
 	resultMap := make(map[uint]*TournamentResult)
 	for i := range existingResults {
 		resultMap[existingResults[i].TeamID] = &existingResults[i]
 	}
 
-	for _, p := range passings {
-		if !inTournament[p.TeamID] {
-			continue
-		}
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, p := range passings {
+			if !inTournament[p.TeamID] {
+				continue
+			}
 
-		points := tournament.PointsForParticipation
-		if p.Place != nil {
-			switch *p.Place {
-			case 1:
-				points = tournament.PointsForFirst
-			case 2:
-				points = tournament.PointsForSecond
-			case 3:
-				points = tournament.PointsForThird
+			points := tournament.PointsForParticipation
+			if p.Place != nil {
+				switch *p.Place {
+				case 1:
+					points = tournament.PointsForFirst
+				case 2:
+					points = tournament.PointsForSecond
+				case 3:
+					points = tournament.PointsForThird
+				}
+			}
+
+			result, exists := resultMap[p.TeamID]
+			if !exists {
+				result = &TournamentResult{
+					TournamentID: tournament.ID,
+					TeamID:       p.TeamID,
+					Score:        points,
+					GamesPlayed:  1,
+				}
+			} else {
+				result.Score += points
+				result.GamesPlayed++
+			}
+			if upsErr := s.tournamentResultRepo.Upsert(ctx, result); upsErr != nil {
+				return err
 			}
 		}
-
-		result, exists := resultMap[p.TeamID]
-		if !exists {
-			result = &TournamentResult{
-				TournamentID: tournament.ID,
-				TeamID:       p.TeamID,
-				Score:        points,
-				GamesPlayed:  1,
-			}
-		} else {
-			result.Score += points
-			result.GamesPlayed++
-		}
-		errors.LogSilently(s.tournamentResultRepo.Upsert(ctx, result), "Upsert tournament result failed")
+		return nil
+	})
+	if err != nil {
+		log.Error().Err(err).Uint("game_id", gameID).Msg("UpdateScoresForGame: transaction failed")
 	}
 }
 

@@ -505,6 +505,18 @@ func (h *AdminHandler) CreateBackup(c *gin.Context) {
 }
 
 // DownloadBackup отдаёт файл бекапа по ID.
+// @Summary Скачивание бекапа
+// @Description Отдаёт файл резервной копии базы данных по ID
+// @Tags admin
+// @Produce application/octet-stream
+// @Param id path int true "ID бекапа"
+// @Success 200 {file} file "Файл бекапа"
+// @Failure 400 {object} map[string]interface{} "Неверный ID"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 404 {object} map[string]interface{} "Бекап не найден"
+// @Router /admin/backups/{id}/download [get]
+// @Security JWT
 func (h *AdminHandler) DownloadBackup(c *gin.Context) {
 	var req IDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -528,6 +540,16 @@ func (h *AdminHandler) DownloadBackup(c *gin.Context) {
 }
 
 // RotateBackups запускает принудительную ротацию старых бекапов.
+// @Summary Ротация бекапов
+// @Description Запускает принудительное удаление старых резервных копий
+// @Tags admin
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Success 302 {string} string "Перенаправление на /admin/backups"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /admin/backups/rotate [post]
+// @Security JWT
 func (h *AdminHandler) RotateBackups(c *gin.Context) {
 	if err := h.backupService.RotateBackups(c.Request.Context()); err != nil {
 		log.Error().Err(err).Msg("RotateBackups failed")

@@ -1,10 +1,10 @@
 {{define "dashboard-index.html"}}
 <div class="max-w-7xl mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 mb-6">Личный кабинет</h1>
+    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Личный кабинет</h1>
 
     {{if .IsAdmin}}
     <div class="card mb-6 bg-yellow-50 border border-yellow-400">
-        <h2 class="text-lg font-semibold text-gray-800">Администрирование</h2>
+        <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100">Администрирование</h2>
         <p class="mt-2"><a href="/admin" class="btn btn-primary text-sm bg-yellow-600 hover:bg-yellow-700">Панель администратора</a></p>
     </div>
     {{end}}
@@ -14,15 +14,15 @@
         <!-- Мои игры -->
         <div class="card">
             <div class="flex justify-between items-center mb-3">
-                <h2 class="text-lg font-semibold text-gray-700">Мои игры <span class="text-sm font-normal text-gray-500">(авторство)</span></h2>
+                <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300">Мои игры <span class="text-sm font-normal text-gray-500 dark:text-gray-400">(авторство)</span></h2>
                 {{if .Dashboard.AuthoredGames}}
                 <form method="GET" action="/dashboard" class="flex items-center gap-2">
                     <input type="hidden" name="search" value="{{.SearchQuery}}">
                     <input type="text" name="q" placeholder="Поиск..." value="{{.SearchQuery}}"
-                           class="w-32 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-2 py-1 text-sm">
+                           class="w-32 rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-2 py-1 text-sm">
                     <button type="submit" class="btn btn-outline text-xs">🔍</button>
                     {{if .SearchQuery}}
-                    <a href="/dashboard" class="text-xs text-gray-500 hover:text-gray-700">✕</a>
+                    <a href="/dashboard" class="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">✕</a>
                     {{end}}
                 </form>
                 {{end}}
@@ -31,13 +31,13 @@
             <ul class="divide-y divide-gray-100">
                 {{range .Dashboard.AuthoredGames}}
                 <li class="py-2 flex justify-between items-center">
-                    <a href="/games/{{.ID}}" class="text-blue-600 hover:underline">{{.Name}}</a>
+                    <a href="/games/{{.ID}}" class="text-blue-600 dark:text-blue-400 hover:underline">{{.Name}}</a>
                     {{if .IsDraft}}<span class="text-xs text-yellow-600 font-medium">(черновик)</span>{{end}}
                 </li>
                 {{end}}
             </ul>
             {{else}}
-            <p class="text-gray-500 text-sm">{{if .SearchQuery}}Ничего не найдено по запросу «{{.SearchQuery}}»{{else}}У вас пока нет созданных игр.{{end}}</p>
+            <p class="text-gray-500 dark:text-gray-400 text-sm">{{if .SearchQuery}}Ничего не найдено по запросу «{{.SearchQuery}}»{{else}}У вас пока нет созданных игр.{{end}}</p>
             {{end}}
             <div class="mt-3">
                 <a href="/games/new" class="btn btn-primary text-sm">+ Создать игру</a>
@@ -47,15 +47,15 @@
         <!-- Мои команды (капитанство) -->
         <div class="card">
             <div class="flex justify-between items-center mb-3">
-                <h2 class="text-lg font-semibold text-gray-700">Мои команды <span class="text-sm font-normal text-gray-500">(капитанство)</span></h2>
+                <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300">Мои команды <span class="text-sm font-normal text-gray-500 dark:text-gray-400">(капитанство)</span></h2>
                 {{if .Dashboard.CaptainTeams}}
                 <form method="GET" action="/dashboard" class="flex items-center gap-2">
                     <input type="hidden" name="search" value="{{.SearchQuery}}">
                     <input type="text" name="q" placeholder="Поиск..." value="{{.SearchQuery}}"
-                           class="w-32 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-2 py-1 text-sm">
+                           class="w-32 rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-2 py-1 text-sm">
                     <button type="submit" class="btn btn-outline text-xs">🔍</button>
                     {{if .SearchQuery}}
-                    <a href="/dashboard" class="text-xs text-gray-500 hover:text-gray-700">✕</a>
+                    <a href="/dashboard" class="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">✕</a>
                     {{end}}
                 </form>
                 {{end}}
@@ -63,11 +63,11 @@
             {{if .Dashboard.CaptainTeams}}
             <ul class="divide-y divide-gray-100">
                 {{range .Dashboard.CaptainTeams}}
-                <li class="py-2 text-sm text-gray-700">{{.Team.Name}} <span class="text-gray-400">в игре</span> {{.Game.Name}}</li>
+                <li class="py-2 text-sm text-gray-700 dark:text-gray-300">{{.Team.Name}} <span class="text-gray-400">в игре</span> {{.Game.Name}}</li>
                 {{end}}
             </ul>
             {{else}}
-            <p class="text-gray-500 text-sm">{{if .SearchQuery}}Ничего не найдено{{else}}Вы не являетесь капитаном ни одной команды.{{end}}</p>
+            <p class="text-gray-500 dark:text-gray-400 text-sm">{{if .SearchQuery}}Ничего не найдено{{else}}Вы не являетесь капитаном ни одной команды.{{end}}</p>
             {{end}}
             <div class="mt-3">
                 <a href="/teams/new" class="btn btn-primary text-sm">+ Создать команду</a>
@@ -80,15 +80,15 @@
         <!-- Участие в командах -->
         <div class="card">
             <div class="flex justify-between items-center mb-3">
-                <h2 class="text-lg font-semibold text-gray-700">Участие в командах</h2>
+                <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300">Участие в командах</h2>
                 {{if .Dashboard.MemberTeams}}
                 <form method="GET" action="/dashboard" class="flex items-center gap-2">
                     <input type="hidden" name="search" value="{{.SearchQuery}}">
                     <input type="text" name="q" placeholder="Поиск..." value="{{.SearchQuery}}"
-                           class="w-32 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-2 py-1 text-sm">
+                           class="w-32 rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-2 py-1 text-sm">
                     <button type="submit" class="btn btn-outline text-xs">🔍</button>
                     {{if .SearchQuery}}
-                    <a href="/dashboard" class="text-xs text-gray-500 hover:text-gray-700">✕</a>
+                    <a href="/dashboard" class="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">✕</a>
                     {{end}}
                 </form>
                 {{end}}
@@ -96,26 +96,26 @@
             {{if .Dashboard.MemberTeams}}
             <ul class="divide-y divide-gray-100">
                 {{range .Dashboard.MemberTeams}}
-                <li class="py-2 text-sm text-gray-700">{{.Team.Name}} <span class="text-gray-400">в игре</span> {{.Game.Name}}</li>
+                <li class="py-2 text-sm text-gray-700 dark:text-gray-300">{{.Team.Name}} <span class="text-gray-400">в игре</span> {{.Game.Name}}</li>
                 {{end}}
             </ul>
             {{else}}
-            <p class="text-gray-500 text-sm">{{if .SearchQuery}}Ничего не найдено{{else}}Вы не состоите ни в одной команде.{{end}}</p>
+            <p class="text-gray-500 dark:text-gray-400 text-sm">{{if .SearchQuery}}Ничего не найдено{{else}}Вы не состоите ни в одной команде.{{end}}</p>
             {{end}}
         </div>
 
         <!-- Активные прохождения -->
         <div class="card">
             <div class="flex justify-between items-center mb-3">
-                <h2 class="text-lg font-semibold text-gray-700">Активные прохождения</h2>
+                <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300">Активные прохождения</h2>
                 {{if .Dashboard.ActivePassings}}
                 <form method="GET" action="/dashboard" class="flex items-center gap-2">
                     <input type="hidden" name="search" value="{{.SearchQuery}}">
                     <input type="text" name="q" placeholder="Поиск..." value="{{.SearchQuery}}"
-                           class="w-32 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-2 py-1 text-sm">
+                           class="w-32 rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-2 py-1 text-sm">
                     <button type="submit" class="btn btn-outline text-xs">🔍</button>
                     {{if .SearchQuery}}
-                    <a href="/dashboard" class="text-xs text-gray-500 hover:text-gray-700">✕</a>
+                    <a href="/dashboard" class="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">✕</a>
                     {{end}}
                 </form>
                 {{end}}
@@ -125,13 +125,13 @@
                 {{range .Dashboard.ActivePassings}}
                 <li class="py-2 flex justify-between items-center text-sm">
                     <span>
-                        <span class="font-medium text-gray-800">{{.GameName}}</span>
+                        <span class="font-medium text-gray-800 dark:text-gray-100">{{.GameName}}</span>
                         <span class="text-gray-400">—</span>
                         {{.TeamName}}
                         <span class="inline-block ml-2 px-2 py-0.5 text-xs font-semibold rounded-full 
                             {{if eq .PassingStatus "started"}}bg-green-100 text-green-800
                             {{else if eq .PassingStatus "accepted"}}bg-blue-100 text-blue-800
-                            {{else}}bg-gray-100 text-gray-800{{end}}">
+                            {{else}}bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100{{end}}">
                             {{.PassingStatus}}
                         </span>
                     </span>
@@ -142,19 +142,19 @@
                 {{end}}
             </ul>
             {{else}}
-            <p class="text-gray-500 text-sm">{{if .SearchQuery}}Ничего не найдено{{else}}Нет активных прохождений.{{end}}</p>
+            <p class="text-gray-500 dark:text-gray-400 text-sm">{{if .SearchQuery}}Ничего не найдено{{else}}Нет активных прохождений.{{end}}</p>
             {{end}}
         </div>
     </div>
 
     <!-- Приглашения -->
     <div class="card">
-        <h2 class="text-lg font-semibold text-gray-700 mb-3">Приглашения</h2>
+        <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">Приглашения</h2>
         {{if .Dashboard.PendingInvitations}}
         <ul class="divide-y divide-gray-100">
             {{range .Dashboard.PendingInvitations}}
             <li class="py-3 flex flex-wrap items-center justify-between gap-2">
-                <span class="text-gray-800">Команда <span class="font-medium">{{.Team.Name}}</span></span>
+                <span class="text-gray-800 dark:text-gray-100">Команда <span class="font-medium">{{.Team.Name}}</span></span>
                 <div class="flex gap-2">
                     <form action="/invitations/{{.ID}}/accept" method="POST" class="inline">
                         <input type="hidden" name="_csrf" value="{{$.csrf}}">
@@ -169,7 +169,7 @@
             {{end}}
         </ul>
         {{else}}
-        <p class="text-gray-500 text-sm">Нет ожидающих приглашений.</p>
+        <p class="text-gray-500 dark:text-gray-400 text-sm">Нет ожидающих приглашений.</p>
         {{end}}
     </div>
 </div>

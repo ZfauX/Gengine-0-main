@@ -912,19 +912,22 @@ func (s *UserDashboardService) GetDashboard(ctx context.Context, userID uint) (*
 		return &dash, err
 	}
 
+	seenTeams := make(map[uint]bool)
 	for _, r := range rows {
-		if r.PassingID == 0 || r.GameName == "" {
-			continue
+		// Добавляем команду в список (один раз)
+		if !seenTeams[r.TeamID] {
+			seenTeams[r.TeamID] = true
+			team := DashboardTeam{ID: r.TeamID, Name: r.TeamName}
+			twg := DashboardTeamWithGame{Team: team, Game: DashboardGame{}}
+			if r.CaptainID == userID {
+				dash.CaptainTeams = append(dash.CaptainTeams, twg)
+			} else {
+				dash.MemberTeams = append(dash.MemberTeams, twg)
+			}
 		}
-		team := DashboardTeam{ID: r.TeamID, Name: r.TeamName}
-		game := DashboardGame{ID: r.GameID, Name: r.GameName}
-		twg := DashboardTeamWithGame{Team: team, Game: game}
-		if r.CaptainID == userID {
-			dash.CaptainTeams = append(dash.CaptainTeams, twg)
-		} else {
-			dash.MemberTeams = append(dash.MemberTeams, twg)
-		}
-		if r.PassingStatus == "started" || r.PassingStatus == "accepted" {
+		// Активные прохождения
+		if r.PassingID != 0 && r.GameName != "" &&
+			(r.PassingStatus == "started" || r.PassingStatus == "accepted") {
 			dash.ActivePassings = append(dash.ActivePassings, DashboardPassingWithGame{
 				PassingStatus: r.PassingStatus,
 				TeamName:      r.TeamName,

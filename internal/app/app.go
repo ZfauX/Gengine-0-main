@@ -102,7 +102,10 @@ func (app *App) SetupRouter() (*gin.Engine, error) {
 			c.Next()
 			return
 		}
-		c.Header("Cache-Control", "no-store, must-revalidate")
+		if strings.HasPrefix(c.Request.URL.Path, "/auth/webauthn") {
+			c.Next()
+			return
+		}
 		csrfMW(c)
 	})
 

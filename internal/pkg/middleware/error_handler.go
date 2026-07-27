@@ -17,7 +17,7 @@ func ErrorHandler() gin.HandlerFunc {
 			if r := recover(); r != nil {
 				log.Error().Interface("panic", r).Msg("Panic recovered")
 				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-					"error": ErrInternalServer,
+					"error": ErrInternalServer.Error(),
 					"code":  "internal_error",
 				})
 			}
@@ -25,7 +25,6 @@ func ErrorHandler() gin.HandlerFunc {
 
 		c.Next()
 
-		// Проверяем, есть ли ошибка в контексте
 		if len(c.Errors) > 0 {
 			if c.Writer.Written() {
 				log.Warn().Err(c.Errors.Last().Err).Msg("ErrorHandler: headers already sent, skipping")
@@ -42,7 +41,7 @@ func ErrorHandler() gin.HandlerFunc {
 			}
 			log.Error().Err(err).Msg("Unhandled error")
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-				"error": ErrInternalServer,
+				"error": ErrInternalServer.Error(),
 				"code":  "internal_error",
 			})
 		}

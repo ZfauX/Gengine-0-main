@@ -43,6 +43,23 @@ self.addEventListener('fetch', event => {
         return;
     }
 
+    // /uploads: Cache-first с fallback на сеть (изображения игр, аватары)
+    if (url.pathname.startsWith('/uploads/')) {
+        event.respondWith(
+            caches.match(event.request).then(cached => {
+                const fetchPromise = fetch(event.request).then(response => {
+                    if (response && response.status === 200) {
+                        const copy = response.clone();
+                        caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
+                    }
+                    return response;
+                }).catch(() => cached);
+                return cached || fetchPromise;
+            })
+        );
+        return;
+    }
+
     // HTML-страницы: Stale-while-revalidate
     if (event.request.mode === 'navigate') {
         event.respondWith(
@@ -105,7 +122,9 @@ self.addEventListener('notificationclick', event => {
     event.waitUntil(
         clients.matchAll({ type: 'window' }).then(clientList => {
             for (const client of clientList) {
-                if (client.url === url && 'focus' in client) return client.focus();
+                if (client.url.startsWith(url) && 'focus' in client) {
+                    return client.focus();
+                }
             }
             if (clients.openWindow) return clients.openWindow(url);
         })

@@ -1,6 +1,6 @@
 {{define "export_import-import.html"}}
 <div class="max-w-7xl mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 mb-6">Импорт CSV</h1>
+    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Импорт CSV</h1>
 
     {{if .Error}}
     <div class="flash flash-error">{{.Error}}</div>
@@ -11,19 +11,19 @@
             <input type="hidden" name="_csrf" value="{{.csrf}}">
 
             <div>
-                <label for="csvfile" class="block text-sm font-medium text-gray-700 mb-1">Файл CSV</label>
+                <label for="csvfile" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Файл CSV</label>
                 <input type="file" name="csvfile" id="csvfile" accept=".csv" required
-                       class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
+                       class="w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
             </div>
 
             <button type="submit" class="btn btn-primary text-sm">Загрузить</button>
         </form>
     </div>
 
-    <hr class="my-6 border-gray-200">
+    <hr class="my-6 border-gray-200 dark:border-gray-700">
 
-    <div class="text-sm text-gray-600 space-y-2">
-        <p><span class="font-medium">Формат CSV:</span> level_position, level_name, question_text, hint, answers (ответы через <code class="bg-gray-100 px-1 py-0.5 rounded text-xs">|</code>)</p>
+    <div class="text-sm text-gray-600 dark:text-gray-400 space-y-2">
+        <p><span class="font-medium">Формат CSV:</span> level_position, level_name, question_text, hint, answers (ответы через <code class="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-xs">|</code>)</p>
         <p>
             <a href="/games/{{.GameID}}/export" download class="btn btn-outline text-sm">Скачать текущий CSV</a>
         </p>

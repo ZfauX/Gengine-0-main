@@ -57,7 +57,9 @@ func (s *ReviewService) Create(gameID, userID uint, rating int, comment string) 
 
 func (s *ReviewService) ListByGame(ctx context.Context, gameID uint) ([]Review, error) {
 	var reviews []Review
-	err := s.DB.WithContext(ctx).Preload("User").Where("game_id = ?", gameID).Order("created_at DESC").Find(&reviews).Error
+	err := s.DB.WithContext(ctx).Preload("User", func(db *gorm.DB) *gorm.DB {
+		return db.Select("id, name, avatar_path")
+	}).Where("game_id = ?", gameID).Order("created_at DESC").Find(&reviews).Error
 	return reviews, err
 }
 

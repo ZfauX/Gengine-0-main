@@ -42,11 +42,16 @@ function initToast() {
 
         var toast = document.createElement('div');
         toast.className = 'toast toast-' + type + ' transition-all duration-300 ease-in-out';
+        var closeBtn = document.createElement('button');
+        closeBtn.className = 'shrink-0 text-gray-400 hover:text-gray-600';
+        closeBtn.setAttribute('aria-label', 'Закрыть');
+        closeBtn.innerHTML = '&times;';
+        closeBtn.addEventListener('click', function() { toast.remove(); });
         toast.innerHTML = '<div class="flex items-start gap-3">' +
             '<span class="text-lg shrink-0">' + (icons[type] || icons.info) + '</span>' +
-            '<div class="flex-1">' + message + '</div>' +
-            '<button onclick="this.parentElement.parentElement.remove()" class="shrink-0 text-gray-400 hover:text-gray-600" aria-label="Закрыть">&times;</button>' +
+            '<div class="flex-1">' + escapeHtml(message) + '</div>' +
             '</div>';
+        toast.appendChild(closeBtn);
 
         container.appendChild(toast);
 
@@ -451,12 +456,25 @@ function initInlineValidation() {
 // =============================================================================
 // UX8: SSE game status notifications
 // =============================================================================
+var _sseReconnectTimer = null;
+
 function initSSEGameNotifications(gameId) {
     if (!gameId) return;
 
     var eventSource = null;
 
     function connectSSE() {
+        // Закрываем старый EventSource, если был (J4)
+        if (eventSource) {
+            eventSource.close();
+        }
+
+        // Отменяем старый reconnect timer (J3)
+        if (_sseReconnectTimer) {
+            clearTimeout(_sseReconnectTimer);
+            _sseReconnectTimer = null;
+        }
+
         try {
             eventSource = new EventSource('/game/sse/' + gameId);
 
@@ -465,39 +483,43 @@ function initSSEGameNotifications(gameId) {
                 document.body.setAttribute('data-sse-active', 'true');
             };
 
+            function parseSSEData(e) {
+                try { return JSON.parse(e.data); } catch (_) { return null; }
+            }
+
             eventSource.addEventListener('game_started', function(e) {
-                var data = JSON.parse(e.data);
-                showToast('🎮 Игра начата! Удачи всем командам!', 'success', 5000);
+                var data = parseSSEData(e);
+                if (data) showToast('🎮 Игра начата! Удачи всем командам!', 'success', 5000);
             });
 
             eventSource.addEventListener('game_finished', function(e) {
-                var data = JSON.parse(e.data);
-                showToast('🏁 Игра завершена! Результаты обновлены.', 'info', 8000);
+                var data = parseSSEData(e);
+                if (data) showToast('🏁 Игра завершена! Результаты обновлены.', 'info', 8000);
             });
 
             eventSource.addEventListener('team_disqualified', function(e) {
-                var data = JSON.parse(e.data);
+                var data = parseSSEData(e);
                 if (data && data.team_id) {
                     showToast('⚠️ Команда дисквалифицирована!', 'error', 10000);
                 }
             });
 
             eventSource.addEventListener('level_completed', function(e) {
-                var data = JSON.parse(e.data);
+                var data = parseSSEData(e);
                 if (data && data.team_id) {
                     showToast('✅ Уровень пройден! Отличная работа!', 'success', 4000);
                 }
             });
 
             eventSource.addEventListener('time_warning', function(e) {
-                var data = JSON.parse(e.data);
+                var data = parseSSEData(e);
                 if (data && data.remaining_minutes) {
                     showToast('⏰ Осталось ' + data.remaining_minutes + ' минут до завершения!', 'warning', 5000);
                 }
             });
 
             eventSource.addEventListener('hint_available', function(e) {
-                var data = JSON.parse(e.data);
+                var data = parseSSEData(e);
                 if (data && data.level_number) {
                     showToast('💡 Подсказка доступна для уровня ' + data.level_number, 'info', 4000);
                 }
@@ -507,7 +529,7 @@ function initSSEGameNotifications(gameId) {
                 console.warn('SSE error, reconnecting in 5s...', err);
                 eventSource.close();
                 document.body.removeAttribute('data-sse-active');
-                setTimeout(connectSSE, 5000);
+                _sseReconnectTimer = setTimeout(connectSSE, 5000);
             };
         } catch (e) {
             console.warn('SSE not supported, notifications disabled:', e);
@@ -518,9 +540,8 @@ function initSSEGameNotifications(gameId) {
 
     // Cleanup on page unload
     window.addEventListener('beforeunload', function() {
-        if (eventSource) {
-            eventSource.close();
-        }
+        if (_sseReconnectTimer) clearTimeout(_sseReconnectTimer);
+        if (eventSource) eventSource.close();
     });
 }
 

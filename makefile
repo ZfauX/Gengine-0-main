@@ -13,8 +13,12 @@ GOLANGCI=golangci-lint
 # По умолчанию: сборка
 all: build
 
-# Сборка приложения
-build:
+# Сборка CSS (Tailwind)
+css:
+	npx --yes tailwindcss -i ./static/css/app.css -o ./static/css/output.css --minify
+
+# Сборка приложения (включая CSS)
+build: css
 	$(GO) build -ldflags "-X main.version=$(shell git describe --tags --always --dirty) -X main.buildDate=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)" -o $(BINARY_NAME) $(MAIN_PATH)
 
 # Запуск миграций

@@ -25,6 +25,13 @@ func NewTwoFactorHandler(twoFactorSvc *TwoFactorService, authService *AuthServic
 }
 
 // EnableForm отображает форму включения 2FA.
+// @Summary Форма включения 2FA
+// @Tags 2fa
+// @Produce html
+// @Success 200 {string} html "Форма включения 2FA"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /user/2fa/enable [get]
+// @Security JWT
 func (h *TwoFactorHandler) EnableForm(c *gin.Context) {
 	userID := c.GetUint("userID")
 	if userID == 0 {
@@ -59,6 +66,16 @@ func (h *TwoFactorHandler) EnableForm(c *gin.Context) {
 }
 
 // Enable подтверждает включение 2FA.
+// @Summary Подтверждение включения 2FA
+// @Tags 2fa
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param code formData string true "Код подтверждения"
+// @Success 302 {string} string "Перенаправление в профиль"
+// @Failure 400 {object} map[string]interface{} "Неверный код"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /user/2fa/enable [post]
+// @Security JWT
 func (h *TwoFactorHandler) Enable(c *gin.Context) {
 	userID := c.GetUint("userID")
 	if userID == 0 {
@@ -120,6 +137,13 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 }
 
 // DisableForm отображает форму отключения 2FA.
+// @Summary Форма отключения 2FA
+// @Tags 2fa
+// @Produce html
+// @Success 200 {string} html "Форма отключения 2FA"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /user/2fa/disable [get]
+// @Security JWT
 func (h *TwoFactorHandler) DisableForm(c *gin.Context) {
 	userID := c.GetUint("userID")
 	if userID == 0 {
@@ -145,6 +169,16 @@ func (h *TwoFactorHandler) DisableForm(c *gin.Context) {
 }
 
 // Disable отключает 2FA.
+// @Summary Отключение 2FA
+// @Tags 2fa
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param code formData string true "Код подтверждения"
+// @Success 302 {string} string "Перенаправление в профиль"
+// @Failure 400 {object} map[string]interface{} "Неверный код"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /user/2fa/disable [post]
+// @Security JWT
 func (h *TwoFactorHandler) Disable(c *gin.Context) {
 	userID := c.GetUint("userID")
 	if userID == 0 {

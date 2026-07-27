@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"html/template"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"sync"
@@ -15,6 +16,8 @@ import (
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
+
+	"github.com/fsnotify/fsnotify"
 )
 
 // BreadcrumbItem представляет один элемент навигационной цепочки
@@ -43,7 +46,72 @@ func EnableDevMode(baseDir string, funcMap template.FuncMap) {
 	mu.Lock()
 	templateDevPattern = filepath.Join(baseDir, "internal", "domain", "*", "templates", "*.html")
 	templateFuncMap = funcMap
+	// Initial load
+	t := template.New("")
+	t.Funcs(templateFuncMap)
+	if _, err := t.ParseGlob(templateDevPattern); err == nil {
+		globalTemplate = t
+	}
+	// Start file watcher
+	go watchTemplates(baseDir, templateDevPattern, templateFuncMap)
 	mu.Unlock()
+}
+
+func watchTemplates(baseDir, pattern string, funcMap template.FuncMap) {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		log.Warn().Err(err).Msg("Render: fsnotify disabled")
+		return
+	}
+	defer watcher.Close()
+
+	// Watch all template directories
+	for _, dir := range []string{
+		"internal/domain/game/templates",
+		"internal/domain/team/templates",
+		"internal/domain/tournament/templates",
+		"internal/domain/user/templates",
+		"internal/domain/level/templates",
+		"internal/domain/monitor/templates",
+		"internal/domain/admin/templates",
+		"internal/domain/export/templates",
+		"internal/domain/social/templates",
+		"internal/domain/notification/templates",
+		"internal/domain/calendar/templates",
+	} {
+		fullPath := filepath.Join(baseDir, dir)
+		if stat, err := os.Stat(fullPath); err == nil && stat.IsDir() {
+			if addErr := watcher.Add(fullPath); addErr != nil {
+				log.Warn().Err(addErr).Str("dir", fullPath).Msg("Render: failed to watch template dir")
+			}
+		}
+	}
+
+	for {
+		select {
+		case event, ok := <-watcher.Events:
+			if !ok {
+				return
+			}
+			if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename) != 0 {
+				mu.Lock()
+				t := template.New("")
+				t.Funcs(funcMap)
+				if _, err := t.ParseGlob(pattern); err != nil {
+					log.Error().Err(err).Msg("Render: hot-reload template parse error")
+				} else {
+					globalTemplate = t
+					log.Debug().Str("file", event.Name).Msg("Render: templates reloaded")
+				}
+				mu.Unlock()
+			}
+		case err, ok := <-watcher.Errors:
+			if !ok {
+				return
+			}
+			log.Warn().Err(err).Msg("Render: fsnotify error")
+		}
+	}
 }
 
 // Page рендерит указанный подшаблон в буфер, вставляет результат как ContentHTML в layout.html.
@@ -53,32 +121,9 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 		data = gin.H{}
 	}
 
-	var tmpl *template.Template
-
-	if templateDevPattern != "" {
-		mu.RLock()
-		pattern := templateDevPattern
-		funcs := templateFuncMap
-		mu.RUnlock()
-
-		t := template.New("")
-		t.Funcs(funcs)
-		if _, err := t.ParseGlob(pattern); err != nil {
-			log.Error().Err(err).Msg("Render: hot-reload template parse error")
-			mu.RLock()
-			tmpl = globalTemplate
-			mu.RUnlock()
-		} else {
-			mu.Lock()
-			globalTemplate = t
-			tmpl = t
-			mu.Unlock()
-		}
-	} else {
-		mu.RLock()
-		tmpl = globalTemplate
-		mu.RUnlock()
-	}
+	mu.RLock()
+	tmpl := globalTemplate
+	mu.RUnlock()
 
 	if tmpl == nil {
 		c.String(http.StatusInternalServerError, "Template engine not initialized")
@@ -179,7 +224,15 @@ func SetBreadcrumb(data gin.H, items ...BreadcrumbItem) {
 	if data == nil {
 		data = gin.H{}
 	}
-	data["Breadcrumb"] = items
+	// Конвертируем в формат, понятный шаблону (слайс map'ов)
+	breadcrumbs := make([]map[string]string, len(items))
+	for i, item := range items {
+		breadcrumbs[i] = map[string]string{
+			"name": item.Name,
+			"url":  item.URL,
+		}
+	}
+	data["Breadcrumbs"] = breadcrumbs
 }
 
 // SetFlash сохраняет flash-сообщение в сессии.

@@ -490,6 +490,9 @@ func TestSendEmail_QuitFailed(t *testing.T) {
 }
 
 func TestEmailService_Send(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping email queue integration test in short mode")
+	}
 	db := setupTestDB(t)
 	server := newTestSMTPServer(t)
 	defer server.Close()
@@ -524,6 +527,7 @@ func TestEmailService_Send(t *testing.T) {
 	// Теперь запускаем воркер для отправки
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	svc.wg.Add(1)
 	svc.StartWorker(ctx, 100*time.Millisecond, 10)
 
 	// Ждём, пока письмо отправится

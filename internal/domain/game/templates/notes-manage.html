@@ -1,13 +1,13 @@
 {{define "notes-manage.html"}}
 <div class="max-w-4xl mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 mb-6">Заметки к игре</h1>
+    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Заметки к игре</h1>
 
     <!-- Форма добавления заметки -->
     <div class="card mb-6">
-        <h3 class="text-lg font-semibold text-gray-700 mb-3">Добавить заметку</h3>
+        <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">Добавить заметку</h3>
         <form id="add-note-form">
             <textarea id="note-text" rows="3" placeholder="Текст заметки..." required
-                      class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm mb-3"></textarea>
+                      class="w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm mb-3"></textarea>
             <button type="submit" class="btn btn-primary text-sm">Сохранить</button>
         </form>
     </div>
@@ -18,17 +18,17 @@
         <div class="card hover:shadow-md transition" data-note-id="{{.ID}}">
             <div class="flex justify-between items-start">
                 <div>
-                    <span class="font-semibold text-gray-800">{{.User.Name}}</span>
-                    <span class="text-sm text-gray-500 ml-2">{{.CreatedAt.Format "02.01.2006 15:04"}}</span>
+                    <span class="font-semibold text-gray-800 dark:text-gray-100">{{.User.Name}}</span>
+                    <span class="text-sm text-gray-500 dark:text-gray-400 ml-2">{{.CreatedAt.Format "02.01.2006 15:04"}}</span>
                     {{if .Level}}
-                    <span class="inline-block ml-2 px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 rounded-md">Уровень: {{.Level.Name}}</span>
+                    <span class="inline-block ml-2 px-2 py-0.5 text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-md">Уровень: {{.Level.Name}}</span>
                     {{end}}
                 </div>
                 {{if eq .UserID $.CurrentUserID}}
                 <button class="delete-note-btn text-gray-400 hover:text-red-600 transition text-xl leading-none" data-note-id="{{.ID}}" title="Удалить заметку">×</button>
                 {{end}}
             </div>
-            <p class="mt-2 text-gray-700 text-sm">{{.Text}}</p>
+            <p class="mt-2 text-gray-700 dark:text-gray-300 text-sm">{{.Text}}</p>
         </div>
         {{end}}
     </div>

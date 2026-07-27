@@ -123,7 +123,9 @@ func (s *ExportService) ExportTeamResultsToCSV(ctx context.Context, gameID, team
 		progressIDs[i] = p.ID
 	}
 	var allAttempts []game.Attempt
-	db.Where("level_progress_id IN ?", progressIDs).Find(&allAttempts)
+	if err := db.Where("level_progress_id IN ?", progressIDs).Find(&allAttempts).Error; err != nil {
+		return err
+	}
 	attemptsMap := make(map[uint]int)
 	for _, a := range allAttempts {
 		attemptsMap[a.LevelProgressID]++

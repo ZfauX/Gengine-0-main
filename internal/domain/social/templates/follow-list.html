@@ -1,6 +1,6 @@
 {{define "follow-list.html"}}
 <div class="max-w-4xl mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 mb-6">Мои подписки</h1>
+    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Мои подписки</h1>
 
     <meta name="csrf-token" content="{{.csrf}}">
 
@@ -9,8 +9,8 @@
         {{range .Authors}}
         <div class="card flex flex-wrap items-center justify-between gap-3 p-4 hover:shadow-md transition">
             <div>
-                <span class="font-medium text-gray-800">{{.Name}}</span>
-                {{if .Email}}<span class="text-sm text-gray-500 ml-2">{{.Email}}</span>{{end}}
+                <span class="font-medium text-gray-800 dark:text-gray-100">{{.Name}}</span>
+                {{if .Email}}<span class="text-sm text-gray-500 dark:text-gray-400 ml-2">{{.Email}}</span>{{end}}
             </div>
             <button class="btn btn-danger text-sm unfollow-btn" data-author-id="{{.ID}}" data-author-name="{{.Name}}">Отписаться</button>
         </div>
@@ -18,7 +18,7 @@
     </div>
     {{else}}
     <div class="card text-center py-12">
-        <p class="text-gray-500">Вы пока ни на кого не подписаны.</p>
+        <p class="text-gray-500 dark:text-gray-400">Вы пока ни на кого не подписаны.</p>
         <p class="mt-2 text-sm text-gray-400">Подпишитесь на авторов, чтобы первыми узнавать об их новых играх.</p>
     </div>
     {{end}}

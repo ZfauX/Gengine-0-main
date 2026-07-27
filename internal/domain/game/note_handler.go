@@ -23,6 +23,15 @@ func NewNoteHandler(noteService *NoteService) *NoteHandler {
 }
 
 // Notes возвращает заметки к игре в формате JSON.
+// @Summary Список заметок
+// @Tags notes
+// @Produce json
+// @Param id path int true "ID игры"
+// @Success 200 {object} map[string]interface{} "Список заметок"
+// @Failure 400 {object} map[string]interface{} "Неверный ID"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/notes [get]
+// @Security JWT
 func (h *NoteHandler) Notes(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
@@ -46,6 +55,17 @@ func (h *NoteHandler) Notes(c *gin.Context) {
 }
 
 // CreateNote создаёт новую заметку.
+// @Summary Создание заметки
+// @Tags notes
+// @Accept json
+// @Produce json
+// @Param id path int true "ID игры"
+// @Param body body object true "Данные заметки"
+// @Success 201 {object} map[string]interface{} "Заметка создана"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/{id}/notes [post]
+// @Security JWT
 func (h *NoteHandler) CreateNote(c *gin.Context) {
 	gameID, parseErr := strconv.Atoi(c.Param("id"))
 	if parseErr != nil || gameID <= 0 {
@@ -98,6 +118,15 @@ func (h *NoteHandler) CreateNote(c *gin.Context) {
 }
 
 // DeleteNote удаляет заметку.
+// @Summary Удаление заметки
+// @Tags notes
+// @Produce json
+// @Param note_id path int true "ID заметки"
+// @Success 200 {object} map[string]interface{} "Заметка удалена"
+// @Failure 400 {object} map[string]interface{} "Неверный ID"
+// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Router /games/notes/{note_id} [delete]
+// @Security JWT
 func (h *NoteHandler) DeleteNote(c *gin.Context) {
 	noteID, err := strconv.Atoi(c.Param("note_id"))
 	if err != nil || noteID <= 0 {

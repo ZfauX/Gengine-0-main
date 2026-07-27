@@ -74,6 +74,16 @@ type BeginRegistrationInput struct {
 	Name string `json:"name" form:"name"`
 }
 
+// BeginRegistration начинает регистрацию passkey.
+// @Summary Начало регистрации passkey
+// @Tags webauthn
+// @Accept json
+// @Produce json
+// @Param credential body object false "Опции регистрации"
+// @Success 200 {object} map[string]interface{} "Опции регистрации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /auth/webauthn/register/begin [post]
+// @Security JWT
 func (h *WebAuthnHandler) BeginRegistration(c *gin.Context) {
 	userID := c.GetUint("userID")
 	user, err := h.userRepo.GetByID(c.Request.Context(), userID)
@@ -135,6 +145,16 @@ func (h *WebAuthnHandler) BeginRegistration(c *gin.Context) {
 	c.JSON(http.StatusOK, creation)
 }
 
+// FinishRegistration завершает регистрацию passkey.
+// @Summary Завершение регистрации passkey
+// @Tags webauthn
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Passkey зарегистрирован"
+// @Failure 400 {object} map[string]interface{} "Ошибка регистрации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /auth/webauthn/register/finish [post]
+// @Security JWT
 func (h *WebAuthnHandler) FinishRegistration(c *gin.Context) {
 	userID := c.GetUint("userID")
 	user, err := h.userRepo.GetByID(c.Request.Context(), userID)
@@ -231,6 +251,13 @@ func (h *WebAuthnHandler) FinishRegistration(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "id": wc.ID})
 }
 
+// BeginLogin начинает аутентификацию по passkey.
+// @Summary Начало входа по passkey
+// @Tags webauthn
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Опции аутентификации"
+// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+// @Router /auth/webauthn/login/begin [post]
 func (h *WebAuthnHandler) BeginLogin(c *gin.Context) {
 	assertion, sessionData, err := h.webAuthn.BeginDiscoverableLogin()
 	if err != nil {
@@ -251,6 +278,14 @@ func (h *WebAuthnHandler) BeginLogin(c *gin.Context) {
 	c.JSON(http.StatusOK, assertion)
 }
 
+// FinishLogin завершает аутентификацию по passkey.
+// @Summary Завершение входа по passkey
+// @Tags webauthn
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Результат аутентификации"
+// @Failure 400 {object} map[string]interface{} "Ошибка аутентификации"
+// @Router /auth/webauthn/login/finish [post]
 func (h *WebAuthnHandler) FinishLogin(c *gin.Context) {
 	sess := sessions.Default(c)
 	sessionDataStr := sess.Get(webauthnLoginSessionKey)
@@ -357,6 +392,14 @@ func (h *WebAuthnHandler) FinishLogin(c *gin.Context) {
 	})
 }
 
+// ListKeys отображает список passkey-ключей.
+// @Summary Список passkey-ключей
+// @Tags webauthn
+// @Produce html
+// @Success 200 {string} html "Страница управления ключами"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /profile/webauthn-keys [get]
+// @Security JWT
 func (h *WebAuthnHandler) ListKeys(c *gin.Context) {
 	userID := c.GetUint("userID")
 	creds, err := h.webauthnRepo.ListByUserID(c.Request.Context(), userID)
@@ -371,6 +414,16 @@ func (h *WebAuthnHandler) ListKeys(c *gin.Context) {
 	})
 }
 
+// DeleteKey удаляет passkey-ключ.
+// @Summary Удаление passkey-ключа
+// @Tags webauthn
+// @Produce html
+// @Param id path int true "ID ключа"
+// @Success 302 {string} string "Перенаправление на /profile/webauthn-keys"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 404 {object} map[string]interface{} "Ключ не найден"
+// @Router /profile/webauthn-keys/delete/{id} [post]
+// @Security JWT
 func (h *WebAuthnHandler) DeleteKey(c *gin.Context) {
 	userID := c.GetUint("userID")
 	id, ok := render.ParseID(c, "id")

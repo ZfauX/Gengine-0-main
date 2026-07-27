@@ -131,7 +131,7 @@ func TestAuthRequired_API_NoCookie(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
-	assert.Contains(t, w.Body.String(), middleware.ErrAuthRequired)
+	assert.Contains(t, w.Body.String(), middleware.ErrAuthRequired.Error())
 }
 
 func TestAuthRequired_API_InvalidToken(t *testing.T) {
@@ -149,7 +149,7 @@ func TestAuthRequired_API_InvalidToken(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
-	assert.Contains(t, w.Body.String(), middleware.ErrInvalidToken)
+	assert.Contains(t, w.Body.String(), middleware.ErrInvalidToken.Error())
 }
 
 // =============================================================================
@@ -236,7 +236,7 @@ func TestAdminRequired_UserNotAdmin(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
-	assert.Contains(t, w.Body.String(), middleware.ErrAccessDenied)
+	assert.Contains(t, w.Body.String(), middleware.ErrAccessDenied.Error())
 }
 
 func TestAdminRequired_AdminUser(t *testing.T) {
@@ -275,7 +275,7 @@ func TestAdminRequired_NoUserID(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
-	assert.Contains(t, w.Body.String(), middleware.ErrAuthRequired)
+	assert.Contains(t, w.Body.String(), middleware.ErrAuthRequired.Error())
 }
 
 // =============================================================================
@@ -403,7 +403,7 @@ func TestRequirePermission_NotAuthorized(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
-	assert.Contains(t, w.Body.String(), middleware.ErrInsufficientRights)
+	assert.Contains(t, w.Body.String(), middleware.ErrInsufficientRights.Error())
 }
 
 func TestRequirePermission_NoUserID(t *testing.T) {
@@ -440,7 +440,7 @@ func TestRequirePermission_InvalidGameID(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
-	assert.Contains(t, w.Body.String(), middleware.ErrInvalidGameID)
+	assert.Contains(t, w.Body.String(), middleware.ErrInvalidGameID.Error())
 }
 
 // =============================================================================
@@ -691,7 +691,7 @@ func TestGlobalRateLimit(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusTooManyRequests, w.Code)
-	assert.Contains(t, w.Body.String(), middleware.ErrRateLimitGlobal)
+	assert.Contains(t, w.Body.String(), middleware.ErrRateLimitGlobal.Error())
 }
 
 func TestLoginRateLimit(t *testing.T) {
@@ -715,7 +715,7 @@ func TestLoginRateLimit(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusTooManyRequests, w.Code)
-	assert.Contains(t, w.Body.String(), middleware.ErrRateLimitLogin)
+	assert.Contains(t, w.Body.String(), middleware.ErrRateLimitLogin.Error())
 }
 
 func TestCodeSubmissionRateLimit(t *testing.T) {
@@ -741,7 +741,7 @@ func TestCodeSubmissionRateLimit(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusTooManyRequests, w.Code)
-	assert.Contains(t, w.Body.String(), middleware.ErrRateLimitCode)
+	assert.Contains(t, w.Body.String(), middleware.ErrRateLimitCode.Error())
 }
 
 func TestCodeSubmissionRateLimit_NoUserID(t *testing.T) {

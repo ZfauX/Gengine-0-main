@@ -1,6 +1,6 @@
 {{define "auth-login.html"}}
 <div class="max-w-md mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 mb-6 text-center">Вход</h1>
+    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6 text-center">Вход</h1>
 
     {{if .Error}}
     <div class="flash flash-error">{{.Error}}</div>
@@ -11,17 +11,17 @@
             <input type="hidden" name="_csrf" value="{{.csrf}}">
 
             <div>
-                <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
                 <input type="email" name="email" id="email" required
-                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Email}}border-red-500{{end}}"
+                       class="w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Email}}border-red-500{{end}}"
                        onkeypress="if(event.key === 'Enter') this.form.submit()">
                 {{if .Errors.Email}}<p class="text-red-500 text-xs mt-1">{{.Errors.Email}}</p>{{end}}
             </div>
 
             <div>
-                <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Пароль</label>
+                <label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Пароль</label>
                 <input type="password" name="password" id="password" required
-                       class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Password}}border-red-500{{end}}">
+                       class="w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Password}}border-red-500{{end}}">
                 {{if .Errors.Password}}<p class="text-red-500 text-xs mt-1">{{.Errors.Password}}</p>{{end}}
             </div>
 
@@ -38,20 +38,20 @@
         </script>
 
         <div class="mt-4 space-y-2 text-center text-sm">
-            <a href="/auth/register" class="block text-blue-600 hover:underline">Нет аккаунта? Зарегистрироваться</a>
-            <a href="/auth/forgot" class="block text-blue-600 hover:underline">Забыли пароль?</a>
+            <a href="/auth/register" class="block text-blue-600 dark:text-blue-400 hover:underline">Нет аккаунта? Зарегистрироваться</a>
+            <a href="/auth/forgot" class="block text-blue-600 dark:text-blue-400 hover:underline">Забыли пароль?</a>
         </div>
     </div>
 
     <!-- Passkey -->
     <div class="card mt-6">
-        <p class="text-sm text-gray-600 text-center mb-3">Войти без пароля:</p>
+        <p class="text-sm text-gray-600 dark:text-gray-400 text-center mb-3">Войти без пароля:</p>
         {{template "webauthn-login-button.html" .}}
     </div>
 
     <!-- OAuth-провайдеры -->
     <div class="card mt-6">
-        <p class="text-sm text-gray-600 text-center mb-3">Или войдите через:</p>
+        <p class="text-sm text-gray-600 dark:text-gray-400 text-center mb-3">Или войдите через:</p>
         <div class="flex flex-wrap gap-2 justify-center">
             <a href="/auth/oauth/google" class="btn text-sm bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md">Google</a>
             <a href="/auth/oauth/github" class="btn text-sm bg-gray-800 hover:bg-gray-900 text-white px-4 py-2 rounded-md">GitHub</a>

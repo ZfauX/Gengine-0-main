@@ -25,6 +25,12 @@
         var self = this;
         var wsUrl = this.url;
 
+        // Отменяем старый retryTimer перед новым connect (W1)
+        if (this.retryTimer) {
+            clearTimeout(this.retryTimer);
+            this.retryTimer = null;
+        }
+
         if (this.protocols) {
             this.ws = new WebSocket(wsUrl, this.protocols);
         } else {
@@ -51,7 +57,8 @@
                 var delay = self.calculateDelay();
                 console.log('Reconnecting in', delay, 'ms (attempt', self.retryCount + 1, 'of', self.maxRetries, ')');
                 
-                setTimeout(function() {
+                self.retryTimer = setTimeout(function() {
+                    self.retryTimer = null;
                     self.retryCount++;
                     self.connect();
                 }, delay);

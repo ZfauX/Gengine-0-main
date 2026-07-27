@@ -25,7 +25,9 @@ func (s *NoteService) ListByGame(ctx context.Context, gameID, userID uint) ([]No
 		return nil, errors.New("только автор или соавтор может видеть заметки")
 	}
 	var notes []Note
-	err = s.DB.WithContext(ctx).Preload("User").Where("game_id = ?", gameID).Order("created_at DESC").Find(&notes).Error
+	err = s.DB.WithContext(ctx).Preload("User", func(db *gorm.DB) *gorm.DB {
+		return db.Select("id, name, avatar_path")
+	}).Where("game_id = ?", gameID).Order("created_at DESC").Find(&notes).Error
 	return notes, err
 }
 

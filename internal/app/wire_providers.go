@@ -35,8 +35,8 @@ func wrapLevelProgressService(db *gorm.DB, sseMgr *game.SSEManager, gameService 
 	return game.NewLevelProgressService(db).WithSSEManager(sseMgr).WithGameService(gameService)
 }
 
-func wrapTournamentService(tournamentRepo tournament.TournamentRepository, tournamentGameRepo tournament.TournamentGameRepository, tournamentTeamRepo tournament.TournamentTeamRepository, tournamentResultRepo tournament.TournamentResultRepository, teamService *team.TeamService, cfg *config.Config) *tournament.TournamentService {
-	return tournament.NewTournamentService(tournamentRepo, tournamentGameRepo, tournamentTeamRepo, tournamentResultRepo, teamService, cfg)
+func wrapTournamentService(db *gorm.DB, tournamentRepo tournament.TournamentRepository, tournamentGameRepo tournament.TournamentGameRepository, tournamentTeamRepo tournament.TournamentTeamRepository, tournamentResultRepo tournament.TournamentResultRepository, teamService *team.TeamService, cfg *config.Config) *tournament.TournamentService {
+	return tournament.NewTournamentService(db, tournamentRepo, tournamentGameRepo, tournamentTeamRepo, tournamentResultRepo, teamService, cfg)
 }
 
 func wrapTeamService(teamRepo team.TeamRepository, coAuthorSvc *game.CoAuthorService) *team.TeamService {

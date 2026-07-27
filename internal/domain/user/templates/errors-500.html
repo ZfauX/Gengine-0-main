@@ -2,11 +2,11 @@
 <div class="min-h-[60vh] flex items-center justify-center px-4">
     <div class="max-w-md w-full text-center">
         <div class="text-6xl mb-6">😵</div>
-        <h1 class="text-2xl font-bold text-gray-800 mb-4">500 — Внутренняя ошибка сервера</h1>
+        <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">500 — Внутренняя ошибка сервера</h1>
         {{if .Error}}
         <p class="text-red-600 mb-2">{{.Error}}</p>
         {{else}}
-        <p class="text-gray-600 mb-2">Что-то пошло не так. Мы уже работаем над исправлением.</p>
+        <p class="text-gray-600 dark:text-gray-400 mb-2">Что-то пошло не так. Мы уже работаем над исправлением.</p>
         {{end}}
         <p class="text-sm text-gray-400 mb-6">Попробуйте обновить страницу через несколько минут или вернитесь назад.</p>
         <div class="flex flex-wrap gap-3 justify-center">

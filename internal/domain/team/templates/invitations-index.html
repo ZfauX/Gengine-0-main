@@ -1,6 +1,6 @@
 {{define "invitations-index.html"}}
 <div class="max-w-4xl mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 mb-6">Приглашения в команду</h1>
+    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Приглашения в команду</h1>
 
     <div class="mb-6">
         <a href="/games/{{.GameID}}/teams/{{.TeamID}}/invitations/new" class="btn btn-primary text-sm">+ Создать новое приглашение</a>
@@ -12,8 +12,8 @@
             {{range .Invitations}}
             <li class="py-3 flex flex-wrap items-center justify-between gap-2">
                 <div>
-                    <span class="font-medium text-gray-800">{{.User.Name}}</span>
-                    <span class="text-sm text-gray-500 ml-2">({{.User.Email}})</span>
+                    <span class="font-medium text-gray-800 dark:text-gray-100">{{.User.Name}}</span>
+                    <span class="text-sm text-gray-500 dark:text-gray-400 ml-2">({{.User.Email}})</span>
                 </div>
                 <div>
                     {{if eq .Status "pending"}}
@@ -23,7 +23,7 @@
                     {{else if eq .Status "declined"}}
                         <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">Отклонено</span>
                     {{else}}
-                        <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">{{.Status}}</span>
+                        <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100">{{.Status}}</span>
                     {{end}}
                 </div>
             </li>
@@ -32,8 +32,8 @@
     </div>
     {{else}}
     <div class="card text-center py-12">
-        <p class="text-gray-500">Приглашений пока нет.</p>
-        <p class="mt-2 text-sm text-gray-400"><a href="/games/{{.GameID}}/teams/{{.TeamID}}/invitations/new" class="text-blue-600 hover:underline">Создайте первое приглашение</a></p>
+        <p class="text-gray-500 dark:text-gray-400">Приглашений пока нет.</p>
+        <p class="mt-2 text-sm text-gray-400"><a href="/games/{{.GameID}}/teams/{{.TeamID}}/invitations/new" class="text-blue-600 dark:text-blue-400 hover:underline">Создайте первое приглашение</a></p>
     </div>
     {{end}}
 

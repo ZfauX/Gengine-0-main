@@ -2,7 +2,7 @@
 <!-- Open Graph meta -->
 {{if .Game}}
 <meta property="og:title" content="{{.Game.Name}} · Encounter Engine">
-<meta property="og:description" content="{{.Game.Description | truncate 200}}">
+<meta property="og:description" content="{{truncate .Game.Description 200}}">
 <meta property="og:url" content="{{.BaseURL}}/games/{{.Game.ID}}">
 {{if .Game.CoverPath}}<meta property="og:image" content="{{.BaseURL}}/{{.Game.CoverPath}}">{{end}}
 <meta property="og:type" content="website">
@@ -10,7 +10,7 @@
 {{end}}
 <div class="max-w-7xl mx-auto">
     <!-- Заголовок -->
-    <h1 class="text-2xl font-bold text-gray-800 mb-6">{{.Game.Name}}</h1>
+    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">{{.Game.Name}}</h1>
 
     <!-- Основная карточка -->
     <div class="card mb-6">
@@ -21,16 +21,16 @@
         {{end}}
 
         <div class="space-y-2 text-sm">
-            <p class="text-gray-700">{{.Game.Description}}</p>
-            <p><span class="font-medium text-gray-600">Автор:</span> {{.Game.Author.Name}}</p>
+            <p class="text-gray-700 dark:text-gray-300">{{.Game.Description}}</p>
+            <p><span class="font-medium text-gray-600 dark:text-gray-400">Автор:</span> {{.Game.Author.Name}}</p>
             {{if .Game.StartsAt}}
-            <p><span class="font-medium text-gray-600">Дата старта:</span> {{.Game.StartsAt.Format "02.01.2006 15:04"}}</p>
+            <p><span class="font-medium text-gray-600 dark:text-gray-400">Дата старта:</span> {{.Game.StartsAt.Format "02.01.2006 15:04"}}</p>
             {{end}}
             {{if .Game.RegistrationDeadline}}
-            <p><span class="font-medium text-gray-600">Регистрация до:</span> {{.Game.RegistrationDeadline.Format "02.01.2006 15:04"}}</p>
+            <p><span class="font-medium text-gray-600 dark:text-gray-400">Регистрация до:</span> {{.Game.RegistrationDeadline.Format "02.01.2006 15:04"}}</p>
             {{end}}
-            <p><span class="font-medium text-gray-600">Максимум команд:</span> {{.Game.MaxTeamNumber}}</p>
-            <p><span class="font-medium text-gray-600">Видимость:</span>
+            <p><span class="font-medium text-gray-600 dark:text-gray-400">Максимум команд:</span> {{.Game.MaxTeamNumber}}</p>
+            <p><span class="font-medium text-gray-600 dark:text-gray-400">Видимость:</span>
                 {{if eq .Game.Visibility "public"}}Публичная
                 {{else if eq .Game.Visibility "private"}}Приватная
                 {{else}}Скрытая{{end}}
@@ -47,11 +47,11 @@
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         <!-- Рейтинг -->
         <div class="card">
-            <h3 class="text-lg font-semibold text-gray-700 mb-3">Рейтинг игры</h3>
+            <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">Рейтинг игры</h3>
             {{if .ReviewsCount}}
-            <p class="text-gray-600">Средняя оценка: <strong class="text-blue-600">{{.AvgRating}}</strong> ({{.ReviewsCount}} отзывов)</p>
+            <p class="text-gray-600 dark:text-gray-400">Средняя оценка: <strong class="text-blue-600 dark:text-blue-400">{{.AvgRating}}</strong> ({{.ReviewsCount}} отзывов)</p>
             {{else}}
-            <p class="text-gray-500">Пока нет отзывов.</p>
+            <p class="text-gray-500 dark:text-gray-400">Пока нет отзывов.</p>
             {{end}}
             {{if .CurrentUserID}}
             <div class="mt-3">
@@ -63,19 +63,19 @@
         <!-- Список отзывов (если есть) -->
         {{if .Reviews}}
         <div class="card">
-            <h3 class="text-lg font-semibold text-gray-700 mb-3">Отзывы</h3>
+            <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">Отзывы</h3>
             <div class="space-y-4 max-h-64 overflow-y-auto">
                 {{range .Reviews}}
                 <div class="border-b border-gray-100 pb-3 last:border-0">
                     <div class="flex justify-between items-start">
                         <div>
-                            <span class="font-medium text-gray-800">{{.User.Name}}</span>
-                            <span class="text-sm text-gray-500 ml-2">оценка: {{.Rating}}/10</span>
+                            <span class="font-medium text-gray-800 dark:text-gray-100">{{.User.Name}}</span>
+                            <span class="text-sm text-gray-500 dark:text-gray-400 ml-2">оценка: {{.Rating}}/10</span>
                         </div>
                         <span class="text-xs text-gray-400">{{.CreatedAt.Format "02.01.2006 15:04"}}</span>
                     </div>
                     {{if .Comment}}
-                    <p class="text-sm text-gray-600 mt-1">{{.Comment}}</p>
+                    <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">{{.Comment}}</p>
                     {{end}}
                 </div>
                 {{end}}
@@ -119,23 +119,23 @@
 
     <!-- Модальное окно быстрого просмотра -->
     <div id="preview-modal" class="fixed inset-0 z-50 hidden bg-black/50 flex items-center justify-center">
-        <div class="bg-white w-full max-w-4xl max-h-[90vh] rounded-lg shadow-xl overflow-hidden mx-4">
-            <div class="flex justify-between items-center p-4 border-b border-gray-200">
-                <h2 class="text-xl font-bold text-gray-800">Состав игры «{{.Game.Name}}»</h2>
-                <button id="close-preview" class="text-gray-400 hover:text-gray-600 text-2xl font-bold">&times;</button>
+        <div class="bg-white dark:bg-gray-800 w-full max-w-4xl max-h-[90vh] rounded-lg shadow-xl overflow-hidden mx-4">
+            <div class="flex justify-between items-center p-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">Состав игры «{{.Game.Name}}»</h2>
+                <button id="close-preview" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-2xl font-bold">&times;</button>
             </div>
             <div id="preview-content" class="p-6 overflow-y-auto max-h-[70vh]">
-                <p class="text-gray-500">Загрузка...</p>
+                <p class="text-gray-500 dark:text-gray-400">Загрузка...</p>
             </div>
         </div>
     </div>
 
     <!-- Модальное окно удаления с undo -->
     <div id="delete-modal" class="fixed inset-0 z-50 hidden bg-black/50 flex items-center justify-center">
-        <div class="bg-white w-full max-w-md rounded-lg shadow-xl mx-4">
+        <div class="bg-white dark:bg-gray-800 w-full max-w-md rounded-lg shadow-xl mx-4">
             <div class="p-6">
-                <h3 class="text-lg font-bold text-gray-800 mb-2">Удалить игру?</h3>
-                <p class="text-gray-600 mb-4">Вы действительно хотите удалить <strong id="delete-game-name"></strong>?</p>
+                <h3 class="text-lg font-bold text-gray-800 dark:text-gray-100 mb-2">Удалить игру?</h3>
+                <p class="text-gray-600 dark:text-gray-400 mb-4">Вы действительно хотите удалить <strong id="delete-game-name"></strong>?</p>
                 <p class="text-sm text-red-600 mb-4">⚠️ Это действие нельзя будет отменить. Все уровни, вопросы и ответы будут удалены.</p>
                 <div class="flex gap-3">
                     <button id="confirm-delete" class="btn btn-danger text-sm flex-1">Удалить</button>
@@ -148,7 +148,7 @@
                     </div>
                     <div class="flex justify-between items-center">
                         <p class="text-xs text-yellow-600">Отмена через <span id="delete-timer-count">5</span> сек</p>
-                        <button id="undo-delete" class="text-sm font-medium text-blue-600 hover:text-blue-800">↩ Отменить удаление</button>
+                        <button id="undo-delete" class="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800">↩ Отменить удаление</button>
                     </div>
                 </div>
             </div>
@@ -224,7 +224,7 @@
 
         function renderPreview(levels) {
             if (!levels || levels.length === 0) {
-                previewContent.innerHTML = '<p class="text-gray-500">Нет данных</p>';
+                previewContent.innerHTML = '<p class="text-gray-500 dark:text-gray-400">Нет данных</p>';
                 return;
             }
             let html = '';
@@ -232,8 +232,8 @@
             let mapLevels = [];
 
             levels.forEach(function(lvl, index) {
-                html += `<div class="mb-4"><h3 class="font-semibold text-gray-800">${escapeHtml(String(index + 1))}. ${escapeHtml(lvl.name)}</h3>`;
-                if (lvl.description) html += `<p class="text-sm text-gray-600 italic">${escapeHtml(lvl.description)}</p>`;
+                html += `<div class="mb-4"><h3 class="font-semibold text-gray-800 dark:text-gray-100">${escapeHtml(String(index + 1))}. ${escapeHtml(lvl.name)}</h3>`;
+                if (lvl.description) html += `<p class="text-sm text-gray-600 dark:text-gray-400 italic">${escapeHtml(lvl.description)}</p>`;
 
                 // Check if level has coordinates
                 if (lvl.latitude && lvl.longitude) {
@@ -245,8 +245,8 @@
                     html += `<div class="ml-4 mt-2 space-y-2">`;
                     lvl.questions.forEach(function(q) {
                         html += `<div class="pl-4 border-l-4 border-blue-400">`;
-                        html += `<p class="font-medium text-gray-700">${escapeHtml(q.text)}</p>`;
-                        if (q.hint) html += `<p class="text-sm text-gray-500">Подсказка: ${escapeHtml(q.hint)}</p>`;
+                        html += `<p class="font-medium text-gray-700 dark:text-gray-300">${escapeHtml(q.text)}</p>`;
+                        if (q.hint) html += `<p class="text-sm text-gray-500 dark:text-gray-400">Подсказка: ${escapeHtml(q.hint)}</p>`;
                         if (q.answers && q.answers.length > 0) {
                             html += `<ul class="text-green-700 text-sm list-disc list-inside mt-1">`;
                             q.answers.forEach(function(a) { html += `<li>${escapeHtml(a)}</li>`; });

@@ -19,6 +19,17 @@ func NewPushHandler(db *gorm.DB, vapidCfg config.VAPIDConfig) *PushHandler {
 	return &PushHandler{db: db, vapidCfg: vapidCfg}
 }
 
+// Subscribe подписывает пользователя на push-уведомления.
+// @Summary Подписка на push-уведомления
+// @Tags push
+// @Accept json
+// @Produce json
+// @Param subscription body object true "Данные подписки"
+// @Success 200 {object} map[string]interface{} "Подписка оформлена"
+// @Failure 400 {object} map[string]interface{} "Неверный формат"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /api/push/subscribe [post]
+// @Security JWT
 func (h *PushHandler) Subscribe(c *gin.Context) {
 	userID := c.GetUint("userID")
 	if userID == 0 {
@@ -57,6 +68,17 @@ func (h *PushHandler) Subscribe(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "subscribed"})
 }
 
+// Unsubscribe отписывает пользователя от push-уведомлений.
+// @Summary Отписка от push-уведомлений
+// @Tags push
+// @Accept json
+// @Produce json
+// @Param endpoint body object true "Endpoint подписки"
+// @Success 200 {object} map[string]interface{} "Подписка удалена"
+// @Failure 400 {object} map[string]interface{} "Неверный запрос"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /api/push/unsubscribe [post]
+// @Security JWT
 func (h *PushHandler) Unsubscribe(c *gin.Context) {
 	userID := c.GetUint("userID")
 	if userID == 0 {
@@ -81,6 +103,12 @@ func (h *PushHandler) Unsubscribe(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "unsubscribed"})
 }
 
+// VapidPublicKey возвращает публичный ключ VAPID для push-уведомлений.
+// @Summary Публичный ключ VAPID
+// @Tags push
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Публичный ключ"
+// @Router /api/push/vapid-public-key [get]
 func (h *PushHandler) VapidPublicKey(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"public_key": h.vapidCfg.PublicKey,

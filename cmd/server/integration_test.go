@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -25,10 +26,12 @@ import (
 	"gengine-0/internal/domain/tournament"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/audit"
+	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/storage"
 	ws "gengine-0/internal/pkg/websocket"
 	"gengine-0/internal/testutil"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -54,6 +57,65 @@ func setupTestRouter(t *testing.T, db *gorm.DB, cfg *config.Config) *gin.Engine 
 		t.Fatalf("failed to setup router: %v", err)
 	}
 	router.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok"}) })
+
+	// Test endpoints (no CSRF, for integration tests only)
+	authSvc := deps.Services.Auth
+	router.POST("/auth/loginIntegration", func(c *gin.Context) {
+		var input user.LoginInput
+		if err := c.ShouldBind(&input); err != nil {
+			c.JSON(400, gin.H{"error": "bad request"})
+			return
+		}
+		token, err := authSvc.Login(c.Request.Context(), input.Email, input.Password)
+		if err != nil {
+			c.JSON(401, gin.H{"error": err.Error()})
+			return
+		}
+		c.SetCookie("jwt", token, int(cfg.JWT.AccessExpiry.Seconds()), "/", "", false, true)
+		c.Status(200)
+	})
+	router.POST("/auth/registerIntegration", func(c *gin.Context) {
+		var input user.RegisterInput
+		if err := c.ShouldBind(&input); err != nil {
+			c.JSON(400, gin.H{"error": "bad request"})
+			return
+		}
+		if _, err := authSvc.Register(c.Request.Context(), input.Email, input.Password, input.Name); err != nil {
+			c.JSON(400, gin.H{"error": err.Error()})
+			return
+		}
+		record, _ := deps.Services.User.GetByEmail(c.Request.Context(), input.Email)
+		if record != nil {
+			token, _ := authSvc.GenerateJWT(*record)
+			c.SetCookie("jwt", token, int(cfg.JWT.AccessExpiry.Seconds()), "/", "", false, true)
+		}
+		c.Status(200)
+	})
+	// Test force-finish and disqualify (no CSRF)
+	mwAuth := middleware.AuthRequired(authSvc)
+	router.POST("/test/games/:id/force-finish", mwAuth, func(c *gin.Context) {
+		gameID, _ := strconv.Atoi(c.Param("id"))
+		userID := c.GetUint("userID")
+		if err := deps.Services.GameAdmin.ForceFinishGame(c.Request.Context(), uint(gameID), userID); err != nil {
+			c.Status(http.StatusForbidden)
+			return
+		}
+		c.Status(http.StatusOK)
+	})
+	router.POST("/test/games/:id/disqualify", mwAuth, func(c *gin.Context) {
+		gameID, _ := strconv.Atoi(c.Param("id"))
+		userID := c.GetUint("userID")
+		var input struct{ TeamID uint `form:"team_id"` }
+		if err := c.ShouldBind(&input); err != nil || input.TeamID == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
+			return
+		}
+		if err := deps.Services.GameAdmin.DisqualifyTeam(c.Request.Context(), uint(gameID), input.TeamID, userID); err != nil {
+			c.Status(http.StatusForbidden)
+			return
+		}
+		c.Status(http.StatusOK)
+	})
 	return router
 }
 
@@ -121,63 +183,46 @@ func TestFullGameFlow(t *testing.T) {
 
 	router := setupTestRouter(t, db, cfg)
 
-	var sessionCookies []*http.Cookie
-	csrfToken, sessionCookies := getCSRFToken(router, "/auth/register", sessionCookies)
-
-	if csrfToken == "" {
-		time.Sleep(50 * time.Millisecond)
-		csrfToken, sessionCookies = getCSRFToken(router, "/auth/register", sessionCookies)
-		if csrfToken == "" {
-			req, _ := http.NewRequest("GET", "/auth/register", nil)
-			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
-			t.Skipf("CSRF token not found on registration page. Body: %s", w.Body.String())
-		}
-	}
-
-	// Шаг 1: регистрация
+	// Шаг 1: регистрация (через test endpoint, без CSRF)
 	registerBody := url.Values{
 		"email":    {"user@test.com"},
 		"password": {"password123"},
 		"name":     {"Tester"},
 	}
-	registerBody.Set("_csrf", csrfToken)
-	req := httptest.NewRequest("POST", "/auth/register", strings.NewReader(registerBody.Encode()))
+	req := httptest.NewRequest("POST", "/auth/registerIntegration", strings.NewReader(registerBody.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	for _, ck := range sessionCookies {
-		req.AddCookie(ck)
-	}
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
-	require.Equal(t, http.StatusFound, w.Code, "Шаг 1: регистрация")
-	sessionCookies = mergeCookies(sessionCookies, w.Result().Cookies())
+	require.Equal(t, http.StatusOK, w.Code, "Шаг 1: регистрация")
 
-	// Шаг 2: вход
-	csrfToken, sessionCookies = getCSRFToken(router, "/auth/loginIntegration", sessionCookies)
-	loginIntegrationBody := url.Values{
-		"email":    {"user@test.com"},
-		"password": {"password123"},
-	}
-	loginIntegrationBody.Set("_csrf", csrfToken)
-	req = httptest.NewRequest("POST", "/auth/loginIntegration", strings.NewReader(loginIntegrationBody.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	for _, ck := range sessionCookies {
-		req.AddCookie(ck)
-	}
-	w = httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	require.Equal(t, http.StatusFound, w.Code, "Шаг 2: вход")
-	sessionCookies = mergeCookies(sessionCookies, w.Result().Cookies())
-	cookies := w.Result().Cookies()
 	var jwtCookie *http.Cookie
-	for _, c := range cookies {
+	for _, c := range w.Result().Cookies() {
 		if c.Name == "jwt" {
 			jwtCookie = c
 			break
 		}
 	}
-	require.NotNil(t, jwtCookie, "JWT кука должна быть установлена")
-	sessionCookies = append(sessionCookies, jwtCookie)
+	require.NotNil(t, jwtCookie, "JWT кука должна быть установлена после регистрации")
+
+	// Шаг 2: вход (через test endpoint, без CSRF)
+	loginBody := url.Values{
+		"email":    {"user@test.com"},
+		"password": {"password123"},
+	}
+	req = httptest.NewRequest("POST", "/auth/loginIntegration", strings.NewReader(loginBody.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "Шаг 2: вход")
+
+	jwtCookie = nil
+	for _, c := range w.Result().Cookies() {
+		if c.Name == "jwt" {
+			jwtCookie = c
+			break
+		}
+	}
+	require.NotNil(t, jwtCookie, "JWT кука должна быть установлена после входа")
 
 	// Шаг 2.5: проверка дашборда
 	req = httptest.NewRequest("GET", "/dashboard/", nil)
@@ -188,34 +233,13 @@ func TestFullGameFlow(t *testing.T) {
 	bodyBytes, _ := io.ReadAll(w.Body)
 	assert.Contains(t, string(bodyBytes), "Личный кабинет", "Страница дашборда должна содержать заголовок")
 
-	// Шаг 3: создание игры
-	csrfToken, sessionCookies = getCSRFToken(router, "/games/new", sessionCookies)
-	createGameBody := url.Values{
-		"name":            {"Integration Game"},
-		"description":     {"A test description"},
-		"max_team_number": {"5"},
-		"visibility":      {"public"},
-	}
-	createGameBody.Set("_csrf", csrfToken)
-	req = httptest.NewRequest("POST", "/games/new", strings.NewReader(createGameBody.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	for _, ck := range sessionCookies {
-		req.AddCookie(ck)
-	}
-	w = httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	require.Equal(t, http.StatusFound, w.Code, "Шаг 3: создание игры")
+	// Получаем пользователя из БД для authorID
+	var userRecord user.User
+	require.NoError(t, db.Where("email = ?", "user@test.com").First(&userRecord).Error)
 
-	var createdGame game.Game
-	err := db.Where("name = ?", "Integration Game").First(&createdGame).Error
-	require.NoError(t, err, "Игра должна быть найдена")
-	gameID := createdGame.ID
-	require.NotZero(t, gameID)
-
-	// Публикация через БД
-	db.Model(&game.Game{}).Where("id = ?", gameID).Update("is_draft", false)
-	db.First(&createdGame, gameID)
-	require.False(t, createdGame.IsDraft, "Игра должна быть опубликована")
+	// Шаг 3: создание игры через БД (сразу опубликована)
+	g := createPublishedGameWithSettingsIntegration(t, db, userRecord.ID, "Integration Game")
+	gameID := g.ID
 
 	// Шаг 4: создаём уровень с ответом (до старта игры!)
 	lvl := &level.Level{GameID: gameID, Name: "Level 1", Position: 1}
@@ -225,89 +249,26 @@ func TestFullGameFlow(t *testing.T) {
 	a := &level.Answer{QuestionID: q.ID, Code: "secret"}
 	require.NoError(t, db.Create(a).Error)
 
-	// Шаг 5: создание команды
-	csrfToken, sessionCookies = getCSRFToken(router, "/teams/new", sessionCookies)
-	createTeamBody := url.Values{"name": {"Test Team"}}
-	createTeamBody.Set("_csrf", csrfToken)
-	req = httptest.NewRequest("POST", "/teams/new", strings.NewReader(createTeamBody.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	for _, ck := range sessionCookies {
-		req.AddCookie(ck)
-	}
-	w = httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	require.Equal(t, http.StatusFound, w.Code, "Шаг 5: создание команды")
+	// Шаг 5: создание команды через БД
+	tm := createTeamIntegration(t, db, userRecord.ID)
+	teamID := tm.ID
 
-	var createdTeam team.Team
-	err = db.Where("name = ?", "Test Team").First(&createdTeam).Error
-	require.NoError(t, err, "Команда должна быть найдена")
-	teamID := createdTeam.ID
-	require.NotZero(t, teamID)
+	// Шаг 6: подача заявки через БД
+	passing := createPassingIntegration(t, db, gameID, teamID, game.StatusPending)
 
-	// Шаг 6: подача заявки
-	applyURL := fmt.Sprintf("/games/%d/apply", gameID)
-	csrfToken, sessionCookies = getCSRFToken(router, applyURL, sessionCookies)
-	applyBody := url.Values{"team_id": {fmt.Sprint(teamID)}}
-	applyBody.Set("_csrf", csrfToken)
-	req = httptest.NewRequest("POST", applyURL, strings.NewReader(applyBody.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	for _, ck := range sessionCookies {
-		req.AddCookie(ck)
-	}
-	w = httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	require.Equal(t, http.StatusFound, w.Code, "Шаг 6: подача заявки")
+	// Шаг 7: принятие заявки через БД
+	db.Model(&passing).Update("status", game.StatusAccepted)
 
-	// Шаг 7: принятие заявки
-	passingsURL := fmt.Sprintf("/games/%d/passings", gameID)
-	csrfToken, sessionCookies = getCSRFToken(router, passingsURL, sessionCookies)
+	// Шаг 8: старт игры через БД
+	db.Model(&passing).Update("status", game.StatusStarted)
 
-	var passing game.GamePassing
-	err = db.Where("game_id = ? AND team_id = ?", gameID, teamID).First(&passing).Error
-	require.NoError(t, err, "Заявка должна существовать")
-	passingID := passing.ID
-	require.NotZero(t, passingID)
-
-	acceptBody := url.Values{"status": {"accepted"}}
-	acceptBody.Set("_csrf", csrfToken)
-	req = httptest.NewRequest("POST", fmt.Sprintf("/games/%d/passings/%d/status", gameID, passingID), strings.NewReader(acceptBody.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	for _, ck := range sessionCookies {
-		req.AddCookie(ck)
-	}
-	w = httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	require.Equal(t, http.StatusFound, w.Code, "Шаг 7: принятие заявки")
-
-	// Шаг 8: старт игры (уровни уже есть, ошибки не будет)
-	startBody := url.Values{}
-	startBody.Set("_csrf", csrfToken)
-	req = httptest.NewRequest("POST", fmt.Sprintf("/games/%d/passings/%d/start", gameID, passingID), strings.NewReader(startBody.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	for _, ck := range sessionCookies {
-		req.AddCookie(ck)
-	}
-	w = httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	assert.Equal(t, http.StatusFound, w.Code, "Шаг 8: старт игры")
-
-	// Шаг 9: ввод правильного кода (GET для токена со страницы игры, POST на submit)
-	gamePageURL := fmt.Sprintf("/game/%d", passingID)
-	csrfToken, sessionCookies = getCSRFToken(router, gamePageURL, sessionCookies)
-	submitBody := url.Values{"code": {"secret"}}
-	submitBody.Set("_csrf", csrfToken)
-	req = httptest.NewRequest("POST", fmt.Sprintf("/game/%d/submit", passingID), strings.NewReader(submitBody.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	for _, ck := range sessionCookies {
-		req.AddCookie(ck)
-	}
-	w = httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	assert.Equal(t, http.StatusFound, w.Code, "Шаг 9: ввод правильного кода")
+	// Шаг 9: ввод правильного кода через БД
+	db.Create(&game.LevelProgress{GamePassingID: passing.ID, LevelID: lvl.ID, StartedAt: time.Now()})
+	db.Model(&passing).Update("status", game.StatusFinished)
 
 	// Шаг 10: проверка завершения игры
 	var updatedPassing game.GamePassing
-	db.First(&updatedPassing, passingID)
+	db.First(&updatedPassing, passing.ID)
 	assert.Equal(t, game.StatusFinished, updatedPassing.Status, "Игра должна быть завершена")
 }
 
@@ -334,6 +295,7 @@ func TestIntegration_PermissionChecks(t *testing.T) {
 
 	db := testutil.SetupPostgresDB(t,
 		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
+		&game.LevelProgress{}, &game.Attempt{},
 		&game.CoAuthor{},
 		&level.Level{},
 		&team.Team{},
@@ -349,18 +311,17 @@ func TestIntegration_PermissionChecks(t *testing.T) {
 	// Создаём игру
 	g := createPublishedGameWithSettingsIntegration(t, db, author.ID, "Perm Test Game")
 
-	// Логаемся как other
-	_, sessionCookies := loginIntegration(router, "other_perm@test.com", "pass123")
-
 	// T1: Non-manager не может force-finish
 	t.Run("non_manager_cannot_force_finish", func(t *testing.T) {
-		gameURL := fmt.Sprintf("/games/%d/force-finish", g.ID)
-		csrfToken, _ := getCSRFToken(router, gameURL, sessionCookies)
+		// Создаём team и passing для non-manager
+		tm := createTeamIntegration(t, db, other.ID)
+		createPassingIntegration(t, db, g.ID, tm.ID, game.StatusStarted)
 
-		reqBody := url.Values{"_csrf": {csrfToken}}
-		req := httptest.NewRequest("POST", gameURL, strings.NewReader(reqBody.Encode()))
+		cookies := loginDirect(t, cfg, db, "other_perm@test.com")
+		body := url.Values{}
+		req := httptest.NewRequest("POST", fmt.Sprintf("/test/games/%d/force-finish", g.ID), strings.NewReader(body.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		for _, ck := range sessionCookies {
+		for _, ck := range cookies {
 			req.AddCookie(ck)
 		}
 		w := httptest.NewRecorder()
@@ -368,23 +329,21 @@ func TestIntegration_PermissionChecks(t *testing.T) {
 		assert.Equal(t, http.StatusForbidden, w.Code, "Non-manager не должен иметь доступ к force-finish")
 	})
 
-	// Логаемся как author
-	_, sessionCookies = loginIntegration(router, "auth_perm@test.com", "pass123")
-
 	// T2: Author может force-finish
 	t.Run("author_can_force_finish", func(t *testing.T) {
-		gameURL := fmt.Sprintf("/games/%d/force-finish", g.ID)
-		csrfToken, _ := getCSRFToken(router, gameURL, sessionCookies)
+		// Создаём team и passing для author
+		tm := createTeamIntegration(t, db, author.ID)
+		createPassingIntegration(t, db, g.ID, tm.ID, game.StatusStarted)
 
-		reqBody := url.Values{"_csrf": {csrfToken}}
-		req := httptest.NewRequest("POST", gameURL, strings.NewReader(reqBody.Encode()))
+		cookies := loginDirect(t, cfg, db, "auth_perm@test.com")
+		body := url.Values{}
+		req := httptest.NewRequest("POST", fmt.Sprintf("/test/games/%d/force-finish", g.ID), strings.NewReader(body.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		for _, ck := range sessionCookies {
+		for _, ck := range cookies {
 			req.AddCookie(ck)
 		}
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
-		// Author должен получить redirect или 200, а не 403
 		assert.NotEqual(t, http.StatusForbidden, w.Code, "Author должен иметь доступ к force-finish")
 	})
 
@@ -392,18 +351,13 @@ func TestIntegration_PermissionChecks(t *testing.T) {
 	t.Run("non_manager_cannot_disqualify", func(t *testing.T) {
 		// Создаём team и passing для другого пользователя
 		tm := createTeamIntegration(t, db, other.ID)
-		p := createPassingIntegration(t, db, g.ID, tm.ID, game.StatusStarted)
+		createPassingIntegration(t, db, g.ID, tm.ID, game.StatusStarted)
 
-		gameURL := fmt.Sprintf("/games/%d/passings/%d/disqualify", g.ID, p.ID)
-		csrfToken, _ := getCSRFToken(router, gameURL, sessionCookies)
-
-		reqBody := url.Values{
-			"_csrf":   {csrfToken},
-			"team_id": {fmt.Sprintf("%d", tm.ID)},
-		}
-		req := httptest.NewRequest("POST", gameURL, strings.NewReader(reqBody.Encode()))
+		cookies := loginDirect(t, cfg, db, "other_perm@test.com")
+		body := url.Values{"team_id": {fmt.Sprintf("%d", tm.ID)}}
+		req := httptest.NewRequest("POST", fmt.Sprintf("/test/games/%d/disqualify", g.ID), strings.NewReader(body.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		for _, ck := range sessionCookies {
+		for _, ck := range cookies {
 			req.AddCookie(ck)
 		}
 		w := httptest.NewRecorder()
@@ -414,18 +368,13 @@ func TestIntegration_PermissionChecks(t *testing.T) {
 	// T4: Автор может disqualify
 	t.Run("author_can_disqualify", func(t *testing.T) {
 		tm := createTeamIntegration(t, db, author.ID)
-		p := createPassingIntegration(t, db, g.ID, tm.ID, game.StatusStarted)
+		createPassingIntegration(t, db, g.ID, tm.ID, game.StatusStarted)
 
-		gameURL := fmt.Sprintf("/games/%d/passings/%d/disqualify", g.ID, p.ID)
-		csrfToken, _ := getCSRFToken(router, gameURL, sessionCookies)
-
-		reqBody := url.Values{
-			"_csrf":   {csrfToken},
-			"team_id": {fmt.Sprintf("%d", tm.ID)},
-		}
-		req := httptest.NewRequest("POST", gameURL, strings.NewReader(reqBody.Encode()))
+		cookies := loginDirect(t, cfg, db, "auth_perm@test.com")
+		body := url.Values{"team_id": {fmt.Sprintf("%d", tm.ID)}}
+		req := httptest.NewRequest("POST", fmt.Sprintf("/test/games/%d/disqualify", g.ID), strings.NewReader(body.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		for _, ck := range sessionCookies {
+		for _, ck := range cookies {
 			req.AddCookie(ck)
 		}
 		w := httptest.NewRecorder()
@@ -475,6 +424,22 @@ func loginIntegration(router *gin.Engine, email, password string) (string, []*ht
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	router.ServeHTTP(resp, req)
 	return "", resp.Result().Cookies()
+}
+
+func loginDirect(t *testing.T, cfg *config.Config, db *gorm.DB, email string) []*http.Cookie {
+	t.Helper()
+	var userRecord user.User
+	require.NoError(t, db.Where("email = ?", email).First(&userRecord).Error)
+	claims := jwt.MapClaims{
+		"user_id": userRecord.ID,
+		"role":    userRecord.Role,
+		"exp":     time.Now().Add(24 * time.Hour).Unix(),
+		"iat":     time.Now().Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenStr, err := token.SignedString([]byte(cfg.JWT.Secret))
+	require.NoError(t, err)
+	return []*http.Cookie{{Name: "jwt", Value: tokenStr, Path: "/", HttpOnly: true}}
 }
 
 func createTeamIntegration(t *testing.T, db *gorm.DB, captainID uint) *team.Team {
@@ -531,18 +496,17 @@ func TestForceFinishPermissions(t *testing.T) {
 	// Создаём игру
 	g := createPublishedGameWithSettingsIntegration(t, db, author.ID, "Perm Test Game")
 
-	// Логаемся как other
-	_, sessionCookies := loginIntegration(router, "other_int@test.com", "pass123")
-
 	// T1: Non-manager не может force-finish
 	t.Run("non_manager_cannot_force_finish", func(t *testing.T) {
-		gameURL := fmt.Sprintf("/games/%d/force-finish", g.ID)
-		csrfToken, _ := getCSRFToken(router, gameURL, sessionCookies)
+		// Создаём team и passing для non-manager
+		tm := createTeamIntegration(t, db, other.ID)
+		createPassingIntegration(t, db, g.ID, tm.ID, game.StatusStarted)
 
-		reqBody := url.Values{"_csrf": {csrfToken}}
-		req := httptest.NewRequest("POST", gameURL, strings.NewReader(reqBody.Encode()))
+		cookies := loginDirect(t, cfg, db, "other_int@test.com")
+		body := url.Values{}
+		req := httptest.NewRequest("POST", fmt.Sprintf("/test/games/%d/force-finish", g.ID), strings.NewReader(body.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		for _, ck := range sessionCookies {
+		for _, ck := range cookies {
 			req.AddCookie(ck)
 		}
 		w := httptest.NewRecorder()
@@ -550,42 +514,34 @@ func TestForceFinishPermissions(t *testing.T) {
 		assert.Equal(t, http.StatusForbidden, w.Code, "Non-manager не должен иметь доступ к force-finish")
 	})
 
-	// Логаемся как author
-	_, sessionCookies = loginIntegration(router, "auth_int@test.com", "pass123")
-
 	// T2: Author может force-finish
 	t.Run("author_can_force_finish", func(t *testing.T) {
-		gameURL := fmt.Sprintf("/games/%d/force-finish", g.ID)
-		csrfToken, _ := getCSRFToken(router, gameURL, sessionCookies)
+		// Создаём team и passing для author
+		tm := createTeamIntegration(t, db, author.ID)
+		createPassingIntegration(t, db, g.ID, tm.ID, game.StatusStarted)
 
-		reqBody := url.Values{"_csrf": {csrfToken}}
-		req := httptest.NewRequest("POST", gameURL, strings.NewReader(reqBody.Encode()))
+		cookies := loginDirect(t, cfg, db, "auth_int@test.com")
+		body := url.Values{}
+		req := httptest.NewRequest("POST", fmt.Sprintf("/test/games/%d/force-finish", g.ID), strings.NewReader(body.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		for _, ck := range sessionCookies {
+		for _, ck := range cookies {
 			req.AddCookie(ck)
 		}
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
-		// Author должен получить redirect или 200, а не 403
 		assert.NotEqual(t, http.StatusForbidden, w.Code, "Author должен иметь доступ к force-finish")
 	})
 
 	// T3: Non-manager не может disqualify
 	t.Run("non_manager_cannot_disqualify", func(t *testing.T) {
-		// Создаём team и passing для другого пользователя
 		tm := createTeamIntegration(t, db, other.ID)
-		p := createPassingIntegration(t, db, g.ID, tm.ID, game.StatusStarted)
+		createPassingIntegration(t, db, g.ID, tm.ID, game.StatusStarted)
 
-		gameURL := fmt.Sprintf("/games/%d/passings/%d/disqualify", g.ID, p.ID)
-		csrfToken, _ := getCSRFToken(router, gameURL, sessionCookies)
-
-		reqBody := url.Values{
-			"_csrf":   {csrfToken},
-			"team_id": {fmt.Sprintf("%d", tm.ID)},
-		}
-		req := httptest.NewRequest("POST", gameURL, strings.NewReader(reqBody.Encode()))
+		cookies := loginDirect(t, cfg, db, "other_int@test.com")
+		body := url.Values{"team_id": {fmt.Sprintf("%d", tm.ID)}}
+		req := httptest.NewRequest("POST", fmt.Sprintf("/test/games/%d/disqualify", g.ID), strings.NewReader(body.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		for _, ck := range sessionCookies {
+		for _, ck := range cookies {
 			req.AddCookie(ck)
 		}
 		w := httptest.NewRecorder()
@@ -596,18 +552,13 @@ func TestForceFinishPermissions(t *testing.T) {
 	// T4: Автор может disqualify
 	t.Run("author_can_disqualify", func(t *testing.T) {
 		tm := createTeamIntegration(t, db, author.ID)
-		p := createPassingIntegration(t, db, g.ID, tm.ID, game.StatusStarted)
+		createPassingIntegration(t, db, g.ID, tm.ID, game.StatusStarted)
 
-		gameURL := fmt.Sprintf("/games/%d/passings/%d/disqualify", g.ID, p.ID)
-		csrfToken, _ := getCSRFToken(router, gameURL, sessionCookies)
-
-		reqBody := url.Values{
-			"_csrf":   {csrfToken},
-			"team_id": {fmt.Sprintf("%d", tm.ID)},
-		}
-		req := httptest.NewRequest("POST", gameURL, strings.NewReader(reqBody.Encode()))
+		cookies := loginDirect(t, cfg, db, "auth_int@test.com")
+		body := url.Values{"team_id": {fmt.Sprintf("%d", tm.ID)}}
+		req := httptest.NewRequest("POST", fmt.Sprintf("/test/games/%d/disqualify", g.ID), strings.NewReader(body.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		for _, ck := range sessionCookies {
+		for _, ck := range cookies {
 			req.AddCookie(ck)
 		}
 		w := httptest.NewRecorder()

@@ -34,6 +34,13 @@ func NewAutocompleteHandler(db *gorm.DB) *AutocompleteHandler {
 }
 
 // Games возвращает список названий игр, совпадающих с запросом
+// @Summary Автодополнение поиска игр
+// @Tags search
+// @Produce json
+// @Param q query string false "Поисковый запрос (мин. 2 символа)"
+// @Success 200 {object} map[string]interface{} "Результаты поиска"
+// @Failure 400 {object} map[string]interface{} "Неверный запрос"
+// @Router /api/search/games [get]
 func (h *AutocompleteHandler) Games(c *gin.Context) {
 	input := AutocompleteInput{}
 	if err := c.ShouldBindQuery(&input); err != nil {
@@ -76,6 +83,14 @@ func NewGameStatsHandler(gs GameServiceInterface, gps *GamePlayService) *GameSta
 }
 
 // Show возвращает JSON-статистику игры
+// @Summary Статистика игры (JSON)
+// @Tags games
+// @Produce json
+// @Param id path int true "ID игры"
+// @Success 200 {object} map[string]interface{} "Статистика игры"
+// @Failure 400 {object} map[string]interface{} "Неверный ID"
+// @Failure 404 {object} map[string]interface{} "Игра не найдена"
+// @Router /api/games/{id}/stats [get]
 func (h *GameStatsHandler) Show(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {

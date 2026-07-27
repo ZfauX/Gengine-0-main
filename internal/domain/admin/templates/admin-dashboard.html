@@ -1,9 +1,9 @@
 {{define "admin-dashboard.html"}}
 <div class="max-w-7xl mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 mb-6">Панель администратора</h1>
+    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Панель администратора</h1>
 
     {{block "admin-nav" .}}
-    <nav class="flex flex-wrap gap-2 p-3 bg-gray-100 rounded-lg mb-6">
+    <nav class="flex flex-wrap gap-2 p-3 bg-gray-100 dark:bg-gray-800 rounded-lg mb-6">
         <a href="/admin" class="btn {{if eq .ContentBlock "admin-dashboard.html"}}btn-primary{{else}}btn-outline{{end}} text-sm">Дашборд</a>
         <a href="/admin/users" class="btn btn-outline text-sm">Пользователи</a>
         <a href="/admin/games" class="btn btn-outline text-sm">Игры</a>
@@ -16,29 +16,29 @@
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-4">
         <!-- Пользователи -->
         <div class="card text-center p-6 hover-lift">
-            <h2 class="text-sm font-medium text-gray-500 uppercase tracking-wider">Пользователи</h2>
-            <p class="text-4xl font-bold text-blue-600 my-2">{{.UserCount}}</p>
+            <h2 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Пользователи</h2>
+            <p class="text-4xl font-bold text-blue-600 dark:text-blue-400 my-2">{{.UserCount}}</p>
             <a href="/admin/users" class="btn btn-primary text-sm inline-block mt-2">Управление</a>
         </div>
 
         <!-- Игры -->
         <div class="card text-center p-6 hover-lift">
-            <h2 class="text-sm font-medium text-gray-500 uppercase tracking-wider">Игры</h2>
-            <p class="text-4xl font-bold text-blue-600 my-2">{{.GameCount}}</p>
+            <h2 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Игры</h2>
+            <p class="text-4xl font-bold text-blue-600 dark:text-blue-400 my-2">{{.GameCount}}</p>
             <a href="/admin/games" class="btn btn-primary text-sm inline-block mt-2">Модерация</a>
         </div>
 
         <!-- Аудит -->
         <div class="card text-center p-6 hover-lift">
-            <h2 class="text-sm font-medium text-gray-500 uppercase tracking-wider">Аудит</h2>
-            <p class="text-4xl font-bold text-blue-600 my-2">{{.AuditCount}}</p>
+            <h2 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Аудит</h2>
+            <p class="text-4xl font-bold text-blue-600 dark:text-blue-400 my-2">{{.AuditCount}}</p>
             <a href="/admin/audit" class="btn btn-primary text-sm inline-block mt-2">Журнал</a>
         </div>
 
         <!-- Бэкапы -->
         <div class="card text-center p-6 hover-lift">
-            <h2 class="text-sm font-medium text-gray-500 uppercase tracking-wider">Бэкапы</h2>
-            <p class="text-4xl font-bold text-blue-600 my-2">{{.BackupCount}}</p>
+            <h2 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Бэкапы</h2>
+            <p class="text-4xl font-bold text-blue-600 dark:text-blue-400 my-2">{{.BackupCount}}</p>
             <a href="/admin/backups" class="btn btn-primary text-sm inline-block mt-2">Резервные копии</a>
         </div>
     </div>

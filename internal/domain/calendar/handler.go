@@ -142,6 +142,9 @@ func (h *CalendarHandler) CalendarICal(c *gin.Context) {
 	sb.WriteString("METHOD:PUBLISH\r\n")
 
 	for _, g := range games {
+		if g.IsDraft || g.Visibility != "public" {
+			continue
+		}
 		if g.StartsAt == nil {
 			continue
 		}

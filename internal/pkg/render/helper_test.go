@@ -90,8 +90,8 @@ func TestParseIDQuery_Missing(t *testing.T) {
 func TestSetBreadcrumb(t *testing.T) {
 	data := gin.H{}
 	SetBreadcrumb(data, BreadcrumbItem{Name: "Home", URL: "/"})
-	assert.Contains(t, data, "Breadcrumb")
-	assert.Len(t, data["Breadcrumb"], 1)
+	assert.Contains(t, data, "Breadcrumbs")
+	assert.Len(t, data["Breadcrumbs"], 1)
 }
 
 func TestSetBreadcrumb_NilData(t *testing.T) {
@@ -105,9 +105,10 @@ func TestSetBreadcrumb_Multiple(t *testing.T) {
 		BreadcrumbItem{Name: "Home", URL: "/"},
 		BreadcrumbItem{Name: "Profile", URL: "/profile"},
 	)
-	items := data["Breadcrumb"].([]BreadcrumbItem)
+	items, ok := data["Breadcrumbs"].([]map[string]string)
+	assert.True(t, ok)
 	assert.Len(t, items, 2)
-	assert.Equal(t, "Profile", items[1].Name)
+	assert.Equal(t, "Profile", items[1]["name"])
 }
 
 func TestPage_NoTemplate(t *testing.T) {

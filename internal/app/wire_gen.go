@@ -109,7 +109,7 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	tournamentGameRepository := repos.TournGame
 	tournamentTeamRepository := repos.TournTeam
 	tournamentResultRepository := repos.TournResult
-	tournamentService := wrapTournamentService(tournamentRepository, tournamentGameRepository, tournamentTeamRepository, tournamentResultRepository, teamService, cfg)
+	tournamentService := wrapTournamentService(db, tournamentRepository, tournamentGameRepository, tournamentTeamRepository, tournamentResultRepository, teamService, cfg)
 	appServices := &services{
 		Auth:            authService,
 		User:            userService,

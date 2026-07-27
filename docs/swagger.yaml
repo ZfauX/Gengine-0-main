@@ -128,6 +128,47 @@ paths:
       summary: Список бекапов
       tags:
       - admin
+  /admin/backups/{id}/download:
+    get:
+      description: Отдаёт файл резервной копии базы данных по ID
+      parameters:
+      - description: ID бекапа
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: Файл бекапа
+          schema:
+            type: file
+        "400":
+          description: Неверный ID
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Бекап не найден
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Скачивание бекапа
+      tags:
+      - admin
   /admin/backups/create:
     post:
       consumes:
@@ -158,6 +199,33 @@ paths:
       security:
       - JWT: []
       summary: Создание бекапа
+      tags:
+      - admin
+  /admin/backups/rotate:
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      description: Запускает принудительное удаление старых резервных копий
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на /admin/backups
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Ротация бекапов
       tags:
       - admin
   /admin/games:
@@ -340,6 +408,139 @@ paths:
       summary: Переключение роли пользователя
       tags:
       - admin
+  /api/games/{id}/stats:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Статистика игры
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Неверный ID
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Игра не найдена
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Статистика игры (JSON)
+      tags:
+      - games
+  /api/push/subscribe:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Данные подписки
+        in: body
+        name: subscription
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Подписка оформлена
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Неверный формат
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Подписка на push-уведомления
+      tags:
+      - push
+  /api/push/unsubscribe:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Endpoint подписки
+        in: body
+        name: endpoint
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Подписка удалена
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Неверный запрос
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Отписка от push-уведомлений
+      tags:
+      - push
+  /api/push/vapid-public-key:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Публичный ключ
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Публичный ключ VAPID
+      tags:
+      - push
+  /api/search/games:
+    get:
+      parameters:
+      - description: Поисковый запрос (мин. 2 символа)
+        in: query
+        name: q
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Результаты поиска
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Неверный запрос
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Автодополнение поиска игр
+      tags:
+      - search
   /api/settings/notifications:
     get:
       produces:
@@ -726,11 +927,11 @@ paths:
       - auth
   /auth/verify:
     get:
-      description: Активирует email пользователя по токену из письма
+      description: Активирует email пользователя по коду из письма
       parameters:
-      - description: Токен подтверждения
+      - description: Код подтверждения
         in: query
-        name: token
+        name: code
         required: true
         type: string
       produces:
@@ -741,13 +942,106 @@ paths:
           schema:
             type: string
         "400":
-          description: Неверный или просроченный токен
+          description: Неверный или просроченный код
           schema:
             additionalProperties: true
             type: object
       summary: Подтверждение email
       tags:
       - auth
+  /auth/webauthn/login/begin:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Опции аутентификации
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Внутренняя ошибка
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Начало входа по passkey
+      tags:
+      - webauthn
+  /auth/webauthn/login/finish:
+    post:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Результат аутентификации
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Ошибка аутентификации
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Завершение входа по passkey
+      tags:
+      - webauthn
+  /auth/webauthn/register/begin:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Опции регистрации
+        in: body
+        name: credential
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Опции регистрации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Начало регистрации passkey
+      tags:
+      - webauthn
+  /auth/webauthn/register/finish:
+    post:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Passkey зарегистрирован
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Ошибка регистрации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Завершение регистрации passkey
+      tags:
+      - webauthn
   /calendar:
     get:
       description: Возвращает HTML-страницу с календарём игр, где отображаются опубликованные
@@ -781,6 +1075,34 @@ paths:
       summary: Экспорт календаря в iCal
       tags:
       - calendar
+  /chat/ws:
+    get:
+      parameters:
+      - description: ID комнаты чата
+        in: query
+        name: room
+        required: true
+        type: string
+      responses:
+        "101":
+          description: Switching Protocols
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "429":
+          description: Слишком много соединений
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: WebSocket чата
+      tags:
+      - monitor
   /dashboard:
     get:
       description: Отображает главную страницу личного кабинета пользователя
@@ -1216,6 +1538,57 @@ paths:
       summary: Подача заявки на игру
       tags:
       - passings
+  /games/{id}/chat:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница чата
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Страница чата игры
+      tags:
+      - monitor
+  /games/{id}/chat-rooms:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ID комнат чата
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: ID комнат чата
+      tags:
+      - monitor
   /games/{id}/co-authors:
     get:
       parameters:
@@ -2583,6 +2956,262 @@ paths:
       summary: Форма создания уровня
       tags:
       - levels
+  /games/{id}/logs:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница логов
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Недостаточно прав
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Логи игры
+      tags:
+      - monitor
+  /games/{id}/logs/ws:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "101":
+          description: Switching Protocols
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Недостаточно прав
+          schema:
+            additionalProperties: true
+            type: object
+        "429":
+          description: Слишком много соединений
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: WebSocket логов
+      tags:
+      - monitor
+  /games/{id}/monitor:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница мониторинга
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Недостаточно прав
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Страница мониторинга игры
+      tags:
+      - monitor
+  /games/{id}/monitor/data:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Snapshot прогресса команд
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Недостаточно прав
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Данные мониторинга (JSON)
+      tags:
+      - monitor
+  /games/{id}/monitor/stream:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: SSE поток обновлений
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Недостаточно прав
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Поток мониторинга (SSE)
+      tags:
+      - monitor
+  /games/{id}/monitor/ws:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "101":
+          description: Switching Protocols
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Недостаточно прав
+          schema:
+            additionalProperties: true
+            type: object
+        "429":
+          description: Слишком много соединений
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: WebSocket мониторинга
+      tags:
+      - monitor
+  /games/{id}/notes:
+    get:
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Список заметок
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Неверный ID
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Список заметок
+      tags:
+      - notes
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: ID игры
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Данные заметки
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Заметка создана
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Создание заметки
+      tags:
+      - notes
   /games/{id}/passings:
     get:
       parameters:
@@ -3176,6 +3805,37 @@ paths:
       summary: Создание игры
       tags:
       - games
+  /games/notes/{note_id}:
+    delete:
+      parameters:
+      - description: ID заметки
+        in: path
+        name: note_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Заметка удалена
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Неверный ID
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Доступ запрещён
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Удаление заметки
+      tags:
+      - notes
   /invitations/{id}/accept:
     post:
       parameters:
@@ -3386,6 +4046,55 @@ paths:
       summary: Обновление профиля
       tags:
       - profile
+  /profile/webauthn-keys:
+    get:
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Страница управления ключами
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Список passkey-ключей
+      tags:
+      - webauthn
+  /profile/webauthn-keys/delete/{id}:
+    post:
+      parameters:
+      - description: ID ключа
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление на /profile/webauthn-keys
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Ключ не найден
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Удаление passkey-ключа
+      tags:
+      - webauthn
   /settings/notifications:
     get:
       produces:
@@ -4004,6 +4713,106 @@ paths:
       summary: Форма создания турнира
       tags:
       - tournaments
+  /user/2fa/disable:
+    get:
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Форма отключения 2FA
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Форма отключения 2FA
+      tags:
+      - 2fa
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      parameters:
+      - description: Код подтверждения
+        in: formData
+        name: code
+        required: true
+        type: string
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление в профиль
+          schema:
+            type: string
+        "400":
+          description: Неверный код
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Отключение 2FA
+      tags:
+      - 2fa
+  /user/2fa/enable:
+    get:
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Форма включения 2FA
+          schema:
+            type: string
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Форма включения 2FA
+      tags:
+      - 2fa
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      parameters:
+      - description: Код подтверждения
+        in: formData
+        name: code
+        required: true
+        type: string
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление в профиль
+          schema:
+            type: string
+        "400":
+          description: Неверный код
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Подтверждение включения 2FA
+      tags:
+      - 2fa
   /users/{id}:
     get:
       description: Отображает публичный профиль пользователя по ID
@@ -4028,6 +4837,166 @@ paths:
       summary: Публичный профиль пользователя
       tags:
       - profile
+  /voting/{session_id}/close:
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      parameters:
+      - description: ID сессии голосования
+        in: path
+        name: session_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Победивший вариант
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Недостаточно прав
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Закрытие голосования
+      tags:
+      - monitor
+  /voting/{session_id}/results:
+    get:
+      parameters:
+      - description: ID сессии голосования
+        in: path
+        name: session_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Результаты голосования
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Неверный ID сессии
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Результаты голосования
+      tags:
+      - monitor
+  /voting/start:
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      parameters:
+      - description: ID прохождения
+        in: formData
+        name: passing_id
+        required: true
+        type: integer
+      - description: ID уровня
+        in: formData
+        name: level_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Голосование запущено
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Недостаточно прав
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Запуск голосования
+      tags:
+      - monitor
+  /voting/vote:
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      parameters:
+      - description: ID сессии голосования
+        in: formData
+        name: session_id
+        required: true
+        type: integer
+      - description: ID команды
+        in: formData
+        name: team_id
+        required: true
+        type: integer
+      - description: Выбранный вариант
+        in: formData
+        name: option
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Голос учтён
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Ошибка валидации
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Требуется аутентификация
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Недостаточно прав
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - JWT: []
+      summary: Голосование
+      tags:
+      - monitor
 securityDefinitions:
   JWT:
     in: cookie

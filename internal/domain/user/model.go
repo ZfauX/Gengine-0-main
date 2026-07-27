@@ -17,6 +17,8 @@ type User struct {
 	EmailVerified     bool   `gorm:"default:false"`
 	AvatarPath        string `gorm:"default:''"`
 	ProfileVisibility string `gorm:"default:public"` // public / hidden
+	Plan              string `gorm:"default:'free'"`
+	StripeCustomerID  string `gorm:"default:''"`
 	// 2FA fields
 	TwoFactorEnabled     bool               `gorm:"default:false"`               // включена ли 2FA
 	TwoFactorSecret      string             `gorm:"default:'';size:32" json:"-"` // секрет для TOTP (Base32)
@@ -52,21 +54,25 @@ type ExternalLogin struct {
 
 // PasswordResetToken хранит токен для сброса пароля.
 type PasswordResetToken struct {
-	ID        uint       `gorm:"primaryKey"`
-	UserID    uint       `gorm:"not null;index:idx_password_reset_user"`
-	ResetCode string     `gorm:"uniqueIndex;not null"` // одноразовый код в URL сброса
-	TokenHash string     `gorm:"uniqueIndex;not null"` // SHA256 хеш токена
-	ExpiresAt time.Time  `gorm:"not null"`
-	UsedAt    *time.Time `gorm:"index:idx_password_reset_used"`
+	ID        uint           `gorm:"primaryKey"`
+	UserID    uint           `gorm:"not null;index:idx_password_reset_user"`
+	ResetCode string         `gorm:"uniqueIndex;not null"` // одноразовый код в URL сброса
+	TokenHash string         `gorm:"uniqueIndex;not null"` // SHA256 хеш токена
+	ExpiresAt time.Time      `gorm:"not null"`
+	UsedAt    *time.Time     `gorm:"index:idx_password_reset_used"`
+	UpdatedAt time.Time      `gorm:"autoUpdateTime"`
+	DeletedAt gorm.DeletedAt `gorm:"index"`
 }
 
 // EmailVerificationToken хранит токен для подтверждения email.
 type EmailVerificationToken struct {
-	ID               uint      `gorm:"primaryKey"`
-	UserID           uint      `gorm:"not null;index"`
-	TokenHash        string    `gorm:"uniqueIndex;not null"`         // SHA256 хеш токена
-	VerificationCode string    `gorm:"uniqueIndex;not null;size:12"` // короткий код для URL (8 символов)
-	ExpiresAt        time.Time `gorm:"not null"`
+	ID               uint           `gorm:"primaryKey"`
+	UserID           uint           `gorm:"not null;index"`
+	TokenHash        string         `gorm:"uniqueIndex;not null"`        // SHA256 хеш токена
+	VerificationCode string         `gorm:"uniqueIndex;not null;size:8"` // короткий код для URL (8 символов)
+	ExpiresAt        time.Time      `gorm:"not null"`
+	UpdatedAt        time.Time      `gorm:"autoUpdateTime"`
+	DeletedAt        gorm.DeletedAt `gorm:"index"`
 }
 
 // PublicUser — безопасное представление пользователя для публичного API и шаблонов.
@@ -102,10 +108,11 @@ func (u *User) ToPublic() PublicUser {
 
 // NotificationSetting хранит настройки уведомлений пользователя.
 type NotificationSetting struct {
-	ID     uint `gorm:"primaryKey"`
-	UserID uint `gorm:"uniqueIndex;not null"`
-	// JSON-строка с флагами каналов по типам событий
-	SettingsJSON string `gorm:"type:text"`
+	ID           uint           `gorm:"primaryKey"`
+	UserID       uint           `gorm:"uniqueIndex;not null"`
+	SettingsJSON string         `gorm:"type:text"`
+	UpdatedAt    time.Time      `gorm:"autoUpdateTime"`
+	DeletedAt    gorm.DeletedAt `gorm:"index"`
 }
 
 // PushSubscription хранит подписку на push-уведомления.
@@ -119,11 +126,13 @@ type PushSubscription struct {
 
 // RefreshToken хранит информацию о выданных refresh-токенах для возможности отзыва.
 type RefreshToken struct {
-	ID        uint       `gorm:"primaryKey"`
-	UserID    uint       `gorm:"not null;index:idx_refresh_tokens_user"`
-	TokenHash string     `gorm:"uniqueIndex;not null" json:"-"`   // SHA256 хеш токена
-	DeviceID  string     `gorm:"index:idx_refresh_tokens_device"` // опциональный идентификатор устройства
-	ExpiresAt time.Time  `gorm:"not null"`
-	RevokedAt *time.Time `gorm:"index:idx_refresh_tokens_revoked"` // NULL, если не отозван
-	CreatedAt time.Time  `gorm:"autoCreateTime"`
+	ID        uint           `gorm:"primaryKey"`
+	UserID    uint           `gorm:"not null;index:idx_refresh_tokens_user"`
+	TokenHash string         `gorm:"uniqueIndex;not null" json:"-"`   // SHA256 хеш токена
+	DeviceID  string         `gorm:"index:idx_refresh_tokens_device"` // опциональный идентификатор устройства
+	ExpiresAt time.Time      `gorm:"not null"`
+	RevokedAt *time.Time     `gorm:"index:idx_refresh_tokens_revoked"` // NULL, если не отозван
+	CreatedAt time.Time      `gorm:"autoCreateTime"`
+	UpdatedAt time.Time      `gorm:"autoUpdateTime"`
+	DeletedAt gorm.DeletedAt `gorm:"index"`
 }

@@ -1,23 +1,23 @@
 {{define "teams-members.html"}}
 <div class="max-w-4xl mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 mb-6">Состав команды «{{.Team.Name}}»</h1>
+    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Состав команды «{{.Team.Name}}»</h1>
 
     <!-- Информация о капитане -->
     <div class="card mb-6">
-        <p class="text-gray-700"><span class="font-medium text-gray-600">Капитан:</span> {{.Team.Captain.Name}} ({{.Team.Captain.Email}})</p>
+        <p class="text-gray-700 dark:text-gray-300"><span class="font-medium text-gray-600 dark:text-gray-400">Капитан:</span> {{.Team.Captain.Name}} ({{.Team.Captain.Email}})</p>
     </div>
 
     <!-- Список участников -->
     <div class="card mb-6">
         <div class="flex justify-between items-center mb-4">
-            <h2 class="text-lg font-semibold text-gray-700">Участники ({{len .Members}})</h2>
+            <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300">Участники ({{len .Members}})</h2>
         </div>
 
         {{if .Members}}
         <ul class="divide-y divide-gray-100">
             {{range .Members}}
             <li class="py-3 flex flex-wrap items-center justify-between gap-2">
-                <span class="text-gray-800">{{.Name}} ({{.Email}})</span>
+                <span class="text-gray-800 dark:text-gray-100">{{.Name}} ({{.Email}})</span>
                 {{if and $.CanManage $.GameID}}
                 <form action="/games/{{$.GameID}}/teams/{{$.TeamID}}/members/{{.ID}}/remove" method="POST" class="inline" onsubmit="return confirm('Удалить участника?')">
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
@@ -28,7 +28,7 @@
             {{end}}
         </ul>
         {{else}}
-        <p class="text-gray-500 text-sm">В команде пока нет участников.</p>
+        <p class="text-gray-500 dark:text-gray-400 text-sm">В команде пока нет участников.</p>
         {{end}}
     </div>
 

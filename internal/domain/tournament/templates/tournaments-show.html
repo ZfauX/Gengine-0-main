@@ -1,58 +1,58 @@
 {{define "tournaments-show.html"}}
 <div class="max-w-7xl mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 mb-6">{{.Tournament.Name}}</h1>
+    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">{{.Tournament.Name}}</h1>
 
     <!-- Основная информация -->
     <div class="card mb-6 space-y-2 text-sm">
         {{if .Tournament.Description}}
-        <p class="text-gray-600">{{.Tournament.Description}}</p>
+        <p class="text-gray-600 dark:text-gray-400">{{.Tournament.Description}}</p>
         {{end}}
-        <p><span class="font-medium text-gray-600">Автор:</span> {{.Tournament.Author.Name}}</p>
+        <p><span class="font-medium text-gray-600 dark:text-gray-400">Автор:</span> {{.Tournament.Author.Name}}</p>
     </div>
 
     <!-- Система начисления очков -->
     <div class="card mb-6">
-        <h3 class="text-lg font-semibold text-gray-700 mb-3">Система начисления очков</h3>
+        <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">Система начисления очков</h3>
         <ul class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
             <li class="bg-blue-50 p-2 rounded-md text-center">
-                <span class="block font-medium text-gray-500">1 место</span>
-                <span class="text-xl font-bold text-blue-600">{{.Tournament.PointsForFirst}}</span>
+                <span class="block font-medium text-gray-500 dark:text-gray-400">1 место</span>
+                <span class="text-xl font-bold text-blue-600 dark:text-blue-400">{{.Tournament.PointsForFirst}}</span>
             </li>
             <li class="bg-blue-50 p-2 rounded-md text-center">
-                <span class="block font-medium text-gray-500">2 место</span>
-                <span class="text-xl font-bold text-blue-600">{{.Tournament.PointsForSecond}}</span>
+                <span class="block font-medium text-gray-500 dark:text-gray-400">2 место</span>
+                <span class="text-xl font-bold text-blue-600 dark:text-blue-400">{{.Tournament.PointsForSecond}}</span>
             </li>
             <li class="bg-blue-50 p-2 rounded-md text-center">
-                <span class="block font-medium text-gray-500">3 место</span>
-                <span class="text-xl font-bold text-blue-600">{{.Tournament.PointsForThird}}</span>
+                <span class="block font-medium text-gray-500 dark:text-gray-400">3 место</span>
+                <span class="text-xl font-bold text-blue-600 dark:text-blue-400">{{.Tournament.PointsForThird}}</span>
             </li>
             <li class="bg-blue-50 p-2 rounded-md text-center">
-                <span class="block font-medium text-gray-500">Участие</span>
-                <span class="text-xl font-bold text-blue-600">{{.Tournament.PointsForParticipation}}</span>
+                <span class="block font-medium text-gray-500 dark:text-gray-400">Участие</span>
+                <span class="text-xl font-bold text-blue-600 dark:text-blue-400">{{.Tournament.PointsForParticipation}}</span>
             </li>
         </ul>
     </div>
 
     <!-- Турнирная таблица -->
-    <h2 class="text-xl font-semibold text-gray-800 mb-4">Турнирная таблица</h2>
+    <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">Турнирная таблица</h2>
     {{if .Results}}
     <div class="card overflow-x-auto mb-6">
         <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
+            <thead class="bg-gray-50 dark:bg-gray-800">
                 <tr>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Место</th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Команда</th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Очки</th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Игр сыграно</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Место</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Команда</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Очки</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Игр сыграно</th>
                 </tr>
             </thead>
-            <tbody class="bg-white divide-y divide-gray-200">
+            <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200">
                 {{range $index, $result := .Results}}
-                <tr class="hover:bg-gray-50 transition">
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{add1 $index}}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{.Team.Name}}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{.Score}}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{.GamesPlayed}}</td>
+                <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 transition">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">{{add1 $index}}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">{{.Team.Name}}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">{{.Score}}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{.GamesPlayed}}</td>
                 </tr>
                 {{end}}
             </tbody>
@@ -60,20 +60,20 @@
     </div>
     {{else}}
     <div class="card text-center py-12 mb-6">
-        <p class="text-gray-500">Пока нет результатов. Команды ещё не завершили игры турнира.</p>
+        <p class="text-gray-500 dark:text-gray-400">Пока нет результатов. Команды ещё не завершили игры турнира.</p>
     </div>
     {{end}}
 
     <!-- Игры турнира -->
-    <h2 class="text-xl font-semibold text-gray-800 mb-4">Игры турнира</h2>
+    <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">Игры турнира</h2>
     {{if .Games}}
     <div class="card mb-6">
         <ul class="divide-y divide-gray-100">
             {{range .Games}}
             <li class="py-3 flex flex-wrap items-center justify-between gap-2">
-                <a href="/games/{{.ID}}" class="text-blue-600 hover:underline font-medium">{{.Name}}</a>
+                <a href="/games/{{.ID}}" class="text-blue-600 dark:text-blue-400 hover:underline font-medium">{{.Name}}</a>
                 {{if .StartsAt}}
-                <span class="text-sm text-gray-500">{{.StartsAt.Format "02.01.2006 15:04"}}</span>
+                <span class="text-sm text-gray-500 dark:text-gray-400">{{.StartsAt.Format "02.01.2006 15:04"}}</span>
                 {{end}}
             </li>
             {{end}}
@@ -81,7 +81,7 @@
     </div>
     {{else}}
     <div class="card text-center py-12 mb-6">
-        <p class="text-gray-500">В турнир пока не добавлены игры.</p>
+        <p class="text-gray-500 dark:text-gray-400">В турнир пока не добавлены игры.</p>
     </div>
     {{end}}
 
@@ -91,9 +91,9 @@
         <form action="/tournaments/{{.Tournament.ID}}/apply" method="POST" class="flex flex-wrap items-end gap-3">
             <input type="hidden" name="_csrf" value="{{.csrf}}">
             <div>
-                <label for="team_id" class="block text-sm font-medium text-gray-700 mb-1">Команда</label>
+                <label for="team_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Команда</label>
                 <select name="team_id" id="team_id" required
-                        class="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                        class="rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
                     <option value="">-- выберите команду --</option>
                     {{range .UserTeams}}
                         <option value="{{.ID}}">{{.Name}}</option>

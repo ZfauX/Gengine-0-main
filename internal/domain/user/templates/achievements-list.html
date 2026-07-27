@@ -1,22 +1,22 @@
 {{define "achievements-list.html"}}
 <div class="max-w-4xl mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 mb-6">Мои достижения</h1>
+    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Мои достижения</h1>
 
     {{if .Achievements}}
     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         {{range .Achievements}}
         <div class="card text-center p-6 hover:shadow-md transition">
             <div class="text-4xl mb-3">{{.Icon}}</div>
-            <h3 class="text-lg font-semibold text-gray-800">{{.Name}}</h3>
-            <p class="text-sm text-gray-500 mt-1">{{.Description}}</p>
+            <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{.Name}}</h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">{{.Description}}</p>
         </div>
         {{end}}
     </div>
     {{else}}
     <div class="card text-center py-16">
         <div class="text-6xl mb-4">🏆</div>
-        <h2 class="text-xl font-semibold text-gray-700">Пока нет достижений</h2>
-        <p class="text-gray-500 mt-2">Участвуйте в играх, создавайте уровни, побеждайте — и здесь появятся ваши награды.</p>
+        <h2 class="text-xl font-semibold text-gray-700 dark:text-gray-300">Пока нет достижений</h2>
+        <p class="text-gray-500 dark:text-gray-400 mt-2">Участвуйте в играх, создавайте уровни, побеждайте — и здесь появятся ваши награды.</p>
     </div>
     {{end}}
 

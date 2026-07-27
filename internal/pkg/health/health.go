@@ -21,6 +21,7 @@ type Checker struct {
 	valkey               cache.CacheStore
 	failedEmailThreshold int
 	uploadsDir           string
+	smtpEnabled          bool
 }
 
 // NewChecker создаёт новый Checker.
@@ -36,6 +37,12 @@ func NewCheckerWithValkey(db *gorm.DB, hub *ws.RoomHub, valkey cache.CacheStore)
 // WithUploadsDir устанавливает путь к директории загрузок для проверки дискового пространства.
 func (c *Checker) WithUploadsDir(dir string) *Checker {
 	c.uploadsDir = dir
+	return c
+}
+
+// WithSMTPEnabled включает проверку email-очереди (только если SMTP настроен).
+func (c *Checker) WithSMTPEnabled(enabled bool) *Checker {
+	c.smtpEnabled = enabled
 	return c
 }
 
@@ -188,6 +195,14 @@ func (c *Checker) checkValkey(ctx context.Context) Status {
 // checkEmailQueue проверяет количество failed email в очереди.
 func (c *Checker) checkEmailQueue(ctx context.Context) Status {
 	start := time.Now()
+
+	if !c.smtpEnabled {
+		return Status{
+			Status:  "ok",
+			Message: "SMTP disabled, email queue not checked",
+			Latency: time.Since(start).String(),
+		}
+	}
 
 	var failedCount int64
 	if err := c.db.WithContext(ctx).Model(&email.QueuedEmail{}).Where("status = ?", "failed").Count(&failedCount).Error; err != nil {

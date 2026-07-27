@@ -1,17 +1,17 @@
 {{define "questions-show.html"}}
 <div class="max-w-4xl mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 mb-6">Вопрос: {{.Question.Text}}</h1>
+    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Вопрос: {{.Question.Text}}</h1>
 
     {{if .Question.Hint}}
     <div class="card mb-6">
-        <p class="text-gray-500 italic">Подсказка: {{.Question.Hint}}</p>
+        <p class="text-gray-500 dark:text-gray-400 italic">Подсказка: {{.Question.Hint}}</p>
     </div>
     {{end}}
 
     <!-- Ответы -->
     <div class="card mb-6">
         <div class="flex justify-between items-center mb-4">
-            <h2 class="text-lg font-semibold text-gray-700">Ответы</h2>
+            <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300">Ответы</h2>
             <a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions/{{.Question.ID}}/answers/new" class="btn btn-primary text-sm">+ Добавить ответ</a>
         </div>
 
@@ -19,7 +19,7 @@
         <ul class="divide-y divide-gray-100">
             {{range .Question.Answers}}
             <li class="py-3 flex justify-between items-center">
-                <span class="font-mono text-gray-800">{{.Code}}</span>
+                <span class="font-mono text-gray-800 dark:text-gray-100">{{.Code}}</span>
                 <form action="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{$.Question.ID}}/answers/{{.ID}}" method="POST" class="inline" onsubmit="return confirm('Удалить ответ?')">
                     <input type="hidden" name="_method" value="DELETE">
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
@@ -29,7 +29,7 @@
             {{end}}
         </ul>
         {{else}}
-        <p class="text-gray-500 text-sm">Ответов пока нет.</p>
+        <p class="text-gray-500 dark:text-gray-400 text-sm">Ответов пока нет.</p>
         {{end}}
     </div>
 

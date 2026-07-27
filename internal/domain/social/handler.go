@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"gengine-0/internal/domain/user"
 	apperrors "gengine-0/internal/pkg/errors"
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
@@ -27,10 +28,11 @@ type AuthorIDRequest struct {
 // FollowHandler обрабатывает запросы подписок.
 type FollowHandler struct {
 	followService *FollowService
+	userService   *user.UserService
 }
 
-func NewFollowHandler(followService *FollowService) *FollowHandler {
-	return &FollowHandler{followService: followService}
+func NewFollowHandler(followService *FollowService, userService *user.UserService) *FollowHandler {
+	return &FollowHandler{followService: followService, userService: userService}
 }
 
 // Follow подписывается на автора.
@@ -61,6 +63,12 @@ func (h *FollowHandler) Follow(c *gin.Context) {
 			"error": appErr.Message,
 			"code":  appErr.Code,
 		})
+		return
+	}
+
+	if _, err := h.userService.GetByID(c.Request.Context(), req.ID); err != nil {
+		appErr := apperrors.NotFound("пользователь не найден")
+		c.AbortWithStatusJSON(appErr.HTTPStatus, appErr)
 		return
 	}
 

@@ -28,17 +28,24 @@ const (
 	NotificationTypeTimeExpired         NotificationType = "time_expired"
 )
 
-// Notification представляет уведомление в БД
+// Notification represents a user notification stored in the database.
 type Notification struct {
-	gorm.Model
-	UserID    uint             `json:"user_id" gorm:"index"`
+	ID        uint             `gorm:"primaryKey"`
+	CreatedAt time.Time        `gorm:"autoCreateTime"`
+	UpdatedAt time.Time        `gorm:"autoUpdateTime"`
+	DeletedAt gorm.DeletedAt   `gorm:"index"`
+	UserID    uint             `json:"user_id" gorm:"not null;index"`
 	Type      NotificationType `json:"type" gorm:"size:50"`
-	Title     string           `json:"title"`
-	Message   string           `json:"message"`
-	URL       string           `json:"url,omitempty"`
-	Read      bool             `json:"read" gorm:"default:false;index"`
-	Data      string           `json:"data,omitempty" gorm:"type:text"`
-	CreatedAt time.Time        `json:"created_at"`
+	Title     string           `json:"title" gorm:"not null"`
+	// Body is the notification message content in plain text.
+	Body string `json:"body" gorm:"type:text;not null;default:''"`
+	// Link is an optional URL the notification points to.
+	Link string `json:"link,omitempty" gorm:"not null;default:''"`
+	Read bool   `json:"read" gorm:"default:false;index"`
+	// ReadAt is set when the notification is first read by the user.
+	ReadAt *time.Time `json:"read_at,omitempty"`
+	GameID *uint      `json:"game_id,omitempty"`
+	TeamID *uint      `json:"team_id,omitempty"`
 }
 
 // TableName переопределяет имя таблицы
@@ -166,15 +173,14 @@ func (s *NotificationService) GetEmailNotificationFlags(ctx context.Context, use
 }
 
 // Create создаёт новое push-уведомление
-func (s *NotificationService) Create(ctx context.Context, userID uint, ntype NotificationType, title, message, url, data string) error {
+func (s *NotificationService) Create(ctx context.Context, userID uint, ntype NotificationType, title, body, link string) error {
 	notification := &Notification{
-		UserID:  userID,
-		Type:    ntype,
-		Title:   title,
-		Message: message,
-		URL:     url,
-		Data:    data,
-		Read:    false,
+		UserID: userID,
+		Type:   ntype,
+		Title:  title,
+		Body:   body,
+		Link:   link,
+		Read:   false,
 	}
 
 	if err := s.db.WithContext(ctx).Create(notification).Error; err != nil {
@@ -198,8 +204,8 @@ func (s *NotificationService) sendWebSocketNotification(userID uint, notificatio
 		"type":         string(notification.Type),
 		"id":           notification.ID,
 		"title":        notification.Title,
-		"message":      notification.Message,
-		"url":          notification.URL,
+		"body":         notification.Body,
+		"link":         notification.Link,
 		"created_at":   notification.CreatedAt.Format(time.RFC3339),
 		"unread_count": s.getUnreadCount(userID),
 	}
@@ -234,7 +240,7 @@ func (s *NotificationService) GetByUser(ctx context.Context, userID uint, page, 
 	var total int64
 	var notifications []Notification
 
-	query := s.db.WithContext(ctx).Where("user_id = ?", userID).Order("created_at DESC")
+	query := s.db.WithContext(ctx).Model(&Notification{}).Where("user_id = ?", userID).Order("created_at DESC")
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
@@ -281,7 +287,7 @@ func (s *NotificationService) SendTimeWarning(ctx context.Context, userID uint, 
 	message := fmt.Sprintf("До завершения уровня осталось %d секунд", remainingSeconds)
 	url := fmt.Sprintf("/game/%d", passingID)
 
-	err := s.Create(ctx, userID, NotificationTypeTimeWarning, title, message, url, fmt.Sprintf(`{"passing_id":%d,"remaining":%d}`, passingID, remainingSeconds))
+	err := s.Create(ctx, userID, NotificationTypeTimeWarning, title, message, url)
 	if err != nil {
 		return err
 	}
@@ -308,5 +314,5 @@ func (s *NotificationService) SendTimeExpired(ctx context.Context, userID uint, 
 	message := "Время на прохождение уровня истекло. Уровень автоматически завершён."
 	url := fmt.Sprintf("/game/%d", passingID)
 
-	return s.Create(ctx, userID, NotificationTypeTimeExpired, title, message, url, fmt.Sprintf(`{"passing_id":%d}`, passingID))
+	return s.Create(ctx, userID, NotificationTypeTimeExpired, title, message, url)
 }

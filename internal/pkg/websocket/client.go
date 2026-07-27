@@ -15,7 +15,7 @@ const (
 	writeWait             = 10 * time.Second
 	pongWait              = 60 * time.Second
 	pingPeriod            = (pongWait * 9) / 10
-	clientSendBufferSize  = 256
+	clientSendBufferSize  = 512
 	websocketReadDeadline = pongWait
 )
 
@@ -79,7 +79,7 @@ func (c *Client) writePump(ctx context.Context) {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
-		if err := c.Conn.Close(); err != nil {
+		if err := c.Conn.Close(); err != nil && !isClosedConnError(err) {
 			log.Debug().Err(err).Str("client_id", c.ID).Msg("writePump: conn close failed")
 		}
 		if c.Hub != nil {
@@ -127,9 +127,6 @@ func (c *Client) writePump(ctx context.Context) {
 func HandleWebSocketWithContext(ctx context.Context, client *Client) {
 	go client.writePump(ctx)
 
-	if err := client.Conn.SetReadDeadline(time.Now().Add(websocketReadDeadline)); err != nil {
-		log.Debug().Err(err).Str("client_id", client.ID).Msg("HandleWebSocket: set read deadline failed")
-	}
 	client.Conn.SetPongHandler(func(string) error {
 		if err := client.Conn.SetReadDeadline(time.Now().Add(websocketReadDeadline)); err != nil {
 			log.Debug().Err(err).Str("client_id", client.ID).Msg("HandleWebSocket: set read deadline failed")
@@ -152,6 +149,9 @@ func HandleWebSocketWithContext(ctx context.Context, client *Client) {
 
 		// ReadMessage будет ждать до readTimeout, затем вернёт ошибку,
 		// что позволит циклу проверить ctx.Done()
+		if err := client.Conn.SetReadDeadline(time.Now().Add(websocketReadDeadline)); err != nil {
+			log.Debug().Err(err).Str("client_id", client.ID).Msg("HandleWebSocket: set read deadline failed")
+		}
 		_, _, err := client.Conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
@@ -167,4 +167,16 @@ func HandleWebSocketWithContext(ctx context.Context, client *Client) {
 // WritePumpWithContext запускает writePump с поддержкой контекста.
 func WritePumpWithContext(ctx context.Context, client *Client) {
 	go client.writePump(ctx)
+}
+
+// isClosedConnError проверяет, является ли ошибка "connection already closed".
+func isClosedConnError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure, websocket.CloseAbnormalClosure, websocket.CloseNoStatusReceived) {
+		return true
+	}
+	errStr := err.Error()
+	return errStr == "use of closed network connection" || errStr == "connection closed"
 }

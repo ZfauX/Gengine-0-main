@@ -7,6 +7,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+const hubChanCapacity = 64
+
 // RoomHub управляет WebSocket-комнатами и клиентами.
 type RoomHub struct {
 	rooms      map[string]map[*Client]bool
@@ -29,9 +31,9 @@ type RoomHub struct {
 func NewRoomHub() *RoomHub {
 	return &RoomHub{
 		rooms:         make(map[string]map[*Client]bool),
-		register:      make(chan *Client),
-		unregister:    make(chan *Client),
-		broadcast:     make(chan *Message),
+		register:      make(chan *Client), // unbuffered — синхронная регистрация
+		unregister:    make(chan *Client, hubChanCapacity),
+		broadcast:     make(chan *Message, hubChanCapacity),
 		done:          make(chan struct{}),
 		maxTotalConns: 1000,
 		maxConnsPerIP: 50,
@@ -81,6 +83,12 @@ func (h *RoomHub) incConnection(ip string) {
 func (h *RoomHub) decConnection(ip string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.decConnectionNoLock(ip)
+}
+
+// decConnectionNoLock — то же, что decConnection, но без захвата h.mu.
+// Используется в cleanupInactiveClients (который уже держит h.mu.Lock()).
+func (h *RoomHub) decConnectionNoLock(ip string) {
 	if h.totalConns > 0 {
 		h.totalConns--
 	}
@@ -159,15 +167,15 @@ func (h *RoomHub) runLoop() {
 				h.mu.RUnlock()
 				continue
 			}
-			// Копируем map клиентов (защита от concurrent map modifications)
-			clientsCopy := make(map[*Client]bool, len(room))
+			// Собираем клиентов в слайс (меньше аллокаций, чем map[*Client]bool)
+			clients := make([]*Client, 0, len(room))
 			for client := range room {
-				clientsCopy[client] = true
+				clients = append(clients, client)
 			}
 			h.mu.RUnlock()
 
 			// Рассылка БЕЗ удержания лока
-			for client := range clientsCopy {
+			for _, client := range clients {
 				if client.IsClosed() {
 					// Удаляем из оригинальной map под локом
 					h.mu.Lock()

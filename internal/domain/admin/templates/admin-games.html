@@ -1,7 +1,7 @@
 {{define "admin-games.html"}}
 <div class="max-w-7xl mx-auto">
     <!-- Навигация -->
-    <nav class="flex flex-wrap gap-2 p-3 bg-gray-100 rounded-lg mb-6">
+    <nav class="flex flex-wrap gap-2 p-3 bg-gray-100 dark:bg-gray-800 rounded-lg mb-6">
         <a href="/admin" class="btn btn-outline text-sm">Дашборд</a>
         <a href="/admin/users" class="btn btn-outline text-sm">Пользователи</a>
         <a href="/admin/games" class="btn btn-primary text-sm">Игры</a>
@@ -9,7 +9,7 @@
         <a href="/admin/backups" class="btn btn-outline text-sm">Бэкапы</a>
     </nav>
 
-    <h1 class="text-2xl font-bold text-gray-800 mb-4">Модерация игр</h1>
+    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">Модерация игр</h1>
 
     <!-- Фильтр по статусу -->
     <div class="flex flex-wrap gap-2 mb-6">
@@ -22,23 +22,23 @@
     <input type="hidden" id="csrf_token" value="{{.csrf}}">
 
     <!-- Таблица игр -->
-    <div class="overflow-x-auto bg-white rounded-lg shadow-sm border border-gray-200">
+    <div class="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
         <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
+            <thead class="bg-gray-50 dark:bg-gray-800">
                 <tr>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Название</th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Автор</th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Статус</th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Действия</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">ID</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Название</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Автор</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Статус</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Действия</th>
                 </tr>
             </thead>
-            <tbody class="bg-white divide-y divide-gray-200">
+            <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200">
                 {{range .Games}}
-                <tr class="hover:bg-gray-50 transition">
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{.ID}}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{.Name}}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{.Author.Name}}</td>
+                <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 transition">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{.ID}}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">{{.Name}}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{.Author.Name}}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">
                         {{if .IsDraft}}
                             <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">Черновик</span>
@@ -71,15 +71,15 @@
             {{end}}
         </div>
         <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-            <p class="text-sm text-gray-700">
+            <p class="text-sm text-gray-700 dark:text-gray-300">
                 Страница <span class="font-medium">{{.Page}}</span> из <span class="font-medium">{{.TotalPages}}</span>
-                <span class="text-gray-500">(всего {{.Total}} записей)</span>
+                <span class="text-gray-500 dark:text-gray-400">(всего {{.Total}} записей)</span>
             </p>
             <nav class="inline-flex gap-1" aria-label="Пагинация">
                 {{if gt .Page 1}}
                     <a href="?page={{.PrevPage}}&status={{$.Status}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm px-3 py-1">←</a>
                 {{end}}
-                <span class="px-3 py-1 text-sm text-gray-700 bg-gray-100 rounded-md">{{.Page}}</span>
+                <span class="px-3 py-1 text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 rounded-md">{{.Page}}</span>
                 {{if lt .Page .TotalPages}}
                     <a href="?page={{.NextPage}}&status={{$.Status}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm px-3 py-1">→</a>
                 {{end}}

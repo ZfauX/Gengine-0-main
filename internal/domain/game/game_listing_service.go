@@ -3,6 +3,7 @@ package game
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,14 +26,17 @@ func NewGameListingService(gameRepo GameRepository) *GameListingService {
 	return &GameListingService{gameRepo: gameRepo}
 }
 
-// ListFilteredPaginated возвращает список игр с фильтрацией и пагинацией.
-// Использует один SQL-запрос с оконной функцией для total_count.
+// ListFilteredPaginated returns filtered games with pagination.
+// Uses COUNT(*) OVER() window function to get total in a single query.
 func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter GameFilter, sort *GameSort, page, perPage int) ([]Game, int64, error) {
-	// Формируем базовый SQL с оконной функцией
-	sql := `
+	var b strings.Builder
+	b.Grow(1500)
+
+	b.WriteString(`
 		SELECT games.*,
-			(COALESCE(ratings.avg_rating, 0)) as rating_value,
-			COALESCE(participants.participant_count, 0) as participant_count
+			COALESCE(ratings.avg_rating, 0) as rating_value,
+			COALESCE(participants.participant_count, 0) as participant_count,
+			COUNT(*) OVER() AS total_count
 		FROM games
 		LEFT JOIN (
 			SELECT game_id, COALESCE(AVG(rating), 0) as avg_rating
@@ -43,55 +47,53 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 			FROM game_passings WHERE status IN ('accepted','started','finished')
 			GROUP BY game_id
 		) participants ON participants.game_id = games.id
-		WHERE (visibility = 'public' OR author_id = ?) AND (is_draft = false OR author_id = ?)`
+		WHERE (visibility = 'public' OR author_id = ?) AND (is_draft = false OR author_id = ?)`)
 
 	args := []any{filter.ViewerID, filter.ViewerID}
 
 	switch filter.Status {
 	case filterDraft:
-		sql += " AND is_draft = true AND author_id = ?"
+		b.WriteString(" AND is_draft = true AND author_id = ?")
 		args = append(args, filter.ViewerID)
 	case filterPublished:
-		sql += " AND is_draft = false"
+		b.WriteString(" AND is_draft = false")
 	default:
-		// неизвестный статус — без фильтрации
 	}
 
 	if filter.Search != "" {
 		escapedSearch := sqlutil.EscapeLike(filter.Search)
 		if s.useSearchVector(ctx) {
-			sql += " AND (search_vector IS NOT NULL AND search_vector @@ plainto_tsquery('russian', ?) OR name ILIKE ?)"
+			b.WriteString(" AND (search_vector IS NOT NULL AND search_vector @@ plainto_tsquery('russian', ?) OR name ILIKE ?)")
 			args = append(args, filter.Search, "%"+escapedSearch+"%")
 		} else {
-			sql += " AND name ILIKE ?"
+			b.WriteString(" AND name ILIKE ?")
 			args = append(args, "%"+escapedSearch+"%")
 		}
 	}
 	if filter.DateFrom != "" {
 		if dateFrom, err := time.Parse("2006-01-02", filter.DateFrom); err == nil {
-			sql += " AND starts_at >= ?"
+			b.WriteString(" AND starts_at >= ?")
 			args = append(args, dateFrom)
 		}
 	}
 	if filter.DateTo != "" {
 		if dateTo, err := time.Parse("2006-01-02", filter.DateTo); err == nil {
-			sql += " AND starts_at < ?"
+			b.WriteString(" AND starts_at < ?")
 			args = append(args, dateTo.Add(24*time.Hour))
 		}
 	}
 	if filter.AuthorID != nil {
-		sql += " AND author_id = ?"
+		b.WriteString(" AND author_id = ?")
 		args = append(args, *filter.AuthorID)
 	}
 
-	// Определяем ORDER BY через белый список колонок
+	// ORDER BY через белый список колонок (защита от SQL injection)
 	orderClause := "games.created_at DESC"
 	if sort != nil {
 		sortDir := strings.ToUpper(string(sort.Order))
 		if sortDir != "ASC" && sortDir != "DESC" {
 			sortDir = "DESC"
 		}
-
 		var sortColumn string
 		switch sort.Field {
 		case "name":
@@ -105,7 +107,6 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 		default:
 			sortColumn = "games.created_at"
 		}
-
 		if sort.Field == "name" || sort.Field == "starts_at" {
 			orderClause = sortColumn + " " + sortDir + ", games.created_at DESC"
 		} else {
@@ -113,33 +114,33 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 		}
 	}
 
-	sql += " ORDER BY " + orderClause
+	b.WriteString(" ORDER BY " + orderClause)
 
+	// Получаем общее количество отдельным запросом (всегда корректно, даже при пустой странице)
+	countB := b.String()
 	offset := (page - 1) * perPage
-	countSQL := `SELECT COUNT(*) AS total FROM (` + sql + `) cnt`
-	paginatedArgs := make([]any, len(args))
-	copy(paginatedArgs, args)
-	paginatedArgs = append(paginatedArgs, perPage, offset)
-	paginatedSQL := sql + " LIMIT ? OFFSET ?"
+	b.WriteString(" LIMIT " + strconv.Itoa(perPage) + " OFFSET " + strconv.Itoa(offset))
+	query := b.String()
 
 	var total int64
-	if err := s.gameRepo.Model(ctx).Raw(countSQL, args...).Scan(&total).Error; err != nil {
+	if err := s.gameRepo.Model(ctx).Raw("SELECT COUNT(*) FROM ("+countB+") cnt", args...).Scan(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
 	type gameRow struct {
 		Game
+		RatingValue      float64
+		ParticipantCount int
 	}
 	var rows []gameRow
-	if err := s.gameRepo.Model(ctx).Raw(paginatedSQL, paginatedArgs...).Scan(&rows).Error; err != nil {
+	if err := s.gameRepo.Model(ctx).Raw(query, args...).Scan(&rows).Error; err != nil {
 		return nil, 0, err
 	}
 
-	var games []Game
-	for _, row := range rows {
-		games = append(games, row.Game)
+	games := make([]Game, len(rows))
+	for i, row := range rows {
+		games[i] = row.Game
 	}
-
 	return games, total, nil
 }
 

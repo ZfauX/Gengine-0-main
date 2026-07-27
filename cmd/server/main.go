@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -25,6 +26,8 @@ import (
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/storage"
 	ws "gengine-0/internal/pkg/websocket"
+
+	docs "gengine-0/docs"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
@@ -77,6 +80,14 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
+
+	// Динамический host для Swagger (берётся из конфига, не хардкод)
+	if parsedURL, parseErr := url.Parse(cfg.Server.BaseURL); parseErr == nil {
+		docs.SwaggerInfo.Host = parsedURL.Host
+	} else {
+		docs.SwaggerInfo.Host = "localhost:8080"
+	}
+	docs.SwaggerInfo.BasePath = "/"
 
 	// ============================================================
 	// ИНИЦИАЛИЗАЦИЯ SENTRY

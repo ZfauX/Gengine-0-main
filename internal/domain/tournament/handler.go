@@ -150,11 +150,18 @@ func (h *TournamentHandler) Show(c *gin.Context) {
 
 	canApply := h.tournamentService.CanApply(c.Request.Context(), req.ID, userID)
 
+	teams, err := h.teamService.GetMyTeams(c.Request.Context(), userID)
+	if err != nil {
+		log.Error().Err(err).Uint("user_id", userID).Msg("TournamentHandler.Show: failed to get teams")
+		teams = []team.Team{}
+	}
+
 	render.Page(c, http.StatusOK, "tournaments-show.html", gin.H{
 		"Tournament":    t,
 		"Games":         games,
 		"Leaderboard":   leaderboard,
 		"CanApply":      canApply,
+		"UserTeams":     teams,
 		"CurrentUserID": userID,
 		"csrf":          csrf.GetToken(c),
 		"Breadcrumbs": []map[string]string{

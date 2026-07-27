@@ -56,6 +56,7 @@ func newTournamentService(db *gorm.DB, teamSvc *team.TeamService) *tournament.To
 	tournamentResultRepo := tournament.NewGormTournamentResultRepo(db)
 	cfg := &config.Config{}
 	return tournament.NewTournamentService(
+		db,
 		tournamentRepo,
 		tournamentGameRepo,
 		tournamentTeamRepo,

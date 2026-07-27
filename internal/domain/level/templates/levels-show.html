@@ -1,15 +1,15 @@
 {{define "levels-show.html"}}
 <div class="max-w-4xl mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 mb-6">Уровень: {{.Level.Name}}</h1>
+    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Уровень: {{.Level.Name}}</h1>
 
     <!-- Информация об уровне -->
     <div class="card mb-6 space-y-2 text-sm">
         {{if .Level.Description}}
-        <p class="text-gray-600 italic">{{.Level.Description}}</p>
+        <p class="text-gray-600 dark:text-gray-400 italic">{{.Level.Description}}</p>
         {{end}}
 
-        <p><span class="font-medium text-gray-600">Позиция:</span> {{.Level.Position}}</p>
-        <p><span class="font-medium text-gray-600">Тип:</span>
+        <p><span class="font-medium text-gray-600 dark:text-gray-400">Позиция:</span> {{.Level.Position}}</p>
+        <p><span class="font-medium text-gray-600 dark:text-gray-400">Тип:</span>
             {{if eq .Level.Type "single"}}Обычный
             {{else if eq .Level.Type "checkpoint"}}Чекпоинт
             {{else if eq .Level.Type "parallel_group"}}Параллельная группа
@@ -23,7 +23,7 @@
         </div>
         {{end}}
         {{if .Level.Latitude}}
-        <p><span class="font-medium text-gray-600">Координаты:</span> {{.Level.Latitude}}, {{.Level.Longitude}}</p>
+        <p><span class="font-medium text-gray-600 dark:text-gray-400">Координаты:</span> {{.Level.Latitude}}, {{.Level.Longitude}}</p>
         
         <!-- Карта Leaflet -->
         <div class="mt-4">
@@ -52,19 +52,19 @@
     <!-- Вопросы -->
     <div class="card mb-6">
         <div class="flex justify-between items-center mb-4">
-            <h2 class="text-lg font-semibold text-gray-700">Вопросы</h2>
+            <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300">Вопросы</h2>
             <a href="/games/{{.GameID}}/levels/{{.Level.ID}}/questions/new" class="btn btn-primary text-sm">+ Добавить вопрос</a>
         </div>
 
         {{if .Level.Questions}}
         <ul class="space-y-4">
             {{range .Level.Questions}}
-            <li class="border border-gray-200 rounded-lg p-4 bg-gray-50">
+            <li class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
                 <div class="flex flex-wrap items-start justify-between gap-2">
                     <div class="flex-1">
-                        <p class="font-medium text-gray-800">{{.Text}}</p>
+                        <p class="font-medium text-gray-800 dark:text-gray-100">{{.Text}}</p>
                         {{if .Hint}}
-                        <p class="text-sm text-gray-500 italic">Подсказка: {{.Hint}}</p>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 italic">Подсказка: {{.Hint}}</p>
                         {{end}}
                     </div>
                     <div class="flex flex-wrap items-center gap-2 text-sm">
@@ -78,7 +78,7 @@
                 </div>
                 {{if .Answers}}
                 <div class="mt-3">
-                    <p class="text-sm font-medium text-gray-600">Ответы:</p>
+                    <p class="text-sm font-medium text-gray-600 dark:text-gray-400">Ответы:</p>
                     <ul class="flex flex-wrap gap-2 mt-1">
                         {{range .Answers}}
                         <li class="px-2 py-1 text-sm font-mono text-green-700 bg-green-50 rounded-md border border-green-200">{{.Code}}</li>
@@ -90,7 +90,7 @@
             {{end}}
         </ul>
         {{else}}
-        <p class="text-gray-500 text-sm">Вопросов пока нет.</p>
+        <p class="text-gray-500 dark:text-gray-400 text-sm">Вопросов пока нет.</p>
         {{end}}
     </div>
 

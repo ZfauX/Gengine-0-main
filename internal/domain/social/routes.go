@@ -16,10 +16,11 @@ func RegisterRoutes(
 	db *gorm.DB,
 	cfg *config.Config,
 	authService *user.AuthService,
+	userService *user.UserService,
 ) {
 	followRepo := NewGormFollowRepo(db)
 	followService := NewFollowService(followRepo)
-	followHandler := NewFollowHandler(followService)
+	followHandler := NewFollowHandler(followService, userService)
 
 	authRequired := middleware.AuthRequired(authService)
 

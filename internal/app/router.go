@@ -109,7 +109,9 @@ func (app *App) setupEngine(r *gin.Engine) error {
 		gin.WrapH(promhttp.Handler())(c)
 	})
 
-	healthChecker := health.NewCheckerWithValkey(app.DB, app.Hub, app.Deps.Cache).WithUploadsDir(app.Config.Server.UploadsDir)
+	healthChecker := health.NewCheckerWithValkey(app.DB, app.Hub, app.Deps.Cache).
+		WithUploadsDir(app.Config.Server.UploadsDir).
+		WithSMTPEnabled(app.Config.SMTP.Enabled)
 	r.GET("/healthz", func(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
 		defer cancel()
@@ -250,7 +252,7 @@ func (app *App) registerMonitorRoutes(r *gin.RouterGroup) {
 }
 
 func (app *App) registerSocialRoutes(r *gin.RouterGroup) {
-	social.RegisterRoutes(r, app.DB, app.Config, app.Deps.Services.Auth)
+	social.RegisterRoutes(r, app.DB, app.Config, app.Deps.Services.Auth, app.Deps.Services.User)
 }
 
 func (app *App) registerExportRoutes(r *gin.RouterGroup) error {

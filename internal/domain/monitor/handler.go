@@ -103,6 +103,15 @@ func NewMonitorHandler(
 }
 
 // MonitorPage отображает HTML-страницу мониторинга.
+// @Summary Страница мониторинга игры
+// @Tags monitor
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Страница мониторинга"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /games/{id}/monitor [get]
+// @Security JWT
 func (h *MonitorHandler) MonitorPage(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -122,6 +131,15 @@ func (h *MonitorHandler) MonitorPage(c *gin.Context) {
 }
 
 // MonitorData возвращает snapshot прогресса игры в JSON (для polling fallback).
+// @Summary Данные мониторинга (JSON)
+// @Tags monitor
+// @Produce json
+// @Param id path int true "ID игры"
+// @Success 200 {object} map[string]interface{} "Snapshot прогресса команд"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /games/{id}/monitor/data [get]
+// @Security JWT
 func (h *MonitorHandler) MonitorData(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -140,6 +158,15 @@ func (h *MonitorHandler) MonitorData(c *gin.Context) {
 }
 
 // MonitorStreamSSE предоставляет Server-Sent Events для обновлений прогресса игры.
+// @Summary Поток мониторинга (SSE)
+// @Tags monitor
+// @Produce text/event-stream
+// @Param id path int true "ID игры"
+// @Success 200 {string} string "SSE поток обновлений"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /games/{id}/monitor/stream [get]
+// @Security JWT
 func (h *MonitorHandler) MonitorStreamSSE(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -199,6 +226,15 @@ func (h *MonitorHandler) MonitorStreamSSE(c *gin.Context) {
 }
 
 // MonitorWS обрабатывает WebSocket-соединение для live-обновлений прогресса.
+// @Summary WebSocket мониторинга
+// @Tags monitor
+// @Param id path int true "ID игры"
+// @Success 101 {string} string "Switching Protocols"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Failure 429 {object} map[string]interface{} "Слишком много соединений"
+// @Router /games/{id}/monitor/ws [get]
+// @Security JWT
 func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -260,7 +296,15 @@ func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 	}()
 }
 
-// ChatPage отображает HTML-страницу чата игры.// ChatPage отображает HTML-страницу чата игры.
+// ChatPage отображает HTML-страницу чата игры.
+// @Summary Страница чата игры
+// @Tags monitor
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Страница чата"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /games/{id}/chat [get]
+// @Security JWT
 func (h *MonitorHandler) ChatPage(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -303,6 +347,14 @@ func (h *MonitorHandler) ChatPage(c *gin.Context) {
 }
 
 // ChatWS обрабатывает WebSocket-соединение чата.
+// @Summary WebSocket чата
+// @Tags monitor
+// @Param room query string true "ID комнаты чата"
+// @Success 101 {string} string "Switching Protocols"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 429 {object} map[string]interface{} "Слишком много соединений"
+// @Router /chat/ws [get]
+// @Security JWT
 func (h *MonitorHandler) ChatWS(c *gin.Context) {
 	roomID := c.Query("room")
 	if roomID == "" {
@@ -329,6 +381,30 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 		log.Warn().Str("room_id", roomID).Msg("ChatWS: invalid room ID")
 		c.AbortWithStatus(http.StatusBadRequest)
 		return
+	}
+
+	// Проверка прав доступа к комнате чата
+	var chatRoom ChatRoom
+	if findErr := h.db.WithContext(c.Request.Context()).First(&chatRoom, roomIDUint).Error; findErr != nil {
+		log.Warn().Err(err).Str("room_id", roomID).Msg("ChatWS: room not found")
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "комната не найдена"})
+		return
+	}
+	if chatRoom.GameID != nil {
+		isManager, mgrErr := h.coAuthorSvc.IsUserManager(c.Request.Context(), *chatRoom.GameID, userID)
+		if mgrErr != nil {
+			log.Error().Err(mgrErr).Uint("game_id", *chatRoom.GameID).Uint("user_id", userID).Msg("ChatWS: manager check error")
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "внутренняя ошибка"})
+			return
+		}
+		if !isManager {
+			_, findErr := h.gameService.GetPassingByUser(c.Request.Context(), *chatRoom.GameID, userID)
+			if findErr != nil {
+				log.Warn().Uint("user_id", userID).Uint("game_id", *chatRoom.GameID).Msg("ChatWS: access denied, not a participant")
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "доступ запрещён"})
+				return
+			}
+		}
 	}
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
@@ -410,6 +486,14 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 }
 
 // ChatRoomIDs возвращает ID комнат чата (общая и командная) для игры.
+// @Summary ID комнат чата
+// @Tags monitor
+// @Produce json
+// @Param id path int true "ID игры"
+// @Success 200 {object} map[string]interface{} "ID комнат чата"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /games/{id}/chat-rooms [get]
+// @Security JWT
 func (h *MonitorHandler) ChatRoomIDs(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -467,6 +551,15 @@ func (h *MonitorHandler) ChatRoomIDs(c *gin.Context) {
 }
 
 // ListLogs отображает HTML-страницу с историей логов игры.
+// @Summary Логи игры
+// @Tags monitor
+// @Produce html
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Страница логов"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /games/{id}/logs [get]
+// @Security JWT
 func (h *MonitorHandler) ListLogs(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -489,6 +582,15 @@ func (h *MonitorHandler) ListLogs(c *gin.Context) {
 }
 
 // LogsWS предоставляет WebSocket-стрим логов игры.
+// @Summary WebSocket логов
+// @Tags monitor
+// @Param id path int true "ID игры"
+// @Success 101 {string} string "Switching Protocols"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Failure 429 {object} map[string]interface{} "Слишком много соединений"
+// @Router /games/{id}/logs/ws [get]
+// @Security JWT
 func (h *MonitorHandler) LogsWS(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -531,6 +633,18 @@ func (h *MonitorHandler) LogsWS(c *gin.Context) {
 }
 
 // StartVoting запускает голосование по текущему уровню-чёрному ящику.
+// @Summary Запуск голосования
+// @Tags monitor
+// @Accept x-www-form-urlencoded
+// @Produce json
+// @Param passing_id formData uint true "ID прохождения"
+// @Param level_id formData uint true "ID уровня"
+// @Success 200 {object} map[string]interface{} "Голосование запущено"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /voting/start [post]
+// @Security JWT
 func (h *MonitorHandler) StartVoting(c *gin.Context) {
 	var input StartVotingInput
 	if err := c.ShouldBind(&input); err != nil {
@@ -575,6 +689,19 @@ func (h *MonitorHandler) StartVoting(c *gin.Context) {
 }
 
 // Vote обрабатывает голос команды за выбранный вариант.
+// @Summary Голосование
+// @Tags monitor
+// @Accept x-www-form-urlencoded
+// @Produce json
+// @Param session_id formData uint true "ID сессии голосования"
+// @Param team_id formData uint true "ID команды"
+// @Param option formData string true "Выбранный вариант"
+// @Success 200 {object} map[string]interface{} "Голос учтён"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /voting/vote [post]
+// @Security JWT
 func (h *MonitorHandler) Vote(c *gin.Context) {
 	var input VoteInput
 	if err := c.ShouldBind(&input); err != nil {
@@ -629,6 +756,15 @@ func (h *MonitorHandler) Vote(c *gin.Context) {
 }
 
 // GetVotingResults возвращает текущие результаты голосования.
+// @Summary Результаты голосования
+// @Tags monitor
+// @Produce json
+// @Param session_id path int true "ID сессии голосования"
+// @Success 200 {object} map[string]interface{} "Результаты голосования"
+// @Failure 400 {object} map[string]interface{} "Неверный ID сессии"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Router /voting/{session_id}/results [get]
+// @Security JWT
 func (h *MonitorHandler) GetVotingResults(c *gin.Context) {
 	var req GameIDAndSessionIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -653,6 +789,17 @@ func (h *MonitorHandler) GetVotingResults(c *gin.Context) {
 }
 
 // CloseVoting завершает голосование и определяет победителя.
+// @Summary Закрытие голосования
+// @Tags monitor
+// @Accept x-www-form-urlencoded
+// @Produce json
+// @Param session_id path int true "ID сессии голосования"
+// @Success 200 {object} map[string]interface{} "Победивший вариант"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
+// @Router /voting/{session_id}/close [post]
+// @Security JWT
 func (h *MonitorHandler) CloseVoting(c *gin.Context) {
 	var req GameIDAndSessionIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {

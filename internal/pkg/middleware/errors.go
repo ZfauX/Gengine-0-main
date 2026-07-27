@@ -1,17 +1,19 @@
 package middleware
 
-const (
-	ErrAuthRequired       = "требуется аутентификация"
-	ErrInvalidToken       = "невалидный токен"
-	ErrAccessDenied       = "доступ запрещён"
-	ErrInsufficientRights = "недостаточно прав"
-	ErrInternalServer     = "внутренняя ошибка сервера"
+import "errors"
 
-	ErrRateLimitGlobal   = "слишком много запросов"
-	ErrRateLimitLogin    = "слишком много попыток входа, попробуйте позже"
-	ErrRateLimitRegister = "слишком много попыток регистрации, попробуйте позже"
-	ErrRateLimitCode     = "слишком частый ввод кодов"
-	ErrRateLimitSSE      = "слишком много SSE-подключений"
+var (
+	ErrAuthRequired       = errors.New("требуется аутентификация")
+	ErrInvalidToken       = errors.New("невалидный токен")
+	ErrAccessDenied       = errors.New("доступ запрещён")
+	ErrInsufficientRights = errors.New("недостаточно прав")
+	ErrInternalServer     = errors.New("внутренняя ошибка сервера")
 
-	ErrInvalidGameID = "неверный game_id"
+	ErrRateLimitGlobal   = errors.New("слишком много запросов")
+	ErrRateLimitLogin    = errors.New("слишком много попыток входа, попробуйте позже")
+	ErrRateLimitRegister = errors.New("слишком много попыток регистрации, попробуйте позже")
+	ErrRateLimitCode     = errors.New("слишком частый ввод кодов")
+	ErrRateLimitSSE      = errors.New("слишком много SSE-подключений")
+
+	ErrInvalidGameID = errors.New("неверный game_id")
 )

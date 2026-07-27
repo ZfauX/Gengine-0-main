@@ -237,7 +237,7 @@ func TestCreate_SavesToDB(t *testing.T) {
 	mock.ExpectCommit()
 
 	svc := NewNotificationService(db, nil)
-	err := svc.Create(context.Background(), 1, NotificationTypeGameStarted, "Title", "Message", "/url", "")
+	err := svc.Create(context.Background(), 1, NotificationTypeGameStarted, "Title", "Message", "/url")
 	assert.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -257,7 +257,7 @@ func TestCreate_WithHub_SendsWebSocket(t *testing.T) {
 	t.Cleanup(hub.Stop)
 
 	svc := NewNotificationService(db, hub)
-	err := svc.Create(context.Background(), 1, NotificationTypeGameStarted, "Title", "Message", "/url", "")
+	err := svc.Create(context.Background(), 1, NotificationTypeGameStarted, "Title", "Message", "/url")
 	assert.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -270,7 +270,7 @@ func TestCreate_DBError(t *testing.T) {
 	mock.ExpectRollback()
 
 	svc := NewNotificationService(db, ws.NewRoomHub())
-	err := svc.Create(context.Background(), 1, NotificationTypeGameStarted, "T", "M", "", "")
+	err := svc.Create(context.Background(), 1, NotificationTypeGameStarted, "T", "M", "")
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

@@ -1,15 +1,15 @@
 {{define "profile-public.html"}}
 <div class="max-w-4xl mx-auto" data-profile-user-id="{{.ProfileUser.ID}}">
-    <h1 class="text-2xl font-bold text-gray-800 mb-6">Профиль пользователя</h1>
+    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Профиль пользователя</h1>
 
     <div class="card mb-6">
         <div class="flex flex-col sm:flex-row items-center sm:items-start gap-6">
             <!-- Аватар -->
             <div class="flex-shrink-0">
                 {{if .ProfileUser.AvatarPath}}
-                    <img src="{{.ProfileUser.AvatarPath}}" alt="Аватар" class="w-32 h-32 rounded-full object-cover border-2 border-gray-200">
+                    <img src="{{.ProfileUser.AvatarPath}}" alt="Аватар" class="w-32 h-32 rounded-full object-cover border-2 border-gray-200 dark:border-gray-700">
                 {{else}}
-                    <div class="w-32 h-32 rounded-full bg-gray-200 flex items-center justify-center text-4xl text-gray-500">
+                    <div class="w-32 h-32 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-4xl text-gray-500 dark:text-gray-400">
                         {{if .ProfileUser.Name}}{{slice .ProfileUser.Name 0 1}}{{else}}?{{end}}
                     </div>
                 {{end}}
@@ -17,28 +17,28 @@
 
             <!-- Информация -->
             <div class="flex-1 text-center sm:text-left">
-                <h2 class="text-xl font-semibold text-gray-800">{{.ProfileUser.Name}}</h2>
+                <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100">{{.ProfileUser.Name}}</h2>
                 {{if and .IsOwner .ProfileUser.Email}}
-                <p class="text-sm text-gray-500">{{.ProfileUser.Email}}</p>
+                <p class="text-sm text-gray-500 dark:text-gray-400">{{.ProfileUser.Email}}</p>
                 {{end}}
 
                 <!-- Статистика -->
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
-                    <div class="text-center p-2 bg-gray-50 rounded-md">
-                        <div class="text-xl font-bold text-blue-600">{{.GamesCreated}}</div>
-                        <div class="text-xs text-gray-500">игр создано</div>
+                    <div class="text-center p-2 bg-gray-50 dark:bg-gray-800 rounded-md">
+                        <div class="text-xl font-bold text-blue-600 dark:text-blue-400">{{.GamesCreated}}</div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400">игр создано</div>
                     </div>
-                    <div class="text-center p-2 bg-gray-50 rounded-md">
-                        <div class="text-xl font-bold text-blue-600">{{.GamesPlayed}}</div>
-                        <div class="text-xs text-gray-500">игр пройдено</div>
+                    <div class="text-center p-2 bg-gray-50 dark:bg-gray-800 rounded-md">
+                        <div class="text-xl font-bold text-blue-600 dark:text-blue-400">{{.GamesPlayed}}</div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400">игр пройдено</div>
                     </div>
-                    <div class="text-center p-2 bg-gray-50 rounded-md">
-                        <div class="text-xl font-bold text-blue-600">{{.Wins}}</div>
-                        <div class="text-xs text-gray-500">побед</div>
+                    <div class="text-center p-2 bg-gray-50 dark:bg-gray-800 rounded-md">
+                        <div class="text-xl font-bold text-blue-600 dark:text-blue-400">{{.Wins}}</div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400">побед</div>
                     </div>
-                    <div class="text-center p-2 bg-gray-50 rounded-md">
-                        <div class="text-xl font-bold text-blue-600">{{.Rating}}</div>
-                        <div class="text-xs text-gray-500">рейтинг</div>
+                    <div class="text-center p-2 bg-gray-50 dark:bg-gray-800 rounded-md">
+                        <div class="text-xl font-bold text-blue-600 dark:text-blue-400">{{.Rating}}</div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400">рейтинг</div>
                     </div>
                 </div>
 
@@ -58,13 +58,13 @@
 
     <!-- Достижения -->
     {{if .Achievements}}
-    <h2 class="text-xl font-semibold text-gray-800 mb-4">Достижения</h2>
+    <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">Достижения</h2>
     <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-6">
         {{range .Achievements}}
         <div class="card text-center p-4">
             <div class="text-3xl mb-2">{{.Icon}}</div>
-            <div class="text-sm font-medium text-gray-700">{{.Name}}</div>
-            <div class="text-xs text-gray-500">{{.Description}}</div>
+            <div class="text-sm font-medium text-gray-700 dark:text-gray-300">{{.Name}}</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">{{.Description}}</div>
         </div>
         {{end}}
     </div>
@@ -72,15 +72,15 @@
 
     <!-- Последние игры автора -->
     {{if .RecentGames}}
-    <h2 class="text-xl font-semibold text-gray-800 mb-4">Последние игры автора</h2>
+    <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">Последние игры автора</h2>
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
         {{range .RecentGames}}
         <div class="card hover:shadow-md transition">
             {{if .CoverPath}}
                 <img src="{{.CoverPath}}" alt="{{.Name}}" class="w-full h-36 object-cover rounded-md mb-3">
             {{end}}
-            <h3 class="font-medium text-gray-800"><a href="/games/{{.ID}}" class="text-blue-600 hover:underline">{{.Name}}</a></h3>
-            <p class="text-xs text-gray-500">{{.CreatedAt}}</p>
+            <h3 class="font-medium text-gray-800 dark:text-gray-100"><a href="/games/{{.ID}}" class="text-blue-600 dark:text-blue-400 hover:underline">{{.Name}}</a></h3>
+            <p class="text-xs text-gray-500 dark:text-gray-400">{{.CreatedAt}}</p>
             {{if .IsDraft}}<span class="text-xs text-yellow-600 font-medium">Черновик</span>{{end}}
         </div>
         {{end}}

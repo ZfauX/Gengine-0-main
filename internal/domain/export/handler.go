@@ -43,6 +43,20 @@ func NewExportHandler(
 	}
 }
 
+func (h *ExportHandler) checkGameAccess(c *gin.Context, gameID uint) bool {
+	userID := c.GetUint("userID")
+	if userID == 0 {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "требуется аутентификация"})
+		return false
+	}
+	ok, err := h.gameService.IsUserManager(c.Request.Context(), gameID, userID)
+	if err != nil || !ok {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "доступ запрещён"})
+		return false
+	}
+	return true
+}
+
 func parseGameID(c *gin.Context) (uint, error) {
 	idStr := c.Param("id")
 	if idStr == "" {
@@ -72,6 +86,10 @@ func (h *ExportHandler) ExportGameCSV(c *gin.Context) {
 	gameID, err := parseGameID(c)
 	if err != nil {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if !h.checkGameAccess(c, gameID) {
 		return
 	}
 
@@ -106,6 +124,10 @@ func (h *ExportHandler) ImportGameForm(c *gin.Context) {
 		return
 	}
 
+	if !h.checkGameAccess(c, gameID) {
+		return
+	}
+
 	render.Page(c, http.StatusOK, "export_import-import.html", gin.H{
 		"GameID": gameID,
 		"csrf":   csrf.GetToken(c),
@@ -130,6 +152,10 @@ func (h *ExportHandler) ImportGame(c *gin.Context) {
 	gameID, err := parseGameID(c)
 	if err != nil {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if !h.checkGameAccess(c, gameID) {
 		return
 	}
 
@@ -200,6 +226,10 @@ func (h *ExportHandler) ExportResultsCSV(c *gin.Context) {
 		return
 	}
 
+	if !h.checkGameAccess(c, gameID) {
+		return
+	}
+
 	var buf bytes.Buffer
 	if err := h.exportService.ExportResultsToCSV(c.Request.Context(), gameID, &buf); err != nil {
 		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportResultsCSV: failed to export results to CSV")
@@ -232,6 +262,10 @@ func (h *ExportHandler) ExportGamePDF(c *gin.Context) {
 		return
 	}
 
+	if !h.checkGameAccess(c, gameID) {
+		return
+	}
+
 	var buf bytes.Buffer
 	if err := h.exportService.ExportGameToPDF(c.Request.Context(), gameID, &buf); err != nil {
 		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportGamePDF: failed to generate PDF")
@@ -261,6 +295,10 @@ func (h *ExportHandler) ExportStatisticsPDF(c *gin.Context) {
 	gameID, err := parseGameID(c)
 	if err != nil {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if !h.checkGameAccess(c, gameID) {
 		return
 	}
 
@@ -300,6 +338,10 @@ func (h *ExportHandler) ExportGameExcel(c *gin.Context) {
 		return
 	}
 
+	if !h.checkGameAccess(c, gameID) {
+		return
+	}
+
 	var buf bytes.Buffer
 	if err := h.exportService.ExportGameToExcel(c.Request.Context(), gameID, &buf); err != nil {
 		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportGameExcel: failed to generate Excel")
@@ -329,6 +371,10 @@ func (h *ExportHandler) ExportResultsExcel(c *gin.Context) {
 	gameID, err := parseGameID(c)
 	if err != nil {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if !h.checkGameAccess(c, gameID) {
 		return
 	}
 
@@ -374,6 +420,10 @@ func (h *ExportHandler) ExportTeamResultsCSV(c *gin.Context) {
 
 	userID := c.GetUint("userID")
 
+	if !h.checkGameAccess(c, gameID) {
+		return
+	}
+
 	// Проверяем, что пользователь — капитан команды или автор игры
 	var passing game.GamePassing
 	if err := h.db.WithContext(c.Request.Context()).
@@ -401,6 +451,9 @@ func (h *ExportHandler) ExportTeamResultsCSV(c *gin.Context) {
 		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportTeamResultsCSV: failed to find game")
 		render.RenderErrorPage(c, http.StatusNotFound)
 		return
+	}
+	if g.AuthorID == userID {
+		isAuthor = true
 	}
 
 	if !isCaptain && !isAuthor {

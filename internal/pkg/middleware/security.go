@@ -61,6 +61,7 @@ func setCSPHeaders(c *gin.Context, nonce string) {
 		"style-src 'self' 'nonce-" + nonce + "' " + getLeafletCSSHash() + " https://www.gstatic.com; " +
 		"img-src 'self' data: https:; " +
 		"connect-src 'self' ws: wss:; " +
+		"form-action 'self'; " +
 		"frame-src 'self' https://www.google.com https://www.youtube.com https://player.vimeo.com https://rutube.ru;"
 
 	c.Header("Content-Security-Policy", csp)

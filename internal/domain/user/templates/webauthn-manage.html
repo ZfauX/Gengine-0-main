@@ -1,23 +1,23 @@
 {{define "webauthn-manage.html"}}
 <div class="max-w-4xl mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 mb-6">Управление Passkey</h1>
+    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Управление Passkey</h1>
 
     <div class="card mb-6">
-        <p class="text-sm text-gray-600 mb-4">Passkey (ключи доступа) позволяют входить в систему без пароля, используя биометрию или PIN-код вашего устройства.</p>
+        <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">Passkey (ключи доступа) позволяют входить в систему без пароля, используя биометрию или PIN-код вашего устройства.</p>
         <button id="add-passkey-btn" class="btn btn-primary text-sm" onclick="registerPasskey()">Добавить Passkey</button>
     </div>
 
     {{if .Credentials}}
     <div class="card">
-        <h3 class="text-lg font-semibold text-gray-700 mb-3">Сохранённые ключи</h3>
+        <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">Сохранённые ключи</h3>
         <div class="space-y-3">
             {{range .Credentials}}
-            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+            <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-md">
                 <div>
-                    <div class="font-medium text-gray-800">
+                    <div class="font-medium text-gray-800 dark:text-gray-100">
                         {{if .Name}}{{.Name}}{{else}}Passkey #{{.ID}}{{end}}
                     </div>
-                    <div class="text-xs text-gray-500">
+                    <div class="text-xs text-gray-500 dark:text-gray-400">
                         Добавлен: {{.CreatedAt.Format "02.01.2006 15:04"}}
                     </div>
                 </div>
@@ -31,7 +31,7 @@
     </div>
     {{else}}
     <div class="card">
-        <p class="text-gray-500 text-sm">У вас ещё нет сохранённых Passkey.</p>
+        <p class="text-gray-500 dark:text-gray-400 text-sm">У вас ещё нет сохранённых Passkey.</p>
     </div>
     {{end}}
 </div>

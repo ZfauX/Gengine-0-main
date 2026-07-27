@@ -1,5 +1,5 @@
-<!DOCTYPE html>
-<html lang="ru" data-theme="light">
+﻿<!DOCTYPE html>
+<html lang="ru">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -8,13 +8,10 @@
     <meta name="keywords" content="квесты, игры, командные игры, urban quest, encounter">
     <meta name="author" content="Encounter Engine">
     <meta name="theme-color" content="#2563eb">
-    <meta property="og:title" content="{{.Title}} · Encounter Engine">
-    <meta property="og:description" content="{{.Description | default "Платформа для создания и проведения квестов"}}">
-    <meta property="og:type" content="website">
-    <meta property="og:locale" content="ru_RU">
-    <meta property="og:site_name" content="Encounter Engine">
-    <meta property="og:image" content="/static/icons/icon-512x512.png">
-    <meta name="twitter:card" content="summary_large_image">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">arge_image">
     <title>{{.Title}} · Encounter Engine</title>
     <!-- Accessibility -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -29,226 +26,17 @@
     <!-- Leaflet CSS для карт (локально) -->
     <link rel="stylesheet" href="/static/css/leaflet.css">
 
-    <!-- Небольшие кастомные стили поверх Tailwind с nonce -->
+    <!-- View Transitions API (inline: output.css содержит всё остальное) -->
     <style nonce="{{.csp_nonce}}">
-        :root {
-            --bg-primary: #f3f4f6;
-            --bg-card: #ffffff;
-            --text-primary: #111827;
-            --text-secondary: #6b7280;
-            --border-color: #e5e7eb;
-            --nav-bg: #ffffff;
-        }
-        [data-theme="dark"] {
-            --bg-primary: #0f172a;
-            --bg-card: #1e293b;
-            --text-primary: #f1f5f9;
-            --text-secondary: #94a3b8;
-            --border-color: #334155;
-            --nav-bg: #1e293b;
-        }
-        /* Навбар в тёмной теме */
-        [data-theme="dark"] nav,
-        [data-theme="dark"] .nav-link,
-        [data-theme="dark"] #notificationDropdown,
-        [data-theme="dark"] #mobileMenu a {
-            background: var(--nav-bg) !important;
-            border-color: var(--border-color) !important;
-            color: var(--text-secondary) !important;
-        }
-        [data-theme="dark"] nav a:not(.btn),
-        [data-theme="dark"] .nav-link {
-            color: var(--text-secondary) !important;
-        }
-        [data-theme="dark"] nav a:not(.btn):hover,
-        [data-theme="dark"] .nav-link:hover {
-            color: var(--text-primary) !important;
-        }
-        [data-theme="dark"] nav .text-red-500,
-        [data-theme="dark"] nav a.text-red-500 {
-            color: #f87171 !important;
-        }
-        [data-theme="dark"] nav .text-red-500:hover,
-        [data-theme="dark"] nav a.text-red-500:hover {
-            color: #fca5a5 !important;
-        }
-        [data-theme="dark"] #mobileMenu a:hover {
-            background: #334155 !important;
-        }
-        [data-theme="dark"] #notificationDropdown h3 {
-            color: var(--text-primary) !important;
-        }
-        /* Текст в карточках и формах */
-        [data-theme="dark"] .card h1,
-        [data-theme="dark"] .card h2,
-        [data-theme="dark"] .card h3,
-        [data-theme="dark"] .card label,
-        [data-theme="dark"] h1.text-gray-800,
-        [data-theme="dark"] h2.text-gray-800 {
-            color: var(--text-primary) !important;
-        }
-        [data-theme="dark"] .text-gray-700,
-        [data-theme="dark"] .text-gray-600 {
-            color: var(--text-secondary) !important;
-        }
-        [data-theme="dark"] .text-gray-500 {
-            color: #64748b !important;
-        }
-        /* Поля ввода */
-        [data-theme="dark"] input[type="text"],
-        [data-theme="dark"] input[type="email"],
-        [data-theme="dark"] input[type="password"],
-        [data-theme="dark"] textarea,
-        [data-theme="dark"] select {
-            background: #334155 !important;
-            border-color: #475569 !important;
-            color: var(--text-primary) !important;
-        }
-        [data-theme="dark"] input:focus,
-        [data-theme="dark"] textarea:focus,
-        [data-theme="dark"] select:focus {
-            border-color: #3b82f6 !important;
-        }
-        /* Кнопка GitHub в тёмной теме */
-        [data-theme="dark"] .bg-gray-800:not(nav *) {
-            background: #334155 !important;
-            border: 1px solid #475569 !important;
-        }
-        [data-theme="dark"] .bg-gray-800:not(nav *):hover {
-            background: #475569 !important;
-        }
-        /* Формы фильтрации */
-        [data-theme="dark"] form.bg-white,
-        [data-theme="dark"] .filter-form {
-            background: var(--bg-card) !important;
-            border-color: var(--border-color) !important;
-        }
-        [data-theme="dark"] .btn-outline {
-            background: var(--bg-card) !important;
-            border-color: var(--border-color) !important;
-            color: var(--text-secondary) !important;
-        }
-        [data-theme="dark"] .btn-outline:hover {
-            background: #334155 !important;
-            color: var(--text-primary) !important;
-        }
-        /* View Transitions API */
         @view-transition { navigation: auto; }
         ::view-transition-old(root) { animation: fade-out 0.2s ease; }
         ::view-transition-new(root) { animation: fade-in 0.2s ease; }
         @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
         @keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
-        body {
-            background: var(--bg-primary);
-            font-family: 'Inter', system-ui, -apple-system, sans-serif;
-            color: var(--text-primary);
-            transition: background-color 0.2s ease, color 0.2s ease;
-        }
-        .nav-link {
-            transition: color 0.15s ease;
-        }
-        .fade-in {
-            animation: fadeIn 0.2s ease-in-out;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(4px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        .hover-lift {
-            transition: transform 0.15s ease, box-shadow 0.15s ease;
-        }
-        .hover-lift:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1);
-        }
 
-        /* Responsive table */
         @media (max-width: 640px) {
-            .table-responsive {
-                overflow-x: auto;
-                -webkit-overflow-scrolling: touch;
-            }
-            table {
-                min-width: 600px;
-            }
-        }
-
-        /* Print styles */
-        @media print {
-            nav, footer, .no-print {
-                display: none !important;
-            }
-            body {
-                background: white !important;
-                color: black !important;
-            }
-            .card {
-                box-shadow: none !important;
-                border: 1px solid #ddd !important;
-            }
-        }
-
-        /* Tooltip */
-        .tooltip {
-            position: relative;
-        }
-        .tooltip::after {
-            content: attr(data-tooltip);
-            position: absolute;
-            bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            padding: 4px 8px;
-            background: #1f2937;
-            color: white;
-            font-size: 12px;
-            border-radius: 4px;
-            white-space: nowrap;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.2s ease;
-            margin-bottom: 4px;
-        }
-        .tooltip:hover::after {
-            opacity: 1;
-        }
-
-        /* Loading spinner */
-        .spinner {
-            border: 3px solid rgba(0,0,0,0.1);
-            border-radius: 50%;
-            border-top: 3px solid #2563eb;
-            width: 24px;
-            height: 24px;
-            animation: spin 0.8s linear infinite;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        /* Map container */
-        .map-container {
-            height: 300px;
-            border-radius: 0.5rem;
-            overflow: hidden;
-            margin-top: 1rem;
-        }
-        .map-container.leaflet-container {
-            background: #f3f4f6;
-        }
-        [data-theme="dark"] .map-container.leaflet-container {
-            background: #374151;
-        }
-
-        /* Mobile sticky timer */
-        @media (max-width: 639px) {
-            #mobile-sticky-timer {
-                box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
-            }
-            [data-theme="dark"] #mobile-sticky-timer {
-                box-shadow: 0 -2px 10px rgba(0,0,0,0.3);
-            }
+            .table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+            table { min-width: 600px; }
         }
     </style>
     {{.ExtraHead}}
@@ -360,39 +148,14 @@
     <!-- Основной контент -->
     <main id="main-content" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8" role="main" aria-label="Основной контент">
         <!-- Breadcrumb навигация -->
-        {{if .Breadcrumb}}
-        <nav class="flex mb-6" aria-label="Breadcrumb">
-            <ol class="inline-flex items-center space-x-1 md:space-x-3">
-                <li class="inline-flex items-center">
-                    <a href="/" class="text-gray-700 hover:text-blue-600 text-sm">Главная</a>
-                </li>
-                {{range .Breadcrumb}}
-                <li>
-                    <div class="flex items-center">
-                        <svg class="w-6 h-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path>
-                        </svg>
-                        {{if .URL}}
-                            <a href="{{.URL}}" class="ml-1 text-gray-700 hover:text-blue-600 text-sm md:ml-2">{{.Name}}</a>
-                        {{else}}
-                            <span class="ml-1 text-gray-500 text-sm md:ml-2">{{.Name}}</span>
-                        {{end}}
-                    </div>
-                </li>
-                {{end}}
-            </ol>
-        </nav>
-        {{end}}
         {{if .Breadcrumbs}}
         <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-4" aria-label="Breadcrumb">
-            <ol class="inline-flex items-center space-x-1 md:space-x-3 text-sm">
+            <div class="flex items-center gap-1 text-sm">
                 {{range $i, $crumb := .Breadcrumbs}}
-                <li class="inline-flex items-center">
-                    {{if $i}}<svg class="w-4 h-4 text-gray-400 mx-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>{{end}}
-                    {{if $crumb.url}}<a href="{{$crumb.url}}" class="text-gray-700 hover:text-blue-600">{{$crumb.name}}</a>{{else}}<span class="text-gray-500">{{$crumb.name}}</span>{{end}}
-                </li>
+                    {{if $i}}<span class="text-gray-400 mx-1">›</span>{{end}}
+                    {{if $crumb.url}}<a href="{{$crumb.url}}" class="text-gray-700 hover:text-blue-600 whitespace-nowrap">{{$crumb.name}}</a>{{else}}<span class="text-gray-500 whitespace-nowrap">{{$crumb.name}}</span>{{end}}
                 {{end}}
-            </ol>
+            </div>
         </nav>
         {{end}}
         {{if .ContentHTML}}
@@ -461,18 +224,18 @@
             const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
             if (stored === 'dark' || (!stored && prefersDark)) {
-                document.documentElement.setAttribute('data-theme', 'dark');
+                document.documentElement.classList.add('dark');
                 toggle.textContent = '☀️';
             }
 
             toggle.addEventListener('click', function() {
-                const current = document.documentElement.getAttribute('data-theme');
+                const current = document.documentElement.classList.contains('dark');
                 if (current === 'dark') {
-                    document.documentElement.removeAttribute('data-theme');
+                    document.documentElement.classList.remove('dark');
                     localStorage.setItem('theme', 'light');
                     toggle.textContent = '🌙';
                 } else {
-                    document.documentElement.setAttribute('data-theme', 'dark');
+                    document.documentElement.classList.add('dark');
                     localStorage.setItem('theme', 'dark');
                     toggle.textContent = '☀️';
                 }

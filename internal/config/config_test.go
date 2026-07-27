@@ -261,12 +261,15 @@ func TestLoadConfig_JWTSecretTooShort(t *testing.T) {
 	assert.Contains(t, err.Error(), "at least 32 characters")
 }
 
-func TestLoadConfig_JWTSecretWeak(t *testing.T) {
-	cleanup := setEnv(t, "JWT_SECRET", "change-me-12345678901234567890ab")
+func TestLoadConfig_JWTSecretPrefixNotWeak(t *testing.T) {
+	// Regression: "change-me-..." should NOT be rejected as weak with exact-match-only check
+	cleanup := setEnv(t, "JWT_SECRET", "change-me-12345678901234567890")
 	defer cleanup()
 	_, err := LoadConfig()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "weak/default value")
+	// It should fail on length (< 32), not on weak value
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "weak/default value")
+	assert.Contains(t, err.Error(), "at least 32 characters")
 }
 
 func TestLoadConfig_OAuthEnabledMissingClientID(t *testing.T) {

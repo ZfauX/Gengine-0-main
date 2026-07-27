@@ -244,7 +244,7 @@ func (r *gormEmailVerificationRepo) GetToken(ctx context.Context, tokenStr strin
 	return &t, nil
 }
 func (r *gormEmailVerificationRepo) DeleteToken(ctx context.Context, token *EmailVerificationToken) error {
-	return r.db.WithContext(ctx).Delete(token).Error
+	return r.db.WithContext(ctx).Unscoped().Delete(token).Error
 }
 func (r *gormEmailVerificationRepo) GetTokenByCode(ctx context.Context, code string) (*EmailVerificationToken, error) {
 	var t EmailVerificationToken

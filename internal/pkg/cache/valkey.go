@@ -261,65 +261,24 @@ func (c *ValkeyCache) GetOrSetString(key string, ttl time.Duration, fn func() (s
 	return "", fmt.Errorf("unexpected type for key %s", key)
 }
 
-// GetOrSetStringWithTTL — атомарная операция get-or-set с Lua скриптом.
-// При cache hit НЕ перезаписывает TTL ключа, предотвращая race condition.
-const getOrSetLuaScript = `
-local key = KEYS[1]
-local ttl = tonumber(ARGV[1])
-local value = ARGV[2]
-
-local existing = redis.call('GET', key)
-if existing then
-    return {1, existing}
-else
-    redis.call('SET', key, value, 'EX', ttl)
-    return {0, value}
-end
-`
-
 func (c *ValkeyCache) GetOrSetStringWithTTL(key string, ttl time.Duration, fn func() (string, error)) (string, error) {
 	return c.GetOrSetStringWithTTLWithCtx(context.Background(), key, ttl, fn)
 }
 
-// GetOrSetStringWithTTLWithCtx — атомарная операция get-or-set с Lua скриптом и контекстом.
-// При cache hit НЕ перезаписывает TTL ключа, предотвращая race condition.
 func (c *ValkeyCache) GetOrSetStringWithTTLWithCtx(ctx context.Context, key string, ttl time.Duration, fn func() (string, error)) (string, error) {
 	if c == nil || c.client == nil {
 		return fn()
 	}
-
+	if val, ok := c.Get(key); ok {
+		if s, ok := val.(string); ok {
+			return s, nil
+		}
+	}
 	str, fnErr := fn()
 	if fnErr != nil {
 		return "", fnErr
 	}
-	data, marshalErr := json.Marshal(str)
-	if marshalErr != nil {
-		return "", marshalErr
-	}
-
-	script := c.client.Eval(ctx, getOrSetLuaScript, []string{key}, int(ttl.Seconds()), string(data))
-
-	result, err := script.Result()
-	if err != nil {
-		if err == redis.Nil {
-			if setErr := c.client.Set(ctx, key, data, ttl).Err(); setErr != nil {
-				log.Warn().Err(setErr).Str("key", key).Msg("Valkey: SetWithTTL error")
-			}
-			return str, nil
-		}
-		log.Warn().Err(err).Str("key", key).Msg("Valkey: GetOrSetStringWithTTL script error")
-		if setErr := c.client.Set(ctx, key, data, ttl).Err(); setErr != nil {
-			log.Warn().Err(setErr).Str("key", key).Msg("Valkey: SetWithTTL error")
-		}
-		return str, nil
-	}
-
-	if arr, ok := result.([]interface{}); ok && len(arr) >= 2 {
-		if s, ok := arr[1].(string); ok {
-			return s, nil
-		}
-	}
-
+	data, _ := json.Marshal(str)
 	if setErr := c.client.Set(ctx, key, data, ttl).Err(); setErr != nil {
 		log.Warn().Err(setErr).Str("key", key).Msg("Valkey: SetWithTTL error")
 	}
