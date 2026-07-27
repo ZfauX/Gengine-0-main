@@ -236,8 +236,8 @@
             }
 
             toggle.addEventListener('click', function() {
-                const current = document.documentElement.classList.contains('dark');
-                if (current === 'dark') {
+                const isDark = document.documentElement.classList.contains('dark');
+                if (isDark) {
                     document.documentElement.classList.remove('dark');
                     localStorage.setItem('theme', 'light');
                     toggle.textContent = '🌙';
