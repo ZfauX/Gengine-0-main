@@ -49,7 +49,17 @@ function registerPasskey() {
     })
     .then(r => r.json())
     .then(creation => {
-        return navigator.credentials.create({ publicKey: creation.publicKey ?? creation });
+        var opts = creation.publicKey || creation;
+        opts.challenge = base64ToArrayBuffer(opts.challenge);
+        if (opts.user && opts.user.id) {
+            opts.user.id = base64ToArrayBuffer(opts.user.id);
+        }
+        if (opts.excludeCredentials) {
+            opts.excludeCredentials.forEach(function(c) {
+                c.id = base64ToArrayBuffer(c.id);
+            });
+        }
+        return navigator.credentials.create({ publicKey: opts });
     })
     .then(credential => {
         const body = {
@@ -88,6 +98,15 @@ function registerPasskey() {
 }
 
     document.getElementById('add-passkey-btn').addEventListener('click', registerPasskey);
+
+function base64ToArrayBuffer(base64) {
+    var binary = atob(base64.replace(/-/g, '+').replace(/_/g, '/'));
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
+}
 
     // Form confirmation dialogs (CSP-safe)
     document.addEventListener('submit', function(e) {

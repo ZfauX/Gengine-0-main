@@ -20,7 +20,14 @@ function loginWithPasskey() {
     fetch('/auth/webauthn/login/begin', { method: 'POST' })
     .then(r => r.json())
     .then(assertion => {
-        return navigator.credentials.get({ publicKey: assertion.publicKey ?? assertion });
+        var opts = assertion.publicKey || assertion;
+        opts.challenge = base64ToArrayBuffer(opts.challenge);
+        if (opts.allowCredentials) {
+            opts.allowCredentials.forEach(function(c) {
+                c.id = base64ToArrayBuffer(c.id);
+            });
+        }
+        return navigator.credentials.get({ publicKey: opts });
     })
     .then(credential => {
         const body = {
@@ -60,6 +67,15 @@ function loginWithPasskey() {
 }
 
     document.getElementById('passkey-login-btn').addEventListener('click', loginWithPasskey);
+
+function base64ToArrayBuffer(base64) {
+    var binary = atob(base64.replace(/-/g, '+').replace(/_/g, '/'));
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
+}
 
 function arrayBufferToBase64(buf) {
     const bytes = new Uint8Array(buf);
