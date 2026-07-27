@@ -30,6 +30,6 @@
   <polygon points="120,256 200,236 180,256 200,276" fill="rgba(255,255,255,0.4)"/>
   <!-- Center circle -->
   <circle cx="256" cy="256" r="80" fill="rgba(255,255,255,0.95)"/>
-  <!-- Letter "E" -->
-  <text x="256" y="282" font-family="system-ui, -apple-system, sans-serif" font-size="120" font-weight="800" fill="#2563eb" text-anchor="middle" dominant-baseline="central">E</text>
+  <!-- Letter "G" -->
+  <text x="256" y="282" font-family="system-ui, -apple-system, sans-serif" font-size="120" font-weight="800" fill="#2563eb" text-anchor="middle" dominant-baseline="central">G</text>
 </svg>
