@@ -6,10 +6,6 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS two_factor_enabled BOOLEAN NOT NULL D
 ALTER TABLE users ADD COLUMN IF NOT EXISTS two_factor_secret TEXT NOT NULL DEFAULT '';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS two_factor_backup_codes TEXT NOT NULL DEFAULT '';
 
--- ========== Хеширование токенов (zero-downtime) ==========
-ALTER TABLE password_reset_tokens ADD COLUMN IF NOT EXISTS token_hash TEXT;
-ALTER TABLE email_verification_tokens ADD COLUMN IF NOT EXISTS token_hash TEXT;
-
 -- ========== Блокировка при неудачных попытках входа ==========
 ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMP WITH TIME ZONE;
