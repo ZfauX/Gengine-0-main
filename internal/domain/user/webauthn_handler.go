@@ -46,9 +46,14 @@ func NewWebAuthnHandler(
 	rpID := baseURL.Hostname()
 	rpOrigin := strings.TrimRight(cfg.Server.BaseURL, "/")
 	rpOrigins := []string{rpOrigin}
-	// Для localhost добавляем origin без порта (браузер может отправлять http://localhost)
+	// Для localhost добавляем origin без порта + 127.0.0.1 (браузер может использовать любой)
 	if rpID == "localhost" || rpID == "127.0.0.1" {
-		rpOrigins = append(rpOrigins, "http://"+rpID)
+		rpOrigins = append(rpOrigins,
+			"http://localhost",
+			"http://localhost:"+cfg.Server.Port,
+			"http://127.0.0.1",
+			"http://127.0.0.1:"+cfg.Server.Port,
+		)
 	}
 
 	wcfg := &gowebauthn.Config{
