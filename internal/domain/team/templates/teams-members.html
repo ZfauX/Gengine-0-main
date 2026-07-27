@@ -19,7 +19,7 @@
             <li class="py-3 flex flex-wrap items-center justify-between gap-2">
                 <span class="text-gray-800 dark:text-gray-100">{{.Name}} ({{.Email}})</span>
                 {{if and $.CanManage $.GameID}}
-                <form action="/games/{{$.GameID}}/teams/{{$.TeamID}}/members/{{.ID}}/remove" method="POST" class="inline" onsubmit="return confirm('Удалить участника?')">
+                <form action="/games/{{$.GameID}}/teams/{{$.TeamID}}/members/{{.ID}}/remove" method="POST" class="inline" data-confirm-form="Удалить участника?">
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
                     <button type="submit" class="btn btn-danger text-xs">Удалить</button>
                 </form>
@@ -49,4 +49,7 @@
         <a href="/games/{{.GameID}}" class="btn btn-outline text-sm">← Назад к игре</a>
     </div>
 </div>
+<script nonce="{{.csp_nonce}}">
+document.addEventListener('submit',function(e){var f=e.target.closest('[data-confirm-form]');if(f&&!confirm(f.getAttribute('data-confirm-form')))e.preventDefault()});
+</script>
 {{end}}

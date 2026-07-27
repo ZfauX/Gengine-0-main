@@ -79,15 +79,8 @@ func (h *RoomHub) incConnection(ip string) {
 	h.connsPerIP[ip]++
 }
 
-// decConnection уменьшает счётчики при отписке клиента.
-func (h *RoomHub) decConnection(ip string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.decConnectionNoLock(ip)
-}
-
-// decConnectionNoLock — то же, что decConnection, но без захвата h.mu.
-// Используется в cleanupInactiveClients (который уже держит h.mu.Lock()).
+// decConnectionNoLock уменьшает счётчики при отписке клиента.
+// Вызывается из cleanupInactiveClients и unregister (которые уже держат h.mu.Lock()).
 func (h *RoomHub) decConnectionNoLock(ip string) {
 	if h.totalConns > 0 {
 		h.totalConns--

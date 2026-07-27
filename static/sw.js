@@ -7,7 +7,9 @@ const STATIC_ASSETS = [
     '/static/icons/icon-192x192.png',
     '/static/icons/icon-512x512.png',
     '/static/css/output.css',
-    '/static/js/app.js'
+    '/static/js/app.js',
+    '/static/js/leaflet.js',
+    '/static/css/leaflet.css'
 ];
 
 // Установка — кэшируем статику (только гарантированно доступные URL)

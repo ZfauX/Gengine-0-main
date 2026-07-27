@@ -231,7 +231,7 @@ function initAutoSaveDrafts() {
     var draftForms = document.querySelectorAll('[data-autosave]');
     draftForms.forEach(function(form) {
         var key = form.dataset.autosave;
-        var fields = form.querySelectorAll('input, textarea, select');
+        var fields = form.querySelectorAll('input:not([type="password"]):not([type="hidden"]), textarea, select');
 
         // Restore draft on page load
         var draft = localStorage.getItem(key);
@@ -655,17 +655,29 @@ function initSSEIndicator() {
             originalConnect(id);
 
             // Override the SSE reconnect to show connecting state
-            var checkInterval = setInterval(function() {
+            if (window._sseCheckInterval) {
+                clearInterval(window._sseCheckInterval);
+                window._sseCheckInterval = null;
+            }
+            window._sseCheckInterval = setInterval(function() {
                 var esCheck = document.querySelector('[data-sse-active]');
                 if (!esCheck) {
                     indicator.className = 'inline-flex items-center text-sm text-yellow-600';
                     indicator.innerHTML = '<span class="animate-spin h-3 w-3 mr-1 border-2 border-yellow-600 border-t-transparent rounded-full"></span> Переподключение...';
                 } else {
-                    clearInterval(checkInterval);
+                    if (window._sseCheckInterval) {
+                        clearInterval(window._sseCheckInterval);
+                        window._sseCheckInterval = null;
+                    }
                 }
             }, 1000);
 
-            setTimeout(function() { clearInterval(checkInterval); }, 30000);
+            setTimeout(function() {
+                if (window._sseCheckInterval) {
+                    clearInterval(window._sseCheckInterval);
+                    window._sseCheckInterval = null;
+                }
+            }, 30000);
         };
     }
 }

@@ -136,19 +136,19 @@ func (m *SSEManager) UnregisterSession(session *SSESession) {
 	}
 	delete(m.gameMap, session)
 
-		sessions := m.sessions[gameID]
-		for i, s := range sessions {
-			if s == session {
-				m.sessions[gameID] = append(sessions[:i], sessions[i+1:]...)
-				session.closeOnce.Do(func() {
-					session.mu.Lock()
-					session.closed = true
-					session.mu.Unlock()
-					close(session.done)
-				})
-				break
-			}
+	sessions := m.sessions[gameID]
+	for i, s := range sessions {
+		if s == session {
+			m.sessions[gameID] = append(sessions[:i], sessions[i+1:]...)
+			session.closeOnce.Do(func() {
+				session.mu.Lock()
+				session.closed = true
+				session.mu.Unlock()
+				close(session.done)
+			})
+			break
 		}
+	}
 	if len(m.sessions[gameID]) == 0 {
 		delete(m.sessions, gameID)
 	}

@@ -28,6 +28,7 @@ func RegisterRoutes(
 	localStorage storage.FileStorage,
 	emailSvc *email.EmailService,
 	webauthnHandler *WebAuthnHandler,
+	userRepo UserRepository,
 ) {
 	authHandler := NewAuthHandler(cfg, authSvc, userSvc, passwordResetSvc, emailVerifSvc, oauthSvc, auditSvc, emailSvc)
 	profileSvc := NewProfileService(db)
@@ -122,5 +123,19 @@ func RegisterRoutes(
 		apiGroup.POST("/subscribe", pushHandler.Subscribe)
 		apiGroup.POST("/unsubscribe", pushHandler.Unsubscribe)
 		apiGroup.GET("/vapid-public-key", pushHandler.VapidPublicKey)
+	}
+
+	// ============================================================
+	// 2FA (настройка)
+	// ============================================================
+	twoFactorSvc := NewTwoFactorService()
+	twoFactorHandler := NewTwoFactorHandler(twoFactorSvc, authSvc, userRepo)
+	userGroup := r.Group("/user")
+	userGroup.Use(middleware.AuthRequired(authSvc))
+	{
+		userGroup.GET("/2fa/enable", twoFactorHandler.EnableForm)
+		userGroup.POST("/2fa/enable", twoFactorHandler.Enable)
+		userGroup.GET("/2fa/disable", twoFactorHandler.DisableForm)
+		userGroup.POST("/2fa/disable", twoFactorHandler.Disable)
 	}
 }

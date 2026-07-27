@@ -176,6 +176,8 @@ func (h *AdminHandler) ListUsers(c *gin.Context) {
 		nextPage = totalPages
 	}
 
+	errorFlash := render.GetFlash(c, "error")
+
 	render.Page(c, http.StatusOK, "admin-users.html", gin.H{
 		"Users":         users,
 		"Role":          req.Role,
@@ -187,6 +189,7 @@ func (h *AdminHandler) ListUsers(c *gin.Context) {
 		"Total":         total,
 		"CurrentUserID": c.GetUint("userID"),
 		"IsAdmin":       true,
+		"Error":         errorFlash,
 		"csrf":          csrf.GetToken(c),
 	})
 }
@@ -207,6 +210,7 @@ func (h *AdminHandler) ToggleAdmin(c *gin.Context) {
 	var req IDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
 		log.Warn().Err(err).Msg("ToggleAdmin: invalid user ID")
+		render.SetFlash(c, "error", "Неверный ID пользователя")
 		c.Redirect(http.StatusFound, "/admin/users")
 		return
 	}
@@ -216,8 +220,10 @@ func (h *AdminHandler) ToggleAdmin(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			log.Warn().Uint("user_id", req.ID).Msg("ToggleAdmin: user not found")
+			render.SetFlash(c, "error", "Пользователь не найден")
 		} else {
 			log.Error().Err(err).Uint("user_id", req.ID).Msg("ToggleAdmin: failed to get user")
+			render.SetFlash(c, "error", "Ошибка получения пользователя")
 		}
 		c.Redirect(http.StatusFound, "/admin/users")
 		return
@@ -230,6 +236,7 @@ func (h *AdminHandler) ToggleAdmin(c *gin.Context) {
 	}
 	if err := h.userRepo.Update(ctx, u.ID, map[string]any{"role": u.Role}); err != nil {
 		log.Error().Err(err).Uint("user", u.ID).Msg("ToggleAdmin: failed to update role")
+		render.SetFlash(c, "error", "Ошибка обновления роли пользователя")
 		c.Redirect(http.StatusFound, "/admin/users")
 		return
 	}
@@ -255,6 +262,7 @@ func (h *AdminHandler) DeleteUser(c *gin.Context) {
 	var req IDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
 		log.Warn().Err(err).Msg("DeleteUser: invalid user ID")
+		render.SetFlash(c, "error", "Неверный ID пользователя")
 		c.Redirect(http.StatusFound, "/admin/users")
 		return
 	}
@@ -262,8 +270,10 @@ func (h *AdminHandler) DeleteUser(c *gin.Context) {
 	if err := h.userRepo.Delete(c.Request.Context(), req.ID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			log.Warn().Uint("user_id", req.ID).Msg("DeleteUser: user not found")
+			render.SetFlash(c, "error", "Пользователь не найден")
 		} else {
 			log.Error().Err(err).Uint("user_id", req.ID).Msg("DeleteUser: failed to delete user")
+			render.SetFlash(c, "error", "Ошибка удаления пользователя")
 		}
 		c.Redirect(http.StatusFound, "/admin/users")
 		return
@@ -340,6 +350,8 @@ func (h *AdminHandler) ListGames(c *gin.Context) {
 		nextPage = totalPages
 	}
 
+	errorFlash := render.GetFlash(c, "error")
+
 	render.Page(c, http.StatusOK, "admin-games.html", gin.H{
 		"Games":         games,
 		"Status":        req.Status,
@@ -351,6 +363,7 @@ func (h *AdminHandler) ListGames(c *gin.Context) {
 		"Total":         total,
 		"CurrentUserID": c.GetUint("userID"),
 		"IsAdmin":       true,
+		"Error":         errorFlash,
 		"csrf":          csrf.GetToken(c),
 	})
 }
@@ -371,6 +384,7 @@ func (h *AdminHandler) DeleteGame(c *gin.Context) {
 	var req IDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
 		log.Warn().Err(err).Msg("DeleteGame: invalid game ID")
+		render.SetFlash(c, "error", "Неверный ID игры")
 		c.Redirect(http.StatusFound, "/admin/games")
 		return
 	}
@@ -378,8 +392,10 @@ func (h *AdminHandler) DeleteGame(c *gin.Context) {
 	if err := h.gameRepo.Delete(c.Request.Context(), req.ID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			log.Warn().Uint("game_id", req.ID).Msg("DeleteGame: game not found")
+			render.SetFlash(c, "error", "Игра не найдена")
 		} else {
 			log.Error().Err(err).Uint("game_id", req.ID).Msg("DeleteGame: failed to delete game")
+			render.SetFlash(c, "error", "Ошибка удаления игры")
 		}
 		c.Redirect(http.StatusFound, "/admin/games")
 		return

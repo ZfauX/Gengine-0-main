@@ -16,7 +16,7 @@
             <div class="flex flex-wrap items-center gap-2">
                 <a href="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{.ID}}/edit" class="btn btn-outline text-xs" title="Редактировать">✎</a>
                 <a href="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{.ID}}/answers" class="btn btn-outline text-xs">Ответы</a>
-                <form action="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{.ID}}" method="POST" class="inline" onsubmit="return confirm('Удалить вопрос?')">
+                <form action="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{.ID}}" method="POST" class="inline" data-confirm-form="Удалить вопрос?">
                     <input type="hidden" name="_method" value="DELETE">
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
                     <button type="submit" class="btn btn-danger text-xs">Удалить</button>
@@ -36,4 +36,7 @@
         <a href="/games/{{.GameID}}/levels/{{.LevelID}}" class="btn btn-outline text-sm">← Назад к уровню</a>
     </div>
 </div>
+<script nonce="{{.csp_nonce}}">
+document.addEventListener('submit',function(e){var f=e.target.closest('[data-confirm-form]');if(f&&!confirm(f.getAttribute('data-confirm-form')))e.preventDefault()});
+</script>
 {{end}}

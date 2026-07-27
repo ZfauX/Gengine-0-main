@@ -5,7 +5,9 @@ import (
 	"gengine-0/internal/pkg/render"
 	"net/http"
 
+	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
 )
 
 // TwoFactorHandler обрабатывает HTTP-запросы для 2FA.
@@ -57,6 +59,14 @@ func (h *TwoFactorHandler) EnableForm(c *gin.Context) {
 	secret, _ := h.twoFactorSvc.GenerateSecret()
 	qrURL, _ := h.twoFactorSvc.GenerateQRCodeURL(secret, user.Email, "Gengine-0")
 
+	// Сохраняем секрет в сессии для подтверждения на следующем шаге
+	sess := sessions.Default(c)
+	sess.Set("2fa_pending_secret", secret)
+	sess.Set("2fa_pending_secret_url", qrURL)
+	if err := sess.Save(); err != nil {
+		log.Error().Err(err).Msg("EnableForm: failed to save session")
+	}
+
 	render.Page(c, http.StatusOK, "user-2fa-enable.html", gin.H{
 		"Title":  "Включить 2FA",
 		"User":   user.ToPublic(),
@@ -97,33 +107,60 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 		return
 	}
 
-	// Проверяем код
-	valid, err := h.twoFactorSvc.VerifyCode(user.TwoFactorSecret, input.Code)
-	if err != nil || !valid {
-		render.Page(c, http.StatusOK, "user-2fa-enable.html", gin.H{
-			"Title":  "Включить 2FA",
-			"Error":  "Неверный код. Попробуйте ещё раз.",
-			"User":   user.ToPublic(),
-			"Secret": user.TwoFactorSecret,
-		})
-		return
-	}
-
-	// Включаем 2FA
-	if err := h.twoFactorSvc.Enable2FA(user); err != nil {
-		render.Page(c, http.StatusOK, "user-2fa-enable.html", gin.H{
+	// Получаем секрет из сессии (сгенерирован на шаге EnableForm)
+	sess := sessions.Default(c)
+	pendingSecret, ok := sess.Get("2fa_pending_secret").(string)
+	if !ok || pendingSecret == "" {
+		render.Page(c, http.StatusBadRequest, "user-2fa-enable.html", gin.H{
 			"Title": "Включить 2FA",
-			"Error": "Ошибка включения: " + err.Error(),
+			"Error": "Сессия истекла. Начните настройку 2FA заново.",
 			"User":  user.ToPublic(),
 		})
 		return
 	}
 
+	// Проверяем код против сохранённого секрета
+	valid, err := h.twoFactorSvc.VerifyCode(pendingSecret, input.Code)
+	if err != nil || !valid {
+		render.Page(c, http.StatusOK, "user-2fa-enable.html", gin.H{
+			"Title": "Включить 2FA",
+			"Error": "Неверный код. Попробуйте ещё раз.",
+			"User":  user.ToPublic(),
+		})
+		return
+	}
+
+	// Генерируем резервные коды
+	backupCodes, err := h.twoFactorSvc.GenerateBackupCodes()
+	if err != nil {
+		render.Page(c, http.StatusOK, "user-2fa-enable.html", gin.H{
+			"Title": "Включить 2FA",
+			"Error": "Ошибка генерации резервных кодов: " + err.Error(),
+			"User":  user.ToPublic(),
+		})
+		return
+	}
+
+	hashedCodes, err := h.twoFactorSvc.HashBackupCodes(backupCodes)
+	if err != nil {
+		render.Page(c, http.StatusOK, "user-2fa-enable.html", gin.H{
+			"Title": "Включить 2FA",
+			"Error": "Ошибка хеширования резервных кодов: " + err.Error(),
+			"User":  user.ToPublic(),
+		})
+		return
+	}
+
+	// Включаем 2FA с подтверждённым секретом
+	user.TwoFactorEnabled = true
+	user.TwoFactorSecret = pendingSecret
+	user.TwoFactorBackupCodes = hashedCodes
+
 	// Сохраняем пользователя
 	if err := h.userRepo.Update(c.Request.Context(), user.ID, map[string]any{
 		"two_factor_enabled":      true,
-		"two_factor_secret":       user.TwoFactorSecret,
-		"two_factor_backup_codes": user.TwoFactorBackupCodes,
+		"two_factor_secret":       pendingSecret,
+		"two_factor_backup_codes": hashedCodes,
 	}); err != nil {
 		render.Page(c, http.StatusOK, "user-2fa-enable.html", gin.H{
 			"Title": "Включить 2FA",
@@ -133,7 +170,19 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/user/profile?2fa_enabled=1")
+	// Очищаем сессию
+	sess.Delete("2fa_pending_secret")
+	sess.Delete("2fa_pending_secret_url")
+	if err := sess.Save(); err != nil {
+		log.Error().Err(err).Msg("Enable: failed to clear session")
+	}
+
+	// Показываем страницу успеха с резервными кодами
+	render.Page(c, http.StatusOK, "user-2fa-enabled.html", gin.H{
+		"Title":       "2FA включена",
+		"User":        user.ToPublic(),
+		"BackupCodes": backupCodes,
+	})
 }
 
 // DisableForm отображает форму отключения 2FA.

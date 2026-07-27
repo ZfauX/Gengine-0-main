@@ -272,6 +272,7 @@ func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 	}
 	client := ws.NewClient(conn, gameID, remoteIP)
 	h.hub.RegisterClient(client)
+	c.Abort()
 
 	snapshot, err := h.monitorService.GetOrFetchSnapshot(c.Request.Context(), req.ID)
 	if err != nil {
@@ -386,7 +387,7 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 	// Проверка прав доступа к комнате чата
 	var chatRoom ChatRoom
 	if findErr := h.db.WithContext(c.Request.Context()).First(&chatRoom, roomIDUint).Error; findErr != nil {
-		log.Warn().Err(err).Str("room_id", roomID).Msg("ChatWS: room not found")
+		log.Warn().Err(findErr).Str("room_id", roomID).Msg("ChatWS: room not found")
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "комната не найдена"})
 		return
 	}
@@ -619,6 +620,7 @@ func (h *MonitorHandler) LogsWS(c *gin.Context) {
 	}
 	client := ws.NewClient(conn, "logs_"+gameID, remoteIP)
 	h.hub.RegisterClient(client)
+	c.Abort()
 
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()

@@ -11,11 +11,10 @@
     </div>
 
     {{if .Levels}}
-    <div id="level-list" class="space-y-3" role="list" aria-label="Список уровней">
+    <div id="level-list" class="space-y-3" role="list" aria-label="Список уровней" data-game-id="{{.GameID}}">
         {{range .Levels}}
-        <div class="card flex flex-wrap items-center gap-3 p-4 hover:shadow-md transition" role="listitem" draggable="true"
-             data-level-id="{{.ID}}" data-position="{{.Position}}"
-             ondragstart="dragLevel(event)" ondragover="dragOverLevel(event)" ondrop="dropLevel(event, {{$.GameID}})"
+         <div class="card flex flex-wrap items-center gap-3 p-4 hover:shadow-md transition" role="listitem" draggable="true"
+              data-level-id="{{.ID}}" data-position="{{.Position}}"
              aria-label="Уровень {{.Name}}, позиция {{.Position}}">
             <div class="cursor-grab active:cursor-grabbing touch-none" aria-label="Перетащить для сортировки">
                 <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"/></svg>
@@ -27,10 +26,10 @@
             <div class="flex flex-wrap items-center gap-2">
                 <a href="/games/{{$.GameID}}/levels/{{.ID}}/edit" class="btn btn-outline text-xs" aria-label="Редактировать уровень {{.Name}}">✎</a>
                 <a href="/games/{{$.GameID}}/levels/{{.ID}}/questions" class="btn btn-outline text-xs">Вопросы</a>
-                <button type="button" onclick="duplicateLevel({{$.GameID}}, {{.ID}})" class="btn btn-primary text-xs" aria-label="Дублировать уровень {{.Name}}">Дублировать</button>
-                <button type="button" onclick="moveLevel({{$.GameID}}, {{.ID}}, 'up')" class="btn btn-outline text-xs px-2 py-1" aria-label="Переместить уровень {{.Name}} вверх" title="Вверх">↑</button>
-                <button type="button" onclick="moveLevel({{$.GameID}}, {{.ID}}, 'down')" class="btn btn-outline text-xs px-2 py-1" aria-label="Переместить уровень {{.Name}} вниз" title="Вниз">↓</button>
-                <button type="button" onclick="deleteLevel({{$.GameID}}, {{.ID}})" class="btn btn-danger text-xs" aria-label="Удалить уровень {{.Name}}">Удалить</button>
+                <button type="button" data-action="duplicate" data-level-id="{{.ID}}" class="btn btn-primary text-xs" aria-label="Дублировать уровень {{.Name}}">Дублировать</button>
+                <button type="button" data-action="move-up" data-level-id="{{.ID}}" class="btn btn-outline text-xs px-2 py-1" aria-label="Переместить уровень {{.Name}} вверх" title="Вверх">↑</button>
+                <button type="button" data-action="move-down" data-level-id="{{.ID}}" class="btn btn-outline text-xs px-2 py-1" aria-label="Переместить уровень {{.Name}} вниз" title="Вниз">↓</button>
+                <button type="button" data-action="delete" data-level-id="{{.ID}}" class="btn btn-danger text-xs" aria-label="Удалить уровень {{.Name}}">Удалить</button>
             </div>
         </div>
         {{end}}
@@ -82,37 +81,84 @@ function duplicateLevel(gameId, levelId) {
     }).catch(function() { window.showToast('Ошибка сети', 'error'); });
 }
 
-// Drag and drop sorting
-let dragSrcEl = null;
-function dragLevel(e) {
-    dragSrcEl = e.target.closest('[draggable]');
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', '');
-}
-function dragOverLevel(e) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    var target = e.target.closest('[draggable]');
-    if (target && target !== dragSrcEl) {
-        target.style.borderBottom = '2px solid #3B82F6';
-    }
-}
-function dropLevel(e, gameId) {
-    e.preventDefault();
-    var target = e.target.closest('[draggable]');
-    if (target && target !== dragSrcEl) {
-        target.style.borderBottom = '';
-        var fromId = dragSrcEl.dataset.levelId;
-        var toId = target.dataset.levelId;
-        fetch('/games/' + gameId + '/levels/' + fromId + '/move-to/' + toId, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-            body: '_csrf={{.csrf}}'
-        }).then(function(r) {
-            if (r.ok || r.redirected) window.location.reload();
-            else window.showToast('Ошибка сортировки', 'error');
-        });
-    }
-}
+// CSP-compliant event binding
+(function() {
+    var list = document.getElementById('level-list');
+    if (!list) return;
+    var gameId = list.getAttribute('data-game-id');
+
+    // Button actions via event delegation (data-action + data-level-id)
+    list.addEventListener('click', function(e) {
+        var btn = e.target.closest('[data-action]');
+        if (!btn) return;
+        var action = btn.getAttribute('data-action');
+        var levelId = btn.getAttribute('data-level-id');
+        if (!levelId) return;
+
+        switch (action) {
+            case 'duplicate': duplicateLevel(gameId, levelId); break;
+            case 'move-up': moveLevel(gameId, levelId, 'up'); break;
+            case 'move-down': moveLevel(gameId, levelId, 'down'); break;
+            case 'delete': deleteLevel(gameId, levelId); break;
+        }
+    });
+
+    // Drag and drop sorting via event delegation
+    var dragSrcEl = null;
+
+    list.addEventListener('dragstart', function(e) {
+        var el = e.target.closest('[draggable]');
+        if (!el) return;
+        dragSrcEl = el;
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', '');
+    });
+
+    list.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        var target = e.target.closest('[draggable]');
+        if (target && target !== dragSrcEl) {
+            target.style.borderBottom = '2px solid #3B82F6';
+        }
+    });
+
+    list.addEventListener('dragleave', function(e) {
+        var target = e.target.closest('[draggable]');
+        if (target) {
+            target.style.borderBottom = '';
+        }
+    });
+
+    list.addEventListener('dragend', function() {
+        var items = list.querySelectorAll('[draggable]');
+        for (var i = 0; i < items.length; i++) {
+            items[i].style.borderBottom = '';
+        }
+    });
+
+    list.addEventListener('drop', function(e) {
+        e.preventDefault();
+        if (!dragSrcEl) return;
+        var target = e.target.closest('[draggable]');
+        if (target && target !== dragSrcEl) {
+            // Cleanup visual styles
+            var items = list.querySelectorAll('[draggable]');
+            for (var i = 0; i < items.length; i++) {
+                items[i].style.borderBottom = '';
+            }
+            var fromId = dragSrcEl.getAttribute('data-level-id');
+            var toId = target.getAttribute('data-level-id');
+            fetch('/games/' + gameId + '/levels/' + fromId + '/move-to/' + toId, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: '_csrf={{.csrf}}'
+            }).then(function(r) {
+                if (r.ok || r.redirected) window.location.reload();
+                else window.showToast('Ошибка сортировки', 'error');
+            });
+        }
+    });
+})();
 </script>
 {{end}}

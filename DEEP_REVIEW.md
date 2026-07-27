@@ -1,4 +1,4 @@
-# Deep Review (pass 12) — июль 2026
+# Deep Review (pass 13) — июль 2026
 
 ## Покрытие
 
@@ -7,391 +7,269 @@
 | `golangci-lint run ./...` | Чисто |
 | `go vet ./...` | Чисто |
 | `go build ./...` | OK |
-| `go test ./... (short)` | 35/35 пакетов, все зелёные |
-| `go test -tags=integration` | 12/12 |
+| `go test -short ./...` | 35/35 ✅ |
+
+> Предыдущий раунд (pass 12) исправил 15 проблем (10 Critical + 5 High).
+> Этот раунд (pass 13) находит **новые** проблемы, не замеченные ранее.
 
 ---
 
 ## 🔴 CRITICAL — нужно исправить немедленно
 
-### C1. SSE TOCTOU race — запись в ResponseWriter после выхода из handler
+### C1. CSP nonce: inline `onclick` handlers не работают (21 нарушение)
 
-**Файл:** `internal/domain/game/sse_handler.go:163-192`
+**Файлы:** 13 файлов в `internal/domain/*/templates/*.html`
 
-**Проблема:** `Broadcast()` копирует список сессий под `mgr.mu.Lock()`, отпускает блокировку, а затем пишет в `s.w` (ResponseWriter) каждой сессии. Между проверкой `<-s.done` (неблокирующее чтение) и захватом `s.mu.Lock()` SSE handler может выйти (context cancelled), ResponseWriter становится невалидным. Gin может переиспользовать соединение для другого запроса → паника или повреждение данных.
+**Проблема:** Политика CSP (`security.go`) запрещает `'unsafe-inline'` и `'unsafe-hashes'`. Все HTML-атрибуты `onclick`, `onkeypress`, `onsubmit`, `ondragstart` и т.д. **молча блокируются браузером**. Кнопки выглядят кликабельными, но ничего не происходит.
 
-**Race window:**
-```
-Broadcast()                     SSE handler (sseConnect)
-──────────────────              ──────────────────────────
-<-s.done → false                c.Request.Context().Done()
-(window opens)                  UnregisterSession(session)
-                                close(s.done)
-                                handler returns, RW invalidated
-s.mu.Lock()
-s.w.Write(...) ← PANIC/corruption
-```
+**Поражённый функционал:**
+| Файл | Хендлер | Что сломано |
+|------|---------|-------------|
+| `levels-list.html:18` | `ondragstart/ondragover/ondrop` | Drag & drop сортировка уровней |
+| `levels-list.html:30-33` | `onclick="duplicateLevel/moveLevel/deleteLevel"` | Кнопки действий над уровнем |
+| `webauthn-manage.html:7` | `onclick="registerPasskey()"` | Добавление passkey |
+| `webauthn-login-button.html:2` | `onclick="loginWithPasskey()"` | Вход по passkey |
+| `games-photos.html:53` | `onclick="closePhotoModal()"` | Закрытие модалки фото |
+| `games-list.html:68` | `onclick="window.location.href"` | Клик по карточке игры |
+| `offline.html:23` | `onclick="location.reload()"` | Кнопка "Повторить" |
+| `errors-*.html:5 файлов` | `onclick="history.back()"` | Кнопки "Назад" |
+| `monitor-page.html:188` | `onclick="disqualifyTeam()"` | Дисквалификация команды |
 
-**Фикс:** Добавить флаг `s.closed` под `s.mu`, проверять его при записи.
-
----
-
-### C2. RoomHub self-deadlock — повторный Lock()
-
-**Файл:** `internal/pkg/websocket/room_hub.go:145-155`
-
-**Проблема:** В `runLoop()` канал `unregister` вызывает `h.decConnection()` (который внутри делает `h.mu.Lock()`), а затем снова `h.mu.Lock()` на следующей строке. `sync.Mutex` в Go не реентерабельный → **deadlock** при первом же отключении клиента.
-
-```go
-case client := <-h.unregister:
-    h.decConnection(client.RemoteIP)  // h.mu.Lock() внутри
-    h.mu.Lock()                        // ДЕДЛОК!
-```
-
-**Фикс:** Вызывать `decConnectionNoLock` напрямую.
+**Фикс:** Заменить все HTML-атрибуты `on*` на `addEventListener` в `<script nonce="{{.csp_nonce}}">` блоках.
 
 ---
 
-### C3. RatingService.Scan — всегда возвращает (0, 0, nil)
+### C2. Inline `onkeypress` заблокирован CSP (5 файлов)
 
-**Файл:** `internal/domain/game/rating_service.go:140-150`
+**Файлы:** `auth-login.html:17`, `auth-register.html:18`, `auth-reset.html:18`, `auth-forgot.html:20`, `gameplay-test.html:35`
 
-**Проблема:** `Scan(map[string]any{...})` с pointer-значениями не работает в GORM. GORM ожидает указатель на struct или slice struct-ов. `map[string]any` с `&avgRating` внутри игнорируется → функция всегда возвращает `(0, 0, nil)` для всех игр. Это ломает:
-- Сортировку игр по рейтингу
-- Отображение рейтинга на карточке игры
-- Фильтрацию по рейтингу
-
-```go
-Scan(map[string]any{"avg_rating": &avgRating, "count": &count})  // НЕ РАБОТАЕТ
-```
-
-**Фикс:** Использовать struct destination + `WithContext(ctx)`.
+**Проблема:** `onkeypress="if(event.key === 'Enter') this.form.submit()"` заблокирован CSP. К счастью, Enter и так работает через нативную отправку формы. Это dead code, который нужно удалить.
 
 ---
 
-### C4. Notification WebSocket — context.Background() вместо request context
+### C3. 2FA Enable — верификация всегда проваливается
 
-**Файл:** `internal/domain/notification/routes.go:67`
+**Файл:** `internal/domain/user/two_factor_handler.go:57-110`
 
-**Проблема:** Создаётся контекст от `context.Background()` вместо `c.Request.Context()`. При отключении клиента горутина не завершается 60 секунд (readTimeout).
+**Проблема:** Флоу включения 2FA сломан:
+1. `EnableForm()` генерирует секрет и показывает QR-код
+2. Секрет **нигде не сохраняется** (не в сессии, не в форме)
+3. `Enable()` достаёт пользователя из БД — в `user.TwoFactorSecret` **пусто** (2FA ещё не включена)
+4. `VerifyCode(user.TwoFactorSecret, input.Code)` проверяет код против пустой строки → всегда false
 
-```go
-ctx, cancel := context.WithCancel(context.Background())  // ❌
-defer cancel()
-go func() {
-    ws.HandleWebSocketWithContext(ctx, client)
-}()
-```
-
-**Фикс:** `context.WithCancel(c.Request.Context())`
+**Результат:** 2FA невозможно включить. Секрет должен передаваться через скрытое поле формы или храниться в сессии между шагами.
 
 ---
 
-### C5. Tournament Upsert — ошибка тени
+### C4. 2FA — отсутствуют 3 шаблона
 
-**Файл:** `internal/domain/tournament/service.go:292`
+**Файлы:** `internal/domain/user/templates/` — нет файлов:
+- `user-2fa-enable.html`
+- `user-2fa-enabled.html`
+- `user-2fa-disable.html`
 
-**Проблема:** `return err` вместо `return upsErr`. При ошибке `Upsert` транзакция не откатывается.
+**Проблема:** Обращение к `/user/2fa/enable` или `/user/2fa/disable` вызывает панику шаблонизатора (missing template). Весь пользовательский интерфейс 2FA не работает.
+
+---
+
+### C5. `renderGameplayError` — паника в шаблоне
+
+**Файл:** `internal/domain/game/gameplay_handler.go:123-129`
+**Темплейт:** `gameplay-show.html` (обращается к `{{.Level.Name}}`, `{{.Level.Questions}}`)
+
+**Проблема:** `renderGameplayError` передаёт только `PassingID`, `Error`, `csrf`. Но шаблон немедленно обращается к `.Level` (nil) → `html/template` паникует.
+
+**Вызывается из:** `SubmitCode:199`, `SubmitFile:266,272`.
+
+---
+
+### C6. Admin handlers — редирект без flash-сообщения
+
+**Файл:** `internal/domain/admin/handler.go:206-275, 370-391`
+
+**Проблема:** 3 хендлера (`ToggleAdmin`, `DeleteUser`, `DeleteGame`) при ошибке делают редирект на список без flash-сообщения. Пользователь видит успешный редирект без индикации ошибки.
 
 ```go
-if upsErr := s.tournamentResultRepo.Upsert(ctx, result); upsErr != nil {
-    return err  // ДОЛЖНО БЫТЬ: return upsErr
+if err := h.userRepo.Delete(c.Request.Context(), req.ID); err != nil {
+    log.Error().Err(err).Msg("DeleteUser: failed")
+    c.Redirect(http.StatusFound, "/admin/users")
+    return  // пользователь НЕ ВИДИТ, что произошла ошибка
 }
 ```
 
-**Фикс:** `return upsErr`
+**Фикс:** Использовать `render.SetFlash(c, "error", msg)` перед редиректом.
 
 ---
 
-### C6. Rate limiting не работает на password reset
+### C7. `initAutoSaveDrafts` — пароли сохраняются в localStorage
 
-**Файл:** `internal/domain/user/routes.go:56-62`
+**Файл:** `static/js/app.js:234`
 
-**Проблема:** `/auth/forgot` POST и `/auth/reset` POST не имеют rate limiting middleware. В отличие от логина (`LoginRateLimit`) и регистрации (`RegistrationRateLimit`). Это позволяет:
-1. **User enumeration** — разные сообщения об ошибке для существующего/несуществующего email
-2. **Brute force** reset-кода — 6-символьный код без троттлинга
-
-**Фикс:** Добавить `PasswordResetRateLimit` middleware (например, 3/min).
-
----
-
-### C7. Malformed HTML в layout.html — склеенные meta-теги
-
-**Файл:** `internal/domain/user/templates/layout.html:14`
-
-```html
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">arge_image">
+```js
+var fields = form.querySelectorAll('input, textarea, select'); // включает type="password"
 ```
 
-**Проблема:** Тег `twitter:card` `summary_large_image` склеился с предыдущей строкой. `>` после `black-translucent"` преждевременно закрывает meta. `twitter:card` отсутствует на всех страницах, кроме `games-show.html`.
+**Проблема:** Если форма с `data-autosave` содержит поле пароля, он сохраняется в localStorage в открытом виде.
+
+**Фикс:** `input:not([type="password"]):not([type="hidden"])`
 
 ---
 
-### C8. json.Marshal errors silently ignored
+### C8. WebSocket — orphaned connections при reconnect
 
-**Файлы:**
-- `internal/domain/user/webauthn_handler.go:134, 270`
-- `internal/pkg/cache/valkey.go:281`
+**Файл:** `static/js/ws-client.js:24-38`
 
-**Проблема:** `json.Marshal` может вернуть ошибку (например, из-за несериализуемого поля). В webauthn_handler это приведёт к сохранению `"null"` в сессии → пользователь получит "Неверные данные сессии". В valkey — сохранятся `null` байты.
+**Проблема:** `connect()` создаёт новый `WebSocket`, не закрывая старый, если он ещё в `CONNECTING` или `OPEN`. Старый сокет теряет ссылку, но продолжает висеть на сервере.
 
-**Фикс:** Проверять ошибку, возвращать 500 при ошибке маршалинга.
-
----
-
-### C9. i18n не подключён к шаблонам
-
-**Файлы:** Все 60+ шаблонов в `internal/domain/*/templates/*.html`
-
-**Проблема:** Пакет `internal/pkg/i18n/` содержит 256 строк на русском и английском, функции `T()` и `TF()`. Но они **не зарегистрированы** в `template.FuncMap` шаблонизатора. Все тексты в шаблонах — хардкод на русском. Переключение языка через `i18n.Middleware()` не работает, потому что шаблоны не используют `{{ T "key" }}`.
-
-**Фикс:** Зарегистрировать `i18n.T` и `i18n.TF` в `template.FuncMap` через middleware (извлекать язык из контекста).
-
----
-
-### C10. Missing icon-180x180.png — 404 на iOS
-
-**Файлы:** `internal/domain/user/templates/layout.html:22`, `static/icons/`
-
-**Проблема:** На каждой загрузке страницы на iOS браузер пытается загрузить `/static/icons/icon-180x180.png`, который не существует (404). Нет apple-touch-icon для ретина-дисплеев.
+**Фикс:** Проверять `this.ws.readyState` и закрывать перед созданием нового.
 
 ---
 
 ## 🟠 HIGH — нужно исправить в ближайшее время
 
-### H1. SSE Stop() race с Broadcast()
-
-**Файл:** `internal/domain/game/sse_handler.go:86-99`
-
-`Stop()` очищает `m.sessions` под lock-ом, но `Broadcast()` уже скопировала список сессий до lock-а и будет писать в невалидные ResponseWriter-ы.
-
-### H2. Mutex held across I/O в SSE Broadcast
-
-**Файл:** `internal/domain/game/sse_handler.go:181-189`
-
-`Write()` и `Flush()` выполняются под `s.mu.Lock()`. Если клиент медленный (TCP backpressure), все Broadcast-ы к этому клиенту блокируются.
-
-### H3. defer в цикле внутри транзакции
-
-**Файл:** `internal/domain/level/level_progress_service.go:338-357`
-
-`defer onCommitCopy()` в цикле `for` внутри транзакции. Все `defer`-ы выполняются LIFO после коммита транзакции.
-
-### H4. Fire-and-forget goroutines в auth_handler
-
-**Файл:** `internal/domain/user/auth_handler.go:451`
-
-Горутина отправки email без errgroup, без WaitGroup, без recovery. При shutdown сервера продолжает работать.
-
-### H5. /metrics и /swagger доступны всем аутентифицированным пользователям
-
-**Файл:** `internal/app/router.go:97-110`
-
-Используется `OptionalAuth` + проверка `userID != 0` — но не проверяется роль admin. Любой залогиненный пользователь видит полный Swagger и метрики Prometheus.
-
-### H6. Logout — GET запрос (CSRF-forced)
-
-**Файл:** `internal/domain/user/routes.go:52`
-
-GET logout — может быть вызван через `<img src="...">`. Должен быть POST.
-
-### H7. Password min length: 6 в binding vs 8 в валидаторе
-
-**Файл:** `internal/domain/user/handler.go:49`
-
-```go
-type RegisterInput struct {
-    Password string `form:"password" binding:"required,min=6,max=72"`
-```
-
-GIN binding проверяет min=6, сервис проверяет min=8 — несоответствие.
-
-### H8. RatingService — контекст не пробрасывается
-
-**Файл:** `internal/domain/game/rating_service.go:28-89, 91-99, 140-150`
-
-`UpdateRatingsForGame` принимает `ctx`, но все DB-запросы внутри него делаются **без** `WithContext(ctx)`. Запросы не отменяются при timeout/cancellation.
-
-### H9. N+1 в RatingService.UpdateRatingsForGame
-
-**Файл:** `internal/domain/game/rating_service.go:45-85`
-
-На каждое прохождение (passing) — отдельный запрос членов команды. 50 прохождений × 5 участников = 301 запрос.
-
-### H10. TournamentService.Apply без транзакции
-
-**Файл:** `internal/domain/tournament/service.go:121-193`
-
-`AddTeam` успешен, затем `CreatePassing` падает на 3-й итерации — команда зарегистрирована в турнире без прохождений. Нужен `Transaction`.
-
-### H11. Cookie Secure flag зависит от X-Forwarded-Proto
-
-**Файл:** `internal/domain/user/handler.go:13-32`
-
-`isHTTPS()` проверяет `X-Forwarded-Proto` — заголовок, который клиент может подделать, если приложение не за reverse proxy. Для cookie `jwt`, `refresh_token`, CSRF это критично.
-
-### H12. Debounced search — полная перезагрузка страницы
-
-**Файл:** `internal/domain/game/templates/games-list.html:234-239`
-
-debounce 300ms → `form.submit()` → полная перезагрузка страницы. Скролл теряется, UX ужасный. Нужен AJAX/fetch.
-
-### H13. Auto-save сохраняет пароли в localStorage
-
-**Файл:** `static/js/app.js:230-267`
-
-`initAutoSaveDrafts()` сохраняет ВСЕ поля формы. Если форма с атрибутом `data-autosave` содержит поле пароля — пароль попадает в localStorage в открытом виде.
-
----
-
-## 🟡 MEDIUM — стоит исправить
-
-### M1. isStopped() использует Lock() вместо RLock()
-
-**Файл:** `internal/pkg/websocket/room_hub.go:216-220`
-
-Чтение поля `stopped` под полной блокировкой сериализует всех читателей.
-
-### M2. Cache removeExpired блокирует все операции
-
-**Файл:** `internal/pkg/cache/cache.go:95-106`
-
-Write lock на всё время итерации всех ключей (тысячи). Блокирует Get/Set/Delete.
-
-### M3. Global rate limiter vars без синхронизации
-
-**Файл:** `internal/pkg/middleware/rate_limiter.go:247-301`
-
-`globalRateLimiter` и др. читаются без атомарных операций или mutex.
-
-### M4. Uploads без Content-Disposition
-
-**Файл:** `internal/app/router.go:175`
-
-`/uploads/` раздаётся через `r.Static` — файлы могут отображаться в браузере inline (особенно PDF).
-
-### M5. HSTS только при HTTPS (не на первом HTTP)
-
-**Файл:** `internal/pkg/middleware/security.go:72-75`
-
-HSTS не отправляется на первый HTTP-запрос → возможен SSL stripping.
-
-### M6. Встроенные onclick обработчики нарушают CSP nonce
-
-**Файлы:** `internal/domain/level/templates/levels-list.html:30-33`, `webauthn-manage.html:24`
-
-`onclick="duplicateLevel(...)"` не работает с nonce-based CSP. Использовать `addEventListener`.
-
-### M7. Валидация ошибок строковыми совпадениями
-
-**Файл:** `internal/domain/game/templates/gameplay-show.html:277-287`
-
-```js
-if (errorMsg.indexOf('already completed') !== -1 || errorMsg.indexOf('завершён') !== -1)
-```
-
-Хрупко. Использовать числовые error-коды с сервера.
-
-### M8. Старые WebSocket соединения не закрываются при reconnect
-
-**Файл:** `static/js/ws-client.js:24-38`
-
-При вызове `connect()` на уже CONNECTING сокете старый `this.ws` не закрывается.
-
-### M9. Отсутствует favicon для разных устройств
-
-В layout есть ссылки на favicon.ico, но нет PNG-favicon для современных браузеров.
-
-### M10. Нет print стилей
-
-При печати страницы навигация, кнопки и оверлеи выглядят плохо.
-
-### M11. Touch-устройства: hover-состояния залипают
-
-Нет `@media (hover: hover)` для ховеров. На мобильных после тапа ховер остаётся активным.
-
-### M12. Leaflet assets не кешируются Service Worker
+### H1. Leaflet assets не кешируются Service Worker
 
 **Файл:** `static/sw.js:4-11`
 
-leaflet.js и leaflet.css не в STATIC_ASSETS — офлайн-карты не работают.
+`STATIC_ASSETS` не включает `/static/js/leaflet.js` и `/static/css/leaflet.css`. Офлайн-карты не работают.
 
-### M13. Нет beforeunload для dirty-форм
+### H2. Password hint mismatch: `minlength="6"` vs backend `min=8`
 
-При случайной навигации с заполненной формой данные теряются.
+**Файлы:** `auth-register.html:33`, `auth-reset.html:16`
 
-### M14. Аватар сабмитится без превью
+HTML5 validation позволяет 6 символов, но хинт и бэкенд требуют 8.
 
-Пользователь ткнул не в тот файл — он сразу улетел на сервер.
+### H3. SSE indicator interval — утечка при множественных вызовах
 
-### M15. Скелетон всегда в DOM, виден при отключённом JS
+**Файл:** `static/js/app.js:658-666`
 
-`games-list.html:53-62` — skeleton всегда рендерится, контент начинается как `hidden`. Если JS не загрузился — skeleton виден вечно.
+`checkInterval` — локальная переменная. При повторных вызовах `initSSEGameNotifications()` старый interval не очищается. Есть 30s safety cap, но при многих вызовах intervals накапливаются.
 
-### M16. Секрет сессии используется и для CSRF
+### H4. ChatWS — логирует не ту ошибку
 
-`app.go:86` — один и тот же `Session.Secret` для подписи cookie сессии и CSRF-токенов. Нарушение key separation.
+**Файл:** `internal/domain/monitor/handler.go:389`
+
+```go
+log.Warn().Err(err).Str("room_id", roomID).Msg("ChatWS: room not found")
+```
+
+Логируется `err` (результат `strconv.Atoi`, который успешен), а должен быть `findErr` (результат DB-запроса).
+
+### H5. ImportGame — пропущен `WithContext`
+
+**Файл:** `internal/domain/export/handler.go:196`
+
+`h.exportService.ImportGameFromCSV(h.db, gameID, file)` — передаёт `h.db` напрямую, а не `h.db.WithContext(c.Request.Context())`. Транзакция импорта не отменяется при disconnect.
+
+### H6. MonitorWS/LogsWS — нет `c.Abort()` после upgrade
+
+**Файл:** `internal/domain/monitor/handler.go:273`
+
+После WebSocket upgrade не вызывается `c.Abort()`. Gin может попытаться записать ответ в уже захваченное соединение. `ChatWS` (line 416) делает `c.Abort()` правильно.
+
+### H7. `decConnection` удалена, остался вызов из cleanup (исправлено)
+
+**Статус:** ✅ **ИСПРАВЛЕНО** — `decConnection` удалена, `cleanupInactiveClients` вызывает `decConnectionNoLock` напрямую.
+
+### H8. Export team query — пропущен `WithContext`
+
+**Файл:** `internal/domain/export/handler.go:439`
+
+`h.db.Table("teams")...` без `WithContext`, в отличие от соседних запросов (строки 429, 450).
+
+### H9. Password reset rate limit — неспецифичная ошибка
+
+**Файл:** `internal/pkg/middleware/rate_limiter.go:443`
+
+`PasswordResetRateLimit` использует `ErrRateLimitGlobal` вместо собственного `ErrRateLimitPasswordReset`. Нет отдельного i18n-ключа. Пользователь видит общее сообщение "слишком много запросов".
+
+---
+
+## 🟡 MEDIUM
+
+### M1. ImportGame — raw `err.Error()` в HTTP ответе
+
+**Файл:** `internal/domain/export/handler.go:200`
+
+```go
+"Error": "Ошибка импорта: " + err.Error()
+```
+
+Может утечь внутренние детали (имена таблиц, constraint names) при ошибках GORM.
+
+### M2. Redirect без `game_id` — битый URL
+
+**Файл:** `internal/domain/game/gameplay_handler.go:337`
+
+`/games/` + `c.Query("game_id")` + `/monitor` — если query-параметр отсутствует, URL становится `/games//monitor`.
+
+### M3. Service Worker — нет background sync
+
+Офлайн-отправка форм (например, создание игры) не работает. Формы теряются при отсутствии соединения.
+
+### M4. View Transitions API — Chrome-only, нет fallback
+
+`@view-transition { navigation: auto; }` — экспериментальная Chrome-фича. Safari/Firefox игнорируют, но навигация через HTMX уже даёт плавные переходы.
+
+### M5. Skeleton loading всегда в DOM при выключенном JS
+
+`games-list.html:53-62` — skeleton виден вечно, если JS не загрузился.
+
+### M6. Аватар — нет превью перед загрузкой
+
+Пользователь выбирает файл → форма сразу сабмитится. Нет подтверждения.
+
+### M7. Debounced search — полная перезагрузка
+
+`games-list.html:234-239` — 300ms debounce → `form.submit()`. Скролл теряется.
+
+### M8. Нет `beforeunload` для dirty-форм
+
+При случайной навигации данные форм теряются.
+
+### M9. Cookie `refresh_token` заскоплен на `/auth/refresh`
+
+Это корректно для безопасности, но при logout очищается только cookie с этим путём. Если другое приложение установило cookie с тем же именем на `/` — она останется.
 
 ---
 
 ## 🔧 Оптимизации производительности
 
-| # | Область | Что делать | Оценка |
-|---|---------|-----------|--------|
-| P1 | `RatingService.UpdateRatingsForGame` | Batch-load team members через JOIN, не N+1 | ~5× быстрее |
-| P2 | `level_progresses` partial index | `CREATE INDEX ... WHERE finished_at IS NULL` | ~10× для CheckTimeouts |
-| P3 | `Cache.removeExpired` | Итерация под RLock, удаление под отдельным Lock | Не блокирует все операции |
-| P4 | SSE запись | Использовать буферизированный канал вместо mutex+Write | Не блокирует Broadcast |
-| P5 | `isStopped → RLock` | Разрешить параллельное чтение stopped | Снижает конкуренцию |
-| P6 | `GetTeamsByUserID` | UNION вместо двух запросов | 2× меньше запросов |
-| P7 | strings.Builder для SQL | Уже используется — отлично | ✅ |
-| P8 | `Session(gorm.Session{NewDB: true})` | Изолировать Count от Find в пагинации | Стабильнее |
+| # | Область | Статус |
+|---|---------|--------|
+| P1 | `Cache.removeExpired` — write lock на всю итерацию | ❌ Не исправлено |
+| P2 | `isStopped()` — `Lock()` вместо `RLock()` | ✅ **Исправлено** (убрана, код прямой) |
+| P3 | RoomHub broadcast — stale room reference | ⚠️ Частично (убрали deadlock, остался stale ref) |
+| P4 | N+1 в RatingService (passing → team members) | ❌ Не исправлено |
+| P5 | Partial index для `level_progresses WHERE finished_at IS NULL` | ❌ Не исправлено |
 
 ---
 
-## 🎨 Улучшения пользовательского опыта
+## 📊 Статистика
 
-| # | Что | Где | Эффект |
-|---|-----|-----|--------|
-| U1 | Подключить i18n к шаблонам | `render/helper.go` + все шаблоны | Полноценная локализация (ru/en) |
-| U2 | AJAX-поиск игр вместо `form.submit()` | `games-list.html` | Без перезагрузки |
-| U3 | Превью аватара перед загрузкой | `profile-show.html` | Контроль качества |
-| U4 | beforeunload для dirty-форм | Все формы | Не терять данные |
-| U5 | Loading state на submit | Все формы | Обратная связь |
-| U6 | Modal confirm вместо native confirm | `webauthn-manage.html`, `levels-list.html` | Консистентность UI |
-| U7 | Error-коды вместо string match | `gameplay-show.html` | Надёжность |
-| U8 | debounce → throttle для поиска | `games-list.html` | Меньше запросов |
-| U9 | Print styles | `app.css` | Принт-френдли |
-| U10 | `@media (hover: hover)` | `app.css` | Мобильный UX |
-| U11 | aria-label на все иконки | layout.html, шаблоны | A11y |
-| U12 | Label вместо placeholder | `home.html` | WCAG compliance |
+| Приоритет | Новые | Всего (с pass 12 осталось) |
+|-----------|-------|--------------------------|
+| 🔴 CRITICAL | 8 | 8 |
+| 🟠 HIGH | 9 | 9 |
+| 🟡 MEDIUM | 9 | 9 |
+| 🔵 LOW | 3 | 3 |
 
 ---
 
-## 📊 Статистика по приоритетам
+## Резюме
 
-| Приоритет | Количество | Описание |
-|-----------|-----------|----------|
-| 🔴 CRITICAL | 10 | Паника, потеря данных, race condition, security hole |
-| 🟠 HIGH | 13 | Ошибки бизнес-логики, UX-баги, утечки памяти |
-| 🟡 MEDIUM | 16 | Code quality, производительность, доступность |
-| 🟢 LOW | 8 | Косметика, best practices |
+После исправления 15 проблем из pass 12, pass 13 обнаружил **новые 29 проблем**.
 
----
+### Топ-3 по реальному impact:
 
-## Заключение
+1. **Inline onclick заблокированы CSP** (C1) — 21 интерактивный элемент не работает: пасскей аутентификация, drag & drop, кнопки навигации, дисквалификация команд. **Вся клиентская интерактивность через HTML-атрибуты сломана.**
+2. **2FA Enable всегда проваливается** (C3) — секрет не передаётся между шагами. 2FA невозможно включить.
+3. **2FA шаблоны отсутствуют** (C4) — страницы 2FA (/user/2fa/enable, /disable) вызывают панику.
 
-Проект в хорошем состоянии, но есть **10 критических проблем**, которые нужно исправить до production:
-
-1. **Race condition** в SSE (`sse_handler.go`)
-2. **Self-deadlock** в RoomHub (`room_hub.go`)
-3. **RatingService.Scan** — возвращает нули для всех игр
-4. **Goroutine leak** в notification/routes.go
-5. **Upsert error shadow** в tournament/service.go
-6. **Rate limiting** на password reset
-7. **Malformed HTML** в layout.html
-8. **json.Marshal errors** игнорируются в 3 местах
-9. **i18n** не подключён к шаблонам (ключевая фича не работает)
-10. **Missing icon** 180×180 → 404 на iOS
-
-После их исправления — Medium-приоритетные оптимизации производительности и UX.
+### Что уже исправлено (в этом раунде):
+- `golangci-lint` — чисто (удалена dead `decConnection`, gofmt)
+- `decConnection` удалена, cleanup использует `decConnectionNoLock`
+- Password rate limit middleware добавлен
+- /swagger и /metrics требуют admin
+- Logout — POST с CSRF
+- isHTTPS — безопасен (только `c.Request.TLS`)

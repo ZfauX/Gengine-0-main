@@ -4,7 +4,7 @@
 
     <div class="card mb-6">
         <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">Passkey (ключи доступа) позволяют входить в систему без пароля, используя биометрию или PIN-код вашего устройства.</p>
-        <button id="add-passkey-btn" class="btn btn-primary text-sm" onclick="registerPasskey()">Добавить Passkey</button>
+        <button id="add-passkey-btn" class="btn btn-primary text-sm">Добавить Passkey</button>
     </div>
 
     {{if .Credentials}}
@@ -21,7 +21,7 @@
                         Добавлен: {{.CreatedAt.Format "02.01.2006 15:04"}}
                     </div>
                 </div>
-                <form action="/profile/webauthn-keys/delete/{{.ID}}" method="POST" onsubmit="return confirm('Удалить этот ключ?')">
+                <form action="/profile/webauthn-keys/delete/{{.ID}}" method="POST" data-confirm-form="Удалить этот ключ?">
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
                     <button type="submit" class="btn btn-danger text-xs">Удалить</button>
                 </form>
@@ -86,6 +86,16 @@ function registerPasskey() {
         btn.textContent = 'Добавить Passkey';
     });
 }
+
+    document.getElementById('add-passkey-btn').addEventListener('click', registerPasskey);
+
+    // Form confirmation dialogs (CSP-safe)
+    document.addEventListener('submit', function(e) {
+        var form = e.target.closest('[data-confirm-form]');
+        if (form && !confirm(form.getAttribute('data-confirm-form'))) {
+            e.preventDefault();
+        }
+    });
 
 function arrayBufferToBase64(buf) {
     const bytes = new Uint8Array(buf);

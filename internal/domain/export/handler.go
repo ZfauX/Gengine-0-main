@@ -193,7 +193,7 @@ func (h *ExportHandler) ImportGame(c *gin.Context) {
 		return
 	}
 
-	if err := h.exportService.ImportGameFromCSV(h.db, gameID, file); err != nil {
+	if err := h.exportService.ImportGameFromCSV(h.db.WithContext(c.Request.Context()), gameID, file); err != nil {
 		log.Error().Err(err).Uint("game_id", gameID).Msg("ImportGame: failed to import game from CSV")
 		render.Page(c, http.StatusInternalServerError, "export_import-import.html", gin.H{
 			"GameID": gameID,
@@ -436,7 +436,7 @@ func (h *ExportHandler) ExportTeamResultsCSV(c *gin.Context) {
 	// Проверяем права: капитан или автор
 	isCaptain := false
 	var t struct{ CaptainID uint }
-	if err := h.db.Table("teams").Select("captain_id").Where("id = ?", teamID).First(&t).Error; err != nil {
+	if err := h.db.WithContext(c.Request.Context()).Table("teams").Select("captain_id").Where("id = ?", teamID).First(&t).Error; err != nil {
 		log.Error().Err(err).Uint("team_id", uint(teamID)).Msg("ExportTeamResultsCSV: failed to find team")
 		render.RenderErrorPage(c, http.StatusNotFound)
 		return

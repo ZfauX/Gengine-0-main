@@ -213,7 +213,7 @@ func (app *App) registerAdminRoutes(r *gin.RouterGroup) {
 }
 
 func (app *App) registerUserRoutes(r *gin.RouterGroup) {
-	user.RegisterRoutes(r, app.Config, app.Deps.Services.Auth, app.Deps.Services.User, app.Deps.Services.PasswordReset, app.Deps.Services.EmailVerif, app.Deps.Services.OAuth, app.Deps.AuditSvc, app.DB, app.LocalStorage, app.Deps.Services.Email, app.Deps.WebAuthn)
+	user.RegisterRoutes(r, app.Config, app.Deps.Services.Auth, app.Deps.Services.User, app.Deps.Services.PasswordReset, app.Deps.Services.EmailVerif, app.Deps.Services.OAuth, app.Deps.AuditSvc, app.DB, app.LocalStorage, app.Deps.Services.Email, app.Deps.WebAuthn, app.Deps.Repos.User)
 }
 
 func (app *App) registerGameRoutes(r *gin.RouterGroup) {

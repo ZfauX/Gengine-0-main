@@ -88,7 +88,7 @@
     <div class="flex flex-wrap gap-3 mb-6">
         {{if .IsManager}}
             {{if .Game.IsDraft}}
-            <form action="/games/{{.Game.ID}}/publish" method="POST" class="inline" onsubmit="return confirm('Опубликовать игру? После публикации она станет видимой для игроков.')">
+            <form action="/games/{{.Game.ID}}/publish" method="POST" class="inline" data-confirm-form="Опубликовать игру? После публикации она станет видимой для игроков.">
                 <input type="hidden" name="_csrf" value="{{.csrf}}">
                 <button type="submit" class="btn btn-primary text-sm">Опубликовать</button>
             </form>
@@ -105,7 +105,7 @@
             <a href="/games/{{.Game.ID}}/export" class="btn btn-outline text-sm">Экспорт CSV</a>
             <a href="/games/{{.Game.ID}}/export-pdf" class="btn btn-outline text-sm">📄 PDF</a>
             <a href="/games/{{.Game.ID}}/test" class="btn btn-outline text-sm">Тест</a>
-            <form action="/games/{{.Game.ID}}/force-finish" method="POST" class="inline" onsubmit="return confirm('Вы уверены? Принудительное завершение остановит все активные прохождения.')">
+            <form action="/games/{{.Game.ID}}/force-finish" method="POST" class="inline" data-confirm-form="Вы уверены? Принудительное завершение остановит все активные прохождения.">
                 <input type="hidden" name="_csrf" value="{{.csrf}}">
                 <button type="submit" class="btn btn-danger text-sm">Завершить игру</button>
             </form>
@@ -413,5 +413,13 @@
             closeModal();
         });
     })();
+
+    // Form confirmation dialogs (CSP-safe)
+    document.addEventListener('submit', function(e) {
+        var form = e.target.closest('[data-confirm-form]');
+        if (form && !confirm(form.getAttribute('data-confirm-form'))) {
+            e.preventDefault();
+        }
+    });
 </script>
 {{end}}

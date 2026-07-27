@@ -11,9 +11,13 @@
         <p class="text-sm text-gray-400 mb-6">Попробуйте обновить страницу через несколько минут или вернитесь назад.</p>
         <div class="flex flex-wrap gap-3 justify-center">
             <a href="/" class="btn btn-primary text-sm inline-block">На главную</a>
-            <button onclick="location.reload()" class="btn btn-outline text-sm inline-block">Обновить</button>
-            <button onclick="history.back()" class="btn btn-outline text-sm inline-block">← Назад</button>
+            <button id="btn-reload" class="btn btn-outline text-sm inline-block">Обновить</button>
+            <button id="btn-back" class="btn btn-outline text-sm inline-block">← Назад</button>
         </div>
     </div>
 </div>
+<script nonce="{{.csp_nonce}}">
+document.getElementById('btn-reload').addEventListener('click',function(){location.reload()});
+document.getElementById('btn-back').addEventListener('click',function(){history.back()});
+</script>
 {{end}}

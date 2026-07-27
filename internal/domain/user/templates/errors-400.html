@@ -7,8 +7,9 @@
         <p class="text-sm text-gray-400 mb-6">Проверьте введённые данные и попробуйте снова.</p>
         <div class="flex flex-wrap gap-3 justify-center">
             <a href="/" class="btn btn-primary text-sm inline-block">На главную</a>
-            <button onclick="history.back()" class="btn btn-outline text-sm inline-block">← Назад</button>
+            <button id="btn-back" class="btn btn-outline text-sm inline-block">← Назад</button>
         </div>
     </div>
 </div>
+<script nonce="{{.csp_nonce}}">document.getElementById('btn-back').addEventListener('click',function(){history.back()});</script>
 {{end}}

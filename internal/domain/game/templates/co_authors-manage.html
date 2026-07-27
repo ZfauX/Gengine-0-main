@@ -13,7 +13,7 @@
                     <span class="font-medium text-gray-800 dark:text-gray-100">{{.User.Name}}</span>
                     <span class="text-sm text-gray-500 dark:text-gray-400 ml-2">({{.User.Email}})</span>
                 </div>
-                <form action="/games/{{$.GameID}}/co-authors/{{.UserID}}/remove" method="POST" class="inline" onsubmit="return confirm('Удалить соавтора «{{.User.Name}}»?')">
+                <form action="/games/{{$.GameID}}/co-authors/{{.UserID}}/remove" method="POST" class="inline" data-confirm-form="Удалить соавтора «{{.User.Name}}»?">
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
                     <button type="submit" class="btn btn-danger text-xs">Удалить</button>
                 </form>
@@ -43,4 +43,7 @@
 
     <a href="/games/{{.GameID}}" class="btn btn-outline text-sm">← Назад к игре</a>
 </div>
+<script nonce="{{.csp_nonce}}">
+document.addEventListener('submit',function(e){var f=e.target.closest('[data-confirm-form]');if(f&&!confirm(f.getAttribute('data-confirm-form')))e.preventDefault()});
+</script>
 {{end}}

@@ -120,10 +120,33 @@ func (h *GameplayHandler) ShowGame(c *gin.Context) {
 }
 
 // renderGameplayError рендерит страницу ошибки с полными данными уровня.
-func (h *GameplayHandler) renderGameplayError(c *gin.Context, passingID uint, err_msg string) {
+func (h *GameplayHandler) renderGameplayError(c *gin.Context, passingID uint, errMsg string) {
+	// Пытаемся получить все данные геймплея для корректного рендера шаблона
+	data, dataErr := h.gamePlaySvc.GetGameplayData(c.Request.Context(), passingID)
+	if dataErr == nil {
+		render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
+			"PassingID":        passingID,
+			"Level":            data.Level,
+			"Attempts":         data.Attempts,
+			"TimeLimitSeconds": data.TimeLimitSec,
+			"HideAnswers":      data.Settings.HideAnswersUntilFinished && data.Passing.Status != StatusFinished,
+			"TeamID":           data.Passing.TeamID,
+			"GameID":           data.Passing.GameID,
+			"Error":            errMsg,
+			"csrf":             csrf.GetToken(c),
+		})
+		return
+	}
+
+	// Fallback: пытаемся получить хотя бы GameID
+	gameID := uint(0)
+	if passing, passErr := h.gamePlaySvc.GetPassingWithGame(c.Request.Context(), passingID); passErr == nil {
+		gameID = passing.GameID
+	}
 	render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
 		"PassingID": passingID,
-		"Error":     err_msg,
+		"GameID":    gameID,
+		"Error":     errMsg,
 		"csrf":      csrf.GetToken(c),
 	})
 }

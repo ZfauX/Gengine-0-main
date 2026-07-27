@@ -440,7 +440,7 @@ func PasswordResetRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 		result := rl.Allow("reset:" + key)
 		setRateLimitHeaders(c, result)
 		if !result.Allowed {
-			respondRateLimitError(c, ErrRateLimitGlobal, result)
+			respondRateLimitError(c, ErrRateLimitPasswordReset, result)
 			return
 		}
 		c.Next()

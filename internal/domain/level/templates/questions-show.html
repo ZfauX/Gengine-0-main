@@ -20,7 +20,7 @@
             {{range .Question.Answers}}
             <li class="py-3 flex justify-between items-center">
                 <span class="font-mono text-gray-800 dark:text-gray-100">{{.Code}}</span>
-                <form action="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{$.Question.ID}}/answers/{{.ID}}" method="POST" class="inline" onsubmit="return confirm('Удалить ответ?')">
+                <form action="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{$.Question.ID}}/answers/{{.ID}}" method="POST" class="inline" data-confirm-form="Удалить ответ?">
                     <input type="hidden" name="_method" value="DELETE">
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
                     <button type="submit" class="btn btn-danger text-xs">Удалить</button>
@@ -39,4 +39,7 @@
         <a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions" class="btn btn-outline text-sm">← Назад к вопросам</a>
     </div>
 </div>
+<script nonce="{{.csp_nonce}}">
+document.addEventListener('submit',function(e){var f=e.target.closest('[data-confirm-form]');if(f&&!confirm(f.getAttribute('data-confirm-form')))e.preventDefault()});
+</script>
 {{end}}

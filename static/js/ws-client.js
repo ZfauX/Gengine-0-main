@@ -31,6 +31,19 @@
             this.retryTimer = null;
         }
 
+        // Close existing connection cleanly before creating a new one (C8)
+        if (this.ws) {
+            var oldWs = this.ws;
+            oldWs.onopen = null;
+            oldWs.onclose = null;
+            oldWs.onerror = null;
+            oldWs.onmessage = null;
+            if (oldWs.readyState === WebSocket.OPEN || oldWs.readyState === WebSocket.CONNECTING) {
+                oldWs.close();
+            }
+            this.ws = null;
+        }
+
         if (this.protocols) {
             this.ws = new WebSocket(wsUrl, this.protocols);
         } else {

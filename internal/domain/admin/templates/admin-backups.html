@@ -14,7 +14,7 @@
                 <button type="submit" class="btn btn-primary text-sm">Создать бекап</button>
             </form>
             {{if gt .Count 0}}
-            <form action="/admin/backups/rotate" method="POST" class="inline" onsubmit="return confirm('Удалить старые бекапы?')">
+            <form action="/admin/backups/rotate" method="POST" class="inline" data-confirm-form="Удалить старые бекапы?">
                 <input type="hidden" name="_csrf" value="{{.csrf}}">
                 <button type="submit" class="btn btn-danger text-sm">Очистить старые бекапы</button>
             </form>
@@ -54,4 +54,7 @@
     </div>
     {{end}}
 </div>
+<script nonce="{{.csp_nonce}}">
+document.addEventListener('submit',function(e){var f=e.target.closest('[data-confirm-form]');if(f&&!confirm(f.getAttribute('data-confirm-form')))e.preventDefault()});
+</script>
 {{end}}

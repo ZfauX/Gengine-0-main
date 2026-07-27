@@ -1,24 +1,24 @@
 {{define "gameplay-show.html"}}
 <div class="max-w-3xl mx-auto" data-passing-id="{{.PassingID}}" data-game-id="{{.GameID}}" data-time-limit="{{.TimeLimitSeconds}}">
-    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Прохождение уровня: {{.Level.Name}}</h1>
+    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Прохождение уровня: {{if .Level}}{{.Level.Name}}{{else}}—{{end}}</h1>
 
     <!-- Карточка уровня -->
     <div class="card mb-6">
-        <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">{{.Level.Name}}</h2>
+        <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">{{if .Level}}{{.Level.Name}}{{else}}—{{end}}</h2>
 
-        {{if .Level.Description}}
+        {{if .Level}}{{if .Level.Description}}
         <p class="text-gray-600 dark:text-gray-400 mb-4">{{.Level.Description}}</p>
-        {{end}}
+        {{end}}{{end}}
 
         <!-- Вопросы -->
-        {{range .Level.Questions}}
+        {{if .Level}}{{range .Level.Questions}}
         <div class="mb-4 last:mb-0">
             <p class="font-medium text-gray-800 dark:text-gray-100"><span class="font-bold">Вопрос:</span> {{.Text}}</p>
             {{if .Hint}}
             <p class="text-sm text-gray-500 dark:text-gray-400 italic mt-1">Подсказка: {{.Hint}}</p>
             {{end}}
         </div>
-        {{end}}
+        {{end}}{{end}}
 
         <!-- Таймер -->
         <div id="timer-container" class="mb-4">

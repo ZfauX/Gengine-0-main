@@ -20,8 +20,11 @@
         <div class="icon">📡</div>
         <h1>Нет соединения</h1>
         <p>Проверьте подключение к интернету и попробуйте снова.</p>
-        <button onclick="window.location.reload()" class="btn">🔄 Попробовать снова</button>
+        <button id="reconnect-btn" class="btn">🔄 Попробовать снова</button>
     </div>
+    <script nonce="{{.csp_nonce}}">
+    document.getElementById('reconnect-btn').addEventListener('click', function() { window.location.reload(); });
+    </script>
 </body>
 </html>
 {{end}}
