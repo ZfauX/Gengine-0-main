@@ -1,6 +1,7 @@
 {
     "name": "Encounter Engine",
     "short_name": "Encounter",
+    "description": "Платформа для создания и проведения квестов",
     "start_url": "/dashboard?source=pwa",
     "display": "standalone",
     "background_color": "#f0f2f5",
@@ -16,6 +17,12 @@
             "src": "/static/icons/icon-512x512.png",
             "sizes": "512x512",
             "type": "image/png"
+        },
+        {
+            "src": "/static/icons/icon-180x180.png",
+            "sizes": "180x180",
+            "type": "image/png",
+            "purpose": "maskable"
         }
     ]
 }
