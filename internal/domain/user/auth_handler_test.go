@@ -16,32 +16,17 @@ func TestIsHTTPS(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		headers  map[string]string
+		setTLS   bool
 		expected bool
 	}{
 		{
 			name:     "TLS connection",
-			headers:  map[string]string{"X-Forwarded-Proto": "http"},
-			expected: true,
-		},
-		{
-			name:     "X-Forwarded-Proto https",
-			headers:  map[string]string{"X-Forwarded-Proto": "https"},
-			expected: true,
-		},
-		{
-			name:     "X-Forwarded-Protocol with s suffix",
-			headers:  map[string]string{"X-Forwarded-Protocol": "https"},
-			expected: true,
-		},
-		{
-			name:     "X-Url-Scheme https",
-			headers:  map[string]string{"X-Url-Scheme": "https"},
+			setTLS:   true,
 			expected: true,
 		},
 		{
 			name:     "HTTP connection",
-			headers:  map[string]string{},
+			setTLS:   false,
 			expected: false,
 		},
 	}
@@ -51,10 +36,7 @@ func TestIsHTTPS(t *testing.T) {
 			w := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(w)
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
-			for k, v := range tt.headers {
-				req.Header.Set(k, v)
-			}
-			if tt.name == "TLS connection" {
+			if tt.setTLS {
 				req.TLS = new(tls.ConnectionState)
 			}
 			c.Request = req

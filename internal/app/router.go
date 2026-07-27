@@ -95,15 +95,17 @@ func (app *App) setupEngine(r *gin.Engine) error {
 	r.Use(middleware.ContextTimeout(30 * time.Second))
 
 	r.GET("/swagger/*any", middleware.OptionalAuth(app.Deps.Services.Auth), func(c *gin.Context) {
-		if c.GetUint("userID") == 0 {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": i18n.T("generic.auth_required")})
+		role, _ := c.Get("role")
+		if role != "admin" {
+			c.JSON(http.StatusForbidden, gin.H{"error": i18n.T("generic.forbidden")})
 			return
 		}
 		ginSwagger.WrapHandler(swaggerFiles.Handler)(c)
 	})
 	r.GET("/metrics", middleware.OptionalAuth(app.Deps.Services.Auth), func(c *gin.Context) {
-		if c.GetUint("userID") == 0 {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": i18n.T("generic.auth_required")})
+		role, _ := c.Get("role")
+		if role != "admin" {
+			c.JSON(http.StatusForbidden, gin.H{"error": i18n.T("generic.forbidden")})
 			return
 		}
 		gin.WrapH(promhttp.Handler())(c)

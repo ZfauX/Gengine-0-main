@@ -136,15 +136,18 @@ func (s *RatingService) GetLeaderboard(ctx context.Context, limit int) ([]Leader
 	return entries, nil
 }
 
-// GetAverageRating возвращает средний рейтинг и количество отзывов для игры.
-func (s *RatingService) GetAverageRating(gameID uint) (float64, int64, error) {
-	var avgRating float64
-	var count int64
+type avgRatingResult struct {
+	AvgRating float64
+	Count     int64
+}
 
-	err := s.DB.Table("reviews").
+// GetAverageRating возвращает средний рейтинг и количество отзывов для игры.
+func (s *RatingService) GetAverageRating(ctx context.Context, gameID uint) (float64, int64, error) {
+	var result avgRatingResult
+	err := s.DB.WithContext(ctx).Table("reviews").
 		Select("COALESCE(AVG(rating), 0) as avg_rating, COUNT(*) as count").
 		Where("game_id = ?", gameID).
-		Scan(map[string]any{"avg_rating": &avgRating, "count": &count}).Error
+		Scan(&result).Error
 
-	return avgRating, count, err
+	return result.AvgRating, result.Count, err
 }

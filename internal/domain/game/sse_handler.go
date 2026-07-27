@@ -22,6 +22,7 @@ type SSESession struct {
 	done      chan struct{}
 	closeOnce sync.Once
 	remoteIP  string
+	closed    bool // закрыт under s.mu
 }
 
 // SSEManager управляет SSE-подключениями для каждой игры
@@ -135,14 +136,19 @@ func (m *SSEManager) UnregisterSession(session *SSESession) {
 	}
 	delete(m.gameMap, session)
 
-	sessions := m.sessions[gameID]
-	for i, s := range sessions {
-		if s == session {
-			m.sessions[gameID] = append(sessions[:i], sessions[i+1:]...)
-			session.closeOnce.Do(func() { close(session.done) })
-			break
+		sessions := m.sessions[gameID]
+		for i, s := range sessions {
+			if s == session {
+				m.sessions[gameID] = append(sessions[:i], sessions[i+1:]...)
+				session.closeOnce.Do(func() {
+					session.mu.Lock()
+					session.closed = true
+					session.mu.Unlock()
+					close(session.done)
+				})
+				break
+			}
 		}
-	}
 	if len(m.sessions[gameID]) == 0 {
 		delete(m.sessions, gameID)
 	}
@@ -174,20 +180,19 @@ func (m *SSEManager) Broadcast(gameID uint, eventType string, data any) {
 	}
 
 	for _, s := range sessions {
-		select {
-		case <-s.done:
-			continue
-		default:
-			s.mu.Lock()
-			event := "event: " + eventType + "\ndata: " + toJSON(payload) + "\n\n"
-			if _, err := s.w.Write([]byte(event)); err != nil {
-				s.mu.Unlock()
-				log.Debug().Err(err).Msg("SSE: write error")
-				continue
-			}
-			s.flush.Flush()
+		s.mu.Lock()
+		if s.closed {
 			s.mu.Unlock()
+			continue
 		}
+		event := "event: " + eventType + "\ndata: " + toJSON(payload) + "\n\n"
+		if _, err := s.w.Write([]byte(event)); err != nil {
+			s.mu.Unlock()
+			log.Debug().Err(err).Msg("SSE: write error")
+			continue
+		}
+		s.flush.Flush()
+		s.mu.Unlock()
 	}
 }
 

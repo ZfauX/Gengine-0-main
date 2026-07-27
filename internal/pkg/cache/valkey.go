@@ -278,7 +278,11 @@ func (c *ValkeyCache) GetOrSetStringWithTTLWithCtx(ctx context.Context, key stri
 	if fnErr != nil {
 		return "", fnErr
 	}
-	data, _ := json.Marshal(str)
+	data, marshalErr := json.Marshal(str)
+	if marshalErr != nil {
+		log.Warn().Err(marshalErr).Str("key", key).Msg("Valkey: SetWithTTL marshal error")
+		return str, nil
+	}
 	if setErr := c.client.Set(ctx, key, data, ttl).Err(); setErr != nil {
 		log.Warn().Err(setErr).Str("key", key).Msg("Valkey: SetWithTTL error")
 	}

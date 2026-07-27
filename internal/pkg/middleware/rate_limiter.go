@@ -414,6 +414,39 @@ func SSERateLimit(window time.Duration, limit int) gin.HandlerFunc {
 	}
 }
 
+var passwordResetRateLimiter *RateLimiter
+
+func InitPasswordResetRateLimiter(window time.Duration, limit int) {
+	passwordResetRateLimiter = NewRateLimiter(window, limit)
+}
+
+func InitPasswordResetRateLimiterWithValkey(client *redis.Client, window time.Duration, limit int) {
+	passwordResetRateLimiter = NewValkeyRateLimiter(client, window, limit)
+}
+
+func StopPasswordResetRateLimiter() {
+	if passwordResetRateLimiter != nil {
+		passwordResetRateLimiter.Stop()
+	}
+}
+
+func PasswordResetRateLimit(window time.Duration, limit int) gin.HandlerFunc {
+	rl := passwordResetRateLimiter
+	if rl == nil {
+		rl = NewRateLimiter(window, limit)
+	}
+	return func(c *gin.Context) {
+		key := c.ClientIP()
+		result := rl.Allow("reset:" + key)
+		setRateLimitHeaders(c, result)
+		if !result.Allowed {
+			respondRateLimitError(c, ErrRateLimitGlobal, result)
+			return
+		}
+		c.Next()
+	}
+}
+
 var apiRateLimiter *RateLimiter
 
 func InitAPIRateLimiter(window time.Duration, limit int) {

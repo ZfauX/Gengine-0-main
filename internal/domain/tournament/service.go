@@ -290,7 +290,7 @@ func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint
 				result.GamesPlayed++
 			}
 			if upsErr := s.tournamentResultRepo.Upsert(ctx, result); upsErr != nil {
-				return err
+				return upsErr
 			}
 		}
 		return nil

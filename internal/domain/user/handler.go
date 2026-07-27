@@ -3,7 +3,6 @@ package user
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -11,19 +10,7 @@ import (
 const avatarMaxSize = 2 * 1024 * 1024
 
 func isHTTPS(c *gin.Context) bool {
-	if c.Request.TLS != nil {
-		return true
-	}
-	if proto := c.GetHeader("X-Forwarded-Proto"); proto == "https" {
-		return true
-	}
-	if proto := c.GetHeader("X-Forwarded-Protocol"); strings.HasSuffix(proto, "s") {
-		return true
-	}
-	if proto := c.GetHeader("X-Url-Scheme"); proto == "https" {
-		return true
-	}
-	return false
+	return c.Request.TLS != nil
 }
 
 func setSecureCookie(c *gin.Context, name, value string, maxAge int, path string) {
@@ -46,7 +33,7 @@ type VerifyEmailRequest struct {
 
 type RegisterInput struct {
 	Email    string `form:"email" json:"email" binding:"required,email"`
-	Password string `form:"password" json:"password" binding:"required,min=6,max=72"`
+	Password string `form:"password" json:"password" binding:"required,min=8,max=72"`
 	Name     string `form:"name" json:"name" binding:"required,min=2,max=50"`
 }
 

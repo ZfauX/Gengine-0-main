@@ -9,7 +9,7 @@ import (
 
 func TestFuncMap_ContainsExpectedKeys(t *testing.T) {
 	fm := FuncMap()
-	expected := []string{"add1", "sub", "subtract", "add", "loop", "formatBytes", "csrfToken", "default", "truncate"}
+	expected := []string{"add1", "sub", "subtract", "add", "loop", "formatBytes", "csrfToken", "default", "truncate", "T", "TF"}
 	for _, key := range expected {
 		assert.Contains(t, fm, key)
 	}

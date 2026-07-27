@@ -143,8 +143,8 @@ func (h *RoomHub) runLoop() {
 			log.Debug().Str("room", client.RoomID).Str("ip", client.RemoteIP).Msg("WebSocket client registered")
 
 		case client := <-h.unregister:
-			h.decConnection(client.RemoteIP)
 			h.mu.Lock()
+			h.decConnectionNoLock(client.RemoteIP)
 			if room, ok := h.rooms[client.RoomID]; ok {
 				delete(room, client)
 				if len(room) == 0 {

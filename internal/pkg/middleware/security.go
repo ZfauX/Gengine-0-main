@@ -69,8 +69,8 @@ func setCSPHeaders(c *gin.Context, nonce string) {
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
 
-	// HSTS только если запрос пришёл по HTTPS (проверяем X-Forwarded-Proto или scheme)
-	if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
+	// HSTS только если запрос пришёл по HTTPS
+	if c.Request.TLS != nil {
 		c.Header("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
 	}
 

@@ -11,7 +11,8 @@
     <link rel="manifest" href="/static/manifest.json">
     <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">arge_image">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="twitter:card" content="summary_large_image">
     <title>{{.Title}} · Encounter Engine</title>
     <!-- Accessibility -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -19,7 +20,7 @@
     <!-- Favicon -->
     <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/icon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/icon-16x16.png">
-    <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/icon-180x180.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/icon-192x192.png">
     <!-- Подключаем собранный Tailwind CSS (локально) -->
     <link rel="stylesheet" href="/static/css/output.css">
 
@@ -112,7 +113,10 @@
                         <a href="/games" class="nav-link text-gray-600 hover:text-blue-600">Игры</a>
                         <a href="/teams" class="nav-link text-gray-600 hover:text-blue-600">Команды</a>
                         <a href="/profile" class="nav-link text-gray-600 hover:text-blue-600">Профиль</a>
-                        <a href="/auth/logout" class="nav-link text-red-500 hover:text-red-700">Выйти</a>
+                        <form action="/auth/logout" method="POST" class="inline">
+                            <input type="hidden" name="_csrf" value="{{.csrf}}">
+                            <button type="submit" class="nav-link text-red-500 hover:text-red-700">Выйти</button>
+                        </form>
                     {{else}}
                         <a href="/auth/login" class="nav-link text-gray-600 hover:text-blue-600">Войти</a>
                         <a href="/auth/register" class="btn btn-primary text-sm">Регистрация</a>
@@ -136,7 +140,10 @@
                     <a href="/games" class="block px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100">Игры</a>
                     <a href="/teams" class="block px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100">Команды</a>
                     <a href="/profile" class="block px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100">Профиль</a>
-                    <a href="/auth/logout" class="block px-3 py-2 rounded-md text-red-500 hover:bg-red-50">Выйти</a>
+                    <form action="/auth/logout" method="POST" class="block">
+                        <input type="hidden" name="_csrf" value="{{.csrf}}">
+                        <button type="submit" class="block w-full text-left px-3 py-2 rounded-md text-red-500 hover:bg-red-50">Выйти</button>
+                    </form>
                 {{else}}
                     <a href="/auth/login" class="block px-3 py-2 rounded-md text-gray-700 hover:bg-gray-100">Войти</a>
                     <a href="/auth/register" class="block px-3 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700">Регистрация</a>

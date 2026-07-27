@@ -198,7 +198,7 @@ func (s *GameCRUDService) GetGameWithStats(ctx context.Context, gameID uint) (*G
 	}
 
 	if s.ratingService != nil {
-		avgRating, reviewsCount, err = s.ratingService.GetAverageRating(gameID)
+		avgRating, reviewsCount, err = s.ratingService.GetAverageRating(ctx, gameID)
 		if err != nil {
 			log.Warn().Err(err).Uint("game_id", gameID).Msg("GetGameWithStats: failed to get average rating")
 		}
@@ -220,5 +220,5 @@ func (s *GameCRUDService) GetAverageRating(ctx context.Context, gameID uint) (fl
 	if s.ratingService == nil {
 		return 0, 0, nil
 	}
-	return s.ratingService.GetAverageRating(gameID)
+	return s.ratingService.GetAverageRating(ctx, gameID)
 }

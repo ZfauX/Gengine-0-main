@@ -324,7 +324,7 @@ func (s *GameService) GetAverageRating(ctx context.Context, gameID uint) (float6
 		return avg, count, nil
 	}
 
-	avgRating, count, err := s.ratingService.GetAverageRating(gameID)
+	avgRating, count, err := s.ratingService.GetAverageRating(ctx, gameID)
 	if err != nil {
 		return 0, 0, err
 	}

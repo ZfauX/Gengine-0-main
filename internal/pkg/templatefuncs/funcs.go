@@ -4,11 +4,15 @@ package templatefuncs
 import (
 	"fmt"
 	"html/template"
+
+	"gengine-0/internal/pkg/i18n"
 )
 
 // FuncMap возвращает map с функциями для шаблонов.
 func FuncMap() template.FuncMap {
 	return template.FuncMap{
+		"T":           i18n.T,   // {{ T "home.welcome" }}
+		"TF":          i18n.TF,  // {{ TF "home.greeting" .Name }}
 		"add1":        add1,
 		"sub":         sub,
 		"subtract":    subtract,

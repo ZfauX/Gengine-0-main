@@ -63,12 +63,12 @@ func (s *ReviewService) ListByGame(ctx context.Context, gameID uint) ([]Review, 
 	return reviews, err
 }
 
-func (s *ReviewService) GetAverageRating(gameID uint) (float64, int64, error) {
+func (s *ReviewService) GetAverageRating(ctx context.Context, gameID uint) (float64, int64, error) {
 	var result struct {
 		Avg   float64
 		Count int64
 	}
-	err := s.DB.Model(&Review{}).
+	err := s.DB.WithContext(ctx).Model(&Review{}).
 		Where("game_id = ?", gameID).
 		Select("COALESCE(AVG(rating), 0) as avg, COUNT(*) as count").
 		Scan(&result).Error

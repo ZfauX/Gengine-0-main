@@ -2,10 +2,12 @@
 package user
 
 import (
+	"context"
 	"crypto/subtle"
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/pkg/audit"
@@ -346,6 +348,13 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 			log.Error().Err(genErr).Str("email", input.Email).Msg("ForgotPassword: failed to generate token")
 		} else if !h.cfg.SMTP.Enabled {
 			log.Info().Str("email", input.Email).Str("reset_code", resetCode).Msg("ForgotPassword: reset link (SMTP disabled, see log)")
+		} else if h.emailSvc != nil {
+			resetURL := h.cfg.Server.BaseURL + "/auth/reset/" + resetCode
+			subject := "Восстановление пароля"
+			body := fmt.Sprintf("Здравствуйте, %s!\n\nДля восстановления пароля перейдите по ссылке:\n%s\n\nЕсли вы не запрашивали восстановление пароля, проигнорируйте это письмо.\n\nС уважением,\nКоманда Gengine", user.Name, resetURL)
+			if sendErr := h.emailSvc.Send(user.Email, subject, body); sendErr != nil {
+				log.Error().Err(sendErr).Str("email", input.Email).Msg("ForgotPassword: failed to queue password reset email")
+			}
 		}
 	}
 
@@ -449,8 +458,21 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 		if h.emailSvc != nil {
 			if user, err := h.userService.GetByID(c.Request.Context(), userID); err == nil {
 				go func() {
-					if err := h.emailSvc.SendPasswordChangedEmail(user.Email, user.Name); err != nil {
-						log.Error().Err(err).Uint("user_id", userID).Msg("ResetPassword: failed to send password changed email")
+					ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+					defer cancel()
+
+					done := make(chan error, 1)
+					go func() {
+						done <- h.emailSvc.SendPasswordChangedEmail(user.Email, user.Name)
+					}()
+
+					select {
+					case <-ctx.Done():
+						log.Error().Err(ctx.Err()).Uint("user_id", userID).Msg("ResetPassword: timeout sending password changed email")
+					case err := <-done:
+						if err != nil {
+							log.Error().Err(err).Uint("user_id", userID).Msg("ResetPassword: failed to send password changed email")
+						}
 					}
 				}()
 			}

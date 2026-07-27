@@ -64,7 +64,7 @@ func NotificationsWS(hub *ws.RoomHub) gin.HandlerFunc {
 
 		log.Debug().Uint("user_id", userID).Str("room", roomID).Msg("NotificationsWS: connected")
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(c.Request.Context())
 		defer cancel()
 
 		go func() {

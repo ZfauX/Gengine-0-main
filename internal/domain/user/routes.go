@@ -49,17 +49,17 @@ func RegisterRoutes(
 
 		authGroup.POST("/register", middleware.RegistrationRateLimit(10*time.Minute, 3), authHandler.Register)
 
-		authGroup.GET("/logout", authHandler.Logout)
+		authGroup.POST("/logout", authHandler.Logout)
 
 		authGroup.POST("/logout-all", middleware.AuthRequired(authSvc), authHandler.LogoutAll)
 
 		authGroup.GET("/forgot", authHandler.ShowForgotForm)
 
-		authGroup.POST("/forgot", authHandler.ForgotPassword)
+		authGroup.POST("/forgot", middleware.PasswordResetRateLimit(1*time.Minute, 10), authHandler.ForgotPassword)
 
 		authGroup.GET("/reset/:resetCode", authHandler.ShowResetForm)
 
-		authGroup.POST("/reset", authHandler.ResetPassword)
+		authGroup.POST("/reset", middleware.PasswordResetRateLimit(1*time.Minute, 5), authHandler.ResetPassword)
 
 		authGroup.GET("/verify", authHandler.VerifyEmail)
 

@@ -131,7 +131,12 @@ func (h *WebAuthnHandler) BeginRegistration(c *gin.Context) {
 	}
 
 	sess := sessions.Default(c)
-	sessionDataJSON, _ := json.Marshal(sessionData)
+	sessionDataJSON, err := json.Marshal(sessionData)
+	if err != nil {
+		log.Error().Err(err).Msg("BeginRegistration: failed to marshal session data")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка"})
+		return
+	}
 	sess.Set(webauthnSessionKey, string(sessionDataJSON))
 	if input.Name != "" {
 		sess.Set(webauthnSessionKey+"_name", input.Name)
@@ -267,7 +272,12 @@ func (h *WebAuthnHandler) BeginLogin(c *gin.Context) {
 	}
 
 	sess := sessions.Default(c)
-	sessionDataJSON, _ := json.Marshal(sessionData)
+	sessionDataJSON, err := json.Marshal(sessionData)
+	if err != nil {
+		log.Error().Err(err).Msg("BeginLogin: failed to marshal session data")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка"})
+		return
+	}
 	sess.Set(webauthnLoginSessionKey, string(sessionDataJSON))
 	if err := sess.Save(); err != nil {
 		log.Error().Err(err).Msg("BeginLogin: failed to save session")

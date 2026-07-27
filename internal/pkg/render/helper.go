@@ -130,6 +130,10 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 		return
 	}
 
+	// Добавляем язык в данные шаблона для {{ T }}/{{ TF }} в шаблонах
+	lang := i18n.FromCtx(c)
+	data["lang"] = string(lang)
+
 	// Добавляем nonce в данные шаблона
 	nonce := middleware.GetCSPNonce(c)
 	data["csp_nonce"] = nonce
