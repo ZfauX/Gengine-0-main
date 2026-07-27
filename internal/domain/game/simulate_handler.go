@@ -44,6 +44,7 @@ func (h *SimulateHandler) Simulate(c *gin.Context) {
 		return
 	}
 	render.Page(c, http.StatusOK, "simulate-results.html", gin.H{
+		"Title":  "Симуляция",
 		"GameID": gameID,
 		"Result": result,
 	})

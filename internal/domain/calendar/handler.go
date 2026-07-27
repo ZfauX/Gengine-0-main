@@ -39,7 +39,9 @@ func NewCalendarHandler(gameRepo game.GameRepository) *CalendarHandler {
 // @Success 200 {string} html "Страница календаря"
 // @Router /calendar [get]
 func (h *CalendarHandler) CalendarPage(c *gin.Context) {
-	render.Page(c, http.StatusOK, "calendar-page.html", gin.H{})
+	render.Page(c, http.StatusOK, "calendar-page.html", gin.H{
+		"Title": "Календарь игр",
+	})
 }
 
 // CalendarData возвращает события календаря в JSON-формате.

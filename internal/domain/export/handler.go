@@ -129,6 +129,7 @@ func (h *ExportHandler) ImportGameForm(c *gin.Context) {
 	}
 
 	render.Page(c, http.StatusOK, "export_import-import.html", gin.H{
+		"Title":  "Импорт",
 		"GameID": gameID,
 		"csrf":   csrf.GetToken(c),
 	})
@@ -162,6 +163,7 @@ func (h *ExportHandler) ImportGame(c *gin.Context) {
 	file, header, err := c.Request.FormFile("csvfile")
 	if err != nil {
 		render.Page(c, http.StatusBadRequest, "export_import-import.html", gin.H{
+			"Title":  "Импорт",
 			"GameID": gameID,
 			"Error":  "Файл не выбран",
 			"csrf":   csrf.GetToken(c),
@@ -176,6 +178,7 @@ func (h *ExportHandler) ImportGame(c *gin.Context) {
 
 	if header.Size > importMaxFileSize {
 		render.Page(c, http.StatusBadRequest, "export_import-import.html", gin.H{
+			"Title":  "Импорт",
 			"GameID": gameID,
 			"Error":  "Размер файла не должен превышать 10 МБ",
 			"csrf":   csrf.GetToken(c),
@@ -186,6 +189,7 @@ func (h *ExportHandler) ImportGame(c *gin.Context) {
 	contentType := header.Header.Get("Content-Type")
 	if contentType != "text/csv" && contentType != "application/csv" {
 		render.Page(c, http.StatusBadRequest, "export_import-import.html", gin.H{
+			"Title":  "Импорт",
 			"GameID": gameID,
 			"Error":  "Допустимы только CSV-файлы",
 			"csrf":   csrf.GetToken(c),
@@ -196,6 +200,7 @@ func (h *ExportHandler) ImportGame(c *gin.Context) {
 	if err := h.exportService.ImportGameFromCSV(h.db.WithContext(c.Request.Context()), gameID, file); err != nil {
 		log.Error().Err(err).Uint("game_id", gameID).Msg("ImportGame: failed to import game from CSV")
 		render.Page(c, http.StatusInternalServerError, "export_import-import.html", gin.H{
+			"Title":  "Импорт",
 			"GameID": gameID,
 			"Error":  "Ошибка импорта",
 			"csrf":   csrf.GetToken(c),

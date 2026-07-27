@@ -71,6 +71,7 @@ func (h *PassingHandler) ListPassings(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "game_passings-list.html", gin.H{
+		"Title":         "Заявки на участие",
 		"GameID":        gameID,
 		"Passings":      passings,
 		"UserID":        userID,
@@ -106,6 +107,7 @@ func (h *PassingHandler) ApplyForm(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "game_passings-apply.html", gin.H{
+		"Title":         "Подать заявку",
 		"GameID":        gameID,
 		"Teams":         teams,
 		"csrf":          csrf.GetToken(c),
@@ -139,6 +141,7 @@ func (h *PassingHandler) Apply(c *gin.Context) {
 			teams = t
 		}
 		render.Page(c, http.StatusBadRequest, "game_passings-apply.html", gin.H{
+			"Title":  "Подать заявку",
 			"GameID": gameID,
 			"Teams":  teams,
 			"Error":  errMsg,

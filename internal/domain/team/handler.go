@@ -93,6 +93,7 @@ func (h *TeamHandler) MyTeams(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "teams-my.html", gin.H{
+		"Title":         "Мои команды",
 		"Teams":         teams,
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,
@@ -116,6 +117,7 @@ func (h *TeamHandler) NewTeamForm(c *gin.Context) {
 	userID := c.GetUint("userID")
 	isAdmin := middleware.IsAdmin(c)
 	render.Page(c, http.StatusOK, "teams-new.html", gin.H{
+		"Title":         "Создание команды",
 		"csrf":          csrf.GetToken(c),
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,
@@ -148,6 +150,7 @@ func (h *TeamHandler) CreateTeam(c *gin.Context) {
 			errs.Add("form", err)
 		}
 		render.Page(c, http.StatusBadRequest, "teams-new.html", gin.H{
+			"Title":  "Создание команды",
 			"Error":  errs.Error(),
 			"Errors": errs,
 			"csrf":   csrf.GetToken(c),
@@ -162,6 +165,7 @@ func (h *TeamHandler) CreateTeam(c *gin.Context) {
 	team, err := h.teamService.CreateTeam(c.Request.Context(), cleanName, userID)
 	if err != nil {
 		render.Page(c, http.StatusBadRequest, "teams-new.html", gin.H{
+			"Title": "Создание команды",
 			"Error": err.Error(),
 			"csrf":  csrf.GetToken(c),
 		})
@@ -206,6 +210,7 @@ func (h *TeamHandler) ViewTeam(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "teams-members.html", gin.H{
+		"Title":         "Участники команды",
 		"Team":          team,
 		"Members":       members,
 		"CanManage":     canManage,
@@ -245,6 +250,7 @@ func (h *TeamHandler) Members(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "teams-members.html", gin.H{
+		"Title":         "Участники команды",
 		"GameID":        c.Param("game_id"),
 		"TeamID":        req.TeamID,
 		"Team":          team,
@@ -281,6 +287,7 @@ func (h *TeamHandler) AddMemberForm(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "teams-add_member.html", gin.H{
+		"Title":         "Добавить участника",
 		"GameID":        c.Param("game_id"),
 		"TeamID":        req.TeamID,
 		"Users":         availableUsers,
@@ -320,6 +327,7 @@ func (h *TeamHandler) AddMember(c *gin.Context) {
 	if err := validation.ValidatePositiveUint("ID пользователя", input.UserID); err != nil {
 		errs.Add("user_id", err)
 		render.Page(c, http.StatusBadRequest, "teams-add_member.html", gin.H{
+			"Title":  "Добавить участника",
 			"GameID": c.Param("game_id"),
 			"TeamID": req.TeamID,
 			"Error":  errs.Error(),
@@ -387,6 +395,7 @@ func (h *TeamHandler) ChangeCaptainForm(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "teams-change_captain.html", gin.H{
+		"Title":         "Смена капитана",
 		"GameID":        c.Param("game_id"),
 		"TeamID":        req.TeamID,
 		"Members":       members,
@@ -408,6 +417,7 @@ func (h *TeamHandler) ChangeCaptain(c *gin.Context) {
 	var input ChangeCaptainInput
 	if err := c.ShouldBind(&input); err != nil {
 		render.Page(c, http.StatusBadRequest, "teams-change_captain.html", gin.H{
+			"Title": "Смена капитана",
 			"Error": "Неверные данные: " + err.Error(),
 			"csrf":  csrf.GetToken(c),
 		})
@@ -417,6 +427,7 @@ func (h *TeamHandler) ChangeCaptain(c *gin.Context) {
 	// Валидация ID нового капитана
 	if err := validation.ValidatePositiveUint("ID капитана", input.CaptainID); err != nil {
 		render.Page(c, http.StatusBadRequest, "teams-change_captain.html", gin.H{
+			"Title": "Смена капитана",
 			"Error": err.Error(),
 			"csrf":  csrf.GetToken(c),
 		})
@@ -465,6 +476,7 @@ func (h *InvitationHandler) Index(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "invitations-index.html", gin.H{
+		"Title":         "Приглашения",
 		"GameID":        c.Param("game_id"),
 		"TeamID":        req.TeamID,
 		"Invitations":   invitations,
@@ -485,6 +497,7 @@ func (h *InvitationHandler) NewForm(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "invitations-new.html", gin.H{
+		"Title":         "Новое приглашение",
 		"GameID":        c.Param("game_id"),
 		"TeamID":        req.TeamID,
 		"csrf":          csrf.GetToken(c),
@@ -510,6 +523,7 @@ func (h *InvitationHandler) Create(c *gin.Context) {
 			errs.Add("form", err)
 		}
 		render.Page(c, http.StatusBadRequest, "invitations-new.html", gin.H{
+			"Title":  "Новое приглашение",
 			"GameID": c.Param("game_id"),
 			"TeamID": req.TeamID,
 			"Error":  errs.Error(),
@@ -522,7 +536,8 @@ func (h *InvitationHandler) Create(c *gin.Context) {
 	// Валидация ID пользователя
 	if err := validation.ValidatePositiveUint("ID пользователя", input.UserID); err != nil {
 		errs.Add("user_id", err)
-		render.Page(c, http.StatusBadRequest, "invitations-new.html", gin.H{
+		render.Page(c, http.StatusBadRequest, "teams-add_member.html", gin.H{
+			"Title":  "Добавить участника",
 			"GameID": c.Param("game_id"),
 			"TeamID": req.TeamID,
 			"Error":  errs.Error(),
@@ -536,6 +551,7 @@ func (h *InvitationHandler) Create(c *gin.Context) {
 	if err != nil {
 		log.Error().Err(err).Uint("team_id", req.TeamID).Uint("invited_user", input.UserID).Uint("inviter", userID).Msg("InvitationHandler.Create: failed to create invitation")
 		render.Page(c, http.StatusInternalServerError, "invitations-new.html", gin.H{
+			"Title": "Новое приглашение",
 			"Error": err.Error(),
 			"csrf":  csrf.GetToken(c),
 		})
@@ -565,6 +581,7 @@ func (h *InvitationHandler) MyInvitations(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "invitations-my.html", gin.H{
+		"Title":         "Мои приглашения",
 		"Invitations":   invitations,
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,

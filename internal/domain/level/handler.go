@@ -155,6 +155,7 @@ func (h *LevelHandler) ListByGame(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	data := gin.H{
+		"Title":         "Уровни",
 		"GameID":        gameID,
 		"Levels":        levels,
 		"csrf":          csrf.GetToken(c),
@@ -196,6 +197,7 @@ func (h *LevelHandler) NewForm(c *gin.Context) {
 
 	isAdmin := middleware.IsAdmin(c)
 	data := gin.H{
+		"Title":         "Новый уровень",
 		"GameID":        gameID,
 		"csrf":          csrf.GetToken(c),
 		"CurrentUserID": userID,
@@ -259,6 +261,7 @@ func (h *LevelHandler) Create(c *gin.Context) {
 			errs.Add("form", err)
 		}
 		render.Page(c, http.StatusBadRequest, "levels-new.html", gin.H{
+			"Title":  "Новый уровень",
 			"GameID": gameID,
 			"Error":  errs.Error(),
 			"Errors": errs,
@@ -283,6 +286,7 @@ func (h *LevelHandler) Create(c *gin.Context) {
 	if err := h.levelService.Create(c.Request.Context(), uint(gameID), level, userID); err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Uint("user", userID).Msg("Create: failed to create level")
 		render.Page(c, http.StatusInternalServerError, "levels-new.html", gin.H{
+			"Title":  "Новый уровень",
 			"GameID": gameID,
 			"Error":  err.Error(),
 			"csrf":   csrf.GetToken(c),
@@ -345,6 +349,7 @@ func (h *LevelHandler) EditForm(c *gin.Context) {
 	}
 
 	data := gin.H{
+		"Title":         "Редактирование уровня",
 		"Level":         level,
 		"GameID":        gameID,
 		"csrf":          csrf.GetToken(c),
@@ -411,6 +416,7 @@ func (h *LevelHandler) Update(c *gin.Context) {
 			errs.Add("form", err)
 		}
 		render.Page(c, http.StatusBadRequest, "levels-edit.html", gin.H{
+			"Title":  "Редактирование уровня",
 			"Error":  errs.Error(),
 			"Errors": errs,
 			"csrf":   csrf.GetToken(c),
@@ -434,12 +440,14 @@ func (h *LevelHandler) Update(c *gin.Context) {
 	if err := h.levelService.Update(c.Request.Context(), uint(levelID), updated, userID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			render.Page(c, http.StatusNotFound, "levels-edit.html", gin.H{
+				"Title": "Редактирование уровня",
 				"Error": "Уровень не найден",
 				"csrf":  csrf.GetToken(c),
 			})
 		} else {
 			log.Error().Err(err).Int("level_id", levelID).Uint("user", userID).Msg("Update: failed to update level")
 			render.Page(c, http.StatusInternalServerError, "levels-edit.html", gin.H{
+				"Title": "Редактирование уровня",
 				"Level": updated,
 				"Error": err.Error(),
 				"csrf":  csrf.GetToken(c),
@@ -608,6 +616,7 @@ func (h *LevelHandler) ListQuestions(c *gin.Context) {
 	}
 
 	data := gin.H{
+		"Title":         "Вопросы",
 		"LevelID":       levelID,
 		"GameID":        level.GameID,
 		"Questions":     questions,
@@ -659,6 +668,7 @@ func (h *LevelHandler) NewQuestionForm(c *gin.Context) {
 	}
 
 	render.Page(c, http.StatusOK, "questions-new.html", gin.H{
+		"Title":         "Новый вопрос",
 		"LevelID":       levelID,
 		"GameID":        level.GameID,
 		"csrf":          csrf.GetToken(c),
@@ -691,6 +701,7 @@ func (h *LevelHandler) CreateQuestion(c *gin.Context) {
 	var input CreateQuestionInput
 	if err := c.ShouldBind(&input); err != nil {
 		render.Page(c, http.StatusBadRequest, "questions-new.html", gin.H{
+			"Title":   "Новый вопрос",
 			"LevelID": levelID,
 			"Error":   "Неверные данные: " + err.Error(),
 			"csrf":    csrf.GetToken(c),
@@ -706,6 +717,7 @@ func (h *LevelHandler) CreateQuestion(c *gin.Context) {
 	if err := h.questionService.Create(c.Request.Context(), uint(levelID), question, userID); err != nil {
 		log.Error().Err(err).Int("level_id", levelID).Uint("user", userID).Msg("CreateQuestion: failed to create question")
 		render.Page(c, http.StatusInternalServerError, "questions-new.html", gin.H{
+			"Title":   "Новый вопрос",
 			"LevelID": levelID,
 			"Error":   err.Error(),
 			"csrf":    csrf.GetToken(c),
@@ -774,6 +786,7 @@ func (h *LevelHandler) EditQuestionForm(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "questions-edit.html", gin.H{
+		"Title":         "Редактирование вопроса",
 		"Question":      question,
 		"GameID":        level.GameID,
 		"LevelID":       question.LevelID,
@@ -808,6 +821,7 @@ func (h *LevelHandler) UpdateQuestion(c *gin.Context) {
 	var input UpdateQuestionInput
 	if err := c.ShouldBind(&input); err != nil {
 		render.Page(c, http.StatusBadRequest, "questions-edit.html", gin.H{
+			"Title": "Редактирование вопроса",
 			"Error": "Неверные данные: " + err.Error(),
 			"csrf":  csrf.GetToken(c),
 		})
@@ -822,6 +836,7 @@ func (h *LevelHandler) UpdateQuestion(c *gin.Context) {
 	if err := h.questionService.Update(c.Request.Context(), uint(questionID), updated, userID); err != nil {
 		log.Error().Err(err).Int("question_id", questionID).Uint("user", userID).Msg("UpdateQuestion: failed to update question")
 		render.Page(c, http.StatusInternalServerError, "questions-edit.html", gin.H{
+			"Title":    "Редактирование вопроса",
 			"Question": updated,
 			"Error":    err.Error(),
 			"csrf":     csrf.GetToken(c),
@@ -932,6 +947,7 @@ func (h *LevelHandler) ListAnswers(c *gin.Context) {
 	}
 
 	data := gin.H{
+		"Title":         "Ответы",
 		"QuestionID":    questionID,
 		"GameID":        level.GameID,
 		"LevelID":       question.LevelID,
@@ -976,6 +992,7 @@ func (h *LevelHandler) CreateAnswer(c *gin.Context) {
 	var input CreateAnswerInput
 	if err := c.ShouldBind(&input); err != nil {
 		render.Page(c, http.StatusBadRequest, "answers-list.html", gin.H{
+			"Title":      "Ответы",
 			"QuestionID": questionID,
 			"Error":      "Неверные данные: " + err.Error(),
 			"csrf":       csrf.GetToken(c),
@@ -990,6 +1007,7 @@ func (h *LevelHandler) CreateAnswer(c *gin.Context) {
 	if err := h.answerService.Create(c.Request.Context(), uint(questionID), answer, userID); err != nil {
 		log.Error().Err(err).Int("question_id", questionID).Uint("user", userID).Msg("CreateAnswer: failed to create answer")
 		render.Page(c, http.StatusInternalServerError, "answers-list.html", gin.H{
+			"Title":      "Ответы",
 			"QuestionID": questionID,
 			"Error":      err.Error(),
 			"csrf":       csrf.GetToken(c),

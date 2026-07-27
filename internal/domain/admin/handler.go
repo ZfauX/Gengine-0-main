@@ -110,6 +110,7 @@ func (h *AdminHandler) Dashboard(c *gin.Context) {
 	}
 
 	render.Page(c, http.StatusOK, "admin-dashboard.html", gin.H{
+		"Title":         "Админ-панель",
 		"UserCount":     userCount,
 		"GameCount":     gameCount,
 		"AuditCount":    auditCount,
@@ -180,6 +181,7 @@ func (h *AdminHandler) ListUsers(c *gin.Context) {
 	errorFlash := render.GetFlash(c, "error")
 
 	render.Page(c, http.StatusOK, "admin-users.html", gin.H{
+		"Title":         "Пользователи",
 		"Users":         users,
 		"Role":          req.Role,
 		"Page":          req.Page,
@@ -354,6 +356,7 @@ func (h *AdminHandler) ListGames(c *gin.Context) {
 	errorFlash := render.GetFlash(c, "error")
 
 	render.Page(c, http.StatusOK, "admin-games.html", gin.H{
+		"Title":         "Игры",
 		"Games":         games,
 		"Status":        req.Status,
 		"Page":          req.Page,
@@ -457,6 +460,7 @@ func (h *AdminHandler) AuditLog(c *gin.Context) {
 	}
 
 	render.Page(c, http.StatusOK, "admin-audit.html", gin.H{
+		"Title":         "Журнал аудита",
 		"Logs":          logs,
 		"Page":          req.Page,
 		"TotalPages":    totalPages,
@@ -491,6 +495,7 @@ func (h *AdminHandler) ListBackups(c *gin.Context) {
 	}
 	maxBackups := h.backupService.GetMaxBackups()
 	render.Page(c, http.StatusOK, "admin-backups.html", gin.H{
+		"Title":         "Резервные копии",
 		"Backups":       backups,
 		"MaxBackups":    maxBackups,
 		"Count":         len(backups),

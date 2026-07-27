@@ -199,6 +199,7 @@ func (app *App) setupEngine(r *gin.Engine) error {
 			c.Header("Cache-Control", "no-cache, private")
 		}
 		render.Page(c, http.StatusOK, "home.html", gin.H{
+			"Title":         "Главная",
 			"CurrentUserID": userID,
 			"IsAdmin":       role == "admin",
 			"csrf":          csrf.GetToken(c),

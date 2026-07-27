@@ -3,6 +3,7 @@ package middleware
 
 import (
 	"fmt"
+	"html"
 	"net/http"
 	"strings"
 
@@ -22,7 +23,7 @@ func renderErrorHTML(c *gin.Context, status int, title, message string) {
 .card{background:#fff;border-radius:1rem;padding:3rem;text-align:center;max-width:400px;box-shadow:0 10px 25px rgba(0,0,0,0.1)}
 h1{color:#111827;font-size:1.5rem;margin-bottom:.5rem}p{color:#6b7280;margin-bottom:1.5rem}
 a{display:inline-block;padding:.75rem 1.5rem;background:#2563eb;color:#fff;border-radius:.5rem;text-decoration:none;font-weight:500}
-a:hover{background:#1d4ed8}</style></head><body><div class="card"><h1>%s</h1><p>%s</p><a href="/">На главную</a></div></body></html>`, title, title, message)
+a:hover{background:#1d4ed8}</style></head><body><div class="card"><h1>%s</h1><p>%s</p><a href="/">На главную</a></div></body></html>`, title, title, html.EscapeString(message))
 	_, _ = c.Writer.Write([]byte(body))
 	c.Abort()
 }
@@ -80,5 +81,5 @@ func ErrorHandler() gin.HandlerFunc {
 // isHTMLRequest проверяет Accept-заголовок запроса на наличие text/html.
 func isHTMLRequest(c *gin.Context) bool {
 	accept := c.GetHeader("Accept")
-	return strings.Contains(accept, "text/html")
+	return strings.Contains(strings.ToLower(accept), "text/html")
 }

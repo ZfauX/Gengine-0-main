@@ -81,6 +81,7 @@ func (h *DashboardHandler) Index(c *gin.Context) {
 
 	isAdmin := middleware.IsAdmin(c)
 	render.Page(c, http.StatusOK, "dashboard-index.html", gin.H{
+		"Title":         "Личный кабинет",
 		"Dashboard":     dash,
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,

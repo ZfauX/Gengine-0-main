@@ -68,7 +68,8 @@ func NewAuthHandler(
 // @Router /auth/login [get]
 func (h *AuthHandler) ShowLoginForm(c *gin.Context) {
 	render.Page(c, http.StatusOK, "auth-login.html", gin.H{
-		"csrf": csrf.GetToken(c),
+		"Title": "Вход",
+		"csrf":  csrf.GetToken(c),
 		"Breadcrumbs": []map[string]string{
 			{"name": "Главная", "url": "/"},
 			{"name": "Вход"},
@@ -98,6 +99,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			errs.Add("form", fmt.Errorf("некорректные данные: %v", err))
 		}
 		render.Page(c, http.StatusBadRequest, "auth-login.html", gin.H{
+			"Title":  "Вход",
 			"Errors": errs,
 			"Error":  errs.Error(),
 			"csrf":   csrf.GetToken(c),
@@ -108,6 +110,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	token, err := h.authSvc.Login(c.Request.Context(), input.Email, input.Password)
 	if err != nil {
 		render.Page(c, http.StatusUnauthorized, "auth-login.html", gin.H{
+			"Title":  "Вход",
 			"Errors": validation.FieldErrors{"email": "Неверный email или пароль"},
 			"Error":  "Неверный email или пароль",
 			"csrf":   csrf.GetToken(c),
@@ -233,7 +236,8 @@ func (h *AuthHandler) LogoutAll(c *gin.Context) {
 // @Router /auth/register [get]
 func (h *AuthHandler) ShowRegisterForm(c *gin.Context) {
 	render.Page(c, http.StatusOK, "auth-register.html", gin.H{
-		"csrf": csrf.GetToken(c),
+		"Title": "Регистрация",
+		"csrf":  csrf.GetToken(c),
 		"Breadcrumbs": []map[string]string{
 			{"name": "Главная", "url": "/"},
 			{"name": "Регистрация"},
@@ -266,6 +270,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 			errs.Add("form", fmt.Errorf("некорректные данные: %v", err))
 		}
 		render.Page(c, http.StatusBadRequest, "auth-register.html", gin.H{
+			"Title":  "Регистрация",
 			"Errors": errs,
 			"Error":  errs.Error(),
 			"csrf":   csrf.GetToken(c),
@@ -278,6 +283,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	if err := validation.ValidatePasswordStrength(input.Password); err != nil {
 		render.Page(c, http.StatusBadRequest, "auth-register.html", gin.H{
+			"Title":  "Регистрация",
 			"Errors": validation.FieldErrors{"password": err.Error()},
 			"Error":  err.Error(),
 			"csrf":   csrf.GetToken(c),
@@ -288,6 +294,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	user, err := h.authSvc.Register(c.Request.Context(), cleanEmail, input.Password, cleanName)
 	if err != nil {
 		render.Page(c, http.StatusConflict, "auth-register.html", gin.H{
+			"Title":  "Регистрация",
 			"Errors": validation.FieldErrors{"email": "Email уже зарегистрирован"},
 			"Error":  "Email уже зарегистрирован",
 			"csrf":   csrf.GetToken(c),
@@ -310,7 +317,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 // @Router /auth/forgot [get]
 func (h *AuthHandler) ShowForgotForm(c *gin.Context) {
 	render.Page(c, http.StatusOK, "auth-forgot.html", gin.H{
-		"csrf": csrf.GetToken(c),
+		"Title": "Восстановление пароля",
+		"csrf":  csrf.GetToken(c),
 	})
 }
 
@@ -333,6 +341,7 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 			errs.Add("email", fmt.Errorf("некорректный email"))
 		}
 		render.Page(c, http.StatusBadRequest, "auth-forgot.html", gin.H{
+			"Title":  "Восстановление пароля",
 			"Errors": errs,
 			"Error":  errs.Error(),
 			"csrf":   csrf.GetToken(c),
@@ -361,6 +370,7 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 
 	// Всегда показываем одинаковое сообщение — не раскрываем, существует ли email
 	render.Page(c, http.StatusOK, "auth-forgot.html", gin.H{
+		"Title":   "Восстановление пароля",
 		"Message": "Если указанный email зарегистрирован, мы отправили инструкции по восстановлению пароля",
 		"csrf":    csrf.GetToken(c),
 	})
@@ -383,12 +393,14 @@ func (h *AuthHandler) ShowResetForm(c *gin.Context) {
 	}
 	if _, err := h.passwordResetSvc.passResetRepo.GetTokenByResetCode(c.Request.Context(), resetCode); err != nil {
 		render.Page(c, http.StatusBadRequest, "auth-reset.html", gin.H{
+			"Title": "Сброс пароля",
 			"Error": "Недействительная или истёкшая ссылка для сброса пароля",
 			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
 	render.Page(c, http.StatusOK, "auth-reset.html", gin.H{
+		"Title":     "Сброс пароля",
 		"ResetCode": resetCode,
 		"csrf":      csrf.GetToken(c),
 	})
@@ -414,6 +426,7 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 			errs.Add("form", fmt.Errorf("некорректные данные: %v", err))
 		}
 		render.Page(c, http.StatusBadRequest, "auth-reset.html", gin.H{
+			"Title":     "Сброс пароля",
 			"ResetCode": c.PostForm("reset_code"),
 			"Errors":    errs,
 			"Error":     errs.Error(),
@@ -430,6 +443,7 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 
 	if err := validation.ValidatePasswordStrength(input.Password); err != nil {
 		render.Page(c, http.StatusBadRequest, "auth-reset.html", gin.H{
+			"Title":     "Сброс пароля",
 			"ResetCode": input.ResetCode,
 			"Errors":    validation.FieldErrors{"password": err.Error()},
 			"Error":     err.Error(),
@@ -441,6 +455,7 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	if err := h.passwordResetSvc.ResetPassword(c.Request.Context(), input.ResetCode, input.Password); err != nil {
 		log.Warn().Err(err).Msg("ResetPassword: failed")
 		render.Page(c, http.StatusBadRequest, "auth-reset.html", gin.H{
+			"Title":     "Сброс пароля",
 			"ResetCode": input.ResetCode,
 			"Errors":    validation.FieldErrors{},
 			"Error":     "Не удалось сбросить пароль. Проверьте ссылку и попробуйте снова.",
@@ -496,6 +511,7 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 	var req VerifyEmailRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
 		render.Page(c, http.StatusBadRequest, "auth-verify_error.html", gin.H{
+			"Title": "Ошибка",
 			"Error": "Неверный или отсутствующий код подтверждения",
 		})
 		return
@@ -503,11 +519,14 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 
 	if _, err := h.emailVerificationSvc.VerifyByCode(c.Request.Context(), req.Code); err != nil {
 		render.Page(c, http.StatusBadRequest, "auth-verify_error.html", gin.H{
+			"Title": "Ошибка",
 			"Error": err.Error(),
 		})
 		return
 	}
-	render.Page(c, http.StatusOK, "auth-verify_success.html", gin.H{})
+	render.Page(c, http.StatusOK, "auth-verify_success.html", gin.H{
+		"Title": "Email подтверждён",
+	})
 }
 
 // OAuthLogin перенаправляет на страницу OAuth-провайдера.
@@ -556,6 +575,7 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 	var req OAuthProviderRequest
 	if err := c.ShouldBindUri(&req); err != nil {
 		render.Page(c, http.StatusBadRequest, "auth-login.html", gin.H{
+			"Title": "Вход",
 			"Error": "Неверный провайдер",
 			"csrf":  csrf.GetToken(c),
 		})
@@ -566,6 +586,7 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 	state := c.Query("state")
 	if code == "" {
 		render.Page(c, http.StatusBadRequest, "auth-login.html", gin.H{
+			"Title": "Вход",
 			"Error": "Отсутствует код авторизации",
 			"csrf":  csrf.GetToken(c),
 		})
@@ -578,6 +599,7 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 	if !ok || subtle.ConstantTimeCompare([]byte(savedStateStr), []byte(state)) != 1 {
 		log.Warn().Str("provider", req.Provider).Str("state", state).Msg("OAuthCallback: state mismatch")
 		render.Page(c, http.StatusBadRequest, "auth-login.html", gin.H{
+			"Title": "Вход",
 			"Error": "Ошибка авторизации: неверный параметр state",
 			"csrf":  csrf.GetToken(c),
 		})
@@ -592,11 +614,13 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			render.Page(c, http.StatusBadRequest, "auth-login.html", gin.H{
+				"Title": "Вход",
 				"Error": "Пользователь не найден",
 				"csrf":  csrf.GetToken(c),
 			})
 		} else {
 			render.Page(c, http.StatusBadRequest, "auth-login.html", gin.H{
+				"Title": "Вход",
 				"Error": "Ошибка входа через " + req.Provider,
 				"csrf":  csrf.GetToken(c),
 			})
@@ -607,6 +631,7 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 	token, err := h.authSvc.GenerateJWT(*user)
 	if err != nil {
 		render.Page(c, http.StatusInternalServerError, "auth-login.html", gin.H{
+			"Title": "Вход",
 			"Error": "Внутренняя ошибка",
 			"csrf":  csrf.GetToken(c),
 		})

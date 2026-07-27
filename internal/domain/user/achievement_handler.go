@@ -39,6 +39,7 @@ func (h *AchievementHandler) List(c *gin.Context) {
 		return
 	}
 	render.Page(c, http.StatusOK, "achievements-list.html", gin.H{
+		"Title":         "Достижения",
 		"Achievements":  achievements,
 		"CurrentUserID": userID,
 	})

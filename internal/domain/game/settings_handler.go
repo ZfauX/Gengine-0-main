@@ -82,6 +82,7 @@ func (h *SettingsHandler) SettingsPage(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "games-settings.html", gin.H{
+		"Title":         "Настройки игры",
 		"Game":          g,
 		"Settings":      settings,
 		"csrf":          csrf.GetToken(c),
@@ -111,6 +112,7 @@ func (h *SettingsHandler) SaveSettings(c *gin.Context) {
 	if limitErr := limitRequestBody(c, 1*1024*1024); limitErr != nil {
 		g, _ := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID)
 		render.Page(c, http.StatusBadRequest, "games-settings.html", gin.H{
+			"Title": "Настройки игры",
 			"Game":  g,
 			"Error": limitErr.Error(),
 			"csrf":  csrf.GetToken(c),
@@ -141,6 +143,7 @@ func (h *SettingsHandler) SaveSettings(c *gin.Context) {
 	if perLevelTimeLimit > 3600 {
 		g, _ := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID)
 		render.Page(c, http.StatusBadRequest, "games-settings.html", gin.H{
+			"Title": "Настройки игры",
 			"Game":  g,
 			"Error": "Лимит времени на уровень не может превышать 3600 минут",
 			"csrf":  csrf.GetToken(c),
@@ -176,6 +179,7 @@ func (h *SettingsHandler) SaveSettings(c *gin.Context) {
 	if err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Msg("SettingsHandler.SaveSettings: failed to save settings")
 		render.Page(c, http.StatusInternalServerError, "games-settings.html", gin.H{
+			"Title":    "Настройки игры",
 			"Game":     g,
 			"Settings": *settings,
 			"Error":    "Ошибка сохранения: " + err.Error(),

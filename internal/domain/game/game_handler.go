@@ -145,6 +145,7 @@ func (h *GameHandler) List(c *gin.Context) {
 		"PerPage":       perPage,
 		"TotalPages":    totalPages,
 		"Total":         total,
+		"Title":         "Игры",
 		"Breadcrumbs": []map[string]string{
 			{"name": "Главная", "url": "/"},
 			{"name": "Игры"},
@@ -212,6 +213,7 @@ func (h *GameHandler) Show(c *gin.Context) {
 		"CanApply":      canApply,
 		"csrf":          csrf.GetToken(c),
 		"BaseURL":       c.Request.Host,
+		"Title":         g.Name + " · Encounter Engine",
 		"Breadcrumbs": []map[string]string{
 			{"name": "Главная", "url": "/"},
 			{"name": "Игры", "url": "/games"},
@@ -230,7 +232,8 @@ func (h *GameHandler) Show(c *gin.Context) {
 // @Security JWT
 func (h *GameHandler) NewForm(c *gin.Context) {
 	render.Page(c, http.StatusOK, "games-new.html", gin.H{
-		"csrf": csrf.GetToken(c),
+		"csrf":  csrf.GetToken(c),
+		"Title": "Создание игры",
 		"Breadcrumbs": []map[string]string{
 			{"name": "Главная", "url": "/"},
 			{"name": "Игры", "url": "/games"},
@@ -263,6 +266,7 @@ func (h *GameHandler) Create(c *gin.Context) {
 			"Error":  errs.Error(),
 			"Errors": errs,
 			"csrf":   csrf.GetToken(c),
+			"Title":  "Создание игры",
 		})
 		return
 	}
@@ -282,6 +286,7 @@ func (h *GameHandler) Create(c *gin.Context) {
 			"Error":  errs.Error(),
 			"Errors": errs,
 			"csrf":   csrf.GetToken(c),
+			"Title":  "Создание игры",
 		})
 		return
 	}
@@ -294,6 +299,7 @@ func (h *GameHandler) Create(c *gin.Context) {
 			"Error":  errs.Error(),
 			"Errors": errs,
 			"csrf":   csrf.GetToken(c),
+			"Title":  "Создание игры",
 		})
 		return
 	}
@@ -305,6 +311,7 @@ func (h *GameHandler) Create(c *gin.Context) {
 			"Error":  errs.Error(),
 			"Errors": errs,
 			"csrf":   csrf.GetToken(c),
+			"Title":  "Создание игры",
 		})
 		return
 	}
@@ -315,6 +322,7 @@ func (h *GameHandler) Create(c *gin.Context) {
 			"Error":  errs.Error(),
 			"Errors": errs,
 			"csrf":   csrf.GetToken(c),
+			"Title":  "Создание игры",
 		})
 		return
 	}
@@ -341,6 +349,7 @@ func (h *GameHandler) Create(c *gin.Context) {
 			"Error":  errs.Error(),
 			"Errors": errs,
 			"csrf":   csrf.GetToken(c),
+			"Title":  "Создание игры",
 		})
 		return
 	}
@@ -395,6 +404,7 @@ func (h *GameHandler) EditForm(c *gin.Context) {
 		"csrf":          csrf.GetToken(c),
 		"CurrentUserID": userID,
 		"IsAdmin":       middleware.IsAdmin(c),
+		"Title":         "Редактирование игры",
 		"Breadcrumbs": []map[string]string{
 			{"name": "Главная", "url": "/"},
 			{"name": "Игры", "url": "/games"},

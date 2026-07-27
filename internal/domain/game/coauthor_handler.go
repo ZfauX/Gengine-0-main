@@ -60,6 +60,7 @@ func (h *CoAuthorHandler) ManageCoAuthors(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "co_authors-manage.html", gin.H{
+		"Title":         "Соавторы",
 		"GameID":        gameID,
 		"CoAuthors":     coAuthors,
 		"csrf":          csrf.GetToken(c),
@@ -75,6 +76,7 @@ func (h *CoAuthorHandler) renderCoAuthorManagePage(c *gin.Context, gameID int, e
 		log.Error().Err(listErr).Int("game_id", gameID).Msg("AddCoAuthor: failed to list coauthors")
 	}
 	data := gin.H{
+		"Title":         "Соавторы",
 		"GameID":        gameID,
 		"CoAuthors":     coAuthors,
 		"Error":         errs.Error(),

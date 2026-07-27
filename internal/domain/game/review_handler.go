@@ -48,6 +48,7 @@ func (h *ReviewHandler) ShowForm(c *gin.Context) {
 	}
 
 	render.Page(c, http.StatusOK, "reviews-new.html", gin.H{
+		"Title":  "Отзывы",
 		"GameID": gameID,
 	})
 }
@@ -82,6 +83,7 @@ func (h *ReviewHandler) Create(c *gin.Context) {
 	}
 	if errs.HasErrors() {
 		render.Page(c, http.StatusOK, "reviews-new.html", gin.H{
+			"Title":  "Отзывы",
 			"GameID": gameID,
 			"Error":  errs.Error(),
 			"Errors": errs,
@@ -91,6 +93,7 @@ func (h *ReviewHandler) Create(c *gin.Context) {
 
 	if err := h.reviewService.Create(uint(gameID), userID, rating, comment); err != nil {
 		render.Page(c, http.StatusOK, "reviews-new.html", gin.H{
+			"Title":  "Отзывы",
 			"GameID": gameID,
 			"Error":  err.Error(),
 		})

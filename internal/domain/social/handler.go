@@ -191,6 +191,7 @@ func (h *FollowHandler) Subscriptions(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "follow-list.html", gin.H{
+		"Title":         "Подписки",
 		"Authors":       authors,
 		"csrf":          csrf.GetToken(c),
 		"CurrentUserID": userID,

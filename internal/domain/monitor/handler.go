@@ -123,6 +123,7 @@ func (h *MonitorHandler) MonitorPage(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "monitor-page.html", gin.H{
+		"Title":         "Мониторинг",
 		"GameID":        req.ID,
 		"csrf":          csrf.GetToken(c),
 		"CurrentUserID": userID,
@@ -336,6 +337,7 @@ func (h *MonitorHandler) ChatPage(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "chat-page.html", gin.H{
+		"Title":         "Чат",
 		"GameID":        gameID,
 		"PassingID":     passingID,
 		"TeamID":        teamID,
@@ -576,6 +578,7 @@ func (h *MonitorHandler) ListLogs(c *gin.Context) {
 		return
 	}
 	render.Page(c, http.StatusOK, "logs-list.html", gin.H{
+		"Title":  "Журнал",
 		"GameID": gameID,
 		"Logs":   logs,
 		"csrf":   csrf.GetToken(c),

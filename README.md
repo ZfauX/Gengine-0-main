@@ -29,7 +29,7 @@ Gengine‑0 позволяет авторам проектировать мно�
 | **Язык** | Go 1.25 |
 | **HTTP-фреймворк** | Gin |
 | **ORM** | GORM (PostgreSQL) |
-| **Миграции** | golang-migrate (17 миграций) |
+| **Миграции** | golang-migrate (18 миграций) |
 | **Аутентификация** | JWT, OAuth2, WebAuthn/Passkeys, 2FA (TOTP) |
 | **WebSocket** | Gorilla WebSocket |
 | **SSE** | Server-Sent Events |
@@ -128,7 +128,7 @@ internal/
     i18n/                   — интернационализация (256 строк, ru+en)
     render/                 — HTML-рендеринг
     storage/                — файловое хранилище
-migrations/                 — SQL-миграции (17 файлов)
+migrations/                 — SQL-миграции (18 файлов)
 static/                     — CSS, JS, PWA (manifest.json + sw.js)
 ```
 

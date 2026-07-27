@@ -99,6 +99,7 @@ func (h *TournamentHandler) List(c *gin.Context) {
 		return
 	}
 	render.Page(c, http.StatusOK, "tournaments-list.html", gin.H{
+		"Title":       "Турниры",
 		"Tournaments": tournaments,
 		"Breadcrumbs": []map[string]string{
 			{"name": "Главная", "url": "/"},
@@ -157,6 +158,7 @@ func (h *TournamentHandler) Show(c *gin.Context) {
 	}
 
 	render.Page(c, http.StatusOK, "tournaments-show.html", gin.H{
+		"Title":         "Турнир",
 		"Tournament":    t,
 		"Games":         games,
 		"Leaderboard":   leaderboard,
@@ -183,7 +185,8 @@ func (h *TournamentHandler) Show(c *gin.Context) {
 // @Security JWT
 func (h *TournamentHandler) NewForm(c *gin.Context) {
 	render.Page(c, http.StatusOK, "tournaments-new.html", gin.H{
-		"csrf": csrf.GetToken(c),
+		"Title": "Создание турнира",
+		"csrf":  csrf.GetToken(c),
 		"Breadcrumbs": []map[string]string{
 			{"name": "Главная", "url": "/"},
 			{"name": "Турниры", "url": "/tournaments"},
@@ -231,6 +234,7 @@ func (h *TournamentHandler) Create(c *gin.Context) {
 			errs.Add("form", err)
 		}
 		render.Page(c, http.StatusBadRequest, "tournaments-new.html", gin.H{
+			"Title":  "Создание турнира",
 			"Error":  errs.Error(),
 			"Errors": errs,
 			"csrf":   csrf.GetToken(c),
@@ -251,6 +255,7 @@ func (h *TournamentHandler) Create(c *gin.Context) {
 	if err := h.tournamentService.Create(c.Request.Context(), t); err != nil {
 		log.Error().Err(err).Uint("author_id", userID).Msg("TournamentHandler.Create: failed to create tournament")
 		render.Page(c, http.StatusInternalServerError, "tournaments-new.html", gin.H{
+			"Title": "Создание турнира",
 			"Error": err.Error(),
 			"csrf":  csrf.GetToken(c),
 		})
@@ -296,6 +301,7 @@ func (h *TournamentHandler) EditForm(c *gin.Context) {
 	}
 
 	render.Page(c, http.StatusOK, "tournaments-edit.html", gin.H{
+		"Title":      "Редактирование турнира",
 		"Tournament": t,
 		"csrf":       csrf.GetToken(c),
 		"Breadcrumbs": []map[string]string{
@@ -355,6 +361,7 @@ func (h *TournamentHandler) Update(c *gin.Context) {
 			errs.Add("form", err)
 		}
 		render.Page(c, http.StatusBadRequest, "tournaments-edit.html", gin.H{
+			"Title":  "Редактирование турнира",
 			"Error":  errs.Error(),
 			"Errors": errs,
 			"csrf":   csrf.GetToken(c),
@@ -374,6 +381,7 @@ func (h *TournamentHandler) Update(c *gin.Context) {
 	if err := h.tournamentService.Update(c.Request.Context(), req.ID, updated, userID); err != nil {
 		log.Error().Err(err).Uint("tournament_id", req.ID).Uint("user_id", userID).Msg("TournamentHandler.Update: failed to update tournament")
 		render.Page(c, http.StatusInternalServerError, "tournaments-edit.html", gin.H{
+			"Title": "Редактирование турнира",
 			"Error": err.Error(),
 			"csrf":  csrf.GetToken(c),
 		})
@@ -416,6 +424,7 @@ func (h *TournamentHandler) Games(c *gin.Context) {
 	}
 
 	render.Page(c, http.StatusOK, "tournaments-games.html", gin.H{
+		"Title":          "Игры турнира",
 		"TournamentID":   req.ID,
 		"Games":          games,
 		"AvailableGames": availableGames,
@@ -517,6 +526,7 @@ func (h *TournamentHandler) ApplyForm(c *gin.Context) {
 	}
 
 	render.Page(c, http.StatusOK, "tournaments-apply.html", gin.H{
+		"Title":        "Подать заявку",
 		"TournamentID": req.ID,
 		"Teams":        teams,
 		"csrf":         csrf.GetToken(c),

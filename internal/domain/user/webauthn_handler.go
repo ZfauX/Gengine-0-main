@@ -419,6 +419,7 @@ func (h *WebAuthnHandler) ListKeys(c *gin.Context) {
 	}
 
 	render.Page(c, http.StatusOK, "webauthn-manage.html", gin.H{
+		"Title":       "Passkey",
 		"Credentials": creds,
 		"csrf":        csrf2.GetToken(c),
 	})

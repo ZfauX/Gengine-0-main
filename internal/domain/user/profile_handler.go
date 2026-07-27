@@ -54,6 +54,7 @@ func (h *ProfileHandler) Show(c *gin.Context) {
 		return
 	}
 	render.Page(c, http.StatusOK, "profile-show.html", gin.H{
+		"Title":         "Профиль",
 		"User":          user.ToPublic(),
 		"Achievements":  user.Achievements,
 		"CurrentUserID": userID,
@@ -121,6 +122,7 @@ func (h *ProfileHandler) PublicProfile(c *gin.Context) {
 
 	pubUser := user.ToPublic()
 	render.Page(c, http.StatusOK, "profile-public.html", gin.H{
+		"Title":         "Профиль пользователя",
 		"ProfileUser":   &pubUser,
 		"Achievements":  user.Achievements,
 		"CurrentUserID": currentUserID,
@@ -244,6 +246,7 @@ func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 			errs.Add("form", errors.New("некорректные данные"))
 		}
 		render.Page(c, http.StatusBadRequest, "profile-show.html", gin.H{
+			"Title":  "Профиль",
 			"Errors": errs,
 			"Error":  errs.Error(),
 			"csrf":   csrf.GetToken(c),
@@ -261,6 +264,7 @@ func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 			errs.Add("form", err)
 		}
 		render.Page(c, http.StatusInternalServerError, "profile-show.html", gin.H{
+			"Title":  "Профиль",
 			"Errors": errs,
 			"Error":  errs.Error(),
 			"csrf":   csrf.GetToken(c),
@@ -289,6 +293,7 @@ func (h *ProfileHandler) ChangePassword(c *gin.Context) {
 	var input ChangePasswordInput
 	if err := c.ShouldBind(&input); err != nil {
 		render.Page(c, http.StatusBadRequest, "profile-show.html", gin.H{
+			"Title": "Профиль",
 			"Error": "Некорректные данные: " + err.Error(),
 			"csrf":  csrf.GetToken(c),
 		})
@@ -297,6 +302,7 @@ func (h *ProfileHandler) ChangePassword(c *gin.Context) {
 
 	if err := validation.ValidatePasswordStrength(input.NewPassword); err != nil {
 		render.Page(c, http.StatusBadRequest, "profile-show.html", gin.H{
+			"Title": "Профиль",
 			"Error": err.Error(),
 			"csrf":  csrf.GetToken(c),
 		})
@@ -306,6 +312,7 @@ func (h *ProfileHandler) ChangePassword(c *gin.Context) {
 	if err := h.userSvc.ChangePassword(c.Request.Context(), userID, input.OldPassword, input.NewPassword); err != nil {
 		log.Error().Err(err).Uint("user", userID).Msg("ChangePassword: failed to update")
 		render.Page(c, http.StatusBadRequest, "profile-show.html", gin.H{
+			"Title": "Профиль",
 			"Error": "Неверный текущий пароль",
 			"csrf":  csrf.GetToken(c),
 		})

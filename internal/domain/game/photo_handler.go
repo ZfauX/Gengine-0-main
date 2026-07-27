@@ -75,6 +75,7 @@ func (h *PhotoHandler) PhotosPage(c *gin.Context) {
 	}
 
 	render.Page(c, http.StatusOK, "games-photos.html", gin.H{
+		"Title":         "Фотографии",
 		"GameID":        gameID,
 		"Photos":        photos,
 		"CurrentUserID": userID,

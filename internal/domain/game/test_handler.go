@@ -71,6 +71,7 @@ func (h *TestHandler) TestPage(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "games-test.html", gin.H{
+		"Title":         "Тестирование",
 		"Game":          g,
 		"TestPassings":  testPassings,
 		"csrf":          csrf.GetToken(c),

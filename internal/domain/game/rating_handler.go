@@ -45,6 +45,7 @@ func (h *RatingHandler) Leaderboard(c *gin.Context) {
 	}
 
 	render.Page(c, http.StatusOK, "ratings-leaderboard.html", gin.H{
+		"Title":   "Рейтинг игроков",
 		"Entries": entries,
 	})
 }

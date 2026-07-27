@@ -144,6 +144,11 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 		data["Flash"] = flash
 	}
 
+	// Add canonical URL if not set
+	if _, exists := data["CanonicalURL"]; !exists {
+		data["CanonicalURL"] = ""
+	}
+
 	var buf bytes.Buffer
 	if err := tmpl.ExecuteTemplate(&buf, contentTemplate, data); err != nil {
 		log.Error().Err(err).Msg("Render: template execution error")
