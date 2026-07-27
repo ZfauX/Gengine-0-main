@@ -68,6 +68,7 @@
    ============================================================ */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Переменные тёмной темы */
 @layer base {
   .dark {
     --color-bg-primary: #0f172a;
@@ -76,11 +77,12 @@
     --color-text-secondary: #94a3b8;
     --color-border-light: #334155;
     --color-nav-bg: #1e293b;
-    background: var(--color-bg-primary);
   }
-  .dark body {
-    background: var(--color-bg-primary);
-  }
+}
+
+/* Прямой оверрайд фона — вне @layer, гарантированно поверх всего Tailwind */
+.dark body {
+  background: #0f172a !important;
 }
 
 /* ============================================================
