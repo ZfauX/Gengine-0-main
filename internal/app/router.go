@@ -138,6 +138,11 @@ func (app *App) setupEngine(r *gin.Engine) error {
 					{"loc": app.Config.Server.BaseURL + "/", "changefreq": "daily", "priority": "1.0"},
 					{"loc": app.Config.Server.BaseURL + "/games", "changefreq": "hourly", "priority": "0.9"},
 					{"loc": app.Config.Server.BaseURL + "/calendar", "changefreq": "daily", "priority": "0.7"},
+					{"loc": app.Config.Server.BaseURL + "/tournaments", "changefreq": "daily", "priority": "0.7"},
+					{"loc": app.Config.Server.BaseURL + "/teams", "changefreq": "daily", "priority": "0.5"},
+					{"loc": app.Config.Server.BaseURL + "/leaderboard", "changefreq": "daily", "priority": "0.5"},
+					{"loc": app.Config.Server.BaseURL + "/auth/login", "changefreq": "monthly", "priority": "0.3"},
+					{"loc": app.Config.Server.BaseURL + "/auth/register", "changefreq": "monthly", "priority": "0.3"},
 				},
 			},
 		})
