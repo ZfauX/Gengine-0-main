@@ -53,6 +53,7 @@ func TestLevelService_Create_NotAuthor(t *testing.T) {
 	lvl := &level.Level{Name: "L1", Position: 1}
 	err := svc.Create(context.Background(), g.ID, lvl, other.ID)
 	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "только автор или контент-менеджер может создавать уровни")
 }
 
 func TestLevelService_Update(t *testing.T) {
@@ -159,6 +160,7 @@ func TestLevelService_Duplicate_NotAuthor(t *testing.T) {
 
 	_, err := svc.Duplicate(context.Background(), original.ID, other.ID)
 	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "недостаточно прав")
 }
 
 func TestLevelService_ListByGame(t *testing.T) {
@@ -283,6 +285,7 @@ func TestQuestionService_Create_NotAuthor(t *testing.T) {
 	q := &level.Question{Text: "Q"}
 	err := qSvc.Create(context.Background(), lvl.ID, q, other.ID)
 	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "только автор или контент-менеджер может создавать вопросы")
 }
 
 // ---------- AnswerService ----------
@@ -384,6 +387,7 @@ func TestAnswerService_Create_NotAuthor(t *testing.T) {
 	a := &level.Answer{Code: "456"}
 	err := aSvc.Create(context.Background(), q.ID, a, other.ID)
 	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "нет прав на создание ответа")
 }
 
 // ---------- Вспомогательные функции ----------

@@ -15,7 +15,6 @@
     <meta name="twitter:card" content="summary_large_image">
     <title>{{.Title}} · Encounter Engine</title>
     <!-- Accessibility -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="format-detection" content="telephone=no">
     <!-- Favicon -->
     <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/icon-32x32.png">
@@ -90,13 +89,13 @@
                             {{end}}
                         </button>
                         <!-- Dropdown уведомлений -->
-                        <div id="notificationDropdown" class="hidden absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-200 z-50">
-                            <div class="p-4 border-b border-gray-200">
+                        <div id="notificationDropdown" class="hidden absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-50">
+                            <div class="p-4 border-b border-gray-200 dark:border-gray-700">
                                 <h3 class="font-semibold text-gray-800">Уведомления</h3>
                             </div>
                             <div id="notificationList" class="max-h-96 overflow-y-auto">
                             </div>
-                            <div class="p-3 border-t border-gray-200 text-center">
+                            <div class="p-3 border-t border-gray-200 dark:border-gray-700 text-center">
                                 <a href="/notifications" class="text-sm text-blue-600 hover:text-blue-700">Все уведомления</a>
                             </div>
                         </div>

@@ -296,6 +296,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	h.auditSvc.Log(user.ID, "register", "user", user.ID, cleanEmail)
+	render.SetFlash(c, "success", "Регистрация успешна! Проверьте email для подтверждения.")
 	c.Redirect(http.StatusFound, "/auth/login")
 }
 

@@ -488,7 +488,7 @@ func TestGameHandler_Create_Success(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusFound, w.Code)
-	assert.Equal(t, "/games", w.Header().Get("Location"))
+	assert.Contains(t, w.Header().Get("Location"), "/games/")
 	mockGameService.AssertExpectations(t)
 	mockAuditService.AssertExpectations(t)
 }

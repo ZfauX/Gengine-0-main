@@ -1,13 +1,5 @@
 {{define "games-show.html"}}
-<!-- Open Graph meta -->
-{{if .Game}}
-<meta property="og:title" content="{{.Game.Name}} · Encounter Engine">
-<meta property="og:description" content="{{truncate .Game.Description 200}}">
-<meta property="og:url" content="{{.BaseURL}}/games/{{.Game.ID}}">
-{{if .Game.CoverPath}}<meta property="og:image" content="{{.BaseURL}}/{{.Game.CoverPath}}">{{end}}
-<meta property="og:type" content="website">
-<meta name="twitter:card" content="summary_large_image">
-{{end}}
+<!-- TODO: Move OG meta tags to handler via .ExtraHead when implementing social sharing -->
 <div class="max-w-7xl mx-auto">
     <!-- Заголовок -->
     <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">{{.Game.Name}}</h1>
@@ -199,7 +191,7 @@
                 return r.json();
             })
             .then(res => {
-                console.log('Full preview data:', res);
+                if (window.DEBUG) console.log('Full preview data:', res);
                 previewCache[gameID] = { data: res.data, timestamp: Date.now() };
                 sessionStorage.setItem('previewCache', JSON.stringify(previewCache));
                 renderPreview(res.data);

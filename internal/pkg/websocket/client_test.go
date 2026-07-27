@@ -114,7 +114,7 @@ func TestClient_WritePump_CloseOnSendChannelClose(t *testing.T) {
 		// Ждём запуска writePump
 		time.Sleep(50 * time.Millisecond)
 
-		client.Close()
+		defer client.Close()
 		// Ждём завершения writePump
 		time.Sleep(50 * time.Millisecond)
 	}))

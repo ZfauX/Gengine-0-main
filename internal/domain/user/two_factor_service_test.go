@@ -10,6 +10,7 @@ import (
 )
 
 func TestTwoFactorService_GenerateSecret(t *testing.T) {
+	t.Parallel()
 	svc := NewTwoFactorService()
 
 	secret1, err := svc.GenerateSecret()
@@ -23,6 +24,7 @@ func TestTwoFactorService_GenerateSecret(t *testing.T) {
 }
 
 func TestTwoFactorService_GenerateQRCodeURL(t *testing.T) {
+	t.Parallel()
 	svc := NewTwoFactorService()
 
 	secret := "JBSWY3DPEHPK3PXP"
@@ -34,6 +36,7 @@ func TestTwoFactorService_GenerateQRCodeURL(t *testing.T) {
 }
 
 func TestTwoFactorService_VerifyCode_Valid(t *testing.T) {
+	t.Parallel()
 	svc := NewTwoFactorService()
 
 	secret, err := svc.GenerateSecret()
@@ -48,6 +51,7 @@ func TestTwoFactorService_VerifyCode_Valid(t *testing.T) {
 }
 
 func TestTwoFactorService_VerifyCode_Invalid(t *testing.T) {
+	t.Parallel()
 	svc := NewTwoFactorService()
 
 	secret, err := svc.GenerateSecret()
@@ -59,6 +63,7 @@ func TestTwoFactorService_VerifyCode_Invalid(t *testing.T) {
 }
 
 func TestTwoFactorService_GenerateBackupCodes(t *testing.T) {
+	t.Parallel()
 	svc := NewTwoFactorService()
 
 	codes, err := svc.GenerateBackupCodes()
@@ -74,6 +79,7 @@ func TestTwoFactorService_GenerateBackupCodes(t *testing.T) {
 }
 
 func TestTwoFactorService_HashAndVerifyBackupCodes(t *testing.T) {
+	t.Parallel()
 	svc := NewTwoFactorService()
 
 	codes, err := svc.GenerateBackupCodes()
@@ -100,6 +106,7 @@ func TestTwoFactorService_HashAndVerifyBackupCodes(t *testing.T) {
 }
 
 func TestTwoFactorService_ParseBackupCodeFromString(t *testing.T) {
+	t.Parallel()
 	svc := NewTwoFactorService()
 
 	codes := svc.ParseBackupCodeFromString("")
@@ -113,6 +120,7 @@ func TestTwoFactorService_ParseBackupCodeFromString(t *testing.T) {
 }
 
 func TestTwoFactorService_Enable2FA(t *testing.T) {
+	t.Parallel()
 	svc := NewTwoFactorService()
 
 	user := &User{
@@ -130,6 +138,7 @@ func TestTwoFactorService_Enable2FA(t *testing.T) {
 }
 
 func TestTwoFactorService_Disable2FA(t *testing.T) {
+	t.Parallel()
 	svc := NewTwoFactorService()
 
 	user := &User{
@@ -148,6 +157,7 @@ func TestTwoFactorService_Disable2FA(t *testing.T) {
 }
 
 func TestTwoFactorService_Validate2FAInput(t *testing.T) {
+	t.Parallel()
 	svc := NewTwoFactorService()
 
 	tests := []struct {
@@ -175,6 +185,7 @@ func TestTwoFactorService_Validate2FAInput(t *testing.T) {
 }
 
 func TestTwoFactorService_GetBackupCodesCount(t *testing.T) {
+	t.Parallel()
 	svc := NewTwoFactorService()
 
 	codes, _ := svc.GenerateBackupCodes()

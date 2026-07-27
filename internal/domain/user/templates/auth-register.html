@@ -41,7 +41,7 @@
             {{if .RecaptchaSiteKey}}
             <div class="flex justify-center">
                 <div class="g-recaptcha" data-sitekey="{{.RecaptchaSiteKey}}"></div>
-                <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+                <script src="https://www.google.com/recaptcha/api.js" async defer nonce="{{.csp_nonce}}"></script>
             </div>
             {{end}}
 

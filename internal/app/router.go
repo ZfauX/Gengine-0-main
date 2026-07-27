@@ -155,6 +155,10 @@ func (app *App) setupEngine(r *gin.Engine) error {
 		c.JSON(http.StatusOK, gin.H{})
 	})
 
+	r.NoRoute(func(c *gin.Context) {
+		render.RenderErrorPage(c, http.StatusNotFound)
+	})
+
 	if app.Config.Server.TrustedProxies != "" {
 		proxies := strings.Split(app.Config.Server.TrustedProxies, ",")
 		trusted := make([]string, 0, len(proxies))

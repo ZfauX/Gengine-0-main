@@ -1,5 +1,6 @@
 {{define "tournaments-show.html"}}
 <div class="max-w-7xl mx-auto">
+    {{if .Tournament}}
     <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">{{.Tournament.Name}}</h1>
 
     <!-- Основная информация -->
@@ -106,5 +107,10 @@
         <a href="/tournaments/{{.Tournament.ID}}/edit" class="btn btn-outline text-sm">Редактировать</a>
         <a href="/tournaments" class="btn btn-outline text-sm">← Назад к списку</a>
     </div>
+    {{else}}
+    <div class="card text-center py-12 mb-6">
+        <p class="text-gray-500 dark:text-gray-400">Турнир не найден.</p>
+    </div>
+    {{end}}
 </div>
 {{end}}

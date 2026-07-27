@@ -12,17 +12,20 @@ import (
 )
 
 func TestNewCache(t *testing.T) {
+	t.Parallel()
 	c, err := NewCache(time.Minute, 10*time.Minute)
 	require.NoError(t, err)
 	assert.NotNil(t, c)
 }
 
 func TestNewCacheWithLRU(t *testing.T) {
+	t.Parallel()
 	c := NewCacheWithLRU(time.Minute, 10*time.Minute, 100)
 	assert.NotNil(t, c)
 }
 
 func TestCache_SetAndDelete(t *testing.T) {
+	t.Parallel()
 	c, err := NewCache(time.Minute, 10*time.Minute)
 	require.NoError(t, err)
 	defer c.Close()
@@ -34,6 +37,7 @@ func TestCache_SetAndDelete(t *testing.T) {
 }
 
 func TestCache_Get_Missing(t *testing.T) {
+	t.Parallel()
 	c, _ := NewCache(time.Minute, 10*time.Minute)
 	defer c.Close()
 
@@ -43,6 +47,7 @@ func TestCache_Get_Missing(t *testing.T) {
 }
 
 func TestCache_Get_Expired(t *testing.T) {
+	t.Parallel()
 	c, _ := NewCache(time.Minute, 10*time.Minute)
 	defer c.Close()
 
@@ -55,6 +60,7 @@ func TestCache_Get_Expired(t *testing.T) {
 }
 
 func TestCache_Get_Expired_RemovesFromLRU(t *testing.T) {
+	t.Parallel()
 	c := NewCacheWithLRU(time.Minute, 10*time.Minute, 10)
 	defer c.Close()
 
@@ -67,6 +73,7 @@ func TestCache_Get_Expired_RemovesFromLRU(t *testing.T) {
 }
 
 func TestCache_SetDefault(t *testing.T) {
+	t.Parallel()
 	c, _ := NewCache(time.Minute, 10*time.Minute)
 	defer c.Close()
 
@@ -77,6 +84,7 @@ func TestCache_SetDefault(t *testing.T) {
 }
 
 func TestCache_Delete(t *testing.T) {
+	t.Parallel()
 	c, _ := NewCache(time.Minute, 10*time.Minute)
 	defer c.Close()
 
@@ -89,6 +97,7 @@ func TestCache_Delete(t *testing.T) {
 }
 
 func TestCache_DeleteByPrefix(t *testing.T) {
+	t.Parallel()
 	c, _ := NewCache(time.Minute, 10*time.Minute)
 	defer c.Close()
 
@@ -105,6 +114,7 @@ func TestCache_DeleteByPrefix(t *testing.T) {
 }
 
 func TestCache_Flush(t *testing.T) {
+	t.Parallel()
 	c, _ := NewCache(time.Minute, 10*time.Minute)
 	defer c.Close()
 
@@ -120,6 +130,7 @@ func TestCache_Flush(t *testing.T) {
 }
 
 func TestCache_GetOrSet(t *testing.T) {
+	t.Parallel()
 	c, _ := NewCache(time.Minute, 10*time.Minute)
 	defer c.Close()
 
@@ -142,6 +153,7 @@ func TestCache_GetOrSet(t *testing.T) {
 }
 
 func TestCache_GetOrSetError(t *testing.T) {
+	t.Parallel()
 	c, _ := NewCache(time.Minute, 10*time.Minute)
 	defer c.Close()
 
@@ -154,6 +166,7 @@ func TestCache_GetOrSetError(t *testing.T) {
 }
 
 func TestCache_ExtendTTL(t *testing.T) {
+	t.Parallel()
 	c := NewCacheWithLRU(time.Minute, 10*time.Minute, 100)
 	defer c.Close()
 
@@ -177,6 +190,7 @@ func TestCache_ExtendTTL(t *testing.T) {
 }
 
 func TestCache_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
 	c, _ := NewCache(time.Minute, 10*time.Minute)
 	defer c.Close()
 
@@ -200,6 +214,7 @@ func TestCache_ConcurrentAccess(t *testing.T) {
 }
 
 func TestCache_ConcurrentPrefixDelete(t *testing.T) {
+	t.Parallel()
 	c, _ := NewCache(time.Minute, 10*time.Minute)
 	defer c.Close()
 
@@ -219,6 +234,7 @@ func TestCache_ConcurrentPrefixDelete(t *testing.T) {
 }
 
 func TestCache_GetOrSetString(t *testing.T) {
+	t.Parallel()
 	c, _ := NewCache(time.Minute, 10*time.Minute)
 	defer c.Close()
 
@@ -230,6 +246,7 @@ func TestCache_GetOrSetString(t *testing.T) {
 }
 
 func TestCache_GetOrSetInt(t *testing.T) {
+	t.Parallel()
 	c, _ := NewCache(time.Minute, 10*time.Minute)
 	defer c.Close()
 
@@ -241,6 +258,7 @@ func TestCache_GetOrSetInt(t *testing.T) {
 }
 
 func TestCache_GetOrSetFloat64(t *testing.T) {
+	t.Parallel()
 	c, _ := NewCache(time.Minute, 10*time.Minute)
 	defer c.Close()
 
@@ -252,6 +270,7 @@ func TestCache_GetOrSetFloat64(t *testing.T) {
 }
 
 func TestCache_GetOrSetStringWithTTL(t *testing.T) {
+	t.Parallel()
 	c, _ := NewCache(time.Minute, 10*time.Minute)
 	defer c.Close()
 
@@ -274,6 +293,7 @@ func TestCache_GetOrSetStringWithTTL(t *testing.T) {
 }
 
 func TestNoopCache(t *testing.T) {
+	t.Parallel()
 	c := NewNoopCache()
 	val, ok := c.Get("key")
 	assert.False(t, ok)
@@ -319,6 +339,7 @@ func TestNoopCache(t *testing.T) {
 }
 
 func TestCache_Stats(t *testing.T) {
+	t.Parallel()
 	c := NewCacheWithLRU(time.Minute, 10*time.Minute, 100)
 	defer c.Close()
 
@@ -332,6 +353,7 @@ func TestCache_Stats(t *testing.T) {
 }
 
 func TestCache_ExtendTTL_NotFound(t *testing.T) {
+	t.Parallel()
 	c := NewCacheWithLRU(time.Minute, 10*time.Minute, 100)
 	defer c.Close()
 
@@ -340,6 +362,7 @@ func TestCache_ExtendTTL_NotFound(t *testing.T) {
 }
 
 func TestCache_DeleteByPrefix_Empty(t *testing.T) {
+	t.Parallel()
 	c, _ := NewCache(time.Minute, 10*time.Minute)
 	defer c.Close()
 
@@ -348,6 +371,7 @@ func TestCache_DeleteByPrefix_Empty(t *testing.T) {
 }
 
 func TestCache_GetWithCtx(t *testing.T) {
+	t.Parallel()
 	c, _ := NewCache(time.Minute, 10*time.Minute)
 	defer c.Close()
 
@@ -358,6 +382,7 @@ func TestCache_GetWithCtx(t *testing.T) {
 }
 
 func TestCache_SetWithCtx(t *testing.T) {
+	t.Parallel()
 	c, _ := NewCache(time.Minute, 10*time.Minute)
 	defer c.Close()
 
@@ -368,6 +393,7 @@ func TestCache_SetWithCtx(t *testing.T) {
 }
 
 func TestCache_DeleteWithCtx(t *testing.T) {
+	t.Parallel()
 	c, _ := NewCache(time.Minute, 10*time.Minute)
 	defer c.Close()
 
@@ -378,6 +404,7 @@ func TestCache_DeleteWithCtx(t *testing.T) {
 }
 
 func TestCache_DeleteByPrefixWithCtx(t *testing.T) {
+	t.Parallel()
 	c, _ := NewCache(time.Minute, 10*time.Minute)
 	defer c.Close()
 
@@ -392,6 +419,7 @@ func TestCache_DeleteByPrefixWithCtx(t *testing.T) {
 }
 
 func TestCache_RemoveExpired(t *testing.T) {
+	t.Parallel()
 	c := NewCacheWithLRU(10*time.Minute, 10*time.Minute, 100)
 	defer c.Close()
 
@@ -416,6 +444,7 @@ func TestCache_RemoveExpired(t *testing.T) {
 }
 
 func TestCache_RemoveExpired_Concurrent(t *testing.T) {
+	t.Parallel()
 	c := NewCacheWithLRU(10*time.Minute, 10*time.Minute, 100)
 	defer c.Close()
 

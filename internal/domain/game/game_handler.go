@@ -346,7 +346,7 @@ func (h *GameHandler) Create(c *gin.Context) {
 	}
 
 	h.auditService.Log(userID, "create", "game", game.ID, game.Name)
-	c.Redirect(http.StatusFound, "/games")
+	c.Redirect(http.StatusFound, "/games/"+strconv.Itoa(int(game.ID)))
 }
 
 // EditForm отображает форму редактирования игры.

@@ -135,7 +135,7 @@ func TestSaveSettings_CreatesNew(t *testing.T) {
 	}
 
 	err := svc.SaveSettings(context.Background(), 1, &Settings{EmailEnabled: true})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }
 
 func TestSaveSettings_UpdatesExisting(t *testing.T) {
@@ -158,7 +158,7 @@ func TestSaveSettings_UpdatesExisting(t *testing.T) {
 	}
 
 	err := svc.SaveSettings(context.Background(), 1, &Settings{EmailEnabled: false, PushEnabled: true})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 }
 
 func TestSaveSettings_GetError(t *testing.T) {
@@ -238,7 +238,7 @@ func TestCreate_SavesToDB(t *testing.T) {
 
 	svc := NewNotificationService(db, nil)
 	err := svc.Create(context.Background(), 1, NotificationTypeGameStarted, "Title", "Message", "/url")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 

@@ -41,6 +41,7 @@ func setupHandler() http.Handler {
 }
 
 func TestMiddleware_GET_ReturnsToken(t *testing.T) {
+	t.Parallel()
 	s := httptest.NewServer(setupHandler())
 	defer s.Close()
 
@@ -54,6 +55,7 @@ func TestMiddleware_GET_ReturnsToken(t *testing.T) {
 }
 
 func TestMiddleware_GET_SetsCookie(t *testing.T) {
+	t.Parallel()
 	s := httptest.NewServer(setupHandler())
 	defer s.Close()
 
@@ -73,6 +75,7 @@ func TestMiddleware_GET_SetsCookie(t *testing.T) {
 }
 
 func TestMiddleware_POST_ValidToken(t *testing.T) {
+	t.Parallel()
 	s := httptest.NewServer(setupHandler())
 	defer s.Close()
 
@@ -103,6 +106,7 @@ func TestMiddleware_POST_ValidToken(t *testing.T) {
 }
 
 func TestMiddleware_POST_MissingToken(t *testing.T) {
+	t.Parallel()
 	s := httptest.NewServer(setupHandler())
 	defer s.Close()
 
@@ -118,6 +122,7 @@ func TestMiddleware_POST_MissingToken(t *testing.T) {
 }
 
 func TestMiddleware_POST_WrongToken(t *testing.T) {
+	t.Parallel()
 	s := httptest.NewServer(setupHandler())
 	defer s.Close()
 
@@ -144,6 +149,7 @@ func TestMiddleware_POST_WrongToken(t *testing.T) {
 }
 
 func TestMiddleware_POST_TokenInHeader(t *testing.T) {
+	t.Parallel()
 	s := httptest.NewServer(setupHandler())
 	defer s.Close()
 
@@ -171,6 +177,7 @@ func TestMiddleware_POST_TokenInHeader(t *testing.T) {
 }
 
 func TestMiddleware_DifferentSecrets(t *testing.T) {
+	t.Parallel()
 	s1 := httptest.NewServer(setupHandler())
 	defer s1.Close()
 
@@ -206,6 +213,7 @@ func TestMiddleware_DifferentSecrets(t *testing.T) {
 }
 
 func TestMiddleware_POST_ExpiredCookie(t *testing.T) {
+	t.Parallel()
 	s := httptest.NewServer(setupHandler())
 	defer s.Close()
 
@@ -229,6 +237,7 @@ func TestMiddleware_POST_ExpiredCookie(t *testing.T) {
 }
 
 func TestGetToken_BeforeMiddleware(t *testing.T) {
+	t.Parallel()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 
@@ -245,6 +254,7 @@ func TestGetToken_BeforeMiddleware(t *testing.T) {
 }
 
 func TestMiddleware_SafeMethods(t *testing.T) {
+	t.Parallel()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(Middleware(testSecret, false, nil))

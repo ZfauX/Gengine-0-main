@@ -197,7 +197,7 @@ func (h *ExportHandler) ImportGame(c *gin.Context) {
 		log.Error().Err(err).Uint("game_id", gameID).Msg("ImportGame: failed to import game from CSV")
 		render.Page(c, http.StatusInternalServerError, "export_import-import.html", gin.H{
 			"GameID": gameID,
-			"Error":  "Ошибка импорта: " + err.Error(),
+			"Error":  "Ошибка импорта",
 			"csrf":   csrf.GetToken(c),
 		})
 		return

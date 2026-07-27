@@ -159,7 +159,7 @@ func (h *TeamHandler) CreateTeam(c *gin.Context) {
 	cleanName := sanitize.StripHTML(input.Name)
 
 	userID := c.GetUint("userID")
-	_, err := h.teamService.CreateTeam(c.Request.Context(), cleanName, userID)
+	team, err := h.teamService.CreateTeam(c.Request.Context(), cleanName, userID)
 	if err != nil {
 		render.Page(c, http.StatusBadRequest, "teams-new.html", gin.H{
 			"Error": err.Error(),
@@ -168,7 +168,7 @@ func (h *TeamHandler) CreateTeam(c *gin.Context) {
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/teams")
+	c.Redirect(http.StatusFound, "/teams/"+strconv.Itoa(int(team.ID)))
 }
 
 // ViewTeam отображает состав команды вне контекста игры (по прямой ссылке /teams/:team_id).

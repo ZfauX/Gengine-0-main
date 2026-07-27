@@ -131,12 +131,18 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 	}
 
 	// Добавляем язык в данные шаблона для {{ T }}/{{ TF }} в шаблонах
+	// TODO: data["lang"] is reserved for future use — i18n wiring is in progress
 	lang := i18n.FromCtx(c)
 	data["lang"] = string(lang)
 
 	// Добавляем nonce в данные шаблона
 	nonce := middleware.GetCSPNonce(c)
 	data["csp_nonce"] = nonce
+
+	// Add flash message from session
+	if flash := GetFlash(c, "flash"); flash != "" {
+		data["Flash"] = flash
+	}
 
 	var buf bytes.Buffer
 	if err := tmpl.ExecuteTemplate(&buf, contentTemplate, data); err != nil {
@@ -194,6 +200,8 @@ func errorTemplateForStatus(status int) string {
 		return "errors-429.html"
 	case http.StatusInternalServerError:
 		return "errors-500.html"
+	case http.StatusServiceUnavailable:
+		return "errors-503.html"
 	default:
 		return "errors-500.html"
 	}
