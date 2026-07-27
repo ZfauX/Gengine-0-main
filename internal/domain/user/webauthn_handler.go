@@ -39,15 +39,28 @@ func NewWebAuthnHandler(
 	webauthnRepo WebAuthnRepository,
 	auditSvc *audit.Service,
 ) (*WebAuthnHandler, error) {
-	baseURL, err := url.Parse(cfg.Server.BaseURL)
-	if err != nil {
-		return nil, err
+	rpID := cfg.Server.WebAuthnRPID
+	rpOriginsList := cfg.Server.WebAuthnOrigins
+
+	// Если RPID не задан в конфиге — берём из BaseURL
+	if rpID == "" {
+		baseURL, err := url.Parse(cfg.Server.BaseURL)
+		if err != nil {
+			return nil, err
+		}
+		rpID = baseURL.Hostname()
 	}
-	rpID := baseURL.Hostname()
-	rpOrigin := strings.TrimRight(cfg.Server.BaseURL, "/")
-	rpOrigins := []string{rpOrigin}
-	// Для localhost добавляем origin без порта + 127.0.0.1 (браузер может использовать любой)
-	if rpID == "localhost" || rpID == "127.0.0.1" {
+
+	// Если origins не заданы — формируем из BaseURL + localhost fallback
+	rpOrigins := []string{strings.TrimRight(cfg.Server.BaseURL, "/")}
+	if rpOriginsList != "" {
+		for _, o := range strings.Split(rpOriginsList, ",") {
+			o = strings.TrimSpace(o)
+			if o != "" {
+				rpOrigins = append(rpOrigins, o)
+			}
+		}
+	} else if rpID == "localhost" || rpID == "127.0.0.1" {
 		rpOrigins = append(rpOrigins,
 			"http://localhost",
 			"http://localhost:"+cfg.Server.Port,
