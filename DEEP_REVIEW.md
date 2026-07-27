@@ -1,275 +1,200 @@
-# Deep Review (pass 13) — июль 2026
+# Deep Review (pass 14) — июль 2026
 
 ## Покрытие
 
 | Инструмент | Результат |
 |-----------|-----------|
-| `golangci-lint run ./...` | Чисто |
-| `go vet ./...` | Чисто |
-| `go build ./...` | OK |
-| `go test -short ./...` | 35/35 ✅ |
+| `golangci-lint run ./...` | ✅ Чисто |
+| `go vet ./...` | ✅ Чисто |
+| `go build ./...` | ✅ OK |
+| `go test -short ./...` | ✅ 35/35 |
+| `go generate ./internal/app/` | ✅ Не требуется |
 
-> Предыдущий раунд (pass 12) исправил 15 проблем (10 Critical + 5 High).
-> Этот раунд (pass 13) находит **новые** проблемы, не замеченные ранее.
-
----
-
-## 🔴 CRITICAL — нужно исправить немедленно
-
-### C1. CSP nonce: inline `onclick` handlers не работают (21 нарушение)
-
-**Файлы:** 13 файлов в `internal/domain/*/templates/*.html`
-
-**Проблема:** Политика CSP (`security.go`) запрещает `'unsafe-inline'` и `'unsafe-hashes'`. Все HTML-атрибуты `onclick`, `onkeypress`, `onsubmit`, `ondragstart` и т.д. **молча блокируются браузером**. Кнопки выглядят кликабельными, но ничего не происходит.
-
-**Поражённый функционал:**
-| Файл | Хендлер | Что сломано |
-|------|---------|-------------|
-| `levels-list.html:18` | `ondragstart/ondragover/ondrop` | Drag & drop сортировка уровней |
-| `levels-list.html:30-33` | `onclick="duplicateLevel/moveLevel/deleteLevel"` | Кнопки действий над уровнем |
-| `webauthn-manage.html:7` | `onclick="registerPasskey()"` | Добавление passkey |
-| `webauthn-login-button.html:2` | `onclick="loginWithPasskey()"` | Вход по passkey |
-| `games-photos.html:53` | `onclick="closePhotoModal()"` | Закрытие модалки фото |
-| `games-list.html:68` | `onclick="window.location.href"` | Клик по карточке игры |
-| `offline.html:23` | `onclick="location.reload()"` | Кнопка "Повторить" |
-| `errors-*.html:5 файлов` | `onclick="history.back()"` | Кнопки "Назад" |
-| `monitor-page.html:188` | `onclick="disqualifyTeam()"` | Дисквалификация команды |
-
-**Фикс:** Заменить все HTML-атрибуты `on*` на `addEventListener` в `<script nonce="{{.csp_nonce}}">` блоках.
+> После pass 13 (29 исправлений), pass 14 проверяет качество исправлений и ищет
+> проблемы, не замеченные в предыдущих раундах.
 
 ---
 
-### C2. Inline `onkeypress` заблокирован CSP (5 файлов)
+## 🔴 CRITICAL
 
-**Файлы:** `auth-login.html:17`, `auth-register.html:18`, `auth-reset.html:18`, `auth-forgot.html:20`, `gameplay-test.html:35`
+### C1. 2FA Disable — несоответствие полей формы
 
-**Проблема:** `onkeypress="if(event.key === 'Enter') this.form.submit()"` заблокирован CSP. К счастью, Enter и так работает через нативную отправку формы. Это dead code, который нужно удалить.
+**Файл:** `internal/domain/user/two_factor_handler.go:238`, `user-2fa-disable.html:22`
 
----
+**Проблема:** Шаблон отправляет поле `password`, хендлер читает `code`.
 
-### C3. 2FA Enable — верификация всегда проваливается
+| Компонент | Поле |
+|-----------|------|
+| Шаблон `<input>` | `name="password"` (подпись: «Подтвердите паролем») |
+| Хендлер `struct { Code string \`form:"code"\` }` | Читает несуществующий `code` |
 
-**Файл:** `internal/domain/user/two_factor_handler.go:57-110`
-
-**Проблема:** Флоу включения 2FA сломан:
-1. `EnableForm()` генерирует секрет и показывает QR-код
-2. Секрет **нигде не сохраняется** (не в сессии, не в форме)
-3. `Enable()` достаёт пользователя из БД — в `user.TwoFactorSecret` **пусто** (2FA ещё не включена)
-4. `VerifyCode(user.TwoFactorSecret, input.Code)` проверяет код против пустой строки → всегда false
-
-**Результат:** 2FA невозможно включить. Секрет должен передаваться через скрытое поле формы или храниться в сессии между шагами.
+**Следствие:** `ShouldBind` всегда возвращает ошибку required. Хендлер редиректит `/user/2fa/disable` без flash. **Пользователь никогда не сможет отключить 2FA.**
 
 ---
 
-### C4. 2FA — отсутствуют 3 шаблона
+### C2. 2FA — CSRF-токен не передаётся в шаблоны
 
-**Файлы:** `internal/domain/user/templates/` — нет файлов:
-- `user-2fa-enable.html`
-- `user-2fa-enabled.html`
-- `user-2fa-disable.html`
+**Файл:** `internal/domain/user/two_factor_handler.go:70, 114, 181, 214`
 
-**Проблема:** Обращение к `/user/2fa/enable` или `/user/2fa/disable` вызывает панику шаблонизатора (missing template). Весь пользовательский интерфейс 2FA не работает.
+**Проблема:** Ни один из 4 вызовов `render.Page()` в 2FA-хендлерах не передаёт `"csrf": csrf.GetToken(c)`. Все POST-формы содержат `{{.csrf}}`, который будет пустой строкой → **CSRF middleware ответит 403 Forbidden** на все запросы включения/отключения 2FA.
 
----
-
-### C5. `renderGameplayError` — паника в шаблоне
-
-**Файл:** `internal/domain/game/gameplay_handler.go:123-129`
-**Темплейт:** `gameplay-show.html` (обращается к `{{.Level.Name}}`, `{{.Level.Questions}}`)
-
-**Проблема:** `renderGameplayError` передаёт только `PassingID`, `Error`, `csrf`. Но шаблон немедленно обращается к `.Level` (nil) → `html/template` паникует.
-
-**Вызывается из:** `SubmitCode:199`, `SubmitFile:266,272`.
+**Сравнение:** Домашняя страница (`router.go:200`) правильно передаёт `"csrf": csrf.GetToken(c)`.
 
 ---
 
-### C6. Admin handlers — редирект без flash-сообщения
+## 🟠 HIGH
 
-**Файл:** `internal/domain/admin/handler.go:206-275, 370-391`
+### H1. 2FA Disable не проверяет пароль пользователя
 
-**Проблема:** 3 хендлера (`ToggleAdmin`, `DeleteUser`, `DeleteGame`) при ошибке делают редирект на список без flash-сообщения. Пользователь видит успешный редирект без индикации ошибки.
+**Файл:** `internal/domain/user/two_factor_handler.go:253-261`
+
+Хендлер `Disable` не аутентифицирует пользователя повторно. При наличии активной сессии злоумышленник может отключить 2FA. Даже после исправления C1 (поля) остаётся проблема: для отключения 2FA нужно требовать **текущий пароль** (а не TOTP).
+
+---
+
+### H2. `SubmitFile` — 3 error-пути без PassingID/Level (JS сломан)
+
+**Файл:** `internal/domain/game/gameplay_handler.go:304-335`
 
 ```go
-if err := h.userRepo.Delete(c.Request.Context(), req.ID); err != nil {
-    log.Error().Err(err).Msg("DeleteUser: failed")
-    c.Redirect(http.StatusFound, "/admin/users")
-    return  // пользователь НЕ ВИДИТ, что произошла ошибка
-}
+render.Page(c, http.StatusBadRequest, "gameplay-show.html", gin.H{
+    "Error": "Размер файла не должен превышать 10 МБ",
+    "csrf":  csrf.GetToken(c),
+    // ❌ Нет PassingID, Level, Attempts
+})
 ```
 
-**Фикс:** Использовать `render.SetFlash(c, "error", msg)` перед редиректом.
+Шаблон ожидает `data-passing-id="{{.PassingID}}"` на контейнере для JS-инициализации. Без него таймер, SSE, AJAX-отправка не работают. Пользователь видит статичную страницу без контекста уровня.
+
+**В 3 местах:** строки 305, 318, 331.
 
 ---
 
-### C7. `initAutoSaveDrafts` — пароли сохраняются в localStorage
+### H3. Нет секции 2FA на странице профиля
 
-**Файл:** `static/js/app.js:234`
+**Файл:** `internal/domain/user/templates/profile-show.html`
 
-```js
-var fields = form.querySelectorAll('input, textarea, select'); // включает type="password"
-```
-
-**Проблема:** Если форма с `data-autosave` содержит поле пароля, он сохраняется в localStorage в открытом виде.
-
-**Фикс:** `input:not([type="password"]):not([type="hidden"])`
+Нет ссылки «Включить 2FA» / статуса «2FA включена». Пользователь не узнаёт о существовании 2FA без знания прямого URL `/user/2fa/enable`.
 
 ---
 
-### C8. WebSocket — orphaned connections при reconnect
+### H4. Backup-коды теряются после ухода со страницы
 
-**Файл:** `static/js/ws-client.js:24-38`
+**Файл:** `internal/domain/user/templates/user-2fa-enabled.html`
 
-**Проблема:** `connect()` создаёт новый `WebSocket`, не закрывая старый, если он ещё в `CONNECTING` или `OPEN`. Старый сокет теряет ссылку, но продолжает висеть на сервере.
-
-**Фикс:** Проверять `this.ws.readyState` и закрывать перед созданием нового.
-
----
-
-## 🟠 HIGH — нужно исправить в ближайшее время
-
-### H1. Leaflet assets не кешируются Service Worker
-
-**Файл:** `static/sw.js:4-11`
-
-`STATIC_ASSETS` не включает `/static/js/leaflet.js` и `/static/css/leaflet.css`. Офлайн-карты не работают.
-
-### H2. Password hint mismatch: `minlength="6"` vs backend `min=8`
-
-**Файлы:** `auth-register.html:33`, `auth-reset.html:16`
-
-HTML5 validation позволяет 6 символов, но хинт и бэкенд требуют 8.
-
-### H3. SSE indicator interval — утечка при множественных вызовах
-
-**Файл:** `static/js/app.js:658-666`
-
-`checkInterval` — локальная переменная. При повторных вызовах `initSSEGameNotifications()` старый interval не очищается. Есть 30s safety cap, но при многих вызовах intervals накапливаются.
-
-### H4. ChatWS — логирует не ту ошибку
-
-**Файл:** `internal/domain/monitor/handler.go:389`
-
-```go
-log.Warn().Err(err).Str("room_id", roomID).Msg("ChatWS: room not found")
-```
-
-Логируется `err` (результат `strconv.Atoi`, который успешен), а должен быть `findErr` (результат DB-запроса).
-
-### H5. ImportGame — пропущен `WithContext`
-
-**Файл:** `internal/domain/export/handler.go:196`
-
-`h.exportService.ImportGameFromCSV(h.db, gameID, file)` — передаёт `h.db` напрямую, а не `h.db.WithContext(c.Request.Context())`. Транзакция импорта не отменяется при disconnect.
-
-### H6. MonitorWS/LogsWS — нет `c.Abort()` после upgrade
-
-**Файл:** `internal/domain/monitor/handler.go:273`
-
-После WebSocket upgrade не вызывается `c.Abort()`. Gin может попытаться записать ответ в уже захваченное соединение. `ChatWS` (line 416) делает `c.Abort()` правильно.
-
-### H7. `decConnection` удалена, остался вызов из cleanup (исправлено)
-
-**Статус:** ✅ **ИСПРАВЛЕНО** — `decConnection` удалена, `cleanupInactiveClients` вызывает `decConnectionNoLock` напрямую.
-
-### H8. Export team query — пропущен `WithContext`
-
-**Файл:** `internal/domain/export/handler.go:439`
-
-`h.db.Table("teams")...` без `WithContext`, в отличие от соседних запросов (строки 429, 450).
-
-### H9. Password reset rate limit — неспецифичная ошибка
-
-**Файл:** `internal/pkg/middleware/rate_limiter.go:443`
-
-`PasswordResetRateLimit` использует `ErrRateLimitGlobal` вместо собственного `ErrRateLimitPasswordReset`. Нет отдельного i18n-ключа. Пользователь видит общее сообщение "слишком много запросов".
+Коды показываются один раз при включении. Если пользователь обновит страницу или перейдёт по ссылке — коды потеряны. Нет страницы повторного просмотра или регенерации.
 
 ---
 
 ## 🟡 MEDIUM
 
-### M1. ImportGame — raw `err.Error()` в HTTP ответе
+### M1. Missing VerificationCode в service_test.go
 
-**Файл:** `internal/domain/export/handler.go:200`
+**Файл:** `internal/domain/user/service_test.go:396-401`
 
+Тест создаёт `EmailVerificationToken` без `VerificationCode`:
 ```go
-"Error": "Ошибка импорта: " + err.Error()
+token := &EmailVerificationToken{
+    UserID:    user.ID,
+    TokenHash: hashToken("validtoken"),
+    ExpiresAt: time.Now().Add(time.Hour),
+    // ❌ VerificationCode не указан
+}
 ```
 
-Может утечь внутренние детали (имена таблиц, constraint names) при ошибках GORM.
-
-### M2. Redirect без `game_id` — битый URL
-
-**Файл:** `internal/domain/game/gameplay_handler.go:337`
-
-`/games/` + `c.Query("game_id")` + `/monitor` — если query-параметр отсутствует, URL становится `/games//monitor`.
-
-### M3. Service Worker — нет background sync
-
-Офлайн-отправка форм (например, создание игры) не работает. Формы теряются при отсутствии соединения.
-
-### M4. View Transitions API — Chrome-only, нет fallback
-
-`@view-transition { navigation: auto; }` — экспериментальная Chrome-фича. Safari/Firefox игнорируют, но навигация через HTMX уже даёт плавные переходы.
-
-### M5. Skeleton loading всегда в DOM при выключенном JS
-
-`games-list.html:53-62` — skeleton виден вечно, если JS не загрузился.
-
-### M6. Аватар — нет превью перед загрузкой
-
-Пользователь выбирает файл → форма сразу сабмитится. Нет подтверждения.
-
-### M7. Debounced search — полная перезагрузка
-
-`games-list.html:234-239` — 300ms debounce → `form.submit()`. Скролл теряется.
-
-### M8. Нет `beforeunload` для dirty-форм
-
-При случайной навигации данные форм теряются.
-
-### M9. Cookie `refresh_token` заскоплен на `/auth/refresh`
-
-Это корректно для безопасности, но при logout очищается только cookie с этим путём. Если другое приложение установило cookie с тем же именем на `/` — она останется.
+В PostgreSQL `uniqueIndex` не допускает пустые строки `''`. Тест проходит только потому, что первый токен удаляется перед созданием второго (`VerifyToken` → `DeleteToken`). Если тесты когда-либо запустятся параллельно с `t.Parallel()`, упадёт unique constraint violation.
 
 ---
 
-## 🔧 Оптимизации производительности
+### M2. Duplicate `audit.Service` instance в админке
 
-| # | Область | Статус |
-|---|---------|--------|
-| P1 | `Cache.removeExpired` — write lock на всю итерацию | ❌ Не исправлено |
-| P2 | `isStopped()` — `Lock()` вместо `RLock()` | ✅ **Исправлено** (убрана, код прямой) |
-| P3 | RoomHub broadcast — stale room reference | ⚠️ Частично (убрали deadlock, остался stale ref) |
-| P4 | N+1 в RatingService (passing → team members) | ❌ Не исправлено |
-| P5 | Partial index для `level_progresses WHERE finished_at IS NULL` | ❌ Не исправлено |
+**Файл:** `internal/domain/admin/routes.go:29`, `internal/app/router.go:212`
+
+`admin.RegisterRoutes()` возвращает `*audit.Service`, но `router.go:212` игнорирует возвращаемое значение. Основной `audit.Service` создаётся в `NewDependencies()` (`app.go:33`). Два независимых экземпляра — если сервис имеет внутреннее состояние (буферизированные события), они расходятся.
+
+---
+
+### M3. `SubmitCode` — errors без .Level как fallback
+
+**Файл:** `internal/domain/game/gameplay_handler.go:188-210`
+
+При ошибках валидации рендер без `.Level` и `.Attempts`. Nil-guards в шаблоне не дают упасть, но пользователь не видит уровень и историю попыток (плохой UX).
+
+---
+
+### M4. `ChatWS` — `findErr` не логируется
+
+**Файл:** `internal/domain/monitor/handler.go:404`
+
+```go
+log.Warn().Uint("user_id", userID).Uint("game_id", *chatRoom.GameID).Msg("ChatWS: access denied, not a participant")
+```
+Отсутствует `.Err(findErr)`. При отладке потеряна информация о реальной причине отказа в доступе.
+
+---
+
+### M5. `MonitorData` — неверный префикс в логе
+
+**Файл:** `internal/domain/monitor/handler.go:152`
+
+```go
+log.Error().Err(err).Uint("game_id", req.ID).Msg("MonitorWS: failed to get snapshot")
+```
+Должно быть `"MonitorData:"` — копипаста из MonitorWS хендлера.
+
+---
+
+### M6. QR-код через внешний API (приватность)
+
+**Файл:** `internal/domain/user/templates/user-2fa-enable.html:17`
+
+Секрет 2FA передаётся в URL внешнего сервиса `api.qrserver.com`. Рекомендация: генерировать QR-код локально (`github.com/skip2/go-qrcode`).
+
+---
+
+## ✅ Проверка исправлений pass 13
+
+| # | Проблема | Статус |
+|---|----------|--------|
+| C1 | 21 inline onclick заблокированы CSP | ✅ Все заменены на addEventListener |
+| C2 | 5 onkeypress заблокированы | ✅ Удалены |
+| C3 | 2FA секрет теряется | ✅ Хранится в сессии |
+| C4 | 3 шаблона 2FA отсутствуют | ✅ Созданы |
+| C5 | renderGameplayError паникует | ✅ nil-guards + 2-level fallback |
+| C6 | Admin редиректы без flash | ✅ SetFlash на всех error-путях |
+| C7 | Пароли в localStorage | ✅ Исключены password/hidden поля |
+| C8 | WebSocket orphaned connections | ✅ Закрытие старого WS перед reconnect |
+| H1 | Leaflet не в SW cache | ✅ В STATIC_ASSETS |
+| H2 | Password minlength=6 | ✅ Исправлено на 8 |
+| H3 | SSE interval leak | ✅ module-level var + cleanup |
+| H4 | ChatWS err→findErr | ✅ Исправлено |
+| H5 | ImportGame без context | ✅ WithContext |
+| H6 | c.Abort() после WS upgrade | ✅ MonitorWS + LogsWS |
+| H8 | Export team query без context | ✅ WithContext |
+| H9 | Rate limit error message | ✅ ErrRateLimitPasswordReset |
 
 ---
 
 ## 📊 Статистика
 
-| Приоритет | Новые | Всего (с pass 12 осталось) |
-|-----------|-------|--------------------------|
-| 🔴 CRITICAL | 8 | 8 |
-| 🟠 HIGH | 9 | 9 |
-| 🟡 MEDIUM | 9 | 9 |
-| 🔵 LOW | 3 | 3 |
+| Приоритет | Количество |
+|-----------|-----------|
+| 🔴 CRITICAL | 2 |
+| 🟠 HIGH | 4 |
+| 🟡 MEDIUM | 6 |
+| ✅ Исправлено (pass 13) | 16/16 |
 
 ---
 
 ## Резюме
 
-После исправления 15 проблем из pass 12, pass 13 обнаружил **новые 29 проблем**.
+После 14 раундов ревью в проекте остались **2 критические и 4 высокие проблемы** — все в области 2FA (которая была реализована в pass 13):
 
-### Топ-3 по реальному impact:
+1. **2FA Disable сломан** (C1) — форма отправляет password, хендлер читает code
+2. **CSRF не передаётся** в 2FA-шаблоны (C2) — все POST-запросы получат 403
+3. **Disable не проверяет пароль** (H1) — high severity
+4. **SubmitFile ошибки без PassingID** (H2) — JS интерактив не работает
+5. **2FA нет в профиле** (H3) — пользователь не может найти настройки
+6. **Backup-коды теряются** (H4)
 
-1. **Inline onclick заблокированы CSP** (C1) — 21 интерактивный элемент не работает: пасскей аутентификация, drag & drop, кнопки навигации, дисквалификация команд. **Вся клиентская интерактивность через HTML-атрибуты сломана.**
-2. **2FA Enable всегда проваливается** (C3) — секрет не передаётся между шагами. 2FA невозможно включить.
-3. **2FA шаблоны отсутствуют** (C4) — страницы 2FA (/user/2fa/enable, /disable) вызывают панику.
-
-### Что уже исправлено (в этом раунде):
-- `golangci-lint` — чисто (удалена dead `decConnection`, gofmt)
-- `decConnection` удалена, cleanup использует `decConnectionNoLock`
-- Password rate limit middleware добавлен
-- /swagger и /metrics требуют admin
-- Logout — POST с CSRF
-- isHTTPS — безопасен (только `c.Request.TLS`)
+**Всё остальное:** 16/16 исправлений из pass 13 работают корректно. Линтер, тесты, архитектура — чисто.
