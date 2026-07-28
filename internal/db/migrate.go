@@ -92,6 +92,53 @@ func MigrateFromDir(gdb *gorm.DB, migrationsDir string) error {
 		return fmt.Errorf("ошибка применения миграций: %w", upErr)
 	}
 
+	// Если применяли squashed, нужно также применить индивидуальные миграции,
+	// которые вышли после создания squashed набора
+	if migrationsDir == "migrations_squashed" {
+		newVersion, _, _ := m.Version()
+		log.Info().Uint("version", newVersion).Msg("Squashed миграции применены")
+
+		// Закрываем текущий экземпляр миграции
+		srcErr, dbErr := m.Close()
+		if srcErr != nil {
+			log.Warn().Err(srcErr).Msg("migrate: close source error")
+		}
+		if dbErr != nil {
+			log.Warn().Err(dbErr).Msg("migrate: close db error")
+		}
+
+		// Создаём новый экземпляр для индивидуальных миграций
+		// golang-migrate пропустит уже применённые версии (1-5) и применит 6-20
+		indivM, err := migrate.NewWithDatabaseInstance(
+			"file://"+filepath.ToSlash("migrations"),
+			"postgres", driver)
+		if err != nil {
+			return fmt.Errorf("не удалось создать экземпляр для индивидуальных миграций: %w", err)
+		}
+
+		if upErr := indivM.Up(); upErr != nil && !errors.Is(upErr, migrate.ErrNoChange) {
+			return fmt.Errorf("ошибка применения индивидуальных миграций: %w", upErr)
+		}
+
+		newVersion, dirtyAfter, versionErr := indivM.Version()
+		if versionErr == nil && dirtyAfter {
+			log.Warn().Uint("version", newVersion).Msg("Индивидуальные миграции в грязном состоянии после применения")
+		} else if versionErr == nil {
+			log.Info().Uint("version", newVersion).Msg("Миграции успешно применены")
+		} else {
+			log.Info().Msg("Миграции успешно применены")
+		}
+
+		srcErr, dbErr = indivM.Close()
+		if srcErr != nil {
+			log.Warn().Err(srcErr).Msg("migrate: close source error")
+		}
+		if dbErr != nil {
+			log.Warn().Err(dbErr).Msg("migrate: close db error")
+		}
+		return nil
+	}
+
 	newVersion, dirtyAfter, versionErr := m.Version()
 	if versionErr == nil && dirtyAfter {
 		log.Warn().Uint("version", newVersion).Msg("Миграции в грязном состоянии после применения")
