@@ -1,6 +1,6 @@
 {{define "questions-edit.html"}}
 <div class="max-w-3xl mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Редактирование вопроса</h1>
+    <h1 class="page-title">Редактирование вопроса</h1>
 
     {{if .Error}}
     <div class="flash flash-error">{{.Error}}</div>
@@ -12,18 +12,18 @@
 
         <!-- Текст вопроса -->
         <div>
-            <label for="text" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Текст вопроса</label>
+            <label for="text" class="form-label">Текст вопроса</label>
             <input type="text" name="text" id="text" value="{{.Question.Text}}" required
                    class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.text}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
-            {{if .Errors.text}}<p class="text-red-500 text-xs mt-1">{{.Errors.text}}</p>{{end}}
+            {{if .Errors.text}}<p class="field-error">{{.Errors.text}}</p>{{end}}
         </div>
 
         <!-- Подсказка -->
         <div>
-            <label for="hint" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Подсказка</label>
+            <label for="hint" class="form-label">Подсказка</label>
             <input type="text" name="hint" id="hint" value="{{.Question.Hint}}"
                    class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.hint}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
-            {{if .Errors.hint}}<p class="text-red-500 text-xs mt-1">{{.Errors.hint}}</p>{{end}}
+            {{if .Errors.hint}}<p class="field-error">{{.Errors.hint}}</p>{{end}}
         </div>
 
         <!-- Кнопки -->

@@ -1,6 +1,6 @@
 {{define "games-new.html"}}
 <div class="max-w-3xl mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Новая игра</h1>
+    <h1 class="page-title">Новая игра</h1>
 
     {{if .Error}}
     <div class="flash flash-error">{{.Error}}</div>
@@ -11,63 +11,63 @@
 
         <!-- Название -->
         <div>
-            <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Название</label>
+            <label for="name" class="form-label">Название</label>
             <input type="text" name="name" id="name" required
                    class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.name}}border-red-500{{end}}">
-            <p class="text-red-500 text-xs mt-1">{{.Errors.name}}</p>
+            <p class="field-error">{{.Errors.name}}</p>
         </div>
 
         <!-- Описание -->
         <div>
-            <label for="description" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Описание</label>
+            <label for="description" class="form-label">Описание</label>
             <textarea name="description" id="description" rows="4"
                       class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.description}}border-red-500{{end}}"></textarea>
-            <p class="text-red-500 text-xs mt-1">{{.Errors.description}}</p>
+            <p class="field-error">{{.Errors.description}}</p>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <!-- Дата и время начала -->
             <div>
-                <label for="starts_at" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Дата и время начала</label>
+                <label for="starts_at" class="form-label">Дата и время начала</label>
                 <input type="datetime-local" name="starts_at" id="starts_at"
                        class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.starts_at}}border-red-500{{end}}">
-                <p class="text-red-500 text-xs mt-1">{{.Errors.starts_at}}</p>
+                <p class="field-error">{{.Errors.starts_at}}</p>
             </div>
 
             <!-- Крайний срок регистрации -->
             <div>
-                <label for="registration_deadline" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Крайний срок регистрации</label>
+                <label for="registration_deadline" class="form-label">Крайний срок регистрации</label>
                 <input type="datetime-local" name="registration_deadline" id="registration_deadline"
                        class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.registration_deadline}}border-red-500{{end}}">
-                <p class="text-red-500 text-xs mt-1">{{.Errors.registration_deadline}}</p>
+                <p class="field-error">{{.Errors.registration_deadline}}</p>
             </div>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <!-- Максимальное количество команд -->
             <div>
-                <label for="max_team_number" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Максимальное количество команд</label>
+                <label for="max_team_number" class="form-label">Максимальное количество команд</label>
                 <input type="number" name="max_team_number" id="max_team_number" value="10" min="1"
                        class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.max_team_number}}border-red-500{{end}}">
-                <p class="text-red-500 text-xs mt-1">{{.Errors.max_team_number}}</p>
+                <p class="field-error">{{.Errors.max_team_number}}</p>
             </div>
 
             <!-- Видимость -->
             <div>
-                <label for="visibility" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Видимость</label>
+                <label for="visibility" class="form-label">Видимость</label>
                 <select name="visibility" id="visibility"
                         class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.visibility}}border-red-500{{end}}">
                     <option value="public">Публичная</option>
                     <option value="private">Приватная</option>
                     <option value="unlisted">Скрытая</option>
                 </select>
-                <p class="text-red-500 text-xs mt-1">{{.Errors.visibility}}</p>
+                <p class="field-error">{{.Errors.visibility}}</p>
             </div>
         </div>
 
         <!-- Обложка -->
         <div>
-            <label for="cover" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Обложка игры (опционально)</label>
+            <label for="cover" class="form-label">Обложка игры (опционально)</label>
             <div id="coverDropZone" class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:border-blue-500 transition cursor-pointer">
                 <input type="file" name="cover" id="cover" accept="image/jpeg,image/png,image/webp" class="hidden">
                 <div id="coverPlaceholder">

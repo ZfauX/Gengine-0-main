@@ -1,15 +1,15 @@
 {{define "admin-audit.html"}}
 <div class="max-w-7xl mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Аудит действий</h1>
+    <h1 class="page-title">Аудит действий</h1>
 
     <!-- Форма фильтрации -->
     <form method="GET" action="/admin/audit" class="flex flex-wrap items-end gap-3 mb-6 bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
         <div class="flex-1 min-w-[180px]">
-            <label for="user_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ID пользователя</label>
+            <label for="user_id" class="form-label">ID пользователя</label>
             <input type="text" name="user_id" id="user_id" value="{{.UserID}}" placeholder="ID пользователя" class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
         </div>
         <div class="flex-1 min-w-[180px]">
-            <label for="action" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Действие</label>
+            <label for="action" class="form-label">Действие</label>
             <select name="action" id="action" class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
                 <option value="">Все действия</option>
                 <option value="create" {{if eq .Action "create"}}selected{{end}}>Создание</option>
@@ -32,22 +32,22 @@
         <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50 dark:bg-gray-800">
                 <tr>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Время</th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Пользователь</th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Действие</th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Объект</th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">ID объекта</th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Детали</th>
+                    <th scope="col" class="table-header">Время</th>
+                    <th scope="col" class="table-header">Пользователь</th>
+                    <th scope="col" class="table-header">Действие</th>
+                    <th scope="col" class="table-header">Объект</th>
+                    <th scope="col" class="table-header">ID объекта</th>
+                    <th scope="col" class="table-header">Детали</th>
                 </tr>
             </thead>
             <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200">
                 {{range .Logs}}
                 <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 transition">
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{.CreatedAt}}</td>
+                    <td class="table-cell">{{.CreatedAt}}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">{{.UserName}} ({{.UserID}})</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{.Action}}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{.ObjectType}}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{.ObjectID}}</td>
+                    <td class="table-cell">{{.Action}}</td>
+                    <td class="table-cell">{{.ObjectType}}</td>
+                    <td class="table-cell">{{.ObjectID}}</td>
                     <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate">{{.Details}}</td>
                 </tr>
                 {{else}}

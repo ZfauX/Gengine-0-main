@@ -1,6 +1,6 @@
 {{define "tournaments-add_game.html"}}
 <div class="max-w-3xl mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Добавить игру в турнир</h1>
+    <h1 class="page-title">Добавить игру в турнир</h1>
 
     {{if .Error}}
     <div class="flash flash-error">{{.Error}}</div>
@@ -11,7 +11,7 @@
 
         <!-- Выбор игры -->
         <div>
-            <label for="game_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Игра</label>
+            <label for="game_id" class="form-label">Игра</label>
             <select name="game_id" id="game_id" required
                     class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.game_id}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
                 <option value="">-- выберите игру --</option>
@@ -21,7 +21,7 @@
                     <option value="" disabled>Нет доступных игр</option>
                 {{end}}
             </select>
-            {{if .Errors.game_id}}<p class="text-red-500 text-xs mt-1">{{.Errors.game_id}}</p>{{end}}
+            {{if .Errors.game_id}}<p class="field-error">{{.Errors.game_id}}</p>{{end}}
         </div>
 
         <!-- Кнопки -->

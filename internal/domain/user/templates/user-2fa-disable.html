@@ -1,6 +1,6 @@
 {{define "user-2fa-disable.html"}}
 <div class="max-w-lg mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6 text-center">Отключить двухфакторную аутентификацию</h1>
+    <h1 class="page-title">Отключить двухфакторную аутентификацию</h1>
 
     {{if .Error}}
     <div class="flash flash-error mb-4">{{.Error}}</div>
@@ -19,7 +19,7 @@
             <input type="hidden" name="_csrf" value="{{.csrf}}">
 
             <div>
-                <label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Подтвердите паролем</label>
+                <label for="password" class="form-label">Подтвердите паролем</label>
                 <input type="password" name="password" id="password" required autocomplete="current-password"
                        placeholder="Ваш текущий пароль"
                        class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">

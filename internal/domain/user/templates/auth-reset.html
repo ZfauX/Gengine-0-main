@@ -1,6 +1,6 @@
 {{define "auth-reset.html"}}
 <div class="max-w-md mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6 text-center">Сброс пароля</h1>
+    <h1 class="page-title">Сброс пароля</h1>
 
     {{if .Error}}
     <div class="flash flash-error">{{.Error}}</div>
@@ -12,11 +12,11 @@
             <input type="hidden" name="reset_code" value="{{.ResetCode}}">
 
             <div>
-                <label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Новый пароль</label>
+                <label for="password" class="form-label">Новый пароль</label>
                 <input type="password" name="password" id="password" required minlength="8"
                        class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Password}}border-red-500{{end}}"
                        >
-                {{if .Errors.Password}}<p class="text-red-500 text-xs mt-1">{{.Errors.Password}}</p>{{end}}
+                {{if .Errors.Password}}<p class="field-error">{{.Errors.Password}}</p>{{end}}
             </div>
 
             <button type="submit" id="resetBtn" class="w-full btn btn-primary text-sm">Установить пароль</button>

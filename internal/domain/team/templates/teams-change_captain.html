@@ -1,13 +1,13 @@
 {{define "teams-change_captain.html"}}
 <div class="max-w-3xl mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Смена капитана команды «{{.Team.Name}}»</h1>
+    <h1 class="page-title">Смена капитана команды «{{.Team.Name}}»</h1>
 
     <form action="/games/{{.GameID}}/teams/{{.TeamID}}/change-captain" method="POST" class="card space-y-4">
         <input type="hidden" name="_csrf" value="{{.csrf}}">
 
         <!-- Выбор нового капитана -->
         <div>
-            <label for="captain_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Выберите нового капитана</label>
+            <label for="captain_id" class="form-label">Выберите нового капитана</label>
             <select name="captain_id" id="captain_id" required
                     class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
                 <option value="">-- выберите нового капитана --</option>

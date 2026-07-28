@@ -1,6 +1,6 @@
 {{define "answers-index.html"}}
 <div class="max-w-3xl mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Ответы на вопрос</h1>
+    <h1 class="page-title">Ответы на вопрос</h1>
 
     {{if .Error}}
     <div class="flash flash-error">{{.Error}}</div>
@@ -32,10 +32,10 @@
         <form action="/games/{{.GameID}}/levels/{{.LevelID}}/questions/{{.QuestionID}}/answers" method="POST" class="flex flex-wrap items-end gap-3">
             <input type="hidden" name="_csrf" value="{{.csrf}}">
             <div class="flex-1 min-w-[180px]">
-                <label for="code" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Код</label>
+                <label for="code" class="form-label">Код</label>
                 <input type="text" name="code" id="code" placeholder="Код" required
                        class="w-full rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.code}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
-                {{if .Errors.code}}<p class="text-red-500 text-xs mt-1">{{.Errors.code}}</p>{{end}}
+                {{if .Errors.code}}<p class="field-error">{{.Errors.code}}</p>{{end}}
             </div>
             <button type="submit" class="btn btn-primary text-sm whitespace-nowrap">Добавить</button>
         </form>

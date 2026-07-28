@@ -1,6 +1,6 @@
 {{define "auth-login.html"}}
 <div class="max-w-md mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6 text-center">Вход</h1>
+    <h1 class="page-title">Вход</h1>
 
     {{if .Error}}
     <div class="flash flash-error">{{.Error}}</div>
@@ -11,18 +11,18 @@
             <input type="hidden" name="_csrf" value="{{.csrf}}">
 
             <div>
-                <label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
+                <label for="email" class="form-label">Email</label>
                 <input type="email" name="email" id="email" required
                        class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Email}}border-red-500{{end}}"
                        >
-                {{if .Errors.Email}}<p class="text-red-500 text-xs mt-1">{{.Errors.Email}}</p>{{end}}
+                {{if .Errors.Email}}<p class="field-error">{{.Errors.Email}}</p>{{end}}
             </div>
 
             <div>
-                <label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Пароль</label>
+                <label for="password" class="form-label">Пароль</label>
                 <input type="password" name="password" id="password" required
                        class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Password}}border-red-500{{end}}">
-                {{if .Errors.Password}}<p class="text-red-500 text-xs mt-1">{{.Errors.Password}}</p>{{end}}
+                {{if .Errors.Password}}<p class="field-error">{{.Errors.Password}}</p>{{end}}
             </div>
 
             <button type="submit" id="loginBtn" class="w-full btn btn-primary text-sm">Войти</button>

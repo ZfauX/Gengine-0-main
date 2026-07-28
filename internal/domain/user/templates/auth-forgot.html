@@ -1,6 +1,6 @@
 {{define "auth-forgot.html"}}
 <div class="max-w-md mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6 text-center">Восстановление пароля</h1>
+    <h1 class="page-title">Восстановление пароля</h1>
 
     {{if .Message}}
     <div class="flash flash-success">{{.Message}}</div>
@@ -14,11 +14,11 @@
             <input type="hidden" name="_csrf" value="{{.csrf}}">
 
             <div>
-                <label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Введите ваш email</label>
+                <label for="email" class="form-label">Введите ваш email</label>
                 <input type="email" name="email" id="email" required
                        class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Email}}border-red-500{{end}}"
                        >
-                {{if .Errors.Email}}<p class="text-red-500 text-xs mt-1">{{.Errors.Email}}</p>{{end}}
+                {{if .Errors.Email}}<p class="field-error">{{.Errors.Email}}</p>{{end}}
             </div>
 
             <button type="submit" class="w-full btn btn-primary text-sm">Отправить инструкции</button>

@@ -1,23 +1,23 @@
 {{define "game_passings-list.html"}}
 <div class="max-w-7xl mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Заявки и прохождения игры</h1>
+    <h1 class="page-title">Заявки и прохождения игры</h1>
 
     {{if .Passings}}
     <div class="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
         <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50 dark:bg-gray-800">
                 <tr>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Команда</th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Капитан</th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Статус</th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Действия</th>
+                    <th scope="col" class="table-header">Команда</th>
+                    <th scope="col" class="table-header">Капитан</th>
+                    <th scope="col" class="table-header">Статус</th>
+                    <th scope="col" class="table-header">Действия</th>
                 </tr>
             </thead>
             <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200">
                 {{range .Passings}}
                 <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 transition">
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">{{.Team.Name}}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{.Team.Captain.Name}} ({{.Team.Captain.Email}})</td>
+                    <td class="table-cell">{{.Team.Captain.Name}} ({{.Team.Captain.Email}})</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">
                         {{if eq .Status "pending"}}
                             <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">Ожидает</span>
