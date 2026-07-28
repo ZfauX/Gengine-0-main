@@ -1,5 +1,18 @@
 -- 000005_schema.down.sql
--- Откат сводной миграции (в обратном порядке: 000018 → 000005)
+-- Откат сводной миграции (в обратном порядке: 000020 → 000005)
+
+-- ========== 000020: push_subscriptions, email_queues, device_id index ==========
+DROP INDEX IF EXISTS idx_refresh_tokens_device;
+ALTER TABLE email_queues ADD COLUMN IF NOT EXISTS to_address TEXT;
+UPDATE email_queues SET to_address = recipient WHERE to_address IS NULL AND recipient IS NOT NULL;
+ALTER TABLE email_queues DROP COLUMN IF EXISTS recipient;
+DROP TABLE IF EXISTS push_subscriptions;
+
+-- ========== 000019: refresh_tokens недостающие колонки ==========
+DROP INDEX IF EXISTS idx_refresh_tokens_deleted_at;
+DROP INDEX IF EXISTS idx_refresh_tokens_updated_at;
+ALTER TABLE refresh_tokens DROP COLUMN IF EXISTS deleted_at;
+ALTER TABLE refresh_tokens DROP COLUMN IF EXISTS updated_at;
 
 -- ========== 000018: Недостающие колонки ==========
 -- notifications
