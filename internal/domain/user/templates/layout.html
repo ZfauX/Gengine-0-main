@@ -225,37 +225,47 @@
 
         // Переключение темы
         (function() {
-            const toggle = document.getElementById('themeToggle');
-            if (!toggle) return;
-
-            const stored = localStorage.getItem('theme');
-            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-
-            if (stored === 'dark' || (!stored && prefersDark)) {
-                document.documentElement.classList.add('dark');
-                toggle.textContent = '☀️';
+            function getThemeState() {
+                return document.documentElement.classList.contains('dark');
             }
 
-            toggle.addEventListener('click', function() {
-                const isDark = document.documentElement.classList.contains('dark');
-                if (isDark) {
-                    document.documentElement.classList.remove('dark');
-                    localStorage.setItem('theme', 'light');
-                    toggle.textContent = '🌙';
-                } else {
+            function setThemeState(dark) {
+                if (dark) {
                     document.documentElement.classList.add('dark');
                     localStorage.setItem('theme', 'dark');
-                    toggle.textContent = '☀️';
+                } else {
+                    document.documentElement.classList.remove('dark');
+                    localStorage.setItem('theme', 'light');
                 }
-            });
+                // Sync both buttons
+                var icon = dark ? '☀️' : '🌙';
+                var dt = document.getElementById('themeToggle');
+                var mt = document.getElementById('themeToggleMobile');
+                if (dt) dt.textContent = icon;
+                if (mt) mt.textContent = icon;
+            }
 
-            // Keyboard navigation — клавиша 'T' переключает тему
+            function toggleTheme() {
+                setThemeState(!getThemeState());
+            }
+
+            // Init from localStorage or system preference
+            var stored = localStorage.getItem('theme');
+            var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            setThemeState(stored === 'dark' || (!stored && prefersDark));
+
+            // Attach toggle to both buttons
+            var dt = document.getElementById('themeToggle');
+            var mt = document.getElementById('themeToggleMobile');
+            if (dt) dt.addEventListener('click', toggleTheme);
+            if (mt) mt.addEventListener('click', toggleTheme);
+
+            // Keyboard: T key toggles theme
             document.addEventListener('keydown', function(e) {
                 if (e.key === 't' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-                    const target = e.target;
-                    // Игнорируем ввод в текстовые поля
-                    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
-                    toggle.click();
+                    var t = e.target;
+                    if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return;
+                    toggleTheme();
                 }
             });
         })();
@@ -271,19 +281,6 @@
                 mobileMenu.classList.toggle('hidden');
                 hamburger.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
             });
-
-            // Sync theme toggle for mobile button
-            const mobileThemeBtn = document.getElementById('themeToggleMobile');
-            const desktopThemeBtn = document.getElementById('themeToggle');
-            if (mobileThemeBtn && desktopThemeBtn) {
-                mobileThemeBtn.addEventListener('click', function() {
-                    desktopThemeBtn.click();
-                    // Sync icon
-                    setTimeout(function() {
-                        mobileThemeBtn.textContent = desktopThemeBtn.textContent;
-                    }, 0);
-                });
-            }
         })();
 
         // Top progress bar for navigation
