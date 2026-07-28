@@ -62,6 +62,10 @@
   }
 }
 
+/* ============================================================
+   Утилиты — вне @layer, выше Tailwind utilities
+   ============================================================ */
+
 /* Глобальные стили для полей ввода — тёмная тема */
 input, textarea, select {
   background: #fff;
@@ -70,6 +74,43 @@ input, textarea, select {
 .dark input, .dark textarea, .dark select {
   background: #1e293b;
   color: #f1f5f9;
+}
+
+/* Формы */
+.form-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  margin-bottom: 0.25rem;
+}
+.field-error {
+  color: #ef4444;
+  font-size: 0.75rem;
+  margin-top: 0.25rem;
+}
+.page-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+/* Таблицы */
+.table-header {
+  padding: 0.75rem 1.5rem;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+}
+.table-cell {
+  padding: 1rem 1.5rem;
+  white-space: nowrap;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
 }
 
 /* ============================================================
