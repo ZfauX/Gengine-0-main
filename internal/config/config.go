@@ -72,8 +72,8 @@ type ServerConfig struct {
 	RateLimitAPI            int           // лимит API-запросов в минуту (по умолчанию 60)
 
 	// WebAuthn (passkeys) — origins через запятую, RPID по умолчанию из BaseURL
-	WebAuthnRPID     string // relying party ID (например: localhost, example.com)
-	WebAuthnOrigins  string // разрешённые origins через запятую (например: http://localhost:8080,http://127.0.0.1:8080)
+	WebAuthnRPID    string // relying party ID (например: localhost, example.com)
+	WebAuthnOrigins string // разрешённые origins через запятую (например: http://localhost:8080,http://127.0.0.1:8080)
 
 	LogLevel string // уровень логирования: debug, info, warn, error (по умолчанию info)
 }
