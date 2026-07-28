@@ -13,7 +13,7 @@
         <div>
             <label for="rating" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Оценка (1–10)</label>
             <select name="rating" id="rating" required
-                    class="w-full rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.rating}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
+                    class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.rating}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
                 <option value="">--</option>
                 <option value="1">1 — Ужасно</option>
                 <option value="2">2</option>
@@ -33,7 +33,7 @@
         <div>
             <label for="comment" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Комментарий (необязательно)</label>
             <textarea name="comment" id="comment" rows="4" placeholder="Ваш комментарий..."
-                      class="w-full rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.comment}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}"></textarea>
+                      class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.comment}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}"></textarea>
             {{if .Errors.comment}}<p class="text-red-500 text-xs mt-1">{{.Errors.comment}}</p>{{end}}
         </div>
 

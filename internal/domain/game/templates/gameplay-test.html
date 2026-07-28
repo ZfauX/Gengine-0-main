@@ -31,7 +31,7 @@
         <form action="/testing/{{.PassingID}}" method="POST" class="flex flex-wrap items-center gap-3">
             <input type="hidden" name="_csrf" value="{{.csrf}}">
             <input type="text" name="code" placeholder="Введите код (любой)" required
-                   class="flex-1 min-w-[180px] rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2"
+                   class="flex-1 min-w-[180px] rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2"
                    >
             <button type="submit" class="btn btn-primary text-sm whitespace-nowrap">Отправить код</button>
         </form>

@@ -13,7 +13,7 @@
             <div class="flex-1 min-w-[200px]">
                 <label for="team_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Выберите команду</label>
                 <select name="team_id" id="team_id" required
-                        class="w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.team_id}}border-red-500{{end}}">
+                        class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.team_id}}border-red-500{{end}}">
                     <option value="">-- выберите команду --</option>
                     {{range .Teams}}
                         <option value="{{.ID}}">{{.Name}}</option>

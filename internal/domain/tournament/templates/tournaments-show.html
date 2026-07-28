@@ -94,7 +94,7 @@
             <div>
                 <label for="team_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Команда</label>
                 <select name="team_id" id="team_id" required
-                        class="rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                        class="rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
                     <option value="">-- выберите команду --</option>
                     {{range .UserTeams}}
                         <option value="{{.ID}}">{{.Name}}</option>

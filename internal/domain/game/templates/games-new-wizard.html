@@ -31,15 +31,15 @@
                         <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Название игры *</label>
                         <input type="text" name="name" id="name" value="{{.Name}}" required
                                minlength="3" maxlength="100"
-                               class="w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                               placeholder="Например: Тайны старого города">
+                                class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                placeholder="Например: Тайны старого города">
                         {{if .Errors.Name}}<p class="text-red-500 text-xs mt-1">{{.Errors.Name}}</p>{{end}}
                     </div>
 
                     <div>
                         <label for="description" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Описание</label>
                         <textarea name="description" id="description" rows="4"
-                                  class="w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                  class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                                   placeholder="Краткое описание игры, сюжет, атмосфера..."
                                   maxlength="2000">{{.Description}}</textarea>
                         <p class="text-xs text-gray-400 mt-1">{{.Description | len}}/2000 символов</p>
@@ -48,14 +48,14 @@
                     <div>
                         <label for="max_team_number" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Макс. количество команд *</label>
                         <input type="number" name="max_team_number" id="max_team_number" value="{{.MaxTeamNumber}}" min="1" max="100" required
-                               class="w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                                class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
                         {{if .Errors.MaxTeamNumber}}<p class="text-red-500 text-xs mt-1">{{.Errors.MaxTeamNumber}}</p>{{end}}
                     </div>
 
                     <div>
                         <label for="visibility" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Видимость *</label>
                         <select name="visibility" id="visibility" required
-                                class="w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                                class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
                             <option value="public" {{if eq .Visibility "public"}}selected{{end}}>Публичная (видна всем)</option>
                             <option value="private" {{if eq .Visibility "private"}}selected{{end}}>Приватная (только по ссылке)</option>
                         </select>
@@ -70,7 +70,7 @@
                     <div>
                         <label for="starts_at" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Дата и время начала</label>
                         <input type="datetime-local" name="starts_at" id="starts_at" value="{{.StartsAt}}"
-                               class="w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                                class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
                         <p class="text-xs text-gray-400 mt-1">Оставьте пустым для игры без привязки ко времени</p>
                         {{if .Errors.StartsAt}}<p class="text-red-500 text-xs mt-1">{{.Errors.StartsAt}}</p>{{end}}
                     </div>
@@ -78,7 +78,7 @@
                     <div>
                         <label for="registration_deadline" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Крайний срок регистрации</label>
                         <input type="datetime-local" name="registration_deadline" id="registration_deadline" value="{{.RegistrationDeadline}}"
-                               class="w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                                class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
                         <p class="text-xs text-gray-400 mt-1">До этой даты команды могут подать заявку</p>
                         {{if .Errors.RegistrationDeadline}}<p class="text-red-500 text-xs mt-1">{{.Errors.RegistrationDeadline}}</p>{{end}}
                     </div>
@@ -112,7 +112,7 @@
                 <div class="space-y-4">
                     <label class="flex items-center gap-3">
                         <input type="checkbox" name="is_draft" id="is_draft" {{if .IsDraft}}checked{{end}}
-                               class="w-4 h-4 text-blue-600 dark:text-blue-400 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500">
+                               class="w-4 h-4 text-blue-600 dark:text-blue-400 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 rounded focus:ring-blue-500">
                         <div>
                             <span class="font-medium text-gray-800 dark:text-gray-100">Черновик</span>
                             <p class="text-sm text-gray-500 dark:text-gray-400">Сохранить как черновик (не публиковать сразу)</p>
