@@ -22,6 +22,13 @@ func hasAppliedMigrations(gdb *gorm.DB) bool {
 	return count > 0
 }
 
+// getCurrentVersion возвращает текущую версию миграций из schema_migrations.
+func getCurrentVersion(gdb *gorm.DB) uint {
+	var version int
+	gdb.Raw("SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1").Scan(&version)
+	return uint(version)
+}
+
 // RunMigrations запускает миграции. Для свежей БД использует squashed-файлы
 // (migrations_squashed/), для существующей — обычные поштучные (migrations/).
 func RunMigrations(gdb *gorm.DB) error {
@@ -43,6 +50,13 @@ func MigrateFromDir(gdb *gorm.DB, migrationsDir string) error {
 
 	if migrationsDir == "" {
 		if hasAppliedMigrations(gdb) {
+			// Проверяем, не была ли БД создана через squashed (версия 5+)
+			// Squashed набор теперь полный (000001-000020), индивидуальные не нужны
+			currentVersion := getCurrentVersion(gdb)
+			if currentVersion >= 5 {
+				log.Info().Uint("version", currentVersion).Msg("БД создана через squashed миграции — индивидуальные не требуются")
+				return nil
+			}
 			migrationsDir = "migrations"
 			log.Info().Msg("БД содержит миграции — применяем поштучные файлы")
 		} else {
