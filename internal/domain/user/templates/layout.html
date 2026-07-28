@@ -160,8 +160,8 @@
         <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-4" aria-label="Breadcrumb">
             <div class="flex items-center gap-1 text-sm">
                 {{range $i, $crumb := .Breadcrumbs}}
-                    {{if $i}}<span class="text-gray-400 mx-1">›</span>{{end}}
-                    {{if $crumb.url}}<a href="{{$crumb.url}}" class="text-gray-700 hover:text-blue-600 whitespace-nowrap">{{$crumb.name}}</a>{{else}}<span class="text-gray-500 whitespace-nowrap">{{$crumb.name}}</span>{{end}}
+                    {{if $i}}<span class="text-gray-400 dark:text-gray-600 mx-1">›</span>{{end}}
+                    {{if $crumb.url}}<a href="{{$crumb.url}}" class="text-gray-700 dark:text-gray-300 hover:text-blue-600 whitespace-nowrap">{{$crumb.name}}</a>{{else}}<span class="text-gray-500 dark:text-gray-400 whitespace-nowrap">{{$crumb.name}}</span>{{end}}
                 {{end}}
             </div>
         </nav>
@@ -169,7 +169,7 @@
         {{if .ContentHTML}}
             {{.ContentHTML}}
         {{else}}
-            <p class="text-gray-500">Контент не указан.</p>
+            <p class="text-gray-500 dark:text-gray-400">Контент не указан.</p>
         {{end}}
     </main>
 
