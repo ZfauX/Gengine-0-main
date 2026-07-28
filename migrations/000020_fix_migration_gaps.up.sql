@@ -23,3 +23,8 @@ ALTER TABLE email_queues DROP COLUMN IF EXISTS to_address;
 
 -- ========== 3. refresh_tokens: недостающий индекс device_id ==========
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_device ON refresh_tokens(device_id);
+
+-- ========== 4. notification_settings: недостающая колонка deleted_at ==========
+-- Модель NotificationSetting имеет DeletedAt, GORM добавляет WHERE deleted_at IS NULL
+ALTER TABLE notification_settings ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE;
+CREATE INDEX IF NOT EXISTS idx_notification_settings_deleted_at ON notification_settings(deleted_at);
