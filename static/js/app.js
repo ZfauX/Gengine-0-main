@@ -291,18 +291,17 @@ function initPushSubscription() {
                         applicationServerKey: urlBase64ToUint8Array(enableBtn.dataset.vapidKey || '')
                     });
                 }).then(function(subscription) {
-                    fetch('/api/push/subscribe', {
+                    return fetch('/api/push/subscribe', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(subscription)
-                    }).then(function() {
-                        showToast('Уведомления включены', 'success');
-                        updatePushUI();
-                    }).catch(function() {
-                        showToast('Ошибка подписки на уведомления', 'error');
                     });
+                }).then(function() {
+                    showToast('Уведомления включены', 'success');
+                    localStorage.setItem('push_enabled', 'true');
+                    updatePushUI();
                 }).catch(function(err) {
-                    showToast('Ошибка: ' + err.message, 'error');
+                    showToast('Ошибка: ' + (err.message || 'не удалось подписаться'), 'error');
                 });
             } else {
                 showToast('Разрешите уведомления в настройках браузера', 'warning');
@@ -314,10 +313,10 @@ function initPushSubscription() {
         navigator.serviceWorker.ready.then(function(registration) {
             return registration.pushManager.getSubscription();
         }).then(function(subscription) {
-            if (!subscription) return;
+            if (!subscription) return null;
             var endpoint = subscription.endpoint;
             return subscription.unsubscribe().then(function() {
-                fetch('/api/push/unsubscribe', {
+                return fetch('/api/push/unsubscribe', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ endpoint: endpoint })
@@ -325,6 +324,7 @@ function initPushSubscription() {
             });
         }).then(function() {
             showToast('Уведомления отключены', 'success');
+            localStorage.setItem('push_enabled', 'false');
             updatePushUI();
         }).catch(function(err) {
             showToast('Ошибка отключения: ' + err.message, 'error');
@@ -332,28 +332,57 @@ function initPushSubscription() {
     });
 
     function updatePushUI() {
+        // Если разрешение не дано — показываем "Включить"
         if (Notification.permission !== 'granted') {
             enableBtn.style.display = '';
             disableBtn.style.display = 'none';
-            statusEl.textContent = 'Нажмите "Включить", чтобы получать push-уведомления';
+            statusEl.textContent = Notification.permission === 'denied'
+                ? 'Уведомления заблокированы браузером'
+                : 'Нажмите "Включить", чтобы получать push-уведомления';
             return;
         }
-        navigator.serviceWorker.ready.then(function(registration) {
-            return registration.pushManager.getSubscription();
-        }).then(function(subscription) {
-            if (subscription) {
+        // Разрешение есть — пытаемся получить подписку
+        // Используем таймаут, чтобы не ждать SW бесконечно
+        var timeout = setTimeout(function() {
+            // Если SW не ответил за 3с, проверяем localStorage
+            if (localStorage.getItem('push_enabled') === 'true') {
                 enableBtn.style.display = 'none';
                 disableBtn.style.display = '';
                 statusEl.textContent = 'Push-уведомления активны';
             } else {
                 enableBtn.style.display = '';
                 disableBtn.style.display = 'none';
+                statusEl.textContent = 'Нажмите "Включить"';
+            }
+        }, 3000);
+
+        navigator.serviceWorker.ready.then(function(registration) {
+            return registration.pushManager.getSubscription();
+        }).then(function(subscription) {
+            clearTimeout(timeout);
+            if (subscription) {
+                enableBtn.style.display = 'none';
+                disableBtn.style.display = '';
+                statusEl.textContent = 'Push-уведомления активны';
+                localStorage.setItem('push_enabled', 'true');
+            } else {
+                enableBtn.style.display = '';
+                disableBtn.style.display = 'none';
                 statusEl.textContent = 'Нажмите "Включить", чтобы получать push-уведомления';
+                localStorage.setItem('push_enabled', 'false');
             }
         }).catch(function() {
-            enableBtn.style.display = '';
-            disableBtn.style.display = 'none';
-            statusEl.textContent = 'Сервис-воркер не готов';
+            clearTimeout(timeout);
+            // Если SW не готов — показываем enable, полагаемся на localStorage
+            if (localStorage.getItem('push_enabled') === 'true') {
+                enableBtn.style.display = 'none';
+                disableBtn.style.display = '';
+                statusEl.textContent = 'Push-уведомления активны';
+            } else {
+                enableBtn.style.display = '';
+                disableBtn.style.display = 'none';
+                statusEl.textContent = 'Нажмите "Включить"';
+            }
         });
     }
 }
