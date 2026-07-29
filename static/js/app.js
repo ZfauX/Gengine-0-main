@@ -279,26 +279,8 @@ function initPushSubscription() {
     var statusEl = document.getElementById('push-status');
     if (!enableBtn || !disableBtn || !statusEl) return;
 
-    // Сначала регистрируем SW, затем проверяем подписку
-    navigator.serviceWorker.register('/static/sw.js').then(function() {
-        return navigator.serviceWorker.ready;
-    }).then(function(registration) {
-        return registration.pushManager.getSubscription();
-    }).then(function(subscription) {
-        if (subscription) {
-            enableBtn.style.display = 'none';
-            disableBtn.style.display = '';
-            statusEl.textContent = 'Push-уведомления активны';
-        } else {
-            enableBtn.style.display = '';
-            disableBtn.style.display = 'none';
-            statusEl.textContent = 'Нажмите "Включить", чтобы получать push-уведомления';
-        }
-    }).catch(function() {
-        enableBtn.style.display = '';
-        disableBtn.style.display = 'none';
-        statusEl.textContent = 'Сервис-воркер не готов';
-    });
+    // Проверяем статус подписки при загрузке
+    updatePushUI();
 
     enableBtn.addEventListener('click', function() {
         Notification.requestPermission().then(function(permission) {
@@ -315,9 +297,7 @@ function initPushSubscription() {
                         body: JSON.stringify(subscription)
                     }).then(function() {
                         showToast('Уведомления включены', 'success');
-                        enableBtn.style.display = 'none';
-                        disableBtn.style.display = '';
-                        statusEl.textContent = 'Push-уведомления активны';
+                        updatePushUI();
                     }).catch(function() {
                         showToast('Ошибка подписки на уведомления', 'error');
                     });
@@ -345,13 +325,37 @@ function initPushSubscription() {
             });
         }).then(function() {
             showToast('Уведомления отключены', 'success');
-            enableBtn.style.display = '';
-            disableBtn.style.display = 'none';
-            statusEl.textContent = 'Push-уведомления отключены';
+            updatePushUI();
         }).catch(function(err) {
             showToast('Ошибка отключения: ' + err.message, 'error');
         });
     });
+
+    function updatePushUI() {
+        if (Notification.permission !== 'granted') {
+            enableBtn.style.display = '';
+            disableBtn.style.display = 'none';
+            statusEl.textContent = 'Нажмите "Включить", чтобы получать push-уведомления';
+            return;
+        }
+        navigator.serviceWorker.ready.then(function(registration) {
+            return registration.pushManager.getSubscription();
+        }).then(function(subscription) {
+            if (subscription) {
+                enableBtn.style.display = 'none';
+                disableBtn.style.display = '';
+                statusEl.textContent = 'Push-уведомления активны';
+            } else {
+                enableBtn.style.display = '';
+                disableBtn.style.display = 'none';
+                statusEl.textContent = 'Нажмите "Включить", чтобы получать push-уведомления';
+            }
+        }).catch(function() {
+            enableBtn.style.display = '';
+            disableBtn.style.display = 'none';
+            statusEl.textContent = 'Сервис-воркер не готов';
+        });
+    }
 }
 
 // =============================================================================
