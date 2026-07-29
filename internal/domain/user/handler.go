@@ -24,7 +24,7 @@ type UserIDRequest struct {
 }
 
 type OAuthProviderRequest struct {
-	Provider string `uri:"provider" json:"provider" binding:"required,oneof=google github yandex"`
+	Provider string `uri:"provider" json:"provider" binding:"required,oneof=vk yandex"`
 }
 
 type VerifyEmailRequest struct {

@@ -40,9 +40,8 @@ func newTestConfig() *config.Config {
 			Enabled: false,
 		},
 		OAuth: config.OAuthConfig{
-			Google: config.OAuthProvider{ClientID: "test", ClientSecret: "test"},
-			GitHub: config.OAuthProvider{ClientID: "test", ClientSecret: "test"},
 			Yandex: config.OAuthProvider{ClientID: "test", ClientSecret: "test"},
+			VK: config.OAuthProvider{ClientID: "test", ClientSecret: "test"},
 		},
 	}
 }
@@ -441,9 +440,9 @@ func TestOAuthService_GetAuthURL(t *testing.T) {
 	service := NewOAuthService(userRepo, extLoginRepo, cfg)
 
 	t.Run("поддерживаемый провайдер", func(t *testing.T) {
-		url, state, err := service.GetAuthURL("google")
+		url, state, err := service.GetAuthURL("yandex")
 		require.NoError(t, err)
-		assert.Contains(t, url, "accounts.google.com")
+		assert.Contains(t, url, "oauth.yandex.com")
 		assert.NotEmpty(t, state, "state должен быть сгенерирован")
 		assert.Len(t, state, 32, "state должен иметь длину 32 символа")
 	})

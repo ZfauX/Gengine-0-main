@@ -531,9 +531,9 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 
 // OAuthLogin перенаправляет на страницу OAuth-провайдера.
 // @Summary Начало OAuth-авторизации
-// @Description Перенаправляет на страницу авторизации OAuth-провайдера (VK, Yandex, Google)
+// @Description Перенаправляет на страницу авторизации OAuth-провайдера (VK, Yandex)
 // @Tags auth
-// @Param provider path string true "Провайдер (vk, yandex, google)"
+// @Param provider path string true "Провайдер (vk, yandex)"
 // @Success 302 {string} string "Перенаправление на OAuth-провайдера"
 // @Failure 400 {object} map[string]interface{} "Неизвестный провайдер"
 // @Router /auth/oauth/{provider} [get]
@@ -565,7 +565,7 @@ func (h *AuthHandler) OAuthLogin(c *gin.Context) {
 // @Summary Обработка callback OAuth
 // @Description Завершает OAuth-авторизацию, создаёт или связывает пользователя
 // @Tags auth
-// @Param provider path string true "Провайдер (vk, yandex, google)"
+// @Param provider path string true "Провайдер (vk, yandex)"
 // @Param code query string true "Код авторизации"
 // @Param state query string true "State-параметр"
 // @Success 302 {string} string "Перенаправление на /dashboard"

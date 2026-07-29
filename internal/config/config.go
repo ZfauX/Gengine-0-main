@@ -130,9 +130,8 @@ type AdminConfig struct {
 
 // OAuthConfig содержит конфигурацию OAuth-провайдеров.
 type OAuthConfig struct {
-	Google OAuthProvider // настройки Google OAuth
-	GitHub OAuthProvider // настройки GitHub OAuth
 	Yandex OAuthProvider // настройки Yandex OAuth
+	VK     OAuthProvider // настройки VK OAuth
 }
 
 // OAuthProvider содержит параметры одного OAuth-провайдера.
@@ -284,13 +283,10 @@ func LoadConfig() (*Config, error) {
 	}
 
 	// OAuth провайдеры – каждый со своим флагом включения
-	if cfg.OAuth.Google, err = loadOAuthProvider("GOOGLE", cfg.Server.StrictMode); err != nil {
-		return nil, err
-	}
-	if cfg.OAuth.GitHub, err = loadOAuthProvider("GITHUB", cfg.Server.StrictMode); err != nil {
-		return nil, err
-	}
 	if cfg.OAuth.Yandex, err = loadOAuthProvider("YANDEX", cfg.Server.StrictMode); err != nil {
+		return nil, err
+	}
+	if cfg.OAuth.VK, err = loadOAuthProvider("VK", cfg.Server.StrictMode); err != nil {
 		return nil, err
 	}
 

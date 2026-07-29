@@ -146,18 +146,18 @@ func TestLoadConfig_OAuthEnabled(t *testing.T) {
 	cleanup9 := setEnv(t, "ADMIN_PASSWORD", "securepassword12345")
 	defer cleanup9()
 
-	cleanup10 := setEnv(t, "GOOGLE_ENABLED", "true")
+	cleanup10 := setEnv(t, "VK_ENABLED", "true")
 	defer cleanup10()
-	cleanup11 := setEnv(t, "GOOGLE_CLIENT_ID", "google_id")
+	cleanup11 := setEnv(t, "VK_CLIENT_ID", "vk_id")
 	defer cleanup11()
-	cleanup12 := setEnv(t, "GOOGLE_CLIENT_SECRET", "google_secret")
+	cleanup12 := setEnv(t, "VK_CLIENT_SECRET", "vk_secret")
 	defer cleanup12()
 
 	cfg, err := LoadConfig()
 	require.NoError(t, err)
-	assert.True(t, cfg.OAuth.Google.Enabled)
-	assert.Equal(t, "google_id", cfg.OAuth.Google.ClientID)
-	assert.Equal(t, "google_secret", cfg.OAuth.Google.ClientSecret)
+	assert.True(t, cfg.OAuth.VK.Enabled)
+	assert.Equal(t, "vk_id", cfg.OAuth.VK.ClientID)
+	assert.Equal(t, "vk_secret", cfg.OAuth.VK.ClientSecret)
 }
 
 func TestLoadConfig_SMTPEnabled(t *testing.T) {
@@ -273,15 +273,15 @@ func TestLoadConfig_JWTSecretPrefixNotWeak(t *testing.T) {
 }
 
 func TestLoadConfig_OAuthEnabledMissingClientID(t *testing.T) {
-	cleanup1 := setEnv(t, "GITHUB_ENABLED", "true")
+	cleanup1 := setEnv(t, "VK_ENABLED", "true")
 	defer cleanup1()
-	cleanup2 := setEnv(t, "GITHUB_CLIENT_ID", "") // пусто
+	cleanup2 := setEnv(t, "VK_CLIENT_ID", "") // пусто
 	defer cleanup2()
-	cleanup3 := setEnv(t, "GITHUB_CLIENT_SECRET", "") // пусто
+	cleanup3 := setEnv(t, "VK_CLIENT_SECRET", "") // пусто
 	defer cleanup3()
 	_, err := LoadConfig()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "GITHUB")
+	assert.Contains(t, err.Error(), "VK")
 }
 
 func TestLoadConfig_SMTPEnabledMissingFrom(t *testing.T) {

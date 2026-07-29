@@ -24,8 +24,6 @@ import (
 	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/github"
-	"golang.org/x/oauth2/google"
 	"golang.org/x/oauth2/yandex"
 	"gorm.io/gorm"
 )
@@ -385,26 +383,22 @@ func NewOAuthService(
 	httpClient := httpClientWithTimeout(oauthHTTPTimeout)
 
 	configs := map[string]*oauth2.Config{
-		"google": {
-			ClientID:     cfg.OAuth.Google.ClientID,
-			ClientSecret: cfg.OAuth.Google.ClientSecret,
-			RedirectURL:  cfg.Server.BaseURL + "/auth/oauth/google/callback",
-			Scopes:       []string{"email", "profile"},
-			Endpoint:     google.Endpoint,
-		},
-		"github": {
-			ClientID:     cfg.OAuth.GitHub.ClientID,
-			ClientSecret: cfg.OAuth.GitHub.ClientSecret,
-			RedirectURL:  cfg.Server.BaseURL + "/auth/oauth/github/callback",
-			Scopes:       []string{"user:email"},
-			Endpoint:     github.Endpoint,
-		},
 		"yandex": {
 			ClientID:     cfg.OAuth.Yandex.ClientID,
 			ClientSecret: cfg.OAuth.Yandex.ClientSecret,
 			RedirectURL:  cfg.Server.BaseURL + "/auth/oauth/yandex/callback",
 			Scopes:       []string{"login:email", "login:info"},
 			Endpoint:     yandex.Endpoint,
+		},
+		"vk": {
+			ClientID:     cfg.OAuth.VK.ClientID,
+			ClientSecret: cfg.OAuth.VK.ClientSecret,
+			RedirectURL:  cfg.Server.BaseURL + "/auth/oauth/vk/callback",
+			Scopes:       []string{"email"},
+			Endpoint: oauth2.Endpoint{
+				AuthURL:  "https://oauth.vk.com/authorize",
+				TokenURL: "https://oauth.vk.com/access_token",
+			},
 		},
 	}
 
@@ -431,25 +425,20 @@ func (s *OAuthService) GetAuthURL(provider string) (authURL string, state string
 	return authURL, state, nil
 }
 
-type googleUserInfo struct {
-	ID            string `json:"id"`
-	Email         string `json:"email"`
-	VerifiedEmail bool   `json:"verified_email"`
-	Name          string `json:"name"`
-}
-
-type githubEmail struct {
-	Email    string `json:"email"`
-	Primary  bool   `json:"primary"`
-	Verified bool   `json:"verified"`
-}
-
 type yandexUserInfo struct {
 	ID         string `json:"id"`
 	Email      string `json:"email"`
 	IsVerified bool   `json:"is_verified"`
 	FirstName  string `json:"first_name"`
 	LastName   string `json:"last_name"`
+}
+
+type vkUserInfo struct {
+	Response []struct {
+		ID        int    `json:"id"`
+		FirstName string `json:"first_name"`
+		LastName  string `json:"last_name"`
+	} `json:"response"`
 }
 
 func (s *OAuthService) ctxWithHTTPClient(ctx context.Context) context.Context {
@@ -477,85 +466,6 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 	var emailStr, name, externalID string
 	var emailVerified bool
 	switch provider {
-	case "google":
-		req, reqErr := http.NewRequestWithContext(ctxWithClient, "GET", "https://www.googleapis.com/oauth2/v2/userinfo", nil)
-		if reqErr != nil {
-			return nil, fmt.Errorf("создание запроса к Google API: %w", reqErr)
-		}
-		resp, respErr := client.Do(req)
-		if respErr != nil {
-			return nil, fmt.Errorf("запрос к Google API: %w", respErr)
-		}
-		defer func() {
-			if closeErr := resp.Body.Close(); closeErr != nil {
-				log.Warn().Err(closeErr).Msg("OAuth Google: failed to close response body")
-			}
-		}()
-		var info googleUserInfo
-		if decodeErr := json.NewDecoder(resp.Body).Decode(&info); decodeErr != nil {
-			return nil, fmt.Errorf("декодирование ответа Google: %w", decodeErr)
-		}
-		emailStr = info.Email
-		externalID = info.ID
-		emailVerified = info.VerifiedEmail
-		name = info.Name
-		if emailStr == "" {
-			return nil, stderrors.New("не удалось получить email от Google")
-		}
-		if !emailVerified {
-			return nil, stderrors.New("email от Google не подтверждён")
-		}
-	case "github":
-		req, reqErr := http.NewRequestWithContext(ctxWithClient, "GET", "https://api.github.com/user/emails", nil)
-		if reqErr != nil {
-			return nil, fmt.Errorf("создание запроса к GitHub API: %w", reqErr)
-		}
-		resp, respErr := client.Do(req)
-		if respErr != nil {
-			return nil, fmt.Errorf("запрос к GitHub API: %w", respErr)
-		}
-		defer func() {
-			if closeErr := resp.Body.Close(); closeErr != nil {
-				log.Warn().Err(closeErr).Msg("OAuth GitHub: failed to close response body")
-			}
-		}()
-		var emails []githubEmail
-		if decodeErr := json.NewDecoder(resp.Body).Decode(&emails); decodeErr != nil {
-			return nil, fmt.Errorf("декодирование ответа GitHub: %w", decodeErr)
-		}
-		var found bool
-		for _, e := range emails {
-			if e.Primary && e.Verified {
-				emailStr = e.Email
-				found = true
-				break
-			}
-		}
-		if !found {
-			return nil, stderrors.New("не найден верифицированный primary email от GitHub")
-		}
-		reqUser, reqUserErr := http.NewRequestWithContext(ctxWithClient, "GET", "https://api.github.com/user", nil)
-		if reqUserErr != nil {
-			return nil, fmt.Errorf("создание запроса к GitHub user: %w", reqUserErr)
-		}
-		respUser, respUserErr := client.Do(reqUser)
-		if respUserErr != nil {
-			log.Warn().Err(respUserErr).Msg("не удалось получить имя пользователя GitHub")
-		} else {
-			defer func() {
-				if closeErr := respUser.Body.Close(); closeErr != nil {
-					log.Warn().Err(closeErr).Msg("OAuth GitHub user: failed to close response body")
-				}
-			}()
-			var userInfo struct {
-				Login string `json:"login"`
-				ID    uint   `json:"id"`
-			}
-			if decodeErr := json.NewDecoder(respUser.Body).Decode(&userInfo); decodeErr == nil {
-				name = userInfo.Login
-				externalID = fmt.Sprintf("%d", userInfo.ID)
-			}
-		}
 	case "yandex":
 		req, reqErr := http.NewRequestWithContext(ctxWithClient, "GET", "https://login.yandex.ru/info?format=json", nil)
 		if reqErr != nil {
@@ -570,23 +480,42 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 				log.Warn().Err(closeErr).Msg("OAuth Yandex: failed to close response body")
 			}
 		}()
-		var info yandexUserInfo
-		if decodeErr := json.NewDecoder(resp.Body).Decode(&info); decodeErr != nil {
+		var yInfo yandexUserInfo
+		if decodeErr := json.NewDecoder(resp.Body).Decode(&yInfo); decodeErr != nil {
 			return nil, fmt.Errorf("декодирование ответа Yandex: %w", decodeErr)
 		}
-		emailStr = info.Email
-		externalID = info.ID
-		emailVerified = info.IsVerified
+		emailStr = yInfo.Email
+		externalID = yInfo.ID
+		emailVerified = yInfo.IsVerified
 		if emailStr == "" {
 			return nil, stderrors.New("не удалось получить email от Yandex")
 		}
 		if !emailVerified {
 			return nil, stderrors.New("email от Yandex не подтверждён")
 		}
-		name = info.FirstName
+		name = yInfo.FirstName
 		if name == "" {
-			name = info.LastName
+			name = yInfo.LastName
 		}
+	case "vk":
+		// VK возвращает email в токене, получаем имя через users.get
+		emailStr = token.Extra("email").(string)
+		if emailStr == "" {
+			return nil, stderrors.New("не удалось получить email от VK")
+		}
+		externalID = token.Extra("user_id").(string)
+
+		userReq, _ := http.NewRequestWithContext(ctxWithClient, "GET",
+			"https://api.vk.com/method/users.get?v=5.131&user_ids="+externalID, nil)
+		userResp, userErr := client.Do(userReq)
+		if userErr == nil {
+			defer userResp.Body.Close()
+			var vkInfo vkUserInfo
+			if decodeErr := json.NewDecoder(userResp.Body).Decode(&vkInfo); decodeErr == nil && len(vkInfo.Response) > 0 {
+				name = vkInfo.Response[0].FirstName + " " + vkInfo.Response[0].LastName
+			}
+		}
+		emailVerified = true
 	default:
 		return nil, stderrors.New("неподдерживаемый провайдер для получения информации")
 	}
