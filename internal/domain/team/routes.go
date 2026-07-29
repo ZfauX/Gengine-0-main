@@ -27,6 +27,7 @@ func RegisterRoutes(
 	teamHandler := NewTeamHandler(teamService, localStorage)
 	invitationHandler := NewInvitationHandler(invitationService)
 	chatHandler := NewChatHandler(db, hub, teamService)
+	userSearchHandler := NewUserSearchHandler(db, teamService)
 
 	teamsGroup := r.Group("/teams")
 	teamsGroup.Use(middleware.AuthRequired(authService))
@@ -40,7 +41,7 @@ func RegisterRoutes(
 		teamsGroup.GET("/:team_id", teamHandler.ViewTeam)
 
 		teamsGroup.GET("/:team_id/invitations", invitationHandler.Index)
-		teamsGroup.GET("/:team_id/invitations/new", invitationHandler.NewForm)
+		teamsGroup.GET("/:team_id/invitations/new", userSearchHandler.NewInvitationForm)
 		teamsGroup.POST("/:team_id/invitations/new", invitationHandler.Create)
 
 		teamsGroup.GET("/:team_id/chat", chatHandler.TeamChatPage)
@@ -49,6 +50,13 @@ func RegisterRoutes(
 
 		teamsGroup.GET("/:team_id/change-captain", teamHandler.ChangeCaptainForm)
 		teamsGroup.POST("/:team_id/change-captain", teamHandler.ChangeCaptain)
+	}
+
+	// API для поиска пользователей
+	apiGroup := r.Group("/api/teams")
+	apiGroup.Use(middleware.AuthRequired(authService))
+	{
+		apiGroup.GET("/:team_id/users/search", userSearchHandler.SearchUsers)
 	}
 
 	invitationsGroup := r.Group("/invitations")
