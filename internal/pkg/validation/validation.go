@@ -33,26 +33,13 @@ func ValidatePositiveUint(field string, value uint) error {
 	return nil
 }
 
-// ValidateGameDates проверяет корректность дат (дедлайн не позже старта, даты не в прошлом).
+// ValidateGameDates проверяет корректность дат (дедлайн не позже старта).
+// Допускаются nil-даты (не указаны), даты в прошлом (игра уже идёт).
 func ValidateGameDates(startsAt, registrationDeadline *time.Time) error {
-	if registrationDeadline != nil && registrationDeadline.Before(time.Now()) {
-		return errors.New("крайний срок регистрации не может быть в прошлом")
-	}
-	if startsAt != nil && startsAt.Before(time.Now()) {
-		return errors.New("дата начала не может быть в прошлом")
-	}
-	if registrationDeadline != nil && startsAt != nil && !registrationDeadline.Before(*startsAt) {
+	if registrationDeadline != nil && startsAt != nil && registrationDeadline.After(*startsAt) {
 		return errors.New("крайний срок регистрации не может быть позже даты начала")
 	}
 	return nil
-}
-
-// ValidateStartDate проверяет, что дата начала не в прошлом (кастомный валидатор для gin).
-func ValidateStartDate(t *time.Time) bool {
-	if t == nil {
-		return true
-	}
-	return !t.Before(time.Now())
 }
 
 // FieldErrors хранит ошибки валидации для каждого поля формы.
