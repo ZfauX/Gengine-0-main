@@ -82,17 +82,7 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *gorm.DB, authSer
 	service := NewNotificationService(db, hub).WithHub(hub).WithSSEManager(sseMgr)
 	settingsHandler := NewSettingsHandler(service, cfg.VAPID)
 
-	// HTML-РјР°СЂС€СЂСѓС‚С‹ РґР»СЏ СЃС‚СЂР°РЅРёС†С‹ РЅР°СЃС‚СЂРѕРµРє СѓРІРµРґРѕРјР»РµРЅРёР№
-	protected := r.Group("/settings")
-	protected.Use(middleware.AuthRequired(authService))
-	{
-		protected.GET("/notifications", settingsHandler.ShowForm)
-	}
-
-	// Р¤РѕСЂРјР° СЃРѕС…СЂР°РЅРµРЅРёСЏ РЅР°СЃС‚СЂРѕРµРє (POST)
-	protected.POST("/notifications", settingsHandler.Save)
-
-	// API-РјР°СЂС€СЂСѓС‚С‹ РґР»СЏ AJAX-РѕРїРµСЂР°С†РёР№
+	// API для настроек уведомлений (используется AJAX на странице профиля)
 	api := r.Group("/api/settings")
 	api.Use(middleware.AuthRequired(authService))
 	{
@@ -188,8 +178,8 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *gorm.DB, authSer
 		wsGroup.GET("/notifications", NotificationsWS(hub))
 	}
 
-	// Перенаправление /notifications → /settings/notifications
+	// Перенаправление /notifications → /profile
 	r.GET("/notifications", middleware.AuthRequired(authService), func(c *gin.Context) {
-		c.Redirect(http.StatusFound, "/settings/notifications")
+		c.Redirect(http.StatusFound, "/profile")
 	})
 }
