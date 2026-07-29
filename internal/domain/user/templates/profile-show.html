@@ -117,6 +117,15 @@
             <button id="save-notifications-btn" class="btn btn-primary text-sm">Сохранить настройки</button>
             <div id="notification-settings-message" class="mt-2 text-sm hidden"></div>
         </div>
+        {{if .VapidPublicKey}}
+        <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <button id="enable-push" data-vapid-key="{{.VapidPublicKey}}"
+                    class="btn btn-primary text-sm">
+                🔔 Включить push-уведомления
+            </button>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">Push-уведомления приходят даже когда браузер закрыт</p>
+        </div>
+        {{end}}
     </div>
 
     <!-- Двухфакторная аутентификация -->

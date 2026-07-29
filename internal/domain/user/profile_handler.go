@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"gengine-0/internal/config"
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/storage"
@@ -24,15 +25,17 @@ type ProfileHandler struct {
 	authSvc    *AuthService
 	profileSvc *ProfileService
 	userSvc    *UserService
+	cfg        *config.Config
 }
 
-func NewProfileHandler(db *gorm.DB, st storage.FileStorage, authSvc *AuthService, profileSvc *ProfileService, userSvc *UserService) *ProfileHandler {
+func NewProfileHandler(db *gorm.DB, st storage.FileStorage, authSvc *AuthService, profileSvc *ProfileService, userSvc *UserService, cfg *config.Config) *ProfileHandler {
 	return &ProfileHandler{
 		db:         db,
 		storage:    st,
 		authSvc:    authSvc,
 		profileSvc: profileSvc,
 		userSvc:    userSvc,
+		cfg:        cfg,
 	}
 }
 
@@ -54,11 +57,12 @@ func (h *ProfileHandler) Show(c *gin.Context) {
 		return
 	}
 	render.Page(c, http.StatusOK, "profile-show.html", gin.H{
-		"Title":         "Профиль",
-		"User":          user.ToPublic(),
-		"Achievements":  user.Achievements,
-		"CurrentUserID": userID,
-		"csrf":          csrf.GetToken(c),
+		"Title":          "Профиль",
+		"User":           user.ToPublic(),
+		"Achievements":   user.Achievements,
+		"VapidPublicKey": h.cfg.VAPID.PublicKey,
+		"CurrentUserID":  userID,
+		"csrf":           csrf.GetToken(c),
 		"Breadcrumbs": []map[string]string{
 			{"name": "Главная", "url": "/"},
 			{"name": "Профиль"},
