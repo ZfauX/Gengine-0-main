@@ -279,78 +279,70 @@ function initPushSubscription() {
     var statusEl = document.getElementById('push-status');
     if (!enableBtn || !disableBtn || !statusEl) return;
 
-    // Включаем/выключаем кнопки на основе состояния
-    function setPushState(active) {
-        if (active) {
-            enableBtn.style.display = 'none';
-            disableBtn.style.display = '';
-            statusEl.textContent = 'Push-уведомления активны';
-            localStorage.setItem('push_enabled', 'true');
-        } else {
-            enableBtn.style.display = '';
-            disableBtn.style.display = 'none';
-            statusEl.textContent = Notification.permission === 'denied'
-                ? 'Уведомления заблокированы браузером'
-                : 'Нажмите "Включить", чтобы получать push-уведомления';
-            localStorage.setItem('push_enabled', 'false');
-        }
+    function showEnabled() {
+        enableBtn.style.display = 'none';
+        disableBtn.style.display = '';
+        statusEl.textContent = 'Push-уведомления активны';
+        statusEl.className = 'text-xs text-green-600 dark:text-green-400 mt-2';
     }
 
-    // При загрузке — проверяем localStorage и Notification.permission
-    if (Notification.permission === 'granted' && localStorage.getItem('push_enabled') === 'true') {
-        setPushState(true);
-        // Дополнительно проверяем подписку через SW (не блокируя UI)
-        navigator.serviceWorker.ready.then(function(r) { return r.pushManager.getSubscription(); })
-            .then(function(s) { if (!s) { localStorage.setItem('push_enabled', 'false'); setPushState(false); } })
-            .catch(function() {});
+    function showDisabled(reason) {
+        enableBtn.style.display = '';
+        disableBtn.style.display = 'none';
+        statusEl.textContent = reason || 'Нажмите "Включить", чтобы получать push-уведомления';
+        statusEl.className = 'text-xs text-gray-500 dark:text-gray-400 mt-2';
+    }
+
+    // При загрузке — проверяем Notification.permission
+    if (Notification.permission === 'granted') {
+        showEnabled();
     } else {
-        setPushState(false);
+        showDisabled();
     }
 
     enableBtn.addEventListener('click', function() {
         Notification.requestPermission().then(function(permission) {
             if (permission === 'granted') {
+                showEnabled();
+                // Подписка через SW (в фоне, UI уже обновлён)
                 navigator.serviceWorker.ready.then(function(registration) {
                     return registration.pushManager.subscribe({
                         userVisibleOnly: true,
                         applicationServerKey: urlBase64ToUint8Array(enableBtn.dataset.vapidKey || '')
                     });
                 }).then(function(subscription) {
-                    return fetch('/api/push/subscribe', {
+                    fetch('/api/push/subscribe', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(subscription)
+                    }).catch(function(e) {
+                        console.warn('Push subscribe save failed:', e);
                     });
-                }).then(function() {
-                    showToast('Уведомления включены', 'success');
-                    setPushState(true);
                 }).catch(function(err) {
-                    showToast('Ошибка: ' + (err.message || 'не удалось подписаться'), 'error');
+                    console.warn('Push SW subscribe failed:', err);
                 });
             } else {
-                showToast('Разрешите уведомления в настройках браузера', 'warning');
+                showDisabled('Разрешите уведомления в настройках браузера');
             }
         });
     });
 
     disableBtn.addEventListener('click', function() {
+        showDisabled('Push-уведомления отключены');
         navigator.serviceWorker.ready.then(function(registration) {
             return registration.pushManager.getSubscription();
         }).then(function(subscription) {
-            if (!subscription) return null;
+            if (!subscription) return;
             var endpoint = subscription.endpoint;
-            return subscription.unsubscribe().then(function() {
-                return fetch('/api/push/unsubscribe', {
+            subscription.unsubscribe().then(function() {
+                fetch('/api/push/unsubscribe', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ endpoint: endpoint })
-                });
+                }).catch(function(e) { console.warn('Push unsubscribe save failed:', e); });
             });
-        }).then(function() {
-            showToast('Уведомления отключены', 'success');
-            setPushState(false);
         }).catch(function(err) {
-            showToast('Ошибка отключения: ' + err.message, 'error');
+            console.warn('Push unsubscribe failed:', err);
         });
     });
 }
