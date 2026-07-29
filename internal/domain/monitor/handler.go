@@ -470,7 +470,7 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 			_, message, err := conn.ReadMessage()
 			if err != nil {
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-					log.Error().Err(err).Str("room_id", roomID).Msg("ChatWS: read error")
+					log.Debug().Err(err).Str("room_id", roomID).Msg("ChatWS: read error")
 				}
 				return
 			}
