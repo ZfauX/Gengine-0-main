@@ -94,15 +94,39 @@
         return String(text).replace(/[&<>"']/g, function(m) { return map[m]; });
     }
 
+    function showSendingStatus(text) {
+        var div = document.createElement('div');
+        div.id = 'sending-status';
+        div.className = 'mb-3 text-right';
+        div.innerHTML = '<div class="inline-block max-w-[80%] text-left">' +
+            '<div class="rounded-lg px-3 py-2 mt-1 bg-blue-400 text-white opacity-70">' +
+            escapeHtml(text) +
+            ' <span class="text-xs opacity-60">⏳</span></div></div>';
+        messagesEl.appendChild(div);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function removeSendingStatus() {
+        var el = document.getElementById('sending-status');
+        if (el) el.remove();
+    }
+
     function sendMessage() {
         var text = inputEl.value.trim();
-        if (!text || !socket || socket.readyState !== WebSocket.OPEN) return;
+        if (!text) { return; }
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            statusEl.textContent = '⚠️ Соединение не установлено. Сообщение не отправлено.';
+            statusEl.className = 'mt-2 text-sm text-red-500';
+            return;
+        }
+        showSendingStatus(text);
         socket.send(JSON.stringify({
             type: 'message',
             room_id: roomID,
             content: text
         }));
         inputEl.value = '';
+        setTimeout(function() { removeSendingStatus(); }, 5000);
     }
 
     sendBtn.addEventListener('click', sendMessage);
