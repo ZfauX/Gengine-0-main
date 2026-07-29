@@ -1,8 +1,8 @@
 {{define "teams-change_captain.html"}}
 <div class="max-w-3xl mx-auto">
-    <h1 class="page-title">Смена капитана команды «{{.Team.Name}}»</h1>
+    <h1 class="page-title">Смена капитана</h1>
 
-    <form action="/games/{{.GameID}}/teams/{{.TeamID}}/change-captain" method="POST" class="card space-y-4">
+    <form action="/teams/{{.TeamID}}/change-captain" method="POST" class="card space-y-4">
         <input type="hidden" name="_csrf" value="{{.csrf}}">
 
         <!-- Выбор нового капитана -->
@@ -20,7 +20,7 @@
         <!-- Кнопки -->
         <div class="flex flex-wrap gap-3 pt-2">
             <button type="submit" class="btn btn-primary text-sm">Сменить</button>
-            <a href="/games/{{.GameID}}/teams/{{.TeamID}}/members" class="btn btn-outline text-sm">Отмена</a>
+            <a href="/teams/{{.TeamID}}" class="btn btn-outline text-sm">Отмена</a>
         </div>
     </form>
 </div>

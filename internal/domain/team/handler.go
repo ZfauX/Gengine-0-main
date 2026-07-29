@@ -380,7 +380,7 @@ func (h *TeamHandler) ChangeCaptainForm(c *gin.Context) {
 		return
 	}
 
-	_, members, err := h.teamService.GetTeamWithMembers(c.Request.Context(), req.TeamID)
+	team, members, err := h.teamService.GetTeamWithMembers(c.Request.Context(), req.TeamID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			render.RenderErrorPage(c, http.StatusNotFound)
@@ -396,12 +396,16 @@ func (h *TeamHandler) ChangeCaptainForm(c *gin.Context) {
 
 	render.Page(c, http.StatusOK, "teams-change_captain.html", gin.H{
 		"Title":         "Смена капитана",
-		"GameID":        c.Param("game_id"),
 		"TeamID":        req.TeamID,
 		"Members":       members,
 		"csrf":          csrf.GetToken(c),
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,
+		"Breadcrumbs": []map[string]string{
+			{"name": "Главная", "url": "/"},
+			{"name": team.Name, "url": "/teams/" + strconv.Itoa(int(team.ID))},
+			{"name": "Смена капитана"},
+		},
 	})
 }
 

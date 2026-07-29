@@ -6,7 +6,7 @@
     <div class="flash flash-error">{{.Error}}</div>
     {{end}}
 
-    <form action="/games/{{.GameID}}/teams/{{.TeamID}}/members/add" method="POST" class="card space-y-4">
+    <form action="/teams/{{.TeamID}}/add-member" method="POST" class="card space-y-4">
         <input type="hidden" name="_csrf" value="{{.csrf}}">
 
         <!-- Выбор пользователя -->
@@ -25,7 +25,7 @@
         <!-- Кнопки -->
         <div class="flex flex-wrap gap-3 pt-2">
             <button type="submit" class="btn btn-primary text-sm">Добавить</button>
-            <a href="/games/{{.GameID}}/teams/{{.TeamID}}/members" class="btn btn-outline text-sm">Отмена</a>
+            <a href="/teams/{{.TeamID}}" class="btn btn-outline text-sm">Отмена</a>
         </div>
     </form>
 </div>
