@@ -272,16 +272,21 @@ function initAutoSaveDrafts() {
 function initPushSubscription() {
     if (!('Notification' in window) || !('serviceWorker' in navigator)) return;
 
-    var pushBtn = document.getElementById('enable-push');
-    if (!pushBtn) return;
+    var enableBtn = document.getElementById('enable-push');
+    var disableBtn = document.getElementById('disable-push');
+    var statusEl = document.getElementById('push-status');
+    if (!enableBtn || !disableBtn || !statusEl) return;
 
-    pushBtn.addEventListener('click', function() {
+    // Проверяем текущее состояние подписки
+    checkSubscription();
+
+    enableBtn.addEventListener('click', function() {
         Notification.requestPermission().then(function(permission) {
             if (permission === 'granted') {
                 navigator.serviceWorker.ready.then(function(registration) {
                     return registration.pushManager.subscribe({
                         userVisibleOnly: true,
-                        applicationServerKey: urlBase64ToUint8Array(pushBtn.dataset.vapidKey || '')
+                        applicationServerKey: urlBase64ToUint8Array(enableBtn.dataset.vapidKey || '')
                     });
                 }).then(function(subscription) {
                     fetch('/api/push/subscribe', {
@@ -290,7 +295,9 @@ function initPushSubscription() {
                         body: JSON.stringify(subscription)
                     }).then(function() {
                         showToast('Уведомления включены', 'success');
-                        pushBtn.style.display = 'none';
+                        enableBtn.style.display = 'none';
+                        disableBtn.style.display = '';
+                        statusEl.textContent = 'Push-уведомления активны';
                     }).catch(function() {
                         showToast('Ошибка подписки на уведомления', 'error');
                     });
@@ -302,6 +309,45 @@ function initPushSubscription() {
             }
         });
     });
+
+    disableBtn.addEventListener('click', function() {
+        navigator.serviceWorker.ready.then(function(registration) {
+            return registration.pushManager.getSubscription();
+        }).then(function(subscription) {
+            if (!subscription) return;
+            var endpoint = subscription.endpoint;
+            return subscription.unsubscribe().then(function() {
+                fetch('/api/push/unsubscribe', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ endpoint: endpoint })
+                });
+            });
+        }).then(function() {
+            showToast('Уведомления отключены', 'success');
+            enableBtn.style.display = '';
+            disableBtn.style.display = 'none';
+            statusEl.textContent = 'Push-уведомления отключены';
+        }).catch(function(err) {
+            showToast('Ошибка отключения: ' + err.message, 'error');
+        });
+    });
+
+    function checkSubscription() {
+        navigator.serviceWorker.ready.then(function(registration) {
+            return registration.pushManager.getSubscription();
+        }).then(function(subscription) {
+            if (subscription) {
+                enableBtn.style.display = 'none';
+                disableBtn.style.display = '';
+                statusEl.textContent = 'Push-уведомления активны';
+            } else {
+                enableBtn.style.display = '';
+                disableBtn.style.display = 'none';
+                statusEl.textContent = 'Нажмите "Включить", чтобы получать push-уведомления';
+            }
+        });
+    }
 }
 
 // =============================================================================
