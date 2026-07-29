@@ -269,6 +269,8 @@ function initAutoSaveDrafts() {
 // =============================================================================
 // UX5: Web Push subscription
 // =============================================================================
+// UX5: Web Push subscription
+// =============================================================================
 function initPushSubscription() {
     if (!('Notification' in window) || !('serviceWorker' in navigator)) return;
 
@@ -277,8 +279,24 @@ function initPushSubscription() {
     var statusEl = document.getElementById('push-status');
     if (!enableBtn || !disableBtn || !statusEl) return;
 
-    // Проверяем текущее состояние подписки
-    checkSubscription();
+    // Ждём регистрации SW и проверяем подписку
+    navigator.serviceWorker.ready.then(function(registration) {
+        return registration.pushManager.getSubscription();
+    }).then(function(subscription) {
+        if (subscription) {
+            enableBtn.style.display = 'none';
+            disableBtn.style.display = '';
+            statusEl.textContent = 'Push-уведомления активны';
+        } else {
+            enableBtn.style.display = '';
+            disableBtn.style.display = 'none';
+            statusEl.textContent = 'Нажмите "Включить", чтобы получать push-уведомления';
+        }
+    }).catch(function() {
+        enableBtn.style.display = '';
+        disableBtn.style.display = 'none';
+        statusEl.textContent = 'Сервис-воркер не готов';
+    });
 
     enableBtn.addEventListener('click', function() {
         Notification.requestPermission().then(function(permission) {
@@ -332,22 +350,6 @@ function initPushSubscription() {
             showToast('Ошибка отключения: ' + err.message, 'error');
         });
     });
-
-    function checkSubscription() {
-        navigator.serviceWorker.ready.then(function(registration) {
-            return registration.pushManager.getSubscription();
-        }).then(function(subscription) {
-            if (subscription) {
-                enableBtn.style.display = 'none';
-                disableBtn.style.display = '';
-                statusEl.textContent = 'Push-уведомления активны';
-            } else {
-                enableBtn.style.display = '';
-                disableBtn.style.display = 'none';
-                statusEl.textContent = 'Нажмите "Включить", чтобы получать push-уведомления';
-            }
-        });
-    }
 }
 
 // =============================================================================
