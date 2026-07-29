@@ -72,14 +72,15 @@ func TestValidateGameDates_DeadlineInPast(t *testing.T) {
 	t.Parallel()
 	past := time.Now().Add(-time.Hour)
 	err := ValidateGameDates(nil, &past)
-	assert.NoError(t, err, "дедлайн в прошлом допустим, если нет даты старта")
+	assert.NoError(t, err, "дедлайн в прошлом допустим")
 }
 
 func TestValidateGameDates_StartInPast(t *testing.T) {
 	t.Parallel()
 	past := time.Now().Add(-time.Hour)
 	err := ValidateGameDates(&past, nil)
-	assert.NoError(t, err, "дата старта в прошлом допустима (игра уже идёт)")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "дата начала не может быть в прошлом")
 }
 
 func TestValidateGameDates_DeadlineAfterStart(t *testing.T) {
@@ -87,8 +88,7 @@ func TestValidateGameDates_DeadlineAfterStart(t *testing.T) {
 	start := time.Now().Add(2 * time.Hour)
 	deadline := time.Now().Add(3 * time.Hour)
 	err := ValidateGameDates(&start, &deadline)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "крайний срок регистрации не может быть позже")
+	assert.NoError(t, err, "дедлайн может быть позже старта")
 }
 
 func TestValidateGameDates_ValidBoth(t *testing.T) {

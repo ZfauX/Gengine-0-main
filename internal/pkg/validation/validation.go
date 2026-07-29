@@ -33,11 +33,12 @@ func ValidatePositiveUint(field string, value uint) error {
 	return nil
 }
 
-// ValidateGameDates проверяет корректность дат (дедлайн не позже старта).
-// Допускаются nil-даты (не указаны), даты в прошлом (игра уже идёт).
+// ValidateGameDates проверяет корректность дат (старт не в прошлом).
+// Дедлайн регистрации может быть позже старта (заявки принимаются во время игры)
+// или отсутствовать (бессрочный приём).
 func ValidateGameDates(startsAt, registrationDeadline *time.Time) error {
-	if registrationDeadline != nil && startsAt != nil && registrationDeadline.After(*startsAt) {
-		return errors.New("крайний срок регистрации не может быть позже даты начала")
+	if startsAt != nil && startsAt.Before(time.Now()) {
+		return errors.New("дата начала не может быть в прошлом")
 	}
 	return nil
 }
