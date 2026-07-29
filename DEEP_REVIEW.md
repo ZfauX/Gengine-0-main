@@ -1,4 +1,4 @@
-# Deep Review (pass 18) — финальная проверка
+# Deep Review (pass 19) — июль 2026
 
 ## Покрытие
 
@@ -9,136 +9,132 @@
 | `go build ./...` | ✅ OK |
 | `go test -short ./...` | ✅ 35/35 |
 
-> Проверка регрессий pass 17 + финальное здоровье проекта.
-
----
-
-## ✅ Регрессии pass 17 — все 6/6 проверены
-
-| Проверка | Статус |
-|----------|--------|
-| SEO Title во всех handler.go | ✅ Добавлены |
-| Canonical URL в layout + helper.go | ✅ Работает |
-| ErrorHandler XSS (EscapeString + ToLower) | ✅ Исправлено |
-| Squashed migrations 000005_schema | ✅ Создан |
-| CHANGELOG.md | ✅ Создан |
-| gorm.io/gorm v1.26.0 | ✅ Зафиксирован |
-
 ---
 
 ## 🔴 CRITICAL
 
-### C1. Sitemap — всего 3 URL из десятков страниц
+### C1. `AddMember` — ошибка обещает то, что не работает
 
-**Файл:** `internal/app/router.go:133-144`
+**Файл:** `internal/domain/team/service.go:80`
 
 ```go
-r.GET("/sitemap.xml", func(c *gin.Context) {
-    // / — priority 1.0
-    // /games — priority 0.9
-    // /calendar — priority 0.7
-})
+return errors.New("только капитан или автор игры может добавлять участников")
 ```
 
-В проекте 11 доменов с десятками публичных страниц, но sitemap покрывает только 3. Нет: `/teams`, `/tournaments`, `/games/:id`, `/users/:id`, `/dashboard`, `/profile`, `/settings/notifications`, `/leaderboard` и т.д.
+Текст говорит "автор игры может добавлять", но `CanManageTeam` (line 72) проверяет **только капитана**. Автор игры, не являющийся капитаном, получит misleading error.
+
+**Фикс:** Убрать "или автор игры" из сообщения об ошибке (команды теперь независимы от игр).
 
 ---
 
-### C2. `.env.example` — не хватает 26 переменных
+### C2. Mojibake в JSON-ответах notification/routes.go
 
-**Файлы:** `.env.example` vs `internal/config/config.go`
+**Файл:** `internal/domain/notification/routes.go`
 
-В `.env.example` описано 50 переменных. Config загружает 76. Разрыв в **26 переменных**:
+Русские строки в JSON-ответах сохранены в битой кодировке (UTF-8 → Latin-1 → UTF-8):
 
-**Server/Logging:**
-`LOG_FILE_PATH`, `LOG_MAX_SIZE`, `LOG_MAX_AGE`, `LOG_COMPRESS`, `LOG_FORMAT`, `LOG_LEVEL`, `STATIC_DIR`, `UPLOADS_DIR`, `MAX_UPLOAD_SIZE`, `MAX_BODY_SIZE`, `CORS_ORIGINS`, `TRUSTED_PROXIES`, `STRICT_CONFIG`
+```go
+c.JSON(http.StatusOK, gin.H{
+    "error": "РўСЂРµР±СѓРµС‚СЃСЏ Р°СѓС‚РµРЅС‚РёС„РёРєР°С†РёСЏ",
+})
+```
 
-**DB Pool:**
-`DB_CONN_MAX_IDLE_TIME`
-
-**Rate Limiting:**
-`RATE_LIMIT_WINDOW`, `RATE_LIMIT_GLOBAL`, `RATE_LIMIT_LOGIN`, `RATE_LIMIT_REGISTRATION`, `RATE_LIMIT_CODE_SUBMISSION`, `RATE_LIMIT_SSE`, `RATE_LIMIT_API`
-
-**Valkey:**
-`VALKEY_POOL_SIZE`, `VALKEY_MIN_IDLE_CONNS`, `VALKEY_MAX_RETRIES`
-
-**WebSocket:**
-`WS_MAX_TOTAL_CONNS`, `WS_MAX_CONNS_PER_IP`
-
-### C3. `.env.example` — 3 мёртвые Stripe-переменные
-
-`STRIPE_ENABLED`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` описаны в `.env.example`, но **не загружаются** в `config.go` и не используются. `StripeCustomerID` есть в модели User, но код интеграции отсутствует.
+**Затрагивает 7 строк:** 126, 136, 144, 152, 164. Клиенты получат кракозябры вместо русского текста.
 
 ---
 
 ## 🟠 HIGH
 
-### H1. CI — нет Valkey service
+### H1. Unqualified column references в game_listing_service
 
-**Файл:** `.github/workflows/go.yml`
+**Файл:** `internal/domain/game/game_listing_service.go:53,59,89`
 
-Интеграционные тесты могут использовать Valkey (через `Init*WithValkey`), но в CI нет Valkey-сервиса. Тесты, использующие Valkey, пропустятся или упадут.
+WHERE-условия используют `author_id`, `visibility`, `is_draft` без префикса `games.`. Сейчас нет конфликтов, но добавление любого JOIN с такими же именами сломает запрос.
 
-### H2. CI — coverage только `./cmd/server/...`
+**Фикс:** `games.author_id`, `games.visibility`, `games.is_draft`
 
-Покрытие интеграционных тестов меряет только `cmd/server/`, не включая `internal/` пакеты, которые тесты реально упражняют.
+---
 
-### H3. README — PostgreSQL версия
+### H2. Пустой пакет `internal/pkg/apierror/`
 
-Говорит "PostgreSQL 16+", но Docker использует `postgres:18-alpine`. Стоит обновить.
+**Файл:** `internal/pkg/apierror/` — пустая директория
+
+Мёртвый код. Нужно удалить.
+
+---
+
+### H3. `CreateInvitation` — игнорируется ошибка `GetByTeamAndUser`
+
+**Файл:** `internal/domain/team/service.go:181`
+
+```go
+existing, _ := s.invRepo.GetByTeamAndUser(ctx, teamID, invitedUserID)
+```
+
+При ошибке БД `existing` будет nil, и проверка на дубликат приглашения пропустится.
+
+---
+
+### H4. `game` пакет — 50 файлов, пора декомпозировать
+
+Самый большой пакет (50 Go файлов). Можно выделить подпакеты:
+- `gamepassing/` — прохождения и заявки
+- `gamereview/` — отзывы и рейтинги
+- `gamelevel/` — управление уровнями (если не пересекается с `level/`)
 
 ---
 
 ## 🟡 MEDIUM
 
-| # | Область | Описание |
-|---|---------|----------|
-| M1 | CI | `govulncheck` без кеширования — каждый раз скачивается |
-| M2 | CI | Нет шага `go mod download` для lint job (полагается на кеш из setup-go) |
-| M3 | SEO | Sitemap не генерируется динамически из БД |
+| # | Область | Файл | Описание |
+|---|---------|------|----------|
+| M1 | Cleanup | `.gitignore` | Нет `.opencode/` в gitignore — файлы конфигурации попадают в репозиторий |
+| M2 | Email | `queue.go:50` | TODO: использовать константы вместо raw strings для статусов |
+| M3 | i18n | `helper.go:134` | TODO: `data["lang"]` зарезервировано для будущей i18n интеграции |
+| M4 | Team | `service.go:170` | `"пользователь не найден"` — теряется оригинальная ошибка БД |
+| M5 | Team | `handler.go:235` | `members` ссылается на капитана на странице `ViewTeam` (old `Members` handler) |
+| M6 | Notification | `routes.go:103,124` | Избыточные `if userID == 0` (уже под AuthRequired) |
+| M7 | Notification | `routes.go` | `userID == 0` проверки в `apiNotifs` хендлерах — синхронизировать стиль |
+| M8 | DI | `wire_providers.go` | `NewGameplayHandler` принимает 8 параметров, 1 (`attemptSvc`) игнорируется через `_` |
 
 ---
 
-## ✅ Исправлено в раундах 1-18
+## ✅ Исправлено за раунд
 
-| Раунд | Найдено | Исправлено |
-|-------|---------|------------|
-| 1-11 | ~160 | ✅ Все |
-| 12 | 15 | ✅ Все |
-| 13 | 29 | ✅ Все |
-| 14 | 8 | ✅ Все |
-| 15 | 18 | ✅ Все |
-| 16 | 33 | ✅ Все |
-| 17 | 24 | ✅ Все |
-| **Всего** | **~287** | **✅ 287/287** |
+| Проблема | Статус |
+|----------|--------|
+| Ambiguous column `name` in game listing query (FTS search) | ✅ `games.name ILIKE` |
+| ValidateGameDates test broken after validation change | ✅ Test updated |
+| Game listing test broken after LEFT JOIN users | ✅ `users.name as author__name` |
+| Push notification button state | ✅ `Notification.permission` based |
+| ChatWS error log level too high | ✅ `Error` → `Debug` |
+| Level handler nil pointer (db: nil) | ✅ `db *gorm.DB` passed |
+| Game creation missing is_draft checkbox | ✅ Added to games-new.html |
 
 ---
 
-## 📊 Финальный статус проекта
+## 📊 Статистика
 
 | Метрика | Значение |
 |---------|----------|
-| Go файлов | ~180 |
-| HTML шаблонов | ~77 |
-| Тестовых функций | ~200+ |
-| Пакетов с тестами | 35/35 (100%) |
-| Миграций БД | 18 |
-| i18n ключей | 357 ru / 353 en |
-| CI/CD | GitHub Actions (5 jobs) |
-| Docker | Alpine multi-stage |
-| Деплой | Docker Compose |
-| Раундов ревью | 18 |
-| Найдено/исправлено | ~287 / ~287 |
+| Go файлов в `internal/` | ~215 |
+| Доменов | 11 |
+| Пакетов в `internal/pkg/` | 22 (1 пустой) |
+| Тестов | 35/35 пакетов |
+| TODO/FIXME комментариев | 2 |
+| Пустых пакетов | 1 (`apierror/`) |
 
 ---
 
 ## 🏁 Заключение
 
-Проект в **отличном состоянии**: 100% тестов, 100% линтер, 0 ветированых ошибок, документация в порядке.
+После 19 раундов ревью проект стабилен: 35/35 тестов, линтер чист, все основные баги исправлены.
 
-**Осталось 3 критические проблемы:**
-1. Sitemap — 3 URL вместо десятков (быстрое исправление)
-2. 26 env-переменных не документированы в `.env.example`
-3. 3 мёртвые Stripe-переменные в `.env.example`
+**Остаётся 2 критические и 4 высокие проблемы:**
 
-**После их исправления** проект можно считать production-ready.
+1. **`AddMember` error message** — не соответствует реальности (can't fix without breaking team independence)
+2. **Mojibake в JSON ответах** — 7 строк notification/routes.go
+3. **Unqualified columns** — fragile SQL в game_listing_service
+4. **Empty `apierror/` package** — 1 пустая директория
+5. **Ignored error** — `GetByTeamAndUser` результат не проверяется
+6. **Game package size** — 50 файлов, пора декомпозировать
