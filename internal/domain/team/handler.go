@@ -339,7 +339,7 @@ func (h *TeamHandler) AddMember(c *gin.Context) {
 
 	if err := h.teamService.AddMember(c.Request.Context(), req.TeamID, input.UserID, actorID); err != nil {
 		switch err.Error() {
-		case "пользователь уже в команде", "только капитан или автор игры может добавлять участников":
+		case "пользователь уже в команде", "только капитан может добавлять участников":
 			render.RenderError(c, http.StatusBadRequest, err.Error())
 		default:
 			log.Error().Err(err).Uint("team_id", req.TeamID).Uint("user_id", input.UserID).Uint("actor_id", actorID).Msg("AddMember: failed to add member")
@@ -347,7 +347,7 @@ func (h *TeamHandler) AddMember(c *gin.Context) {
 		}
 		return
 	}
-	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/teams/"+strconv.Itoa(int(req.TeamID))+"/members")
+	c.Redirect(http.StatusFound, "/teams/"+strconv.Itoa(int(req.TeamID)))
 }
 
 // RemoveMember удаляет участника из команды.
@@ -369,7 +369,7 @@ func (h *TeamHandler) RemoveMember(c *gin.Context) {
 		}
 		return
 	}
-	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/teams/"+strconv.Itoa(int(req.TeamID))+"/members")
+	c.Redirect(http.StatusFound, "/teams/"+strconv.Itoa(int(req.TeamID)))
 }
 
 // ChangeCaptainForm показывает форму смены капитана.

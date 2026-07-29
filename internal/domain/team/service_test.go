@@ -226,17 +226,15 @@ func TestInvitationService_Decline(t *testing.T) {
 
 func newTeamService(db *gorm.DB) *team.TeamService {
 	teamRepo := team.NewGormTeamRepo(db)
-	authorizer := testutil.NewGameAuthorizerStub(db)
-	return team.NewTeamService(teamRepo, authorizer)
+	return team.NewTeamService(teamRepo)
 }
 
 func newTeamAndInvitationServices(db *gorm.DB) (*team.TeamService, *team.InvitationService) {
 	teamRepo := team.NewGormTeamRepo(db)
 	invRepo := team.NewGormInvitationRepo(db)
-	authorizer := testutil.NewGameAuthorizerStub(db)
 	cfg := &config.Config{}
-	ts := team.NewTeamService(teamRepo, authorizer)
-	invSvc := team.NewInvitationService(invRepo, teamRepo, authorizer, cfg)
+	ts := team.NewTeamService(teamRepo)
+	invSvc := team.NewInvitationService(invRepo, teamRepo, cfg)
 	return ts, invSvc
 }
 

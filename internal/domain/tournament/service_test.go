@@ -45,8 +45,7 @@ func createTournamentGame(t *testing.T, db *gorm.DB, authorID uint, name string)
 
 func newTeamService(db *gorm.DB) *team.TeamService {
 	teamRepo := team.NewGormTeamRepo(db)
-	authorizer := testutil.NewGameAuthorizerStub(db)
-	return team.NewTeamService(teamRepo, authorizer)
+	return team.NewTeamService(teamRepo)
 }
 
 func newTournamentService(db *gorm.DB, teamSvc *team.TeamService) *tournament.TournamentService {

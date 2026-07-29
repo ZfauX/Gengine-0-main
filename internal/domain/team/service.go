@@ -10,20 +10,17 @@ import (
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/email"
 	"gengine-0/internal/pkg/metrics"
-	"gengine-0/internal/pkg/middleware"
 
 	"github.com/rs/zerolog/log"
 )
 
 type TeamService struct {
-	teamRepo   TeamRepository
-	authorizer middleware.GameAuthorizer
+	teamRepo TeamRepository
 }
 
-func NewTeamService(teamRepo TeamRepository, authorizer middleware.GameAuthorizer) *TeamService {
+func NewTeamService(teamRepo TeamRepository) *TeamService {
 	return &TeamService{
-		teamRepo:   teamRepo,
-		authorizer: authorizer,
+		teamRepo: teamRepo,
 	}
 }
 
@@ -71,19 +68,7 @@ func (s *TeamService) CanManageTeam(ctx context.Context, teamID, userID uint) bo
 	if err != nil {
 		return false
 	}
-	if team.CaptainID == userID {
-		return true
-	}
-	passing, err := s.teamRepo.GetPassingByTeam(ctx, teamID)
-	if err != nil {
-		return false
-	}
-	game, err := s.teamRepo.GetGameByID(ctx, passing.GameID)
-	if err != nil {
-		return false
-	}
-	isManager, _ := s.authorizer.IsUserManager(ctx, game.ID, userID)
-	return isManager
+	return team.CaptainID == userID
 }
 
 func (s *TeamService) GetAvailableUsers(ctx context.Context, teamID uint) ([]user.User, error) {
@@ -152,23 +137,20 @@ func (s *TeamService) updateTeamMembersTotal(ctx context.Context) {
 // ---------- InvitationService ----------
 
 type InvitationService struct {
-	invRepo    InvitationRepository
-	teamRepo   TeamRepository
-	authorizer middleware.GameAuthorizer
-	cfg        *config.Config
+	invRepo  InvitationRepository
+	teamRepo TeamRepository
+	cfg      *config.Config
 }
 
 func NewInvitationService(
 	invRepo InvitationRepository,
 	teamRepo TeamRepository,
-	authorizer middleware.GameAuthorizer,
 	cfg *config.Config,
 ) *InvitationService {
 	return &InvitationService{
-		invRepo:    invRepo,
-		teamRepo:   teamRepo,
-		authorizer: authorizer,
-		cfg:        cfg,
+		invRepo:  invRepo,
+		teamRepo: teamRepo,
+		cfg:      cfg,
 	}
 }
 
@@ -178,16 +160,8 @@ func (s *InvitationService) CreateInvitation(ctx context.Context, teamID, invite
 		return nil, getTeamErr
 	}
 
-	isCaptain := (team.CaptainID == actorID)
-	if !isCaptain {
-		passing, passingErr := s.teamRepo.GetPassingByTeam(ctx, teamID)
-		if passingErr != nil {
-			return nil, errors.New("не удалось определить игру для команды")
-		}
-		isManager, _ := s.authorizer.IsUserManager(ctx, passing.GameID, actorID)
-		if !isManager {
-			return nil, errors.New("только капитан или автор игры может создавать приглашения")
-		}
+	if team.CaptainID != actorID {
+		return nil, errors.New("только капитан может создавать приглашения")
 	}
 
 	isMember, memberErr := s.teamRepo.IsMember(ctx, teamID, invitedUserID)

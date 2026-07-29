@@ -39,12 +39,12 @@ func wrapTournamentService(db *gorm.DB, tournamentRepo tournament.TournamentRepo
 	return tournament.NewTournamentService(db, tournamentRepo, tournamentGameRepo, tournamentTeamRepo, tournamentResultRepo, teamService, cfg)
 }
 
-func wrapTeamService(teamRepo team.TeamRepository, coAuthorSvc *game.CoAuthorService) *team.TeamService {
-	return team.NewTeamService(teamRepo, coAuthorSvc)
+func wrapTeamService(teamRepo team.TeamRepository) *team.TeamService {
+	return team.NewTeamService(teamRepo)
 }
 
-func wrapInvitationService(invRepo team.InvitationRepository, teamRepo team.TeamRepository, coAuthorSvc *game.CoAuthorService, cfg *config.Config) *team.InvitationService {
-	return team.NewInvitationService(invRepo, teamRepo, coAuthorSvc, cfg)
+func wrapInvitationService(invRepo team.InvitationRepository, teamRepo team.TeamRepository, cfg *config.Config) *team.InvitationService {
+	return team.NewInvitationService(invRepo, teamRepo, cfg)
 }
 
 func wrapLevelService(levelRepo level.LevelRepository, questionRepo level.QuestionRepository, answerRepo level.AnswerRepository, coAuthorSvc *game.CoAuthorService, gameAdminSvc *game.GameAdminService) *level.LevelService {
