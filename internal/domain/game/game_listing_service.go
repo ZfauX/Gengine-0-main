@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/sqlutil"
 
 	"github.com/rs/zerolog/log"
@@ -36,8 +37,10 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 		SELECT games.*,
 			COALESCE(ratings.avg_rating, 0) as rating_value,
 			COALESCE(participants.participant_count, 0) as participant_count,
+			users.name as author__name,
 			COUNT(*) OVER() AS total_count
 		FROM games
+		LEFT JOIN users ON users.id = games.author_id
 		LEFT JOIN (
 			SELECT game_id, COALESCE(AVG(rating), 0) as avg_rating
 			FROM reviews GROUP BY game_id
@@ -131,6 +134,7 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 		Game
 		RatingValue      float64
 		ParticipantCount int
+		AuthorName       string `gorm:"column:author__name"`
 	}
 	var rows []gameRow
 	if err := s.gameRepo.Model(ctx).Raw(query, args...).Scan(&rows).Error; err != nil {
@@ -140,6 +144,9 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 	games := make([]Game, len(rows))
 	for i, row := range rows {
 		games[i] = row.Game
+		if row.AuthorName != "" {
+			games[i].Author = user.User{Name: row.AuthorName}
+		}
 	}
 	return games, total, nil
 }
