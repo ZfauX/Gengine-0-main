@@ -262,6 +262,23 @@
     });
 
     // Skeleton loading для AJAX-запросов
+    (function() {
+        // При загрузке страницы скрываем skeleton, показываем контент
+        var sk = document.getElementById('skeletonLoading');
+        var cv = document.getElementById('gamesCardView');
+        var tv = document.getElementById('gamesTableView');
+        if (sk && cv) {
+            sk.classList.add('hidden');
+            cv.classList.remove('hidden');
+        }
+        if (tv && cv) {
+            if (sk && cv) {
+                // табличный режим тоже скрыт по умолчанию, показываем только card
+                tv.classList.add('hidden');
+            }
+        }
+    })();
+
     window.showSkeleton = function() {
         const table = document.getElementById('gamesTable');
         if (!table) return;
