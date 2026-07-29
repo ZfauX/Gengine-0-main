@@ -12,7 +12,10 @@ import (
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/middleware"
+	"gengine-0/internal/pkg/render"
 	ws "gengine-0/internal/pkg/websocket"
+
+	csrf "gengine-0/internal/pkg/csrf"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -167,6 +170,32 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *gorm.DB, authSer
 				"total":         total,
 				"page":          page,
 				"per_page":      perPage,
+			})
+		})
+	}
+
+	// Страница уведомлений
+	protectedNotifs := r.Group("/notifications")
+	protectedNotifs.Use(middleware.AuthRequired(authService))
+	{
+		protectedNotifs.GET("/", func(c *gin.Context) {
+			userID := c.GetUint("userID")
+			notifications, total, err := service.GetByUser(c.Request.Context(), userID, 1, 50)
+			if err != nil {
+				log.Error().Err(err).Uint("user_id", userID).Msg("Failed to list notifications")
+				render.RenderErrorPage(c, http.StatusInternalServerError)
+				return
+			}
+			render.Page(c, http.StatusOK, "notifications-list.html", gin.H{
+				"Title":         "Уведомления",
+				"Notifications": notifications,
+				"Total":         total,
+				"CurrentUserID": userID,
+				"csrf":          csrf.GetToken(c),
+				"Breadcrumbs": []map[string]string{
+					{"name": "Главная", "url": "/"},
+					{"name": "Уведомления"},
+				},
 			})
 		})
 	}

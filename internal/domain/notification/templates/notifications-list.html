@@ -1,0 +1,38 @@
+{{define "notifications-list.html"}}
+<div class="max-w-4xl mx-auto">
+    <h1 class="page-title">Уведомления</h1>
+
+    {{if .Notifications}}
+    <div class="card overflow-x-auto">
+        <ul class="divide-y divide-gray-200 dark:divide-gray-700">
+            {{range .Notifications}}
+            <li class="py-4 px-2 flex items-start gap-3 {{if not .Read}}bg-blue-50 dark:bg-blue-900/10{{end}}">
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="text-xs font-medium text-gray-400 dark:text-gray-500">{{.CreatedAt.Format "02.01.2006 15:04"}}</span>
+                        {{if not .Read}}<span class="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></span>{{end}}
+                    </div>
+                    <p class="text-sm font-medium text-gray-800 dark:text-gray-100">{{.Title}}</p>
+                    {{if .Body}}<p class="text-sm text-gray-500 dark:text-gray-400 mt-1">{{.Body}}</p>{{end}}
+                    {{if .Link}}<a href="{{.Link}}" class="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1 inline-block">Подробнее →</a>{{end}}
+                </div>
+            </li>
+            {{end}}
+        </ul>
+    </div>
+
+    <div class="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
+        Всего уведомлений: {{.Total}}
+    </div>
+    {{else}}
+    <div class="card text-center py-12">
+        <div class="text-4xl mb-4">🔔</div>
+        <p class="text-gray-500 dark:text-gray-400">У вас пока нет уведомлений.</p>
+    </div>
+    {{end}}
+
+    <div class="mt-6">
+        <a href="/profile" class="btn btn-outline text-sm">← Назад в профиль</a>
+    </div>
+</div>
+{{end}}
