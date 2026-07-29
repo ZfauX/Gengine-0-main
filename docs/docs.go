@@ -1115,7 +1115,7 @@ const docTemplate = `{
         },
         "/auth/oauth/{provider}": {
             "get": {
-                "description": "Перенаправляет на страницу авторизации OAuth-провайдера (VK, Yandex, Google)",
+                "description": "Перенаправляет на страницу авторизации OAuth-провайдера (VK, Yandex)",
                 "tags": [
                     "auth"
                 ],
@@ -1123,7 +1123,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Провайдер (vk, yandex, google)",
+                        "description": "Провайдер (vk, yandex)",
                         "name": "provider",
                         "in": "path",
                         "required": true
@@ -1156,7 +1156,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Провайдер (vk, yandex, google)",
+                        "description": "Провайдер (vk, yandex)",
                         "name": "provider",
                         "in": "path",
                         "required": true
