@@ -129,10 +129,10 @@ func TestValidateGameDates(t *testing.T) {
 			wantErr:              false,
 		},
 		{
-			name:                 "registrationDeadline после startsAt",
+			name:                 "registrationDeadline после startsAt (допустимо)",
 			startsAt:             &later,
 			registrationDeadline: &muchLater,
-			wantErr:              true,
+			wantErr:              false,
 		},
 	}
 

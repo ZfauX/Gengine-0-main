@@ -66,10 +66,10 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 	if filter.Search != "" {
 		escapedSearch := sqlutil.EscapeLike(filter.Search)
 		if s.useSearchVector(ctx) {
-			b.WriteString(" AND (search_vector IS NOT NULL AND search_vector @@ plainto_tsquery('russian', ?) OR name ILIKE ?)")
+			b.WriteString(" AND (search_vector IS NOT NULL AND search_vector @@ plainto_tsquery('russian', ?) OR games.name ILIKE ?)")
 			args = append(args, filter.Search, "%"+escapedSearch+"%")
 		} else {
-			b.WriteString(" AND name ILIKE ?")
+			b.WriteString(" AND games.name ILIKE ?")
 			args = append(args, "%"+escapedSearch+"%")
 		}
 	}
