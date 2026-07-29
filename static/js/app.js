@@ -279,8 +279,10 @@ function initPushSubscription() {
     var statusEl = document.getElementById('push-status');
     if (!enableBtn || !disableBtn || !statusEl) return;
 
-    // Ждём регистрации SW и проверяем подписку
-    navigator.serviceWorker.ready.then(function(registration) {
+    // Сначала регистрируем SW, затем проверяем подписку
+    navigator.serviceWorker.register('/static/sw.js').then(function() {
+        return navigator.serviceWorker.ready;
+    }).then(function(registration) {
         return registration.pushManager.getSubscription();
     }).then(function(subscription) {
         if (subscription) {
