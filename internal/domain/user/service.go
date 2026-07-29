@@ -499,11 +499,11 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 		}
 	case "vk":
 		// VK возвращает email в токене, получаем имя через users.get
-		emailStr = token.Extra("email").(string)
+		emailStr, _ = token.Extra("email").(string)
 		if emailStr == "" {
 			return nil, stderrors.New("не удалось получить email от VK")
 		}
-		externalID = token.Extra("user_id").(string)
+		externalID, _ = token.Extra("user_id").(string)
 
 		userReq, _ := http.NewRequestWithContext(ctxWithClient, "GET",
 			"https://api.vk.com/method/users.get?v=5.131&user_ids="+externalID, nil)
@@ -515,7 +515,6 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 				name = vkInfo.Response[0].FirstName + " " + vkInfo.Response[0].LastName
 			}
 		}
-		emailVerified = true
 	default:
 		return nil, stderrors.New("неподдерживаемый провайдер для получения информации")
 	}

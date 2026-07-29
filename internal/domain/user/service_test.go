@@ -41,7 +41,7 @@ func newTestConfig() *config.Config {
 		},
 		OAuth: config.OAuthConfig{
 			Yandex: config.OAuthProvider{ClientID: "test", ClientSecret: "test"},
-			VK: config.OAuthProvider{ClientID: "test", ClientSecret: "test"},
+			VK:     config.OAuthProvider{ClientID: "test", ClientSecret: "test"},
 		},
 	}
 }
