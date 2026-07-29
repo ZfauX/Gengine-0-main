@@ -12,6 +12,7 @@ import (
 	"gengine-0/internal/pkg/metrics"
 
 	"github.com/rs/zerolog/log"
+	"gorm.io/gorm"
 )
 
 type TeamService struct {
@@ -77,7 +78,7 @@ func (s *TeamService) GetAvailableUsers(ctx context.Context, teamID uint) ([]use
 
 func (s *TeamService) AddMember(ctx context.Context, teamID, newMemberID, actorID uint) error {
 	if !s.CanManageTeam(ctx, teamID, actorID) {
-		return errors.New("только капитан или автор игры может добавлять участников")
+		return errors.New("только капитан может добавлять участников")
 	}
 	isMember, err := s.teamRepo.IsMember(ctx, teamID, newMemberID)
 	if err != nil {
@@ -178,7 +179,10 @@ func (s *InvitationService) CreateInvitation(ctx context.Context, teamID, invite
 		return nil, errors.New("пользователь уже в команде")
 	}
 
-	existing, _ := s.invRepo.GetByTeamAndUser(ctx, teamID, invitedUserID)
+	existing, getExistErr := s.invRepo.GetByTeamAndUser(ctx, teamID, invitedUserID)
+	if getExistErr != nil && !errors.Is(getExistErr, gorm.ErrRecordNotFound) {
+		return nil, getExistErr
+	}
 	if existing != nil && existing.Status == InvitationPending {
 		return nil, errors.New("приглашение уже отправлено")
 	}

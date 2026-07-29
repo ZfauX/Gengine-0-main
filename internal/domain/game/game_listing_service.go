@@ -50,16 +50,16 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 			FROM game_passings WHERE status IN ('accepted','started','finished')
 			GROUP BY game_id
 		) participants ON participants.game_id = games.id
-		WHERE (visibility = 'public' OR author_id = ?) AND (is_draft = false OR author_id = ?)`)
+		WHERE (games.visibility = 'public' OR games.author_id = ?) AND (games.is_draft = false OR games.author_id = ?)`)
 
 	args := []any{filter.ViewerID, filter.ViewerID}
 
 	switch filter.Status {
 	case filterDraft:
-		b.WriteString(" AND is_draft = true AND author_id = ?")
+		b.WriteString(" AND games.is_draft = true AND games.author_id = ?")
 		args = append(args, filter.ViewerID)
 	case filterPublished:
-		b.WriteString(" AND is_draft = false")
+		b.WriteString(" AND games.is_draft = false")
 	default:
 	}
 
@@ -75,18 +75,18 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 	}
 	if filter.DateFrom != "" {
 		if dateFrom, err := time.Parse("2006-01-02", filter.DateFrom); err == nil {
-			b.WriteString(" AND starts_at >= ?")
+			b.WriteString(" AND games.starts_at >= ?")
 			args = append(args, dateFrom)
 		}
 	}
 	if filter.DateTo != "" {
 		if dateTo, err := time.Parse("2006-01-02", filter.DateTo); err == nil {
-			b.WriteString(" AND starts_at < ?")
+			b.WriteString(" AND games.starts_at < ?")
 			args = append(args, dateTo.Add(24*time.Hour))
 		}
 	}
 	if filter.AuthorID != nil {
-		b.WriteString(" AND author_id = ?")
+		b.WriteString(" AND games.author_id = ?")
 		args = append(args, *filter.AuthorID)
 	}
 

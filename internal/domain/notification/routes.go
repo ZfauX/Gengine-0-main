@@ -123,7 +123,7 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *gorm.DB, authSer
 			userID := c.GetUint("userID")
 			if userID == 0 {
 				c.JSON(http.StatusUnauthorized, gin.H{
-					"error": "РўСЂРµР±СѓРµС‚СЃСЏ Р°СѓС‚РµРЅС‚РёС„РёРєР°С†РёСЏ",
+					"error": "Требуется аутентификация",
 					"code":  "unauthorized",
 				})
 				return
@@ -132,7 +132,7 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *gorm.DB, authSer
 			var settings Settings
 			if err := c.ShouldBindJSON(&settings); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{
-					"error": "РќРµРІРµСЂРЅС‹Р№ С„РѕСЂРјР°С‚ РґР°РЅРЅС‹С…: " + err.Error(),
+					"error": "Неверный формат данных: " + err.Error(),
 					"code":  "bad_request",
 				})
 				return
@@ -141,7 +141,7 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *gorm.DB, authSer
 			if err := service.SaveSettings(c.Request.Context(), userID, &settings); err != nil {
 				log.Error().Err(err).Uint("user_id", userID).Msg("Failed to save notification settings")
 				c.JSON(http.StatusInternalServerError, gin.H{
-					"error": "Р’РЅСѓС‚СЂРµРЅРЅСЏСЏ РѕС€РёР±РєР°",
+					"error": "Внутренняя ошибка",
 					"code":  "internal_error",
 				})
 				return
@@ -149,7 +149,7 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *gorm.DB, authSer
 
 			c.JSON(http.StatusOK, gin.H{
 				"status":  "ok",
-				"message": "РќР°СЃС‚СЂРѕР№РєРё СЃРѕС…СЂР°РЅРµРЅС‹",
+				"message": "Настройки сохранены",
 			})
 		})
 
@@ -161,7 +161,7 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *gorm.DB, authSer
 			notifications, total, err := service.GetByUser(c.Request.Context(), userID, page, perPage)
 			if err != nil {
 				log.Error().Err(err).Uint("user_id", userID).Msg("Failed to list notifications")
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Р’РЅСѓС‚СЂРµРЅРЅСЏСЏ РѕС€РёР±РєР°"})
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка"})
 				return
 			}
 
