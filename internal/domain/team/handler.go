@@ -553,12 +553,21 @@ func (h *InvitationHandler) Create(c *gin.Context) {
 
 	_, err := h.invitationService.CreateInvitation(c.Request.Context(), req.TeamID, input.UserID, userID)
 	if err != nil {
-		log.Error().Err(err).Uint("team_id", req.TeamID).Uint("invited_user", input.UserID).Uint("inviter", userID).Msg("InvitationHandler.Create: failed to create invitation")
-		render.Page(c, http.StatusInternalServerError, "invitations-new.html", gin.H{
-			"Title": "Новое приглашение",
-			"Error": err.Error(),
-			"csrf":  csrf.GetToken(c),
-		})
+		switch err.Error() {
+		case "пользователь не найден", "пользователь уже в команде", "приглашение уже отправлено":
+			render.Page(c, http.StatusBadRequest, "invitations-new.html", gin.H{
+				"Title": "Новое приглашение",
+				"Error": err.Error(),
+				"csrf":  csrf.GetToken(c),
+			})
+		default:
+			log.Error().Err(err).Uint("team_id", req.TeamID).Uint("invited_user", input.UserID).Uint("inviter", userID).Msg("InvitationHandler.Create: failed to create invitation")
+			render.Page(c, http.StatusInternalServerError, "invitations-new.html", gin.H{
+				"Title": "Новое приглашение",
+				"Error": "Внутренняя ошибка",
+				"csrf":  csrf.GetToken(c),
+			})
+		}
 		return
 	}
 	c.Redirect(http.StatusFound, "/teams/"+strconv.Itoa(int(req.TeamID))+"/invitations")

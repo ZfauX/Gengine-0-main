@@ -164,6 +164,12 @@ func (s *InvitationService) CreateInvitation(ctx context.Context, teamID, invite
 		return nil, errors.New("только капитан может создавать приглашения")
 	}
 
+	// Проверяем, что приглашаемый пользователь существует
+	invitedUser, getUserErr := s.teamRepo.GetUserByID(ctx, invitedUserID)
+	if getUserErr != nil {
+		return nil, errors.New("пользователь не найден")
+	}
+
 	isMember, memberErr := s.teamRepo.IsMember(ctx, teamID, invitedUserID)
 	if memberErr != nil {
 		return nil, memberErr
@@ -187,16 +193,13 @@ func (s *InvitationService) CreateInvitation(ctx context.Context, teamID, invite
 	}
 
 	if s.cfg != nil && s.cfg.SMTP.Enabled {
-		invitedUser, getUserErr := s.teamRepo.GetUserByID(ctx, invitedUserID)
-		if getUserErr == nil {
-			acceptLink := fmt.Sprintf("%s/invitations/%d/accept", s.cfg.Server.BaseURL, inv.ID)
-			if emailErr := email.Enqueue(
-				invitedUser.Email,
-				"Приглашение в команду",
-				fmt.Sprintf("Вас пригласили в команду «%s». Принять приглашение: %s", team.Name, acceptLink),
-			); emailErr != nil {
-				log.Error().Err(emailErr).Str("email", invitedUser.Email).Msg("failed to enqueue invitation email")
-			}
+		acceptLink := fmt.Sprintf("%s/invitations/%d/accept", s.cfg.Server.BaseURL, inv.ID)
+		if emailErr := email.Enqueue(
+			invitedUser.Email,
+			"Приглашение в команду",
+			fmt.Sprintf("Вас пригласили в команду «%s». Принять приглашение: %s", team.Name, acceptLink),
+		); emailErr != nil {
+			log.Error().Err(emailErr).Str("email", invitedUser.Email).Msg("failed to enqueue invitation email")
 		}
 	}
 
