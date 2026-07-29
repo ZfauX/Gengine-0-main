@@ -18,8 +18,8 @@
             {{range .Members}}
             <li class="py-3 flex flex-wrap items-center justify-between gap-2">
                 <span class="text-gray-800 dark:text-gray-100">{{.Name}} ({{.Email}})</span>
-                {{if and $.CanManage $.GameID}}
-                <form action="/games/{{$.GameID}}/teams/{{$.TeamID}}/members/{{.ID}}/remove" method="POST" class="inline" data-confirm-form="Удалить участника?">
+                {{if and $.CanManage}}
+                <form action="/teams/{{$.Team.ID}}/members/{{.ID}}/remove" method="POST" class="inline" data-confirm-form="Удалить участника?">
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
                     <button type="submit" class="btn btn-danger text-xs">Удалить</button>
                 </form>
@@ -33,20 +33,16 @@
     </div>
 
     <!-- Действия для управления -->
-    {{if and .CanManage .GameID}}
+    {{if .CanManage}}
     <div class="flex flex-wrap gap-3 mb-6">
-        <a href="/games/{{.GameID}}/teams/{{.TeamID}}/members/add" class="btn btn-primary text-sm">+ Добавить участника</a>
-        <a href="/games/{{.GameID}}/teams/{{.TeamID}}/change-captain" class="btn btn-outline text-sm">Сменить капитана</a>
-    </div>
-    {{else if .CanManage}}
-    <div class="card bg-blue-50 border border-blue-200 text-blue-700 text-sm p-3 mb-6">
-        Для управления командой перейдите к игре, в которой участвует эта команда.
+        <a href="/teams/{{.Team.ID}}/chat" class="btn btn-outline text-sm">💬 Чат команды</a>
+        <a href="/teams/{{.Team.ID}}/change-captain" class="btn btn-outline text-sm">Сменить капитана</a>
     </div>
     {{end}}
 
     <!-- Навигация назад -->
     <div class="mt-6">
-        <a href="/games/{{.GameID}}" class="btn btn-outline text-sm">← Назад к игре</a>
+        <a href="/teams" class="btn btn-outline text-sm">← К списку команд</a>
     </div>
 </div>
 <script nonce="{{.csp_nonce}}">

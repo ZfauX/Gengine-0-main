@@ -1,0 +1,116 @@
+{{define "team-chat.html"}}
+<div class="max-w-4xl mx-auto" data-room-id="{{.RoomID}}" data-user-id="{{.UserID}}" data-user-name="{{.UserName}}">
+    <h1 class="page-title">Чат команды «{{.Team.Name}}»</h1>
+
+    <div class="card">
+        <!-- Область сообщений -->
+        <div id="chat-messages" class="h-96 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-800 mb-3"></div>
+
+        <!-- Поле ввода и отправка -->
+        <div class="flex flex-wrap items-center gap-2">
+            <input type="text" id="chat-input" placeholder="Введите сообщение..." 
+                   class="flex-1 min-w-[180px] rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2">
+            <button id="send-btn" class="btn btn-primary text-sm whitespace-nowrap">Отправить</button>
+        </div>
+
+        <!-- Статус подключения -->
+        <div id="connection-status" class="mt-2 text-sm text-gray-500 dark:text-gray-400"></div>
+    </div>
+</div>
+
+<script nonce="{{.csp_nonce}}">
+(function() {
+    const container = document.querySelector('[data-room-id]');
+    if (!container) return;
+
+    const roomID = parseInt(container.dataset.roomId, 10);
+    const userID = parseInt(container.dataset.userId, 10);
+    const userName = container.dataset.userName || 'Вы';
+    const messagesEl = document.getElementById('chat-messages');
+    const inputEl = document.getElementById('chat-input');
+    const sendBtn = document.getElementById('send-btn');
+    const statusEl = document.getElementById('connection-status');
+
+    const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    let socket = null;
+    let reconnectAttempts = 0;
+
+    function connect() {
+        if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+            return;
+        }
+        const wsUrl = wsProtocol + '//' + window.location.host + '/chat/ws?room=' + roomID;
+        socket = new WebSocket(wsUrl);
+
+        socket.onopen = function() {
+            statusEl.textContent = '🟢 Подключено';
+            statusEl.className = 'mt-2 text-sm text-green-600 dark:text-green-400';
+            reconnectAttempts = 0;
+        };
+
+        socket.onmessage = function(event) {
+            var data = JSON.parse(event.data);
+            if (data.type === 'history' && data.messages) {
+                messagesEl.innerHTML = '';
+                data.messages.forEach(function(msg) { appendMessage(msg, false); });
+                messagesEl.scrollTop = messagesEl.scrollHeight;
+            } else if (data.type === 'message') {
+                appendMessage(data, true);
+            }
+        };
+
+        socket.onclose = function() {
+            statusEl.textContent = '🔴 Отключено. Переподключение...';
+            statusEl.className = 'mt-2 text-sm text-red-500';
+            scheduleReconnect();
+        };
+
+        socket.onerror = function() {
+            socket.close();
+        };
+    }
+
+    function scheduleReconnect() {
+        var delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+        reconnectAttempts++;
+        setTimeout(function() { connect(); }, delay);
+    }
+
+    function appendMessage(msg, scroll) {
+        var isMine = msg.user_id === userID;
+        var div = document.createElement('div');
+        div.className = 'mb-3 ' + (isMine ? 'text-right' : 'text-left');
+        div.innerHTML = '<div class="inline-block max-w-[80%] text-left">' +
+            '<span class="text-xs font-medium text-gray-500 dark:text-gray-400">' + escapeHtml(msg.user_name || '') + '</span>' +
+            '<div class="rounded-lg px-3 py-2 mt-1 ' + (isMine ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100') + '">' +
+            escapeHtml(msg.content) +
+            '</div></div>';
+        messagesEl.appendChild(div);
+        if (scroll) messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function escapeHtml(text) {
+        var map = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'};
+        return String(text).replace(/[&<>"']/g, function(m) { return map[m]; });
+    }
+
+    function sendMessage() {
+        var text = inputEl.value.trim();
+        if (!text || !socket || socket.readyState !== WebSocket.OPEN) return;
+        socket.send(JSON.stringify({
+            type: 'message',
+            room_id: roomID,
+            content: text
+        }));
+        inputEl.value = '';
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+    inputEl.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') sendMessage();
+    });
+
+    connect();
+})();
+</script>
+{{end}}

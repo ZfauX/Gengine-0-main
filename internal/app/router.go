@@ -258,7 +258,7 @@ func (app *App) registerLevelRoutes(r *gin.RouterGroup) {
 }
 
 func (app *App) registerTeamRoutes(r *gin.RouterGroup) {
-	team.RegisterRoutes(r, app.Deps.Services.Team, app.Deps.Services.Invitation, app.Config, app.LocalStorage, app.Deps.Services.CoAuthor, app.Deps.Services.Auth)
+	team.RegisterRoutes(r, app.DB, app.Deps.Services.Team, app.Deps.Services.Invitation, app.Config, app.LocalStorage, app.Deps.Services.CoAuthor, app.Deps.Services.Auth, app.Hub)
 }
 
 func (app *App) registerTournamentRoutes(r *gin.RouterGroup) {

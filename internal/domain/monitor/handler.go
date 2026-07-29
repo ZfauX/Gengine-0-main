@@ -408,6 +408,18 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 				return
 			}
 		}
+	} else if chatRoom.TeamID != nil {
+		// Проверка доступа к командному чату
+		var memberCount int64
+		h.db.WithContext(c.Request.Context()).Table("team_members").
+			Where("team_id = ? AND user_id = ?", *chatRoom.TeamID, userID).Count(&memberCount)
+		if memberCount == 0 {
+			var capt struct{ CaptainID uint }
+			if findErr := h.db.WithContext(c.Request.Context()).Table("teams").Where("id = ?", *chatRoom.TeamID).First(&capt).Error; findErr != nil || capt.CaptainID != userID {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "доступ запрещён"})
+				return
+			}
+		}
 	}
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
