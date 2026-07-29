@@ -207,8 +207,5 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *gorm.DB, authSer
 		wsGroup.GET("/notifications", NotificationsWS(hub))
 	}
 
-	// Перенаправление /notifications → /profile
-	r.GET("/notifications", middleware.AuthRequired(authService), func(c *gin.Context) {
-		c.Redirect(http.StatusFound, "/profile")
-	})
+	// Конец регистрации маршрутов
 }
