@@ -9,6 +9,7 @@ import (
 	ws "gengine-0/internal/pkg/websocket"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // RegisterRoutes СЂРµРіРёСЃС‚СЂРёСЂСѓРµС‚ РјР°СЂС€СЂСѓС‚С‹ РґР»СЏ СѓСЂРѕРІРЅРµР№, РІРѕРїСЂРѕСЃРѕРІ Рё РѕС‚РІРµС‚РѕРІ.
@@ -22,6 +23,7 @@ func RegisterRoutes(
 	cfg *config.Config,
 	authorizer middleware.GameAuthorizer,
 	authService *user.AuthService,
+	db *gorm.DB,
 ) {
 	handler := NewLevelHandler(
 		levelService,
@@ -31,7 +33,7 @@ func RegisterRoutes(
 		hub,
 		cfg,
 		authorizer,
-		nil,
+		db,
 	)
 
 	protected := r.Group("/games/:id/levels")
