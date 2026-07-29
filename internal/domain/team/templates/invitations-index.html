@@ -3,7 +3,7 @@
     <h1 class="page-title">Приглашения в команду</h1>
 
     <div class="mb-6">
-        <a href="/games/{{.GameID}}/teams/{{.TeamID}}/invitations/new" class="btn btn-primary text-sm">+ Создать новое приглашение</a>
+        <a href="/teams/{{.TeamID}}/invitations/new" class="btn btn-primary text-sm">+ Создать новое приглашение</a>
     </div>
 
     {{if .Invitations}}
@@ -33,12 +33,12 @@
     {{else}}
     <div class="card text-center py-12">
         <p class="text-gray-500 dark:text-gray-400">Приглашений пока нет.</p>
-        <p class="mt-2 text-sm text-gray-400"><a href="/games/{{.GameID}}/teams/{{.TeamID}}/invitations/new" class="text-blue-600 dark:text-blue-400 hover:underline">Создайте первое приглашение</a></p>
+        <p class="mt-2 text-sm text-gray-400"><a href="/teams/{{.TeamID}}/invitations/new" class="text-blue-600 dark:text-blue-400 hover:underline">Создайте первое приглашение</a></p>
     </div>
     {{end}}
 
     <div class="mt-6">
-        <a href="/games/{{.GameID}}/teams/{{.TeamID}}/members" class="btn btn-outline text-sm">← Назад к составу</a>
+        <a href="/teams/{{.TeamID}}" class="btn btn-outline text-sm">← Назад к команде</a>
     </div>
 </div>
 {{end}}

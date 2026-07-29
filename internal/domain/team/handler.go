@@ -443,7 +443,7 @@ func (h *TeamHandler) ChangeCaptain(c *gin.Context) {
 		}
 		return
 	}
-	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/teams/"+strconv.Itoa(int(req.TeamID))+"/members")
+	c.Redirect(http.StatusFound, "/teams/"+strconv.Itoa(int(req.TeamID)))
 }
 
 // ---------- Приглашения ----------
@@ -557,7 +557,7 @@ func (h *InvitationHandler) Create(c *gin.Context) {
 		})
 		return
 	}
-	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id")+"/teams/"+strconv.Itoa(int(req.TeamID))+"/invitations")
+	c.Redirect(http.StatusFound, "/teams/"+strconv.Itoa(int(req.TeamID))+"/invitations")
 }
 
 // MyInvitations отображает мои приглашения.

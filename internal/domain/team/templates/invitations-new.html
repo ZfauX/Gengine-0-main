@@ -6,7 +6,7 @@
     <div class="flash flash-error">{{.Error}}</div>
     {{end}}
 
-    <form action="/games/{{.GameID}}/teams/{{.TeamID}}/invitations" method="POST" class="card space-y-4">
+    <form action="/teams/{{.TeamID}}/invitations/new" method="POST" class="card space-y-4">
         <input type="hidden" name="_csrf" value="{{.csrf}}">
 
         <!-- Поле для ID пользователя -->
@@ -20,7 +20,7 @@
         <!-- Кнопки -->
         <div class="flex flex-wrap gap-3 pt-2">
             <button type="submit" class="btn btn-primary text-sm">Пригласить</button>
-            <a href="/games/{{.GameID}}/teams/{{.TeamID}}/invitations" class="btn btn-outline text-sm">Отмена</a>
+            <a href="/teams/{{.TeamID}}/invitations" class="btn btn-outline text-sm">Отмена</a>
         </div>
     </form>
 </div>

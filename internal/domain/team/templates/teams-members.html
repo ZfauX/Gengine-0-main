@@ -35,6 +35,8 @@
     <!-- Действия для управления -->
     {{if .CanManage}}
     <div class="flex flex-wrap gap-3 mb-6">
+        <a href="/teams/{{.Team.ID}}/invitations/new" class="btn btn-primary text-sm">+ Пригласить участника</a>
+        <a href="/teams/{{.Team.ID}}/invitations" class="btn btn-outline text-sm">Приглашения</a>
         <a href="/teams/{{.Team.ID}}/chat" class="btn btn-outline text-sm">💬 Чат команды</a>
         <a href="/teams/{{.Team.ID}}/change-captain" class="btn btn-outline text-sm">Сменить капитана</a>
     </div>

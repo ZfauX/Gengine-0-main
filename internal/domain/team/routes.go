@@ -39,6 +39,10 @@ func RegisterRoutes(
 
 		teamsGroup.GET("/:team_id", teamHandler.ViewTeam)
 
+		teamsGroup.GET("/:team_id/invitations", invitationHandler.Index)
+		teamsGroup.GET("/:team_id/invitations/new", invitationHandler.NewForm)
+		teamsGroup.POST("/:team_id/invitations/new", invitationHandler.Create)
+
 		teamsGroup.GET("/:team_id/chat", chatHandler.TeamChatPage)
 
 		teamsGroup.POST("/:team_id/members/:member_id/remove", teamHandler.RemoveMember)
