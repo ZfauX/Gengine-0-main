@@ -115,7 +115,11 @@ func (s *AttemptService) AcceptPendingAttemptWithTx(ctx context.Context, tx *gor
 		Order("created_at DESC").
 		First(&lastAttempt).Error
 	if err != nil {
-		return errors.New("нет ожидающей попытки для подтверждения")
+		// Различаем «нет ожидающей попытки» и реальную ошибку БД (B3).
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("нет ожидающей попытки для подтверждения")
+		}
+		return err
 	}
 	lastAttempt.Success = true
 	return tx.WithContext(ctx).Save(&lastAttempt).Error

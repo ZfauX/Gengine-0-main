@@ -331,13 +331,21 @@ func checkTimeoutsImpl(db *gorm.DB, ctx context.Context, onGameFinished GameComp
 
 	// Batch UPDATE всех просроченных прогрессов одной транзакцией
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Batch update finished_at для всех просроченных
-		if err := tx.Model(&LevelProgress{}).
+		// Batch update finished_at для всех просроченных.
+		// RowsAffected проверяем: если другой инстанс уже обработал те же ID
+		// (FOR UPDATE сериализует, второй видит finished_at уже не NULL), то
+		// advance-петлю пропускаем — иначе создадутся дублирующие next-level
+		// прогрессы (B6).
+		res := tx.Model(&LevelProgress{}).
 			Where("id IN ?", timedOutIDs).
 			Where("finished_at IS NULL").
 			Clauses(clause.Locking{Strength: "UPDATE"}).
-			Update("finished_at", now).Error; err != nil {
-			return err
+			Update("finished_at", now)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return nil
 		}
 
 		// Для каждого просроченного прогресса advance to next level

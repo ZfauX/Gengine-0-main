@@ -126,9 +126,11 @@ func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID, 
 		}
 
 		var attempts []game.Attempt
-		tx.Where("level_progress_id IN (SELECT id FROM level_progresses WHERE game_passing_id = ? AND level_id = ?)",
+		if findErr := tx.Where("level_progress_id IN (SELECT id FROM level_progresses WHERE game_passing_id = ? AND level_id = ?)",
 			lockedSession.GamePassingID, lockedSession.LevelID).
-			Find(&attempts)
+			Find(&attempts).Error; findErr != nil {
+			return findErr
+		}
 		valid := false
 		for _, a := range attempts {
 			if (a.IsFile && a.FilePath == option) || (!a.IsFile && a.Code == option) {

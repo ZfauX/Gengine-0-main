@@ -39,6 +39,9 @@ type GamePlayService struct {
 	coAuthorSvc *CoAuthorService
 	cfg         *config.Config
 	sseMgr      *SSEManager
+	// gameFinishedCallback вызывается при завершении последнего уровня игры
+	// (начисление турнирных очков, пересчёт результатов). Настраивается из app-слоя.
+	gameFinishedCallback GameCompletionCallback
 }
 
 // NewGamePlayService создаёт новый экземпляр GamePlayService.
@@ -68,11 +71,31 @@ func (s *GamePlayService) WithSSEManager(sseMgr *SSEManager) *GamePlayService {
 	return s
 }
 
+// WithGameFinishedCallback устанавливает колбэк завершения игры (турнирные очки и пр.).
+func (s *GamePlayService) WithGameFinishedCallback(cb GameCompletionCallback) *GamePlayService {
+	s.gameFinishedCallback = cb
+	return s
+}
+
+// finishCallback возвращает замыкание для CompleteLevel, вызывающее общий колбэк.
+// Использует context.WithoutCancel, чтобы начисление очков завершилось даже
+// при отмене контекста запроса (клиент отключился).
+func (s *GamePlayService) finishCallback(ctx context.Context, gameID uint) func() {
+	if s.gameFinishedCallback == nil {
+		return nil
+	}
+	return func() {
+		s.gameFinishedCallback(context.WithoutCancel(ctx), gameID)
+	}
+}
+
 // SubmitCode обрабатывает отправку текстового кода с транзакцией и блокировкой.
 func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint, code string) (*SubmitResult, error) {
 	var result *SubmitResult
 	var savedGameID uint
 	var savedLevelID uint
+	// onCommit (колбэк завершения игры) вызываем ПОСЛЕ коммита транзакции.
+	var onCommitFn func()
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// 1. Блокируем прогресс текущего уровня
@@ -101,13 +124,11 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 		if success {
 			// 5. Завершаем уровень
 			gameID := passing.GameID
-			onCommit, completeErr := CompleteLevel(tx, progress, nil)
+			onCommit, completeErr := CompleteLevel(tx, progress, s.finishCallback(ctx, gameID))
 			if completeErr != nil {
 				return completeErr
 			}
-			if onCommit != nil {
-				onCommit()
-			}
+			onCommitFn = onCommit
 			savedGameID = gameID
 			savedLevelID = progress.LevelID
 			result = &SubmitResult{Attempt: att, GameID: gameID}
@@ -128,17 +149,32 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 		return nil, err
 	}
 
-	// Отправляем обновления ПОСЛЕ коммита транзакции
+	// Колбэк завершения игры — строго после коммита (B1-порядок: расчёт мест
+	// раньше начисления турнирных очков выполняется внутри onGameFinished).
+	if onCommitFn != nil {
+		onCommitFn()
+	}
+
+	// Отправляем обновления ПОСЛЕ коммита транзакции.
+	// broadcast и пересчёт результатов делаем асинхронно, чтобы не задерживать
+	// ответ игроку (P1/P2) — контекст изолируем от отмены HTTP-запроса.
 	if result != nil && result.Attempt != nil {
+		asyncCtx := context.WithoutCancel(ctx)
 		if result.GameID != 0 {
 			s.broadcastLevelComplete(savedGameID, passingID, savedLevelID)
 		}
-		s.broadcastSnapshot(ctx, passingID)
+		passingIDCopy := passingID
+		go func() {
+			s.broadcastSnapshot(asyncCtx, passingIDCopy)
+		}()
 		if result.GameID != 0 {
 			if s.monitorSvc != nil {
-				if err := s.monitorSvc.CalculateResults(ctx, result.GameID); err != nil {
-					log.Error().Err(err).Uint("game_id", result.GameID).Msg("SubmitCode: CalculateResults failed")
-				}
+				gameIDCopy := result.GameID
+				go func() {
+					if err := s.monitorSvc.CalculateResults(asyncCtx, gameIDCopy); err != nil {
+						log.Error().Err(err).Uint("game_id", gameIDCopy).Msg("SubmitCode: CalculateResults failed")
+					}
+				}()
 			}
 		}
 	}
@@ -287,6 +323,7 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (
 func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, userID uint) error {
 	var gameID uint
 	var savedLevelID uint
+	var onCommitFn func()
 
 	transactionErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		progress, progressErr := GetCurrentProgressForUpdate(tx, passingID)
@@ -319,13 +356,11 @@ func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, u
 			return acceptErr
 		}
 
-		onCommit, completeErr := CompleteLevel(tx, progress, nil)
+		onCommit, completeErr := CompleteLevel(tx, progress, s.finishCallback(ctx, gameID))
 		if completeErr != nil {
 			return completeErr
 		}
-		if onCommit != nil {
-			onCommit()
-		}
+		onCommitFn = onCommit
 		savedLevelID = progress.LevelID
 
 		logEntry := Log{
@@ -343,10 +378,20 @@ func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, u
 		return transactionErr
 	}
 
-	// Рассчитываем результаты и шлём обновления ПОСЛЕ транзакции
+	// Колбэк завершения игры — после коммита (B1).
+	if onCommitFn != nil {
+		onCommitFn()
+	}
+
+	// Рассчитываем результаты и шлём обновления ПОСЛЕ транзакции (асинхронно, P1/P2).
+	asyncCtx := context.WithoutCancel(ctx)
 	s.broadcastLevelComplete(gameID, passingID, savedLevelID)
-	if calcErr := s.monitorSvc.CalculateResults(ctx, gameID); calcErr != nil {
-		log.Error().Err(calcErr).Uint("game_id", gameID).Msg("AcceptBlackboxAnswer: CalculateResults failed")
+	if s.monitorSvc != nil {
+		go func() {
+			if calcErr := s.monitorSvc.CalculateResults(asyncCtx, gameID); calcErr != nil {
+				log.Error().Err(calcErr).Uint("game_id", gameID).Msg("AcceptBlackboxAnswer: CalculateResults failed")
+			}
+		}()
 	}
 
 	s.broadcastSnapshot(ctx, passingID)
@@ -376,12 +421,13 @@ func (s *GamePlayService) StartTesting(ctx context.Context, gameID, userID uint)
 			return errors.New("игра не содержит уровней")
 		}
 
-		// Проверяем, не существует ли уже тестовое прохождение для этой игры и пользователя
-		// Используем FOR UPDATE для исключения race condition
+		// Проверяем, не существует ли уже тестовое прохождение для этой игры И ЭТОГО
+		// пользователя (B9). Раньше фильтр был только по game_id + шаблону имени
+		// `_test_%` — второй модератор не мог запустить свой тест для той же игры.
 		var existing GamePassing
 		findErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Joins("JOIN teams ON teams.id = game_passings.team_id").
-			Where("game_passings.game_id = ? AND game_passings.status = ? AND teams.name LIKE ?", gameID, StatusTesting, "_test_%").
+			Where("game_passings.game_id = ? AND game_passings.status = ? AND teams.captain_id = ?", gameID, StatusTesting, userID).
 			First(&existing).Error
 		if findErr == nil {
 			return fmt.Errorf("тестовое прохождение уже существует")

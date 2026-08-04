@@ -24,6 +24,8 @@ type GameAdminService struct {
 	coAuthorSvc *CoAuthorService
 	cfg         *config.Config
 	sseMgr      *SSEManager
+	// gameFinishedCallback вызывается при принудительном завершении игры.
+	gameFinishedCallback GameCompletionCallback
 }
 
 // NewGameAdminService создаёт новый экземпляр GameAdminService.
@@ -38,6 +40,12 @@ func NewGameAdminService(db *gorm.DB, coAuthorSvc *CoAuthorService, cfg *config.
 // WithSSEManager устанавливает SSE-менеджер для broadcast-уведомлений.
 func (s *GameAdminService) WithSSEManager(sseMgr *SSEManager) *GameAdminService {
 	s.sseMgr = sseMgr
+	return s
+}
+
+// WithGameFinishedCallback устанавливает колбэк завершения игры (турнирные очки и пр.).
+func (s *GameAdminService) WithGameFinishedCallback(cb GameCompletionCallback) *GameAdminService {
+	s.gameFinishedCallback = cb
 	return s
 }
 
@@ -95,6 +103,12 @@ func (s *GameAdminService) ForceFinishGame(ctx context.Context, gameID, userID u
 	for _, p := range passings {
 		s.notifyCaptainAboutFinish(ctx, p.TeamID, &game)
 	}
+
+	// Принудительное завершение = завершение игры: начисляем турнирные очки
+	// и пересчитываем результаты (аналогично обычному финишу).
+	if s.gameFinishedCallback != nil {
+		s.gameFinishedCallback(context.WithoutCancel(ctx), gameID)
+	}
 	return nil
 }
 
@@ -118,7 +132,11 @@ func (s *GameAdminService) DisqualifyTeam(ctx context.Context, gameID, teamID, u
 			Where("game_id = ? AND team_id = ? AND status = ?", gameID, teamID, StatusStarted).
 			Preload("Team.Captain").
 			First(&passing).Error; err != nil {
-			return errors.New("команда не в игре или уже завершила")
+			// Различаем «команда не в игре» и реальную ошибку БД (B3).
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("команда не в игре или уже завершила")
+			}
+			return err
 		}
 
 		if err := tx.First(&game, gameID).Error; err != nil {

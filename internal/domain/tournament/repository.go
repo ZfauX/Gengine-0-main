@@ -117,7 +117,8 @@ func (r *gormTournamentGameRepo) FindByGameID(ctx context.Context, gameID uint) 
 }
 func (r *gormTournamentGameRepo) ListFinishedPassings(ctx context.Context, gameID uint, status game.GamePassingStatus) ([]game.GamePassing, error) {
 	var passings []game.GamePassing
-	err := r.db.WithContext(ctx).Where("game_id = ? AND status = ?", gameID, status).Find(&passings).Error
+	// Только ещё не начисленные прохождения — идемпотентность UpdateScoresForGame.
+	err := r.db.WithContext(ctx).Where("game_id = ? AND status = ? AND tournament_scored = false", gameID, status).Find(&passings).Error
 	return passings, err
 }
 

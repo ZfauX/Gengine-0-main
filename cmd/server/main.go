@@ -281,6 +281,15 @@ func run() error {
 		}
 	}
 
+	// Прокидываем колбэк в обычный игровой путь (SubmitCode/AcceptBlackboxAnswer)
+	// и в принудительное завершение — турнирные очки начисляются и при штатном финише.
+	if deps.Services.GamePlay != nil {
+		deps.Services.GamePlay.WithGameFinishedCallback(onGameFinished)
+	}
+	if deps.Services.GameAdmin != nil {
+		deps.Services.GameAdmin.WithGameFinishedCallback(onGameFinished)
+	}
+
 	// bgWg отслеживает фоновые горутины для корректного завершения.
 	var bgWg sync.WaitGroup
 

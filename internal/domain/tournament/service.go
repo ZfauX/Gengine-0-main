@@ -94,7 +94,9 @@ func (s *TournamentService) AddGame(ctx context.Context, tournamentID, gameID, u
 			return stderrors.New("игра уже в турнире")
 		}
 		var order int64
-		tx.Model(&TournamentGame{}).Where("tournament_id = ?", tournamentID).Count(&order)
+		if err := tx.Model(&TournamentGame{}).Where("tournament_id = ?", tournamentID).Count(&order).Error; err != nil {
+			return err
+		}
 		tg := TournamentGame{
 			TournamentID: tournamentID,
 			GameID:       gameID,
@@ -338,6 +340,7 @@ func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint
 			resultMap[existingResults[i].TeamID] = &existingResults[i]
 		}
 
+		scoredIDs := make([]uint, 0, len(passings))
 		for _, p := range passings {
 			if !inTournament[p.TeamID] {
 				continue
@@ -369,6 +372,16 @@ func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint
 			}
 			if upsErr := s.tournamentResultRepo.Upsert(tx, result); upsErr != nil {
 				return upsErr
+			}
+			scoredIDs = append(scoredIDs, p.ID)
+		}
+
+		// Помечаем прохождения начисленными в той же транзакции (идемпотентность).
+		if len(scoredIDs) > 0 {
+			if markErr := tx.Model(&game.GamePassing{}).
+				Where("id IN ?", scoredIDs).
+				Update("tournament_scored", true).Error; markErr != nil {
+				return markErr
 			}
 		}
 		return nil

@@ -23,6 +23,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Константы для фильтрации статусов игр (чтобы избежать магических строк)
@@ -135,7 +136,12 @@ func (s *GameService) CreateGameWithCover(ctx context.Context, dto *CreateGameDT
 
 // UpdateGameWithCover делегирует GameCoverService.
 func (s *GameService) UpdateGameWithCover(ctx context.Context, gameID uint, dto *UpdateGameDTO, userID uint, isAdmin bool) error {
-	return s.coverService.UpdateGameWithCover(ctx, gameID, dto, userID, isAdmin)
+	if err := s.coverService.UpdateGameWithCover(ctx, gameID, dto, userID, isAdmin); err != nil {
+		return err
+	}
+	// Инвалидируем кэш игры — покрытие/поля игры изменились (P4).
+	s.cache.DeleteWithCtx(ctx, fmt.Sprintf("game:%d", gameID))
+	return nil
 }
 
 // Create делегирует GameCRUDService.
@@ -442,12 +448,14 @@ func (s *GameService) IsUserManager(ctx context.Context, gameID, userID uint) (b
 }
 
 // GetPassingByUser возвращает активное passing для игры и пользователя.
+// ORDER BY id: при совпадении нескольких статусов выбираем детерминированно (B10).
 func (s *GameService) GetPassingByUser(ctx context.Context, gameID, userID uint) (*GamePassing, error) {
 	var passing GamePassing
 	err := s.db.WithContext(ctx).
 		Joins("JOIN team_members ON team_members.team_id = game_passings.team_id").
 		Where("game_passings.game_id = ? AND game_passings.status IN (?,?) AND team_members.user_id = ?",
 			gameID, StatusAccepted, StatusStarted, userID).
+		Order("game_passings.id ASC").
 		First(&passing).Error
 	if err != nil {
 		return nil, err
@@ -518,39 +526,34 @@ func (s *GameService) GetSettingsWithDefaults(ctx context.Context, gameID uint) 
 
 // SaveSettings сохраняет или обновляет настройки игры.
 func (s *GameService) SaveSettings(ctx context.Context, gameID uint, input GameSetting) (*GameSetting, error) {
-	db := s.db.WithContext(ctx)
-
-	// UPDATE существующей записи, потом INSERT если не нашлось
-	result := db.Model(&GameSetting{}).Where("game_id = ?", gameID).Updates(map[string]any{
-		"allow_hints":                 input.AllowHints,
-		"hint_penalty_seconds":        input.HintPenaltySeconds,
-		"max_hints":                   input.MaxHints,
-		"per_level_time_limit":        input.PerLevelTimeLimit,
-		"hide_answers_until_finished": input.HideAnswersUntilFinished,
-		"auto_start":                  input.AutoStart,
-	})
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	if result.RowsAffected == 0 {
-		newSettings := GameSetting{
-			GameID:                   gameID,
-			AllowHints:               input.AllowHints,
-			HintPenaltySeconds:       input.HintPenaltySeconds,
-			MaxHints:                 input.MaxHints,
-			PerLevelTimeLimit:        input.PerLevelTimeLimit,
-			HideAnswersUntilFinished: input.HideAnswersUntilFinished,
-			AutoStart:                input.AutoStart,
-		}
-		if err := db.Create(&newSettings).Error; err != nil {
-			return nil, err
-		}
-		return &newSettings, nil
+	settings := GameSetting{
+		GameID:                   gameID,
+		AllowHints:               input.AllowHints,
+		HintPenaltySeconds:       input.HintPenaltySeconds,
+		MaxHints:                 input.MaxHints,
+		PerLevelTimeLimit:        input.PerLevelTimeLimit,
+		HideAnswersUntilFinished: input.HideAnswersUntilFinished,
+		AutoStart:                input.AutoStart,
 	}
 
-	var saved GameSetting
-	if err := db.Where("game_id = ?", gameID).First(&saved).Error; err != nil {
+	// Единый upsert (B4): update-then-insert имел гонку — два параллельных
+	// первых сохранения оба видели 0 затронутых строк и оба делали Create.
+	if err := s.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "game_id"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			"allow_hints":                 settings.AllowHints,
+			"hint_penalty_seconds":        settings.HintPenaltySeconds,
+			"max_hints":                   settings.MaxHints,
+			"per_level_time_limit":        settings.PerLevelTimeLimit,
+			"hide_answers_until_finished": settings.HideAnswersUntilFinished,
+			"auto_start":                  settings.AutoStart,
+		}),
+	}).Create(&settings).Error; err != nil {
 		return nil, err
 	}
-	return &saved, nil
+
+	// Инвалидируем кэш game:%d — GameSetting входит в закэшированную игру (P4).
+	s.cache.DeleteWithCtx(ctx, fmt.Sprintf("game:%d", gameID))
+
+	return &settings, nil
 }

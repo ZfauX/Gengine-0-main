@@ -63,11 +63,14 @@ type GamePassing struct {
 	Status         GamePassingStatus `gorm:"default:'pending';index:idx_game_passings_status"`
 	ResultDuration *time.Duration    `gorm:"type:bigint"`
 	Place          *int
-	Game           Game                        `gorm:"foreignKey:GameID"`
-	Team           team.Team                   `gorm:"foreignKey:TeamID"`
-	Progresses     []LevelProgress             `gorm:"foreignKey:GamePassingID"`
-	Logs           []Log                       `gorm:"foreignKey:GamePassingID"`
-	VotingSessions []GameBlackboxVotingSession `gorm:"foreignKey:GamePassingID"`
+	// TournamentScored — очки турнира за это прохождение уже начислены
+	// (защита от двойного начисления при повторном вызове UpdateScoresForGame).
+	TournamentScored bool                        `gorm:"column:tournament_scored;default:false"`
+	Game             Game                        `gorm:"foreignKey:GameID"`
+	Team             team.Team                   `gorm:"foreignKey:TeamID"`
+	Progresses       []LevelProgress             `gorm:"foreignKey:GamePassingID"`
+	Logs             []Log                       `gorm:"foreignKey:GamePassingID"`
+	VotingSessions   []GameBlackboxVotingSession `gorm:"foreignKey:GamePassingID"`
 }
 
 type LevelProgress struct {
