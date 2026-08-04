@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestMain устанавливает обязательные переменные окружения перед запуском любого теста,
-// чтобы избежать ошибок при вызове LoadConfig в тестах.
+// TestMain СѓСЃС‚Р°РЅР°РІР»РёРІР°РµС‚ РѕР±СЏР·Р°С‚РµР»СЊРЅС‹Рµ РїРµСЂРµРјРµРЅРЅС‹Рµ РѕРєСЂСѓР¶РµРЅРёСЏ РїРµСЂРµРґ Р·Р°РїСѓСЃРєРѕРј Р»СЋР±РѕРіРѕ С‚РµСЃС‚Р°,
+// С‡С‚РѕР±С‹ РёР·Р±РµР¶Р°С‚СЊ РѕС€РёР±РѕРє РїСЂРё РІС‹Р·РѕРІРµ LoadConfig РІ С‚РµСЃС‚Р°С….
 func TestMain(m *testing.M) {
 	_ = os.Setenv("DB_HOST", "localhost")
 	_ = os.Setenv("DB_PORT", "5432")
@@ -21,17 +21,17 @@ func TestMain(m *testing.M) {
 	_ = os.Setenv("JWT_SECRET", "xK9mP2vL5nQ8wR3tY6uI0oP4sD7fG1hJ")
 	_ = os.Setenv("SESSION_SECRET", "aB3cD4eF5gH6iJ7kL8mN9oP0qR1sT2uV3wX4yZ")
 	_ = os.Setenv("ADMIN_EMAIL", "admin@test.com")
-	_ = os.Setenv("ADMIN_PASSWORD", "securepassword12345")
+	_ = os.Setenv("ADMIN_PASSWORD", "SecurePass12345!")
 
 	code := m.Run()
 	os.Exit(code)
 }
 
 // =============================================================================
-// Вспомогательные функции для тестов
+// Р’СЃРїРѕРјРѕРіР°С‚РµР»СЊРЅС‹Рµ С„СѓРЅРєС†РёРё РґР»СЏ С‚РµСЃС‚РѕРІ
 // =============================================================================
 
-// setEnv устанавливает переменную окружения и возвращает функцию для её восстановления.
+// setEnv СѓСЃС‚Р°РЅР°РІР»РёРІР°РµС‚ РїРµСЂРµРјРµРЅРЅСѓСЋ РѕРєСЂСѓР¶РµРЅРёСЏ Рё РІРѕР·РІСЂР°С‰Р°РµС‚ С„СѓРЅРєС†РёСЋ РґР»СЏ РµС‘ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРёСЏ.
 func setEnv(t *testing.T, key, value string) func() {
 	t.Helper()
 	old, exists := os.LookupEnv(key)
@@ -46,7 +46,7 @@ func setEnv(t *testing.T, key, value string) func() {
 }
 
 // =============================================================================
-// Тесты для LoadConfig (успешные сценарии)
+// РўРµСЃС‚С‹ РґР»СЏ LoadConfig (СѓСЃРїРµС€РЅС‹Рµ СЃС†РµРЅР°СЂРёРё)
 // =============================================================================
 
 func TestLoadConfig_Success(t *testing.T) {
@@ -67,7 +67,7 @@ func TestLoadConfig_Success(t *testing.T) {
 	defer cleanup7()
 	cleanup8 := setEnv(t, "ADMIN_EMAIL", "admin@test.com")
 	defer cleanup8()
-	cleanup9 := setEnv(t, "ADMIN_PASSWORD", "securepassword12345")
+	cleanup9 := setEnv(t, "ADMIN_PASSWORD", "SecurePass12345!")
 	defer cleanup9()
 
 	cfg, err := LoadConfig()
@@ -82,7 +82,7 @@ func TestLoadConfig_Success(t *testing.T) {
 	assert.Equal(t, "xK9mP2vL5nQ8wR3tY6uI0oP4sD7fG1hJ", cfg.JWT.Secret)
 	assert.Equal(t, "aB3cD4eF5gH6iJ7kL8mN9oP0qR1sT2uV3wX4yZ", cfg.Session.Secret)
 	assert.Equal(t, "admin@test.com", cfg.Admin.Email)
-	assert.Equal(t, "securepassword12345", cfg.Admin.Password)
+	assert.Equal(t, "SecurePass12345!", cfg.Admin.Password)
 }
 
 func TestLoadConfig_WithOptionalEnv(t *testing.T) {
@@ -102,7 +102,7 @@ func TestLoadConfig_WithOptionalEnv(t *testing.T) {
 	defer cleanup7()
 	cleanup8 := setEnv(t, "ADMIN_EMAIL", "admin@test.com")
 	defer cleanup8()
-	cleanup9 := setEnv(t, "ADMIN_PASSWORD", "securepassword12345")
+	cleanup9 := setEnv(t, "ADMIN_PASSWORD", "SecurePass12345!")
 	defer cleanup9()
 
 	cleanup10 := setEnv(t, "PORT", "9090")
@@ -143,7 +143,7 @@ func TestLoadConfig_OAuthEnabled(t *testing.T) {
 	defer cleanup7()
 	cleanup8 := setEnv(t, "ADMIN_EMAIL", "a@b.c")
 	defer cleanup8()
-	cleanup9 := setEnv(t, "ADMIN_PASSWORD", "securepassword12345")
+	cleanup9 := setEnv(t, "ADMIN_PASSWORD", "SecurePass12345!")
 	defer cleanup9()
 
 	cleanup10 := setEnv(t, "VK_ENABLED", "true")
@@ -177,7 +177,7 @@ func TestLoadConfig_SMTPEnabled(t *testing.T) {
 	defer cleanup7()
 	cleanup8 := setEnv(t, "ADMIN_EMAIL", "a@b.c")
 	defer cleanup8()
-	cleanup9 := setEnv(t, "ADMIN_PASSWORD", "securepassword12345")
+	cleanup9 := setEnv(t, "ADMIN_PASSWORD", "SecurePass12345!")
 	defer cleanup9()
 
 	cleanup10 := setEnv(t, "SMTP_ENABLED", "true")
@@ -220,7 +220,7 @@ func TestLoadConfig_ReCAPTCHAEnabled(t *testing.T) {
 	defer cleanup7()
 	cleanup8 := setEnv(t, "ADMIN_EMAIL", "a@b.c")
 	defer cleanup8()
-	cleanup9 := setEnv(t, "ADMIN_PASSWORD", "securepassword12345")
+	cleanup9 := setEnv(t, "ADMIN_PASSWORD", "SecurePass12345!")
 	defer cleanup9()
 
 	cleanup10 := setEnv(t, "RECAPTCHA_ENABLED", "true")
@@ -238,15 +238,15 @@ func TestLoadConfig_ReCAPTCHAEnabled(t *testing.T) {
 }
 
 // =============================================================================
-// Тесты ошибочных ситуаций (прямая проверка ошибок)
+// РўРµСЃС‚С‹ РѕС€РёР±РѕС‡РЅС‹С… СЃРёС‚СѓР°С†РёР№ (РїСЂСЏРјР°СЏ РїСЂРѕРІРµСЂРєР° РѕС€РёР±РѕРє)
 // =============================================================================
 
 func TestLoadConfig_MissingRequired(t *testing.T) {
-	// Удаляем обязательную переменную и проверяем ошибку
-	cleanup := setEnv(t, "DB_HOST", "") // пустое значение
+	// РЈРґР°Р»СЏРµРј РѕР±СЏР·Р°С‚РµР»СЊРЅСѓСЋ РїРµСЂРµРјРµРЅРЅСѓСЋ Рё РїСЂРѕРІРµСЂСЏРµРј РѕС€РёР±РєСѓ
+	cleanup := setEnv(t, "DB_HOST", "") // РїСѓСЃС‚РѕРµ Р·РЅР°С‡РµРЅРёРµ
 	defer cleanup()
-	// Также нужно убедиться, что другие переменные установлены (уже есть в TestMain)
-	// Но DB_HOST должен быть пустым
+	// РўР°РєР¶Рµ РЅСѓР¶РЅРѕ СѓР±РµРґРёС‚СЊСЃСЏ, С‡С‚Рѕ РґСЂСѓРіРёРµ РїРµСЂРµРјРµРЅРЅС‹Рµ СѓСЃС‚Р°РЅРѕРІР»РµРЅС‹ (СѓР¶Рµ РµСЃС‚СЊ РІ TestMain)
+	// РќРѕ DB_HOST РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РїСѓСЃС‚С‹Рј
 	_, err := LoadConfig()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "DB_HOST")
@@ -275,9 +275,9 @@ func TestLoadConfig_JWTSecretPrefixNotWeak(t *testing.T) {
 func TestLoadConfig_OAuthEnabledMissingClientID(t *testing.T) {
 	cleanup1 := setEnv(t, "VK_ENABLED", "true")
 	defer cleanup1()
-	cleanup2 := setEnv(t, "VK_CLIENT_ID", "") // пусто
+	cleanup2 := setEnv(t, "VK_CLIENT_ID", "") // РїСѓСЃС‚Рѕ
 	defer cleanup2()
-	cleanup3 := setEnv(t, "VK_CLIENT_SECRET", "") // пусто
+	cleanup3 := setEnv(t, "VK_CLIENT_SECRET", "") // РїСѓСЃС‚Рѕ
 	defer cleanup3()
 	_, err := LoadConfig()
 	assert.Error(t, err)
@@ -289,7 +289,7 @@ func TestLoadConfig_SMTPEnabledMissingFrom(t *testing.T) {
 	defer cleanup1()
 	cleanup2 := setEnv(t, "SMTP_HOST", "smtp.example.com")
 	defer cleanup2()
-	cleanup3 := setEnv(t, "SMTP_FROM", "") // пусто
+	cleanup3 := setEnv(t, "SMTP_FROM", "") // РїСѓСЃС‚Рѕ
 	defer cleanup3()
 	_, err := LoadConfig()
 	assert.Error(t, err)
@@ -305,7 +305,7 @@ func TestLoadConfig_InvalidDuration(t *testing.T) {
 }
 
 // =============================================================================
-// Бенчмарк для LoadConfig
+// Р‘РµРЅС‡РјР°СЂРє РґР»СЏ LoadConfig
 // =============================================================================
 
 func BenchmarkLoadConfig(b *testing.B) {
@@ -317,7 +317,7 @@ func BenchmarkLoadConfig(b *testing.B) {
 	require.NoError(b, os.Setenv("JWT_SECRET", "xK9mP2vL5nQ8wR3tY6uI0oP4sD7fG1hJ"))
 	require.NoError(b, os.Setenv("SESSION_SECRET", "aB3cD4eF5gH6iJ7kL8mN9oP0qR1sT2uV3wX4yZ"))
 	require.NoError(b, os.Setenv("ADMIN_EMAIL", "a@b.c"))
-	require.NoError(b, os.Setenv("ADMIN_PASSWORD", "securepassword12345"))
+	require.NoError(b, os.Setenv("ADMIN_PASSWORD", "SecurePass12345!"))
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

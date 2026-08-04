@@ -178,12 +178,12 @@ func TestBlackboxVoteService_StartVoteAndClose(t *testing.T) {
 	att2 := &game.Attempt{LevelProgressID: progress.ID, Code: "optB", Success: false}
 	require.NoError(t, db.Create(att2).Error)
 
-	err = voteSvc.Vote(context.Background(), 1, tm1.ID, "optA")
+	err = voteSvc.Vote(context.Background(), 1, tm1.ID, author.ID, "optA")
 	require.NoError(t, err)
-	err = voteSvc.Vote(context.Background(), 1, tm2.ID, "optB")
+	err = voteSvc.Vote(context.Background(), 1, tm2.ID, author.ID, "optB")
 	require.NoError(t, err)
 
-	results, err := voteSvc.GetVotingResults(context.Background(), 1)
+	results, err := voteSvc.GetVotingResults(context.Background(), 1, author.ID)
 	require.NoError(t, err)
 	assert.Equal(t, 1, results["optA"])
 	assert.Equal(t, 1, results["optB"])
@@ -218,8 +218,8 @@ func TestBlackboxVoteService_DuplicateVote(t *testing.T) {
 	prog := createLevelProgress(t, db, passing.ID, lvl.ID, false)
 	db.Create(&game.Attempt{LevelProgressID: prog.ID, Code: "optA"})
 
-	require.NoError(t, voteSvc.Vote(context.Background(), 1, tm.ID, "optA"))
-	err := voteSvc.Vote(context.Background(), 1, tm.ID, "optA")
+	require.NoError(t, voteSvc.Vote(context.Background(), 1, tm.ID, author.ID, "optA"))
+	err := voteSvc.Vote(context.Background(), 1, tm.ID, author.ID, "optA")
 	assert.Error(t, err)
 }
 

@@ -6,9 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"gengine-0/internal/domain/game"
@@ -32,16 +35,25 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		origin := r.Header.Get("Origin")
 		if origin == "" {
-			return true
+			return false
 		}
 		host := r.Host
-		if forwardedHost := r.Header.Get("X-Forwarded-Host"); forwardedHost != "" {
-			host = forwardedHost
+		// NB: X-Forwarded-Host не доверяем — при прямом доступе атакующий
+		// подделывает и Origin, и X-Forwarded-Host, обходя проверку.
+		// Exact host match (with port normalization) — NOT prefix match
+		u, err := url.Parse(origin)
+		if err != nil {
+			return false
 		}
-		if strings.HasPrefix(origin, "http://"+host) || strings.HasPrefix(origin, "https://"+host) {
-			return true
+		originHost := u.Host
+		if oHost, _, pErr := net.SplitHostPort(u.Host); pErr == nil {
+			originHost = oHost
 		}
-		return false
+		reqHost := host
+		if rHost, _, pErr := net.SplitHostPort(host); pErr == nil {
+			reqHost = rHost
+		}
+		return strings.EqualFold(originHost, reqHost)
 	},
 }
 
@@ -53,6 +65,10 @@ type GameIDRequest struct {
 
 type GameIDAndSessionIDRequest struct {
 	ID        uint `uri:"id" binding:"required,gt=0"`
+	SessionID uint `uri:"session_id" binding:"required,gt=0"`
+}
+
+type SessionIDRequest struct {
 	SessionID uint `uri:"session_id" binding:"required,gt=0"`
 }
 
@@ -68,6 +84,125 @@ type VoteInput struct {
 }
 
 // ---------- Обработчики ----------
+
+// Shared poller for monitor SSE — один сборщик на игру вместо N клиентов × 1 запрос/сек
+type monitorSubscriber struct {
+	ch   chan []byte
+	done chan struct{}
+}
+
+var (
+	monitorPollers   = make(map[uint]*monitorGamePoller)
+	monitorPollersMu sync.Mutex
+)
+
+type monitorGamePoller struct {
+	cancel      context.CancelFunc
+	wg          sync.WaitGroup
+	subscribers []*monitorSubscriber
+	subMu       sync.Mutex
+}
+
+// subscribeMonitor добавляет подписчика для указанной игры. Если сборщик не запущен — запускает его.
+func subscribeMonitor(gameID uint, snapFn func(context.Context) ([]byte, error)) *monitorSubscriber {
+	monitorPollersMu.Lock()
+	defer monitorPollersMu.Unlock()
+
+	sub := &monitorSubscriber{
+		ch:   make(chan []byte, 4),
+		done: make(chan struct{}),
+	}
+
+	poller, exists := monitorPollers[gameID]
+	if !exists {
+		ctx, cancel := context.WithCancel(context.Background())
+		poller = &monitorGamePoller{cancel: cancel}
+		monitorPollers[gameID] = poller
+
+		poller.wg.Add(1)
+		go func() {
+			defer poller.wg.Done()
+			ticker := time.NewTicker(1 * time.Second)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					data, err := snapFn(ctx)
+					if err != nil {
+						continue
+					}
+					poller.subMu.Lock()
+					for _, s := range poller.subscribers {
+						select {
+						case s.ch <- data:
+						default:
+							// subscriber too slow, skip
+						}
+					}
+					poller.subMu.Unlock()
+				}
+			}
+		}()
+	}
+
+	poller.subMu.Lock()
+	poller.subscribers = append(poller.subscribers, sub)
+	poller.subMu.Unlock()
+
+	return sub
+}
+
+// StopAllMonitorPollers останавливает все активные сборщики (вызывается при graceful shutdown).
+// Не держит глобальный мьютекс во время wg.Wait, чтобы не блокировать другие игры.
+func StopAllMonitorPollers() {
+	monitorPollersMu.Lock()
+	pollers := make([]*monitorGamePoller, 0, len(monitorPollers))
+	for id, poller := range monitorPollers {
+		poller.cancel()
+		delete(monitorPollers, id)
+		pollers = append(pollers, poller)
+	}
+	monitorPollersMu.Unlock()
+
+	for _, poller := range pollers {
+		poller.wg.Wait()
+	}
+}
+
+// unsubscribeMonitor удаляет подписчика. Если подписчиков не осталось — останавливает сборщик.
+func unsubscribeMonitor(gameID uint, sub *monitorSubscriber) {
+	monitorPollersMu.Lock()
+	poller, exists := monitorPollers[gameID]
+	monitorPollersMu.Unlock()
+	if !exists {
+		return
+	}
+
+	poller.subMu.Lock()
+	for i, s := range poller.subscribers {
+		if s == sub {
+			poller.subscribers = append(poller.subscribers[:i], poller.subscribers[i+1:]...)
+			close(sub.done)
+			break
+		}
+	}
+	remaining := len(poller.subscribers)
+	poller.subMu.Unlock()
+
+	if remaining == 0 {
+		poller.cancel()
+		// Wait outside the global mutex to avoid blocking other games
+		poller.wg.Wait()
+		monitorPollersMu.Lock()
+		if current, ok := monitorPollers[gameID]; ok && current == poller {
+			delete(monitorPollers, gameID)
+		}
+		monitorPollersMu.Unlock()
+	}
+}
 
 type MonitorHandler struct {
 	db                  *gorm.DB
@@ -115,7 +250,7 @@ func NewMonitorHandler(
 func (h *MonitorHandler) MonitorPage(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
 		return
 	}
 
@@ -123,11 +258,17 @@ func (h *MonitorHandler) MonitorPage(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "monitor-page.html", gin.H{
-		"Title":         "Мониторинг",
+		"Title":         render.Tr(c, "nav.monitor"),
 		"GameID":        req.ID,
 		"csrf":          csrf.GetToken(c),
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,
+		"Breadcrumbs": []map[string]string{
+			{"name": "nav.home", "url": "/"},
+			{"name": "nav.games", "url": "/games"},
+			{"name": "game.breadcrumb_label", "url": "/games/" + c.Param("id")},
+			{"name": "nav.monitor"},
+		},
 	})
 }
 
@@ -144,14 +285,14 @@ func (h *MonitorHandler) MonitorPage(c *gin.Context) {
 func (h *MonitorHandler) MonitorData(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID игры"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": render.Tr(c, "handler.invalid_game_id")})
 		return
 	}
 
 	snapshot, err := h.monitorService.GetOrFetchSnapshot(c.Request.Context(), req.ID)
 	if err != nil {
 		log.Error().Err(err).Uint("game_id", req.ID).Msg("MonitorWS: failed to get snapshot")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось получить данные мониторинга"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": render.Tr(c, "handler.snapshot_failed")})
 		return
 	}
 
@@ -181,11 +322,19 @@ func (h *MonitorHandler) MonitorStreamSSE(c *gin.Context) {
 	c.Header("Connection", "keep-alive")
 	c.Header("X-Accel-Buffering", "no")
 
+	// Subscribe to shared poller — один сборщик на игру вместо N клиентов × 1 запрос/сек
+	snapFn := func(ctx context.Context) ([]byte, error) {
+		snapshot, err := h.monitorService.GetOrFetchSnapshot(ctx, gameID)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(snapshot)
+	}
+	sub := subscribeMonitor(gameID, snapFn)
+	defer unsubscribeMonitor(gameID, sub)
+
 	pingTicker := time.NewTicker(30 * time.Second)
 	defer pingTicker.Stop()
-
-	updateTicker := time.NewTicker(1 * time.Second)
-	defer updateTicker.Stop()
 
 	ctx := c.Request.Context()
 
@@ -194,29 +343,15 @@ func (h *MonitorHandler) MonitorStreamSSE(c *gin.Context) {
 		case <-ctx.Done():
 			log.Debug().Uint("game_id", gameID).Msg("SSE connection closed by client")
 			return
+		case <-sub.done:
+			return
 		case <-pingTicker.C:
 			if _, err := fmt.Fprintf(c.Writer, ": ping\n\n"); err != nil {
 				log.Debug().Err(err).Uint("game_id", gameID).Msg("SSE ping write error")
 				return
 			}
 			c.Writer.Flush()
-		case <-updateTicker.C:
-			snapshot, err := h.monitorService.GetOrFetchSnapshot(c.Request.Context(), req.ID)
-			if err != nil {
-				log.Error().Err(err).Uint("game_id", req.ID).Msg("MonitorStreamSSE: failed to get snapshot")
-				if _, writeErr := fmt.Fprintf(c.Writer, "event: error\ndata: {\"error\": \"%s\"}\n\n", err.Error()); writeErr != nil {
-					log.Error().Err(writeErr).Uint("game_id", req.ID).Msg("MonitorStreamSSE: failed to write error event")
-				}
-				c.Writer.Flush()
-				continue
-			}
-
-			data, marshalErr := json.Marshal(snapshot)
-			if marshalErr != nil {
-				log.Error().Err(marshalErr).Uint("game_id", gameID).Msg("SSE: failed to marshal snapshot")
-				continue
-			}
-
+		case data := <-sub.ch:
 			if _, writeErr := fmt.Fprintf(c.Writer, "event: update\ndata: %s\n\n", data); writeErr != nil {
 				log.Debug().Err(writeErr).Uint("game_id", gameID).Msg("SSE write error")
 				return
@@ -248,14 +383,14 @@ func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 	// 🔒 P1-2: Проверка аутентификации перед WebSocket-соединением
 	userID := c.GetUint("userID")
 	if userID == 0 {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "требуется аутентификация"})
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": render.Tr(c, "handler.unauthorized")})
 		return
 	}
 
 	// 🔒 Проверка прав доступа к игре (автор, соавтор или модератор)
 	ok, err := h.coAuthorSvc.IsUserManager(c.Request.Context(), req.ID, userID)
 	if err != nil || !ok {
-		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "нет доступа к мониторингу"})
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.monitor_denied")})
 		return
 	}
 
@@ -286,11 +421,13 @@ func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 		}
 	}
 
-	ctx, cancel := context.WithCancel(c.Request.Context())
-	defer cancel()
+	// WebSocket lives beyond the HTTP handler — use a background context that is
+	// cancelled only when the connection goroutine finishes, NOT when the handler returns.
+	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
 		defer func() {
+			cancel()
 			h.hub.UnregisterClient(client)
 			client.Close()
 		}()
@@ -310,7 +447,7 @@ func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 func (h *MonitorHandler) ChatPage(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
 		return
 	}
 	gameID := req.ID
@@ -337,7 +474,7 @@ func (h *MonitorHandler) ChatPage(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "chat-page.html", gin.H{
-		"Title":         "Чат",
+		"Title":         render.Tr(c, "nav.chat"),
 		"GameID":        gameID,
 		"PassingID":     passingID,
 		"TeamID":        teamID,
@@ -346,6 +483,12 @@ func (h *MonitorHandler) ChatPage(c *gin.Context) {
 		"csrf":          csrf.GetToken(c),
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,
+		"Breadcrumbs": []map[string]string{
+			{"name": "nav.home", "url": "/"},
+			{"name": "nav.games", "url": "/games"},
+			{"name": "game.breadcrumb_label", "url": "/games/" + c.Param("id")},
+			{"name": "nav.chat"},
+		},
 	})
 }
 
@@ -367,7 +510,7 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 	if userID == 0 {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "требуется аутентификация"})
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": render.Tr(c, "handler.unauthorized")})
 		return
 	}
 	remoteIP := c.ClientIP()
@@ -404,7 +547,7 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 			_, findErr := h.gameService.GetPassingByUser(c.Request.Context(), *chatRoom.GameID, userID)
 			if findErr != nil {
 				log.Warn().Uint("user_id", userID).Uint("game_id", *chatRoom.GameID).Msg("ChatWS: access denied, not a participant")
-				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "доступ запрещён"})
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
 				return
 			}
 		}
@@ -416,7 +559,7 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 		if memberCount == 0 {
 			var capt struct{ CaptainID uint }
 			if findErr := h.db.WithContext(c.Request.Context()).Table("teams").Where("id = ?", *chatRoom.TeamID).First(&capt).Error; findErr != nil || capt.CaptainID != userID {
-				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "доступ запрещён"})
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
 				return
 			}
 		}
@@ -437,7 +580,11 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 		client.Close()
 	}()
 
-	msgs, err := h.chatService.GetMessages(c.Request.Context(), uint(roomIDUint), 50)
+	// Create background context for all post-upgrade DB operations
+	wsCtx, wsCancel := context.WithCancel(context.Background())
+	defer wsCancel()
+
+	msgs, err := h.chatService.GetMessages(wsCtx, uint(roomIDUint), 50)
 	if err != nil {
 		log.Error().Err(err).Int("room_id", roomIDUint).Msg("ChatWS: failed to get history")
 	} else {
@@ -455,18 +602,23 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 		}
 	}
 
-	ctx, cancel := context.WithCancel(c.Request.Context())
-	defer cancel()
+	go ws.WritePumpWithContext(wsCtx, client)
 
-	// Используем экспортируемую функцию из пакета websocket
-	go ws.WritePumpWithContext(ctx, client)
+	// Set read deadline and pong handler to prevent goroutine leaks on client disconnect
+	conn.SetReadLimit(32 * 1024)
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	})
 
 	for {
 		select {
-		case <-ctx.Done():
+		case <-wsCtx.Done():
 			log.Debug().Str("room_id", roomID).Msg("ChatWS: context cancelled, stopping read loop")
 			return
 		default:
+			if err := conn.SetReadDeadline(time.Now().Add(60 * time.Second)); err != nil {
+				log.Debug().Err(err).Str("room_id", roomID).Msg("ChatWS: set read deadline failed")
+			}
 			_, message, err := conn.ReadMessage()
 			if err != nil {
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
@@ -474,16 +626,23 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 				}
 				return
 			}
-			cleanContent := sanitize.StripHTML(string(message))
+			// Client sends JSON: {"type":"message","room_id":...,"content":"..."}
+			var msgData struct {
+				Content string `json:"content"`
+			}
+			if parseErr := json.Unmarshal(message, &msgData); parseErr != nil || msgData.Content == "" {
+				msgData.Content = string(message)
+			}
+			cleanContent := sanitize.StripHTML(msgData.Content)
 			if cleanContent == "" {
 				continue
 			}
-			msg, err := h.chatService.SaveMessage(c.Request.Context(), uint(roomIDUint), userID, cleanContent)
+			msg, err := h.chatService.SaveMessage(wsCtx, uint(roomIDUint), userID, cleanContent)
 			if err != nil {
 				log.Error().Err(err).Str("room_id", roomID).Uint("user_id", userID).Msg("ChatWS: failed to save message")
 				continue
 			}
-			if preloadErr := h.db.WithContext(c.Request.Context()).First(&msg, msg.ID).Error; preloadErr != nil {
+			if preloadErr := h.db.WithContext(wsCtx).First(&msg, msg.ID).Error; preloadErr != nil {
 				log.Error().Err(preloadErr).Uint("msg_id", msg.ID).Msg("ChatWS: failed to preload user")
 			}
 			msg.Content = sanitize.StripHTML(msg.Content)
@@ -512,7 +671,7 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 func (h *MonitorHandler) ChatRoomIDs(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		appErr := apperrors.BadRequest("Неверный ID игры")
+		appErr := apperrors.BadRequest(render.Tr(c, "handler.invalid_game_id"))
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -523,6 +682,25 @@ func (h *MonitorHandler) ChatRoomIDs(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	ctx := c.Request.Context()
+
+	// Доступ к комнатам чата только для менеджеров игры или её участников —
+	// иначе любой авторизованный пользователь может создавать комнаты
+	// для произвольного gameID (spam-создание сущностей).
+	isManager, mgrErr := h.coAuthorSvc.IsUserManager(ctx, gameID, userID)
+	if mgrErr != nil {
+		log.Error().Err(mgrErr).Uint("game_id", gameID).Uint("user_id", userID).Msg("ChatRoomIDs: manager check error")
+		appErr := apperrors.Wrap(mgrErr, "MonitorHandler")
+		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
+		return
+	}
+	if !isManager {
+		if _, err := h.gameService.GetPassingByUser(ctx, gameID, userID); err != nil {
+			log.Warn().Uint("game_id", gameID).Uint("user_id", userID).Msg("ChatRoomIDs: access denied, not a participant")
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden"), "code": "forbidden"})
+			return
+		}
+	}
+
 	generalRoom, err := h.chatService.GetOrCreateGameRoom(ctx, gameID)
 	if err != nil {
 		log.Error().Err(err).Uint("game_id", gameID).Msg("ChatRoomIDs: failed to get general room")
@@ -578,7 +756,7 @@ func (h *MonitorHandler) ChatRoomIDs(c *gin.Context) {
 func (h *MonitorHandler) ListLogs(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
 		return
 	}
 	gameID := req.ID
@@ -615,9 +793,18 @@ func (h *MonitorHandler) LogsWS(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 	if userID == 0 {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "требуется аутентификация"})
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": render.Tr(c, "handler.unauthorized")})
 		return
 	}
+
+	if ok, err := h.coAuthorSvc.IsUserManager(c.Request.Context(), req.ID, userID); err != nil {
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Ошибка проверки прав"})
+		return
+	} else if !ok {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
+		return
+	}
+
 	gameID := strconv.Itoa(int(req.ID))
 	remoteIP := c.ClientIP()
 
@@ -637,11 +824,12 @@ func (h *MonitorHandler) LogsWS(c *gin.Context) {
 	h.hub.RegisterClient(client)
 	c.Abort()
 
-	ctx, cancel := context.WithCancel(c.Request.Context())
-	defer cancel()
+	// WebSocket lives beyond the HTTP handler — cancel only when the goroutine finishes
+	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
 		defer func() {
+			cancel()
 			h.hub.UnregisterClient(client)
 			client.Close()
 		}()
@@ -665,7 +853,7 @@ func (h *MonitorHandler) LogsWS(c *gin.Context) {
 func (h *MonitorHandler) StartVoting(c *gin.Context) {
 	var input StartVotingInput
 	if err := c.ShouldBind(&input); err != nil {
-		appErr := apperrors.BadRequest("Неверные данные: " + err.Error())
+		appErr := apperrors.BadRequest(render.LocalizeError(c, err.Error()))
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -674,7 +862,7 @@ func (h *MonitorHandler) StartVoting(c *gin.Context) {
 	}
 
 	if err := validation.ValidatePositiveUint("ID прохождения", input.PassingID); err != nil {
-		appErr := apperrors.BadRequest(err.Error())
+		appErr := apperrors.BadRequest(render.LocalizeError(c, err.Error()))
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -682,7 +870,7 @@ func (h *MonitorHandler) StartVoting(c *gin.Context) {
 		return
 	}
 	if err := validation.ValidatePositiveUint("ID уровня", input.LevelID); err != nil {
-		appErr := apperrors.BadRequest(err.Error())
+		appErr := apperrors.BadRequest(render.LocalizeError(c, err.Error()))
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -694,11 +882,11 @@ func (h *MonitorHandler) StartVoting(c *gin.Context) {
 	if err := h.blackboxVoteService.StartVoting(c.Request.Context(), input.PassingID, input.LevelID, userID); err != nil {
 		switch err.Error() {
 		case "голосование уже активно", "голосование уже было проведено":
-			appErr := apperrors.BadRequest(err.Error())
+			appErr := apperrors.BadRequest(render.LocalizeError(c, err.Error()))
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
 		default:
 			log.Error().Err(err).Uint("passing_id", input.PassingID).Uint("level_id", input.LevelID).Uint("user_id", userID).Msg("StartVoting: failed to start voting")
-			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка", "code": "INTERNAL_ERROR"})
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": render.Tr(c, "handler.internal_error"), "code": "internal_error"})
 		}
 		return
 	}
@@ -722,7 +910,7 @@ func (h *MonitorHandler) StartVoting(c *gin.Context) {
 func (h *MonitorHandler) Vote(c *gin.Context) {
 	var input VoteInput
 	if err := c.ShouldBind(&input); err != nil {
-		appErr := apperrors.BadRequest("Неверные данные: " + err.Error())
+		appErr := apperrors.BadRequest(render.LocalizeError(c, err.Error()))
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -731,7 +919,7 @@ func (h *MonitorHandler) Vote(c *gin.Context) {
 	}
 
 	if err := validation.ValidatePositiveUint("ID сессии", input.SessionID); err != nil {
-		appErr := apperrors.BadRequest(err.Error())
+		appErr := apperrors.BadRequest(render.LocalizeError(c, err.Error()))
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -739,7 +927,7 @@ func (h *MonitorHandler) Vote(c *gin.Context) {
 		return
 	}
 	if err := validation.ValidatePositiveUint("ID команды", input.TeamID); err != nil {
-		appErr := apperrors.BadRequest(err.Error())
+		appErr := apperrors.BadRequest(render.LocalizeError(c, err.Error()))
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -747,7 +935,7 @@ func (h *MonitorHandler) Vote(c *gin.Context) {
 		return
 	}
 	if err := validation.ValidateString("Вариант ответа", input.Option, 1, 1000); err != nil {
-		appErr := apperrors.BadRequest(err.Error())
+		appErr := apperrors.BadRequest(render.LocalizeError(c, err.Error()))
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -756,11 +944,12 @@ func (h *MonitorHandler) Vote(c *gin.Context) {
 	}
 
 	cleanOption := sanitize.StripHTML(input.Option)
+	userID := c.GetUint("userID")
 
-	if err := h.blackboxVoteService.Vote(c.Request.Context(), input.SessionID, input.TeamID, cleanOption); err != nil {
+	if err := h.blackboxVoteService.Vote(c.Request.Context(), input.SessionID, input.TeamID, userID, cleanOption); err != nil {
 		switch err.Error() {
-		case "голосование закрыто", "недопустимый вариант ответа", "ваш голос уже учтён":
-			appErr := apperrors.BadRequest(err.Error())
+		case "голосование закрыто", "недопустимый вариант ответа", "ваш голос уже учтён", "вы не являетесь участником этой команды":
+			appErr := apperrors.BadRequest(render.LocalizeError(c, err.Error()))
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
 		default:
 			log.Error().Err(err).Uint("session_id", input.SessionID).Uint("team_id", input.TeamID).Str("option", cleanOption).Msg("Vote: failed to vote")
@@ -778,21 +967,26 @@ func (h *MonitorHandler) Vote(c *gin.Context) {
 // @Produce json
 // @Param session_id path int true "ID сессии голосования"
 // @Success 200 {object} map[string]interface{} "Результаты голосования"
-// @Failure 400 {object} map[string]interface{} "Неверный ID сессии"
+// @Failure 400 {object} map[string]interface{} render.Tr(c, "handler.invalid_session_id")
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 // @Router /voting/{session_id}/results [get]
 // @Security JWT
 func (h *MonitorHandler) GetVotingResults(c *gin.Context) {
-	var req GameIDAndSessionIDRequest
+	var req SessionIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		appErr := apperrors.BadRequest("Неверный ID сессии")
+		appErr := apperrors.BadRequest(render.Tr(c, "handler.invalid_session_id"))
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
 		})
 		return
 	}
-	results, err := h.blackboxVoteService.GetVotingResults(c.Request.Context(), req.SessionID)
+	userID := c.GetUint("userID")
+	if userID == 0 {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": render.Tr(c, "handler.unauthorized")})
+		return
+	}
+	results, err := h.blackboxVoteService.GetVotingResults(c.Request.Context(), req.SessionID, userID)
 	if err != nil {
 		log.Error().Err(err).Uint("session_id", req.SessionID).Msg("GetVotingResults: failed to get results")
 		appErr := apperrors.Wrap(err, "MonitorHandler")
@@ -818,9 +1012,9 @@ func (h *MonitorHandler) GetVotingResults(c *gin.Context) {
 // @Router /voting/{session_id}/close [post]
 // @Security JWT
 func (h *MonitorHandler) CloseVoting(c *gin.Context) {
-	var req GameIDAndSessionIDRequest
+	var req SessionIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		appErr := apperrors.BadRequest("Неверный ID сессии")
+		appErr := apperrors.BadRequest(render.Tr(c, "handler.invalid_session_id"))
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -832,7 +1026,7 @@ func (h *MonitorHandler) CloseVoting(c *gin.Context) {
 	winner, err := h.blackboxVoteService.CloseVoting(c.Request.Context(), req.SessionID, userID)
 	if err != nil {
 		log.Error().Err(err).Uint("session_id", req.SessionID).Uint("user_id", userID).Msg("CloseVoting: failed to close voting")
-		appErr := apperrors.Forbidden(err.Error())
+		appErr := apperrors.Forbidden(render.LocalizeError(c, err.Error()))
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,

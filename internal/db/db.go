@@ -37,6 +37,9 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 	)
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: &logging.GormLogger{LogLevel: logger.Warn},
+		// Не оборачивать каждую single-row операцию в BEGIN/COMMIT — явные
+		// db.Transaction(...) уже используются там, где нужна атомарность.
+		SkipDefaultTransaction: true,
 	})
 	if err != nil {
 		return nil, err

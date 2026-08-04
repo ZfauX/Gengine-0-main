@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -449,7 +450,7 @@ func TestCache_RemoveExpired_Concurrent(t *testing.T) {
 	defer c.Close()
 
 	for i := 0; i < 50; i++ {
-		c.Set("key:"+string(rune(i)), "value", -time.Second)
+		c.Set(fmt.Sprintf("key:%d", i), "value", -time.Second)
 	}
 
 	var wg sync.WaitGroup

@@ -42,6 +42,7 @@ func AuthRequired(parser TokenParser) gin.HandlerFunc {
 		c.Set("userID", userID)
 		c.Set("role", role) // сохраняем роль
 		SetIsAdmin(c)
+		loadThemeSettings(c)
 		c.Next()
 	}
 }
@@ -57,6 +58,7 @@ func OptionalAuth(parser TokenParser) gin.HandlerFunc {
 			if userID, role, err := parser.ParseToken(token); err == nil {
 				c.Set("userID", userID)
 				c.Set("role", role)
+				loadThemeSettings(c)
 			}
 		}
 		SetIsAdmin(c)

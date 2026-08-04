@@ -1,6 +1,6 @@
 {{define "notification-settings.html"}}
 <div class="max-w-4xl mx-auto">
-    <h1 class="page-title">Настройки уведомлений</h1>
+    <h1 class="page-title">{{ T $.Lang "notif.settings_title" }}</h1>
 
     <!-- Сообщение об успехе -->
     {{if .Success}}
@@ -13,7 +13,7 @@
         <!-- Основные каналы связи -->
         <div class="card">
             <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4 flex items-center gap-2">
-                <span class="text-2xl">📡</span> Каналы связи
+                <span class="text-2xl">📡</span> {{ T $.Lang "notif.channels_title" }}
             </h2>
 
             <div class="space-y-4">
@@ -23,8 +23,8 @@
                         <input type="checkbox" name="email_enabled" {{if .Settings.EmailEnabled}}checked{{end}}
                                class="w-4 h-4 text-blue-600 dark:text-blue-400 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500">
                         <div>
-                            <span class="font-medium text-gray-800 dark:text-gray-100">Email-уведомления</span>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Получать уведомления на почту</p>
+                            <span class="font-medium text-gray-800 dark:text-gray-100">{{ T $.Lang "notif.email_label" }}</span>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">{{ T $.Lang "notif.email_desc" }}</p>
                         </div>
                     </div>
                 </label>
@@ -35,8 +35,8 @@
                         <input type="checkbox" name="browser_enabled" {{if .Settings.BrowserEnabled}}checked{{end}}
                                class="w-4 h-4 text-blue-600 dark:text-blue-400 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500">
                         <div>
-                            <span class="font-medium text-gray-800 dark:text-gray-100">Браузерные уведомления</span>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Показывать всплывающие уведомления в браузере</p>
+                            <span class="font-medium text-gray-800 dark:text-gray-100">{{ T $.Lang "notif.browser_label" }}</span>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">{{ T $.Lang "notif.browser_desc" }}</p>
                         </div>
                     </div>
                 </label>
@@ -47,8 +47,8 @@
                         <input type="checkbox" name="push_enabled" {{if .Settings.PushEnabled}}checked{{end}}
                                class="w-4 h-4 text-blue-600 dark:text-blue-400 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500">
                         <div>
-                            <span class="font-medium text-gray-800 dark:text-gray-100">Push-уведомления</span>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Push-уведомления на устройства</p>
+                            <span class="font-medium text-gray-800 dark:text-gray-100">{{ T $.Lang "notif.push_label" }}</span>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">{{ T $.Lang "notif.push_desc" }}</p>
                         </div>
                     </div>
                 </label>
@@ -57,7 +57,7 @@
                 <div class="ml-8 mt-2">
                     <button id="enable-push" data-vapid-key="{{.VapidPublicKey}}"
                             class="btn btn-primary text-sm">
-                        Включить уведомления в браузере
+                        {{ T $.Lang "notif.enable_browser_btn" }}
                     </button>
                 </div>
                 {{end}}
@@ -67,9 +67,9 @@
         <!-- Email-события -->
         <div class="card">
             <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4 flex items-center gap-2">
-                <span class="text-2xl">📧</span> События для email
+                <span class="text-2xl">📧</span> {{ T $.Lang "notif.email_events_title" }}
             </h2>
-            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Выберите, какие события отправлять на email</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">{{ T $.Lang "notif.email_events_desc" }}</p>
 
             <div class="space-y-3">
                 <label class="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
@@ -77,8 +77,8 @@
                         <input type="checkbox" name="email_game_started" {{if .Settings.EmailGameStarted}}checked{{end}}
                                class="w-4 h-4 text-blue-600 dark:text-blue-400 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500">
                         <div>
-                            <span class="font-medium text-gray-800 dark:text-gray-100">🎮 Игра началась</span>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Когда ваша заявка принята и игра запущена</p>
+                            <span class="font-medium text-gray-800 dark:text-gray-100">{{ T $.Lang "notif.event_game_started" }}</span>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">{{ T $.Lang "notif.event_game_started_desc" }}</p>
                         </div>
                     </div>
                 </label>
@@ -88,8 +88,8 @@
                         <input type="checkbox" name="email_level_completed" {{if .Settings.EmailLevelCompleted}}checked{{end}}
                                class="w-4 h-4 text-blue-600 dark:text-blue-400 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500">
                         <div>
-                            <span class="font-medium text-gray-800 dark:text-gray-100">✅ Уровень пройден</span>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">После успешного прохождения уровня</p>
+                            <span class="font-medium text-gray-800 dark:text-gray-100">{{ T $.Lang "notif.event_level_completed" }}</span>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">{{ T $.Lang "notif.event_level_completed_desc" }}</p>
                         </div>
                     </div>
                 </label>
@@ -99,8 +99,8 @@
                         <input type="checkbox" name="email_application_accepted" {{if .Settings.EmailApplicationAccepted}}checked{{end}}
                                class="w-4 h-4 text-blue-600 dark:text-blue-400 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500">
                         <div>
-                            <span class="font-medium text-gray-800 dark:text-gray-100">📩 Заявка принята</span>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Когда команда принята на игру</p>
+                            <span class="font-medium text-gray-800 dark:text-gray-100">{{ T $.Lang "notif.event_app_accepted" }}</span>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">{{ T $.Lang "notif.event_app_accepted_desc" }}</p>
                         </div>
                     </div>
                 </label>
@@ -110,8 +110,8 @@
                         <input type="checkbox" name="email_application_rejected" {{if .Settings.EmailApplicationRejected}}checked{{end}}
                                class="w-4 h-4 text-blue-600 dark:text-blue-400 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500">
                         <div>
-                            <span class="font-medium text-gray-800 dark:text-gray-100">❌ Заявка отклонена</span>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Если ваша заявка отклонена</p>
+                            <span class="font-medium text-gray-800 dark:text-gray-100">{{ T $.Lang "notif.event_app_rejected" }}</span>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">{{ T $.Lang "notif.event_app_rejected_desc" }}</p>
                         </div>
                     </div>
                 </label>
@@ -121,8 +121,8 @@
                         <input type="checkbox" name="email_time_warning" {{if .Settings.EmailTimeWarning}}checked{{end}}
                                class="w-4 h-4 text-blue-600 dark:text-blue-400 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500">
                         <div>
-                            <span class="font-medium text-gray-800 dark:text-gray-100">⏰ Предупреждение о времени</span>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">За 5 минут до истечения времени уровня</p>
+                            <span class="font-medium text-gray-800 dark:text-gray-100">{{ T $.Lang "notif.event_time_warning" }}</span>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">{{ T $.Lang "notif.event_time_warning_desc" }}</p>
                         </div>
                     </div>
                 </label>
@@ -132,8 +132,8 @@
                         <input type="checkbox" name="email_time_expired" {{if .Settings.EmailTimeExpired}}checked{{end}}
                                class="w-4 h-4 text-blue-600 dark:text-blue-400 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500">
                         <div>
-                            <span class="font-medium text-gray-800 dark:text-gray-100">⏱️ Время вышло</span>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Когда время на уровень истекло</p>
+                            <span class="font-medium text-gray-800 dark:text-gray-100">{{ T $.Lang "notif.event_time_expired" }}</span>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">{{ T $.Lang "notif.event_time_expired_desc" }}</p>
                         </div>
                     </div>
                 </label>
@@ -142,8 +142,8 @@
 
         <!-- Кнопки -->
         <div class="flex flex-wrap gap-3 pt-2">
-            <button type="submit" class="btn btn-primary text-sm">Сохранить настройки</button>
-            <a href="/profile" class="btn btn-outline text-sm">Отмена</a>
+            <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "notif.save_button" }}</button>
+            <a href="/profile" class="btn btn-outline text-sm">{{ T $.Lang "notif.cancel" }}</a>
         </div>
     </form>
 </div>
@@ -183,13 +183,13 @@
             })
             .then(function(r) {
                 if (r.ok) {
-                    showToast('Настройки сохранены!', 'success');
+                    showToast('{{ T $.Lang "notif.saved" }}', 'success');
                 } else {
-                    showToast('Ошибка сохранения настроек', 'error');
+                    showToast('{{ T $.Lang "notif.save_error" }}', 'error');
                 }
             })
             .catch(function() {
-                showToast('Ошибка сети', 'error');
+                showToast('{{ T $.Lang "gameplay.network_error" }}', 'error');
             });
         });
     })();

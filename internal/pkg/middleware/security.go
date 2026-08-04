@@ -4,9 +4,9 @@ package middleware
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 
 	"github.com/gin-gonic/gin"
-	"github.com/rs/zerolog/log"
 )
 
 // generateNonce создаёт криптостойкий случайный nonce для CSP.
@@ -15,8 +15,7 @@ import (
 func generateNonce() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		log.Error().Err(err).Msg("SecurityHeadersMiddleware: failed to generate CSP nonce")
-		return ""
+		panic(fmt.Sprintf("SecurityHeadersMiddleware: crypto/rand generation of CSP nonce failed: %v", err))
 	}
 	return base64.RawURLEncoding.EncodeToString(b)
 }
@@ -37,18 +36,21 @@ func getLeafletCSSHash() string {
 }
 
 // SecurityHeadersMiddleware добавляет базовые защитные заголовки ко всем ответам.
-func SecurityHeadersMiddleware() gin.HandlerFunc {
+// forceHSTS — сервер обслуживается по HTTPS (собственный TLS или reverse-proxy,
+// который терминирует TLS). В этом случае HSTS отправляем всегда, а не только
+// когда прокси прокинул X-Forwarded-Proto (иначе HSTS может никогда не прийти).
+func SecurityHeadersMiddleware(forceHSTS bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		nonce := generateNonce()
 
 		c.Set("csp_nonce", nonce)
-		setCSPHeaders(c, nonce)
+		setCSPHeaders(c, nonce, forceHSTS)
 
 		c.Next()
 	}
 }
 
-func setCSPHeaders(c *gin.Context, nonce string) {
+func setCSPHeaders(c *gin.Context, nonce string, forceHSTS bool) {
 	// При добавлении внешних CDN-скриптов (аналитика, Sentry, reCAPTCHA)
 	// нужно добавить домен в script-src ИЛИ вычислить SHA-256 хеш скрипта.
 	// Список используемых внешних ресурсов:
@@ -58,7 +60,7 @@ func setCSPHeaders(c *gin.Context, nonce string) {
 	//   Vimeo:     https://player.vimeo.com (frame-src)
 	csp := "default-src 'self'; " +
 		"script-src 'self' 'nonce-" + nonce + "' " + getLeafletHash() + " https://www.google.com https://www.gstatic.com; " +
-		"style-src 'self' 'nonce-" + nonce + "' " + getLeafletCSSHash() + " https://www.gstatic.com; " +
+		"style-src 'self' 'nonce-" + nonce + "' 'unsafe-inline' " + getLeafletCSSHash() + " https://www.gstatic.com; " +
 		"img-src 'self' data: https:; " +
 		"connect-src 'self' ws: wss:; " +
 		"form-action 'self'; " +
@@ -69,8 +71,9 @@ func setCSPHeaders(c *gin.Context, nonce string) {
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
 
-	// HSTS только если запрос пришёл по HTTPS
-	if c.Request.TLS != nil {
+	// HSTS: отправляем, если запрос пришёл по HTTPS, через reverse proxy (X-Forwarded-Proto),
+	// либо если сервер гарантированно обслуживается по HTTPS (forceHSTS).
+	if forceHSTS || c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
 		c.Header("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
 	}
 

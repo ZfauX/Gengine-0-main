@@ -15,6 +15,7 @@ var (
 	ErrRateLimitCode          = errors.New("слишком частый ввод кодов")
 	ErrRateLimitSSE           = errors.New("слишком много SSE-подключений")
 	ErrRateLimitPasswordReset = errors.New("слишком много попыток сброса пароля, попробуйте позже")
+	ErrRateLimitAPI           = errors.New("слишком много API-запросов, попробуйте позже")
 
 	ErrInvalidGameID = errors.New("неверный game_id")
 )

@@ -111,14 +111,16 @@ func TestCalendarHandler_CalendarData(t *testing.T) {
 	startsAt1 := time.Date(year, time.Month(month), 15, 10, 0, 0, 0, time.UTC)
 	games := []game.Game{
 		{
-			Model:    gorm.Model{ID: 1},
-			Name:     "Game 1",
-			StartsAt: &startsAt1,
+			Model:      gorm.Model{ID: 1},
+			Name:       "Game 1",
+			StartsAt:   &startsAt1,
+			Visibility: "public",
 		},
 		{
-			Model:    gorm.Model{ID: 2},
-			Name:     "Game 2",
-			StartsAt: nil,
+			Model:      gorm.Model{ID: 2},
+			Name:       "Game 2",
+			StartsAt:   nil,
+			Visibility: "public",
 		},
 	}
 

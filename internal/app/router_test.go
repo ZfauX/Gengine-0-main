@@ -32,6 +32,9 @@ func projectRoot() string {
 
 func setupRouterTest(t *testing.T) (*gin.Engine, *gorm.DB, func()) {
 	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	gin.SetMode(gin.TestMode)
 
 	db := testutil.SetupPostgresDB(t,

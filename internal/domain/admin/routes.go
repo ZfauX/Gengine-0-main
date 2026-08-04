@@ -6,8 +6,10 @@ import (
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/game"
+	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/audit"
+	"gengine-0/internal/pkg/cache"
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/websocket"
 
@@ -15,8 +17,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// RegisterRoutes СЂРµРіРёСЃС‚СЂРёСЂСѓРµС‚ РјР°СЂС€СЂСѓС‚С‹ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РёРІРЅРѕР№ РїР°РЅРµР»Рё.
-// router вЂ” СѓР¶Рµ СЃРіСЂСѓРїРїРёСЂРѕРІР°РЅРЅС‹Р№ РіСЂСѓРїРїР° СЃ /admin prefix Рё middleware (РЅР°РїСЂРёРјРµСЂ 2FA).
+// RegisterRoutes регистрирует маршруты административной панели.
+// router — уже сгруппированный группа с /admin prefix и middleware (например 2FA).
 func RegisterRoutes(
 	router *gin.RouterGroup,
 	db *gorm.DB,
@@ -24,8 +26,10 @@ func RegisterRoutes(
 	authService *user.AuthService,
 	userRepo user.UserRepository,
 	gameRepo game.GameRepository,
+	gameService *game.GameService,
 	hub *websocket.RoomHub,
 	auditService *audit.Service,
+	cacheStore cache.CacheStore,
 ) {
 	if auditService == nil {
 		auditService = audit.NewService(db)
@@ -34,14 +38,16 @@ func RegisterRoutes(
 	backupRepo := NewGormBackupRepo(db)
 	backupService := NewBackupService(backupRepo, "backups", cfg.Server.MaxBackups, cfg.Database)
 
-	adminHandler := NewAdminHandler(userRepo, gameRepo, backupService, auditService)
+	teamRepo := team.NewGormTeamRepo(db)
+	refreshTokenRepo := user.NewGormRefreshTokenRepo(db)
+	adminHandler := NewAdminHandler(userRepo, gameRepo, gameService, teamRepo, backupService, auditService, refreshTokenRepo, cacheStore)
 
 	authRequired := middleware.AuthRequired(authService)
 	adminOnly := adminOnlyMiddleware()
+	twoFactorMW := user.TwoFactorRequired(user.NewTwoFactorService(), userRepo)
 
-	// router СѓР¶Рµ РёРјРµРµС‚ prefix /admin Рё middleware (2FA) РёР· app/router.go
 	protected := router.Group("/")
-	protected.Use(authRequired, adminOnly)
+	protected.Use(authRequired, twoFactorMW, adminOnly)
 	{
 		protected.GET("/", adminHandler.Dashboard)
 
@@ -54,6 +60,8 @@ func RegisterRoutes(
 		protected.GET("/games", adminHandler.ListGames)
 
 		protected.POST("/games/:id/delete", adminHandler.DeleteGame)
+
+		protected.GET("/teams", adminHandler.ListTeams)
 
 		protected.GET("/audit", adminHandler.AuditLog)
 

@@ -1,15 +1,26 @@
 {{define "admin-users.html"}}
 <div class="max-w-7xl mx-auto">
+    <h1 class="page-title">{{ T $.Lang "admin.users_title" }}</h1>
+
     <!-- Навигация -->
     <nav class="flex flex-wrap gap-2 p-3 bg-gray-100 dark:bg-gray-800 rounded-lg mb-6">
-        <a href="/admin" class="btn btn-outline text-sm">Дашборд</a>
-        <a href="/admin/users" class="btn btn-primary text-sm">Пользователи</a>
-        <a href="/admin/games" class="btn btn-outline text-sm">Игры</a>
-        <a href="/admin/audit" class="btn btn-outline text-sm">Аудит</a>
-        <a href="/admin/backups" class="btn btn-outline text-sm">Бэкапы</a>
+        <a href="/admin" class="btn btn-outline text-sm">{{ T $.Lang "admin.dashboard" }}</a>
+        <a href="/admin/users" class="btn btn-primary text-sm">{{ T $.Lang "admin.users" }}</a>
+        <a href="/admin/games" class="btn btn-outline text-sm">{{ T $.Lang "admin.games" }}</a>
+        <a href="/admin/teams" class="btn btn-outline text-sm">{{ T $.Lang "admin.teams" }}</a>
+        <a href="/admin/audit" class="btn btn-outline text-sm">{{ T $.Lang "admin.audit" }}</a>
+        <a href="/admin/backups" class="btn btn-outline text-sm">{{ T $.Lang "admin.backups" }}</a>
     </nav>
 
-    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">Управление пользователями</h1>
+    <!-- Поиск -->
+    <form method="GET" action="/admin/users" class="mb-4">
+        <div class="flex gap-2">
+            <input type="text" name="query" placeholder="{{ T $.Lang "admin.search_by_name_or_email" }}" value="{{.Query}}"
+                   class="flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2">
+            <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "common.search" }}</button>
+            {{if .Query}}<a href="/admin/users" class="btn btn-outline text-sm">{{ T $.Lang "common.reset" }}</a>{{end}}
+        </div>
+    </form>
 
     {{if .Error}}
     <div class="flash flash-error mb-4">{{.Error}}</div>
@@ -17,9 +28,9 @@
 
     <!-- Фильтр по роли -->
     <div class="flex flex-wrap gap-2 mb-6">
-        <a href="?role=admin" class="btn btn-outline text-sm {{if eq .Role "admin"}}bg-blue-50 border-blue-300 text-blue-700{{end}}">Администраторы</a>
-        <a href="?role=user" class="btn btn-outline text-sm {{if eq .Role "user"}}bg-blue-50 border-blue-300 text-blue-700{{end}}">Пользователи</a>
-        <a href="?" class="btn btn-outline text-sm {{if eq .Role ""}}bg-blue-50 border-blue-300 text-blue-700{{end}}">Все</a>
+        <a href="?role=admin" class="btn btn-outline text-sm {{if eq .Role "admin"}}bg-blue-50 border-blue-300 text-blue-700{{end}}">{{ T $.Lang "admin.filter_admins" }}</a>
+        <a href="?role=user" class="btn btn-outline text-sm {{if eq .Role "user"}}bg-blue-50 border-blue-300 text-blue-700{{end}}">{{ T $.Lang "admin.filter_users" }}</a>
+        <a href="?" class="btn btn-outline text-sm {{if eq .Role ""}}bg-blue-50 border-blue-300 text-blue-700{{end}}">{{ T $.Lang "admin.filter_all" }}</a>
     </div>
 
     <!-- Скрытый CSRF-токен для единообразия -->
@@ -30,14 +41,14 @@
         <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50 dark:bg-gray-800">
                 <tr>
-                    <th scope="col" class="table-header">ID</th>
-                    <th scope="col" class="table-header">Имя</th>
-                    <th scope="col" class="table-header">Email</th>
-                    <th scope="col" class="table-header">Роль</th>
-                    <th scope="col" class="table-header">Действия</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "admin.table_id" }}</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "admin.table_name" }}</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "admin.table_email" }}</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "admin.table_role" }}</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "admin.table_actions" }}</th>
                 </tr>
             </thead>
-            <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200">
+            <tbody id="admin-users-tbody" class="bg-white dark:bg-gray-800 divide-y divide-gray-200">
                 {{range .Users}}
                 <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 transition">
                     <td class="table-cell">{{.ID}}</td>
@@ -45,24 +56,26 @@
                     <td class="table-cell">{{.Email}}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">
                         {{if eq .Role "admin"}}
-                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">Администратор</span>
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">{{ T $.Lang "admin.role_admin" }}</span>
                         {{else}}
-                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100">Пользователь</span>
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100">{{ T $.Lang "admin.role_user" }}</span>
                         {{end}}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm space-x-2">
                         <form action="/admin/users/{{.ID}}/toggle-admin" method="POST" class="inline">
                             <input type="hidden" name="_csrf" value="{{$.csrf}}">
                             <button type="submit" class="btn {{if eq .Role "admin"}}btn-outline{{else}}btn-primary{{end}} text-xs">
-                                {{if eq .Role "admin"}}Разжаловать{{else}}Сделать админом{{end}}
+                                {{if eq .Role "admin"}}{{ T $.Lang "admin.demote" }}{{else}}{{ T $.Lang "admin.make_admin" }}{{end}}
                             </button>
                         </form>
-                        <form action="/admin/users/{{.ID}}/delete" method="POST" class="inline" data-confirm-form="Удалить пользователя?">
+                        <form action="/admin/users/{{.ID}}/delete" method="POST" class="inline" data-confirm-form="{{ T $.Lang "admin.user_delete_confirm" }}">
                             <input type="hidden" name="_csrf" value="{{$.csrf}}">
-                            <button type="submit" class="btn btn-danger text-xs">Удалить</button>
+                            <button type="submit" class="btn btn-danger text-xs">{{ T $.Lang "admin.delete" }}</button>
                         </form>
                     </td>
                 </tr>
+                {{else}}
+                <tr><td colspan="5" class="px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">{{ T $.Lang "admin.no_users" }}</td></tr>
                 {{end}}
             </tbody>
         </table>
@@ -73,18 +86,18 @@
     <div class="flex items-center justify-between mt-6">
         <div class="flex-1 flex justify-between sm:hidden">
             {{if gt .Page 1}}
-                <a href="?page={{.PrevPage}}&role={{$.Role}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm">← Предыдущая</a>
+                <a href="?page={{.PrevPage}}&role={{$.Role}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_prev" }}</a>
             {{end}}
             {{if lt .Page .TotalPages}}
-                <a href="?page={{.NextPage}}&role={{$.Role}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm">Следующая →</a>
+                <a href="?page={{.NextPage}}&role={{$.Role}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_next" }}</a>
             {{end}}
         </div>
         <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
             <p class="text-sm text-gray-700 dark:text-gray-300">
-                Страница <span class="font-medium">{{.Page}}</span> из <span class="font-medium">{{.TotalPages}}</span>
-                <span class="text-gray-500 dark:text-gray-400">(всего {{.Total}} записей)</span>
+                {{ TF $.Lang "admin.pagination_page" .Page .TotalPages }}
+                <span class="text-gray-500 dark:text-gray-400">{{ TF $.Lang "admin.pagination_total" .Total }}</span>
             </p>
-            <nav class="inline-flex gap-1" aria-label="Пагинация">
+            <nav class="inline-flex gap-1" aria-label="{{ T $.Lang "layout.nav_aria_label" }}">
                 {{if gt .Page 1}}
                     <a href="?page={{.PrevPage}}&role={{$.Role}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm px-3 py-1">←</a>
                 {{end}}
@@ -97,7 +110,5 @@
     </div>
     {{end}}
 </div>
-<script nonce="{{.csp_nonce}}">
-document.addEventListener('submit',function(e){var f=e.target.closest('[data-confirm-form]');if(f&&!confirm(f.getAttribute('data-confirm-form')))e.preventDefault()});
-</script>
+</div>
 {{end}}

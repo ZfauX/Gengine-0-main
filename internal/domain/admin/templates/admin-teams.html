@@ -1,0 +1,79 @@
+{{define "admin-teams.html"}}
+<div class="max-w-7xl mx-auto">
+    <h1 class="page-title">{{ T $.Lang "admin.teams_title" }}</h1>
+
+    <nav class="flex flex-wrap gap-2 p-3 bg-gray-100 dark:bg-gray-800 rounded-lg mb-6">
+        <a href="/admin" class="btn btn-outline text-sm">{{ T $.Lang "admin.dashboard" }}</a>
+        <a href="/admin/users" class="btn btn-outline text-sm">{{ T $.Lang "admin.users" }}</a>
+        <a href="/admin/games" class="btn btn-outline text-sm">{{ T $.Lang "admin.games" }}</a>
+        <a href="/admin/teams" class="btn btn-primary text-sm">{{ T $.Lang "admin.teams" }}</a>
+        <a href="/admin/audit" class="btn btn-outline text-sm">{{ T $.Lang "admin.audit" }}</a>
+        <a href="/admin/backups" class="btn btn-outline text-sm">{{ T $.Lang "admin.backups" }}</a>
+    </nav>
+
+    <form method="GET" action="/admin/teams" class="mb-4">
+        <div class="flex gap-2">
+            <input type="text" name="query" placeholder="{{ T $.Lang "admin.search_team" }}" value="{{.Query}}"
+                   class="flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2">
+            <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "common.search" }}</button>
+            {{if .Query}}<a href="/admin/teams" class="btn btn-outline text-sm">{{ T $.Lang "common.reset" }}</a>{{end}}
+        </div>
+    </form>
+
+    <div class="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50 dark:bg-gray-800">
+                <tr>
+                    <th scope="col" class="table-header">{{ T $.Lang "admin.id" }}</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "admin.team_name" }}</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "admin.captain" }}</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "common.actions" }}</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200">
+                {{range .Teams}}
+                <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 transition">
+                    <td class="table-cell">{{.ID}}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">{{.Name}}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">{{.Captain.Name}}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                        <a href="/teams/{{.ID}}" class="btn btn-outline text-xs">{{ T $.Lang "common.view" }}</a>
+                    </td>
+                </tr>
+                {{else}}
+                <tr>
+                    <td colspan="4" class="px-6 py-4 text-center text-sm text-gray-500 dark:text-gray-400">{{ T $.Lang "admin.no_teams" }}</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+    </div>
+
+    {{if gt .TotalPages 1}}
+    <div class="flex items-center justify-between mt-6">
+        <div class="flex-1 flex justify-between sm:hidden">
+            {{if gt .Page 1}}
+                <a href="?page={{.PrevPage}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_prev" }}</a>
+            {{end}}
+            {{if lt .Page .TotalPages}}
+                <a href="?page={{.NextPage}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_next" }}</a>
+            {{end}}
+        </div>
+        <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+            <p class="text-sm text-gray-700 dark:text-gray-300">
+                {{ TF $.Lang "admin.pagination_page" .Page .TotalPages }}
+            </p>
+            <nav class="inline-flex gap-1">
+                {{if gt .Page 1}}
+                    <a href="?page={{.PrevPage}}" class="btn btn-outline text-sm px-3 py-1">←</a>
+                {{end}}
+                <span class="px-3 py-1 text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 rounded-md">{{.Page}}</span>
+                {{if lt .Page .TotalPages}}
+                    <a href="?page={{.NextPage}}" class="btn btn-outline text-sm px-3 py-1">→</a>
+                {{end}}
+            </nav>
+        </div>
+    </div>
+    {{end}}
+</div>
+{{end}}

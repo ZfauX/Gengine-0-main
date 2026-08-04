@@ -86,25 +86,16 @@ func (app *App) SetupRouter() (*gin.Engine, error) {
 	csrfMW := csrf.Middleware(app.Config.Session.Secret, secure, []string{app.Config.Server.BaseURL})
 	htmlGroup := r.Group("")
 	htmlGroup.Use(func(c *gin.Context) {
-		if strings.HasPrefix(c.Request.URL.Path, "/api") {
-			c.Next()
-			return
-		}
-		if strings.HasPrefix(c.Request.URL.Path, "/static") {
-			c.Next()
-			return
-		}
-		if strings.HasPrefix(c.Request.URL.Path, "/uploads") {
-			c.Next()
-			return
-		}
-		if strings.HasPrefix(c.Request.URL.Path, "/ws") {
-			c.Next()
-			return
-		}
-		if strings.HasPrefix(c.Request.URL.Path, "/auth/webauthn") {
-			c.Next()
-			return
+		// /auth/webauthn/* в целом НЕ исключаем из CSRF: register/begin и
+		// register/finish аутентифицированы и требуют токен. Без CSRF-защиты
+		// только публичные login/begin и login/finish (WebAuthn challenge сам
+		// привязан к сессии, CSRF здесь невозможен).
+		skip := []string{"/api", "/static", "/uploads", "/ws", "/auth/webauthn/login/begin", "/auth/webauthn/login/finish"}
+		for _, prefix := range skip {
+			if strings.HasPrefix(c.Request.URL.Path, prefix) {
+				c.Next()
+				return
+			}
 		}
 		csrfMW(c)
 	})

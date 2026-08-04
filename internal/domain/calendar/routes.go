@@ -8,8 +8,8 @@ import (
 )
 
 // RegisterRoutes СЂРµРіРёСЃС‚СЂРёСЂСѓРµС‚ РјР°СЂС€СЂСѓС‚С‹ РєР°Р»РµРЅРґР°СЂСЏ.
-func RegisterRoutes(router *gin.RouterGroup, gameRepo game.GameRepository) {
-	calendarHandler := NewCalendarHandler(gameRepo)
+func RegisterRoutes(router *gin.RouterGroup, gameRepo game.GameRepository, baseURL string) {
+	calendarHandler := NewCalendarHandler(gameRepo).WithBaseURL(baseURL)
 
 	router.GET("/calendar", calendarHandler.CalendarPage)
 

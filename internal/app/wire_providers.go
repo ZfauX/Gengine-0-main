@@ -31,6 +31,10 @@ func wrapGameService(db *gorm.DB, gameRepo game.GameRepository, passingRepo game
 	return game.NewGameService(db, gameRepo, passingRepo, ca, rs, ms, ps, hub, cfg, storage, cacheStore, userRepo, ratingSvc)
 }
 
+func wrapReviewService(db *gorm.DB, cacheStore cache.CacheStore) *game.ReviewService {
+	return game.NewReviewService(db).WithCache(cacheStore)
+}
+
 func wrapLevelProgressService(db *gorm.DB, sseMgr *game.SSEManager, gameService *game.GameService) *game.LevelProgressService {
 	return game.NewLevelProgressService(db).WithSSEManager(sseMgr).WithGameService(gameService)
 }
@@ -63,8 +67,8 @@ func wrapEmailService(cfg *config.Config, db *gorm.DB) *email.EmailService {
 	return email.NewEmailService(cfg, db)
 }
 
-func wrapAuthService(userRepo user.UserRepository, achievRepo user.AchievementRepository, emailVerifRepo user.EmailVerificationRepository, refreshTokenRepo user.RefreshTokenRepository, cfg *config.Config) *user.AuthService {
-	return user.NewAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg)
+func wrapAuthService(userRepo user.UserRepository, achievRepo user.AchievementRepository, emailVerifRepo user.EmailVerificationRepository, refreshTokenRepo user.RefreshTokenRepository, cfg *config.Config, cacheStore cache.CacheStore) *user.AuthService {
+	return user.NewAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg).WithCache(cacheStore)
 }
 
 func wrapUserService(userRepo user.UserRepository) *user.UserService {

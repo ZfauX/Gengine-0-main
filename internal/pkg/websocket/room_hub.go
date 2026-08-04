@@ -265,11 +265,15 @@ func (h *RoomHub) UnregisterClient(client *Client) {
 }
 
 // BroadcastToRoom отправляет сообщение всем клиентам в комнате.
+// Неблокирующая: при переполнении буфера сообщение отбрасывается, чтобы не
+// задерживать обработчики HTTP/WS после коммита транзакции.
 func (h *RoomHub) BroadcastToRoom(roomID string, data []byte) {
 	select {
 	case h.broadcast <- &Message{Room: roomID, Data: data}:
 	case <-h.done:
 		log.Warn().Str("room", roomID).Msg("RoomHub: broadcast failed, hub is stopped")
+	default:
+		log.Warn().Str("room", roomID).Msg("RoomHub: broadcast buffer full, dropping message")
 	}
 }
 

@@ -11,10 +11,10 @@ import (
 
 type ChatRoom struct {
 	gorm.Model
-	GameID    *uint     `gorm:"index:idx_chat_rooms_game"`
+	GameID    *uint     `gorm:"uniqueIndex:idx_chat_room_unique"`
 	Game      game.Game `gorm:"foreignKey:GameID"`
-	TeamID    *uint     `gorm:"index:idx_chat_rooms_team"`
-	PassingID *uint     `gorm:"index:idx_chat_rooms_passing"`
+	TeamID    *uint     `gorm:"uniqueIndex:idx_chat_room_unique"`
+	PassingID *uint     `gorm:"uniqueIndex:idx_chat_room_unique"`
 	Name      string
 	Messages  []ChatMessage `gorm:"foreignKey:RoomID"`
 }

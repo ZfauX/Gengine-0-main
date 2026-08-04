@@ -4,13 +4,17 @@ package notification
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
+	"gengine-0/internal/config"
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/user"
 	ws "gengine-0/internal/pkg/websocket"
 
+	webpush "github.com/SherClockHolmes/webpush-go"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
@@ -29,6 +33,12 @@ const (
 )
 
 // Notification represents a user notification stored in the database.
+// TODO: Add ON DELETE CASCADE to notifications foreign keys.
+// Migration needed:
+//
+//	ALTER TABLE notifications DROP CONSTRAINT notifications_user_id_fkey,
+//	ADD CONSTRAINT notifications_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+//	Same for game_id → games(id), team_id → teams(id).
 type Notification struct {
 	ID        uint             `gorm:"primaryKey"`
 	CreatedAt time.Time        `gorm:"autoCreateTime"`
@@ -55,10 +65,12 @@ func (Notification) TableName() string {
 
 // NotificationService отвечает за работу с настройками и push-уведомлениями.
 type NotificationService struct {
-	db     *gorm.DB
-	hub    *ws.RoomHub
-	repo   NotificationRepository
-	sseMgr *game.SSEManager
+	db       *gorm.DB
+	hub      *ws.RoomHub
+	repo     NotificationRepository
+	sseMgr   *game.SSEManager
+	vapidCfg config.VAPIDConfig
+	baseURL  string
 }
 
 func NewNotificationService(db *gorm.DB, hub *ws.RoomHub) *NotificationService {
@@ -78,6 +90,13 @@ func (s *NotificationService) WithHub(hub *ws.RoomHub) *NotificationService {
 // WithSSEManager устанавливает SSE-менеджер для broadcast-уведомлений.
 func (s *NotificationService) WithSSEManager(sseMgr *game.SSEManager) *NotificationService {
 	s.sseMgr = sseMgr
+	return s
+}
+
+// WithVAPID устанавливает VAPID-ключи и базовый URL для отправки Web Push.
+func (s *NotificationService) WithVAPID(cfg config.VAPIDConfig, baseURL string) *NotificationService {
+	s.vapidCfg = cfg
+	s.baseURL = baseURL
 	return s
 }
 
@@ -116,7 +135,7 @@ func DefaultSettings() *Settings {
 func (s *NotificationService) GetSettings(ctx context.Context, userID uint) (*Settings, error) {
 	settings, err := s.repo.GetByUserID(ctx, userID)
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// Возвращаем настройки по умолчанию
 			return DefaultSettings(), nil
 		}
@@ -137,10 +156,10 @@ func (s *NotificationService) SaveSettings(ctx context.Context, userID uint, set
 	}
 	// Ищем существующую запись
 	existing, err := s.repo.GetByUserID(ctx, userID)
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
-	if err == gorm.ErrRecordNotFound {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		// Создаём новую
 		newSettings := &user.NotificationSetting{
 			UserID:       userID,
@@ -189,15 +208,88 @@ func (s *NotificationService) Create(ctx context.Context, userID uint, ntype Not
 
 	// Отправляем WebSocket-уведомление в реальном времени
 	if s.hub != nil {
-		s.sendWebSocketNotification(userID, notification)
+		s.sendWebSocketNotification(ctx, userID, notification)
+	}
+
+	// Отправляем Web Push подписанным устройствам
+	if err := s.sendWebPush(ctx, userID, notification); err != nil {
+		log.Warn().Err(err).Uint("user_id", userID).Msg("Notification: web push send failed")
 	}
 
 	log.Debug().Uint("user_id", userID).Str("type", string(ntype)).Msg("Notification created")
 	return nil
 }
 
+// sendWebPush отправляет Web Push всем подпискам пользователя.
+// Подписка является явным согласием на push — отправляем для каждого созданного уведомления.
+// Устаревшие подписки (HTTP 404/410) автоматически удаляются.
+func (s *NotificationService) sendWebPush(ctx context.Context, userID uint, n *Notification) error {
+	if s.vapidCfg.PublicKey == "" || s.vapidCfg.PrivateKey == "" {
+		return nil // VAPID не настроен — push недоступен
+	}
+
+	var subs []user.PushSubscription
+	if err := s.db.WithContext(ctx).Where("user_id = ?", userID).Find(&subs).Error; err != nil {
+		return fmt.Errorf("load push subscriptions: %w", err)
+	}
+	if len(subs) == 0 {
+		return nil
+	}
+
+	// Уважаем настройку пользователя: если push отключён в настройках — не отправляем.
+	settings, err := s.GetSettings(ctx, userID)
+	if err == nil && !settings.PushEnabled {
+		return nil
+	}
+	if err != nil {
+		log.Warn().Err(err).Uint("user_id", userID).Msg("sendWebPush: failed to load settings, sending anyway")
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"title": n.Title,
+		"body":  n.Body,
+		"url":   s.baseURL + n.Link,
+		"tag":   string(n.Type),
+	})
+	if err != nil {
+		return fmt.Errorf("marshal push payload: %w", err)
+	}
+
+	opts := &webpush.Options{
+		Subscriber:      s.vapidCfg.Subject,
+		VAPIDPublicKey:  s.vapidCfg.PublicKey,
+		VAPIDPrivateKey: s.vapidCfg.PrivateKey,
+		TTL:             3600,
+	}
+
+	for _, sub := range subs {
+		wsub := &webpush.Subscription{
+			Endpoint: sub.Endpoint,
+			Keys: webpush.Keys{
+				Auth:   sub.Auth,
+				P256dh: sub.P256dh,
+			},
+		}
+		resp, err := webpush.SendNotificationWithContext(ctx, payload, wsub, opts)
+		if err != nil {
+			log.Warn().Err(err).Uint("user_id", userID).Uint("sub_id", sub.ID).Msg("webpush send error")
+			continue
+		}
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone {
+			// Подписка устарела — удаляем
+			if err := s.db.WithContext(ctx).Where("id = ?", sub.ID).Delete(&user.PushSubscription{}).Error; err != nil {
+				log.Warn().Err(err).Uint("sub_id", sub.ID).Msg("webpush: failed to delete stale subscription")
+			}
+		} else if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+			log.Warn().Int("status", resp.StatusCode).Uint("user_id", userID).Msg("webpush: unexpected response status")
+		}
+	}
+	return nil
+}
+
 // sendWebSocketNotification отправляет уведомление через WebSocket
-func (s *NotificationService) sendWebSocketNotification(userID uint, notification *Notification) {
+func (s *NotificationService) sendWebSocketNotification(ctx context.Context, userID uint, notification *Notification) {
 	roomID := fmt.Sprintf("user:%d", userID)
 
 	notificationData := map[string]any{
@@ -207,7 +299,7 @@ func (s *NotificationService) sendWebSocketNotification(userID uint, notificatio
 		"body":         notification.Body,
 		"link":         notification.Link,
 		"created_at":   notification.CreatedAt.Format(time.RFC3339),
-		"unread_count": s.getUnreadCount(userID),
+		"unread_count": s.getUnreadCount(ctx, userID),
 	}
 
 	data, err := json.Marshal(notificationData)
@@ -220,10 +312,10 @@ func (s *NotificationService) sendWebSocketNotification(userID uint, notificatio
 }
 
 // getUnreadCount возвращает количество непрочитанных уведомлений
-func (s *NotificationService) getUnreadCount(userID uint) int {
+func (s *NotificationService) getUnreadCount(ctx context.Context, userID uint) int {
 	var count int64
-	if err := s.db.Model(&Notification{}).WithContext(context.Background()).Where("user_id = ? AND read = ?", userID, false).Count(&count).Error; err != nil {
-		log.Error().Err(err).Msg("getUnreadCount: failed")
+	if err := s.db.WithContext(ctx).Model(&Notification{}).Where("user_id = ? AND read = ?", userID, false).Count(&count).Error; err != nil {
+		log.Error().Err(err).Uint("user_id", userID).Msg("getUnreadCount: failed")
 	}
 	return int(count)
 }
@@ -277,8 +369,8 @@ func (s *NotificationService) MarkAllAsRead(ctx context.Context, userID uint) er
 }
 
 // GetUnreadCount возвращает количество непрочитанных уведомлений
-func (s *NotificationService) GetUnreadCount(userID uint) int {
-	return s.getUnreadCount(userID)
+func (s *NotificationService) GetUnreadCount(ctx context.Context, userID uint) int {
+	return s.getUnreadCount(ctx, userID)
 }
 
 // SendTimeWarning отправляет предупреждение о таймере
@@ -295,7 +387,7 @@ func (s *NotificationService) SendTimeWarning(ctx context.Context, userID uint, 
 	// Отправляем SSE-уведомление
 	if s.sseMgr != nil {
 		var passing game.GamePassing
-		if err := s.db.First(&passing, passingID).Error; err == nil {
+		if err := s.db.WithContext(ctx).First(&passing, passingID).Error; err == nil {
 			s.sseMgr.Broadcast(passing.GameID, "time_warning", map[string]any{
 				"game_id":           passing.GameID,
 				"passing_id":        passingID,

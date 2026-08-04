@@ -3,11 +3,15 @@ package admin
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"strconv"
 
 	"gengine-0/internal/domain/game"
+	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/audit"
+	"gengine-0/internal/pkg/cache"
 	"gengine-0/internal/pkg/i18n"
 	"gengine-0/internal/pkg/render"
 
@@ -28,6 +32,7 @@ type IDRequest struct {
 // ListUsersRequest используется для фильтрации и пагинации списка пользователей.
 type ListUsersRequest struct {
 	Role    string `form:"role" binding:"omitempty,oneof=user admin"`
+	Query   string `form:"query"`
 	Page    int    `form:"page" binding:"omitempty,min=1"`
 	PerPage int    `form:"per_page" binding:"omitempty,min=1,max=100"`
 }
@@ -35,6 +40,7 @@ type ListUsersRequest struct {
 // ListGamesRequest используется для фильтрации и пагинации списка игр.
 type ListGamesRequest struct {
 	Status  string `form:"status" binding:"omitempty,oneof=draft published"`
+	Query   string `form:"query"`
 	Page    int    `form:"page" binding:"omitempty,min=1"`
 	PerPage int    `form:"per_page" binding:"omitempty,min=1,max=100"`
 }
@@ -45,28 +51,41 @@ type AuditLogRequest struct {
 	PerPage int    `form:"per_page" binding:"omitempty,min=1,max=100"`
 	UserID  string `form:"user_id"`
 	Action  string `form:"action"`
+	Query   string `form:"query"`
 }
 
 // AdminHandler управляет административной панелью.
 type AdminHandler struct {
-	userRepo      user.UserRepository
-	gameRepo      game.GameRepository
-	backupService *BackupService
-	auditService  *audit.Service
+	userRepo         user.UserRepository
+	gameRepo         game.GameRepository
+	gameService      *game.GameService
+	teamRepo         team.TeamRepository
+	backupService    *BackupService
+	auditService     *audit.Service
+	refreshTokenRepo user.RefreshTokenRepository
+	cacheStore       cache.CacheStore
 }
 
 // NewAdminHandler создаёт новый AdminHandler.
 func NewAdminHandler(
 	userRepo user.UserRepository,
 	gameRepo game.GameRepository,
+	gameService *game.GameService,
+	teamRepo team.TeamRepository,
 	backupSvc *BackupService,
 	auditSvc *audit.Service,
+	refreshTokenRepo user.RefreshTokenRepository,
+	cacheStore cache.CacheStore,
 ) *AdminHandler {
 	return &AdminHandler{
-		userRepo:      userRepo,
-		gameRepo:      gameRepo,
-		backupService: backupSvc,
-		auditService:  auditSvc,
+		userRepo:         userRepo,
+		gameRepo:         gameRepo,
+		gameService:      gameService,
+		teamRepo:         teamRepo,
+		backupService:    backupSvc,
+		auditService:     auditSvc,
+		refreshTokenRepo: refreshTokenRepo,
+		cacheStore:       cacheStore,
 	}
 }
 
@@ -109,10 +128,17 @@ func (h *AdminHandler) Dashboard(c *gin.Context) {
 		backupCount = 0
 	}
 
+	teamCount, err := h.teamRepo.Count(ctx)
+	if err != nil {
+		log.Error().Err(err).Msg("Dashboard: failed to count teams")
+		teamCount = 0
+	}
+
 	render.Page(c, http.StatusOK, "admin-dashboard.html", gin.H{
 		"Title":         "Админ-панель",
 		"UserCount":     userCount,
 		"GameCount":     gameCount,
+		"TeamCount":     teamCount,
 		"AuditCount":    auditCount,
 		"BackupCount":   backupCount,
 		"CurrentUserID": c.GetUint("userID"),
@@ -131,7 +157,7 @@ func (h *AdminHandler) Dashboard(c *gin.Context) {
 // @Param per_page query int false "Количество записей на странице" default(20)
 // @Success 200 {string} html "Страница со списком пользователей"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /admin/users [get]
 // @Security JWT
 func (h *AdminHandler) ListUsers(c *gin.Context) {
@@ -150,19 +176,37 @@ func (h *AdminHandler) ListUsers(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	total, err := h.userRepo.CountByRole(ctx, req.Role)
-	if err != nil {
-		log.Error().Err(err).Str("role", req.Role).Msg("ListUsers: failed to count users")
-		render.RenderErrorPage(c, http.StatusInternalServerError)
-		return
-	}
-
+	var err error
+	var total int64
+	var users []user.User
 	offset := (req.Page - 1) * req.PerPage
-	users, err := h.userRepo.ListPaginated(ctx, req.Role, offset, req.PerPage)
-	if err != nil {
-		log.Error().Err(err).Str("role", req.Role).Msg("ListUsers: failed to list users")
-		render.RenderErrorPage(c, http.StatusInternalServerError)
-		return
+
+	if req.Query != "" {
+		total, err = h.userRepo.CountSearch(ctx, req.Query, req.Role)
+		if err != nil {
+			log.Error().Err(err).Str("query", req.Query).Msg("ListUsers: failed to count search")
+			render.RenderErrorPage(c, http.StatusInternalServerError)
+			return
+		}
+		users, err = h.userRepo.SearchPaginated(ctx, req.Query, req.Role, offset, req.PerPage)
+		if err != nil {
+			log.Error().Err(err).Str("query", req.Query).Msg("ListUsers: failed to search users")
+			render.RenderErrorPage(c, http.StatusInternalServerError)
+			return
+		}
+	} else {
+		total, err = h.userRepo.CountByRole(ctx, req.Role)
+		if err != nil {
+			log.Error().Err(err).Str("role", req.Role).Msg("ListUsers: failed to count users")
+			render.RenderErrorPage(c, http.StatusInternalServerError)
+			return
+		}
+		users, err = h.userRepo.ListPaginated(ctx, req.Role, offset, req.PerPage)
+		if err != nil {
+			log.Error().Err(err).Str("role", req.Role).Msg("ListUsers: failed to list users")
+			render.RenderErrorPage(c, http.StatusInternalServerError)
+			return
+		}
 	}
 
 	totalPages := int((total + int64(req.PerPage) - 1) / int64(req.PerPage))
@@ -184,6 +228,7 @@ func (h *AdminHandler) ListUsers(c *gin.Context) {
 		"Title":         "Пользователи",
 		"Users":         users,
 		"Role":          req.Role,
+		"Query":         req.Query,
 		"Page":          req.Page,
 		"PerPage":       req.PerPage,
 		"TotalPages":    totalPages,
@@ -206,7 +251,7 @@ func (h *AdminHandler) ListUsers(c *gin.Context) {
 // @Param id path int true "ID пользователя"
 // @Success 302 {string} string "Перенаправление на /admin/users"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /admin/users/{id}/toggle-admin [post]
 // @Security JWT
 func (h *AdminHandler) ToggleAdmin(c *gin.Context) {
@@ -244,6 +289,14 @@ func (h *AdminHandler) ToggleAdmin(c *gin.Context) {
 		return
 	}
 
+	// Revoke all refresh tokens so the role change takes effect on next re-login
+	// (existing short-lived access JWTs expire within AccessExpiry).
+	if h.refreshTokenRepo != nil {
+		if err := h.refreshTokenRepo.RevokeAllForUser(ctx, u.ID); err != nil {
+			log.Error().Err(err).Uint("user", u.ID).Msg("ToggleAdmin: failed to revoke refresh tokens")
+		}
+	}
+
 	adminID := c.GetUint("userID")
 	h.auditService.Log(adminID, "toggle_admin_role", "user", u.ID, "new_role: "+u.Role)
 	c.Redirect(http.StatusFound, "/admin/users")
@@ -258,7 +311,7 @@ func (h *AdminHandler) ToggleAdmin(c *gin.Context) {
 // @Param id path int true "ID пользователя"
 // @Success 302 {string} string "Перенаправление на /admin/users"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /admin/users/{id}/delete [post]
 // @Security JWT
 func (h *AdminHandler) DeleteUser(c *gin.Context) {
@@ -266,6 +319,13 @@ func (h *AdminHandler) DeleteUser(c *gin.Context) {
 	if err := c.ShouldBindUri(&req); err != nil {
 		log.Warn().Err(err).Msg("DeleteUser: invalid user ID")
 		render.SetFlash(c, "error", i18n.T("generic.invalid_user_id"))
+		c.Redirect(http.StatusFound, "/admin/users")
+		return
+	}
+
+	adminID := c.GetUint("userID")
+	if req.ID == adminID {
+		render.SetFlash(c, "error", i18n.T("admin.cannot_delete_self"))
 		c.Redirect(http.StatusFound, "/admin/users")
 		return
 	}
@@ -282,7 +342,6 @@ func (h *AdminHandler) DeleteUser(c *gin.Context) {
 		return
 	}
 
-	adminID := c.GetUint("userID")
 	h.auditService.Log(adminID, "delete_user", "user", req.ID, "")
 	c.Redirect(http.StatusFound, "/admin/users")
 }
@@ -299,7 +358,7 @@ func (h *AdminHandler) DeleteUser(c *gin.Context) {
 // @Param per_page query int false "Количество записей на странице" default(20)
 // @Success 200 {string} html "Страница со списком игр"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /admin/games [get]
 // @Security JWT
 func (h *AdminHandler) ListGames(c *gin.Context) {
@@ -318,6 +377,10 @@ func (h *AdminHandler) ListGames(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	query := h.gameRepo.Model(ctx).Preload("Author")
+	if req.Query != "" {
+		query = query.Joins("LEFT JOIN users ON users.id = games.author_id").
+			Where("games.name ILIKE ? OR users.name ILIKE ?", "%"+req.Query+"%", "%"+req.Query+"%")
+	}
 	switch req.Status {
 	case "draft":
 		query = query.Where("is_draft = true")
@@ -359,6 +422,7 @@ func (h *AdminHandler) ListGames(c *gin.Context) {
 		"Title":         "Игры",
 		"Games":         games,
 		"Status":        req.Status,
+		"Query":         req.Query,
 		"Page":          req.Page,
 		"PerPage":       req.PerPage,
 		"TotalPages":    totalPages,
@@ -381,7 +445,7 @@ func (h *AdminHandler) ListGames(c *gin.Context) {
 // @Param id path int true "ID игры"
 // @Success 302 {string} string "Перенаправление на /admin/games"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /admin/games/{id}/delete [post]
 // @Security JWT
 func (h *AdminHandler) DeleteGame(c *gin.Context) {
@@ -393,21 +457,125 @@ func (h *AdminHandler) DeleteGame(c *gin.Context) {
 		return
 	}
 
-	if err := h.gameRepo.Delete(c.Request.Context(), req.ID); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Warn().Uint("game_id", req.ID).Msg("DeleteGame: game not found")
-			render.SetFlash(c, "error", i18n.T("game.not_found"))
-		} else {
-			log.Error().Err(err).Uint("game_id", req.ID).Msg("DeleteGame: failed to delete game")
-			render.SetFlash(c, "error", i18n.T("admin.game_delete_error"))
+	if h.gameService != nil {
+		if err := h.gameService.AdminDelete(c.Request.Context(), req.ID); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				log.Warn().Uint("game_id", req.ID).Msg("DeleteGame: game not found")
+				render.SetFlash(c, "error", i18n.T("game.not_found"))
+			} else {
+				log.Error().Err(err).Uint("game_id", req.ID).Msg("DeleteGame: failed to delete game")
+				render.SetFlash(c, "error", i18n.T("admin.game_delete_error"))
+			}
+			c.Redirect(http.StatusFound, "/admin/games")
+			return
 		}
-		c.Redirect(http.StatusFound, "/admin/games")
-		return
+	} else {
+		if err := h.gameRepo.Delete(c.Request.Context(), req.ID); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				log.Warn().Uint("game_id", req.ID).Msg("DeleteGame: game not found")
+				render.SetFlash(c, "error", i18n.T("game.not_found"))
+			} else {
+				log.Error().Err(err).Uint("game_id", req.ID).Msg("DeleteGame: failed to delete game")
+				render.SetFlash(c, "error", i18n.T("admin.game_delete_error"))
+			}
+			c.Redirect(http.StatusFound, "/admin/games")
+			return
+		}
+	}
+
+	// Инвалидируем кэш игры, иначе удалённая игра будет отдаваться до 5 минут.
+	// (GameService.AdminDelete уже делает это при наличии сервиса — fallback для тестов).
+	if h.cacheStore != nil && h.gameService == nil {
+		h.cacheStore.DeleteWithCtx(c.Request.Context(), fmt.Sprintf("game:%d", req.ID))
+		h.cacheStore.DeleteWithCtx(c.Request.Context(), fmt.Sprintf("rating:game:%d", req.ID))
 	}
 
 	adminID := c.GetUint("userID")
 	h.auditService.Log(adminID, "delete_game", "game", req.ID, "")
 	c.Redirect(http.StatusFound, "/admin/games")
+}
+
+// ---------- Команды ----------
+
+// ListTeams отображает список всех команд.
+// @Summary Список команд
+// @Tags admin
+// @Produce html
+// @Param page query int false "Номер страницы" default(1)
+// @Param per_page query int false "Количество записей на странице" default(20)
+// @Success 200 {string} html "Список команд"
+// @Router /admin/teams [get]
+// @Security JWT
+func (h *AdminHandler) ListTeams(c *gin.Context) {
+	page := 1
+	perPage := 20
+	if p, err := strconv.Atoi(c.DefaultQuery("page", "1")); err == nil && p > 0 {
+		page = p
+	}
+	if pp, err := strconv.Atoi(c.DefaultQuery("per_page", "20")); err == nil && pp > 0 && pp <= 100 {
+		perPage = pp
+	}
+
+	query := c.DefaultQuery("query", "")
+	ctx := c.Request.Context()
+
+	var total int64
+	var teams []team.Team
+	var err error
+	offset := (page - 1) * perPage
+
+	if query != "" {
+		total, err = h.teamRepo.CountSearch(ctx, query)
+		if err != nil {
+			log.Error().Err(err).Msg("ListTeams: failed to count teams search")
+			render.RenderErrorPage(c, http.StatusInternalServerError)
+			return
+		}
+		teams, err = h.teamRepo.SearchPaginated(ctx, query, offset, perPage)
+		if err != nil {
+			log.Error().Err(err).Msg("ListTeams: failed to search teams")
+			render.RenderErrorPage(c, http.StatusInternalServerError)
+			return
+		}
+	} else {
+		total, err = h.teamRepo.Count(ctx)
+		if err != nil {
+			log.Error().Err(err).Msg("ListTeams: failed to count teams")
+			render.RenderErrorPage(c, http.StatusInternalServerError)
+			return
+		}
+		teams, err = h.teamRepo.ListAllPaginated(ctx, offset, perPage)
+		if err != nil {
+			log.Error().Err(err).Msg("ListTeams: failed to list teams")
+			render.RenderErrorPage(c, http.StatusInternalServerError)
+			return
+		}
+	}
+
+	totalPages := int((total + int64(perPage) - 1) / int64(perPage))
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	prevPage := page - 1
+	if prevPage < 1 {
+		prevPage = 1
+	}
+	nextPage := page + 1
+	if nextPage > totalPages {
+		nextPage = totalPages
+	}
+	render.Page(c, http.StatusOK, "admin-teams.html", gin.H{
+		"Title":      "Команды",
+		"Teams":      teams,
+		"Query":      query,
+		"Page":       page,
+		"PerPage":    perPage,
+		"TotalPages": totalPages,
+		"Total":      total,
+		"PrevPage":   prevPage,
+		"NextPage":   nextPage,
+		"csrf":       csrf.GetToken(c),
+	})
 }
 
 // ---------- Аудит ----------
@@ -423,7 +591,7 @@ func (h *AdminHandler) DeleteGame(c *gin.Context) {
 // @Param action query string false "Действие (create, update, delete, login и т.д.)"
 // @Success 200 {string} html "Страница аудита"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /admin/audit [get]
 // @Security JWT
 func (h *AdminHandler) AuditLog(c *gin.Context) {
@@ -439,7 +607,7 @@ func (h *AdminHandler) AuditLog(c *gin.Context) {
 		req.PerPage = 20
 	}
 
-	logs, total, err := h.auditService.List(c.Request.Context(), req.UserID, req.Action, req.Page, req.PerPage)
+	logs, total, err := h.auditService.List(c.Request.Context(), req.UserID, req.Action, req.Query, req.Page, req.PerPage)
 	if err != nil {
 		log.Error().Err(err).Str("user_id", req.UserID).Str("action", req.Action).Msg("AuditLog list failed")
 		render.RenderErrorPage(c, http.StatusInternalServerError)
@@ -468,6 +636,7 @@ func (h *AdminHandler) AuditLog(c *gin.Context) {
 		"NextPage":      nextPage,
 		"UserID":        req.UserID,
 		"Action":        req.Action,
+		"Query":         req.Query,
 		"CurrentUserID": c.GetUint("userID"),
 		"IsAdmin":       true,
 		"csrf":          csrf.GetToken(c),
@@ -483,7 +652,7 @@ func (h *AdminHandler) AuditLog(c *gin.Context) {
 // @Produce html
 // @Success 200 {string} html "Страница бекапов"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /admin/backups [get]
 // @Security JWT
 func (h *AdminHandler) ListBackups(c *gin.Context) {
@@ -513,7 +682,7 @@ func (h *AdminHandler) ListBackups(c *gin.Context) {
 // @Produce html
 // @Success 302 {string} string "Перенаправление на /admin/backups"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Failure 500 {object} map[string]interface{} "Ошибка создания бекапа"
 // @Router /admin/backups/create [post]
 // @Security JWT
@@ -535,7 +704,7 @@ func (h *AdminHandler) CreateBackup(c *gin.Context) {
 // @Success 200 {file} file "Файл бекапа"
 // @Failure 400 {object} map[string]interface{} "Неверный ID"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Failure 404 {object} map[string]interface{} "Бекап не найден"
 // @Router /admin/backups/{id}/download [get]
 // @Security JWT
@@ -569,7 +738,7 @@ func (h *AdminHandler) DownloadBackup(c *gin.Context) {
 // @Produce html
 // @Success 302 {string} string "Перенаправление на /admin/backups"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /admin/backups/rotate [post]
 // @Security JWT
 func (h *AdminHandler) RotateBackups(c *gin.Context) {

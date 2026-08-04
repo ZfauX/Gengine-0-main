@@ -1,13 +1,13 @@
 {{define "chat-page.html"}}
 <div class="max-w-4xl mx-auto" data-game-id="{{.GameID}}" data-user-id="{{.UserID}}" data-user-name="{{.UserName}}" data-passing-id="{{.PassingID}}">
-    <h1 class="page-title">Чаты игры</h1>
+    <h1 class="page-title">{{ T $.Lang "gamechat.title" }}</h1>
 
     <div class="card">
         <!-- Кнопки переключения комнат -->
         <div class="flex flex-wrap gap-2 mb-4">
-            <button id="btn-general" class="btn btn-primary text-sm">Общий чат</button>
+            <button id="btn-general" class="btn btn-primary text-sm">{{ T $.Lang "gamechat.general" }}</button>
             {{if .PassingID}}
-            <button id="btn-team" class="btn btn-outline text-sm">Командный чат</button>
+            <button id="btn-team" class="btn btn-outline text-sm">{{ T $.Lang "gamechat.team" }}</button>
             {{end}}
         </div>
 
@@ -16,9 +16,9 @@
 
         <!-- Поле ввода и отправка -->
         <div class="flex flex-wrap items-center gap-2">
-            <input type="text" id="chat-input" placeholder="Введите сообщение..." 
+            <input type="text" id="chat-input" placeholder="{{ T $.Lang "gamechat.input_placeholder" }}" 
                    class="flex-1 min-w-[180px] rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2">
-            <button id="send-btn" class="btn btn-primary text-sm whitespace-nowrap">Отправить</button>
+            <button id="send-btn" class="btn btn-primary text-sm whitespace-nowrap">{{ T $.Lang "gamechat.send_button" }}</button>
         </div>
 
         <!-- Статус подключения -->
@@ -33,7 +33,7 @@
 
         const gameID = parseInt(container.dataset.gameId, 10);
         const userID = parseInt(container.dataset.userId, 10);
-        const userName = container.dataset.userName || 'Вы';
+        const userName = container.dataset.userName || '{{ T $.Lang "common.you" }}';
         const passingID = container.dataset.passingId ? parseInt(container.dataset.passingId, 10) : null;
 
         let currentRoom = 'general';
@@ -76,15 +76,15 @@
                 connect();
             })
             .catch(err => {
-                console.error('Ошибка получения комнат чата:', err);
-                updateConnectionStatus('Ошибка загрузки комнат', '#e74c3c');
+                console.error('Chat: error loading rooms:', err);
+                updateConnectionStatus('{{ T $.Lang "gamechat.load_error" }}', '#e74c3c');
             });
 
         function connect() {
             if (!roomsLoaded) return;
             const room = currentRoom === 'general' ? generalRoomID : teamRoomID;
             if (!room) {
-                updateConnectionStatus('Комната не найдена', '#e74c3c');
+                updateConnectionStatus('{{ T $.Lang "gamechat.room_error" }}', '#e74c3c');
                 return;
             }
 
@@ -95,8 +95,8 @@
 
             socket = new WebSocket(`${wsProtocol}//${location.host}/chat/ws?room=${room}`);
             socket.onopen = function() {
-                console.log('Чат: WebSocket подключён, комната ' + currentRoom);
-                updateConnectionStatus('Подключено', '#2ecc71');
+                console.log('Chat: WebSocket connected, room ' + currentRoom);
+                updateConnectionStatus('{{ T $.Lang "gamechat.connected" }}', '#2ecc71');
                 reconnectAttempts = 0;
             };
             socket.onmessage = function(e) {
@@ -124,13 +124,13 @@
                 }
             };
             socket.onclose = function(event) {
-                console.log('Чат: WebSocket закрыт, переподключение...');
-                updateConnectionStatus('Переподключение...', '#e67e22');
+                console.log('Chat: WebSocket closed, reconnecting...');
+                updateConnectionStatus('{{ T $.Lang "gamechat.reconnecting" }}', '#e67e22');
                 scheduleReconnect();
             };
             socket.onerror = function(error) {
-                console.error('Чат: WebSocket ошибка', error);
-                updateConnectionStatus('Ошибка соединения', '#e74c3c');
+                console.error('Chat: WebSocket error', error);
+                updateConnectionStatus('{{ T $.Lang "gamechat.connection_error" }}', '#e74c3c');
             };
         }
 
@@ -138,8 +138,9 @@
             if (reconnectTimer) clearTimeout(reconnectTimer);
             const delay = Math.min(MAX_RECONNECT_DELAY, BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts));
             reconnectAttempts++;
-            console.log(`Чат: переподключение через ${delay}ms (попытка ${reconnectAttempts})`);
-            updateConnectionStatus(`Переподключение через ${Math.round(delay/1000)}с...`, '#e67e22');
+            console.log(`Chat: reconnecting in ${delay}ms (attempt ${reconnectAttempts})`);
+            var reconnectStr = '{{ T $.Lang "gamechat.reconnecting" }}';
+            updateConnectionStatus(reconnectStr, '#e67e22');
             reconnectTimer = setTimeout(() => {
                 connect();
             }, delay);
@@ -149,7 +150,7 @@
             const div = document.createElement('div');
             div.className = 'chat-message py-1';
             const time = msg.created_at || msg.CreatedAt ? new Date(msg.created_at || msg.CreatedAt).toLocaleTimeString() : '';
-            const author = (msg.User && msg.User.Name) || msg.user_name || (msg.user && msg.user.name) || 'Неизвестный';
+            const author = (msg.User && msg.User.Name) || msg.user_name || (msg.user && msg.user.name) || '{{ T $.Lang "gamechat.unknown_user" }}';
             div.innerHTML = `<span class="font-semibold text-gray-800 dark:text-gray-100">${escapeHtml(author)}:</span> ${escapeHtml(msg.Content || msg.content || msg.text)} <span class="text-xs text-gray-400">(${time})</span>`;
             div.dataset.msgId = msg.id || msg.ID || '';
             chatMessages.appendChild(div);
@@ -191,7 +192,7 @@
             const text = chatInput.value.trim();
             if (!text) return;
             if (!socket || socket.readyState !== WebSocket.OPEN) {
-                updateConnectionStatus('Нет соединения с чатом. Попробуйте позже.', '#e74c3c');
+                updateConnectionStatus('{{ T $.Lang "gamechat.connection_error" }}', '#e74c3c');
                 return;
             }
             socket.send(text);

@@ -1,6 +1,6 @@
 {{define "calendar-page.html"}}
 <div class="max-w-7xl mx-auto">
-    <h1 class="page-title">Календарь игр</h1>
+    <h1 class="page-title">{{ T $.Lang "calendar.title" }}</h1>
 
     <!-- Скрытый CSRF-токен для AJAX-запросов -->
     <meta name="csrf-token" content="{{.csrf}}">
@@ -8,11 +8,11 @@
     <div class="card">
         <!-- Управление месяцем -->
         <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
-            <button id="prev-month" class="btn btn-outline text-sm">← Предыдущий</button>
+            <button id="prev-month" class="btn btn-outline text-sm">{{ T $.Lang "calendar.prev_month" }}</button>
             <h2 id="month-year" class="text-xl font-semibold text-gray-800 dark:text-gray-100 m-0"></h2>
             <div class="flex gap-2">
-                <a href="/calendar/export.ics" class="btn btn-outline text-sm" title="Экспорт в iCal">📅 Экспорт .ics</a>
-                <button id="next-month" class="btn btn-outline text-sm">Следующий →</button>
+                <a href="/calendar/export.ics" class="btn btn-outline text-sm" title="{{ T $.Lang "calendar.export_ics" }}">{{ T $.Lang "calendar.export_ics" }}</a>
+                <button id="next-month" class="btn btn-outline text-sm">{{ T $.Lang "calendar.next_month" }}</button>
             </div>
         </div>
 
@@ -21,13 +21,13 @@
             <table class="w-full text-center border-collapse">
                 <thead>
                     <tr class="bg-gray-100 dark:bg-gray-800">
-                        <th class="p-2 text-sm font-medium text-gray-500 dark:text-gray-400">Пн</th>
-                        <th class="p-2 text-sm font-medium text-gray-500 dark:text-gray-400">Вт</th>
-                        <th class="p-2 text-sm font-medium text-gray-500 dark:text-gray-400">Ср</th>
-                        <th class="p-2 text-sm font-medium text-gray-500 dark:text-gray-400">Чт</th>
-                        <th class="p-2 text-sm font-medium text-gray-500 dark:text-gray-400">Пт</th>
-                        <th class="p-2 text-sm font-medium text-gray-500 dark:text-gray-400">Сб</th>
-                        <th class="p-2 text-sm font-medium text-gray-500 dark:text-gray-400">Вс</th>
+                        <th class="p-2 text-sm font-medium text-gray-500 dark:text-gray-400">{{ T $.Lang "calendar.day_mon" }}</th>
+                        <th class="p-2 text-sm font-medium text-gray-500 dark:text-gray-400">{{ T $.Lang "calendar.day_tue" }}</th>
+                        <th class="p-2 text-sm font-medium text-gray-500 dark:text-gray-400">{{ T $.Lang "calendar.day_wed" }}</th>
+                        <th class="p-2 text-sm font-medium text-gray-500 dark:text-gray-400">{{ T $.Lang "calendar.day_thu" }}</th>
+                        <th class="p-2 text-sm font-medium text-gray-500 dark:text-gray-400">{{ T $.Lang "calendar.day_fri" }}</th>
+                        <th class="p-2 text-sm font-medium text-gray-500 dark:text-gray-400">{{ T $.Lang "calendar.day_sat" }}</th>
+                        <th class="p-2 text-sm font-medium text-gray-500 dark:text-gray-400">{{ T $.Lang "calendar.day_sun" }}</th>
                     </tr>
                 </thead>
                 <tbody id="calendar-body">
@@ -51,8 +51,8 @@
     }
 
     const monthNames = [
-        'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-        'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
+        '{{ T $.Lang "calendar.month_jan" }}', '{{ T $.Lang "calendar.month_feb" }}', '{{ T $.Lang "calendar.month_mar" }}', '{{ T $.Lang "calendar.month_apr" }}', '{{ T $.Lang "calendar.month_may" }}', '{{ T $.Lang "calendar.month_jun" }}',
+        '{{ T $.Lang "calendar.month_jul" }}', '{{ T $.Lang "calendar.month_aug" }}', '{{ T $.Lang "calendar.month_sep" }}', '{{ T $.Lang "calendar.month_oct" }}', '{{ T $.Lang "calendar.month_nov" }}', '{{ T $.Lang "calendar.month_dec" }}'
     ];
 
     function loadCalendar(year, month) {
@@ -69,9 +69,9 @@
                 renderCalendar(data.year, data.month, data.events);
             })
             .catch(err => {
-                console.error('Ошибка загрузки календаря:', err);
+                console.error('Calendar load error:', err);
                 document.getElementById('calendar-body').innerHTML =
-                    `<tr><td colspan="7" class="p-4 text-center text-red-500">Ошибка загрузки данных</td></tr>`;
+                    `<tr><td colspan="7" class="p-4 text-center text-red-500">{{ T $.Lang "calendar.load_error" }}</td></tr>`;
             });
     }
 
@@ -121,7 +121,7 @@
                 const indicator = document.createElement('div');
                 indicator.className = 'inline-flex items-center justify-center w-6 h-6 bg-blue-500 text-white text-xs font-semibold rounded-full cursor-pointer hover:bg-blue-600 transition';
                 indicator.textContent = dayGames.length;
-                indicator.title = `${dayGames.length} игр(ы)`;
+                indicator.title = '{{ T $.Lang "calendar.games_label" }} ' + dayGames.length;
                 indicator.onclick = (e) => {
                     e.stopPropagation();
                     showGamesForDate(dateStr, dayGames);
@@ -153,16 +153,18 @@
         const list = document.getElementById('selected-games-list');
 
         const [y, m, d] = dateStr.split('-');
-        title.textContent = `Игры на ${d}.${m}.${y}`;
+        title.textContent = '{{ TF $.Lang "calendar.games_for" "D" "M" "Y" }}'.replace('D', d).replace('M', m).replace('Y', y);
         list.innerHTML = '';
 
         if (games.length === 0) {
-            list.innerHTML = '<li class="text-gray-500 dark:text-gray-400">Нет запланированных игр</li>';
+            list.innerHTML = '<li class="text-gray-500 dark:text-gray-400">{{ T $.Lang "calendar.no_games" }}</li>';
         } else {
             games.forEach(game => {
                 const li = document.createElement('li');
                 li.className = 'text-sm';
-                li.innerHTML = `<a href="/games/${game.id}" class="text-blue-600 dark:text-blue-400 hover:underline">${escapeHtml(game.name)}</a> — начало в ${escapeHtml(game.time || 'не указано')}`;
+                var startFmt = '{{ T $.Lang "calendar.starts_at" }}';
+                var notSpec = '{{ T $.Lang "calendar.not_specified" }}';
+                li.innerHTML = `<a href="/games/${game.id}" class="text-blue-600 dark:text-blue-400 hover:underline">${escapeHtml(game.name)}</a> — ${startFmt.replace('%s', escapeHtml(game.time || notSpec))}`;
                 list.appendChild(li);
             });
         }

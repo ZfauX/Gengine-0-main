@@ -3,6 +3,7 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -42,16 +43,34 @@ import (
 )
 
 func (app *App) setupEngine(r *gin.Engine) error {
-	store := cookie.NewStore([]byte(app.Config.Session.Secret))
+	// Два ключа: первый — HMAC-подпись, второй — шифрование (AES). Клиент не сможет прочитать
+	// содержимое сессии (pending_user_id, oauth_state, 2fa_verified_*).
+	sessionSecret := []byte(app.Config.Session.Secret)
+	encryptionKey := sha256.Sum256([]byte(app.Config.Session.Secret + ":enc"))
+	store := cookie.NewStore(sessionSecret, encryptionKey[:])
 	store.Options(sessions.Options{
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
 		Secure:   app.Config.TLS.CertFile != "",
 	})
+
+	// Загрузчик настроек темы для авторизованных пользователей (используется auth-мидлварями)
+	middleware.SetThemeSettingsLoader(func(ctx context.Context, userID uint) any {
+		ts, err := user.GetUserThemeSettings(ctx, app.DB, userID)
+		if err != nil {
+			return user.DefaultThemeSettings()
+		}
+		return ts
+	})
+
 	r.Use(gin.Recovery())
 	r.Use(middleware.ErrorHandler())
 	r.Use(middleware.LoggerMiddleware())
+	// HSTS форсируем, когда сервер гарантированно по HTTPS: собственный TLS
+	// либо reverse-proxy (TRUSTED_PROXIES задан) — прокси терминирует TLS.
+	forceHSTS := app.Config.TLS.CertFile != "" || app.Config.Server.TrustedProxies != ""
+	r.Use(middleware.SecurityHeadersMiddleware(forceHSTS))
 	r.Use(sessions.Sessions("gengine_session", store))
 	r.Use(i18n.Middleware(i18n.LangRU))
 	r.Use(middleware.GzipMiddleware())
@@ -64,7 +83,9 @@ func (app *App) setupEngine(r *gin.Engine) error {
 			if o == "*" || strings.HasPrefix(o, "http://") || strings.HasPrefix(o, "https://") {
 				trimmed = append(trimmed, o)
 			} else if o != "" {
-				log.Warn().Str("origin", o).Msg("CORS: skipping invalid origin (must start with http:// or https://)")
+				prefixed := "http://" + o
+				log.Warn().Str("origin", o).Str("fixed", prefixed).Msg("CORS: origin missing protocol, auto-fixed to " + prefixed)
+				trimmed = append(trimmed, prefixed)
 			}
 		}
 		if len(trimmed) > 0 {
@@ -195,6 +216,14 @@ func (app *App) setupEngine(r *gin.Engine) error {
 	r.Static("/static", filepath.Join(app.BaseDir, app.Config.Server.StaticDir))
 	r.Static("/uploads", filepath.Join(app.BaseDir, app.Config.Server.UploadsDir))
 
+	// Service Worker at root scope — controls all pages (offline + push)
+	r.GET("/sw.js", func(c *gin.Context) {
+		swPath := filepath.Join(app.BaseDir, app.Config.Server.StaticDir, "sw.js")
+		c.Header("Service-Worker-Allowed", "/")
+		c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+		c.File(swPath)
+	})
+
 	r.GET("/", middleware.OptionalAuth(app.Deps.Services.Auth), func(c *gin.Context) {
 		var userID uint
 		var role string
@@ -225,11 +254,8 @@ func (app *App) setupEngine(r *gin.Engine) error {
 }
 
 func (app *App) registerAdminRoutes(r *gin.RouterGroup) {
-	twoFactorSvc := user.NewTwoFactorService()
-	twoFactorRequired := user.TwoFactorRequired(twoFactorSvc, app.Deps.Repos.User)
 	adminGroup := r.Group("/admin")
-	adminGroup.Use(twoFactorRequired)
-	admin.RegisterRoutes(adminGroup, app.DB, app.Config, app.Deps.Services.Auth, app.Deps.Repos.User, app.Deps.Repos.Game, app.Hub, app.Deps.AuditSvc)
+	admin.RegisterRoutes(adminGroup, app.DB, app.Config, app.Deps.Services.Auth, app.Deps.Repos.User, app.Deps.Repos.Game, app.Deps.Services.Game, app.Hub, app.Deps.AuditSvc, app.Deps.Cache)
 }
 
 func (app *App) registerUserRoutes(r *gin.RouterGroup) {
@@ -266,7 +292,7 @@ func (app *App) registerTournamentRoutes(r *gin.RouterGroup) {
 }
 
 func (app *App) registerCalendarRoutes(r *gin.RouterGroup) {
-	calendar.RegisterRoutes(r, app.Deps.Repos.Game)
+	calendar.RegisterRoutes(r, app.Deps.Repos.Game, app.Config.Server.BaseURL)
 }
 
 func (app *App) registerMonitorRoutes(r *gin.RouterGroup) {

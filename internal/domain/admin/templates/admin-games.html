@@ -1,15 +1,26 @@
 {{define "admin-games.html"}}
 <div class="max-w-7xl mx-auto">
+    <h1 class="page-title">{{ T $.Lang "admin.games_title" }}</h1>
+
     <!-- Навигация -->
     <nav class="flex flex-wrap gap-2 p-3 bg-gray-100 dark:bg-gray-800 rounded-lg mb-6">
-        <a href="/admin" class="btn btn-outline text-sm">Дашборд</a>
-        <a href="/admin/users" class="btn btn-outline text-sm">Пользователи</a>
-        <a href="/admin/games" class="btn btn-primary text-sm">Игры</a>
-        <a href="/admin/audit" class="btn btn-outline text-sm">Аудит</a>
-        <a href="/admin/backups" class="btn btn-outline text-sm">Бэкапы</a>
+        <a href="/admin" class="btn btn-outline text-sm">{{ T $.Lang "admin.dashboard" }}</a>
+        <a href="/admin/users" class="btn btn-outline text-sm">{{ T $.Lang "admin.users" }}</a>
+        <a href="/admin/games" class="btn btn-primary text-sm">{{ T $.Lang "admin.games" }}</a>
+        <a href="/admin/teams" class="btn btn-outline text-sm">{{ T $.Lang "admin.teams" }}</a>
+        <a href="/admin/audit" class="btn btn-outline text-sm">{{ T $.Lang "admin.audit" }}</a>
+        <a href="/admin/backups" class="btn btn-outline text-sm">{{ T $.Lang "admin.backups" }}</a>
     </nav>
 
-    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">Модерация игр</h1>
+    <!-- Поиск -->
+    <form method="GET" action="/admin/games" class="mb-4">
+        <div class="flex gap-2">
+            <input type="text" name="query" placeholder="{{ T $.Lang "admin.search_games" }}" value="{{.Query}}"
+                   class="flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2">
+            <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "common.search" }}</button>
+            {{if .Query}}<a href="/admin/games" class="btn btn-outline text-sm">{{ T $.Lang "common.reset" }}</a>{{end}}
+        </div>
+    </form>
 
     {{if .Error}}
     <div class="flash flash-error mb-4">{{.Error}}</div>
@@ -17,9 +28,9 @@
 
     <!-- Фильтр по статусу -->
     <div class="flex flex-wrap gap-2 mb-6">
-        <a href="?status=draft" class="btn btn-outline text-sm {{if eq .Status "draft"}}bg-blue-50 border-blue-300 text-blue-700{{end}}">Черновики</a>
-        <a href="?status=published" class="btn btn-outline text-sm {{if eq .Status "published"}}bg-blue-50 border-blue-300 text-blue-700{{end}}">Опубликованные</a>
-        <a href="?" class="btn btn-outline text-sm {{if eq .Status ""}}bg-blue-50 border-blue-300 text-blue-700{{end}}">Все</a>
+        <a href="?status=draft" class="btn btn-outline text-sm {{if eq .Status "draft"}}bg-blue-50 border-blue-300 text-blue-700{{end}}">{{ T $.Lang "admin.filter_drafts" }}</a>
+        <a href="?status=published" class="btn btn-outline text-sm {{if eq .Status "published"}}bg-blue-50 border-blue-300 text-blue-700{{end}}">{{ T $.Lang "admin.filter_published" }}</a>
+        <a href="?" class="btn btn-outline text-sm {{if eq .Status ""}}bg-blue-50 border-blue-300 text-blue-700{{end}}">{{ T $.Lang "admin.filter_all_statuses" }}</a>
     </div>
 
     <!-- Скрытый CSRF-токен для возможных AJAX-запросов -->
@@ -31,10 +42,10 @@
             <thead class="bg-gray-50 dark:bg-gray-800">
                 <tr>
                     <th scope="col" class="table-header">ID</th>
-                    <th scope="col" class="table-header">Название</th>
-                    <th scope="col" class="table-header">Автор</th>
-                    <th scope="col" class="table-header">Статус</th>
-                    <th scope="col" class="table-header">Действия</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "admin.table_name" }}</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "admin.table_author" }}</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "admin.table_status" }}</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "admin.table_actions" }}</th>
                 </tr>
             </thead>
             <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200">
@@ -45,16 +56,17 @@
                     <td class="table-cell">{{.Author.Name}}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">
                         {{if .IsDraft}}
-                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">Черновик</span>
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">{{ T $.Lang "games.draft" }}</span>
                         {{else}}
-                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">Опубликована</span>
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">{{ T $.Lang "games.published" }}</span>
                         {{end}}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm space-x-2">
-                        <a href="/games/{{.ID}}" class="btn btn-outline text-xs">Просмотр</a>
-                        <form action="/admin/games/{{.ID}}/delete" method="POST" class="inline" data-confirm-form="Удалить игру?">
+                        <a href="/games/{{.ID}}" class="btn btn-outline text-xs">{{ T $.Lang "admin.view" }}</a>
+                        <a href="/games/{{.ID}}/edit" class="btn btn-outline text-xs">{{ T $.Lang "common.edit" }}</a>
+                        <form action="/admin/games/{{.ID}}/delete" method="POST" class="inline" data-confirm-form="{{ T $.Lang "admin.game_delete_confirm" }}">
                             <input type="hidden" name="_csrf" value="{{$.csrf}}">
-                            <button type="submit" class="btn btn-danger text-xs">Удалить</button>
+                            <button type="submit" class="btn btn-danger text-xs">{{ T $.Lang "common.delete" }}</button>
                         </form>
                     </td>
                 </tr>
@@ -68,18 +80,18 @@
     <div class="flex items-center justify-between mt-6">
         <div class="flex-1 flex justify-between sm:hidden">
             {{if gt .Page 1}}
-                <a href="?page={{.PrevPage}}&status={{$.Status}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm">← Предыдущая</a>
+                <a href="?page={{.PrevPage}}&status={{$.Status}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_prev" }}</a>
             {{end}}
             {{if lt .Page .TotalPages}}
-                <a href="?page={{.NextPage}}&status={{$.Status}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm">Следующая →</a>
+                <a href="?page={{.NextPage}}&status={{$.Status}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_next" }}</a>
             {{end}}
         </div>
         <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-            <p class="text-sm text-gray-700 dark:text-gray-300">
-                Страница <span class="font-medium">{{.Page}}</span> из <span class="font-medium">{{.TotalPages}}</span>
-                <span class="text-gray-500 dark:text-gray-400">(всего {{.Total}} записей)</span>
-            </p>
-            <nav class="inline-flex gap-1" aria-label="Пагинация">
+                <p class="text-sm text-gray-700 dark:text-gray-300">
+                    {{ TF $.Lang "admin.pagination_page" .Page .TotalPages }}
+                    <span class="text-gray-500 dark:text-gray-400">{{ TF $.Lang "admin.pagination_total" .Total }}</span>
+                </p>
+                <nav class="inline-flex gap-1" aria-label="{{ T $.Lang "layout.nav_aria_label" }}">
                 {{if gt .Page 1}}
                     <a href="?page={{.PrevPage}}&status={{$.Status}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm px-3 py-1">←</a>
                 {{end}}
@@ -92,7 +104,5 @@
     </div>
     {{end}}
 </div>
-<script nonce="{{.csp_nonce}}">
-document.addEventListener('submit',function(e){var f=e.target.closest('[data-confirm-form]');if(f&&!confirm(f.getAttribute('data-confirm-form')))e.preventDefault()});
-</script>
+</div>
 {{end}}

@@ -1,22 +1,31 @@
 {{define "admin-backups.html"}}
 <div class="max-w-7xl mx-auto">
-    <h1 class="page-title">Резервное копирование</h1>
+    <h1 class="page-title">{{ T $.Lang "admin.backups_title" }}</h1>
+
+    <nav class="flex flex-wrap gap-2 p-3 bg-gray-100 dark:bg-gray-800 rounded-lg mb-6">
+        <a href="/admin" class="btn btn-outline text-sm">{{ T $.Lang "admin.dashboard" }}</a>
+        <a href="/admin/users" class="btn btn-outline text-sm">{{ T $.Lang "admin.users" }}</a>
+        <a href="/admin/games" class="btn btn-outline text-sm">{{ T $.Lang "admin.games" }}</a>
+        <a href="/admin/teams" class="btn btn-outline text-sm">{{ T $.Lang "admin.teams" }}</a>
+        <a href="/admin/audit" class="btn btn-outline text-sm">{{ T $.Lang "admin.audit" }}</a>
+        <a href="/admin/backups" class="btn btn-primary text-sm">{{ T $.Lang "admin.backups" }}</a>
+    </nav>
 
     <!-- Статистика и действия -->
     <div class="card mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-            <p class="text-gray-600 dark:text-gray-400">Максимальное количество хранимых копий: <strong class="text-gray-900 dark:text-gray-100">{{.MaxBackups}}</strong></p>
-            <p class="text-gray-600 dark:text-gray-400">Сохранено копий: <strong class="text-gray-900 dark:text-gray-100">{{.Count}}</strong></p>
+            <p class="text-gray-600 dark:text-gray-400">{{ T $.Lang "admin.max_backups" }} <strong class="text-gray-900 dark:text-gray-100">{{.MaxBackups}}</strong></p>
+            <p class="text-gray-600 dark:text-gray-400">{{ T $.Lang "admin.backup_count" }} <strong class="text-gray-900 dark:text-gray-100">{{.Count}}</strong></p>
         </div>
         <div class="flex flex-wrap gap-2">
             <form action="/admin/backups/create" method="POST" class="inline">
                 <input type="hidden" name="_csrf" value="{{.csrf}}">
-                <button type="submit" class="btn btn-primary text-sm">Создать бекап</button>
+                <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "admin.create_backup" }}</button>
             </form>
             {{if gt .Count 0}}
-            <form action="/admin/backups/rotate" method="POST" class="inline" data-confirm-form="Удалить старые бекапы?">
+            <form action="/admin/backups/rotate" method="POST" class="inline" data-confirm-form="{{ T $.Lang "admin.backup_clean_confirm" }}">
                 <input type="hidden" name="_csrf" value="{{.csrf}}">
-                <button type="submit" class="btn btn-danger text-sm">Очистить старые бекапы</button>
+                <button type="submit" class="btn btn-danger text-sm">{{ T $.Lang "admin.clean_backups" }}</button>
             </form>
             {{end}}
         </div>
@@ -28,10 +37,10 @@
         <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50 dark:bg-gray-800">
                 <tr>
-                    <th scope="col" class="table-header">Файл</th>
-                    <th scope="col" class="table-header">Размер</th>
-                    <th scope="col" class="table-header">Создан</th>
-                    <th scope="col" class="table-header">Действия</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "admin.table_file" }}</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "admin.table_size" }}</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "admin.table_created" }}</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "admin.table_actions_h" }}</th>
                 </tr>
             </thead>
             <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200">
@@ -41,7 +50,7 @@
                     <td class="table-cell">{{.Size}} B</td>
                     <td class="table-cell">{{.CreatedAt.Format "02.01.2006 15:04:05"}}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">
-                        <a href="/admin/backups/{{.ID}}/download" class="btn btn-primary text-xs">Скачать</a>
+                        <a href="/admin/backups/{{.ID}}/download" class="btn btn-primary text-xs">{{ T $.Lang "admin.download" }}</a>
                     </td>
                 </tr>
                 {{end}}
@@ -50,7 +59,7 @@
     </div>
     {{else}}
     <div class="card text-center py-12">
-        <p class="text-gray-500 dark:text-gray-400">Резервные копии отсутствуют.</p>
+        <p class="text-gray-500 dark:text-gray-400">{{ T $.Lang "admin.no_backups" }}</p>
     </div>
     {{end}}
 </div>

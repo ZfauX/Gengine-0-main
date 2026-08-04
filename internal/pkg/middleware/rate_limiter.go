@@ -244,14 +244,21 @@ func respondRateLimitError(c *gin.Context, message error, result RateLimitResult
 	c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": message.Error()})
 }
 
-var globalRateLimiter *RateLimiter
+var (
+	globalRateLimiter *RateLimiter
+	globalRLOnce      sync.Once
+)
 
 func InitGlobalRateLimiter(window time.Duration, limit int) {
-	globalRateLimiter = NewRateLimiter(window, limit)
+	globalRLOnce.Do(func() {
+		globalRateLimiter = NewRateLimiter(window, limit)
+	})
 }
 
 func InitGlobalRateLimiterWithValkey(client *redis.Client, window time.Duration, limit int) {
-	globalRateLimiter = NewValkeyRateLimiter(client, window, limit)
+	globalRLOnce.Do(func() {
+		globalRateLimiter = NewValkeyRateLimiter(client, window, limit)
+	})
 }
 
 func StopGlobalRateLimiter() {
@@ -261,10 +268,10 @@ func StopGlobalRateLimiter() {
 }
 
 func GlobalRateLimit(window time.Duration, limit int) gin.HandlerFunc {
+	globalRLOnce.Do(func() {
+		globalRateLimiter = NewRateLimiter(window, limit)
+	})
 	rl := globalRateLimiter
-	if rl == nil {
-		rl = NewRateLimiter(window, limit)
-	}
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
 		result := rl.Allow("global:" + ip)
@@ -478,7 +485,7 @@ func APIRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 		result := rl.Allow(key)
 		setRateLimitHeaders(c, result)
 		if !result.Allowed {
-			respondRateLimitError(c, ErrRateLimitGlobal, result)
+			respondRateLimitError(c, ErrRateLimitAPI, result)
 			return
 		}
 		c.Next()

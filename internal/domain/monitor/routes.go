@@ -137,7 +137,7 @@ func RegisterRoutes(
 	// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
 	// @Router /games/{id}/logs [get]
 	// @Security JWT
-	protected.GET("/games/:id/logs", monitorHandler.ListLogs)
+	protected.GET("/games/:id/logs", gameManager, monitorHandler.ListLogs)
 
 	// @Summary WebSocket логов
 	// @Description Устанавливает WebSocket-соединение для потоковой передачи логов игры.
@@ -149,7 +149,7 @@ func RegisterRoutes(
 	// @Failure 429 {object} map[string]interface{} "Слишком много активных соединений"
 	// @Router /games/{id}/logs/ws [get]
 	// @Security JWT
-	protected.GET("/games/:id/logs/ws", monitorHandler.LogsWS)
+	protected.GET("/games/:id/logs/ws", gameManager, monitorHandler.LogsWS)
 
 	// @Summary Запуск голосования
 	// @Description Запускает голосование на уровне-чёрном ящике (доступно автору игры)
@@ -164,7 +164,7 @@ func RegisterRoutes(
 	// @Failure 403 {object} map[string]interface{} "Недостаточно прав (только автор)"
 	// @Router /voting/start [post]
 	// @Security JWT
-	protected.POST("/voting/start", gameManager, monitorHandler.StartVoting)
+	protected.POST("/voting/start", monitorHandler.StartVoting)
 
 	// @Summary Голосование
 	// @Description Команда голосует за вариант ответа на уровне-чёрном ящике
@@ -189,7 +189,7 @@ func RegisterRoutes(
 	// @Param session_id path int true "ID сессии голосования"
 	// @Success 200 {object} map[string]interface{} "Результаты голосования"
 	// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-	// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+	// @Failure 500 {object} map[string]interface{} render.Tr(c, "handler.internal_error")
 	// @Router /voting/{session_id}/results [get]
 	// @Security JWT
 	protected.GET("/voting/:session_id/results", monitorHandler.GetVotingResults)
@@ -206,5 +206,5 @@ func RegisterRoutes(
 	// @Failure 403 {object} map[string]interface{} "Недостаточно прав (только автор)"
 	// @Router /voting/{session_id}/close [post]
 	// @Security JWT
-	protected.POST("/voting/:session_id/close", gameManager, monitorHandler.CloseVoting)
+	protected.POST("/voting/:session_id/close", monitorHandler.CloseVoting)
 }

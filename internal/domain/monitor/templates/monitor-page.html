@@ -1,8 +1,6 @@
 {{define "monitor-page.html"}}
 <div class="max-w-7xl mx-auto" data-game-id="{{.GameID}}">
-    <h1 class="page-title">
-        Мониторинг игры <span class="text-sm font-normal text-gray-500 dark:text-gray-400">(обновляется в реальном времени)</span>
-    </h1>
+    <h1 class="page-title">{{ T $.Lang "monitor.page_title" }}</h1>
 
     <div class="card">
         <div id="teams-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -46,8 +44,8 @@
             if (wsConnected) return;
             socket = new WebSocket(wsUrl);
             socket.onopen = function() {
-                console.log('Мониторинг: WebSocket подключён');
-                updateConnectionStatus('Подключено (реальное время)', '#2ecc71');
+                console.log('Monitor: WebSocket connected');
+                updateConnectionStatus('{{ T $.Lang "monitor.connected" }}', '#2ecc71');
                 reconnectAttempts = 0;
                 wsConnected = true;
                 stopPolling();
@@ -64,21 +62,21 @@
                     teamsData = data;
                     renderTeams();
                 } catch (err) {
-                    console.error('Мониторинг: ошибка парсинга данных', err);
+                    console.error('Monitor: parse error', err);
                 }
             };
             socket.onclose = function(event) {
                 wsConnected = false;
                 if (event.wasClean) {
-                    console.log('Мониторинг: WebSocket закрыт чисто');
+                    console.log('Monitor: WebSocket closed cleanly');
                 } else {
-                    console.log('Мониторинг: WebSocket обрыв, переподключение...');
+                    console.log('Monitor: WebSocket broken, reconnecting...');
                 }
                 scheduleReconnect();
             };
             socket.onerror = function(error) {
-                console.error('Мониторинг: WebSocket ошибка', error);
-                updateConnectionStatus('Ошибка соединения', '#e74c3c');
+                console.error('Monitor: WebSocket error', error);
+                updateConnectionStatus('{{ T $.Lang "monitor.error_connecting" }}', '#e74c3c');
             };
         }
 
@@ -86,16 +84,17 @@
             if (reconnectTimer) clearTimeout(reconnectTimer);
 
             if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-                console.log('Мониторинг: превышен лимит попыток, переключение на polling');
-                updateConnectionStatus('Переключение на периодическое обновление...', '#e67e22');
+                console.log('Monitor: max reconnect attempts, switching to polling');
+                updateConnectionStatus('{{ T $.Lang "monitor.switching_polling" }}', '#e67e22');
                 startPolling();
                 return;
             }
 
             const delay = Math.min(MAX_RECONNECT_DELAY, BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts));
             reconnectAttempts++;
-            console.log(`Мониторинг: переподключение через ${delay}ms (попытка ${reconnectAttempts})`);
-            updateConnectionStatus(`Переподключение через ${Math.round(delay/1000)}с...`, '#e67e22');
+            console.log(`Monitor: reconnecting in ${delay}ms (attempt ${reconnectAttempts})`);
+            var reconnectStr = '{{ T $.Lang "monitor.reconnecting" }}';
+            updateConnectionStatus(reconnectStr.replace('%d', Math.round(delay/1000)), '#e67e22');
             reconnectTimer = setTimeout(() => {
                 connect();
             }, delay);
@@ -126,7 +125,7 @@
             .then(data => {
                 teamsData = data.teams || data || [];
                 renderTeams();
-                updateConnectionStatus('Обновление каждые 10с (polling)', '#3498db');
+                updateConnectionStatus('{{ T $.Lang "monitor.polling" }}', '#3498db');
                 // Try reconnecting WS in background
                 if (!wsConnected && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
                     reconnectAttempts = 0;
@@ -134,8 +133,8 @@
                 }
             })
             .catch(err => {
-                console.error('Мониторинг: ошибка polling', err);
-                updateConnectionStatus('Ошибка получения данных', '#e74c3c');
+                console.error('Monitor: polling error', err);
+                updateConnectionStatus('{{ T $.Lang "monitor.fetch_error" }}', '#e74c3c');
             });
         }
 
@@ -149,7 +148,7 @@
         function renderTeams() {
             teamsContainer.innerHTML = '';
             if (!teamsData || teamsData.length === 0) {
-                teamsContainer.innerHTML = `<div class="col-span-full text-center text-gray-500 dark:text-gray-400 py-8">Нет данных о командах</div>`;
+                teamsContainer.innerHTML = `<div class="col-span-full text-center text-gray-500 dark:text-gray-400 py-8">{{ T $.Lang "monitor.no_data" }}</div>`;
                 return;
             }
 
@@ -162,45 +161,49 @@
                 card.innerHTML = `
                     <div class="flex justify-between items-start mb-2">
                         <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100 truncate">${escapeHtml(team.team_name)}</h3>
-                        ${team.finished ? '<span class="inline-flex px-2 py-1 text-xs font-bold rounded-full bg-green-100 text-green-800">Финиш!</span>' : ''}
+                        ${team.finished ? '<span class="inline-flex px-2 py-1 text-xs font-bold rounded-full bg-green-100 text-green-800">{{ T $.Lang "monitor.finish" }}</span>' : ''}
                         ${team.place ? `<span class="inline-flex px-2 py-1 text-xs font-bold rounded-full bg-blue-100 text-blue-800">#${team.place}</span>` : ''}
                     </div>
 
                     <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 mb-3">
-                        <div class="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style="width: ${progressPercent}%"></div>
+                        <div class="bg-blue-600 h-2.5 rounded-full transition-all duration-500" data-width="${progressPercent}"></div>
                     </div>
 
                     <div class="grid grid-cols-2 gap-1 text-sm">
-                        <div><span class="text-gray-500 dark:text-gray-400">Уровней:</span> <span class="font-medium">${team.completed_levels}/${team.total_levels}</span></div>
-                        <div><span class="text-gray-500 dark:text-gray-400">Текущий:</span> <span class="font-medium">${team.current_level ? '#' + team.current_level : '—'}</span></div>
-                        <div><span class="text-gray-500 dark:text-gray-400">Время:</span> <span class="font-mono">${team.total_time || '—'}</span></div>
-                        <div><span class="text-gray-500 dark:text-gray-400">Попыток:</span> <span class="font-medium">${team.attempts || 0}</span></div>
+                        <div><span class="text-gray-500 dark:text-gray-400">{{ T $.Lang "monitor.levels" }}</span> <span class="font-medium">${team.completed_levels}/${team.total_levels}</span></div>
+                        <div><span class="text-gray-500 dark:text-gray-400">{{ T $.Lang "monitor.current" }}</span> <span class="font-medium">${team.current_level ? '#' + team.current_level : '—'}</span></div>
+                        <div><span class="text-gray-500 dark:text-gray-400">{{ T $.Lang "monitor.time" }}</span> <span class="font-mono">${team.total_time || '—'}</span></div>
+                        <div><span class="text-gray-500 dark:text-gray-400">{{ T $.Lang "monitor.attempts" }}</span> <span class="font-medium">${team.attempts || 0}</span></div>
                     </div>
 
                     ${team.suspicious ? `
                         <div class="mt-3 text-xs text-yellow-800 bg-yellow-100 p-2 rounded-md flex items-center gap-1">
-                            <span>⚠️</span> ${escapeHtml(team.suspicious_reason || 'Подозрительная активность')}
+                            <span>⚠️</span> ${escapeHtml(team.suspicious_reason || '{{ T $.Lang "monitor.suspicious" }}')}
                         </div>
                     ` : ''}
 
                     ${!team.finished && !team.suspicious ? `
                         <div class="mt-3">
                             <button data-action="disqualify" data-team-id="${team.team_id}" class="btn btn-danger text-xs w-full">
-                                Дисквалифицировать
+                                {{ T $.Lang "monitor.disqualify" }}
                             </button>
                         </div>
                     ` : ''}
                 `;
                 teamsContainer.appendChild(card);
+                // Set progress bar width via JS (CSP-safe)
+                card.querySelectorAll('[data-width]').forEach(function(el) {
+                    el.style.width = el.getAttribute('data-width') + '%';
+                });
             });
         }
 
         // Обработка уведомления о старте игры
         function handleGameStartedNotification(data) {
-            console.log('Мониторинг: игра началась —', data.team_name);
+            console.log('Monitor: game started —', data.team_name);
             
-            // Обновляем статус соединения
-            updateConnectionStatus('✅ ' + data.team_name + ' начала игру!', '#2ecc71');
+            // Update connection status
+            updateConnectionStatus('✅ ' + data.team_name + ' {{ T $.Lang "monitor.game_started" }}', '#2ecc71');
             
             // Перезагружаем данные через 1 секунду чтобы увидеть обновление
             setTimeout(() => {
@@ -234,7 +237,7 @@
         });
 
         window.disqualifyTeam = function(teamId) {
-            if (!confirm('Дисквалифицировать команду? Капитан получит уведомление по email.')) {
+            if (!confirm('{{ T $.Lang "monitor.disqualify_confirm" }}')) {
                 return;
             }
 
@@ -250,11 +253,11 @@
                 return r.text();
             })
             .then(() => {
-                console.log(`Команда #${teamId} дисквалифицирована`);
+                console.log(`Team #${teamId} disqualified`);
             })
             .catch(err => {
                 console.error('Дисквалификация:', err);
-                alert('Ошибка при дисквалификации: ' + err.message);
+                alert('{{ T $.Lang "monitor.disqualify_error" }}' + err.message);
             });
         };
 

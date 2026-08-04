@@ -89,10 +89,11 @@ func (h *RoomHub) cleanupInactiveClients() cleanupResult {
 		}
 
 		// Удаляем неактивных клиентов из комнаты
+		// client.Close() триггерит writePump → UnregisterClient, который уже decrement-ит счётчики.
+		// Поэтому decConnectionNoLock здесь не вызываем — избегаем двойного учёта.
 		for _, client := range clientsToRemove {
 			client.Close()
 			delete(room, client)
-			h.decConnectionNoLock(client.RemoteIP)
 			result.removedClients++
 		}
 

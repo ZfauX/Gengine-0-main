@@ -1,29 +1,38 @@
 {{define "admin-audit.html"}}
 <div class="max-w-7xl mx-auto">
-    <h1 class="page-title">Аудит действий</h1>
+    <h1 class="page-title">{{ T $.Lang "admin.audit_title" }}</h1>
+
+    <nav class="flex flex-wrap gap-2 p-3 bg-gray-100 dark:bg-gray-800 rounded-lg mb-6">
+        <a href="/admin" class="btn btn-outline text-sm">{{ T $.Lang "admin.dashboard" }}</a>
+        <a href="/admin/users" class="btn btn-outline text-sm">{{ T $.Lang "admin.users" }}</a>
+        <a href="/admin/games" class="btn btn-outline text-sm">{{ T $.Lang "admin.games" }}</a>
+        <a href="/admin/teams" class="btn btn-outline text-sm">{{ T $.Lang "admin.teams" }}</a>
+        <a href="/admin/audit" class="btn btn-primary text-sm">{{ T $.Lang "admin.audit" }}</a>
+        <a href="/admin/backups" class="btn btn-outline text-sm">{{ T $.Lang "admin.backups" }}</a>
+    </nav>
 
     <!-- Форма фильтрации -->
     <form method="GET" action="/admin/audit" class="flex flex-wrap items-end gap-3 mb-6 bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
         <div class="flex-1 min-w-[180px]">
-            <label for="user_id" class="form-label">ID пользователя</label>
-            <input type="text" name="user_id" id="user_id" value="{{.UserID}}" placeholder="ID пользователя" class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+            <label for="query" class="form-label">{{ T $.Lang "admin.search_by_email_or_name" }}</label>
+            <input type="text" name="query" id="query" value="{{.Query}}" placeholder="{{ T $.Lang "admin.search_by_email_or_name" }}" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
         </div>
         <div class="flex-1 min-w-[180px]">
-            <label for="action" class="form-label">Действие</label>
-            <select name="action" id="action" class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                <option value="">Все действия</option>
-                <option value="create" {{if eq .Action "create"}}selected{{end}}>Создание</option>
-                <option value="update" {{if eq .Action "update"}}selected{{end}}>Обновление</option>
-                <option value="delete" {{if eq .Action "delete"}}selected{{end}}>Удаление</option>
-                <option value="login" {{if eq .Action "login"}}selected{{end}}>Вход</option>
-                <option value="register" {{if eq .Action "register"}}selected{{end}}>Регистрация</option>
-                <option value="export" {{if eq .Action "export"}}selected{{end}}>Экспорт</option>
-                <option value="import" {{if eq .Action "import"}}selected{{end}}>Импорт</option>
+            <label for="action" class="form-label">{{ T $.Lang "admin.filter_action" }}</label>
+            <select name="action" id="action" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                <option value="">{{ T $.Lang "admin.filter_all_actions" }}</option>
+                <option value="create" {{if eq .Action "create"}}selected{{end}}>{{ T $.Lang "admin.action_create" }}</option>
+                <option value="update" {{if eq .Action "update"}}selected{{end}}>{{ T $.Lang "admin.action_update" }}</option>
+                <option value="delete" {{if eq .Action "delete"}}selected{{end}}>{{ T $.Lang "admin.action_delete" }}</option>
+                <option value="login" {{if eq .Action "login"}}selected{{end}}>{{ T $.Lang "admin.action_login" }}</option>
+                <option value="register" {{if eq .Action "register"}}selected{{end}}>{{ T $.Lang "admin.action_register" }}</option>
+                <option value="export" {{if eq .Action "export"}}selected{{end}}>{{ T $.Lang "admin.action_export" }}</option>
+                <option value="import" {{if eq .Action "import"}}selected{{end}}>{{ T $.Lang "admin.action_import" }}</option>
             </select>
         </div>
         <div class="flex gap-2 items-center">
-            <button type="submit" class="btn btn-primary text-sm">Фильтр</button>
-            <a href="/admin/audit" class="btn btn-outline text-sm">Сбросить</a>
+            <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "common.filter" }}</button>
+            <a href="/admin/audit" class="btn btn-outline text-sm">{{ T $.Lang "common.reset" }}</a>
         </div>
     </form>
 
@@ -32,12 +41,12 @@
         <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50 dark:bg-gray-800">
                 <tr>
-                    <th scope="col" class="table-header">Время</th>
-                    <th scope="col" class="table-header">Пользователь</th>
-                    <th scope="col" class="table-header">Действие</th>
-                    <th scope="col" class="table-header">Объект</th>
-                    <th scope="col" class="table-header">ID объекта</th>
-                    <th scope="col" class="table-header">Детали</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "admin.audit_table_time" }}</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "admin.audit_table_user" }}</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "admin.audit_table_action" }}</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "admin.audit_table_object" }}</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "admin.audit_table_obj_id" }}</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "admin.audit_table_details" }}</th>
                 </tr>
             </thead>
             <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200">
@@ -52,7 +61,7 @@
                 </tr>
                 {{else}}
                 <tr>
-                    <td colspan="6" class="px-6 py-4 text-center text-sm text-gray-500 dark:text-gray-400">Записи аудита не найдены</td>
+                    <td colspan="6" class="px-6 py-4 text-center text-sm text-gray-500 dark:text-gray-400">{{ T $.Lang "admin.audit_no_records" }}</td>
                 </tr>
                 {{end}}
             </tbody>
@@ -64,23 +73,23 @@
     <div class="flex items-center justify-between mt-6">
         <div class="flex-1 flex justify-between sm:hidden">
             {{if gt .Page 1}}
-                <a href="?page={{.PrevPage}}&user_id={{$.UserID}}&action={{$.Action}}" class="btn btn-outline text-sm">← Предыдущая</a>
+                <a href="?page={{.PrevPage}}&query={{$.Query}}&action={{$.Action}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_prev" }}</a>
             {{end}}
             {{if lt .Page .TotalPages}}
-                <a href="?page={{.NextPage}}&user_id={{$.UserID}}&action={{$.Action}}" class="btn btn-outline text-sm">Следующая →</a>
+                <a href="?page={{.NextPage}}&query={{$.Query}}&action={{$.Action}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_next" }}</a>
             {{end}}
         </div>
         <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
             <p class="text-sm text-gray-700 dark:text-gray-300">
-                Страница <span class="font-medium">{{.Page}}</span> из <span class="font-medium">{{.TotalPages}}</span>
+                {{ TF $.Lang "admin.pagination_page" .Page .TotalPages }}
             </p>
-            <nav class="inline-flex gap-1" aria-label="Пагинация">
+            <nav class="inline-flex gap-1" aria-label="{{ T $.Lang "layout.nav_aria_label" }}">
                 {{if gt .Page 1}}
-                    <a href="?page={{.PrevPage}}&user_id={{$.UserID}}&action={{$.Action}}" class="btn btn-outline text-sm px-3 py-1">←</a>
+                    <a href="?page={{.PrevPage}}&query={{$.Query}}&action={{$.Action}}" class="btn btn-outline text-sm px-3 py-1">←</a>
                 {{end}}
                 <span class="px-3 py-1 text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 rounded-md">{{.Page}}</span>
                 {{if lt .Page .TotalPages}}
-                    <a href="?page={{.NextPage}}&user_id={{$.UserID}}&action={{$.Action}}" class="btn btn-outline text-sm px-3 py-1">→</a>
+                    <a href="?page={{.NextPage}}&query={{$.Query}}&action={{$.Action}}" class="btn btn-outline text-sm px-3 py-1">→</a>
                 {{end}}
             </nav>
         </div>

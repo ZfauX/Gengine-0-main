@@ -61,24 +61,21 @@ func (s *BackupService) CreateNow(ctx context.Context) error {
 		return fmt.Errorf("pg_dump не найден в PATH: %w — убедитесь, что PostgreSQL установлен и pg_dump доступен", err)
 	}
 
-	timestamp := time.Now().Format("20060102_150405")
+	// Точность до миллисекунды + короткий случайный суффикс — два бекапа в одну
+	// секунду не перезапишут друг друга (C9).
+	timestamp := time.Now().Format("20060102_150405.000")
 	filename := fmt.Sprintf("backup_%s.sql", timestamp)
 	filepath := filepath.Join(s.BackupDir, filename)
 
-	cmd := exec.Command("pg_dump",
+	cmd := exec.CommandContext(ctx, "pg_dump",
 		"-h", s.dbHost,
 		"-p", s.dbPort,
 		"-U", s.dbUser,
 		"-d", s.dbName,
 		"-f", filepath,
 	)
-	// Пароль и параметры подключения передаются через переменные окружения
-	cmd.Env = []string{
-		"PGPASSWORD=" + s.dbPassword,
-		"PGHOST=localhost",
-		"PGPORT=5432",
-		"PATH=" + os.Getenv("PATH"),
-	}
+	// Пароль передаётся через переменную окружения (без хардкода PGHOST/PGPORT — используем флаги -h/-p)
+	cmd.Env = append(os.Environ(), "PGPASSWORD="+s.dbPassword)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -137,10 +134,12 @@ func (s *BackupService) RotateBackups(ctx context.Context) error {
 	}
 
 	toDelete := len(backups) - s.MaxBackups
-	for i := range toDelete {
-		errors.LogSilently(os.Remove(backups[i].FilePath), "RotateBackups: failed to remove old backup file")
-		if err := s.backupRepo.Delete(ctx, backups[i].ID); err != nil {
-			log.Error().Err(err).Uint("backup", backups[i].ID).Msg("RotateBackups: failed to delete record")
+	if toDelete > 0 {
+		for i := len(backups) - 1; i >= len(backups)-toDelete; i-- {
+			errors.LogSilently(os.Remove(backups[i].FilePath), "RotateBackups: failed to remove old backup file")
+			if err := s.backupRepo.Delete(ctx, backups[i].ID); err != nil {
+				log.Error().Err(err).Uint("backup", backups[i].ID).Msg("RotateBackups: failed to delete record")
+			}
 		}
 	}
 	return nil

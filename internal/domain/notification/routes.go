@@ -4,7 +4,9 @@ package notification
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -27,16 +29,26 @@ var wsUpgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		origin := r.Header.Get("Origin")
 		if origin == "" {
-			return true
+			return false // deny empty origins (CSRF via WebSocket)
+		}
+		// Точное сравнение origin с host (не prefix-match!) — защита от
+		// подделки вида https://example.com.evil.com.
+		u, err := url.Parse(origin)
+		if err != nil {
+			return false
+		}
+		originHost := u.Host
+		// Владельцы origin могут указывать порт; strip его для сравнения.
+		if h, _, err := net.SplitHostPort(originHost); err == nil {
+			originHost = h
 		}
 		host := r.Host
-		if forwardedHost := r.Header.Get("X-Forwarded-Host"); forwardedHost != "" {
-			host = forwardedHost
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
 		}
-		if strings.HasPrefix(origin, "http://"+host) || strings.HasPrefix(origin, "https://"+host) {
-			return true
-		}
-		return false
+		// NB: X-Forwarded-Host не доверяем — при прямом доступе атакующий
+		// подделывает и Origin, и X-Forwarded-Host, обходя проверку.
+		return strings.EqualFold(originHost, host)
 	},
 }
 
@@ -45,7 +57,7 @@ func NotificationsWS(hub *ws.RoomHub) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetUint("userID")
 		if userID == 0 {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "требуется аутентификация"})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": render.Tr(c, "handler.unauthorized")})
 			return
 		}
 
@@ -82,7 +94,7 @@ func NotificationsWS(hub *ws.RoomHub) gin.HandlerFunc {
 
 // RegisterRoutes СЂРµРіРёСЃС‚СЂРёСЂСѓРµС‚ API-РјР°СЂС€СЂСѓС‚С‹ РґР»СЏ СѓРІРµРґРѕРјР»РµРЅРёР№.
 func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *gorm.DB, authService *user.AuthService, hub *ws.RoomHub, sseMgr *game.SSEManager) {
-	service := NewNotificationService(db, hub).WithHub(hub).WithSSEManager(sseMgr)
+	service := NewNotificationService(db, hub).WithHub(hub).WithSSEManager(sseMgr).WithVAPID(cfg.VAPID, cfg.Server.BaseURL)
 	settingsHandler := NewSettingsHandler(service, cfg.VAPID)
 
 	// API для настроек уведомлений (используется AJAX на странице профиля)
@@ -111,7 +123,7 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *gorm.DB, authSer
 			if err != nil {
 				log.Error().Err(err).Uint("user_id", userID).Msg("Failed to get notification settings")
 				c.JSON(http.StatusInternalServerError, gin.H{
-					"error": "Внутренняя ошибка",
+					"error": render.Tr(c, "handler.internal_error"),
 					"code":  "internal_error",
 				})
 				return
@@ -131,8 +143,9 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *gorm.DB, authSer
 
 			var settings Settings
 			if err := c.ShouldBindJSON(&settings); err != nil {
+				log.Warn().Err(err).Ctx(c.Request.Context()).Msg("notification settings invalid JSON")
 				c.JSON(http.StatusBadRequest, gin.H{
-					"error": "Неверный формат данных: " + err.Error(),
+					"error": "Неверный формат данных",
 					"code":  "bad_request",
 				})
 				return
@@ -141,7 +154,7 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *gorm.DB, authSer
 			if err := service.SaveSettings(c.Request.Context(), userID, &settings); err != nil {
 				log.Error().Err(err).Uint("user_id", userID).Msg("Failed to save notification settings")
 				c.JSON(http.StatusInternalServerError, gin.H{
-					"error": "Внутренняя ошибка",
+					"error": render.Tr(c, "handler.internal_error"),
 					"code":  "internal_error",
 				})
 				return
@@ -157,11 +170,19 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *gorm.DB, authSer
 			userID := c.GetUint("userID")
 			page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 			perPage, _ := strconv.Atoi(c.DefaultQuery("per_page", "10"))
+			if page < 1 {
+				page = 1
+			}
+			if perPage < 1 {
+				perPage = 10
+			} else if perPage > 100 {
+				perPage = 100
+			}
 
 			notifications, total, err := service.GetByUser(c.Request.Context(), userID, page, perPage)
 			if err != nil {
 				log.Error().Err(err).Uint("user_id", userID).Msg("Failed to list notifications")
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка"})
+				c.JSON(http.StatusInternalServerError, gin.H{"error": render.Tr(c, "handler.internal_error")})
 				return
 			}
 
@@ -193,8 +214,8 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *gorm.DB, authSer
 				"CurrentUserID": userID,
 				"csrf":          csrf.GetToken(c),
 				"Breadcrumbs": []map[string]string{
-					{"name": "Главная", "url": "/"},
-					{"name": "Уведомления"},
+					{"name": "nav.home", "url": "/"},
+					{"name": "nav.notifications"},
 				},
 			})
 		})

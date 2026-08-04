@@ -9,6 +9,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -29,6 +30,7 @@ type CacheStore interface {
 
 type ValkeyCache struct {
 	client *redis.Client
+	sg     singleflight.Group
 }
 
 var _ CacheStore = (*ValkeyCache)(nil)
@@ -119,6 +121,24 @@ func (c *ValkeyCache) Delete(key string) {
 	if err := c.client.Del(ctx, key).Err(); err != nil {
 		log.Warn().Err(err).Str("key", key).Msg("Valkey: Delete error")
 	}
+}
+
+// GetBytesWithCtx возвращает сырые байты значения (без JSON-разбора).
+// Позволяет потребителям десериализовать значение один раз, минуя
+// промежуточное представление map[string]any (оптимизация P9).
+func (c *ValkeyCache) GetBytesWithCtx(ctx context.Context, key string) ([]byte, bool) {
+	if c == nil || c.client == nil {
+		return nil, false
+	}
+
+	valBytes, err := c.client.Get(ctx, key).Bytes()
+	if err != nil {
+		if err != redis.Nil {
+			log.Warn().Err(err).Str("key", key).Msg("Valkey: GetBytesWithCtx error")
+		}
+		return nil, false
+	}
+	return valBytes, true
 }
 
 func (c *ValkeyCache) GetWithCtx(ctx context.Context, key string) (any, bool) {
@@ -237,15 +257,18 @@ func (c *ValkeyCache) Flush() {
 }
 
 func (c *ValkeyCache) GetOrSet(key string, ttl time.Duration, fn func() (any, error)) (any, error) {
-	if val, ok := c.Get(key); ok {
+	v, err, _ := c.sg.Do(key, func() (any, error) {
+		if val, ok := c.Get(key); ok {
+			return val, nil
+		}
+		val, err := fn()
+		if err != nil {
+			return nil, err
+		}
+		c.Set(key, val, ttl)
 		return val, nil
-	}
-	val, err := fn()
-	if err != nil {
-		return nil, err
-	}
-	c.Set(key, val, ttl)
-	return val, nil
+	})
+	return v, err
 }
 
 func (c *ValkeyCache) GetOrSetString(key string, ttl time.Duration, fn func() (string, error)) (string, error) {
@@ -363,31 +386,33 @@ func (c *ValkeyCache) GetOrSetWithCtx(ctx context.Context, key string, ttl time.
 	if c == nil || c.client == nil {
 		return fn()
 	}
-	valBytes, err := c.client.Get(ctx, key).Bytes()
-	if err == nil {
-		var result any
-		if jsonErr := json.Unmarshal(valBytes, &result); jsonErr == nil {
-			return result, nil
+	v, err, _ := c.sg.Do(key, func() (any, error) {
+		valBytes, err := c.client.Get(ctx, key).Bytes()
+		if err == nil {
+			var result any
+			if jsonErr := json.Unmarshal(valBytes, &result); jsonErr == nil {
+				return result, nil
+			}
+			return string(valBytes), nil
 		}
-		return string(valBytes), nil
-	}
-	if err != redis.Nil {
-		log.Warn().Err(err).Str("key", key).Msg("Valkey: GetOrSetWithCtx Get error")
-		return fn()
-	}
+		if err != redis.Nil {
+			log.Warn().Err(err).Str("key", key).Msg("Valkey: GetOrSetWithCtx Get error")
+		}
 
-	val, err := fn()
-	if err != nil {
-		return nil, err
-	}
-	data, marshalErr := json.Marshal(val)
-	if marshalErr != nil {
-		return nil, marshalErr
-	}
-	if setErr := c.client.Set(ctx, key, data, ttl).Err(); setErr != nil {
-		log.Warn().Err(setErr).Str("key", key).Msg("Valkey: GetOrSetWithCtx Set error")
-	}
-	return val, nil
+		val, err := fn()
+		if err != nil {
+			return nil, err
+		}
+		data, marshalErr := json.Marshal(val)
+		if marshalErr != nil {
+			return nil, marshalErr
+		}
+		if setErr := c.client.Set(ctx, key, data, ttl).Err(); setErr != nil {
+			log.Warn().Err(setErr).Str("key", key).Msg("Valkey: GetOrSetWithCtx Set error")
+		}
+		return val, nil
+	})
+	return v, err
 }
 
 // GetOrSetIntWithCtx — контекстно-ориентированная версия GetOrSetInt.

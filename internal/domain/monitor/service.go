@@ -13,6 +13,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ---------- BlackboxVoteService ----------
@@ -37,14 +38,12 @@ func NewBlackboxVoteService(
 
 // StartVoting открывает новую сессию голосования и оповещает участников.
 func (s *BlackboxVoteService) StartVoting(ctx context.Context, gamePassingID, levelID, userID uint) error {
+	// JOIN-оптимизация: получаем passing + game в 1 SQL-запросе
 	var passing game.GamePassing
-	if err := s.gameRepo.DB(ctx).First(&passing, gamePassingID).Error; err != nil {
+	if err := s.gameRepo.DB(ctx).Joins("Game").First(&passing, gamePassingID).Error; err != nil {
 		return err
 	}
-	g, err := s.gameRepo.GetByID(ctx, passing.GameID)
-	if err != nil {
-		return err
-	}
+	g := passing.Game
 	if g.AuthorID != userID {
 		return errors.New("только автор может запустить голосование")
 	}
@@ -71,12 +70,14 @@ func (s *BlackboxVoteService) StartVoting(ctx context.Context, gamePassingID, le
 
 	if s.cfg != nil && s.cfg.SMTP.Enabled {
 		var captains []string
-		s.gameRepo.DB(ctx).Model(&user.User{}).
+		if err := s.gameRepo.DB(ctx).Model(&user.User{}).
 			Select("users.email").
 			Joins("JOIN teams ON teams.captain_id = users.id").
 			Joins("JOIN game_passings ON game_passings.team_id = teams.id").
 			Where("game_passings.game_id = ? AND game_passings.status = ?", g.ID, game.StatusStarted).
-			Pluck("email", &captains)
+			Pluck("email", &captains).Error; err != nil {
+			log.Error().Err(err).Uint("game_id", g.ID).Msg("failed to load captains for voting start email")
+		}
 
 		for _, emailAddr := range captains {
 			if err := email.Enqueue(
@@ -92,7 +93,7 @@ func (s *BlackboxVoteService) StartVoting(ctx context.Context, gamePassingID, le
 }
 
 // Vote регистрирует голос команды за выбранный вариант.
-func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID uint, option string) error {
+func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID, userID uint, option string) error {
 	session, err := s.blackboxRepo.GetSessionByID(ctx, sessionID)
 	if err != nil {
 		return err
@@ -101,11 +102,26 @@ func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID u
 		return errors.New("голосование закрыто")
 	}
 
+	// Проверка членства: пользователь должен быть участником команды voterTeamID
+	// или автором игры. Иначе любой может голосовать за чужую команду.
+	var memberCount int64
+	if err := s.gameRepo.DB(ctx).Table("team_members").
+		Where("team_id = ? AND user_id = ?", voterTeamID, userID).Count(&memberCount).Error; err != nil {
+		return err
+	}
+	if memberCount == 0 {
+		// Менеджер/автор игры может голосовать от любой команды
+		isManager, mgrErr := s.isGameManager(ctx, session, userID)
+		if mgrErr != nil || !isManager {
+			return errors.New("вы не являетесь участником этой команды")
+		}
+	}
+
 	// Валидация опциона внутри транзакции для избежания race condition
 	return s.gameRepo.DB(ctx).Transaction(func(tx *gorm.DB) error {
 		// Блокируем сессию для сериализации
 		var lockedSession BlackboxVotingSession
-		if lockErr := tx.Set("gorm:query_option", "FOR UPDATE").First(&lockedSession, sessionID).Error; lockErr != nil {
+		if lockErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedSession, sessionID).Error; lockErr != nil {
 			return lockErr
 		}
 
@@ -125,7 +141,8 @@ func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID u
 		}
 
 		// Проверяем существование голоса внутри транзакции
-		_, getVoteErr := s.blackboxRepo.GetVoteBySessionAndVoter(ctx, sessionID, voterTeamID)
+		var existingVote BlackboxVote
+		getVoteErr := tx.Where("session_id = ? AND voter_id = ?", sessionID, voterTeamID).First(&existingVote).Error
 		if getVoteErr == nil {
 			return errors.New("ваш голос уже учтён")
 		}
@@ -142,8 +159,47 @@ func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID u
 	})
 }
 
+// isGameManager проверяет, что пользователь является автором игры, к которой относится сессия голосования.
+func (s *BlackboxVoteService) isGameManager(ctx context.Context, session *BlackboxVotingSession, userID uint) (bool, error) {
+	var passing game.GamePassing
+	if err := s.gameRepo.DB(ctx).First(&passing, session.GamePassingID).Error; err != nil {
+		return false, err
+	}
+	var g game.Game
+	if err := s.gameRepo.DB(ctx).First(&g, passing.GameID).Error; err != nil {
+		return false, err
+	}
+	return g.AuthorID == userID, nil
+}
+
 // GetVotingResults возвращает пары «вариант — количество голосов».
-func (s *BlackboxVoteService) GetVotingResults(ctx context.Context, sessionID uint) (map[string]int, error) {
+// Доступ разрешён автору/соавтору игры или участнику команды, за которую
+// было открыто голосование (защита от IDOR по чужой сессии).
+func (s *BlackboxVoteService) GetVotingResults(ctx context.Context, sessionID, userID uint) (map[string]int, error) {
+	session, err := s.blackboxRepo.GetSessionByID(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	isManager, err := s.isGameManager(ctx, session, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !isManager {
+		var passing game.GamePassing
+		if findErr := s.gameRepo.DB(ctx).First(&passing, session.GamePassingID).Error; findErr != nil {
+			return nil, findErr
+		}
+		var memberCount int64
+		if countErr := s.gameRepo.DB(ctx).Table("team_members").
+			Where("team_id = ? AND user_id = ?", passing.TeamID, userID).Count(&memberCount).Error; countErr != nil {
+			return nil, countErr
+		}
+		if memberCount == 0 {
+			return nil, errors.New("доступ запрещён")
+		}
+	}
+
 	votes, err := s.blackboxRepo.GetVotesBySession(ctx, sessionID)
 	if err != nil {
 		return nil, err
@@ -162,19 +218,17 @@ func (s *BlackboxVoteService) CloseVoting(ctx context.Context, sessionID, userID
 		return "", getSessionErr
 	}
 
+	// JOIN-оптимизация: passing + game в 1 SQL-запросе
 	var passing game.GamePassing
-	if findErr := s.gameRepo.DB(ctx).First(&passing, session.GamePassingID).Error; findErr != nil {
+	if findErr := s.gameRepo.DB(ctx).Joins("Game").First(&passing, session.GamePassingID).Error; findErr != nil {
 		return "", findErr
 	}
-	g, getErr := s.gameRepo.GetByID(ctx, passing.GameID)
-	if getErr != nil {
-		return "", getErr
-	}
+	g := passing.Game
 	if g.AuthorID != userID {
 		return "", errors.New("только автор может завершить голосование")
 	}
 
-	results, getResultsErr := s.GetVotingResults(ctx, sessionID)
+	results, getResultsErr := s.GetVotingResults(ctx, sessionID, userID)
 	if getResultsErr != nil {
 		return "", getResultsErr
 	}
@@ -196,12 +250,14 @@ func (s *BlackboxVoteService) CloseVoting(ctx context.Context, sessionID, userID
 
 	if s.cfg != nil && s.cfg.SMTP.Enabled {
 		var captains []string
-		s.gameRepo.DB(ctx).Model(&user.User{}).
+		if err := s.gameRepo.DB(ctx).Model(&user.User{}).
 			Select("users.email").
 			Joins("JOIN teams ON teams.captain_id = users.id").
 			Joins("JOIN game_passings ON game_passings.team_id = teams.id").
 			Where("game_passings.game_id = ? AND game_passings.status = ?", g.ID, game.StatusStarted).
-			Pluck("email", &captains)
+			Pluck("email", &captains).Error; err != nil {
+			log.Error().Err(err).Uint("game_id", g.ID).Msg("failed to load captains for voting end email")
+		}
 
 		for _, emailAddr := range captains {
 			if emailErr := email.Enqueue(

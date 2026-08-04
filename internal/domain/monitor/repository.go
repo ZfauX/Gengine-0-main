@@ -3,6 +3,8 @@ package monitor
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"gorm.io/gorm"
 )
@@ -36,19 +38,23 @@ func NewGormChatRepo(db *gorm.DB) ChatRepository {
 
 func (r *gormChatRepo) GetOrCreateGameRoom(ctx context.Context, gameID uint) (*ChatRoom, error) {
 	var room ChatRoom
-	err := r.db.WithContext(ctx).Where("game_id = ? AND team_id IS NULL", gameID).First(&room).Error
+	err := r.db.WithContext(ctx).Where("game_id = ? AND team_id IS NULL AND passing_id IS NULL", gameID).First(&room).Error
 	if err == nil {
 		return &room, nil
 	}
-	if err != gorm.ErrRecordNotFound {
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
 	room = ChatRoom{
 		GameID: &gameID,
 		Name:   "Общий чат игры",
 	}
+	// Create with conflict handling — if duplicate (race), re-query
 	if createErr := r.db.WithContext(ctx).Create(&room).Error; createErr != nil {
-		return nil, createErr
+		if err := r.db.WithContext(ctx).Where("game_id = ? AND team_id IS NULL AND passing_id IS NULL", gameID).First(&room).Error; err != nil {
+			return nil, fmt.Errorf("failed to get or create game chat room: %w", err)
+		}
+		return &room, nil
 	}
 	return &room, nil
 }
@@ -59,7 +65,7 @@ func (r *gormChatRepo) GetOrCreateTeamRoom(ctx context.Context, gameID, teamID, 
 	if err == nil {
 		return &room, nil
 	}
-	if err != gorm.ErrRecordNotFound {
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
 	room = ChatRoom{
@@ -68,8 +74,12 @@ func (r *gormChatRepo) GetOrCreateTeamRoom(ctx context.Context, gameID, teamID, 
 		PassingID: &passingID,
 		Name:      "Командный чат",
 	}
+	// Create with conflict handling — if duplicate (race), re-query
 	if createErr := r.db.WithContext(ctx).Create(&room).Error; createErr != nil {
-		return nil, createErr
+		if err := r.db.WithContext(ctx).Where("game_id = ? AND team_id = ? AND passing_id = ?", gameID, teamID, passingID).First(&room).Error; err != nil {
+			return nil, fmt.Errorf("failed to get or create team chat room: %w", err)
+		}
+		return &room, nil
 	}
 	return &room, nil
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -102,7 +103,7 @@ func TestRoomHub_BroadcastToRoom(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 	var received1, received2 map[string]string
-	var fatalErr error
+	var fatalErr atomic.Value
 
 	go func() {
 		defer wg.Done()
@@ -110,10 +111,10 @@ func TestRoomHub_BroadcastToRoom(t *testing.T) {
 		case received := <-c1.Send:
 			err := json.Unmarshal(received, &received1)
 			if err != nil {
-				fatalErr = err
+				fatalErr.Store(err)
 			}
 		case <-time.After(2 * time.Second):
-			fatalErr = fmt.Errorf("client 1 did not receive message")
+			fatalErr.Store(fmt.Errorf("client 1 did not receive message"))
 		}
 	}()
 
@@ -123,16 +124,18 @@ func TestRoomHub_BroadcastToRoom(t *testing.T) {
 		case received := <-c2.Send:
 			err := json.Unmarshal(received, &received2)
 			if err != nil {
-				fatalErr = err
+				fatalErr.Store(err)
 			}
 		case <-time.After(2 * time.Second):
-			fatalErr = fmt.Errorf("client 2 did not receive message")
+			fatalErr.Store(fmt.Errorf("client 2 did not receive message"))
 		}
 	}()
 
 	wg.Wait()
 
-	require.NoError(t, fatalErr)
+	if e := fatalErr.Load(); e != nil {
+		require.NoError(t, e.(error))
+	}
 	assert.Equal(t, "hello", received1["data"])
 	assert.Equal(t, "hello", received2["data"])
 }

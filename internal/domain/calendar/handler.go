@@ -25,10 +25,17 @@ type CalendarDataRequest struct {
 
 type CalendarHandler struct {
 	gameRepo game.GameRepository
+	baseURL  string
 }
 
 func NewCalendarHandler(gameRepo game.GameRepository) *CalendarHandler {
 	return &CalendarHandler{gameRepo: gameRepo}
+}
+
+// WithBaseURL устанавливает канонический base URL (защита от host-header injection).
+func (h *CalendarHandler) WithBaseURL(baseURL string) *CalendarHandler {
+	h.baseURL = strings.TrimRight(baseURL, "/")
+	return h
 }
 
 // CalendarPage отображает HTML-страницу календаря.
@@ -52,7 +59,7 @@ func (h *CalendarHandler) CalendarPage(c *gin.Context) {
 // @Param year query int false "Год" default(текущий)
 // @Param month query int false "Месяц (1-12)" default(текущий)
 // @Success 200 {object} map[string]interface{} "События календаря (ключ — дата, значение — массив игр)"
-// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+// @Failure 500 {object} map[string]interface{} render.Tr(c, "handler.internal_error")
 // @Router /api/v1/calendar [get]
 func (h *CalendarHandler) CalendarData(c *gin.Context) {
 	var req CalendarDataRequest
@@ -93,6 +100,9 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 
 	events := make(map[string][]gin.H)
 	for _, g := range games {
+		if g.IsDraft || g.Visibility != "public" {
+			continue
+		}
 		if g.StartsAt == nil {
 			continue
 		}
@@ -117,7 +127,7 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 // @Tags calendar
 // @Produce text/calendar
 // @Success 200 {string} string "iCalendar файл"
-// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+// @Failure 500 {object} map[string]interface{} render.Tr(c, "handler.internal_error")
 // @Router /calendar/export.ics [get]
 func (h *CalendarHandler) CalendarICal(c *gin.Context) {
 	now := time.Now()
@@ -163,7 +173,13 @@ func (h *CalendarHandler) CalendarICal(c *gin.Context) {
 		if g.Description != "" {
 			fmt.Fprintf(&sb, "DESCRIPTION:%s\r\n", escapeICalText(g.Description))
 		}
-		fmt.Fprintf(&sb, "URL:https://%s/games/%d\r\n", c.Request.Host, g.ID)
+		baseURL := h.baseURL
+		if baseURL == "" {
+			// Fallback на Host из запроса, но только если это валидный host
+			// (host-header injection не должен попасть в iCal-ссылку).
+			baseURL = "https://" + sanitizeHost(c.Request.Host)
+		}
+		fmt.Fprintf(&sb, "URL:%s/games/%d\r\n", baseURL, g.ID)
 		sb.WriteString("END:VEVENT\r\n")
 	}
 
@@ -181,4 +197,20 @@ func escapeICalText(text string) string {
 	text = strings.ReplaceAll(text, ",", `\,`)
 	text = strings.ReplaceAll(text, "\n", `\n`)
 	return text
+}
+
+// sanitizeHost разрешает только символы валидного hostname (латиница, цифры, точка, дефис, двоеточие для порта).
+func sanitizeHost(host string) string {
+	var sb strings.Builder
+	for _, r := range host {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '-' || r == ':' || r == '_' {
+			sb.WriteRune(r)
+			continue
+		}
+		sb.WriteRune('x')
+	}
+	if sb.Len() == 0 {
+		return "localhost"
+	}
+	return sb.String()
 }

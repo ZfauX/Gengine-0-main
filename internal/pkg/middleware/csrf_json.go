@@ -1,7 +1,13 @@
 // internal/pkg/middleware/csrf_json.go
+//
+// UNUSED: This file is kept for reference only. CSRFJSON() is dead code —
+// no callers exist in the codebase. If needed in the future, remove the
+// UNUSED comment and wire it into routes.
+
 package middleware
 
 import (
+	"crypto/subtle"
 	"net/http"
 	"strings"
 
@@ -13,6 +19,8 @@ import (
 // CSRFJSON возвращает middleware, которое проверяет CSRF-токен для всех мутирующих запросов.
 // Для GET/HEAD/OPTIONS запросов проверка не выполняется.
 // Токен ожидается в заголовке "X-CSRF-Token" (для JSON) или в теле формы (для HTML-форм).
+//
+// UNUSED: keep for reference.
 func CSRFJSON() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Для безопасных методов CSRF не требуется
@@ -40,7 +48,7 @@ func CSRFJSON() gin.HandlerFunc {
 		}
 
 		validToken := csrf.GetToken(c)
-		if token != validToken {
+		if subtle.ConstantTimeCompare([]byte(token), []byte(validToken)) != 1 {
 			c.JSON(http.StatusForbidden, gin.H{
 				"error": "CSRF token mismatch",
 				"code":  "csrf_mismatch",

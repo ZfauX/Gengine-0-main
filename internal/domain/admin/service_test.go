@@ -15,6 +15,7 @@ import (
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/admin"
 	"gengine-0/internal/domain/game"
+	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/audit"
 	"gengine-0/internal/testutil"
@@ -67,6 +68,9 @@ func createTestGame(t *testing.T, db *gorm.DB, authorID uint, name string, isDra
 // =============================================================================
 
 func TestBackupService_CreateNow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test (requires pg_dump)")
+	}
 	// Проверяем наличие pg_dump в системе
 	_, err := exec.LookPath("pg_dump")
 	if err != nil {
@@ -188,8 +192,9 @@ func setupAdminHandlerForRedirect(t *testing.T) (*gin.Engine, *gorm.DB, *admin.A
 
 	userRepo := user.NewGormUserRepo(db)
 	gameRepo := game.NewGormGameRepo(db)
+	refreshTokenRepo := user.NewGormRefreshTokenRepo(db)
 
-	handler := admin.NewAdminHandler(userRepo, gameRepo, backupService, auditService)
+	handler := admin.NewAdminHandler(userRepo, gameRepo, nil, team.NewGormTeamRepo(db), backupService, auditService, refreshTokenRepo, nil)
 
 	r := gin.New()
 
@@ -293,7 +298,8 @@ func TestAdminHandler_RotateBackups(t *testing.T) {
 	userRepo := user.NewGormUserRepo(db)
 	gameRepo := game.NewGormGameRepo(db)
 	auditSvc := audit.NewService(db)
-	handler := admin.NewAdminHandler(userRepo, gameRepo, backupService, auditSvc)
+	refreshTokenRepo := user.NewGormRefreshTokenRepo(db)
+	handler := admin.NewAdminHandler(userRepo, gameRepo, nil, team.NewGormTeamRepo(db), backupService, auditSvc, refreshTokenRepo, nil)
 
 	// Новый роутер для теста, без CSRF (RotateBackups не использует csrf.GetToken)
 	r2 := gin.New()
@@ -330,7 +336,7 @@ func TestAuditService_LogAndList(t *testing.T) {
 
 	svc.Log(1, "test_action", "test", 1, "test details")
 
-	logs, total, err := svc.List(ctx, "", "", 1, 10)
+	logs, total, err := svc.List(ctx, "", "", "", 1, 10)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), total)
 	assert.Len(t, logs, 1)
@@ -347,7 +353,7 @@ func TestAuditService_FilterByUser(t *testing.T) {
 	svc.Log(1, "a1", "", 0, "")
 	svc.Log(2, "a2", "", 0, "")
 
-	logs, total, err := svc.List(ctx, strconv.FormatUint(uint64(1), 10), "", 1, 10)
+	logs, total, err := svc.List(ctx, strconv.FormatUint(uint64(1), 10), "", "", 1, 10)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), total)
 	assert.Len(t, logs, 1)
@@ -362,7 +368,7 @@ func TestAuditService_FilterByAction(t *testing.T) {
 	svc.Log(1, "login", "", 0, "")
 	svc.Log(1, "logout", "", 0, "")
 
-	logs, total, err := svc.List(ctx, "", "login", 1, 10)
+	logs, total, err := svc.List(ctx, "", "login", "", 1, 10)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), total)
 	assert.Len(t, logs, 1)

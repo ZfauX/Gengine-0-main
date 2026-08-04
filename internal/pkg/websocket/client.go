@@ -49,6 +49,7 @@ func (c *Client) Close() {
 	defer c.mu.Unlock()
 	if !c.closed {
 		c.closed = true
+		// NOTE: close frame is sent by writePump (single writer) to avoid a race
 		if c.done != nil {
 			close(c.done)
 		}
@@ -93,6 +94,10 @@ func (c *Client) writePump(ctx context.Context) {
 			log.Debug().Str("client_id", c.ID).Msg("writePump: context cancelled, stopping")
 			return
 		case <-c.done:
+			// Client closed — send close frame (we're the single writer)
+			if c.Conn != nil {
+				_ = c.Conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down"))
+			}
 			log.Debug().Str("client_id", c.ID).Msg("writePump: client closed")
 			return
 		case message, ok := <-c.Send:
@@ -126,6 +131,10 @@ func (c *Client) writePump(ctx context.Context) {
 // HandleWebSocketWithContext запускает writePump с контекстом и читает сообщения.
 func HandleWebSocketWithContext(ctx context.Context, client *Client) {
 	go client.writePump(ctx)
+
+	// Гарантированно закрываем клиент при выходе из read-loop (обрыв соединения,
+	// отмена контекста). Close() идемпотентен — безопасен при повторном вызове из handler.
+	defer client.Close()
 
 	client.Conn.SetPongHandler(func(string) error {
 		if err := client.Conn.SetReadDeadline(time.Now().Add(websocketReadDeadline)); err != nil {

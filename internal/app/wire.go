@@ -54,7 +54,7 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 			"Tournament", "TournGame", "TournTeam", "TournResult",
 		),
 		game.NewCoAuthorService,
-		game.NewReviewService,
+		wrapReviewService,
 		game.NewAttemptService,
 		game.NewMonitorService,
 		game.NewPhotoService,

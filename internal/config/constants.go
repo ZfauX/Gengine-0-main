@@ -14,6 +14,7 @@ const (
 	CodeSubmissionRateLimit     = 10
 	SSERateLimit                = 10
 	APIRateLimit                = 60
+	PasswordResetRateLimit      = 5
 	EmailQueueWorkers           = 5
 	EmailQueueInterval          = 10 * time.Second
 	EmailQueueBatchSize         = 10
@@ -22,7 +23,6 @@ const (
 	PoolMonitorInterval         = 1 * time.Minute
 	RefreshTokenCleanupInterval = 1 * time.Hour
 	ServerReadTimeout           = 15 * time.Second
-	ServerWriteTimeout          = 30 * time.Second
 	ServerIdleTimeout           = 120 * time.Second
 	ShutdownTimeout             = 45 * time.Second
 )

@@ -2,6 +2,7 @@
 package db
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -17,15 +18,25 @@ import (
 
 // hasAppliedMigrations проверяет, есть ли уже применённые миграции в БД.
 func hasAppliedMigrations(gdb *gorm.DB) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	var count int64
-	gdb.Raw("SELECT COUNT(*) FROM schema_migrations").Scan(&count)
+	if err := gdb.WithContext(ctx).Raw("SELECT COUNT(*) FROM schema_migrations").Scan(&count).Error; err != nil {
+		log.Warn().Err(err).Msg("hasAppliedMigrations: failed to count schema_migrations")
+		return false
+	}
 	return count > 0
 }
 
 // getCurrentVersion возвращает текущую версию миграций из schema_migrations.
 func getCurrentVersion(gdb *gorm.DB) uint {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	var version int
-	gdb.Raw("SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1").Scan(&version)
+	if err := gdb.WithContext(ctx).Raw("SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1").Scan(&version).Error; err != nil {
+		log.Warn().Err(err).Msg("getCurrentVersion: failed to query schema_migrations")
+		return 0
+	}
 	return uint(version)
 }
 
@@ -33,6 +44,17 @@ func getCurrentVersion(gdb *gorm.DB) uint {
 // (migrations_squashed/), для существующей — обычные поштучные (migrations/).
 func RunMigrations(gdb *gorm.DB) error {
 	return MigrateFromDir(gdb, "")
+}
+
+// cleanupGameSettings удаляет дубликаты game_settings, возникшие из-за
+// пересечения soft-delete и уникального индекса по game_id в GORM.
+func cleanupGameSettings(gdb *gorm.DB) {
+	result := gdb.Exec("DELETE FROM game_settings WHERE id NOT IN (SELECT MIN(id) FROM game_settings GROUP BY game_id)")
+	if result.Error != nil {
+		log.Warn().Err(result.Error).Msg("cleanupGameSettings: failed to remove duplicates")
+	} else if result.RowsAffected > 0 {
+		log.Info().Int64("removed", result.RowsAffected).Msg("cleanupGameSettings: removed duplicate game_settings rows")
+	}
 }
 
 // MigrateFromDir запускает миграции из указанной папки (или автоопределение,
@@ -114,6 +136,10 @@ func MigrateFromDir(gdb *gorm.DB, migrationsDir string) error {
 	} else {
 		log.Info().Msg("Миграции успешно применены")
 	}
+
+	// Clean up duplicate game_settings rows that can occur with GORM soft-delete + unique index
+	cleanupGameSettings(gdb)
+
 	return nil
 }
 

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	lru "github.com/hashicorp/golang-lru/v2"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/rs/zerolog/log"
 )
@@ -17,6 +18,10 @@ type cacheItem struct {
 	value   any
 	expires time.Time
 }
+
+// Compile-time interface compliance checks
+var _ CacheStore = (*Cache)(nil)
+var _ CacheStore = (*NoopCache)(nil)
 
 func (i cacheItem) expired() bool {
 	return !i.expires.IsZero() && time.Now().After(i.expires)
@@ -30,6 +35,7 @@ type Cache struct {
 	keyPrefixes map[string]map[string]bool
 	maxSize     int
 	stop        chan struct{}
+	sg          singleflight.Group
 }
 
 func NewCache(defaultTTL, cleanupInterval time.Duration) (*Cache, error) {
@@ -227,19 +233,22 @@ func (c *Cache) DeleteByPrefixWithCtx(_ context.Context, prefix string) {
 }
 
 func (c *Cache) GetOrSet(key string, ttl time.Duration, fn func() (any, error)) (any, error) {
-	if val, ok := c.Get(key); ok {
+	v, err, _ := c.sg.Do(key, func() (any, error) {
+		if val, ok := c.Get(key); ok {
+			return val, nil
+		}
+		val, err := fn()
+		if err != nil {
+			return nil, err
+		}
+		if ttl == 0 {
+			c.SetDefault(key, val)
+		} else {
+			c.Set(key, val, ttl)
+		}
 		return val, nil
-	}
-	val, err := fn()
-	if err != nil {
-		return nil, err
-	}
-	if ttl == 0 {
-		c.SetDefault(key, val)
-	} else {
-		c.Set(key, val, ttl)
-	}
-	return val, nil
+	})
+	return v, err
 }
 
 func (c *Cache) GetOrSetString(key string, ttl time.Duration, fn func() (string, error)) (string, error) {
@@ -342,15 +351,18 @@ func (c *Cache) GetOrSetWithCtx(ctx context.Context, key string, ttl time.Durati
 		return nil, ctx.Err()
 	default:
 	}
-	if val, ok := c.Get(key); ok {
+	v, err, _ := c.sg.Do(key, func() (any, error) {
+		if val, ok := c.Get(key); ok {
+			return val, nil
+		}
+		val, err := fn()
+		if err != nil {
+			return nil, err
+		}
+		c.Set(key, val, ttl)
 		return val, nil
-	}
-	val, err := fn()
-	if err != nil {
-		return nil, err
-	}
-	c.Set(key, val, ttl)
-	return val, nil
+	})
+	return v, err
 }
 
 // GetOrSetIntWithCtx — контекстно-ориентированная версия GetOrSetInt.

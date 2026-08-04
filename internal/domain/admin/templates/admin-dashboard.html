@@ -1,45 +1,53 @@
 {{define "admin-dashboard.html"}}
 <div class="max-w-7xl mx-auto">
-    <h1 class="page-title">Панель администратора</h1>
+    <h1 class="page-title">{{ T $.Lang "admin.dashboard_title" }}</h1>
 
     {{block "admin-nav" .}}
     <nav class="flex flex-wrap gap-2 p-3 bg-gray-100 dark:bg-gray-800 rounded-lg mb-6">
-        <a href="/admin" class="btn {{if eq .ContentBlock "admin-dashboard.html"}}btn-primary{{else}}btn-outline{{end}} text-sm">Дашборд</a>
-        <a href="/admin/users" class="btn btn-outline text-sm">Пользователи</a>
-        <a href="/admin/games" class="btn btn-outline text-sm">Игры</a>
-        <a href="/admin/audit" class="btn btn-outline text-sm">Аудит</a>
-        <a href="/admin/backups" class="btn btn-outline text-sm">Бэкапы</a>
+        <a href="/admin" class="btn {{if eq .ContentBlock "admin-dashboard.html"}}btn-primary{{else}}btn-outline{{end}} text-sm">{{ T $.Lang "admin.dashboard" }}</a>
+        <a href="/admin/users" class="btn btn-outline text-sm">{{ T $.Lang "admin.users" }}</a>
+        <a href="/admin/games" class="btn btn-outline text-sm">{{ T $.Lang "admin.games" }}</a>
+        <a href="/admin/teams" class="btn btn-outline text-sm">{{ T $.Lang "admin.teams" }}</a>
+        <a href="/admin/audit" class="btn btn-outline text-sm">{{ T $.Lang "admin.audit" }}</a>
+        <a href="/admin/backups" class="btn btn-outline text-sm">{{ T $.Lang "admin.backups" }}</a>
     </nav>
     {{end}}
 
     <!-- Статистика -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mt-4">
         <!-- Пользователи -->
         <div class="card text-center p-6 hover-lift">
-            <h2 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Пользователи</h2>
+            <h2 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">{{ T $.Lang "admin.stat_users" }}</h2>
             <p class="text-4xl font-bold text-blue-600 dark:text-blue-400 my-2">{{.UserCount}}</p>
-            <a href="/admin/users" class="btn btn-primary text-sm inline-block mt-2">Управление</a>
+            <a href="/admin/users" class="btn btn-primary text-sm inline-block mt-2">{{ T $.Lang "admin.users_manage" }}</a>
         </div>
 
         <!-- Игры -->
         <div class="card text-center p-6 hover-lift">
-            <h2 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Игры</h2>
+            <h2 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">{{ T $.Lang "admin.stat_games" }}</h2>
             <p class="text-4xl font-bold text-blue-600 dark:text-blue-400 my-2">{{.GameCount}}</p>
-            <a href="/admin/games" class="btn btn-primary text-sm inline-block mt-2">Модерация</a>
+            <a href="/admin/games" class="btn btn-primary text-sm inline-block mt-2">{{ T $.Lang "admin.games_moderate" }}</a>
+        </div>
+
+        <!-- Команды -->
+        <div class="card text-center p-6 hover-lift">
+            <h2 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">{{ T $.Lang "admin.stat_teams" }}</h2>
+            <p class="text-4xl font-bold text-blue-600 dark:text-blue-400 my-2">{{.TeamCount}}</p>
+            <a href="/admin/teams" class="btn btn-primary text-sm inline-block mt-2">{{ T $.Lang "admin.teams" }}</a>
         </div>
 
         <!-- Аудит -->
         <div class="card text-center p-6 hover-lift">
-            <h2 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Аудит</h2>
+            <h2 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">{{ T $.Lang "admin.stat_audit" }}</h2>
             <p class="text-4xl font-bold text-blue-600 dark:text-blue-400 my-2">{{.AuditCount}}</p>
-            <a href="/admin/audit" class="btn btn-primary text-sm inline-block mt-2">Журнал</a>
+            <a href="/admin/audit" class="btn btn-primary text-sm inline-block mt-2">{{ T $.Lang "admin.audit_log" }}</a>
         </div>
 
         <!-- Бэкапы -->
         <div class="card text-center p-6 hover-lift">
-            <h2 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Бэкапы</h2>
+            <h2 class="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">{{ T $.Lang "admin.stat_backups" }}</h2>
             <p class="text-4xl font-bold text-blue-600 dark:text-blue-400 my-2">{{.BackupCount}}</p>
-            <a href="/admin/backups" class="btn btn-primary text-sm inline-block mt-2">Резервные копии</a>
+            <a href="/admin/backups" class="btn btn-primary text-sm inline-block mt-2">{{ T $.Lang "admin.backups_manage" }}</a>
         </div>
     </div>
 </div>

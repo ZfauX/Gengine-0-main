@@ -45,22 +45,23 @@ type Config struct {
 
 // ServerConfig содержит параметры HTTP-сервера и логирования.
 type ServerConfig struct {
-	Port           string // порт, на котором слушает сервер (по умолчанию 8080)
-	GinMode        string // режим работы Gin (debug, release, test)
-	BaseURL        string // базовый URL приложения для формирования ссылок
-	MaxBackups     int    // максимальное количество сохраняемых архивов логов
-	LogFilePath    string // путь к файлу логов (по умолчанию "logs/app.log")
-	LogMaxSize     int    // максимальный размер файла лога в МБ (по умолчанию 100)
-	LogMaxAge      int    // максимальное количество дней хранения логов (по умолчанию 28)
-	LogCompress    bool   // сжимать ли архивы (по умолчанию true)
-	LogFormat      string // формат вывода логов: "console" или "json" (по умолчанию "console")
-	StaticDir      string // путь к статическим файлам (по умолчанию "static")
-	UploadsDir     string // путь к загружаемым файлам (по умолчанию "uploads")
-	MaxUploadSize  int    // максимальный размер загружаемого файла в байтах (по умолчанию 5MB)
-	MaxBodySize    int    // максимальный размер тела запроса в байтах (по умолчанию 10MB)
-	TrustedProxies string // доверенные прокси через запятую (например: 127.0.0.1,192.168.0.0/24)
-	CORSOrigins    string // разрешённые CORS-источники через запятую (например: https://example.com,http://localhost:3000)
-	StrictMode     bool   // строгий режим: неверные переменные окружения вызывают ошибку вместо fallback
+	Port              string // порт, на котором слушает сервер (по умолчанию 8080)
+	GinMode           string // режим работы Gin (debug, release, test)
+	BaseURL           string // базовый URL приложения для формирования ссылок
+	MaxBackups        int    // максимальное количество сохраняемых архивов логов
+	LogFilePath       string // путь к файлу логов (по умолчанию "logs/app.log")
+	LogMaxSize        int    // максимальный размер файла лога в МБ (по умолчанию 100)
+	LogMaxAge         int    // максимальное количество дней хранения логов (по умолчанию 28)
+	LogCompress       bool   // сжимать ли архивы (по умолчанию true)
+	LogFormat         string // формат вывода логов: "console" или "json" (по умолчанию "console")
+	StaticDir         string // путь к статическим файлам (по умолчанию "static")
+	UploadsDir        string // путь к загружаемым файлам (по умолчанию "uploads")
+	MaxUploadSize     int    // максимальный размер загружаемого файла в байтах (по умолчанию 5MB)
+	MaxBodySize       int    // максимальный размер тела запроса в байтах (по умолчанию 10MB)
+	TrustedProxies    string // доверенные прокси через запятую (например: 127.0.0.1,192.168.0.0/24)
+	CORSOrigins       string // разрешённые CORS-источники через запятую (например: https://example.com,http://localhost:3000)
+	StrictMode        bool   // строгий режим: неверные переменные окружения вызывают ошибку вместо fallback
+	ForceSecureCookie bool   // принудительно устанавливать Secure-флаг на куках (даже без TLS)
 
 	// Rate limiting — настраиваются через env с дефолтами из constants.go
 	RateLimitWindow         time.Duration // окно rate limiter (по умолчанию 1m)
@@ -70,6 +71,7 @@ type ServerConfig struct {
 	RateLimitCodeSubmission int           // лимит отправки кода в минуту (по умолчанию 10)
 	RateLimitSSE            int           // лимит SSE-соединений в минуту (по умолчанию 10)
 	RateLimitAPI            int           // лимит API-запросов в минуту (по умолчанию 60)
+	RateLimitPasswordReset  int           // лимит сбросов пароля в минуту (по умолчанию 5)
 
 	// WebAuthn (passkeys) — origins через запятую, RPID по умолчанию из BaseURL
 	WebAuthnRPID    string // relying party ID (например: localhost, example.com)
@@ -182,6 +184,7 @@ type WebSocketConfig struct {
 type VAPIDConfig struct {
 	PublicKey  string // публичный ключ (для браузера)
 	PrivateKey string // приватный ключ (для подписи push)
+	Subject    string // contact info для VAPID JWT (mailto: или https://)
 }
 
 // LoadConfig загружает конфигурацию из переменных окружения с жёсткой проверкой обязательных секретов.
@@ -191,7 +194,7 @@ func LoadConfig() (*Config, error) {
 
 	// Сервер
 	cfg.Server.Port = getEnvOrDefault("PORT", "8080")
-	cfg.Server.GinMode = getEnvOrDefault("GIN_MODE", "debug")
+	cfg.Server.GinMode = getEnvOrDefault("GIN_MODE", "release")
 	cfg.Server.BaseURL = getEnvOrDefault("BASE_URL", "http://localhost:"+cfg.Server.Port)
 	cfg.Server.MaxBackups = getEnvAsInt("LOG_MAX_BACKUPS", defaultMaxBackups)
 	cfg.Server.LogFilePath = getEnvOrDefault("LOG_FILE_PATH", "logs/app.log")
@@ -215,13 +218,20 @@ func LoadConfig() (*Config, error) {
 	cfg.Server.RateLimitCodeSubmission = getEnvAsInt("RATE_LIMIT_CODE_SUBMISSION", CodeSubmissionRateLimit)
 	cfg.Server.RateLimitSSE = getEnvAsInt("RATE_LIMIT_SSE", SSERateLimit)
 	cfg.Server.RateLimitAPI = getEnvAsInt("RATE_LIMIT_API", APIRateLimit)
+	cfg.Server.RateLimitPasswordReset = getEnvAsInt("RATE_LIMIT_PASSWORD_RESET", PasswordResetRateLimit)
 
 	// Log level
 	cfg.Server.LogLevel = getEnvOrDefault("LOG_LEVEL", "info")
 
+	// Force Secure cookie flag (default false — detected from TLS)
+	cfg.Server.ForceSecureCookie = os.Getenv("FORCE_SECURE_COOKIE") == "true"
+
 	// WebAuthn
 	cfg.Server.WebAuthnRPID = os.Getenv("WEBAUTHN_RPID")
 	cfg.Server.WebAuthnOrigins = os.Getenv("WEBAUTHN_ORIGINS")
+	if cfg.Server.WebAuthnRPID == "" {
+		log.Warn().Msg("WEBAUTHN_RPID is not set — passkey authentication will fail at runtime. Set WEBAUTHN_RPID to your domain (e.g., example.com)")
+	}
 
 	// База данных (обязательные параметры)
 	var err error
@@ -369,7 +379,8 @@ func requireStrongSecret(key string, minLen int) (string, error) {
 	return value, nil
 }
 
-// requireStrongPassword проверяет, что пароль администратора имеет длину не менее minLen.
+// requireStrongPassword проверяет, что пароль администратора имеет длину не менее minLen
+// и содержит минимум 3 из 4 классов символов (заглавные, строчные, цифры, спецсимволы).
 func requireStrongPassword(key string, minLen int) (string, error) {
 	value, ok := os.LookupEnv(key)
 	if !ok || value == "" {
@@ -377,6 +388,28 @@ func requireStrongPassword(key string, minLen int) (string, error) {
 	}
 	if len(value) < minLen {
 		return "", fmt.Errorf("environment variable %s must be at least %d characters long (current: %d)", key, minLen, len(value))
+	}
+	var upper, lower, digit, special bool
+	for _, r := range value {
+		switch {
+		case r >= 'A' && r <= 'Z':
+			upper = true
+		case r >= 'a' && r <= 'z':
+			lower = true
+		case r >= '0' && r <= '9':
+			digit = true
+		default:
+			special = true
+		}
+	}
+	classes := 0
+	for _, b := range []bool{upper, lower, digit, special} {
+		if b {
+			classes++
+		}
+	}
+	if classes < 3 {
+		return "", fmt.Errorf("environment variable %s must contain at least 3 of: uppercase, lowercase, digit, special character", key)
 	}
 	return value, nil
 }
@@ -558,6 +591,10 @@ func getEnvAsFloat(key string, fallback float64) float64 {
 func loadVAPIDConfig(cfg *VAPIDConfig) error {
 	cfg.PublicKey = os.Getenv("VAPID_PUBLIC_KEY")
 	cfg.PrivateKey = os.Getenv("VAPID_PRIVATE_KEY")
+	cfg.Subject = os.Getenv("VAPID_SUBJECT")
+	if cfg.Subject == "" {
+		cfg.Subject = "mailto:admin@encounter-engine.local"
+	}
 	if cfg.PublicKey != "" && cfg.PrivateKey != "" {
 		return nil
 	}

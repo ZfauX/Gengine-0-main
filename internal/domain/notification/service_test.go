@@ -276,6 +276,9 @@ func TestCreate_DBError(t *testing.T) {
 }
 
 func TestGetByUser_DefaultPagination(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test (requires DB)")
+	}
 	// This method requires Model() to be set for Count — tested in integration.
 	t.Skip("requires real DB (GORM needs Model for Count with sqlmock)")
 }
@@ -329,7 +332,7 @@ func TestGetUnreadCount(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(5))
 
 	svc := NewNotificationService(db, nil)
-	count := svc.GetUnreadCount(1)
+	count := svc.GetUnreadCount(context.Background(), 1)
 	assert.Equal(t, 5, count)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

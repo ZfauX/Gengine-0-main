@@ -15,8 +15,11 @@ import (
 func ContextTimeout(timeout time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Исключаем WebSocket и monitor-маршруты из таймаута
+		// (после upgrade соединение живёт дольше таймаута HTTP-запроса)
 		path := c.Request.URL.Path
-		if strings.HasPrefix(path, "/ws") || strings.HasPrefix(path, "/monitor") || strings.HasPrefix(path, "/game/") {
+		if strings.HasPrefix(path, "/ws") || strings.Contains(path, "/ws") ||
+			strings.Contains(path, "/monitor") || strings.Contains(path, "/stream") ||
+			strings.Contains(path, "/sse") {
 			c.Next()
 			return
 		}

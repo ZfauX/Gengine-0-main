@@ -60,16 +60,18 @@ func (h *SettingsHandler) ShowForm(c *gin.Context) {
 func (h *SettingsHandler) Save(c *gin.Context) {
 	userID := c.GetUint("userID")
 
+	// *bool: nil = поле не передано (старый фронт) — сохраняем текущее значение,
+	// иначе отсутствующий чекбокс сбросил бы настройку (C11).
 	var input struct {
-		EmailEnabled             bool `form:"email_enabled"`
-		BrowserEnabled           bool `form:"browser_enabled"`
-		PushEnabled              bool `form:"push_enabled"`
-		EmailGameStarted         bool `form:"email_game_started"`
-		EmailLevelCompleted      bool `form:"email_level_completed"`
-		EmailApplicationAccepted bool `form:"email_application_accepted"`
-		EmailApplicationRejected bool `form:"email_application_rejected"`
-		EmailTimeWarning         bool `form:"email_time_warning"`
-		EmailTimeExpired         bool `form:"email_time_expired"`
+		EmailEnabled             *bool `form:"email_enabled"`
+		BrowserEnabled           *bool `form:"browser_enabled"`
+		PushEnabled              *bool `form:"push_enabled"`
+		EmailGameStarted         *bool `form:"email_game_started"`
+		EmailLevelCompleted      *bool `form:"email_level_completed"`
+		EmailApplicationAccepted *bool `form:"email_application_accepted"`
+		EmailApplicationRejected *bool `form:"email_application_rejected"`
+		EmailTimeWarning         *bool `form:"email_time_warning"`
+		EmailTimeExpired         *bool `form:"email_time_expired"`
 	}
 
 	if err := c.ShouldBind(&input); err != nil {
@@ -77,16 +79,39 @@ func (h *SettingsHandler) Save(c *gin.Context) {
 		return
 	}
 
-	settings := &Settings{
-		EmailEnabled:             input.EmailEnabled,
-		BrowserEnabled:           input.BrowserEnabled,
-		PushEnabled:              input.PushEnabled,
-		EmailGameStarted:         input.EmailGameStarted,
-		EmailLevelCompleted:      input.EmailLevelCompleted,
-		EmailApplicationAccepted: input.EmailApplicationAccepted,
-		EmailApplicationRejected: input.EmailApplicationRejected,
-		EmailTimeWarning:         input.EmailTimeWarning,
-		EmailTimeExpired:         input.EmailTimeExpired,
+	// Начинаем с текущих настроек, чтобы не потерять непереданные поля.
+	settings, err := h.svc.GetSettings(c.Request.Context(), userID)
+	if err != nil {
+		render.RenderError(c, http.StatusInternalServerError, "Ошибка загрузки настроек")
+		return
+	}
+
+	if v := input.EmailEnabled; v != nil {
+		settings.EmailEnabled = *v
+	}
+	if v := input.BrowserEnabled; v != nil {
+		settings.BrowserEnabled = *v
+	}
+	if v := input.PushEnabled; v != nil {
+		settings.PushEnabled = *v
+	}
+	if v := input.EmailGameStarted; v != nil {
+		settings.EmailGameStarted = *v
+	}
+	if v := input.EmailLevelCompleted; v != nil {
+		settings.EmailLevelCompleted = *v
+	}
+	if v := input.EmailApplicationAccepted; v != nil {
+		settings.EmailApplicationAccepted = *v
+	}
+	if v := input.EmailApplicationRejected; v != nil {
+		settings.EmailApplicationRejected = *v
+	}
+	if v := input.EmailTimeWarning; v != nil {
+		settings.EmailTimeWarning = *v
+	}
+	if v := input.EmailTimeExpired; v != nil {
+		settings.EmailTimeExpired = *v
 	}
 
 	if err := h.svc.SaveSettings(c.Request.Context(), userID, settings); err != nil {
@@ -129,6 +154,7 @@ func (h *SettingsHandler) APIEmailSave(c *gin.Context) {
 	var input struct {
 		EmailEnabled             bool `json:"email_enabled"`
 		BrowserEnabled           bool `json:"browser_enabled"`
+		PushEnabled              bool `json:"push_enabled"`
 		EmailGameStarted         bool `json:"email_game_started"`
 		EmailLevelCompleted      bool `json:"email_level_completed"`
 		EmailApplicationAccepted bool `json:"email_application_accepted"`
@@ -145,6 +171,7 @@ func (h *SettingsHandler) APIEmailSave(c *gin.Context) {
 	settings := &Settings{
 		EmailEnabled:             input.EmailEnabled,
 		BrowserEnabled:           input.BrowserEnabled,
+		PushEnabled:              input.PushEnabled,
 		EmailGameStarted:         input.EmailGameStarted,
 		EmailLevelCompleted:      input.EmailLevelCompleted,
 		EmailApplicationAccepted: input.EmailApplicationAccepted,

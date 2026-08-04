@@ -655,10 +655,13 @@ func TestRateLimiter_AllowAfterWindow(t *testing.T) {
 	assert.True(t, rl.Allow("key").Allowed)
 	assert.False(t, rl.Allow("key").Allowed)
 
-	// Ждём истечения окна
+	// Ждём истечения окна без вызова Allow внутри Eventually
+	windowExpiry := time.Now().Add(100 * time.Millisecond)
 	assert.Eventually(t, func() bool {
-		return rl.Allow("key").Allowed
+		return time.Now().After(windowExpiry)
 	}, 500*time.Millisecond, 50*time.Millisecond)
+	result := rl.Allow("key")
+	assert.True(t, result.Allowed)
 }
 
 func TestRateLimiter_DifferentKeys(t *testing.T) {
@@ -767,7 +770,7 @@ func TestCodeSubmissionRateLimit_NoUserID(t *testing.T) {
 func TestSecurityHeadersMiddleware(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.Use(middleware.SecurityHeadersMiddleware())
+	router.Use(middleware.SecurityHeadersMiddleware(true))
 	router.GET("/test", func(c *gin.Context) {
 		c.String(http.StatusOK, "ok")
 	})
