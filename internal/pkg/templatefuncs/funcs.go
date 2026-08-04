@@ -4,6 +4,7 @@ package templatefuncs
 import (
 	"fmt"
 	"html/template"
+	"strings"
 
 	"gengine-0/internal/pkg/i18n"
 )
@@ -11,13 +12,48 @@ import (
 // FuncMap возвращает map с функциями для шаблонов.
 func FuncMap() template.FuncMap {
 	return template.FuncMap{
-		"T":           i18n.T,  // {{ T "home.welcome" }}
-		"TF":          i18n.TF, // {{ TF "home.greeting" .Name }}
+		"T": func(lang interface{}, key string) string {
+			switch v := lang.(type) {
+			case string:
+				return i18n.Default.T(i18n.Lang(v), key)
+			default:
+				return i18n.Default.T(i18n.LangRU, key)
+			}
+		},
+		"TF": func(lang interface{}, key string, args ...any) string {
+			switch v := lang.(type) {
+			case string:
+				return i18n.Default.TF(i18n.Lang(v), key, args...)
+			default:
+				return i18n.Default.TF(i18n.LangRU, key, args...)
+			}
+		},
+		// trName выводит имя элемента (breadcrumb): переводит i18n-ключ (name_key или name с точкой),
+		// иначе возвращает сырое имя (например, имя игры/команды) без перевода.
+		// Принимает interface{} для устойчивости: отсутствующие ключи map (nil/<no value>)
+		// не должны ломать рендер.
+		"trName": func(lang interface{}, name, nameKey interface{}) string {
+			n, _ := name.(string)
+			nk, _ := nameKey.(string)
+			key := nk
+			if key == "" && strings.Contains(n, ".") {
+				key = n
+			}
+			if key == "" {
+				return n
+			}
+			switch v := lang.(type) {
+			case string:
+				return i18n.Default.T(i18n.Lang(v), key)
+			default:
+				return i18n.Default.T(i18n.LangRU, key)
+			}
+		},
 		"add1":        add1,
 		"sub":         sub,
-		"subtract":    subtract,
 		"add":         add,
 		"loop":        loop,
+		"mod":         mod,
 		"formatBytes": formatBytes,
 		"csrfToken":   csrfToken,
 		"default":     defaultValue,
@@ -43,11 +79,6 @@ func sub(a, b int) int {
 	return a - b
 }
 
-// subtract возвращает a - b (альяс для sub, для совместимости с шаблонами).
-func subtract(a, b int) int {
-	return a - b
-}
-
 // add возвращает a + b.
 func add(a, b int) int {
 	return a + b
@@ -55,11 +86,22 @@ func add(a, b int) int {
 
 // loop генерирует слайс целых чисел от start до end включительно.
 func loop(start, end int) []int {
+	if end < start {
+		return []int{}
+	}
 	s := make([]int, end-start+1)
 	for i := range s {
 		s[i] = start + i
 	}
 	return s
+}
+
+// mod возвращает остаток от деления a на b (для шаблонов).
+func mod(a, b int) int {
+	if b == 0 {
+		return 0
+	}
+	return a % b
 }
 
 // formatBytes преобразует байты в человеко-читаемый формат (KB, MB, GB и т.д.).
@@ -76,8 +118,7 @@ func formatBytes(b int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
-// csrfToken возвращает строку-заглушку для вставки CSRF-токена в шаблоны.
-// В реальном использовании значение подставляется через контекст.
+// Deprecated: returns literal string "{{ .csrf }}" — use {{.csrf}} directly in templates.
 func csrfToken() string {
 	return "{{ .csrf }}"
 }

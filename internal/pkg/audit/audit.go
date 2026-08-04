@@ -69,7 +69,7 @@ func (s *Service) Count(ctx context.Context) (int64, error) {
 
 // List возвращает записи аудита с пагинацией и фильтрацией.
 // Добавлен контекст.
-func (s *Service) List(ctx context.Context, userIDStr, action string, page, perPage int) ([]EntryWithUser, int64, error) {
+func (s *Service) List(ctx context.Context, userIDStr, action, query string, page, perPage int) ([]EntryWithUser, int64, error) {
 	base := s.DB.WithContext(ctx).Table("audit_logs").
 		Joins("LEFT JOIN users ON users.id = audit_logs.user_id")
 
@@ -83,6 +83,11 @@ func (s *Service) List(ctx context.Context, userIDStr, action string, page, perP
 	if action != "" {
 		base = base.Where("audit_logs.action = ?", action)
 		countQ = countQ.Where("action = ?", action)
+	}
+	if query != "" {
+		like := "%" + query + "%"
+		base = base.Where("(users.name ILIKE ? OR users.email ILIKE ?)", like, like)
+		countQ = countQ.Where("audit_logs.user_id IN (SELECT id FROM users WHERE name ILIKE ? OR email ILIKE ?)", like, like)
 	}
 
 	var total int64

@@ -9,10 +9,25 @@ import (
 
 func TestFuncMap_ContainsExpectedKeys(t *testing.T) {
 	fm := FuncMap()
-	expected := []string{"add1", "sub", "subtract", "add", "loop", "formatBytes", "csrfToken", "default", "truncate", "T", "TF"}
+	expected := []string{"add1", "sub", "add", "loop", "formatBytes", "csrfToken", "default", "truncate", "T", "TF"}
 	for _, key := range expected {
 		assert.Contains(t, fm, key)
 	}
+}
+
+func TestT_TakesLang(t *testing.T) {
+	fm := FuncMap()
+	tFn, ok := fm["T"].(func(interface{}, string) string)
+	assert.True(t, ok, "T should be func(lang interface{}, key string) string")
+	assert.Equal(t, "Game not found", tFn("en", "game.not_found"))
+	assert.Equal(t, "nonexistent", tFn("en", "nonexistent"))
+}
+
+func TestTF_TakesLang(t *testing.T) {
+	fm := FuncMap()
+	tfFn, ok := fm["TF"].(func(interface{}, string, ...any) string)
+	assert.True(t, ok, "TF should be func(lang interface{}, key string, args ...any) string")
+	assert.Equal(t, "A level with position 5 already exists in this game", tfFn("en", "level.position_exists", 5))
 }
 
 func TestFuncMap_IsTemplateFuncMap(t *testing.T) {
@@ -46,7 +61,7 @@ func TestSub(t *testing.T) {
 }
 
 func TestSubtract(t *testing.T) {
-	assert.Equal(t, 10, subtract(20, 10))
+	assert.Equal(t, 10, sub(20, 10))
 }
 
 func TestAdd(t *testing.T) {

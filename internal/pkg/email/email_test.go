@@ -520,7 +520,7 @@ func TestEmailService_Send(t *testing.T) {
 	var queued QueuedEmail
 	err = db.Where("recipient = ?", "to@test.com").First(&queued).Error
 	require.NoError(t, err)
-	assert.Equal(t, "pending", queued.Status)
+	assert.Equal(t, EmailStatusPending, queued.Status)
 	assert.Equal(t, "Service Subject", queued.Subject)
 	assert.Equal(t, "Service Body", queued.Body)
 
@@ -536,7 +536,7 @@ func TestEmailService_Send(t *testing.T) {
 	// Проверяем, что статус обновился
 	err = db.First(&queued, queued.ID).Error
 	require.NoError(t, err)
-	assert.Equal(t, "sent", queued.Status)
+	assert.Equal(t, EmailStatusSent, queued.Status)
 	assert.NotNil(t, queued.SentAt)
 
 	_, _, body, headers := server.LastMail()

@@ -181,20 +181,44 @@ func (s *LocalStorage) Delete(webPath string) error {
 	if webPath == "" {
 		return nil
 	}
-	// webPath — абсолютный путь, возвращённый Save (например, /abs/path/to/file.jpg)
+
+	// webPath — путь, возвращённый Save
+	// Если путь начинается с "/", это абсолютный файловый путь (например, /C:/Users/.../file.txt)
 	relPath := webPath
 	if strings.HasPrefix(webPath, "/") {
 		relPath = webPath[1:]
 	}
 
-	// Path traversal protection: запрещаем ".." в относительной части пути
+	// Path traversal protection: запрещаем ".."
 	if strings.Contains(relPath, "..") {
 		return fmt.Errorf("путь файла выходит за пределы директории загрузок")
 	}
 
+	// Определяем полный путь к файлу
 	fullPath := filepath.FromSlash(relPath)
-	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+
+	// Если путь относительный, присоединяем к базовой директории
+	if !filepath.IsAbs(fullPath) {
+		fullPath = filepath.Join(s.baseDir, fullPath)
+	}
+
+	// Проверка выхода за пределы директории
+	absPath, err := filepath.Abs(fullPath)
+	if err != nil {
+		return fmt.Errorf("некорректный путь файла: %w", err)
+	}
+	if s.baseDir != "" {
+		absBase, err := filepath.Abs(s.baseDir)
+		if err != nil {
+			return fmt.Errorf("некорректная базовая директория: %w", err)
+		}
+		if !strings.HasPrefix(absPath, absBase) {
+			return fmt.Errorf("путь файла выходит за пределы директории хранения")
+		}
+	}
+
+	if _, err := os.Stat(absPath); os.IsNotExist(err) {
 		return nil
 	}
-	return os.Remove(fullPath)
+	return os.Remove(absPath)
 }

@@ -127,21 +127,21 @@ func TestLocalStorage_Delete(t *testing.T) {
 	})
 
 	t.Run("безопасность: удаление файла за пределами временной директории", func(t *testing.T) {
-		// Создаём временный файл, записываем данные, закрываем, удаляем через storage.Delete
-		tmpFile, err := os.CreateTemp("", "delete_test_*")
+		// Создаём storage с явной базовой директорией
+		restrictedStorage := NewLocalStorage().WithBaseDir(tmpDir)
+		// Создаём временный файл вне tmpDir
+		outsideFile, err := os.CreateTemp("", "delete_test_*")
 		require.NoError(t, err)
-		defer func() {
-			// На случай, если Delete не удалит, уберём сами
-			_ = os.Remove(tmpFile.Name())
-		}()
-		// Сразу закрываем, чтобы storage.Delete мог удалить
-		err = tmpFile.Close()
-		require.NoError(t, err)
+		outsideFileName := outsideFile.Name()
+		outsideFile.Close()
+		defer os.Remove(outsideFileName)
 
-		err = storage.Delete(tmpFile.Name())
-		require.NoError(t, err)
-		_, err = os.Stat(tmpFile.Name())
-		assert.True(t, os.IsNotExist(err))
+		err = restrictedStorage.Delete(outsideFileName)
+		// Должен быть отклонён — файл вне storage директории
+		assert.Error(t, err)
+		// Файл должен остаться нетронутым
+		_, err = os.Stat(outsideFileName)
+		assert.NoError(t, err, "файл не должен быть удалён")
 	})
 }
 

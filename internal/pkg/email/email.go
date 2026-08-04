@@ -24,6 +24,14 @@ const (
 	retryQueueBufferSize = 256
 )
 
+// Email status constants
+const (
+	EmailStatusPending = "pending"
+	EmailStatusSent    = "sent"
+	EmailStatusFailed  = "failed"
+	EmailStatusRetry   = "retry"
+)
+
 // EmailService представляет сервис отправки писем с использованием persistent-очереди
 // и отдельной async retry-очереди для неудавшихся отправок.
 type EmailService struct {
@@ -64,7 +72,7 @@ func (s *EmailService) Send(to, subject, body string) error {
 		Recipient: to,
 		Subject:   subject,
 		Body:      body,
-		Status:    "pending",
+		Status:    EmailStatusPending,
 	}
 
 	if err := s.db.Create(email).Error; err != nil {
@@ -126,7 +134,7 @@ func (s *EmailService) Stop() {
 // Считает письма со статусами 'pending' и 'retry'.
 func (s *EmailService) GetQueueSize(ctx context.Context) int64 {
 	var count int64
-	if err := s.db.WithContext(ctx).Model(&QueuedEmail{}).Where("status IN (?, ?)", "pending", "retry").Count(&count).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&QueuedEmail{}).Where("status IN (?, ?)", EmailStatusPending, EmailStatusRetry).Count(&count).Error; err != nil {
 		log.Error().Err(err).Msg("GetQueueSize: failed to count emails")
 		return 0
 	}
@@ -178,8 +186,8 @@ func (s *EmailService) processPendingEmails(ctx context.Context, batchSize int) 
 	var emails []QueuedEmail
 
 	if err := s.db.WithContext(ctx).
-		Where("status = ? AND (scheduled_at IS NULL OR scheduled_at <= ?)", "pending", time.Now()).
-		Order("created_at ASC").
+		Where("status IN (?, ?) AND (scheduled_at IS NULL OR scheduled_at <= ?)", EmailStatusPending, EmailStatusRetry, time.Now()).
+		Order(gorm.Expr("CASE WHEN status = ? THEN 0 ELSE 1 END, created_at ASC", EmailStatusRetry)).
 		Limit(batchSize).
 		Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 		Find(&emails).Error; err != nil {
@@ -239,10 +247,10 @@ func (s *EmailService) sendEmailWithRetry(ctx context.Context, email *QueuedEmai
 	err := SendEmail(s.cfg, email.Recipient, email.Subject, email.Body)
 	if err == nil {
 		now := time.Now()
-		email.Status = "sent"
+		email.Status = EmailStatusSent
 		email.SentAt = &now
 		if updateErr := s.db.Model(email).Updates(map[string]any{
-			"status":  "sent",
+			"status":  EmailStatusSent,
 			"sent_at": &now,
 		}).Error; updateErr != nil {
 			log.Error().Err(updateErr).Uint("email_id", email.ID).Msg("Failed to update email status to sent")
@@ -253,10 +261,10 @@ func (s *EmailService) sendEmailWithRetry(ctx context.Context, email *QueuedEmai
 
 	// Используем атомарный UPDATE с increment attempts и проверкой статуса
 	// чтобы избежать race condition между воркерами
-	result := s.db.Model(email).Where("status IN ('pending', 'retry')").
+	result := s.db.Model(email).Where("status IN (?, ?)", EmailStatusPending, EmailStatusRetry).
 		Updates(map[string]any{
 			"attempts":   gorm.Expr("attempts + 1"),
-			"status":     gorm.Expr("CASE WHEN attempts + 1 >= ? THEN 'failed' ELSE 'retry' END", defaultMaxAttempts),
+			"status":     gorm.Expr("CASE WHEN attempts + 1 >= ? THEN ? ELSE ? END", defaultMaxAttempts, EmailStatusFailed, EmailStatusRetry),
 			"last_error": err.Error(),
 		})
 	if result.Error != nil {
@@ -273,10 +281,10 @@ func (s *EmailService) sendEmailWithRetry(ctx context.Context, email *QueuedEmai
 		log.Error().Err(reloadErr).Uint("email_id", email.ID).Msg("sendEmailWithRetry: failed to reload email after update")
 		return
 	}
-	if email.Status == "retry" && email.Attempts < defaultMaxAttempts {
+	if email.Status == EmailStatusRetry && email.Attempts < defaultMaxAttempts {
 		delay := time.Duration(1<<(email.Attempts-1)) * time.Second
 		s.scheduleRetry(ctx, email.ID, email.Attempts, delay)
-	} else if email.Status == "failed" {
+	} else if email.Status == EmailStatusFailed {
 		log.Error().
 			Uint("email_id", email.ID).
 			Str("to", email.Recipient).
@@ -326,7 +334,7 @@ func (s *EmailService) processRetryJob(ctx context.Context, job retryJob) {
 	if sendErr == nil {
 		now := time.Now()
 		if updateErr := s.db.Model(&email).Updates(map[string]any{
-			"status":  "sent",
+			"status":  EmailStatusSent,
 			"sent_at": &now,
 		}).Error; updateErr != nil {
 			log.Error().Err(updateErr).Uint("email_id", email.ID).Msg("Failed to update email status to sent")
@@ -336,10 +344,10 @@ func (s *EmailService) processRetryJob(ctx context.Context, job retryJob) {
 	}
 
 	// Используем атомарный UPDATE для защиты от race condition между воркерами
-	result := s.db.Model(&email).Where("status IN ('pending', 'retry')").
+	result := s.db.Model(&email).Where("status IN (?, ?)", EmailStatusPending, EmailStatusRetry).
 		Updates(map[string]any{
 			"attempts":   gorm.Expr("attempts + 1"),
-			"status":     gorm.Expr("CASE WHEN attempts + 1 >= ? THEN 'failed' ELSE 'retry' END", defaultMaxAttempts),
+			"status":     gorm.Expr("CASE WHEN attempts + 1 >= ? THEN ? ELSE ? END", defaultMaxAttempts, EmailStatusFailed, EmailStatusRetry),
 			"last_error": sendErr.Error(),
 		})
 	if result.Error != nil {
@@ -356,7 +364,7 @@ func (s *EmailService) processRetryJob(ctx context.Context, job retryJob) {
 		log.Error().Err(reloadErr).Uint("email_id", email.ID).Msg("processRetryJob: failed to reload email after update")
 		return
 	}
-	if email.Status == "retry" {
+	if email.Status == EmailStatusRetry {
 		delay := time.Duration(1<<(email.Attempts-1)) * time.Second
 		s.scheduleRetry(ctx, email.ID, email.Attempts, delay)
 	} else {

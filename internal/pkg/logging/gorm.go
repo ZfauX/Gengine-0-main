@@ -3,6 +3,7 @@ package logging
 
 import (
 	"context"
+	"regexp"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -42,6 +43,14 @@ func (l *GormLogger) Error(_ context.Context, msg string, data ...any) {
 	}
 }
 
+// redactSensitive заменяет потенциально конфиденциальные данные в SQL-запросах
+func redactSensitive(sql string) string {
+	result := sql
+	// Заменяем email-подобные строки в кавычках
+	result = regexp.MustCompile(`'[^']*@[^']*'`).ReplaceAllString(result, "'***@***'")
+	return result
+}
+
 // Trace логирует SQL-запросы GORM.
 func (l *GormLogger) Trace(_ context.Context, begin time.Time, fc func() (sql string, rowsAffected int64), err error) {
 	if l.LogLevel <= logger.Silent {
@@ -52,7 +61,7 @@ func (l *GormLogger) Trace(_ context.Context, begin time.Time, fc func() (sql st
 	log.Debug().
 		Dur("elapsed", elapsed).
 		Int64("rows", rows).
-		Str("sql", sql).
+		Str("sql", redactSensitive(sql)).
 		Err(err).
 		Msg("GORM trace")
 }

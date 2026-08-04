@@ -85,7 +85,7 @@ func TestAuditService_List_Pagination(t *testing.T) {
 		svc.Log(userID, "action_"+strconv.Itoa(i), "test", uint(i), "details")
 	}
 
-	entries, total, err := svc.List(context.Background(), "", "", 1, 3)
+	entries, total, err := svc.List(context.Background(), "", "", "", 1, 3)
 	require.NoError(t, err)
 	assert.Equal(t, int64(10), total)
 	assert.Len(t, entries, 3)
@@ -103,7 +103,7 @@ func TestAuditService_List_FilterByUser(t *testing.T) {
 	svc.Log(userID2, "login", "user", userID2, "")
 	svc.Log(userID1, "logout", "user", userID1, "")
 
-	entries, total, err := svc.List(context.Background(), strconv.FormatUint(uint64(userID1), 10), "", 1, 10)
+	entries, total, err := svc.List(context.Background(), strconv.FormatUint(uint64(userID1), 10), "", "", 1, 10)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), total)
 	assert.Len(t, entries, 2)
@@ -122,7 +122,7 @@ func TestAuditService_List_FilterByAction(t *testing.T) {
 	svc.Log(userID, "logout", "user", userID, "")
 	svc.Log(userID, "update", "game", 1, "")
 
-	entries, total, err := svc.List(context.Background(), "", "login", 1, 10)
+	entries, total, err := svc.List(context.Background(), "", "login", "", 1, 10)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), total)
 	assert.Len(t, entries, 1)
@@ -140,7 +140,7 @@ func TestAuditService_List_CombinedFilter(t *testing.T) {
 	svc.Log(userID1, "logout", "user", userID1, "")
 	svc.Log(userID2, "login", "user", userID2, "")
 
-	entries, total, err := svc.List(context.Background(), strconv.FormatUint(uint64(userID1), 10), "login", 1, 10)
+	entries, total, err := svc.List(context.Background(), strconv.FormatUint(uint64(userID1), 10), "login", "", 1, 10)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), total)
 	assert.Len(t, entries, 1)
@@ -152,7 +152,7 @@ func TestAuditService_List_Empty(t *testing.T) {
 	db := setupAuditTestDB(t)
 	svc := audit.NewService(db)
 
-	entries, total, err := svc.List(context.Background(), "", "", 1, 10)
+	entries, total, err := svc.List(context.Background(), "", "", "", 1, 10)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), total)
 	assert.Empty(t, entries)
