@@ -70,7 +70,12 @@ type ExternalLoginRepository interface {
 type RefreshTokenRepository interface {
 	Create(ctx context.Context, token *RefreshToken) error
 	GetByTokenHash(ctx context.Context, tokenHash string) (*RefreshToken, error)
+	// GetByTokenHashIncludingRevoked ищет токен независимо от статуса revoked_at
+	// (нужен для детекции reuse отозванного токена).
+	GetByTokenHashIncludingRevoked(ctx context.Context, tokenHash string) (*RefreshToken, error)
 	Revoke(ctx context.Context, id uint) error
+	// RevokeAllByFamily отзывает всю семью refresh-токенов (при детекции кражи).
+	RevokeAllByFamily(ctx context.Context, familyID string) error
 	RevokeAllForUser(ctx context.Context, userID uint) error
 	DeleteExpired(ctx context.Context) error
 }
@@ -304,7 +309,18 @@ func (r *gormPasswordResetRepo) DeleteToken(ctx context.Context, token *Password
 	return r.db.WithContext(ctx).Delete(token).Error
 }
 func (r *gormPasswordResetRepo) MarkTokenUsed(ctx context.Context, id uint, usedAt time.Time) error {
-	return r.db.WithContext(ctx).Model(&PasswordResetToken{}).Where("id = ?", id).Update("used_at", usedAt).Error
+	// Атомарное потребление: conditional update по used_at IS NULL гарантирует,
+	// что токен можно использовать ровно один раз даже при параллельных запросах.
+	res := r.db.WithContext(ctx).Model(&PasswordResetToken{}).
+		Where("id = ? AND used_at IS NULL", id).
+		Update("used_at", usedAt)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 type gormEmailVerificationRepo struct{ db *gorm.DB }
@@ -371,6 +387,24 @@ func (r *gormRefreshTokenRepo) GetByTokenHash(ctx context.Context, tokenHash str
 		return nil, err
 	}
 	return &token, nil
+}
+
+func (r *gormRefreshTokenRepo) GetByTokenHashIncludingRevoked(ctx context.Context, tokenHash string) (*RefreshToken, error) {
+	var token RefreshToken
+	err := r.db.WithContext(ctx).
+		Where("token_hash = ?", tokenHash).
+		First(&token).Error
+	if err != nil {
+		return nil, err
+	}
+	return &token, nil
+}
+
+func (r *gormRefreshTokenRepo) RevokeAllByFamily(ctx context.Context, familyID string) error {
+	now := time.Now()
+	return r.db.WithContext(ctx).Model(&RefreshToken{}).
+		Where("family_id = ? AND revoked_at IS NULL", familyID).
+		Update("revoked_at", now).Error
 }
 
 func (r *gormRefreshTokenRepo) Revoke(ctx context.Context, id uint) error {

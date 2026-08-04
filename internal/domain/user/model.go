@@ -170,9 +170,10 @@ type PushSubscription struct {
 type RefreshToken struct {
 	ID                uint           `gorm:"primaryKey"`
 	UserID            uint           `gorm:"not null;index:idx_refresh_tokens_user"`
-	TokenHash         string         `gorm:"uniqueIndex;not null" json:"-"`   // SHA256 хеш токена
-	DeviceID          string         `gorm:"index:idx_refresh_tokens_device"` // опциональный идентификатор устройства
-	ClientFingerprint string         `gorm:"default:''" json:"-"`             // SHA256(UserAgent + IP prefix) для token binding
+	TokenHash         string         `gorm:"uniqueIndex;not null" json:"-"`                       // SHA256 хеш токена
+	FamilyID          string         `gorm:"index:idx_refresh_tokens_family;default:''" json:"-"` // семья токенов для детекции reuse
+	DeviceID          string         `gorm:"index:idx_refresh_tokens_device"`                     // опциональный идентификатор устройства
+	ClientFingerprint string         `gorm:"default:''" json:"-"`                                 // SHA256(UserAgent + IP prefix) для token binding
 	ExpiresAt         time.Time      `gorm:"not null"`
 	RevokedAt         *time.Time     `gorm:"index:idx_refresh_tokens_revoked"` // NULL, если не отозван
 	CreatedAt         time.Time      `gorm:"autoCreateTime"`

@@ -86,6 +86,21 @@ func (mr *MockUserRepositoryMockRecorder) CountByRole(ctx, role any) *gomock.Cal
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountByRole", reflect.TypeOf((*MockUserRepository)(nil).CountByRole), ctx, role)
 }
 
+// CountSearch mocks base method.
+func (m *MockUserRepository) CountSearch(ctx context.Context, query, role string) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CountSearch", ctx, query, role)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CountSearch indicates an expected call of CountSearch.
+func (mr *MockUserRepositoryMockRecorder) CountSearch(ctx, query, role any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountSearch", reflect.TypeOf((*MockUserRepository)(nil).CountSearch), ctx, query, role)
+}
+
 // Create mocks base method.
 func (m *MockUserRepository) Create(ctx context.Context, user *User) error {
 	m.ctrl.T.Helper()
@@ -217,6 +232,21 @@ func (m *MockUserRepository) ListPaginated(ctx context.Context, role string, off
 func (mr *MockUserRepositoryMockRecorder) ListPaginated(ctx, role, offset, limit any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListPaginated", reflect.TypeOf((*MockUserRepository)(nil).ListPaginated), ctx, role, offset, limit)
+}
+
+// SearchPaginated mocks base method.
+func (m *MockUserRepository) SearchPaginated(ctx context.Context, query, role string, offset, limit int) ([]User, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SearchPaginated", ctx, query, role, offset, limit)
+	ret0, _ := ret[0].([]User)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SearchPaginated indicates an expected call of SearchPaginated.
+func (mr *MockUserRepositoryMockRecorder) SearchPaginated(ctx, query, role, offset, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SearchPaginated", reflect.TypeOf((*MockUserRepository)(nil).SearchPaginated), ctx, query, role, offset, limit)
 }
 
 // Update mocks base method.
@@ -625,6 +655,21 @@ func (mr *MockRefreshTokenRepositoryMockRecorder) GetByTokenHash(ctx, tokenHash 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByTokenHash", reflect.TypeOf((*MockRefreshTokenRepository)(nil).GetByTokenHash), ctx, tokenHash)
 }
 
+// GetByTokenHashIncludingRevoked mocks base method.
+func (m *MockRefreshTokenRepository) GetByTokenHashIncludingRevoked(ctx context.Context, tokenHash string) (*RefreshToken, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetByTokenHashIncludingRevoked", ctx, tokenHash)
+	ret0, _ := ret[0].(*RefreshToken)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetByTokenHashIncludingRevoked indicates an expected call of GetByTokenHashIncludingRevoked.
+func (mr *MockRefreshTokenRepositoryMockRecorder) GetByTokenHashIncludingRevoked(ctx, tokenHash any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByTokenHashIncludingRevoked", reflect.TypeOf((*MockRefreshTokenRepository)(nil).GetByTokenHashIncludingRevoked), ctx, tokenHash)
+}
+
 // Revoke mocks base method.
 func (m *MockRefreshTokenRepository) Revoke(ctx context.Context, id uint) error {
 	m.ctrl.T.Helper()
@@ -639,6 +684,20 @@ func (mr *MockRefreshTokenRepositoryMockRecorder) Revoke(ctx, id any) *gomock.Ca
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Revoke", reflect.TypeOf((*MockRefreshTokenRepository)(nil).Revoke), ctx, id)
 }
 
+// RevokeAllByFamily mocks base method.
+func (m *MockRefreshTokenRepository) RevokeAllByFamily(ctx context.Context, familyID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RevokeAllByFamily", ctx, familyID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RevokeAllByFamily indicates an expected call of RevokeAllByFamily.
+func (mr *MockRefreshTokenRepositoryMockRecorder) RevokeAllByFamily(ctx, familyID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevokeAllByFamily", reflect.TypeOf((*MockRefreshTokenRepository)(nil).RevokeAllByFamily), ctx, familyID)
+}
+
 // RevokeAllForUser mocks base method.
 func (m *MockRefreshTokenRepository) RevokeAllForUser(ctx context.Context, userID uint) error {
 	m.ctrl.T.Helper()
@@ -651,4 +710,85 @@ func (m *MockRefreshTokenRepository) RevokeAllForUser(ctx context.Context, userI
 func (mr *MockRefreshTokenRepositoryMockRecorder) RevokeAllForUser(ctx, userID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RevokeAllForUser", reflect.TypeOf((*MockRefreshTokenRepository)(nil).RevokeAllForUser), ctx, userID)
+}
+
+// MockPushSubscriptionRepository is a mock of PushSubscriptionRepository interface.
+type MockPushSubscriptionRepository struct {
+	ctrl     *gomock.Controller
+	recorder *MockPushSubscriptionRepositoryMockRecorder
+	isgomock struct{}
+}
+
+// MockPushSubscriptionRepositoryMockRecorder is the mock recorder for MockPushSubscriptionRepository.
+type MockPushSubscriptionRepositoryMockRecorder struct {
+	mock *MockPushSubscriptionRepository
+}
+
+// NewMockPushSubscriptionRepository creates a new mock instance.
+func NewMockPushSubscriptionRepository(ctrl *gomock.Controller) *MockPushSubscriptionRepository {
+	mock := &MockPushSubscriptionRepository{ctrl: ctrl}
+	mock.recorder = &MockPushSubscriptionRepositoryMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockPushSubscriptionRepository) EXPECT() *MockPushSubscriptionRepositoryMockRecorder {
+	return m.recorder
+}
+
+// Create mocks base method.
+func (m *MockPushSubscriptionRepository) Create(ctx context.Context, sub *PushSubscription) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Create", ctx, sub)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Create indicates an expected call of Create.
+func (mr *MockPushSubscriptionRepositoryMockRecorder) Create(ctx, sub any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Create", reflect.TypeOf((*MockPushSubscriptionRepository)(nil).Create), ctx, sub)
+}
+
+// DeleteByEndpointAndUser mocks base method.
+func (m *MockPushSubscriptionRepository) DeleteByEndpointAndUser(ctx context.Context, endpoint string, userID uint) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteByEndpointAndUser", ctx, endpoint, userID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteByEndpointAndUser indicates an expected call of DeleteByEndpointAndUser.
+func (mr *MockPushSubscriptionRepositoryMockRecorder) DeleteByEndpointAndUser(ctx, endpoint, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteByEndpointAndUser", reflect.TypeOf((*MockPushSubscriptionRepository)(nil).DeleteByEndpointAndUser), ctx, endpoint, userID)
+}
+
+// FindByEndpoint mocks base method.
+func (m *MockPushSubscriptionRepository) FindByEndpoint(ctx context.Context, endpoint string) (*PushSubscription, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FindByEndpoint", ctx, endpoint)
+	ret0, _ := ret[0].(*PushSubscription)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// FindByEndpoint indicates an expected call of FindByEndpoint.
+func (mr *MockPushSubscriptionRepositoryMockRecorder) FindByEndpoint(ctx, endpoint any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindByEndpoint", reflect.TypeOf((*MockPushSubscriptionRepository)(nil).FindByEndpoint), ctx, endpoint)
+}
+
+// Update mocks base method.
+func (m *MockPushSubscriptionRepository) Update(ctx context.Context, sub *PushSubscription) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Update", ctx, sub)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Update indicates an expected call of Update.
+func (mr *MockPushSubscriptionRepositoryMockRecorder) Update(ctx, sub any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Update", reflect.TypeOf((*MockPushSubscriptionRepository)(nil).Update), ctx, sub)
 }

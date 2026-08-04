@@ -31,6 +31,26 @@ import (
 	"gorm.io/gorm"
 )
 
+// dummyPasswordHash — bcrypt-хэш случайного пароля, генерируется при старте с тем же
+// cost (12), что и реальные пароли. Используется для выравнивания времени ответа
+// при попытке входа по несуществующему email (анти-энумерация).
+var dummyPasswordHash = func() []byte {
+	h, err := bcrypt.GenerateFromPassword([]byte("dummy-password-for-timing-"+randText()), crypto.BcryptCost)
+	if err != nil {
+		return []byte("$2a$12$invalid")
+	}
+	return h
+}()
+
+// randText возвращает случайную hex-строку (для инициализации dummy-хэша).
+func randText() string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return "fallback"
+	}
+	return hex.EncodeToString(b)
+}
+
 const (
 	refreshTokenBytes           = 32
 	oauthStateBytes             = 16
@@ -101,16 +121,21 @@ func (s *AuthService) Login(ctx context.Context, emailStr, password string) (str
 	user, err := s.userRepo.GetByEmail(ctx, emailStr)
 	if err != nil {
 		if stderrors.Is(err, gorm.ErrRecordNotFound) {
-			// Dummy bcrypt to prevent timing-based email enumeration
-			bcrypt.CompareHashAndPassword([]byte("$2a$10$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW"), []byte(password)) //nolint:errcheck
+			// Dummy bcrypt to prevent timing-based email enumeration.
+			// Хэш генерируется с тем же BcryptCost (12), что и реальные пароли,
+			// иначе тайминг-атака различает «нет пользователя» и «неверный пароль» (S3).
+			bcrypt.CompareHashAndPassword(dummyPasswordHash, []byte(password)) //nolint:errcheck
 		}
 		return "", stderrors.New("неверный email или пароль")
 	}
 
-	// Проверка блокировки аккаунта
+	// Проверка блокировки аккаунта.
+	// Возвращаем ТОТ ЖЕ generic-ответ, что и для неверного пароля/несуществующего
+	// email — иначе по сообщению «аккаунт заблокирован» атакующий узнаёт о
+	// существовании аккаунта (oracle) (B2). Реальная причина логируется для ops.
 	if user.LockedUntil != nil && time.Now().Before(*user.LockedUntil) {
-		remaining := time.Until(*user.LockedUntil).Truncate(time.Second)
-		return "", fmt.Errorf("аккаунт заблокирован до %s (осталось %s)", user.LockedUntil.Format("15:04:05"), remaining)
+		log.Debug().Uint("user_id", user.ID).Time("locked_until", *user.LockedUntil).Msg("Login: account is locked")
+		return "", stderrors.New("неверный email или пароль")
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
@@ -131,7 +156,8 @@ func (s *AuthService) Login(ctx context.Context, emailStr, password string) (str
 				log.Error().Err(err).Uint("user_id", user.ID).Msg("Login: failed to lock account")
 				return "", stderrors.New("внутренняя ошибка сервера")
 			}
-			return "", fmt.Errorf("аккаунт заблокирован на 30 минут (превышено 5 неудачных попыток)")
+			// Generic-ответ: не раскрываем существование аккаунта (B2).
+			return "", stderrors.New("неверный email или пароль")
 		}
 		return "", stderrors.New("неверный email или пароль")
 	}
@@ -149,6 +175,12 @@ func (s *AuthService) GenerateJWT(user User) (string, error) {
 }
 
 func (s *AuthService) GenerateRefreshToken(ctx context.Context, user User, deviceID, clientFingerprint string) (string, error) {
+	return s.generateRefreshToken(ctx, user, deviceID, clientFingerprint, "")
+}
+
+// generateRefreshToken создаёт refresh-токен. Если familyID пуст — генерируется
+// новая семья (новый вход). Иначе токен относится к той же семье (ротация).
+func (s *AuthService) generateRefreshToken(ctx context.Context, user User, deviceID, clientFingerprint, familyID string) (string, error) {
 	b := make([]byte, refreshTokenBytes)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
@@ -157,9 +189,18 @@ func (s *AuthService) GenerateRefreshToken(ctx context.Context, user User, devic
 	hash := sha256.Sum256([]byte(token))
 	tokenHash := hex.EncodeToString(hash[:])
 
+	if familyID == "" {
+		fam := make([]byte, 16)
+		if _, err := rand.Read(fam); err != nil {
+			return "", err
+		}
+		familyID = hex.EncodeToString(fam)
+	}
+
 	refreshToken := &RefreshToken{
 		UserID:            user.ID,
 		TokenHash:         tokenHash,
+		FamilyID:          familyID,
 		DeviceID:          deviceID,
 		ClientFingerprint: clientFingerprint,
 		ExpiresAt:         time.Now().Add(s.cfg.JWT.RefreshExpiry),
@@ -195,6 +236,16 @@ func (s *AuthService) RefreshAccessToken(ctx context.Context, refreshTokenStr, d
 
 	stored, err := s.refreshTokenRepo.GetByTokenHash(ctx, tokenHash)
 	if err != nil {
+		// Токен не найден среди активных. Если он существует, но уже отозван —
+		// это reuse (повторное использование) отозванного токена = признак кражи.
+		revoked, rErr := s.refreshTokenRepo.GetByTokenHashIncludingRevoked(ctx, tokenHash)
+		if rErr == nil && revoked != nil && revoked.RevokedAt != nil && revoked.FamilyID != "" {
+			if famErr := s.refreshTokenRepo.RevokeAllByFamily(ctx, revoked.FamilyID); famErr != nil {
+				log.Error().Err(famErr).Uint("user_id", revoked.UserID).Str("family_id", revoked.FamilyID).Msg("RefreshAccessToken: family revoke failed")
+			}
+			log.Warn().Uint("user_id", revoked.UserID).Str("family_id", revoked.FamilyID).Msg("RefreshAccessToken: refresh token reuse detected — family revoked")
+			return "", "", stderrors.New("refresh-токен уже использован — все сессии отозваны")
+		}
 		return "", "", stderrors.New("невалидный или отозванный refresh-токен")
 	}
 	if stored.ExpiresAt.Before(time.Now()) {
@@ -221,8 +272,8 @@ func (s *AuthService) RefreshAccessToken(ctx context.Context, refreshTokenStr, d
 		return "", "", err
 	}
 
-	// Generate new refresh token with same fingerprint binding
-	newRefreshToken, err := s.GenerateRefreshToken(ctx, *user, deviceID, stored.ClientFingerprint)
+	// Generate new refresh token with same fingerprint binding and SAME family
+	newRefreshToken, err := s.generateRefreshToken(ctx, *user, deviceID, stored.ClientFingerprint, stored.FamilyID)
 	if err != nil {
 		return "", "", err
 	}
@@ -259,6 +310,19 @@ func (s *AuthService) ParseToken(tokenStr string) (uint, string, error) {
 		if time.Now().Unix() < int64(iat) {
 			return 0, "", stderrors.New("неверная дата выдачи токена")
 		}
+	}
+
+	// Проверяем issuer/audience — токены, выпущенные другим сервисом/окружением,
+	// не принимаем даже при совпадении секрета (S1).
+	expectedIssuer := s.cfg.Server.BaseURL
+	if expectedIssuer == "" {
+		expectedIssuer = "gengine"
+	}
+	if iss, ok := claims["iss"].(string); !ok || iss != expectedIssuer {
+		return 0, "", stderrors.New("неверный issuer токена")
+	}
+	if aud, ok := claims["aud"].(string); !ok || aud != expectedIssuer {
+		return 0, "", stderrors.New("неверный audience токена")
 	}
 
 	// JTI blacklist check: если токен был отозван (logout, password change), отклоняем его
@@ -347,12 +411,21 @@ func (s *AuthService) generateJWT(user User) (string, error) {
 		return "", fmt.Errorf("jti generation failed: %w", err)
 	}
 
+	// Issuer/audience: защита от приёма токенов, выпущенных другим сервисом
+	// или для другого окружения, подписанных тем же секретом (S1).
+	issuer := s.cfg.Server.BaseURL
+	if issuer == "" {
+		issuer = "gengine"
+	}
+
 	now := time.Now()
 	claims := jwt.MapClaims{
 		"user_id": user.ID,
 		"email":   user.Email,
 		"role":    user.Role,
 		"jti":     hex.EncodeToString(jti),
+		"iss":     issuer,
+		"aud":     issuer,
 		"exp":     now.Add(s.cfg.JWT.AccessExpiry).Unix(),
 		"iat":     now.Unix(),
 		"nbf":     now.Unix(),
@@ -732,10 +805,16 @@ func (s *PasswordResetService) ResetPassword(ctx context.Context, resetCode, new
 		return err
 	}
 	now := time.Now()
-	if err := s.userRepo.Update(ctx, token.UserID, map[string]any{"password": string(hashed)}); err != nil {
+
+	// Сначала потребляем токен (атомарно, WHERE used_at IS NULL) — при сбое
+	// между шагами токен уже мёртв, а не остаётся живым после смены пароля (B5).
+	if err := s.passResetRepo.MarkTokenUsed(ctx, token.ID, now); err != nil {
+		if stderrors.Is(err, gorm.ErrRecordNotFound) {
+			return stderrors.New("токен уже использован")
+		}
 		return err
 	}
-	if err := s.passResetRepo.MarkTokenUsed(ctx, token.ID, now); err != nil {
+	if err := s.userRepo.Update(ctx, token.UserID, map[string]any{"password": string(hashed)}); err != nil {
 		return err
 	}
 	return s.passResetRepo.DeleteToken(ctx, token)
