@@ -1,16 +1,16 @@
 {{define "simulate-results.html"}}
 <div class="max-w-4xl mx-auto">
-    <h1 class="page-title">Результаты симуляции</h1>
+    <h1 class="page-title">{{ T $.Lang "simulate.title" }}</h1>
 
     <!-- Общая статистика -->
     <div class="card mb-6">
         <div class="flex flex-wrap items-center gap-6">
             <div>
-                <p class="text-sm text-gray-500 dark:text-gray-400">Общее время</p>
+                <p class="text-sm text-gray-500 dark:text-gray-400">{{ T $.Lang "simulate.total_time" }}</p>
                 <p class="text-2xl font-bold text-blue-600 dark:text-blue-400">{{.Result.TotalTime}}</p>
             </div>
             <div>
-                <p class="text-sm text-gray-500 dark:text-gray-400">Пройдено уровней</p>
+                <p class="text-sm text-gray-500 dark:text-gray-400">{{ T $.Lang "simulate.levels_passed" }}</p>
                 <p class="text-2xl font-bold text-green-600">{{.Result.LevelsPassed}}</p>
             </div>
         </div>
@@ -18,15 +18,15 @@
 
     <!-- Хронология -->
     <div class="card">
-        <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4">Хронология прохождения</h3>
+        <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4">{{ T $.Lang "simulate.timeline" }}</h3>
         <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50 dark:bg-gray-800">
                     <tr>
-                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Уровень</th>
-                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Код</th>
-                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Время от старта</th>
-                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Статус</th>
+                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">{{ T $.Lang "simulate.table_level" }}</th>
+                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">{{ T $.Lang "simulate.table_code" }}</th>
+                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">{{ T $.Lang "simulate.table_time" }}</th>
+                        <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">{{ T $.Lang "simulate.table_status" }}</th>
                     </tr>
                 </thead>
                 <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200">
@@ -37,9 +37,9 @@
                         <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">{{.Duration}}</td>
                         <td class="px-4 py-3 text-sm">
                             {{if .Success}}
-                            <span class="inline-flex items-center gap-1 text-green-600 font-medium">✅ Успешно</span>
+                            <span class="inline-flex items-center gap-1 text-green-600 font-medium">{{ T $.Lang "simulate.status_success" }}</span>
                             {{else}}
-                            <span class="inline-flex items-center gap-1 text-red-600 font-medium">❌ Ошибка</span>
+                            <span class="inline-flex items-center gap-1 text-red-600 font-medium">{{ T $.Lang "simulate.status_error" }}</span>
                             {{end}}
                         </td>
                     </tr>
@@ -50,7 +50,7 @@
     </div>
 
     <div class="mt-6">
-        <a href="/games/{{.GameID}}" class="btn btn-outline text-sm">← Назад к игре</a>
+        <a href="/games/{{.GameID}}" class="btn btn-outline text-sm">{{ T $.Lang "simulate.back_to_game" }}</a>
     </div>
 </div>
 {{end}}

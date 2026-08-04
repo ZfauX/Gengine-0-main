@@ -27,8 +27,8 @@ func TestAllowedSortFields(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.field, func(t *testing.T) {
-			_, ok := allowedSortFields[tt.field]
-			assert.Equal(t, tt.allowed, ok, "allowedSortFields[%s] should be %v", tt.field, tt.allowed)
+			_, ok := AllowedSortFields[tt.field]
+			assert.Equal(t, tt.allowed, ok, "AllowedSortFields[%s] should be %v", tt.field, tt.allowed)
 		})
 	}
 }

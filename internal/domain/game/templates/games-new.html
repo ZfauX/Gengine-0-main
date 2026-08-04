@@ -1,6 +1,6 @@
 {{define "games-new.html"}}
 <div class="max-w-3xl mx-auto">
-    <h1 class="page-title">Новая игра</h1>
+    <h1 class="page-title">{{ T $.Lang "game.new_title" }}</h1>
 
     {{if .Error}}
     <div class="flash flash-error">{{.Error}}</div>
@@ -11,24 +11,24 @@
 
         <!-- Название -->
         <div>
-            <label for="name" class="form-label">Название</label>
+            <label for="name" class="form-label">{{ T $.Lang "common.name" }}</label>
             <input type="text" name="name" id="name" required
                    class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.name}}border-red-500{{end}}">
-            <p class="field-error">{{.Errors.name}}</p>
+            {{if .Errors.name}}<p class="field-error">{{.Errors.name}}</p>{{end}}
         </div>
 
         <!-- Описание -->
         <div>
-            <label for="description" class="form-label">Описание</label>
+            <label for="description" class="form-label">{{ T $.Lang "common.description" }}</label>
             <textarea name="description" id="description" rows="4"
                       class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.description}}border-red-500{{end}}"></textarea>
-            <p class="field-error">{{.Errors.description}}</p>
+            {{if .Errors.description}}<p class="field-error">{{.Errors.description}}</p>{{end}}
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <!-- Дата и время начала -->
             <div>
-                <label for="starts_at" class="form-label">Дата и время начала</label>
+                <label for="starts_at" class="form-label">{{ T $.Lang "common.start_date" }}</label>
                 <input type="datetime-local" name="starts_at" id="starts_at"
                        class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.starts_at}}border-red-500{{end}}">
                 <p class="field-error">{{.Errors.starts_at}}</p>
@@ -36,7 +36,7 @@
 
             <!-- Крайний срок регистрации -->
             <div>
-                <label for="registration_deadline" class="form-label">Крайний срок регистрации</label>
+                <label for="registration_deadline" class="form-label">{{ T $.Lang "game.new_reg_deadline_label" }}</label>
                 <input type="datetime-local" name="registration_deadline" id="registration_deadline"
                        class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.registration_deadline}}border-red-500{{end}}">
                 <p class="field-error">{{.Errors.registration_deadline}}</p>
@@ -46,7 +46,7 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <!-- Максимальное количество команд -->
             <div>
-                <label for="max_team_number" class="form-label">Максимальное количество команд</label>
+                <label for="max_team_number" class="form-label">{{ T $.Lang "game.new_max_teams_label" }}</label>
                 <input type="number" name="max_team_number" id="max_team_number" value="10" min="1"
                        class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.max_team_number}}border-red-500{{end}}">
                 <p class="field-error">{{.Errors.max_team_number}}</p>
@@ -54,12 +54,12 @@
 
             <!-- Видимость -->
             <div>
-                <label for="visibility" class="form-label">Видимость</label>
+                <label for="visibility" class="form-label">{{ T $.Lang "game.new_visibility_label" }}</label>
                 <select name="visibility" id="visibility"
                         class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.visibility}}border-red-500{{end}}">
-                    <option value="public">Публичная</option>
-                    <option value="private">Приватная</option>
-                    <option value="unlisted">Скрытая</option>
+                    <option value="public">{{ T $.Lang "game.new_visibility_public" }}</option>
+                    <option value="private">{{ T $.Lang "game.new_visibility_private" }}</option>
+                    <option value="unlisted">{{ T $.Lang "game.show_unlisted" }}</option>
                 </select>
                 <p class="field-error">{{.Errors.visibility}}</p>
             </div>
@@ -67,19 +67,19 @@
 
         <!-- Обложка -->
         <div>
-            <label for="cover" class="form-label">Обложка игры (опционально)</label>
+            <label for="cover" class="form-label">{{ T $.Lang "game.edit_cover_label" }}</label>
             <div id="coverDropZone" class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:border-blue-500 transition cursor-pointer">
                 <input type="file" name="cover" id="cover" accept="image/jpeg,image/png,image/webp" class="hidden">
                 <div id="coverPlaceholder">
                     <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
                         <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
                     </svg>
-                    <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">Перетащите изображение сюда или <span class="text-blue-600 dark:text-blue-400 hover:underline">выберите файл</span></p>
-                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">JPG, PNG или WebP (макс. 5MB)</p>
+                    <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">{{ T $.Lang "game.new_cover_drop" }}</p>
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ T $.Lang "game.new_cover_format" }}</p>
                 </div>
                 <div id="coverPreview" class="hidden">
                     <img id="coverImg" class="mx-auto max-h-48 rounded-lg" alt="Preview">
-                    <p class="mt-2 text-sm text-green-600">✓ Файл выбран</p>
+                    <p class="mt-2 text-sm text-green-600">{{ T $.Lang "game.new_cover_selected" }}</p>
                 </div>
             </div>
         </div>
@@ -88,13 +88,13 @@
         <label class="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" name="is_draft" id="is_draft" value="true" checked
                    class="w-4 h-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500">
-            <span class="text-sm text-gray-700 dark:text-gray-300">Сохранить как черновик</span>
+            <span class="text-sm text-gray-700 dark:text-gray-300">{{ T $.Lang "game.new_draft_desc" }}</span>
         </label>
 
         <!-- Кнопки -->
         <div class="flex flex-wrap gap-3 pt-2">
-            <button type="submit" class="btn btn-primary text-sm">Создать</button>
-            <a href="/games" class="btn btn-outline text-sm">Отмена</a>
+            <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "common.create" }}</button>
+            <a href="/games" class="btn btn-outline text-sm">{{ T $.Lang "common.cancel" }}</a>
         </div>
     </form>
 </div>
@@ -153,13 +153,13 @@
             // Проверка типа файла
             const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
             if (validTypes.indexOf(file.type) === -1) {
-                showToast('Неподдерживаемый формат файла. Используйте JPG, PNG или WebP.', 'error');
+                showToast('{{ T $.Lang "game.new_unsupported_format" }}', 'error');
                 return;
             }
 
             // Проверка размера (5MB)
             if (file.size > 5 * 1024 * 1024) {
-                showToast('Файл слишком большой. Максимум 5MB.', 'error');
+                showToast('{{ T $.Lang "game.new_file_too_large" }}', 'error');
                 return;
             }
 

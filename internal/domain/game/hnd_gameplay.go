@@ -4,6 +4,7 @@ package game
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -65,14 +66,14 @@ func NewGameplayHandler(
 // @Param passing_id path int true "ID прохождения"
 // @Success 200 {string} html "Страница прохождения"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
-// @Failure 404 {object} map[string]interface{} "Прохождение не найдено"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 404 {object} map[string]interface{} render.Tr(c, "handler.passing_not_found")
 // @Router /game/{passing_id} [get]
 // @Security JWT
 func (h *GameplayHandler) ShowGame(c *gin.Context) {
 	passingID, err := strconv.Atoi(c.Param("passing_id"))
 	if err != nil || passingID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID прохождения")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_passing_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -80,7 +81,7 @@ func (h *GameplayHandler) ShowGame(c *gin.Context) {
 	// Получаем все данные через сервис
 	data, err := h.gamePlaySvc.GetGameplayData(c.Request.Context(), uint(passingID))
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, ErrGameNotActive) {
 			gameID, _ := strconv.Atoi(c.Query("game_id"))
 			render.Page(c, http.StatusOK, "gameplay-finished.html", gin.H{
 				"PassingID": passingID,
@@ -115,6 +116,7 @@ func (h *GameplayHandler) ShowGame(c *gin.Context) {
 		"GameID":           data.Passing.GameID,
 		"Error":            flashError,
 		"Hint":             flashHint,
+		"IncludeLeaflet":   true,
 		"csrf":             csrf.GetToken(c),
 	})
 }
@@ -160,16 +162,16 @@ func (h *GameplayHandler) renderGameplayError(c *gin.Context, passingID uint, er
 // @Param passing_id path int true "ID прохождения"
 // @Param code formData string true "Код ответа"
 // @Success 302 {string} string "Перенаправление на страницу прохождения"
-// @Failure 400 {object} map[string]interface{} "Неверный код"
+// @Failure 400 {object} map[string]interface{} render.Tr(c, "handler.invalid_code")
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Failure 429 {object} map[string]interface{} "Слишком много попыток"
 // @Router /game/{passing_id}/submit [post]
 // @Security JWT
 func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 	passingID, parseErr := strconv.Atoi(c.Param("passing_id"))
 	if parseErr != nil || passingID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID прохождения")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_passing_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -179,7 +181,7 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 		return
 	}
 
-	if limitErr := limitRequestBody(c, codeSubmitMaxBodySize); limitErr != nil {
+	if limitErr := LimitRequestBody(c, codeSubmitMaxBodySize); limitErr != nil {
 		h.renderGameplayError(c, uint(passingID), limitErr.Error())
 		return
 	}
@@ -219,14 +221,14 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 			c.Redirect(http.StatusFound, "/game/"+c.Param("passing_id")+"/finished")
 			return
 		}
-		h.renderGameplayError(c, uint(passingID), submitErr.Error())
+		h.renderGameplayError(c, uint(passingID), render.LocalizeError(c, submitErr.Error()))
 		return
 	}
 
 	if attempt.Attempt.Success {
 		c.Redirect(http.StatusFound, "/game/"+c.Param("passing_id"))
 	} else {
-		render.SetFlash(c, "gameplay_error", "Неверный код")
+		render.SetFlash(c, "gameplay_error", render.Tr(c, "handler.invalid_code"))
 		c.Redirect(http.StatusFound, "/game/"+c.Param("passing_id"))
 	}
 }
@@ -239,17 +241,22 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на страницу прохождения"
 // @Failure 400 {object} map[string]interface{} "Ошибка"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /game/{passing_id}/hint [post]
 // @Security JWT
 func (h *GameplayHandler) UseHint(c *gin.Context) {
 	passingID, parseErr := strconv.Atoi(c.Param("passing_id"))
 	if parseErr != nil || passingID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID прохождения")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_passing_id"))
 		return
 	}
 	hintText, hintErr := h.gamePlaySvc.UseHint(c.Request.Context(), uint(passingID), c.GetUint("userID"))
 	if hintErr != nil {
+		// Машинно-читаемый код для клиента (UX16): клиент не должен определять
+		// тип ошибки по локализованному тексту.
+		if errors.Is(hintErr, ErrHintLimitReached) {
+			c.Header("X-Error-Code", "hint_limit")
+		}
 		h.renderGameplayError(c, uint(passingID), hintErr.Error())
 		return
 	}
@@ -269,13 +276,13 @@ func (h *GameplayHandler) UseHint(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на страницу прохождения"
 // @Failure 400 {object} map[string]interface{} "Ошибка"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /game/{passing_id}/file [post]
 // @Security JWT
 func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 	passingID, parseErr := strconv.Atoi(c.Param("passing_id"))
 	if parseErr != nil || passingID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID прохождения")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_passing_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -285,14 +292,14 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 		return
 	}
 
-	if limitErr := limitRequestBody(c, answerFileMaxSize); limitErr != nil {
+	if limitErr := LimitRequestBody(c, answerFileMaxSize); limitErr != nil {
 		h.renderGameplayError(c, uint(passingID), limitErr.Error())
 		return
 	}
 
 	file, header, formErr := c.Request.FormFile("answer_file")
 	if formErr != nil {
-		h.renderGameplayError(c, uint(passingID), "Файл не выбран")
+		h.renderGameplayError(c, uint(passingID), render.Tr(c, "handler.file_not_selected"))
 		return
 	}
 	defer func() {
@@ -302,7 +309,7 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 	}()
 
 	if header.Size > answerFileMaxSize {
-		h.renderGameplayError(c, uint(passingID), "Размер файла не должен превышать 10 МБ")
+		h.renderGameplayError(c, uint(passingID), render.Tr(c, "handler.file_too_large"))
 		return
 	}
 
@@ -312,7 +319,7 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 	webPath, saveErr := h.storage.Save("uploads/answers", file, header.Filename, userID, answerFileMaxSize, allowedTypes)
 	if saveErr != nil {
 		log.Error().Err(saveErr).Str("filename", filepath.Base(header.Filename)).Msg("SubmitFile: failed to save file")
-		h.renderGameplayError(c, uint(passingID), "Ошибка сохранения файла")
+		h.renderGameplayError(c, uint(passingID), render.Tr(c, "handler.file_save_error"))
 		return
 	}
 
@@ -322,7 +329,7 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 		if delErr := h.storage.Delete(webPath); delErr != nil {
 			log.Error().Err(delErr).Str("path", webPath).Msg("SubmitFile: failed to delete uploaded file")
 		}
-		h.renderGameplayError(c, uint(passingID), "Не удалось сохранить попытку")
+		h.renderGameplayError(c, uint(passingID), render.Tr(c, "handler.attempt_save_error"))
 		return
 	}
 	c.Redirect(http.StatusFound, "/game/"+c.Param("passing_id"))
@@ -335,20 +342,30 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 // @Param passing_id path int true "ID прохождения"
 // @Success 302 {string} string "Перенаправление на страницу прохождения"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /game/{passing_id}/accept [post]
 // @Security JWT
 func (h *GameplayHandler) AcceptAnswer(c *gin.Context) {
 	passingID, parseErr := strconv.Atoi(c.Param("passing_id"))
 	if parseErr != nil || passingID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID прохождения")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_passing_id"))
 		return
 	}
-	if acceptErr := h.gamePlaySvc.AcceptBlackboxAnswer(c.Request.Context(), uint(passingID), c.GetUint("userID")); acceptErr != nil {
-		render.RenderError(c, http.StatusForbidden, acceptErr.Error())
+	userID := c.GetUint("userID")
+	if !h.isUserInPassing(c.Request.Context(), uint(passingID), userID) {
+		render.RenderErrorPage(c, http.StatusForbidden)
 		return
 	}
-	c.Redirect(http.StatusFound, "/games/"+c.Query("game_id")+"/monitor")
+	if acceptErr := h.gamePlaySvc.AcceptBlackboxAnswer(c.Request.Context(), uint(passingID), userID); acceptErr != nil {
+		render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, acceptErr.Error()))
+		return
+	}
+	gameID, err := strconv.Atoi(c.Query("game_id"))
+	if err != nil || gameID <= 0 {
+		render.RenderErrorPage(c, http.StatusBadRequest)
+		return
+	}
+	c.Redirect(http.StatusFound, fmt.Sprintf("/games/%d/monitor", gameID))
 }
 
 // ---------- Тестовое прохождение ----------
@@ -361,20 +378,20 @@ func (h *GameplayHandler) AcceptAnswer(c *gin.Context) {
 // @Param id path int true "ID игры"
 // @Success 302 {string} string "Перенаправление на страницу тестового прохождения"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/testing/start [get]
 // @Security JWT
 func (h *GameplayHandler) StartTesting(c *gin.Context) {
 	gameID, parseErr := strconv.Atoi(c.Param("id"))
 	if parseErr != nil || gameID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
 		return
 	}
 	userID := c.GetUint("userID")
 
 	passing, startErr := h.gamePlaySvc.StartTesting(c.Request.Context(), uint(gameID), userID)
 	if startErr != nil {
-		render.RenderError(c, http.StatusForbidden, startErr.Error())
+		render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, startErr.Error()))
 		return
 	}
 	c.Redirect(http.StatusFound, "/testing/"+strconv.Itoa(int(passing.ID)))
@@ -388,14 +405,14 @@ func (h *GameplayHandler) StartTesting(c *gin.Context) {
 // @Param passing_id path int true "ID прохождения"
 // @Success 200 {string} html "Страница тестового прохождения"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
-// @Failure 404 {object} map[string]interface{} "Прохождение не найдено"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 404 {object} map[string]interface{} render.Tr(c, "handler.passing_not_found")
 // @Router /testing/{passing_id} [get]
 // @Security JWT
 func (h *GameplayHandler) ShowTestGame(c *gin.Context) {
 	passingID, parseErr := strconv.Atoi(c.Param("passing_id"))
 	if parseErr != nil || passingID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID прохождения")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_passing_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -415,7 +432,7 @@ func (h *GameplayHandler) ShowTestGame(c *gin.Context) {
 		return
 	}
 
-	// Проверяем права через gameService
+	// Проверяем права через gameService (passing + game загружены через JOIN)
 	passing, passingErr := h.gamePlaySvc.GetPassingWithGame(c.Request.Context(), uint(passingID))
 	if passingErr != nil {
 		if errors.Is(passingErr, gorm.ErrRecordNotFound) {
@@ -426,23 +443,18 @@ func (h *GameplayHandler) ShowTestGame(c *gin.Context) {
 		}
 		return
 	}
-	g, gameErr := h.gameService.GetByID(c.Request.Context(), passing.GameID, userID)
-	if gameErr != nil {
-		log.Error().Err(gameErr).Uint("game_id", passing.GameID).Msg("ShowTestGame: failed to get game")
-		render.RenderErrorPage(c, http.StatusInternalServerError)
-		return
-	}
-	ok, permErr := h.gameService.IsUserManager(c.Request.Context(), g.ID, userID)
+	ok, permErr := h.gameService.IsUserManager(c.Request.Context(), passing.GameID, userID)
 	if permErr != nil || !ok {
-		render.RenderError(c, http.StatusForbidden, "Доступ запрещён")
+		render.RenderError(c, http.StatusForbidden, render.Tr(c, "handler.forbidden"))
 		return
 	}
 
 	render.Page(c, http.StatusOK, "gameplay-test.html", gin.H{
-		"PassingID": passingID,
-		"GameID":    passing.GameID,
-		"Level":     progress.Level,
-		"csrf":      csrf.GetToken(c),
+		"PassingID":      passingID,
+		"GameID":         passing.GameID,
+		"Level":          progress.Level,
+		"IncludeLeaflet": true,
+		"csrf":           csrf.GetToken(c),
 	})
 }
 
@@ -453,22 +465,22 @@ func (h *GameplayHandler) ShowTestGame(c *gin.Context) {
 // @Param passing_id path int true "ID прохождения"
 // @Param code formData string true "Код ответа"
 // @Success 302 {string} string "Перенаправление на страницу тестового прохождения"
-// @Failure 400 {object} map[string]interface{} "Неверный код"
+// @Failure 400 {object} map[string]interface{} render.Tr(c, "handler.invalid_code")
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Failure 429 {object} map[string]interface{} "Слишком много попыток"
 // @Router /testing/{passing_id}/submit [post]
 // @Security JWT
 func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
 	passingID, parseErr := strconv.Atoi(c.Param("passing_id"))
 	if parseErr != nil || passingID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID прохождения")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_passing_id"))
 		return
 	}
 
 	userID := c.GetUint("userID")
 
-	// Проверяем права: пользователь должен быть автором или соавтором игры
+	// Проверяем права: пользователь должен быть автором или соавтором игры (passing + game через JOIN)
 	passing, passingErr := h.gamePlaySvc.GetPassingWithGame(c.Request.Context(), uint(passingID))
 	if passingErr != nil {
 		if errors.Is(passingErr, gorm.ErrRecordNotFound) {
@@ -479,19 +491,13 @@ func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
 		}
 		return
 	}
-	g, gameErr := h.gameService.GetByID(c.Request.Context(), passing.GameID, userID)
-	if gameErr != nil {
-		log.Error().Err(gameErr).Uint("game_id", passing.GameID).Msg("SubmitTestCode: failed to get game")
-		render.RenderErrorPage(c, http.StatusInternalServerError)
-		return
-	}
-	ok, permErr := h.gameService.IsUserManager(c.Request.Context(), g.ID, userID)
+	ok, permErr := h.gameService.IsUserManager(c.Request.Context(), passing.GameID, userID)
 	if permErr != nil || !ok {
-		render.RenderError(c, http.StatusForbidden, "Доступ запрещён")
+		render.RenderError(c, http.StatusForbidden, render.Tr(c, "handler.forbidden"))
 		return
 	}
 
-	if limitErr := limitRequestBody(c, codeSubmitMaxBodySize); limitErr != nil {
+	if limitErr := LimitRequestBody(c, codeSubmitMaxBodySize); limitErr != nil {
 		render.Page(c, http.StatusBadRequest, "gameplay-test.html", gin.H{
 			"Error": limitErr.Error(),
 			"csrf":  csrf.GetToken(c),
@@ -540,17 +546,17 @@ func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
 // @Param passing_id path int true "ID прохождения"
 // @Success 302 {string} string "Перенаправление на страницу тестового прохождения"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /testing/{passing_id}/skip [post]
 // @Security JWT
 func (h *GameplayHandler) SkipTestLevel(c *gin.Context) {
 	passingID, parseErr := strconv.Atoi(c.Param("passing_id"))
 	if parseErr != nil || passingID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID прохождения")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_passing_id"))
 		return
 	}
 	if skipErr := h.gamePlaySvc.SkipLevelTest(c.Request.Context(), uint(passingID), c.GetUint("userID")); skipErr != nil {
-		render.RenderError(c, http.StatusForbidden, skipErr.Error())
+		render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, skipErr.Error()))
 		return
 	}
 	c.Redirect(http.StatusFound, "/testing/"+c.Param("passing_id"))

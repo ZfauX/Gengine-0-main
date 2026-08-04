@@ -1,6 +1,6 @@
 {{define "games-photos.html"}}
 <div class="max-w-7xl mx-auto">
-    <h1 class="page-title">Фотогалерея игры</h1>
+    <h1 class="page-title">{{ T $.Lang "photos.title" }}</h1>
 
     <meta name="csrf-token" content="{{.csrf}}">
 
@@ -9,11 +9,11 @@
         <form id="upload-photo-form" enctype="multipart/form-data" class="flex flex-wrap items-center gap-3">
             <input type="file" name="photo" accept="image/jpeg,image/png,image/webp" required
                    class="flex-1 text-sm text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
-            <button type="submit" id="upload-btn" class="btn btn-primary text-sm whitespace-nowrap">Загрузить фото</button>
+            <button type="submit" id="upload-btn" class="btn btn-primary text-sm whitespace-nowrap">{{ T $.Lang "photos.upload_button" }}</button>
         </form>
         <div id="upload-progress" class="mt-3 hidden">
             <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                <div id="upload-progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-150" style="width:0%"></div>
+                <div id="upload-progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-150"></div>
             </div>
             <p id="upload-progress-text" class="text-xs text-gray-500 dark:text-gray-400 mt-1"></p>
         </div>
@@ -25,7 +25,7 @@
     <div id="photos-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {{range .Photos}}
         <div class="photo-card bg-white dark:bg-gray-800 rounded-lg overflow-hidden shadow-sm border border-gray-200 dark:border-gray-700 transition hover:shadow-md" data-photo-id="{{.ID}}">
-            <img src="{{.Path}}" alt="Фото" loading="lazy" class="w-full h-48 object-cover cursor-pointer photo-thumb transition-opacity duration-300 opacity-0"
+            <img src="{{.Path}}" alt="Photo" loading="lazy" class="w-full h-48 object-cover cursor-pointer photo-thumb transition-opacity duration-300 opacity-0"
                  data-path="{{.Path}}"
                  data-user="{{.User.Name}}"
                  data-date="{{.CreatedAt.Format "2006-01-02 15:04:05"}}"
@@ -34,10 +34,10 @@
                 <p class="font-semibold text-gray-800 dark:text-gray-100 text-sm">{{.User.Name}}</p>
                 <p class="text-xs text-gray-500 dark:text-gray-400">{{.CreatedAt.Format "02.01.2006 15:04"}}</p>
                 {{if .Level}}
-                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Уровень: {{.Level.Name}}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ TF $.Lang "photos.level_label" .Level.Name }}</p>
                 {{end}}
                 {{if or (eq .UserID $.CurrentUserID) $.IsManager}}
-                <button class="delete-photo-btn btn btn-danger text-xs mt-2 px-3 py-1" data-photo-id="{{.ID}}">Удалить</button>
+                <button class="delete-photo-btn btn btn-danger text-xs mt-2 px-3 py-1" data-photo-id="{{.ID}}">{{ T $.Lang "photos.delete" }}</button>
                 {{end}}
             </div>
         </div>
@@ -45,14 +45,14 @@
     </div>
     {{else}}
     <div class="card text-center py-12">
-        <p class="text-gray-500 dark:text-gray-400">Фотографий пока нет.</p>
+        <p class="text-gray-500 dark:text-gray-400">{{ T $.Lang "photos.no_photos" }}</p>
     </div>
     {{end}}
 
     <!-- Модальное окно для просмотра фото -->
     <div id="photo-modal" class="fixed inset-0 z-50 hidden bg-black/90 flex items-center justify-center">
         <span class="absolute top-4 right-6 text-white text-4xl font-bold cursor-pointer hover:text-gray-300 transition">×</span>
-        <img id="modal-image" src="" alt="Фото" class="max-w-[90%] max-h-[80%] object-contain">
+        <img id="modal-image" src="" alt="Photo" class="max-w-[90%] max-h-[80%] object-contain">
         <div id="modal-caption" class="absolute bottom-8 left-0 right-0 text-center text-white text-sm px-4"></div>
     </div>
 </div>
@@ -106,7 +106,8 @@
                 if (e.lengthComputable) {
                     const pct = Math.round((e.loaded / e.total) * 100);
                     uploadProgressBar.style.width = pct + '%';
-                    uploadProgressText.textContent = `Загрузка: ${pct}% (${formatBytes(e.loaded)} / ${formatBytes(e.total)})`;
+                    const progressStr = '{{ T $.Lang "photos.upload_progress" }}'.replace('%d%%', pct + '%').replace('%s', formatBytes(e.loaded)).replace('%s', formatBytes(e.total));
+                    uploadProgressText.textContent = progressStr;
                 }
             });
 
@@ -120,22 +121,22 @@
                             uploadBtn.disabled = false;
                             setTimeout(() => uploadProgress.classList.add('hidden'), 1000);
                         } else {
-                            uploadStatus.innerHTML = '<span class="text-green-600">Фото загружено! Обновление...</span>';
+                            uploadStatus.innerHTML = '<span class="text-green-600">{{ T $.Lang "photos.uploaded" }}</span>';
                             setTimeout(() => location.reload(), 800);
                         }
                     } catch(_) {
-                        uploadStatus.innerHTML = '<span class="text-green-600">Фото загружено! Обновление...</span>';
+                        uploadStatus.innerHTML = '<span class="text-green-600">{{ T $.Lang "photos.uploaded" }}</span>';
                         setTimeout(() => location.reload(), 800);
                     }
                 } else {
-                    uploadStatus.innerHTML = `<span class="text-red-600">Ошибка: HTTP ${xhr.status}</span>`;
+                    uploadStatus.innerHTML = '<span class="text-red-600">{{ T $.Lang "photos.upload_error" }}</span>';
                     uploadBtn.disabled = false;
                     setTimeout(() => uploadProgress.classList.add('hidden'), 1000);
                 }
             });
 
             xhr.addEventListener('error', function() {
-                uploadStatus.innerHTML = '<span class="text-red-600">Ошибка сети</span>';
+                uploadStatus.innerHTML = '<span class="text-red-600">{{ T $.Lang "photos.network_error" }}</span>';
                 uploadBtn.disabled = false;
                 setTimeout(() => uploadProgress.classList.add('hidden'), 1000);
             });
@@ -156,7 +157,7 @@
             const date = thumb.dataset.date;
             if (src) {
                 modalImage.src = src;
-                modalCaption.textContent = `${user} — ${date}`;
+                modalCaption.textContent = user + ' — ' + date;
                 modal.classList.remove('hidden');
                 modal.classList.add('flex');
             }
@@ -202,7 +203,7 @@
             if (!btn) return;
             const photoID = btn.dataset.photoId;
             if (!photoID) return;
-            if (!confirm('Удалить это фото? Действие необратимо.')) return;
+            if (!confirm('{{ T $.Lang "photos.delete_confirm" }}')) return;
             fetch('/games/' + gameID + '/photos/' + photoID, {
                 method: 'DELETE',
                 credentials: 'same-origin',
@@ -224,12 +225,12 @@
                         setTimeout(() => card.remove(), 300);
                     }
                 } else {
-                    alert('Ошибка удаления');
+                    alert('{{ T $.Lang "generic.error" }}');
                 }
             })
             .catch(err => {
                 console.error('Delete error:', err);
-                alert('Ошибка удаления: ' + err.message);
+                alert('{{ T $.Lang "generic.error" }}: ' + err.message);
             });
         });
 

@@ -1,49 +1,110 @@
 {{define "co_authors-manage.html"}}
 <div class="max-w-7xl mx-auto">
-    <h1 class="page-title">Управление соавторами</h1>
+    <h1 class="page-title">{{ T $.Lang "coauthor.manage_title" }}</h1>
 
     <!-- Текущие соавторы -->
     <div class="card mb-6">
-        <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4">Текущие соавторы</h2>
+        <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4">{{ T $.Lang "coauthor.current_title" }}</h2>
         {{if .CoAuthors}}
         <ul class="divide-y divide-gray-100">
             {{range .CoAuthors}}
             <li class="py-3 flex justify-between items-center">
                 <div>
                     <span class="font-medium text-gray-800 dark:text-gray-100">{{.User.Name}}</span>
-                    <span class="text-sm text-gray-500 dark:text-gray-400 ml-2">({{.User.Email}})</span>
+                    <span class="text-sm text-gray-500 dark:text-gray-400 ml-2">(ID: {{.UserID}})</span>
                 </div>
-                <form action="/games/{{$.GameID}}/co-authors/{{.UserID}}/remove" method="POST" class="inline" data-confirm-form="Удалить соавтора «{{.User.Name}}»?">
+                <form action="/games/{{$.GameID}}/co-authors/{{.UserID}}/remove" method="POST" class="inline" data-confirm-form='{{ TF $.Lang "coauthor.delete_confirm" .User.Name }}'>
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
-                    <button type="submit" class="btn btn-danger text-xs">Удалить</button>
+                    <button type="submit" class="btn btn-danger text-xs">{{ T $.Lang "coauthor.delete_button" }}</button>
                 </form>
             </li>
             {{end}}
         </ul>
         {{else}}
-        <p class="text-gray-500 dark:text-gray-400 text-sm">Соавторов пока нет</p>
+        <p class="text-gray-500 dark:text-gray-400 text-sm">{{ T $.Lang "coauthor.no_coauthors" }}</p>
         {{end}}
     </div>
 
     <!-- Добавление соавтора -->
     <div class="card mb-6">
-        <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4">Добавить соавтора</h2>
+        <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4">{{ T $.Lang "coauthor.add_title" }}</h2>
         {{if .Error}}<div class="flash flash-error">{{.Error}}</div>{{end}}
         <form action="/games/{{.GameID}}/co-authors" method="POST" class="flex flex-wrap items-end gap-3">
             <input type="hidden" name="_csrf" value="{{.csrf}}">
+            <input type="hidden" name="user_id" id="selected_user_id">
             <div class="flex-1 min-w-[180px]">
-                <label for="user_id" class="form-label">ID пользователя</label>
-                <input type="text" name="user_id" id="user_id" placeholder="ID пользователя" required
-                       class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.user_id}}border-red-500{{end}}">
-                <p class="field-error">{{.Errors.user_id}}</p>
+                <label for="user_search" class="form-label">{{ T $.Lang "coauthor.search_label" }}</label>
+                <input type="text" id="user_search" placeholder="{{ T $.Lang "coauthor.search_placeholder" }}" autocomplete="off"
+                       class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2">
+                <div id="search-results" class="mt-1 border border-gray-200 dark:border-gray-700 rounded-md bg-white dark:bg-gray-800 shadow-lg max-h-48 overflow-y-auto hidden"></div>
             </div>
-            <button type="submit" class="btn btn-primary text-sm">Добавить</button>
+            <button type="submit" id="add-coauthor-btn" class="btn btn-primary text-sm" disabled>{{ T $.Lang "coauthor.add_button" }}</button>
         </form>
     </div>
 
-    <a href="/games/{{.GameID}}" class="btn btn-outline text-sm">← Назад к игре</a>
+    <a href="/games/{{.GameID}}" class="btn btn-outline text-sm">{{ T $.Lang "coauthor.back_to_game" }}</a>
 </div>
 <script nonce="{{.csp_nonce}}">
-document.addEventListener('submit',function(e){var f=e.target.closest('[data-confirm-form]');if(f&&!confirm(f.getAttribute('data-confirm-form')))e.preventDefault()});
+(function() {
+    var gameID = {{.GameID}};
+    var searchInput = document.getElementById('user_search');
+    var resultsEl = document.getElementById('search-results');
+    var selectedInput = document.getElementById('selected_user_id');
+    var addBtn = document.getElementById('add-coauthor-btn');
+    var searchTimeout = null;
+
+    if (!searchInput || !resultsEl) return;
+
+    searchInput.addEventListener('input', function() {
+        var val = searchInput.value.trim();
+        if (val.length < 2) {
+            resultsEl.classList.add('hidden');
+            resultsEl.innerHTML = '';
+            selectedInput.value = '';
+            addBtn.disabled = true;
+            return;
+        }
+
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(function() {
+            fetch('/api/users/search?q=' + encodeURIComponent(val))
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                resultsEl.innerHTML = '';
+                if (!data.users || data.users.length === 0) {
+                    resultsEl.innerHTML = '<div class="p-3 text-sm text-gray-500 dark:text-gray-400">{{ T $.Lang "coauthor.no_results" }}</div>';
+                    resultsEl.classList.remove('hidden');
+                    return;
+                }
+                data.users.forEach(function(u) {
+                    var div = document.createElement('div');
+                    div.className = 'p-3 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer';
+                    div.textContent = u.name + ' (' + u.email + ')';
+                    div.dataset.userId = u.id;
+                    div.dataset.userName = u.name;
+                    div.addEventListener('click', function() {
+                        selectedInput.value = this.dataset.userId;
+                        searchInput.value = this.dataset.userName;
+                        resultsEl.classList.add('hidden');
+                        resultsEl.innerHTML = '';
+                        addBtn.disabled = false;
+                    });
+                    resultsEl.appendChild(div);
+                });
+                resultsEl.classList.remove('hidden');
+            })
+            .catch(function() {
+                resultsEl.innerHTML = '<div class="p-3 text-sm text-red-500">{{ T $.Lang "coauthor.search_error" }}</div>';
+                resultsEl.classList.remove('hidden');
+            });
+        }, 300);
+    });
+
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('#user_search') && !e.target.closest('#search-results')) {
+            resultsEl.classList.add('hidden');
+        }
+    });
+})();
 </script>
 {{end}}

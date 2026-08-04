@@ -1,25 +1,25 @@
 {{define "games-test.html"}}
 <div class="max-w-3xl mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">Тестирование «{{.Game.Name}}»</h1>
+    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">{{ TF $.Lang "gametest.title" .Game.Name }}</h1>
 
     <div class="card mb-6">
-        <p class="text-gray-600 dark:text-gray-400">Здесь вы можете запустить тестовое прохождение игры, чтобы проверить уровни и ответы.</p>
+        <p class="text-gray-600 dark:text-gray-400">{{ T $.Lang "gametest.description" }}</p>
     </div>
 
     <div class="card mb-6">
         <form action="/games/{{.Game.ID}}/testing/start" method="GET">
-            <button type="submit" class="btn btn-primary text-sm">Начать новое тестовое прохождение</button>
+            <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "gametest.start_button" }}</button>
         </form>
     </div>
 
     {{if .TestPassings}}
     <div class="card">
-        <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">Активные тестовые сессии</h3>
+        <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ T $.Lang "gametest.active_sessions" }}</h3>
         <ul class="space-y-2">
             {{range .TestPassings}}
             <li>
                 <a href="/testing/{{.ID}}" class="text-blue-600 dark:text-blue-400 hover:underline">
-                    Прохождение #{{.ID}} ({{.Status}})
+                    {{ TF $.Lang "gametest.passing" .ID .Status }}
                 </a>
             </li>
             {{end}}
@@ -28,7 +28,7 @@
     {{end}}
 
     <div class="mt-6">
-        <a href="/games/{{.Game.ID}}" class="btn btn-outline text-sm">← Назад к игре</a>
+        <a href="/games/{{.Game.ID}}" class="btn btn-outline text-sm">{{ T $.Lang "gametest.back_to_game" }}</a>
     </div>
 </div>
 {{end}}

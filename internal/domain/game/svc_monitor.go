@@ -111,6 +111,11 @@ func (s *MonitorService) GetOrFetchSnapshot(ctx context.Context, gameID uint) ([
 			data:      snapshot,
 			timestamp: time.Now(),
 		}
+		// Удаляем старый элемент списка для того же gameID, чтобы LRU-список не рос
+		// бесконечно при повторных обновлениях одного снапшота (утечка памяти).
+		if elem, ok := s.cacheKeys[gameID]; ok {
+			s.cacheList.Remove(elem)
+		}
 		s.cacheKeys[gameID] = s.cacheList.PushBack(gameID)
 		s.mu.Unlock()
 
@@ -195,6 +200,10 @@ func (s *MonitorService) GameSnapshot(ctx context.Context, gameID uint) ([]TeamP
 		LEFT JOIN (
 			SELECT level_progress_id, COUNT(*) AS total_attempts
 			FROM attempts
+			WHERE level_progress_id IN (
+				SELECT id FROM level_progresses
+				WHERE game_passing_id IN (SELECT id FROM game_passings WHERE game_id = ?)
+			)
 			GROUP BY level_progress_id
 		) ac ON ac.level_progress_id = lp.id
 		LEFT JOIN LATERAL (
@@ -205,7 +214,7 @@ func (s *MonitorService) GameSnapshot(ctx context.Context, gameID uint) ([]TeamP
 		WHERE gp.game_id = ?
 		GROUP BY gp.id, gp.team_id, t.name, gp.status, gp.place, tl.cnt, ac.total_attempts, cl.level_id
 		ORDER BY gp.place ASC`
-	if err := s.DB.WithContext(ctx).Raw(query, gameID, gameID).Scan(&aggregated).Error; err != nil {
+	if err := s.DB.WithContext(ctx).Raw(query, gameID, gameID, gameID).Scan(&aggregated).Error; err != nil {
 		return nil, err
 	}
 

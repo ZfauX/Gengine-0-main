@@ -1,6 +1,6 @@
 {{define "games-edit.html"}}
 <div class="max-w-3xl mx-auto">
-    <h1 class="page-title">Редактировать игру</h1>
+    <h1 class="page-title">{{ T $.Lang "game.edit_title" }}</h1>
 
     {{if .Error}}
     <div class="flash flash-error">{{.Error}}</div>
@@ -12,7 +12,7 @@
 
         <!-- Название -->
         <div>
-            <label for="name" class="form-label">Название</label>
+            <label for="name" class="form-label">{{ T $.Lang "game.edit_name_label" }}</label>
             <input type="text" name="name" id="name" value="{{.Game.Name}}" required
                    class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.name}}border-red-500{{end}}">
             <p class="field-error">{{.Errors.name}}</p>
@@ -20,7 +20,7 @@
 
         <!-- Описание -->
         <div>
-            <label for="description" class="form-label">Описание</label>
+            <label for="description" class="form-label">{{ T $.Lang "game.edit_desc_label" }}</label>
             <textarea name="description" id="description" rows="4"
                       class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.description}}border-red-500{{end}}">{{.Game.Description}}</textarea>
             <p class="field-error">{{.Errors.description}}</p>
@@ -29,7 +29,7 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <!-- Дата и время начала -->
             <div>
-                <label for="starts_at" class="form-label">Дата и время начала</label>
+                <label for="starts_at" class="form-label">{{ T $.Lang "game.edit_start_date_label" }}</label>
                 <input type="datetime-local" name="starts_at" id="starts_at"
                        value="{{if .Game.StartsAt}}{{.Game.StartsAt.Format "2006-01-02T15:04"}}{{end}}"
                        class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.starts_at}}border-red-500{{end}}">
@@ -38,7 +38,7 @@
 
             <!-- Крайний срок регистрации -->
             <div>
-                <label for="registration_deadline" class="form-label">Крайний срок регистрации</label>
+                <label for="registration_deadline" class="form-label">{{ T $.Lang "game.edit_reg_deadline_label" }}</label>
                 <input type="datetime-local" name="registration_deadline" id="registration_deadline"
                        value="{{if .Game.RegistrationDeadline}}{{.Game.RegistrationDeadline.Format "2006-01-02T15:04"}}{{end}}"
                        class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.registration_deadline}}border-red-500{{end}}">
@@ -49,7 +49,7 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <!-- Максимальное количество команд -->
             <div>
-                <label for="max_team_number" class="form-label">Максимальное количество команд</label>
+                <label for="max_team_number" class="form-label">{{ T $.Lang "game.edit_max_teams_label" }}</label>
                 <input type="number" name="max_team_number" id="max_team_number"
                        value="{{.Game.MaxTeamNumber}}" min="1"
                        class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.max_team_number}}border-red-500{{end}}">
@@ -58,12 +58,12 @@
 
             <!-- Видимость -->
             <div>
-                <label for="visibility" class="form-label">Видимость</label>
+                <label for="visibility" class="form-label">{{ T $.Lang "game.edit_visibility_label" }}</label>
                 <select name="visibility" id="visibility"
                         class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.visibility}}border-red-500{{end}}">
-                    <option value="public" {{if eq .Game.Visibility "public"}}selected{{end}}>Публичная</option>
-                    <option value="private" {{if eq .Game.Visibility "private"}}selected{{end}}>Приватная</option>
-                    <option value="unlisted" {{if eq .Game.Visibility "unlisted"}}selected{{end}}>Скрытая</option>
+                    <option value="public" {{if eq .Game.Visibility "public"}}selected{{end}}>{{ T $.Lang "game.edit_public" }}</option>
+                    <option value="private" {{if eq .Game.Visibility "private"}}selected{{end}}>{{ T $.Lang "game.edit_private" }}</option>
+                    <option value="unlisted" {{if eq .Game.Visibility "unlisted"}}selected{{end}}>{{ T $.Lang "game.edit_unlisted" }}</option>
                 </select>
                 <p class="field-error">{{.Errors.visibility}}</p>
             </div>
@@ -71,14 +71,14 @@
 
         <!-- Обложка -->
         <div>
-            <label class="form-label">Обложка игры</label>
+            <label class="form-label">{{ T $.Lang "game.edit_cover_label" }}</label>
             {{if .Game.CoverPath}}
             <div class="mb-3">
-                <img src="{{.Game.CoverPath}}" alt="Обложка" class="max-h-32 rounded-md border border-gray-200 dark:border-gray-700">
+                <img src="{{.Game.CoverPath}}" alt="{{ T $.Lang "game.edit_cover_label" }}" class="max-h-32 rounded-md border border-gray-200 dark:border-gray-700">
                 <div class="mt-2 flex items-center">
                     <input type="checkbox" name="delete_cover" id="delete_cover" value="1"
                            class="rounded border-gray-300 dark:border-gray-600 text-blue-600 dark:text-blue-400 shadow-sm focus:ring-blue-500">
-                    <label for="delete_cover" class="ml-2 text-sm text-gray-600 dark:text-gray-400">Удалить обложку</label>
+                    <label for="delete_cover" class="ml-2 text-sm text-gray-600 dark:text-gray-400">{{ T $.Lang "game.edit_delete_cover" }}</label>
                 </div>
             </div>
             {{end}}
@@ -88,8 +88,8 @@
 
         <!-- Кнопки -->
         <div class="flex flex-wrap gap-3 pt-2">
-            <button type="submit" class="btn btn-primary text-sm">Сохранить</button>
-            <a href="/games/{{.Game.ID}}" class="btn btn-outline text-sm">Отмена</a>
+            <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "game.edit_save" }}</button>
+            <a href="/games/{{.Game.ID}}" class="btn btn-outline text-sm">{{ T $.Lang "game.edit_cancel" }}</a>
         </div>
     </form>
 </div>

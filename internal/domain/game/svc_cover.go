@@ -75,18 +75,20 @@ func (s *GameCoverService) CreateGameWithCover(ctx context.Context, dto *CreateG
 }
 
 // UpdateGameWithCover обновляет игру с возможностью замены или удаления обложки.
-func (s *GameCoverService) UpdateGameWithCover(ctx context.Context, gameID uint, dto *UpdateGameDTO, userID uint) error {
+func (s *GameCoverService) UpdateGameWithCover(ctx context.Context, gameID uint, dto *UpdateGameDTO, userID uint, isAdmin bool) error {
 	game, err := s.gameRepo.GetByID(ctx, gameID)
 	if err != nil {
 		return err
 	}
 
-	isManager, err := s.coAuthor.HasPermission(ctx, gameID, userID, RoleContentEditor)
-	if err != nil {
-		return fmt.Errorf("ошибка проверки прав: %w", err)
-	}
-	if !isManager {
-		return errors.New("только автор или контент-менеджер может редактировать игру")
+	if !isAdmin {
+		isManager, err := s.coAuthor.HasPermission(ctx, gameID, userID, RoleContentEditor)
+		if err != nil {
+			return fmt.Errorf("ошибка проверки прав: %w", err)
+		}
+		if !isManager {
+			return errors.New("только автор или контент-менеджер может редактировать игру")
+		}
 	}
 
 	game.Name = dto.Name

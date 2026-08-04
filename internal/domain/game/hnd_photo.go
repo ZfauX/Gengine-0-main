@@ -56,7 +56,7 @@ func NewPhotoHandler(
 func (h *PhotoHandler) PhotosPage(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -75,12 +75,18 @@ func (h *PhotoHandler) PhotosPage(c *gin.Context) {
 	}
 
 	render.Page(c, http.StatusOK, "games-photos.html", gin.H{
-		"Title":         "Фотографии",
+		"Title":         render.Tr(c, "nav.photos"),
 		"GameID":        gameID,
 		"Photos":        photos,
 		"CurrentUserID": userID,
 		"IsManager":     isManager,
 		"csrf":          csrf.GetToken(c),
+		"Breadcrumbs": []map[string]string{
+			{"name": "nav.home", "url": "/"},
+			{"name": "nav.games", "url": "/games"},
+			{"name": "game.breadcrumb_label", "url": "/games/" + c.Param("id")},
+			{"name": "nav.photos"},
+		},
 	})
 }
 
@@ -101,14 +107,14 @@ func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 	gameID, parseErr := strconv.Atoi(c.Param("id"))
 	if parseErr != nil || gameID <= 0 {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
-			"error": "Неверный ID игры",
+			"error": render.Tr(c, "handler.invalid_game_id"),
 			"code":  "bad_request",
 		})
 		return
 	}
 	userID := c.GetUint("userID")
 
-	if limitErr := limitRequestBody(c, photoMaxSize); limitErr != nil {
+	if limitErr := LimitRequestBody(c, photoMaxSize); limitErr != nil {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 			"error": limitErr.Error(),
 			"code":  "bad_request",
@@ -189,7 +195,7 @@ func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 // @Param photo_id path int true "ID фото"
 // @Success 200 {object} map[string]interface{} "Фото удалено"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Failure 404 {object} map[string]interface{} "Фото не найдено"
 // @Router /games/{id}/photos/{photo_id} [delete]
 // @Security JWT

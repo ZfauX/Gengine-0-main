@@ -1,6 +1,8 @@
 // internal/domain/game/service.go
 //
-//go:generate go run go.uber.org/mock/mockgen -source=service.go -destination=mock_service.go -package=game
+// Note: mockgen may fail on anonymous interface params; tests use hand-rolled mocks
+//
+//go:generate go run go.uber.org/mock/mockgen -source=interfaces.go -destination=mock_service.go -package=game
 package game
 
 import (
@@ -21,7 +23,6 @@ import (
 	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // Константы для фильтрации статусов игр (чтобы избежать магических строк)
@@ -30,13 +31,15 @@ const (
 	filterPublished = "published"
 )
 
-// allowedSortFields — белый список полей, по которым разрешена сортировка
-var allowedSortFields = map[string]bool{
-	"created_at":   true,
-	"name":         true,
-	"starts_at":    true,
-	"rating":       true,
-	"participants": true,
+// ErrGameNotFound — игра не найдена либо недоступна для просмотра
+// (несуществующая, приватная или черновик без прав). Позволяет хендлерам
+// отличать 404 от внутренних ошибок без сравнения по err.Error().
+var ErrGameNotFound = errors.New("игра не найдена")
+
+// AllowedSortFields — допустимые поля для сортировки списка игр.
+// Используется в svc_listing.go и тестами.
+var AllowedSortFields = map[string]bool{
+	"created_at": true, "name": true, "starts_at": true, "rating": true, "participants": true,
 }
 
 // CreateGameDTO — DTO для создания игры с обложкой.
@@ -131,8 +134,8 @@ func (s *GameService) CreateGameWithCover(ctx context.Context, dto *CreateGameDT
 }
 
 // UpdateGameWithCover делегирует GameCoverService.
-func (s *GameService) UpdateGameWithCover(ctx context.Context, gameID uint, dto *UpdateGameDTO, userID uint) error {
-	return s.coverService.UpdateGameWithCover(ctx, gameID, dto, userID)
+func (s *GameService) UpdateGameWithCover(ctx context.Context, gameID uint, dto *UpdateGameDTO, userID uint, isAdmin bool) error {
+	return s.coverService.UpdateGameWithCover(ctx, gameID, dto, userID, isAdmin)
 }
 
 // Create делегирует GameCRUDService.
@@ -141,8 +144,23 @@ func (s *GameService) Create(ctx context.Context, game *Game, authorID uint) err
 }
 
 // cacheGetGame пытается получить Game из кэша, поддерживая как in-memory (сохранение типа),
-// так и Valkey (JSON → map[string]any → обратная конверсия через json.Marshal/Unmarshal).
+// так и Valkey (JSON → []byte → одна десериализация в Game, без map[string]any round-trip).
 func cacheGetGame(store cache.CacheStore, ctx context.Context, key string) (*Game, bool) {
+	// Valkey: сырые JSON-байты → одна десериализация (P9).
+	if vc, ok := store.(*cache.ValkeyCache); ok {
+		raw, ok := vc.GetBytesWithCtx(ctx, key)
+		if !ok {
+			return nil, false
+		}
+		var game Game
+		if err := json.Unmarshal(raw, &game); err != nil {
+			vc.DeleteWithCtx(ctx, key)
+			return nil, false
+		}
+		return &game, true
+	}
+
+	// In-memory: кэш сохраняет тип *Game.
 	cached, ok := store.GetWithCtx(ctx, key)
 	if !ok {
 		return nil, false
@@ -166,17 +184,26 @@ func cacheGetGame(store cache.CacheStore, ctx context.Context, key string) (*Gam
 }
 
 // GetByID возвращает игру по ID с кэшированием.
-func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint) (*Game, error) {
-	cacheKey := fmt.Sprintf("game:%d:viewer:%d", id, viewerID)
+// isAdmin позволяет админам просматривать черновики и приватные игры, автором которых они не являются.
+func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint, isAdmin bool) (*Game, error) {
+	// Один ключ на игру (а не на пару игра+зритель): приватность проверяется
+	// отдельно через CanViewGame, поэтому копию игры на каждого зрителя
+	// хранить не нужно (P7).
+	cacheKey := fmt.Sprintf("game:%d", id)
+
+	role := "user"
+	if isAdmin {
+		role = "admin"
+	}
 
 	if game, ok := cacheGetGame(s.cache, ctx, cacheKey); ok {
-		canView, err := s.crudService.CanViewGame(ctx, game, viewerID, "user")
+		canView, err := s.crudService.CanViewGame(ctx, game, viewerID, role)
 		if err != nil {
 			return nil, err
 		}
 		if !canView {
 			s.cache.DeleteWithCtx(ctx, cacheKey)
-			return nil, errors.New("игра не найдена")
+			return nil, ErrGameNotFound
 		}
 		log.Debug().Uint("game_id", id).Msg("GetByID: cache hit")
 		return game, nil
@@ -187,12 +214,12 @@ func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint) (*Gam
 		return nil, err
 	}
 
-	ok, err := s.crudService.CanViewGame(ctx, game, viewerID, "user")
+	ok, err := s.crudService.CanViewGame(ctx, game, viewerID, role)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
-		return nil, errors.New("игра не найдена")
+		return nil, ErrGameNotFound
 	}
 
 	if !game.IsDraft {
@@ -208,8 +235,7 @@ func (s *GameService) Update(ctx context.Context, id uint, updated *Game, userID
 	if err != nil {
 		return err
 	}
-	s.cache.DeleteByPrefixWithCtx(ctx, fmt.Sprintf("game:%d:viewer:", id))
-	s.cache.DeleteByPrefixWithCtx(ctx, "games:list:")
+	s.cache.DeleteWithCtx(ctx, fmt.Sprintf("game:%d", id))
 	return nil
 }
 
@@ -252,8 +278,47 @@ func (s *GameService) Delete(ctx context.Context, id uint, userID uint) error {
 	if deleteErr != nil {
 		return deleteErr
 	}
-	s.cache.DeleteByPrefixWithCtx(ctx, fmt.Sprintf("game:%d:viewer:", id))
-	s.cache.DeleteByPrefixWithCtx(ctx, "games:list:")
+	s.cache.DeleteWithCtx(ctx, fmt.Sprintf("game:%d", id))
+	return nil
+}
+
+// AdminDelete удаляет игру администратором: очищает обложку/фото с диска,
+// инвалидирует кэш и удаляет игру без проверки авторства.
+func (s *GameService) AdminDelete(ctx context.Context, id uint) error {
+	game, err := s.crudService.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if game.CoverPath != "" {
+		if delErr := s.storage.Delete(game.CoverPath); delErr != nil {
+			log.Error().Err(delErr).Str("path", game.CoverPath).Msg("AdminDelete: failed to delete cover file")
+		}
+	}
+
+	if s.photoService != nil {
+		photos, listErr := s.photoService.List(ctx, id)
+		if listErr == nil {
+			var g errgroup.Group
+			for _, photo := range photos {
+				photoPath := photo.Path
+				g.Go(func() error {
+					if delErr := s.storage.Delete(photoPath); delErr != nil {
+						log.Error().Err(delErr).Str("path", photoPath).Msg("AdminDelete: failed to delete photo file")
+						return delErr
+					}
+					return nil
+				})
+			}
+			errspkg.LogSilently(g.Wait(), "AdminDelete: parallel photo cleanup failed")
+		}
+	}
+
+	if err := s.crudService.Delete(ctx, id, game.AuthorID); err != nil {
+		return err
+	}
+	s.cache.DeleteWithCtx(ctx, fmt.Sprintf("game:%d", id))
+	s.cache.DeleteWithCtx(ctx, fmt.Sprintf("rating:game:%d", id))
 	return nil
 }
 
@@ -263,8 +328,7 @@ func (s *GameService) Publish(ctx context.Context, id uint, userID uint) error {
 	if err != nil {
 		return err
 	}
-	s.cache.DeleteByPrefixWithCtx(ctx, fmt.Sprintf("game:%d:viewer:", id))
-	s.cache.DeleteByPrefixWithCtx(ctx, "games:list:")
+	s.cache.DeleteWithCtx(ctx, fmt.Sprintf("game:%d", id))
 	return nil
 }
 
@@ -283,6 +347,23 @@ func (s *GameService) ListReviews(ctx context.Context, gameID uint) ([]Review, e
 
 // cacheGetRating пытается получить рейтинг из кэша, поддерживая как in-memory, так и Valkey.
 func cacheGetRating(store cache.CacheStore, ctx context.Context, key string) (float64, int64, bool) {
+	// Valkey: сырые JSON-байты → одна десериализация в struct (P9).
+	if vc, ok := store.(*cache.ValkeyCache); ok {
+		raw, ok := vc.GetBytesWithCtx(ctx, key)
+		if !ok {
+			return 0, 0, false
+		}
+		var rr struct {
+			Avg   float64 `json:"avg"`
+			Count int64   `json:"count"`
+		}
+		if err := json.Unmarshal(raw, &rr); err != nil {
+			vc.DeleteWithCtx(ctx, key)
+			return 0, 0, false
+		}
+		return rr.Avg, rr.Count, true
+	}
+
 	cached, ok := store.GetWithCtx(ctx, key)
 	if !ok {
 		return 0, 0, false
@@ -306,7 +387,6 @@ func cacheGetRating(store cache.CacheStore, ctx context.Context, key string) (fl
 		}
 		return avg, count, true
 	default:
-		// Valkey path: JSON → map[string]any, handled above
 		return 0, 0, false
 	}
 }
@@ -342,6 +422,20 @@ func (s *GameService) GetGameWithStats(ctx context.Context, gameID uint) (*Game,
 	return s.crudService.GetGameWithStats(ctx, gameID)
 }
 
+// ShowGame возвращает данные для страницы игры за один вызов:
+// игра (с проверкой прав и кэшем) + отзывы + рейтинг.
+func (s *GameService) ShowGame(ctx context.Context, gameID, viewerID uint, isAdmin bool) (*Game, []Review, float64, int64, error) {
+	game, err := s.GetByID(ctx, gameID, viewerID, isAdmin)
+	if err != nil {
+		return nil, nil, 0, 0, err
+	}
+	reviews, avgRating, reviewsCount, err := s.crudService.GetStats(ctx, gameID)
+	if err != nil {
+		return nil, nil, 0, 0, err
+	}
+	return game, reviews, avgRating, reviewsCount, nil
+}
+
 // IsUserManager делегирует CoAuthorService.
 func (s *GameService) IsUserManager(ctx context.Context, gameID, userID uint) (bool, error) {
 	return s.coAuthorSvc.IsUserManager(ctx, gameID, userID)
@@ -355,7 +449,10 @@ func (s *GameService) GetPassingByUser(ctx context.Context, gameID, userID uint)
 		Where("game_passings.game_id = ? AND game_passings.status IN (?,?) AND team_members.user_id = ?",
 			gameID, StatusAccepted, StatusStarted, userID).
 		First(&passing).Error
-	return &passing, err
+	if err != nil {
+		return nil, err
+	}
+	return &passing, nil
 }
 
 // GetLogsByGameID возвращает логи игры, отсортированные по времени создания.
@@ -381,6 +478,11 @@ func (s *GameService) GetLogsByGameIDPaginated(ctx context.Context, gameID uint,
 	}
 	if page < 1 {
 		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 10
+	} else if pageSize > 100 {
+		pageSize = 100
 	}
 	offset := (page - 1) * pageSize
 	var logs []Log
@@ -416,37 +518,39 @@ func (s *GameService) GetSettingsWithDefaults(ctx context.Context, gameID uint) 
 
 // SaveSettings сохраняет или обновляет настройки игры.
 func (s *GameService) SaveSettings(ctx context.Context, gameID uint, input GameSetting) (*GameSetting, error) {
-	var result GameSetting
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var existing GameSetting
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("game_id = ?", gameID).First(&existing).Error
-		if err == nil {
-			existing.AllowHints = input.AllowHints
-			existing.HintPenaltySeconds = input.HintPenaltySeconds
-			existing.MaxHints = input.MaxHints
-			existing.PerLevelTimeLimit = input.PerLevelTimeLimit
-			existing.HideAnswersUntilFinished = input.HideAnswersUntilFinished
-			existing.AutoStart = input.AutoStart
-			result = existing
-			return tx.Save(&existing).Error
-		} else if errors.Is(err, gorm.ErrRecordNotFound) {
-			newSettings := GameSetting{
-				GameID:                   gameID,
-				AllowHints:               input.AllowHints,
-				HintPenaltySeconds:       input.HintPenaltySeconds,
-				MaxHints:                 input.MaxHints,
-				PerLevelTimeLimit:        input.PerLevelTimeLimit,
-				HideAnswersUntilFinished: input.HideAnswersUntilFinished,
-				AutoStart:                input.AutoStart,
-			}
-			result = newSettings
-			return tx.Create(&newSettings).Error
-		}
-		return err
+	db := s.db.WithContext(ctx)
+
+	// UPDATE существующей записи, потом INSERT если не нашлось
+	result := db.Model(&GameSetting{}).Where("game_id = ?", gameID).Updates(map[string]any{
+		"allow_hints":                 input.AllowHints,
+		"hint_penalty_seconds":        input.HintPenaltySeconds,
+		"max_hints":                   input.MaxHints,
+		"per_level_time_limit":        input.PerLevelTimeLimit,
+		"hide_answers_until_finished": input.HideAnswersUntilFinished,
+		"auto_start":                  input.AutoStart,
 	})
-	if err != nil {
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		newSettings := GameSetting{
+			GameID:                   gameID,
+			AllowHints:               input.AllowHints,
+			HintPenaltySeconds:       input.HintPenaltySeconds,
+			MaxHints:                 input.MaxHints,
+			PerLevelTimeLimit:        input.PerLevelTimeLimit,
+			HideAnswersUntilFinished: input.HideAnswersUntilFinished,
+			AutoStart:                input.AutoStart,
+		}
+		if err := db.Create(&newSettings).Error; err != nil {
+			return nil, err
+		}
+		return &newSettings, nil
+	}
+
+	var saved GameSetting
+	if err := db.Where("game_id = ?", gameID).First(&saved).Error; err != nil {
 		return nil, err
 	}
-	return &result, nil
+	return &saved, nil
 }

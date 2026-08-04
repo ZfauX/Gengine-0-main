@@ -186,25 +186,36 @@ func (s *GameCRUDService) GetGameWithStats(ctx context.Context, gameID uint) (*G
 		return nil, nil, 0, 0, err
 	}
 
+	reviews, avgRating, reviewsCount, err := s.GetStats(ctx, gameID)
+	if err != nil {
+		return nil, nil, 0, 0, err
+	}
+
+	return game, reviews, avgRating, reviewsCount, nil
+}
+
+// GetStats возвращает отзывы и рейтинг игры без повторной загрузки самой игры.
+func (s *GameCRUDService) GetStats(ctx context.Context, gameID uint) ([]Review, float64, int64, error) {
 	reviews := []Review{}
 	avgRating := 0.0
 	reviewsCount := int64(0)
+	var err error
 
 	if s.reviewService != nil {
 		reviews, err = s.reviewService.ListByGame(ctx, gameID)
 		if err != nil {
-			log.Warn().Err(err).Uint("game_id", gameID).Msg("GetGameWithStats: failed to list reviews")
+			log.Warn().Err(err).Uint("game_id", gameID).Msg("GetStats: failed to list reviews")
 		}
 	}
 
 	if s.ratingService != nil {
 		avgRating, reviewsCount, err = s.ratingService.GetAverageRating(ctx, gameID)
 		if err != nil {
-			log.Warn().Err(err).Uint("game_id", gameID).Msg("GetGameWithStats: failed to get average rating")
+			log.Warn().Err(err).Uint("game_id", gameID).Msg("GetStats: failed to get average rating")
 		}
 	}
 
-	return game, reviews, avgRating, reviewsCount, nil
+	return reviews, avgRating, reviewsCount, nil
 }
 
 // ListReviews делегирует ReviewService.

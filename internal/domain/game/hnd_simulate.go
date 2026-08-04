@@ -28,19 +28,19 @@ func NewSimulateHandler(simulateService *SimulateService) *SimulateHandler {
 // @Param id path int true "ID игры"
 // @Success 200 {string} html "Страница симуляции"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/simulate [get]
 // @Security JWT
 func (h *SimulateHandler) Simulate(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
 		return
 	}
 	userID := c.GetUint("userID")
 	result, err := h.simulateService.Simulate(c.Request.Context(), uint(gameID), userID)
 	if err != nil {
-		render.RenderError(c, http.StatusForbidden, err.Error())
+		render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, err.Error()))
 		return
 	}
 	render.Page(c, http.StatusOK, "simulate-results.html", gin.H{

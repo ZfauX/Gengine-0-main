@@ -1,14 +1,14 @@
 {{define "notes-manage.html"}}
 <div class="max-w-4xl mx-auto">
-    <h1 class="page-title">Заметки к игре</h1>
+    <h1 class="page-title">{{ T $.Lang "notes.title" }}</h1>
 
     <!-- Форма добавления заметки -->
     <div class="card mb-6">
-        <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">Добавить заметку</h3>
+        <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ T $.Lang "notes.add_title" }}</h3>
         <form id="add-note-form">
-            <textarea id="note-text" rows="3" placeholder="Текст заметки..." required
+            <textarea id="note-text" rows="3" placeholder="{{ T $.Lang "notes.text_placeholder" }}" required
                       class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm mb-3"></textarea>
-            <button type="submit" class="btn btn-primary text-sm">Сохранить</button>
+            <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "notes.save_button" }}</button>
         </form>
     </div>
 
@@ -21,11 +21,11 @@
                     <span class="font-semibold text-gray-800 dark:text-gray-100">{{.User.Name}}</span>
                     <span class="text-sm text-gray-500 dark:text-gray-400 ml-2">{{.CreatedAt.Format "02.01.2006 15:04"}}</span>
                     {{if .Level}}
-                    <span class="inline-block ml-2 px-2 py-0.5 text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-md">Уровень: {{.Level.Name}}</span>
+                    <span class="inline-block ml-2 px-2 py-0.5 text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-md">{{ TF $.Lang "notes.level_label" .Level.Name }}</span>
                     {{end}}
                 </div>
                 {{if eq .UserID $.CurrentUserID}}
-                <button class="delete-note-btn text-gray-400 hover:text-red-600 transition text-xl leading-none" data-note-id="{{.ID}}" title="Удалить заметку">×</button>
+                <button class="delete-note-btn text-gray-400 hover:text-red-600 transition text-xl leading-none" data-note-id="{{.ID}}" title="{{ T $.Lang "notes.delete_title" }}">×</button>
                 {{end}}
             </div>
             <p class="mt-2 text-gray-700 dark:text-gray-300 text-sm">{{.Text}}</p>
@@ -34,7 +34,7 @@
     </div>
 
     <div class="mt-6">
-        <a href="/games/{{.GameID}}" class="btn btn-outline text-sm">← Назад к игре</a>
+        <a href="/games/{{.GameID}}" class="btn btn-outline text-sm">{{ T $.Lang "notes.back_to_game" }}</a>
     </div>
 </div>
 
@@ -68,7 +68,7 @@
             .then(r => r.json())
             .then(data => {
                 if (data.note) location.reload();
-                else alert('Ошибка создания заметки');
+                else alert('{{ T $.Lang "generic.error" }}');
             });
         });
 
@@ -79,7 +79,7 @@
             if (!btn) return;
             const noteID = btn.dataset.noteId;
             if (!noteID) return;
-            if (!confirm('Удалить заметку?')) return;
+            if (!confirm('{{ T $.Lang "notes.delete_title" }}')) return;
             fetch('/api/notes/' + noteID, {
                 method: 'DELETE',
                 credentials: 'same-origin',
@@ -90,7 +90,7 @@
             .then(r => r.json())
             .then(data => {
                 if (data.status === 'ok') location.reload();
-                else alert('Ошибка удаления');
+                else alert('{{ T $.Lang "generic.error" }}');
             });
         });
     })();

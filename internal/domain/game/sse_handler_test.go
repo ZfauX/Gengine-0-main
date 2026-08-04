@@ -117,3 +117,74 @@ func TestSSEHandler_ConnectionClose(t *testing.T) {
 	assert.NotContains(t, mgr.gameMap, session)
 	mgr.mu.Unlock()
 }
+
+func TestSSEHandler_Stop_ClosesSessions(t *testing.T) {
+	mgr := newTestSSEMgr()
+
+	w := httptest.NewRecorder()
+	flusher := &mockFlusher{recorder: w}
+	session := mgr.RegisterSession(1, "127.0.0.1", w, flusher)
+	require.NotNil(t, session)
+
+	// Stop should close session.done
+	mgr.Stop()
+
+	select {
+	case <-session.done:
+		// session closed — OK
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("session.done was not closed after Stop()")
+	}
+
+	// Sessions map should be cleared
+	mgr.mu.RLock()
+	assert.Len(t, mgr.sessions, 0)
+	assert.Len(t, mgr.gameMap, 0)
+	mgr.mu.RUnlock()
+}
+
+func TestSSEHandler_Stop_NoBroadcastAfterStop(t *testing.T) {
+	mgr := newTestSSEMgr()
+
+	w := httptest.NewRecorder()
+	flusher := &mockFlusher{recorder: w}
+	_ = mgr.RegisterSession(1, "127.0.0.1", w, flusher)
+
+	mgr.Stop()
+
+	// Broadcast after Stop must not panic or block (WaitGroup misuse)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		mgr.Broadcast(1, "after_stop", map[string]any{"ok": true})
+	}()
+
+	select {
+	case <-done:
+		// Broadcast returned without hanging — OK
+	case <-time.After(1 * time.Second):
+		t.Fatal("Broadcast after Stop() hung (WaitGroup misuse?)")
+	}
+}
+
+func TestSSEHandler_CanAccept_Limits(t *testing.T) {
+	mgr := newTestSSEMgr()
+
+	// Per-IP limit
+	assert.True(t, mgr.CanAccept("1.2.3.4"))
+	_ = mgr.RegisterSession(1, "1.2.3.4", httptest.NewRecorder(), &mockFlusher{})
+	_ = mgr.RegisterSession(1, "1.2.3.4", httptest.NewRecorder(), &mockFlusher{})
+	// maxConnsPerIP = 100 in test mgr — so still accepted
+	assert.True(t, mgr.CanAccept("1.2.3.4"))
+
+	// Set low per-IP limit
+	mgr.SetLimits(0, 1) // maxPerIP = 1
+	_ = mgr.RegisterSession(2, "5.6.7.8", httptest.NewRecorder(), &mockFlusher{})
+	_ = mgr.RegisterSession(2, "5.6.7.8", httptest.NewRecorder(), &mockFlusher{})
+	assert.False(t, mgr.CanAccept("5.6.7.8"))
+	assert.True(t, mgr.CanAccept("9.9.9.9"))
+
+	// After Stop, CanAccept should still return false (stopped)
+	mgr.Stop()
+	assert.False(t, mgr.CanAccept("9.9.9.9"))
+}

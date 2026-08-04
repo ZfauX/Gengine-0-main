@@ -1,36 +1,36 @@
 {{define "game_passings-list.html"}}
 <div class="max-w-7xl mx-auto">
-    <h1 class="page-title">Заявки и прохождения игры</h1>
+    <h1 class="page-title">{{ T $.Lang "passing.list_title" }}</h1>
 
     {{if .Passings}}
     <div class="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
         <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50 dark:bg-gray-800">
                 <tr>
-                    <th scope="col" class="table-header">Команда</th>
-                    <th scope="col" class="table-header">Капитан</th>
-                    <th scope="col" class="table-header">Статус</th>
-                    <th scope="col" class="table-header">Действия</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "passing.table_team" }}</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "passing.table_captain" }}</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "passing.table_status" }}</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "passing.table_actions" }}</th>
                 </tr>
             </thead>
             <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200">
                 {{range .Passings}}
                 <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 transition">
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">{{.Team.Name}}</td>
-                    <td class="table-cell">{{.Team.Captain.Name}} ({{.Team.Captain.Email}})</td>
+                    <td class="table-cell">{{.Team.Captain.Name}}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">
                         {{if eq .Status "pending"}}
-                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">Ожидает</span>
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">{{ T $.Lang "passing.status_pending" }}</span>
                         {{else if eq .Status "accepted"}}
-                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">Принята</span>
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">{{ T $.Lang "passing.status_accepted" }}</span>
                         {{else if eq .Status "rejected"}}
-                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">Отклонена</span>
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">{{ T $.Lang "passing.status_rejected" }}</span>
                         {{else if eq .Status "started"}}
-                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">Идёт игра</span>
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">{{ T $.Lang "passing.status_started" }}</span>
                         {{else if eq .Status "finished"}}
-                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">Завершена</span>
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">{{ T $.Lang "passing.status_finished" }}</span>
                         {{else if eq .Status "disqualified"}}
-                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-800 text-white">Дисквалифицирована</span>
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-800 text-white">{{ T $.Lang "passing.status_disqualified" }}</span>
                         {{else}}
                             <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100">{{.Status}}</span>
                         {{end}}
@@ -40,17 +40,17 @@
                         <form action="/games/{{$.GameID}}/passings/{{.ID}}/status" method="POST" class="inline">
                             <input type="hidden" name="_csrf" value="{{$.csrf}}">
                             <input type="hidden" name="status" value="accepted">
-                            <button type="submit" class="btn btn-primary text-xs" data-confirm="Принять заявку от команды «{{.Team.Name}}»">Принять</button>
+                            <button type="submit" class="btn btn-primary text-xs" data-confirm='{{ TF $.Lang "passing.accept_confirm" .Team.Name }}'>{{ T $.Lang "passing.accept" }}</button>
                         </form>
                         <form action="/games/{{$.GameID}}/passings/{{.ID}}/status" method="POST" class="inline">
                             <input type="hidden" name="_csrf" value="{{$.csrf}}">
                             <input type="hidden" name="status" value="rejected">
-                            <button type="submit" class="btn btn-danger text-xs" data-confirm="Отклонить заявку от команды «{{.Team.Name}}»">Отклонить</button>
+                            <button type="submit" class="btn btn-danger text-xs" data-confirm='{{ TF $.Lang "passing.reject_confirm" .Team.Name }}'>{{ T $.Lang "passing.reject" }}</button>
                         </form>
                         {{else if eq .Status "accepted"}}
                         <form action="/games/{{$.GameID}}/passings/{{.ID}}/start" method="POST" class="inline">
                             <input type="hidden" name="_csrf" value="{{$.csrf}}">
-                            <button type="submit" class="btn btn-primary text-xs" data-confirm="Начать игру для команды «{{.Team.Name}}»">Начать игру</button>
+                            <button type="submit" class="btn btn-primary text-xs" data-confirm='{{ TF $.Lang "passing.start_confirm" .Team.Name }}'>{{ T $.Lang "passing.start_game" }}</button>
                         </form>
                         {{end}}
                     </td>
@@ -67,38 +67,38 @@
             <div class="flex justify-between items-start mb-2">
                 <h3 class="font-semibold text-gray-800 dark:text-gray-100">{{.Team.Name}}</h3>
                 {{if eq .Status "pending"}}
-                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">Ожидает</span>
+                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">{{ T $.Lang "passing.status_pending" }}</span>
                 {{else if eq .Status "accepted"}}
-                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">Принята</span>
+                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">{{ T $.Lang "passing.status_accepted" }}</span>
                 {{else if eq .Status "rejected"}}
-                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">Отклонена</span>
+                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">{{ T $.Lang "passing.status_rejected" }}</span>
                 {{else if eq .Status "started"}}
-                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">Идёт игра</span>
+                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">{{ T $.Lang "passing.status_started" }}</span>
                 {{else if eq .Status "finished"}}
-                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">Завершена</span>
+                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">{{ T $.Lang "passing.status_finished" }}</span>
                 {{else if eq .Status "disqualified"}}
-                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-800 text-white">Дисквалифицирована</span>
+                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-800 text-white">{{ T $.Lang "passing.status_disqualified" }}</span>
                 {{else}}
                     <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100">{{.Status}}</span>
                 {{end}}
             </div>
-            <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">Капитан: {{.Team.Captain.Name}} ({{.Team.Captain.Email}})</p>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">{{ TF $.Lang "passing.captain_label" .Team.Captain.Name }}</p>
             <div class="flex gap-2">
                 {{if eq .Status "pending"}}
                 <form action="/games/{{$.GameID}}/passings/{{.ID}}/status" method="POST" class="inline flex-1">
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
                     <input type="hidden" name="status" value="accepted">
-                    <button type="submit" class="btn btn-primary text-xs flex-1" data-confirm="Принять заявку?">Принять</button>
+                    <button type="submit" class="btn btn-primary text-xs flex-1" data-confirm='{{ TF $.Lang "passing.accept_confirm" .Team.Name }}'>{{ T $.Lang "passing.accept" }}</button>
                 </form>
                 <form action="/games/{{$.GameID}}/passings/{{.ID}}/status" method="POST" class="inline flex-1">
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
                     <input type="hidden" name="status" value="rejected">
-                    <button type="submit" class="btn btn-danger text-xs flex-1" data-confirm="Отклонить заявку?">Отклонить</button>
+                    <button type="submit" class="btn btn-danger text-xs flex-1" data-confirm='{{ TF $.Lang "passing.reject_confirm" .Team.Name }}'>{{ T $.Lang "passing.reject" }}</button>
                 </form>
                 {{else if eq .Status "accepted"}}
                 <form action="/games/{{$.GameID}}/passings/{{.ID}}/start" method="POST" class="inline flex-1">
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
-                    <button type="submit" class="btn btn-primary text-xs flex-1" data-confirm="Начать игру?">Начать игру</button>
+                    <button type="submit" class="btn btn-primary text-xs flex-1" data-confirm='{{ TF $.Lang "passing.start_confirm" .Team.Name }}'>{{ T $.Lang "passing.start_game" }}</button>
                 </form>
                 {{end}}
             </div>
@@ -107,7 +107,7 @@
     </div>
     {{else}}
     <div class="card text-center py-12">
-        <p class="text-gray-500 dark:text-gray-400">Заявок пока нет.</p>
+        <p class="text-gray-500 dark:text-gray-400">{{ T $.Lang "passing.no_passings" }}</p>
     </div>
     {{end}}
 
@@ -116,20 +116,20 @@
     <div class="flex items-center justify-between mt-6">
         <div class="flex-1 flex justify-between sm:hidden">
             {{if gt .CurrentPage 1}}
-                <a href="?page={{.CurrentPage | subtract 1}}" class="btn btn-outline text-sm">← Предыдущая</a>
+                <a href="?page={{.CurrentPage | sub 1}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_prev" }}</a>
             {{end}}
             {{if lt .CurrentPage .TotalPages}}
-                <a href="?page={{.CurrentPage | add 1}}" class="btn btn-outline text-sm">Следующая →</a>
+                <a href="?page={{.CurrentPage | add 1}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_next" }}</a>
             {{end}}
         </div>
         <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
             <p class="text-sm text-gray-700 dark:text-gray-300">
-                Страница <span class="font-medium">{{.CurrentPage}}</span> из <span class="font-medium">{{.TotalPages}}</span>
-                <span class="text-gray-500 dark:text-gray-400">(всего {{.TotalItems}} заявок)</span>
+                {{ TF $.Lang "games.pagination_page" .CurrentPage .TotalPages }}
+                <span class="text-gray-500 dark:text-gray-400">{{ TF $.Lang "games.pagination_total" .TotalItems }}</span>
             </p>
-            <nav class="inline-flex gap-1" aria-label="Пагинация">
+            <nav class="inline-flex gap-1" aria-label="Pagination">
                 {{if gt .CurrentPage 1}}
-                    <a href="?page={{.CurrentPage | subtract 1}}" class="btn btn-outline text-sm px-3 py-1">←</a>
+                    <a href="?page={{.CurrentPage | sub 1}}" class="btn btn-outline text-sm px-3 py-1">←</a>
                 {{end}}
                 <span class="px-3 py-1 text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 rounded-md">{{.CurrentPage}}</span>
                 {{if lt .CurrentPage .TotalPages}}
@@ -141,7 +141,7 @@
     {{end}}
 
     <div class="mt-6">
-        <a href="/games/{{.GameID}}" class="btn btn-outline text-sm">← Назад к игре</a>
+        <a href="/games/{{.GameID}}" class="btn btn-outline text-sm">{{ T $.Lang "passing.back_to_game" }}</a>
     </div>
 </div>
 {{end}}

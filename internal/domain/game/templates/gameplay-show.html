@@ -1,6 +1,6 @@
 {{define "gameplay-show.html"}}
 <div class="max-w-3xl mx-auto" data-passing-id="{{.PassingID}}" data-game-id="{{.GameID}}" data-time-limit="{{.TimeLimitSeconds}}">
-    <h1 class="page-title">Прохождение уровня: {{if .Level}}{{.Level.Name}}{{else}}—{{end}}</h1>
+    <h1 class="page-title">{{ TF $.Lang "gameplay.title" (or .Level.Name "—") }}</h1>
 
     <!-- Карточка уровня -->
     <div class="card mb-6">
@@ -13,9 +13,9 @@
         <!-- Вопросы -->
         {{if .Level}}{{range .Level.Questions}}
         <div class="mb-4 last:mb-0">
-            <p class="font-medium text-gray-800 dark:text-gray-100"><span class="font-bold">Вопрос:</span> {{.Text}}</p>
+            <p class="font-medium text-gray-800 dark:text-gray-100"><span class="font-bold">{{ T $.Lang "gameplay.question_label" }}</span> {{.Text}}</p>
             {{if .Hint}}
-            <p class="text-sm text-gray-500 dark:text-gray-400 italic mt-1">Подсказка: {{.Hint}}</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400 italic mt-1">{{ TF $.Lang "gameplay.hint_label" .Hint }}</p>
             {{end}}
         </div>
         {{end}}{{end}}
@@ -28,14 +28,11 @@
         <!-- Форма отправки кода -->
         <form id="code-form" action="/game/{{.PassingID}}/submit" method="POST" class="flex flex-wrap items-center gap-3 mt-4 fade-in">
             <input type="hidden" name="_csrf" value="{{.csrf}}">
-            <input type="text" name="code" id="code-input" placeholder="Введите код" required autocomplete="off"
+            <input type="text" name="code" id="code-input" placeholder='{{ T $.Lang "gameplay.code_placeholder" }}' required autocomplete="off"
                     class="flex-1 min-w-[200px] sm:min-w-[250px] rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-3 text-base md:text-lg"
-                    style="font-size: 16px;" <!-- Prevents iOS zoom on focus -->
                     inputmode="text">
-            <button type="submit" id="submit-btn" class="btn btn-primary text-sm whitespace-nowrap py-3 px-4 sm:py-2 sm:px-3"
-                    style="min-height: 44px; min-width: 44px;">Отправить</button>
-            <button type="button" id="hint-btn" class="btn btn-outline text-sm whitespace-nowrap py-3 px-4 sm:py-2 sm:px-3" title="Использовать подсказку (горячая клавиша: H)"
-                    style="min-height: 44px; min-width: 44px;">💡 Подсказка</button>
+            <button type="submit" id="submit-btn" class="btn btn-primary text-sm whitespace-nowrap py-3 px-4 sm:py-2 sm:px-3 min-h-11 min-w-11">{{ T $.Lang "gameplay.submit_button" }}</button>
+            <button type="button" id="hint-btn" class="btn btn-outline text-sm whitespace-nowrap py-3 px-4 sm:py-2 sm:px-3 min-h-11 min-w-11" title='{{ T $.Lang "gameplay.hint_title" }}'>{{ T $.Lang "gameplay.hint_button" }}</button>
         </form>
 
         <!-- Mobile sticky timer -->
@@ -48,12 +45,12 @@
             <input type="hidden" name="_csrf" value="{{.csrf}}">
             <input type="file" name="answer_file" id="file-input" accept="image/jpeg,image/png,image/gif,application/pdf,text/plain"
                    class="flex-1 text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
-            <button type="submit" id="file-submit-btn" class="btn btn-outline text-sm whitespace-nowrap">Загрузить файл</button>
+            <button type="submit" id="file-submit-btn" class="btn btn-outline text-sm whitespace-nowrap">{{ T $.Lang "gameplay.upload_file" }}</button>
         </form>
 
         <div id="upload-progress" class="mt-2 hidden">
             <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                <div id="upload-progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-150" style="width:0%"></div>
+                <div id="upload-progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-150"></div>
             </div>
             <p id="upload-progress-text" class="text-xs text-gray-500 dark:text-gray-400 mt-1"></p>
         </div>
@@ -69,7 +66,7 @@
 
     <!-- История попыток -->
     <div class="card">
-        <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">История попыток</h3>
+        <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ T $.Lang "gameplay.history_title" }}</h3>
         {{if .Attempts}}
         <ul id="attempts-list" class="divide-y divide-gray-100">
             {{range .Attempts}}
@@ -77,9 +74,9 @@
                 <span class="font-mono">{{.Code}}</span>
                 <span class="flex items-center gap-2">
                     {{if .Success}}
-                    <span class="inline-flex items-center gap-1 text-green-600 font-medium">✅ Верно</span>
+                    <span class="inline-flex items-center gap-1 text-green-600 font-medium">{{ T $.Lang "gameplay.attempt_correct" }}</span>
                     {{else}}
-                    <span class="inline-flex items-center gap-1 text-red-600 font-medium">❌ Неверно</span>
+                    <span class="inline-flex items-center gap-1 text-red-600 font-medium">{{ T $.Lang "gameplay.attempt_wrong" }}</span>
                     {{end}}
                     <span class="text-gray-400 text-xs">{{.CreatedAt.Format "15:04:05"}}</span>
                 </span>
@@ -87,13 +84,13 @@
             {{end}}
         </ul>
         {{else}}
-        <p class="text-gray-500 dark:text-gray-400 text-sm">Пока нет попыток.</p>
+        <p class="text-gray-500 dark:text-gray-400 text-sm">{{ T $.Lang "gameplay.no_attempts" }}</p>
         {{end}}
     </div>
 
     <!-- Навигация назад -->
     <div class="mt-6">
-        <a href="/games/{{.GameID}}" class="btn btn-outline text-sm">← Назад к игре</a>
+        <a href="/games/{{.GameID}}" class="btn btn-outline text-sm">{{ T $.Lang "gameplay.back_to_game" }}</a>
     </div>
 </div>
 
@@ -134,7 +131,7 @@
                 return r.json();
             })
             .then(function(data) {
-                if (data.timeLeft !== undefined) {
+                if (data.timeLeft !== undefined && data.timeLeft < timeLeft) {
                     timeLeft = data.timeLeft;
                 }
                 renderTimer();
@@ -152,11 +149,11 @@
                 return;
             }
             if (timeLeft <= 0) {
-                timerDisplay.textContent = '⏰ Время вышло!';
+                timerDisplay.textContent = '{{ T $.Lang "gameplay.time_expired" }}';
                 timerDisplay.className = 'text-red-600 font-bold text-xl';
                 codeForm.style.display = 'none';
                 if (mobileTimerDisplay) {
-                    mobileTimerDisplay.textContent = '⏰ Время вышло!';
+                    mobileTimerDisplay.textContent = '{{ T $.Lang "gameplay.time_expired" }}';
                     mobileTimerDisplay.className = 'text-center font-mono font-bold text-lg text-red-600';
                 }
                 return;
@@ -165,25 +162,25 @@
             const secs = timeLeft % 60;
             const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
 
-            timerDisplay.textContent = `⏱️ Осталось: ${timeStr}`;
+            timerDisplay.textContent = '{{ T $.Lang "gameplay.time_left" }}'.replace('%s', timeStr);
 
             // Color coding: green > 5min, yellow > 1min, red < 1min
             if (timeLeft <= 60) {
                 timerDisplay.className = 'text-red-600 font-mono text-xl font-bold animate-pulse';
                 if (mobileTimerDisplay) {
-                    mobileTimerDisplay.textContent = `⏱️ ${timeStr}`;
+                    mobileTimerDisplay.textContent = '{{ T $.Lang "gameplay.time_left" }}'.replace('%s', timeStr);
                     mobileTimerDisplay.className = 'text-center font-mono font-bold text-lg text-red-600 animate-pulse';
                 }
             } else if (timeLeft <= 300) {
                 timerDisplay.className = 'text-yellow-600 font-mono text-xl font-bold';
                 if (mobileTimerDisplay) {
-                    mobileTimerDisplay.textContent = `⏱️ ${timeStr}`;
+                    mobileTimerDisplay.textContent = '{{ T $.Lang "gameplay.time_left" }}'.replace('%s', timeStr);
                     mobileTimerDisplay.className = 'text-center font-mono font-bold text-lg text-yellow-600';
                 }
             } else {
                 timerDisplay.className = 'text-gray-700 dark:text-gray-300 font-mono text-xl';
                 if (mobileTimerDisplay) {
-                    mobileTimerDisplay.textContent = `⏱️ ${timeStr}`;
+                    mobileTimerDisplay.textContent = '{{ T $.Lang "gameplay.time_left" }}'.replace('%s', timeStr);
                     mobileTimerDisplay.className = 'text-center font-mono font-bold text-lg text-gray-800 dark:text-gray-100';
                 }
             }
@@ -235,8 +232,8 @@
             const now = new Date();
             const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
             const badge = success
-                ? '<span class="inline-flex items-center gap-1 text-green-600 font-medium">✅ Верно</span>'
-                : '<span class="inline-flex items-center gap-1 text-red-600 font-medium">❌ Неверно</span>';
+                ? '<span class="inline-flex items-center gap-1 text-green-600 font-medium">{{ T $.Lang "gameplay.attempt_correct" }}</span>'
+                : '<span class="inline-flex items-center gap-1 text-red-600 font-medium">{{ T $.Lang "gameplay.attempt_wrong" }}</span>';
             li.innerHTML = `<span class="font-mono">${escapeHtml(code)}</span><span class="flex items-center gap-2">${badge}<span class="text-gray-400 text-xs">${timeStr}</span></span>`;
             attemptsList.prepend(li);
         }
@@ -250,7 +247,7 @@
 
             isSubmitting = true;
             submitBtn.disabled = true;
-            submitBtn.textContent = 'Отправка...';
+            submitBtn.textContent = '{{ T $.Lang "gameplay.submitting" }}';
 
             fetch('/game/' + passingId + '/submit', {
                 method: 'POST',
@@ -268,23 +265,19 @@
                     window.location.reload();
                     return null;
                 }
-                return r.text().then(t => { throw new Error(t || 'Ошибка отправки'); });
+                return r.text().then(t => { throw new Error(t || '{{ T $.Lang "gameplay.submit_error" }}'); });
             })
             .then(data => {
                 if (!data) return; // redirect happened
             })
             .catch(err => {
-                // Показываем конкретную ошибку или сообщение по умолчанию
-                const errorMsg = String(err.message || '');
-                if (errorMsg.indexOf('already completed') !== -1 || errorMsg.indexOf('завершён') !== -1) {
-                    showMessage('Уровень уже завершён.', 'warning');
-                } else if (errorMsg.indexOf('not member') !== -1 || errorMsg.indexOf('участником') !== -1) {
-                    showMessage('Вы не являетесь участником этой команды.', 'error');
-                } else if (errorMsg.indexOf('not found') !== -1 || errorMsg.indexOf('не найден') !== -1) {
-                    showMessage('Прогресс не найден — возможно время истекло.', 'warning');
-                } else {
-                    showMessage('Неверный код! Попробуйте ещё раз.', 'error');
-                }
+                // Backend now returns localized error messages — display directly.
+                // Fall back to a generic message only if empty.
+                const errorMsg = String(err.message || '').trim();
+                const shownMsg = errorMsg || '{{ T $.Lang "gameplay.wrong_code" }}';
+                // Distinguish severity: wrong code vs other issues
+                const isWrongCode = !errorMsg || /код|code|answer|ответ/i.test(errorMsg);
+                showMessage(shownMsg, isWrongCode ? 'error' : 'warning');
                 addAttempt(code, false);
                 codeInput.value = '';
                 codeInput.focus();
@@ -292,7 +285,7 @@
             .finally(() => {
                 isSubmitting = false;
                 submitBtn.disabled = false;
-                submitBtn.textContent = 'Отправить';
+                submitBtn.textContent = '{{ T $.Lang "gameplay.submit_button" }}';
             });
         });
 
@@ -303,7 +296,7 @@
                 if (isSubmitting) return;
                 isSubmitting = true;
                 hintBtn.disabled = true;
-                hintBtn.textContent = 'Загрузка...';
+                hintBtn.textContent = '{{ T $.Lang "gameplay.hint_loading" }}';
 
                 fetch('/game/' + passingId + '/hint', {
                     method: 'POST',
@@ -317,24 +310,32 @@
                         // Получаем hint из query param
                         const hint = new URLSearchParams(window.location.search).get('hint');
                         if (hint) {
-                            showToast('💡 Подсказка: ' + decodeURIComponent(hint), 'info');
+                            showToast('💡 {{ T $.Lang "gameplay.hint_label" }}'.replace('%s', decodeURIComponent(hint)), 'info');
                         } else {
-                            showToast('Подсказка использована. Страница обновится...', 'success');
+                            showToast('{{ T $.Lang "gameplay.hint_used_refresh" }}', 'success');
                         }
                         setTimeout(() => window.location.reload(), 1200);
                     } else {
-                        return r.text().then(t => { throw new Error(t); });
+                        // Прокидываем заголовки в ошибку для машинно-читаемого кода (UX16)
+                        return r.text().then(t => {
+                            const e = new Error(t || '{{ T $.Lang "gameplay.hint_error" }}');
+                            e.headers = r.headers;
+                            throw e;
+                        });
                     }
                 })
                 .catch(err => {
                     const errorMsg = String(err.message || '');
-                    if (errorMsg.indexOf('лимит подсказок') !== -1 || errorMsg.indexOf('subscribed') !== -1) {
-                        showToast('Лимит подсказок исчерпан', 'error');
+                    // Машинно-читаемый код ошибки (UX16): сервер ставит X-Error-Code
+                    // в заголовке ответа, клиент не парсит локализованный текст.
+                    if (err && err.headers && err.headers.get('x-error-code') === 'hint_limit') {
+                        showToast('{{ T $.Lang "gameplay.hint_limit_reached" }}', 'error');
                     } else {
-                        showToast('Ошибка: ' + (err.message || 'не удалось использовать подсказку'), 'error');
+                        const hintErrMsg = err.message || '{{ T $.Lang "gameplay.hint_error" }}';
+                        showToast(hintErrMsg, 'error');
                     }
                     hintBtn.disabled = false;
-                    hintBtn.textContent = '💡 Подсказка';
+                    hintBtn.textContent = '{{ T $.Lang "gameplay.hint_button" }}';
                     isSubmitting = false;
                 });
             });
@@ -368,24 +369,25 @@
                     if (e.lengthComputable) {
                         const pct = Math.round((e.loaded / e.total) * 100);
                         uploadProgressBar.style.width = pct + '%';
-                        uploadProgressText.textContent = `Загрузка: ${pct}% (${formatBytes(e.loaded)} / ${formatBytes(e.total)})`;
+                        const upTpl = '{{ T $.Lang "gameplay.upload_progress" }}';
+                        uploadProgressText.textContent = upTpl.replace('%d%%', pct + '%').replace('%s', formatBytes(e.loaded)).replace('%s', formatBytes(e.total));
                     }
                 });
 
                 xhr.addEventListener('load', function() {
                     uploadProgressBar.style.width = '100%';
                     if (xhr.status >= 200 && xhr.status < 400) {
-                        uploadProgressText.textContent = 'Загружено! Обновление...';
+                        uploadProgressText.textContent = '{{ T $.Lang "gameplay.upload_complete" }}';
                         setTimeout(() => window.location.reload(), 500);
                     } else {
-                        uploadProgressText.textContent = 'Ошибка загрузки';
+                        uploadProgressText.textContent = '{{ T $.Lang "gameplay.upload_error" }}';
                         fileSubmitBtn.disabled = false;
                         setTimeout(() => uploadProgress.classList.add('hidden'), 2000);
                     }
                 });
 
                 xhr.addEventListener('error', function() {
-                    uploadProgressText.textContent = 'Ошибка сети';
+                    uploadProgressText.textContent = '{{ T $.Lang "gameplay.network_error" }}';
                     fileSubmitBtn.disabled = false;
                     setTimeout(() => uploadProgress.classList.add('hidden'), 2000);
                 });
@@ -437,11 +439,11 @@
 
             eventSource.addEventListener('level_completed', function(e) {
                 const data = JSON.parse(e.data);
-                showToast('🎉 Уровень "' + data.data.level_name + '" пройден!', 'success', 6000);
-                // Обновляем таймер
+                showToast('{{ T $.Lang "gameplay.level_completed_with_name" }}'.replace('%s', data.data.level_name), 'success', 6000);
+                // Update timer display
                 const timerDisplay = document.getElementById('timer-display');
                 if (timerDisplay) {
-                    timerDisplay.textContent = '✅ Уровень завершён!';
+                    timerDisplay.textContent = '{{ T $.Lang "gameplay.level_done" }}';
                     timerDisplay.classList.add('text-green-600');
                 }
             });
@@ -449,12 +451,12 @@
             eventSource.addEventListener('time_warning', function(e) {
                 const data = JSON.parse(e.data);
                 const remaining = Math.round(data.data.remaining / 60);
-                showToast('⏰ Осталось ' + remaining + ' минут!', 'warning', 5000);
+                showToast('{{ T $.Lang "gameplay.time_warning" }}'.replace('%d', remaining), 'warning', 5000);
             });
 
             eventSource.addEventListener('hint_used', function(e) {
                 const data = JSON.parse(e.data);
-                showToast('💡 Подсказка использована', 'info');
+                showToast('{{ T $.Lang "gameplay.hint_used" }}', 'info');
             });
 
             // Desktop push notification
@@ -471,9 +473,9 @@
             eventSource.addEventListener('code_submitted', function(e) {
                 const data = JSON.parse(e.data);
                 if (data.data.success) {
-                    showToast('✅ Код принят! Проверка...', 'success', 3000);
+                    showToast('{{ T $.Lang "gameplay.code_accepted" }}', 'success', 3000);
                 } else {
-                    showToast('❌ Код не принят', 'error', 3000);
+                    showToast('{{ T $.Lang "gameplay.code_rejected" }}', 'error', 3000);
                 }
             });
 

@@ -16,10 +16,10 @@ import (
 
 // GameListingService отвечает за списки игр, фильтрацию и сортировку.
 type GameListingService struct {
-	gameRepo        GameRepository
-	searchVectorOk  bool
-	searchVectorMu  sync.RWMutex
-	searchVectorSet bool
+	gameRepo            GameRepository
+	searchVectorExists  bool
+	searchVectorMu      sync.RWMutex
+	searchVectorChecked bool
 }
 
 // NewGameListingService создаёт новый сервис списков.
@@ -43,16 +43,28 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 		LEFT JOIN users ON users.id = games.author_id
 		LEFT JOIN (
 			SELECT game_id, COALESCE(AVG(rating), 0) as avg_rating
-			FROM reviews GROUP BY game_id
+			FROM reviews
+			WHERE game_id IN (
+				SELECT id FROM games
+				WHERE (visibility = 'public' OR author_id = ?) AND (is_draft = false OR author_id = ?)
+			)
+			GROUP BY game_id
 		) ratings ON ratings.game_id = games.id
 		LEFT JOIN (
 			SELECT game_id, COUNT(DISTINCT team_id) as participant_count
-			FROM game_passings WHERE status IN ('accepted','started','finished')
+			FROM game_passings
+			WHERE status IN ('accepted','started','finished')
+			  AND game_id IN (
+				SELECT id FROM games
+				WHERE (visibility = 'public' OR author_id = ?) AND (is_draft = false OR author_id = ?)
+			)
 			GROUP BY game_id
 		) participants ON participants.game_id = games.id
 		WHERE (games.visibility = 'public' OR games.author_id = ?) AND (games.is_draft = false OR games.author_id = ?)`)
 
-	args := []any{filter.ViewerID, filter.ViewerID}
+	// Агрегаты считаем только для игр, видимых пользователю, а не по всей таблице
+	// (visibility/draft-скоп в подзапросах повторяет условия основного WHERE).
+	args := []any{filter.ViewerID, filter.ViewerID, filter.ViewerID, filter.ViewerID, filter.ViewerID, filter.ViewerID}
 
 	switch filter.Status {
 	case filterDraft:
@@ -66,11 +78,11 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 	if filter.Search != "" {
 		escapedSearch := sqlutil.EscapeLike(filter.Search)
 		if s.useSearchVector(ctx) {
-			b.WriteString(" AND (search_vector IS NOT NULL AND search_vector @@ plainto_tsquery('russian', ?) OR games.name ILIKE ?)")
-			args = append(args, filter.Search, "%"+escapedSearch+"%")
+			b.WriteString(" AND (search_vector IS NOT NULL AND search_vector @@ plainto_tsquery('russian', ?) OR games.name ILIKE ? OR users.name ILIKE ?)")
+			args = append(args, filter.Search, "%"+escapedSearch+"%", "%"+escapedSearch+"%")
 		} else {
-			b.WriteString(" AND games.name ILIKE ?")
-			args = append(args, "%"+escapedSearch+"%")
+			b.WriteString(" AND (games.name ILIKE ? OR users.name ILIKE ?)")
+			args = append(args, "%"+escapedSearch+"%", "%"+escapedSearch+"%")
 		}
 	}
 	if filter.DateFrom != "" {
@@ -117,28 +129,35 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 		}
 	}
 
+	// Сохраняем copy запроса до ORDER BY для возможного fallback-COUNT
+	queryBeforeOrder := b.String()
+
 	b.WriteString(" ORDER BY " + orderClause)
 
-	// Получаем общее количество отдельным запросом (всегда корректно, даже при пустой странице)
-	countB := b.String()
 	offset := (page - 1) * perPage
 	b.WriteString(" LIMIT " + strconv.Itoa(perPage) + " OFFSET " + strconv.Itoa(offset))
 	query := b.String()
-
-	var total int64
-	if err := s.gameRepo.Model(ctx).Raw("SELECT COUNT(*) FROM ("+countB+") cnt", args...).Scan(&total).Error; err != nil {
-		return nil, 0, err
-	}
 
 	type gameRow struct {
 		Game
 		RatingValue      float64
 		ParticipantCount int
 		AuthorName       string `gorm:"column:author__name"`
+		TotalCount       int64
 	}
 	var rows []gameRow
 	if err := s.gameRepo.Model(ctx).Raw(query, args...).Scan(&rows).Error; err != nil {
 		return nil, 0, err
+	}
+
+	var total int64
+	if len(rows) > 0 {
+		total = rows[0].TotalCount
+	} else {
+		// Если страница пуста (за пределами данных), считаем total отдельным запросом
+		// Безопасно: используем тот же query без ORDER BY/LIMIT/OFFSET
+		countSQL := "SELECT COUNT(*) FROM (" + queryBeforeOrder + ") AS subq"
+		_ = s.gameRepo.Model(ctx).Raw(countSQL, args...).Scan(&total)
 	}
 
 	games := make([]Game, len(rows))
@@ -160,18 +179,18 @@ func (s *GameListingService) ListByDateRange(ctx context.Context, from, to time.
 // Результат кэшируется на время жизни сервиса.
 func (s *GameListingService) useSearchVector(ctx context.Context) bool {
 	s.searchVectorMu.RLock()
-	if s.searchVectorSet {
-		ok := s.searchVectorOk
+	if s.searchVectorChecked {
+		exists := s.searchVectorExists
 		s.searchVectorMu.RUnlock()
-		return ok
+		return exists
 	}
 	s.searchVectorMu.RUnlock()
 
 	s.searchVectorMu.Lock()
 	defer s.searchVectorMu.Unlock()
 
-	if s.searchVectorSet {
-		return s.searchVectorOk
+	if s.searchVectorChecked {
+		return s.searchVectorExists
 	}
 
 	var exists bool
@@ -180,17 +199,17 @@ func (s *GameListingService) useSearchVector(ctx context.Context) bool {
 		Scan(&exists).Error
 	if err != nil || !exists {
 		log.Warn().Err(err).Bool("exists", exists).Msg("GameListingService: search_vector column not found, falling back to ILIKE")
-		s.searchVectorOk = false
+		s.searchVectorExists = false
 	} else {
-		s.searchVectorOk = true
+		s.searchVectorExists = true
 	}
-	s.searchVectorSet = true
-	return s.searchVectorOk
+	s.searchVectorChecked = true
+	return s.searchVectorExists
 }
 
 // ResetSearchVectorCheck сбрасывает кэш проверки search_vector (для тестов).
 func (s *GameListingService) ResetSearchVectorCheck() {
 	s.searchVectorMu.Lock()
 	defer s.searchVectorMu.Unlock()
-	s.searchVectorSet = false
+	s.searchVectorChecked = false
 }

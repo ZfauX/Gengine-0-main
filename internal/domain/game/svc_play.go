@@ -21,6 +21,13 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// ErrGameNotActive возвращается при попытке получить данные для неактивного прохождения.
+var ErrGameNotActive = errors.New("игра не активна")
+
+// ErrHintLimitReached — лимит подсказок исчерпан. Sentinel позволяет хендлерам
+// передавать клиенту машинно-читаемый код ошибки (UX16, без сравнения строк).
+var ErrHintLimitReached = errors.New("лимит подсказок исчерпан")
+
 // GamePlayService отвечает за игровой процесс: отправку кодов, файлов, подсказок,
 // работу с чёрным ящиком и тестовый режим.
 type GamePlayService struct {
@@ -75,7 +82,7 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 		}
 
 		// 2. Проверяем членство в команде
-		if checkErr := checkTeamMembership(tx, passingID, userID); checkErr != nil {
+		if checkErr := CheckTeamMembership(tx, passingID, userID); checkErr != nil {
 			return checkErr
 		}
 
@@ -128,8 +135,10 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 		}
 		s.broadcastSnapshot(ctx, passingID)
 		if result.GameID != 0 {
-			if err := s.monitorSvc.CalculateResults(ctx, result.GameID); err != nil {
-				log.Error().Err(err).Uint("game_id", result.GameID).Msg("SubmitCode: CalculateResults failed")
+			if s.monitorSvc != nil {
+				if err := s.monitorSvc.CalculateResults(ctx, result.GameID); err != nil {
+					log.Error().Err(err).Uint("game_id", result.GameID).Msg("SubmitCode: CalculateResults failed")
+				}
 			}
 		}
 	}
@@ -147,7 +156,7 @@ func (s *GamePlayService) SubmitFile(ctx context.Context, passingID, userID uint
 			return progressErr
 		}
 
-		if checkErr := checkTeamMembership(tx, passingID, userID); checkErr != nil {
+		if checkErr := CheckTeamMembership(tx, passingID, userID); checkErr != nil {
 			return checkErr
 		}
 
@@ -197,7 +206,7 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (
 			return progressErr
 		}
 
-		if checkErr := checkTeamMembership(tx, passingID, userID); checkErr != nil {
+		if checkErr := CheckTeamMembership(tx, passingID, userID); checkErr != nil {
 			return checkErr
 		}
 
@@ -213,14 +222,18 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (
 		}
 		var settings GameSetting
 		if findErr := tx.Where("game_id = ?", passing.GameID).First(&settings).Error; findErr != nil {
-			settings = GameSetting{AllowHints: true, HintPenaltySeconds: 300, MaxHints: 3}
+			if errors.Is(findErr, gorm.ErrRecordNotFound) {
+				settings = GameSetting{AllowHints: true, HintPenaltySeconds: 300, MaxHints: 3}
+			} else {
+				return fmt.Errorf("failed to load game settings: %w", findErr)
+			}
 		}
 
 		if !settings.AllowHints {
 			return errors.New("подсказки запрещены")
 		}
 		if settings.MaxHints > 0 && progress.HintsUsed >= settings.MaxHints {
-			return errors.New("лимит подсказок исчерпан")
+			return ErrHintLimitReached
 		}
 
 		progress.HintsUsed++
@@ -511,6 +524,10 @@ func (s *GamePlayService) broadcastSnapshot(ctx context.Context, passingID uint)
 		return
 	}
 	gameID := passing.GameID
+	if s.monitorSvc == nil {
+		log.Warn().Uint("game_id", gameID).Msg("GamePlayService.broadcastSnapshot: monitorSvc is nil, skipping snapshot")
+		return
+	}
 	s.monitorSvc.InvalidateCache(gameID)
 	snapshot, err := s.monitorSvc.GetOrFetchSnapshot(timeoutCtx, gameID)
 	if err != nil {
@@ -537,7 +554,7 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 
 	// Проверяем статус прохождения: данные должны быть доступны только для активных игр
 	if passing.Status != StatusStarted && passing.Status != StatusTesting {
-		return nil, errors.New("игра не активна")
+		return nil, ErrGameNotActive
 	}
 
 	var settings GameSetting
@@ -569,7 +586,7 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 		log.Error().Err(err).Uint("progress_id", progress.ID).Msg("GetGameplayData: failed to fetch attempts")
 	}
 
-	var votingSession gameBlackboxVotingSession
+	var votingSession GameBlackboxVotingSession
 	votingActive := false
 	if err := s.db.WithContext(ctx).
 		Where("game_passing_id = ? AND level_id = ? AND is_open = true", passingID, progress.LevelID).
@@ -610,7 +627,8 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 // GetPassingWithGame загружает Passing с GameID для проверки прав.
 func (s *GamePlayService) GetPassingWithGame(ctx context.Context, passingID uint) (*GamePassing, error) {
 	var passing GamePassing
-	if err := s.db.WithContext(ctx).Select("id", "game_id", "team_id").First(&passing, passingID).Error; err != nil {
+	// JOIN-оптимизация: passing + game в 1 SQL-запросе
+	if err := s.db.WithContext(ctx).Joins("Game").First(&passing, passingID).Error; err != nil {
 		return nil, err
 	}
 	return &passing, nil

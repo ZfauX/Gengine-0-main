@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	apperr "gengine-0/internal/pkg/errors"
+	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/validation"
 
@@ -29,14 +30,14 @@ func NewNoteHandler(noteService *NoteService) *NoteHandler {
 // @Param id path int true "ID игры"
 // @Success 200 {object} map[string]interface{} "Список заметок"
 // @Failure 400 {object} map[string]interface{} "Неверный ID"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/notes [get]
 // @Security JWT
 func (h *NoteHandler) Notes(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
-			"error": "Неверный ID игры",
+			"error": render.Tr(c, "handler.invalid_game_id"),
 			"code":  "bad_request",
 		})
 		return
@@ -44,7 +45,7 @@ func (h *NoteHandler) Notes(c *gin.Context) {
 	userID := c.GetUint("userID")
 	notes, err := h.noteService.ListByGame(c.Request.Context(), uint(gameID), userID)
 	if err != nil {
-		appErr := apperr.Forbidden(err.Error())
+		appErr := apperr.Forbidden(render.LocalizeError(c, err.Error()))
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -63,21 +64,21 @@ func (h *NoteHandler) Notes(c *gin.Context) {
 // @Param body body object true "Данные заметки"
 // @Success 201 {object} map[string]interface{} "Заметка создана"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/notes [post]
 // @Security JWT
 func (h *NoteHandler) CreateNote(c *gin.Context) {
 	gameID, parseErr := strconv.Atoi(c.Param("id"))
 	if parseErr != nil || gameID <= 0 {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
-			"error": "Неверный ID игры",
+			"error": render.Tr(c, "handler.invalid_game_id"),
 			"code":  "bad_request",
 		})
 		return
 	}
 	userID := c.GetUint("userID")
 
-	if limitErr := limitRequestBody(c, 1*1024*1024); limitErr != nil {
+	if limitErr := LimitRequestBody(c, 1*1024*1024); limitErr != nil {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 			"error": limitErr.Error(),
 			"code":  "bad_request",
@@ -107,7 +108,7 @@ func (h *NoteHandler) CreateNote(c *gin.Context) {
 
 	note, createErr := h.noteService.Create(c.Request.Context(), uint(gameID), input.LevelID, userID, input.Text)
 	if createErr != nil {
-		appErr := apperr.Forbidden(createErr.Error())
+		appErr := apperr.Forbidden(render.LocalizeError(c, createErr.Error()))
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -124,7 +125,7 @@ func (h *NoteHandler) CreateNote(c *gin.Context) {
 // @Param note_id path int true "ID заметки"
 // @Success 200 {object} map[string]interface{} "Заметка удалена"
 // @Failure 400 {object} map[string]interface{} "Неверный ID"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/notes/{note_id} [delete]
 // @Security JWT
 func (h *NoteHandler) DeleteNote(c *gin.Context) {
@@ -138,7 +139,7 @@ func (h *NoteHandler) DeleteNote(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 	if err := h.noteService.Delete(c.Request.Context(), uint(noteID), userID); err != nil {
-		appErr := apperr.Forbidden(err.Error())
+		appErr := apperr.Forbidden(render.LocalizeError(c, err.Error()))
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,

@@ -8,6 +8,7 @@ import (
 
 	"gengine-0/internal/pkg/cache"
 
+	"github.com/lib/pq"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -41,31 +42,16 @@ func (s *RatingService) UpdateRatingsForGame(ctx context.Context, gameID uint) e
 		log.Error().Err(err).Uint("game", gameID).Msg("UpdateRatingsForGame: failed to load passings")
 		return nil
 	}
+	if len(passings) == 0 {
+		s.cache.DeleteByPrefixWithCtx(ctx, "leaderboard:")
+		return nil
+	}
 
+	// Пункты за команду: место → базовые очки.
+	teamIDs := make([]uint, 0, len(passings))
+	teamPoints := make(map[uint]int, len(passings))
 	for _, p := range passings {
-		type memberResult struct {
-			UserID    uint
-			CaptainID uint
-		}
-		var members []memberResult
-		s.DB.Table("team_members").
-			Select("team_members.user_id, teams.captain_id").
-			Joins("JOIN teams ON teams.id = team_members.team_id").
-			Where("team_members.team_id = ?", p.TeamID).
-			Scan(&members)
-
-		seen := make(map[uint]bool)
-		var userIDs []uint
-		for _, m := range members {
-			if !seen[m.UserID] {
-				seen[m.UserID] = true
-				userIDs = append(userIDs, m.UserID)
-			}
-		}
-		if len(members) > 0 && !seen[members[0].CaptainID] {
-			userIDs = append(userIDs, members[0].CaptainID)
-		}
-
+		teamIDs = append(teamIDs, p.TeamID)
 		basePoints := 2
 		if p.Place != nil {
 			switch *p.Place {
@@ -77,10 +63,73 @@ func (s *RatingService) UpdateRatingsForGame(ctx context.Context, gameID uint) e
 				basePoints = 5
 			}
 		}
-		for _, uid := range userIDs {
-			if err := s.awardPoints(uid, basePoints, now); err != nil {
-				log.Error().Err(err).Uint("user_id", uid).Msg("failed to award participant points")
-			}
+		teamPoints[p.TeamID] = basePoints
+	}
+
+	// Один запрос на всех участников всех команд вместо N+1.
+	type memberResult struct {
+		UserID    uint
+		TeamID    uint
+		CaptainID uint
+	}
+	var members []memberResult
+	if err := s.DB.Table("team_members").
+		Select("team_members.user_id, team_members.team_id, teams.captain_id").
+		Joins("JOIN teams ON teams.id = team_members.team_id").
+		Where("team_members.team_id IN ?", teamIDs).
+		Scan(&members).Error; err != nil {
+		log.Error().Err(err).Uint("game", gameID).Msg("UpdateRatingsForGame: team_members query failed")
+		return nil
+	}
+
+	// Капитаны одним запросом (команды могут не иметь строк в team_members).
+	var teamRows []struct {
+		ID        uint
+		CaptainID uint
+	}
+	if err := s.DB.Table("teams").Select("id, captain_id").Where("id IN ?", teamIDs).Scan(&teamRows).Error; err != nil {
+		log.Error().Err(err).Uint("game", gameID).Msg("UpdateRatingsForGame: teams query failed")
+		return nil
+	}
+	captainByTeam := make(map[uint]uint, len(teamRows))
+	for _, t := range teamRows {
+		captainByTeam[t.ID] = t.CaptainID
+	}
+
+	seen := make(map[uint]bool)
+	var userIDs []uint
+	var points []int
+	addUser := func(uid uint, pts int) {
+		if uid == 0 || seen[uid] {
+			return
+		}
+		seen[uid] = true
+		userIDs = append(userIDs, uid)
+		points = append(points, pts)
+	}
+
+	for _, m := range members {
+		addUser(m.UserID, teamPoints[m.TeamID])
+	}
+	for _, p := range passings {
+		addUser(captainByTeam[p.TeamID], teamPoints[p.TeamID])
+	}
+
+	// Batch upsert одним запросом (unnest) вместо N отдельных INSERT (P6).
+	if len(userIDs) > 0 {
+		ts := make([]time.Time, len(userIDs))
+		for i := range ts {
+			ts[i] = now
+		}
+		if err := s.DB.Exec(`
+			INSERT INTO player_ratings (user_id, score, updated_at)
+			SELECT t.user_id, t.score, t.ts
+			FROM unnest(?::bigint[], ?::int[], ?::timestamptz[]) AS t(user_id, score, ts)
+			ON CONFLICT (user_id) DO UPDATE SET
+				score = player_ratings.score + EXCLUDED.score,
+				updated_at = EXCLUDED.updated_at
+		`, pq.Array(userIDs), pq.Array(points), pq.Array(ts)).Error; err != nil {
+			log.Error().Err(err).Uint("game", gameID).Msg("UpdateRatingsForGame: batch upsert failed")
 		}
 	}
 

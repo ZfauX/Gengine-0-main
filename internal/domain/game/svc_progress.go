@@ -416,13 +416,14 @@ func checkAutoStartGamesImpl(db *gorm.DB, ctx context.Context) {
 				return err
 			}
 			for _, p := range passings {
-				p.Status = StatusStarted
-				if err := tx.Save(&p).Error; err != nil {
-					return err
-				}
 				txProgressSvc := NewLevelProgressService(tx)
 				if err := txProgressSvc.InitFirstLevelWithTx(ctx, tx, p.ID); err != nil {
 					log.Error().Err(err).Uint("passing_id", p.ID).Msg("CheckAutoStartGames: failed to init first level")
+					return err
+				}
+				p.Status = StatusStarted
+				if err := tx.Save(&p).Error; err != nil {
+					return err
 				}
 			}
 			return nil

@@ -1,6 +1,6 @@
 {{define "game_passings-apply.html"}}
 <div class="max-w-7xl mx-auto">
-    <h1 class="page-title">Подать заявку на игру</h1>
+    <h1 class="page-title">{{ T $.Lang "apply.title" }}</h1>
 
     {{if .Error}}
     <div class="flash flash-error">{{.Error}}</div>
@@ -11,10 +11,10 @@
             <input type="hidden" name="_csrf" value="{{.csrf}}">
 
             <div class="flex-1 min-w-[200px]">
-                <label for="team_id" class="form-label">Выберите команду</label>
+                <label for="team_id" class="form-label">{{ T $.Lang "apply.select_team" }}</label>
                 <select name="team_id" id="team_id" required
                         class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.team_id}}border-red-500{{end}}">
-                    <option value="">-- выберите команду --</option>
+                    <option value="">{{ T $.Lang "apply.no_team" }}</option>
                     {{range .Teams}}
                         <option value="{{.ID}}">{{.Name}}</option>
                     {{end}}
@@ -22,12 +22,12 @@
                 <p class="field-error">{{.Errors.team_id}}</p>
             </div>
 
-            <button type="submit" class="btn btn-primary text-sm whitespace-nowrap">Подать заявку</button>
+            <button type="submit" class="btn btn-primary text-sm whitespace-nowrap">{{ T $.Lang "apply.submit_button" }}</button>
         </form>
     </div>
 
     <div>
-        <a href="/teams/new" class="btn btn-outline text-sm">+ Создать новую команду</a>
+        <a href="/teams/new" class="btn btn-outline text-sm">{{ T $.Lang "apply.create_team" }}</a>
     </div>
 </div>
 {{end}}

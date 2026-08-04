@@ -50,34 +50,65 @@ func NewPassingHandler(
 // @Param id path int true "ID игры"
 // @Success 200 {string} html "Список прохождений"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/passings [get]
 // @Security JWT
 func (h *PassingHandler) ListPassings(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
 		return
 	}
 	userID := c.GetUint("userID")
 
-	passings, err := h.passingService.ListByGame(c.Request.Context(), uint(gameID))
+	// Check authorization — only managers, co-authors, and admins can view passings
+	var isManager bool
+	isManager, err = h.coAuthorSvc.IsUserManager(c.Request.Context(), uint(gameID), userID)
+	if err != nil {
+		log.Error().Err(err).Int("game_id", gameID).Uint("user", userID).Msg("ListPassings: auth check failed")
+		render.RenderErrorPage(c, http.StatusInternalServerError)
+		return
+	} else if !isManager && !middleware.IsAdmin(c) {
+		render.RenderErrorPage(c, http.StatusForbidden)
+		return
+	}
+
+	perPage := 20
+	page := 1
+	if p, parseErr := strconv.Atoi(c.DefaultQuery("page", "1")); parseErr == nil && p > 0 {
+		page = p
+	}
+
+	passings, totalItems, err := h.passingService.ListByGamePaginated(c.Request.Context(), uint(gameID), page, perPage)
 	if err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.ListPassings: failed to list passings")
 		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 
+	totalPages := int((totalItems + int64(perPage) - 1) / int64(perPage))
+	if totalPages < 1 {
+		totalPages = 1
+	}
 	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "game_passings-list.html", gin.H{
-		"Title":         "Заявки на участие",
+		"Title":         render.Tr(c, "nav.passings"),
 		"GameID":        gameID,
 		"Passings":      passings,
+		"CurrentPage":   page,
+		"TotalPages":    totalPages,
+		"TotalItems":    totalItems,
 		"UserID":        userID,
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,
 		"csrf":          csrf.GetToken(c),
+		"Breadcrumbs": []map[string]string{
+			{"name": "nav.home", "url": "/"},
+			{"name": "nav.games", "url": "/games"},
+			{"name": "game.breadcrumb_label", "url": "/games/" + c.Param("id")},
+			{"name": "nav.passings"},
+		},
 	})
 }
 
@@ -93,7 +124,7 @@ func (h *PassingHandler) ListPassings(c *gin.Context) {
 func (h *PassingHandler) ApplyForm(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -124,13 +155,13 @@ func (h *PassingHandler) ApplyForm(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/apply [post]
 // @Security JWT
 func (h *PassingHandler) Apply(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -149,24 +180,25 @@ func (h *PassingHandler) Apply(c *gin.Context) {
 		})
 	}
 
-	if err := limitRequestBody(c, 1*1024*1024); err != nil {
-		renderTeams(nil, err.Error())
+	if err := LimitRequestBody(c, 1*1024*1024); err != nil {
+		renderTeams(nil, render.LocalizeError(c, err.Error()))
 		return
 	}
 
 	var input ApplyInput
 	if err := c.ShouldBind(&input); err != nil {
-		renderTeams(nil, "Неверные данные: "+err.Error())
+		log.Error().Err(err).Int("game_id", gameID).Uint("user", userID).Msg("PassingHandler.Apply: invalid input")
+		renderTeams(nil, "Неверный формат данных")
 		return
 	}
 
 	if err := validation.ValidatePositiveUint("ID команды", input.TeamID); err != nil {
-		renderTeams(nil, err.Error())
+		renderTeams(nil, render.LocalizeError(c, err.Error()))
 		return
 	}
 
 	if err := h.passingService.Apply(c.Request.Context(), uint(gameID), input.TeamID, userID); err != nil {
-		renderTeams(nil, err.Error())
+		renderTeams(nil, render.LocalizeError(c, err.Error()))
 		return
 	}
 
@@ -182,13 +214,13 @@ func (h *PassingHandler) Apply(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}/passings"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/passings/{passing_id}/status [post]
 // @Security JWT
 func (h *PassingHandler) UpdatePassingStatus(c *gin.Context) {
 	passingID, err := strconv.Atoi(c.Param("passing_id"))
 	if err != nil || passingID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID прохождения")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_passing_id"))
 		return
 	}
 	status := GamePassingStatus(c.PostForm("status"))
@@ -198,7 +230,7 @@ func (h *PassingHandler) UpdatePassingStatus(c *gin.Context) {
 	}
 
 	if err := h.passingService.UpdateStatus(c.Request.Context(), uint(passingID), status, c.GetUint("userID")); err != nil {
-		render.RenderError(c, http.StatusForbidden, err.Error())
+		render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, err.Error()))
 		return
 	}
 
@@ -213,18 +245,18 @@ func (h *PassingHandler) UpdatePassingStatus(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}/passings"
 // @Failure 400 {object} map[string]interface{} "Ошибка"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/passings/{passing_id}/start [post]
 // @Security JWT
 func (h *PassingHandler) StartGame(c *gin.Context) {
 	passingID, err := strconv.Atoi(c.Param("passing_id"))
 	if err != nil || passingID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID прохождения")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_passing_id"))
 		return
 	}
 
 	if err := h.passingService.StartGame(c.Request.Context(), uint(passingID), c.GetUint("userID")); err != nil {
-		render.RenderError(c, http.StatusForbidden, err.Error())
+		render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, err.Error()))
 		return
 	}
 
@@ -240,13 +272,13 @@ func (h *PassingHandler) StartGame(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}/passings"
 // @Failure 400 {object} map[string]interface{} "Ошибка"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/force-finish [post]
 // @Security JWT
 func (h *PassingHandler) ForceFinish(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -254,9 +286,9 @@ func (h *PassingHandler) ForceFinish(c *gin.Context) {
 	if err := h.gameAdminSvc.ForceFinishGame(c.Request.Context(), uint(gameID), userID); err != nil {
 		ok, checkErr := h.coAuthorSvc.IsUserManager(c.Request.Context(), uint(gameID), userID)
 		if checkErr == nil && ok {
-			render.RenderError(c, http.StatusBadRequest, err.Error())
+			render.RenderError(c, http.StatusBadRequest, render.LocalizeError(c, err.Error()))
 		} else {
-			render.RenderError(c, http.StatusForbidden, err.Error())
+			render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, err.Error()))
 		}
 		return
 	}
@@ -273,34 +305,34 @@ func (h *PassingHandler) ForceFinish(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}/passings"
 // @Failure 400 {object} map[string]interface{} "Ошибка"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/disqualify [post]
 // @Security JWT
 func (h *PassingHandler) DisqualifyTeam(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
 		return
 	}
 	userID := c.GetUint("userID")
 
-	if err := limitRequestBody(c, 1*1024*1024); err != nil {
-		render.RenderError(c, http.StatusBadRequest, err.Error())
+	if err := LimitRequestBody(c, 1*1024*1024); err != nil {
+		render.RenderError(c, http.StatusBadRequest, render.LocalizeError(c, err.Error()))
 		return
 	}
 
 	var input DisqualifyInput
 	if err := c.ShouldBind(&input); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверные данные: "+err.Error())
+		render.RenderError(c, http.StatusBadRequest, render.LocalizeError(c, err.Error()))
 		return
 	}
 	if err := validation.ValidatePositiveUint("ID команды", input.TeamID); err != nil {
-		render.RenderError(c, http.StatusBadRequest, err.Error())
+		render.RenderError(c, http.StatusBadRequest, render.LocalizeError(c, err.Error()))
 		return
 	}
 
 	if err := h.gameAdminSvc.DisqualifyTeam(c.Request.Context(), uint(gameID), input.TeamID, userID); err != nil {
-		render.RenderError(c, http.StatusForbidden, err.Error())
+		render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, err.Error()))
 		return
 	}
 

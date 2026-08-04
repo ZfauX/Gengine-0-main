@@ -9,14 +9,15 @@ import (
 )
 
 type GameServiceInterface interface {
-	GetByID(ctx context.Context, id, userID uint) (*Game, error)
+	GetByID(ctx context.Context, id, userID uint, isAdmin bool) (*Game, error)
 	CreateGameWithCover(ctx context.Context, dto *CreateGameDTO, authorID uint) (*Game, error)
-	UpdateGameWithCover(ctx context.Context, gameID uint, dto *UpdateGameDTO, userID uint) error
+	UpdateGameWithCover(ctx context.Context, gameID uint, dto *UpdateGameDTO, userID uint, isAdmin bool) error
 	ListFilteredPaginated(ctx context.Context, filter GameFilter, sort *GameSort, page, perPage int) ([]Game, int64, error)
 	Delete(ctx context.Context, id uint, userID uint) error
 	Publish(ctx context.Context, id uint, userID uint) error
 	ListReviews(ctx context.Context, gameID uint) ([]Review, error)
 	GetAverageRating(ctx context.Context, gameID uint) (float64, int64, error)
+	ShowGame(ctx context.Context, gameID, viewerID uint, isAdmin bool) (*Game, []Review, float64, int64, error)
 	IsUserManager(ctx context.Context, gameID, userID uint) (bool, error)
 	GetSettingsWithDefaults(ctx context.Context, gameID uint) (*GameSetting, error)
 	SaveSettings(ctx context.Context, gameID uint, settings GameSetting) (*GameSetting, error)
@@ -27,8 +28,8 @@ type CoAuthorServiceInterface interface {
 	HasPermission(ctx context.Context, gameID, userID uint, requiredRole string) (bool, error)
 	CanModerateGame(ctx context.Context, gameID, userID uint) (bool, error)
 	CanEditContent(ctx context.Context, gameID, userID uint) (bool, error)
-	Add(gameID, newCoAuthorID, ownerID uint) error
-	Remove(gameID, coAuthorUserID, ownerID uint) error
+	Add(ctx context.Context, gameID, newCoAuthorID, ownerID uint) error
+	Remove(ctx context.Context, gameID, coAuthorUserID, ownerID uint) error
 	List(ctx context.Context, gameID uint) ([]CoAuthor, error)
 }
 
@@ -39,6 +40,7 @@ type AuditServiceInterface interface {
 type GamePassingServiceInterface interface {
 	Apply(ctx context.Context, gameID, teamID, userID uint) error
 	ListByGame(ctx context.Context, gameID uint) ([]GamePassing, error)
+	ListByGamePaginated(ctx context.Context, gameID uint, page, perPage int) ([]GamePassing, int64, error)
 	ListTestPassings(ctx context.Context, gameID uint, result *[]GamePassing) error
 	UpdateStatus(ctx context.Context, passingID uint, status GamePassingStatus, userID uint) error
 	StartGame(ctx context.Context, passingID, userID uint) error
@@ -71,4 +73,15 @@ type GameAdminServiceInterface interface {
 	ForceFinishGame(ctx context.Context, gameID, userID uint) error
 	DisqualifyTeam(ctx context.Context, gameID, teamID, userID uint) error
 	DeleteLevelFromActiveGame(ctx context.Context, gameID, levelID, userID uint) error
+}
+
+// LevelIniter — интерфейс для объекта, способного инициализировать первый уровень.
+type LevelIniter interface {
+	InitFirstLevel(ctx context.Context, gamePassingID uint) error
+}
+
+// LevelProgressServiceInterface — интерфейс для LevelProgressService (теперь в gameplay).
+type LevelProgressServiceInterface interface {
+	InitFirstLevel(ctx context.Context, gamePassingID uint) error
+	InitFirstLevelWithTx(ctx context.Context, tx LevelIniter, gamePassingID uint) error
 }

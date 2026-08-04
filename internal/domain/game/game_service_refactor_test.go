@@ -10,14 +10,14 @@ import (
 // TestAllowedSortFields_Refactor проверяет что белый список полей сортировки работает
 func TestAllowedSortFields_Refactor(t *testing.T) {
 	// Все разрешённые поля должны быть в map
-	assert.True(t, allowedSortFields["created_at"])
-	assert.True(t, allowedSortFields["name"])
-	assert.True(t, allowedSortFields["starts_at"])
-	assert.True(t, allowedSortFields["rating"])
-	assert.True(t, allowedSortFields["participants"])
+	assert.True(t, AllowedSortFields["created_at"])
+	assert.True(t, AllowedSortFields["name"])
+	assert.True(t, AllowedSortFields["starts_at"])
+	assert.True(t, AllowedSortFields["rating"])
+	assert.True(t, AllowedSortFields["participants"])
 
 	// Запрещённое поле
-	assert.False(t, allowedSortFields["invalid_field"])
+	assert.False(t, AllowedSortFields["invalid_field"])
 }
 
 // TestFilterConstants проверяет константы фильтрации

@@ -39,13 +39,13 @@ func NewCoAuthorHandler(
 // @Param id path int true "ID игры"
 // @Success 200 {string} html "Страница соавторов"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/co-authors [get]
 // @Security JWT
 func (h *CoAuthorHandler) ManageCoAuthors(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -60,12 +60,18 @@ func (h *CoAuthorHandler) ManageCoAuthors(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "co_authors-manage.html", gin.H{
-		"Title":         "Соавторы",
+		"Title":         render.Tr(c, "nav.co_authors"),
 		"GameID":        gameID,
 		"CoAuthors":     coAuthors,
 		"csrf":          csrf.GetToken(c),
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,
+		"Breadcrumbs": []map[string]string{
+			{"name": "nav.home", "url": "/"},
+			{"name": "nav.games", "url": "/games"},
+			{"name": "game.breadcrumb_label", "url": "/games/" + c.Param("id")},
+			{"name": "nav.co_authors"},
+		},
 	})
 }
 
@@ -76,13 +82,19 @@ func (h *CoAuthorHandler) renderCoAuthorManagePage(c *gin.Context, gameID int, e
 		log.Error().Err(listErr).Int("game_id", gameID).Msg("AddCoAuthor: failed to list coauthors")
 	}
 	data := gin.H{
-		"Title":         "Соавторы",
+		"Title":         render.Tr(c, "nav.co_authors"),
 		"GameID":        gameID,
 		"CoAuthors":     coAuthors,
 		"Error":         errs.Error(),
 		"csrf":          csrf.GetToken(c),
 		"CurrentUserID": c.GetUint("userID"),
 		"IsAdmin":       middleware.IsAdmin(c),
+		"Breadcrumbs": []map[string]string{
+			{"name": "nav.home", "url": "/"},
+			{"name": "nav.games", "url": "/games"},
+			{"name": "game.breadcrumb_label", "url": "/games/" + strconv.Itoa(gameID)},
+			{"name": "nav.co_authors"},
+		},
 	}
 	if errs.HasErrors() {
 		data["Errors"] = errs
@@ -98,18 +110,18 @@ func (h *CoAuthorHandler) renderCoAuthorManagePage(c *gin.Context, gameID int, e
 // @Success 302 {string} string "Перенаправление на /games/{id}/co-authors"
 // @Failure 400 {object} map[string]interface{} "Ошибка"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/co-authors [post]
 // @Security JWT
 func (h *CoAuthorHandler) AddCoAuthor(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
 		return
 	}
 	ownerID := c.GetUint("userID")
 
-	if err := limitRequestBody(c, 1*1024*1024); err != nil {
+	if err := LimitRequestBody(c, 1*1024*1024); err != nil {
 		errs := validation.FieldErrors{}
 		errs.Add("form", err)
 		h.renderCoAuthorManagePage(c, gameID, errs)
@@ -130,7 +142,7 @@ func (h *CoAuthorHandler) AddCoAuthor(c *gin.Context) {
 		return
 	}
 
-	if err := h.coAuthorSvc.Add(uint(gameID), input.UserID, ownerID); err != nil {
+	if err := h.coAuthorSvc.Add(c.Request.Context(), uint(gameID), input.UserID, ownerID); err != nil {
 		errs := validation.FieldErrors{}
 		errs.Add("form", err)
 		h.renderCoAuthorManagePage(c, gameID, errs)
@@ -146,24 +158,24 @@ func (h *CoAuthorHandler) AddCoAuthor(c *gin.Context) {
 // @Param user_id path int true "ID пользователя"
 // @Success 302 {string} string "Перенаправление на /games/{id}/co-authors"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/co-authors/{user_id}/delete [post]
 // @Security JWT
 func (h *CoAuthorHandler) RemoveCoAuthor(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
 		return
 	}
 	userID, err := strconv.Atoi(c.Param("user_id"))
 	if err != nil || userID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID пользователя")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_user_id"))
 		return
 	}
 	ownerID := c.GetUint("userID")
 
-	if err := h.coAuthorSvc.Remove(uint(gameID), uint(userID), ownerID); err != nil {
-		render.RenderError(c, http.StatusForbidden, err.Error())
+	if err := h.coAuthorSvc.Remove(c.Request.Context(), uint(gameID), uint(userID), ownerID); err != nil {
+		render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, err.Error()))
 		return
 	}
 	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/co-authors")

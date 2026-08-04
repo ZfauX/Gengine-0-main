@@ -13,7 +13,7 @@ import (
 
 // checkTeamMembership проверяет, является ли пользователь членом команды,
 // связанной с прохождением. Используется внутри транзакций.
-func checkTeamMembership(tx *gorm.DB, passingID, userID uint) error {
+func CheckTeamMembership(tx *gorm.DB, passingID, userID uint) error {
 	var passing GamePassing
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&passing, passingID).Error; err != nil {
 		return err

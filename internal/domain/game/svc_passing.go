@@ -81,18 +81,15 @@ func (s *GamePassingService) Apply(ctx context.Context, gameID, teamID, userID u
 		if int(acceptedCount) >= game.MaxTeamNumber {
 			return errors.New("достигнут лимит команд на игру")
 		}
-		var existing GamePassing
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("game_id = ? AND team_id = ?", gameID, teamID).
-			First(&existing).Error; err != nil {
-			if !errors.Is(err, gorm.ErrRecordNotFound) {
-				return err
-			}
-		} else {
+		passing := GamePassing{GameID: gameID, TeamID: teamID, Status: StatusPending}
+		err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "game_id"}, {Name: "team_id"}},
+			DoNothing: true,
+		}).Create(&passing).Error
+		if err != nil || passing.ID == 0 {
 			return errors.New("заявка уже подана")
 		}
-		passing := GamePassing{GameID: gameID, TeamID: teamID, Status: StatusPending}
-		return tx.Create(&passing).Error
+		return nil
 	})
 }
 
@@ -147,24 +144,17 @@ func (s *GamePassingService) UpdateStatus(ctx context.Context, passingID uint, s
 		StatusDisqualified: {},
 		StatusTesting:      {StatusFinished},
 	}
-	allowedCurrentStatuses := validTransitions[status]
-	if len(allowedCurrentStatuses) == 0 {
-		return errors.New("невозможно перейти в статус " + string(status))
-	}
 
 	var currentStatus GamePassingStatus
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// JOIN-оптимизация: passing + game в 1 SQL-запросе внутри транзакции
 		var passing GamePassing
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&passing, passingID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Joins("Game").First(&passing, passingID).Error; err != nil {
 			return err
 		}
 		currentStatus = passing.Status
 
-		var g Game
-		if err := tx.First(&g, passing.GameID).Error; err != nil {
-			return err
-		}
-		// Проверка прав ВНУТРИ транзакции (предотвращает race condition)
+		// passing.Game загружен через JOIN
 		ok, err := s.coAuthor.HasPermissionTx(tx, passing.GameID, userID, RoleModerator)
 		if err != nil {
 			return err
@@ -174,9 +164,13 @@ func (s *GamePassingService) UpdateStatus(ctx context.Context, passingID uint, s
 		}
 
 		// Проверка допустимости перехода
+		allowedTargets := validTransitions[currentStatus]
+		if len(allowedTargets) == 0 {
+			return fmt.Errorf("невозможно перейти из %s в %s", currentStatus, status)
+		}
 		allowed := false
-		for _, st := range allowedCurrentStatuses {
-			if st == currentStatus {
+		for _, st := range allowedTargets {
+			if st == status {
 				allowed = true
 				break
 			}
@@ -271,7 +265,9 @@ func (s *GamePassingService) broadcastGameStart(ctx context.Context, gameID, pas
 	}
 
 	// Инвалидируем кэш мониторинга
-	s.monitorSvc.InvalidateCache(gameID)
+	if s.monitorSvc != nil {
+		s.monitorSvc.InvalidateCache(gameID)
+	}
 
 	// Формируем JSON-уведомление
 	notification := map[string]any{

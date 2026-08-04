@@ -1,5 +1,11 @@
+{{define "ExtraHead"}}
+<meta property="og:title" content="{{.Game.Name}} — Gengine-0">
+<meta property="og:description" content="{{truncate .Game.Description 200}}">
+<meta property="og:type" content="website">
+<meta property="og:image" content="{{.Game.CoverURL}}">
+{{end}}
+
 {{define "games-show.html"}}
-<!-- TODO: Move OG meta tags to handler via .ExtraHead when implementing social sharing -->
 <div class="max-w-7xl mx-auto">
     <!-- Заголовок -->
     <h1 class="page-title">{{.Game.Name}}</h1>
@@ -8,28 +14,28 @@
     <div class="card mb-6">
         {{if .Game.CoverPath}}
         <div class="mb-4">
-            <img src="{{.Game.CoverPath}}" alt="Обложка игры" class="w-full max-h-64 object-cover rounded-md">
+            <img src="{{.Game.CoverPath}}" alt="{{ TF $.Lang "game.show_cover_alt" .Game.Name }}" class="w-full h-auto rounded-md max-h-100 w-auto min-w-full object-contain">
         </div>
         {{end}}
 
         <div class="space-y-2 text-sm">
             <p class="text-gray-700 dark:text-gray-300">{{.Game.Description}}</p>
-            <p><span class="font-medium text-gray-600 dark:text-gray-400">Автор:</span> {{.Game.Author.Name}}</p>
+            <p><span class="font-medium text-gray-600 dark:text-gray-400">{{ T $.Lang "game.show_author" }}</span> {{.Game.Author.Name}}</p>
             {{if .Game.StartsAt}}
-            <p><span class="font-medium text-gray-600 dark:text-gray-400">Дата старта:</span> {{.Game.StartsAt.Format "02.01.2006 15:04"}}</p>
+            <p><span class="font-medium text-gray-600 dark:text-gray-400">{{ T $.Lang "game.show_start_date" }}</span> {{.Game.StartsAt.Format "02.01.2006 15:04"}}</p>
             {{end}}
             {{if .Game.RegistrationDeadline}}
-            <p><span class="font-medium text-gray-600 dark:text-gray-400">Регистрация до:</span> {{.Game.RegistrationDeadline.Format "02.01.2006 15:04"}}</p>
+            <p><span class="font-medium text-gray-600 dark:text-gray-400">{{ T $.Lang "game.show_reg_deadline" }}</span> {{.Game.RegistrationDeadline.Format "02.01.2006 15:04"}}</p>
             {{end}}
-            <p><span class="font-medium text-gray-600 dark:text-gray-400">Максимум команд:</span> {{.Game.MaxTeamNumber}}</p>
-            <p><span class="font-medium text-gray-600 dark:text-gray-400">Видимость:</span>
-                {{if eq .Game.Visibility "public"}}Публичная
-                {{else if eq .Game.Visibility "private"}}Приватная
-                {{else}}Скрытая{{end}}
+            <p><span class="font-medium text-gray-600 dark:text-gray-400">{{ T $.Lang "game.show_max_teams" }}</span> {{.Game.MaxTeamNumber}}</p>
+            <p><span class="font-medium text-gray-600 dark:text-gray-400">{{ T $.Lang "game.show_visibility" }}</span>
+                {{if eq .Game.Visibility "public"}}{{ T $.Lang "game.show_public" }}
+                {{else if eq .Game.Visibility "private"}}{{ T $.Lang "game.show_private" }}
+                {{else}}{{ T $.Lang "game.show_unlisted" }}{{end}}
             </p>
             {{if .Game.IsDraft}}
             <div class="mt-2">
-                <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">Это черновик</span>
+                <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">{{ T $.Lang "game.show_draft_badge" }}</span>
             </div>
             {{end}}
         </div>
@@ -39,15 +45,15 @@
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         <!-- Рейтинг -->
         <div class="card">
-            <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">Рейтинг игры</h3>
+            <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ T $.Lang "game.show_rating" }}</h3>
             {{if .ReviewsCount}}
-            <p class="text-gray-600 dark:text-gray-400">Средняя оценка: <strong class="text-blue-600 dark:text-blue-400">{{.AvgRating}}</strong> ({{.ReviewsCount}} отзывов)</p>
+            <p class="text-gray-600 dark:text-gray-400">{{ TF $.Lang "game.show_avg_rating" .AvgRating .ReviewsCount }}</p>
             {{else}}
-            <p class="text-gray-500 dark:text-gray-400">Пока нет отзывов.</p>
+            <p class="text-gray-500 dark:text-gray-400">{{ T $.Lang "game.show_no_reviews" }}</p>
             {{end}}
             {{if .CurrentUserID}}
             <div class="mt-3">
-                <a href="/games/{{.Game.ID}}/review" class="btn btn-primary text-sm">Оставить отзыв</a>
+                <a href="/games/{{.Game.ID}}/review" class="btn btn-primary text-sm">{{ T $.Lang "game.show_leave_review" }}</a>
             </div>
             {{end}}
         </div>
@@ -55,14 +61,14 @@
         <!-- Список отзывов (если есть) -->
         {{if .Reviews}}
         <div class="card">
-            <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">Отзывы</h3>
+            <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ T $.Lang "game.show_reviews" }}</h3>
             <div class="space-y-4 max-h-64 overflow-y-auto">
                 {{range .Reviews}}
                 <div class="border-b border-gray-100 pb-3 last:border-0">
                     <div class="flex justify-between items-start">
                         <div>
                             <span class="font-medium text-gray-800 dark:text-gray-100">{{.User.Name}}</span>
-                            <span class="text-sm text-gray-500 dark:text-gray-400 ml-2">оценка: {{.Rating}}/10</span>
+                            <span class="text-sm text-gray-500 dark:text-gray-400 ml-2">{{ TF $.Lang "game.show_rating_score" .Rating }}</span>
                         </div>
                         <span class="text-xs text-gray-400">{{.CreatedAt.Format "02.01.2006 15:04"}}</span>
                     </div>
@@ -80,67 +86,67 @@
     <div class="flex flex-wrap gap-3 mb-6">
         {{if .IsManager}}
             {{if .Game.IsDraft}}
-            <form action="/games/{{.Game.ID}}/publish" method="POST" class="inline" data-confirm-form="Опубликовать игру? После публикации она станет видимой для игроков.">
+            <form action="/games/{{.Game.ID}}/publish" method="POST" class="inline" data-confirm-form='{{ T $.Lang "game.show_publish_confirm" }}'>
                 <input type="hidden" name="_csrf" value="{{.csrf}}">
-                <button type="submit" class="btn btn-primary text-sm">Опубликовать</button>
+                <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "game.show_publish" }}</button>
             </form>
             {{end}}
-            <button id="preview-btn" class="btn btn-outline text-sm">👁 Быстрый просмотр</button>
-            <a href="/games/{{.Game.ID}}/edit" class="btn btn-outline text-sm">Редактировать</a>
-            <a href="/games/{{.Game.ID}}/settings" class="btn btn-outline text-sm">Настройки</a>
-            <a href="/games/{{.Game.ID}}/levels" class="btn btn-outline text-sm">Уровни</a>
-            <a href="/games/{{.Game.ID}}/co-authors" class="btn btn-outline text-sm">Соавторы</a>
-            <a href="/games/{{.Game.ID}}/passings" class="btn btn-outline text-sm">Заявки</a>
-            <a href="/games/{{.Game.ID}}/monitor" class="btn btn-outline text-sm">Мониторинг</a>
-            <a href="/games/{{.Game.ID}}/chat" class="btn btn-outline text-sm">Чат</a>
-            <a href="/games/{{.Game.ID}}/photos" class="btn btn-outline text-sm">📷 Галерея</a>
-            <a href="/games/{{.Game.ID}}/export" class="btn btn-outline text-sm">Экспорт CSV</a>
-            <a href="/games/{{.Game.ID}}/export-pdf" class="btn btn-outline text-sm">📄 PDF</a>
-            <a href="/games/{{.Game.ID}}/test" class="btn btn-outline text-sm">Тест</a>
-            <form action="/games/{{.Game.ID}}/force-finish" method="POST" class="inline" data-confirm-form="Вы уверены? Принудительное завершение остановит все активные прохождения.">
+            <button id="preview-btn" class="btn btn-outline text-sm">{{ T $.Lang "game.show_preview" }}</button>
+            <a href="/games/{{.Game.ID}}/edit" class="btn btn-outline text-sm">{{ T $.Lang "game.show_edit" }}</a>
+            <a href="/games/{{.Game.ID}}/settings" class="btn btn-outline text-sm">{{ T $.Lang "game.show_settings" }}</a>
+            <a href="/games/{{.Game.ID}}/levels" class="btn btn-outline text-sm">{{ T $.Lang "game.show_levels" }}</a>
+            <a href="/games/{{.Game.ID}}/co-authors" class="btn btn-outline text-sm">{{ T $.Lang "game.show_coauthors" }}</a>
+            <a href="/games/{{.Game.ID}}/passings" class="btn btn-outline text-sm">{{ T $.Lang "game.show_applications" }}</a>
+            <a href="/games/{{.Game.ID}}/monitor" class="btn btn-outline text-sm">{{ T $.Lang "game.show_monitor" }}</a>
+            <a href="/games/{{.Game.ID}}/chat" class="btn btn-outline text-sm">{{ T $.Lang "game.show_chat" }}</a>
+            <a href="/games/{{.Game.ID}}/photos" class="btn btn-outline text-sm">{{ T $.Lang "game.show_photos" }}</a>
+            <a href="/games/{{.Game.ID}}/export" class="btn btn-outline text-sm">{{ T $.Lang "game.show_export_csv" }}</a>
+            <a href="/games/{{.Game.ID}}/export-pdf" class="btn btn-outline text-sm">{{ T $.Lang "game.show_export_pdf" }}</a>
+            <a href="/games/{{.Game.ID}}/test" class="btn btn-outline text-sm">{{ T $.Lang "game.show_test" }}</a>
+            <form action="/games/{{.Game.ID}}/force-finish" method="POST" class="inline" data-confirm-form='{{ T $.Lang "game.show_force_finish_confirm" }}'>
                 <input type="hidden" name="_csrf" value="{{.csrf}}">
-                <button type="submit" class="btn btn-danger text-sm">Завершить игру</button>
+                <button type="submit" class="btn btn-danger text-sm">{{ T $.Lang "game.show_force_finish" }}</button>
             </form>
-            <button id="delete-btn" class="btn btn-danger text-sm" data-game-id="{{.Game.ID}}" data-game-name="{{.Game.Name}}">Удалить</button>
+            <button id="delete-btn" class="btn btn-danger text-sm" data-game-id="{{.Game.ID}}" data-game-name="{{.Game.Name}}">{{ T $.Lang "game.show_delete" }}</button>
         {{end}}
         {{if .CanApply}}
-        <a href="/games/{{.Game.ID}}/apply" class="btn btn-primary text-sm">Подать заявку</a>
+        <a href="/games/{{.Game.ID}}/apply" class="btn btn-primary text-sm">{{ T $.Lang "game.show_apply" }}</a>
         {{end}}
-        <a href="/games" class="btn btn-outline text-sm">← Назад к списку</a>
+        <a href="/games" class="btn btn-outline text-sm">{{ T $.Lang "game.show_back_to_list" }}</a>
     </div>
 
     <!-- Модальное окно быстрого просмотра -->
-    <div id="preview-modal" class="fixed inset-0 z-50 hidden bg-black/50 flex items-center justify-center">
+    <div id="preview-modal" class="fixed inset-0 z-50 hidden bg-black/50 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="preview-title">
         <div class="bg-white dark:bg-gray-800 w-full max-w-4xl max-h-[90vh] rounded-lg shadow-xl overflow-hidden mx-4">
             <div class="flex justify-between items-center p-4 border-b border-gray-200 dark:border-gray-700">
-                <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">Состав игры «{{.Game.Name}}»</h2>
+                <h2 id="preview-title" class="text-xl font-bold text-gray-800 dark:text-gray-100">{{ TF $.Lang "game.show_preview_title" .Game.Name }}</h2>
                 <button id="close-preview" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-2xl font-bold">&times;</button>
             </div>
             <div id="preview-content" class="p-6 overflow-y-auto max-h-[70vh]">
-                <p class="text-gray-500 dark:text-gray-400">Загрузка...</p>
+                <p class="text-gray-500 dark:text-gray-400">{{ T $.Lang "game.show_preview_loading" }}</p>
             </div>
         </div>
     </div>
 
     <!-- Модальное окно удаления с undo -->
-    <div id="delete-modal" class="fixed inset-0 z-50 hidden bg-black/50 flex items-center justify-center">
+    <div id="delete-modal" class="fixed inset-0 z-50 hidden bg-black/50 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="delete-title">
         <div class="bg-white dark:bg-gray-800 w-full max-w-md rounded-lg shadow-xl mx-4">
             <div class="p-6">
-                <h3 class="text-lg font-bold text-gray-800 dark:text-gray-100 mb-2">Удалить игру?</h3>
-                <p class="text-gray-600 dark:text-gray-400 mb-4">Вы действительно хотите удалить <strong id="delete-game-name"></strong>?</p>
-                <p class="text-sm text-red-600 mb-4">⚠️ Это действие нельзя будет отменить. Все уровни, вопросы и ответы будут удалены.</p>
+                <h3 id="delete-title" class="text-lg font-bold text-gray-800 dark:text-gray-100 mb-2">{{ T $.Lang "game.show_delete_title" }}</h3>
+                <p class="text-gray-600 dark:text-gray-400 mb-4">{{ T $.Lang "game.show_delete_confirm" }} <strong id="delete-game-name"></strong>?</p>
+                <p class="text-sm text-red-600 mb-4">{{ T $.Lang "game.show_delete_warning" }}</p>
                 <div class="flex gap-3">
-                    <button id="confirm-delete" class="btn btn-danger text-sm flex-1">Удалить</button>
-                    <button id="cancel-delete" class="btn btn-outline text-sm flex-1">Отмена</button>
+                    <button id="confirm-delete" class="btn btn-danger text-sm flex-1">{{ T $.Lang "game.show_delete_btn" }}</button>
+                    <button id="cancel-delete" class="btn btn-outline text-sm flex-1">{{ T $.Lang "game.show_cancel" }}</button>
                 </div>
                 <div id="delete-undo" class="hidden mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-                    <p class="text-sm text-yellow-800 mb-2">Удаление запланировано...</p>
+                    <p class="text-sm text-yellow-800 mb-2">{{ T $.Lang "game.show_delete_scheduled" }}</p>
                     <div class="w-full bg-yellow-200 rounded-full h-2 mb-2">
-                        <div id="delete-timer-bar" class="bg-yellow-600 h-2 rounded-full transition-all duration-1000" style="width:100%"></div>
+                        <div id="delete-timer-bar" class="bg-yellow-600 h-2 rounded-full transition-all duration-1000"></div>
                     </div>
                     <div class="flex justify-between items-center">
-                        <p class="text-xs text-yellow-600">Отмена через <span id="delete-timer-count">5</span> сек</p>
-                        <button id="undo-delete" class="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800">↩ Отменить удаление</button>
+                        <p class="text-xs text-yellow-600">{{ T $.Lang "game.show_delete_cancel_prefix" }} <span id="delete-timer-count">5</span> {{ T $.Lang "game.show_delete_cancel_suffix" }}</p>
+                        <button id="undo-delete" class="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800">{{ T $.Lang "game.show_delete_undo" }}</button>
                     </div>
                 </div>
             </div>
@@ -199,7 +205,7 @@
             })
             .catch(err => {
                 console.error('Preview error:', err);
-                previewContent.innerHTML = `<p class="text-red-500">Ошибка загрузки: ${escapeHtml(err.message)}</p>`;
+                previewContent.innerHTML = `<p class="text-red-500">{{ T $.Lang "game.show_preview_load_error" }}: ${escapeHtml(err.message)}</p>`;
                 openModal();
             });
         });
@@ -216,7 +222,7 @@
 
         function renderPreview(levels) {
             if (!levels || levels.length === 0) {
-                previewContent.innerHTML = '<p class="text-gray-500 dark:text-gray-400">Нет данных</p>';
+                previewContent.innerHTML = '<p class="text-gray-500 dark:text-gray-400">{{ T $.Lang "game.show_preview_no_data" }}</p>';
                 return;
             }
             let html = '';
@@ -238,7 +244,10 @@
                     lvl.questions.forEach(function(q) {
                         html += `<div class="pl-4 border-l-4 border-blue-400">`;
                         html += `<p class="font-medium text-gray-700 dark:text-gray-300">${escapeHtml(q.text)}</p>`;
-                        if (q.hint) html += `<p class="text-sm text-gray-500 dark:text-gray-400">Подсказка: ${escapeHtml(q.hint)}</p>`;
+                        if (q.hint) {
+                            const hintHtml = '{{ T $.Lang "game.show_preview_hint_label" }}'.replace('%s', escapeHtml(q.hint));
+                            html += `<p class="text-sm text-gray-500 dark:text-gray-400">${hintHtml}</p>`;
+                        }
                         if (q.answers && q.answers.length > 0) {
                             html += `<ul class="text-green-700 text-sm list-disc list-inside mt-1">`;
                             q.answers.forEach(function(a) { html += `<li>${escapeHtml(a)}</li>`; });
@@ -314,7 +323,7 @@
             deleteModal.classList.add('flex');
             deleteUndoSection.classList.add('hidden');
             confirmDeleteBtn.disabled = false;
-            confirmDeleteBtn.textContent = 'Удалить';
+            confirmDeleteBtn.textContent = '{{ T $.Lang "game.show_delete_btn" }}';
         });
 
         function closeModal() {
@@ -342,7 +351,7 @@
             // Show undo section
             deleteUndoSection.classList.remove('hidden');
             confirmDeleteBtn.disabled = true;
-            confirmDeleteBtn.textContent = 'Удаление...';
+            confirmDeleteBtn.textContent = '{{ T $.Lang "game.show_deleting" }}';
             countdown = 5;
             deleteTimerCount.textContent = countdown;
             deleteTimerBar.style.width = '100%';
@@ -356,11 +365,8 @@
                 elapsed += interval;
                 const remaining = 100 - (elapsed / totalDuration) * 100;
                 deleteTimerBar.style.width = remaining + '%';
-
-                if (elapsed % 1000 < interval) {
-                    countdown--;
-                    deleteTimerCount.textContent = countdown;
-                }
+                // Текст счётчика обновляет undoTimer (раз в секунду) — здесь НЕ
+                // декрементим countdown, иначе счётчик убегает в 2 раза быстрее.
 
                 if (elapsed >= totalDuration) {
                     clearInterval(deleteTimer);
@@ -377,12 +383,12 @@
                         if (r.ok || r.redirected) {
                             window.location.href = '/games';
                         } else {
-                            window.showToast('Ошибка при удалении', 'error');
+                            window.showToast('{{ T $.Lang "game.show_delete_error" }}', 'error');
                             closeModal();
                         }
                     })
                     .catch(function() {
-                        window.showToast('Ошибка сети', 'error');
+                        window.showToast('{{ T $.Lang "gameplay.network_error" }}', 'error');
                         closeModal();
                     });
                 }
@@ -401,7 +407,7 @@
         undoDeleteBtn.addEventListener('click', function() {
             clearTimeout(deleteTimer);
             clearTimeout(undoTimer);
-            window.showToast('Удаление отменено', 'success');
+            window.showToast('{{ T $.Lang "game.show_delete_cancelled" }}', 'success');
             closeModal();
         });
     })();

@@ -9,6 +9,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 
+	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/sqlutil"
 )
 
@@ -74,11 +75,11 @@ func (h *AutocompleteHandler) Games(c *gin.Context) {
 // GameStatsHandler возвращает статистику игры через API
 type GameStatsHandler struct {
 	gameService     GameServiceInterface
-	gamePlayService *GamePlayService
+	gamePlayService GamePlayServiceInterface
 }
 
 // NewGameStatsHandler создаёт обработчик статистики
-func NewGameStatsHandler(gs GameServiceInterface, gps *GamePlayService) *GameStatsHandler {
+func NewGameStatsHandler(gs GameServiceInterface, gps GamePlayServiceInterface) *GameStatsHandler {
 	return &GameStatsHandler{gameService: gs, gamePlayService: gps}
 }
 
@@ -89,7 +90,7 @@ func NewGameStatsHandler(gs GameServiceInterface, gps *GamePlayService) *GameSta
 // @Param id path int true "ID игры"
 // @Success 200 {object} map[string]interface{} "Статистика игры"
 // @Failure 400 {object} map[string]interface{} "Неверный ID"
-// @Failure 404 {object} map[string]interface{} "Игра не найдена"
+// @Failure 404 {object} map[string]interface{} render.Tr(c, "handler.game_not_found")
 // @Router /api/games/{id}/stats [get]
 func (h *GameStatsHandler) Show(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
@@ -99,7 +100,7 @@ func (h *GameStatsHandler) Show(c *gin.Context) {
 	}
 
 	userID := c.GetUint("userID")
-	game, err := h.gameService.GetByID(c, uint(id), userID)
+	game, err := h.gameService.GetByID(c, uint(id), userID, middleware.IsAdmin(c))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "игра не найдена"})
 		return

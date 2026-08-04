@@ -201,6 +201,6 @@ func RegisterGameplayRoutes(
 
 	r.POST("/testing/:passing_id/skip", handler.SkipTestLevel)
 
-	r.GET("/game/:passing_id/sse", middleware.SSERateLimit(1*time.Minute, 10), SSEHandler(sseMgr, db))
-	r.GET("/game/sse/:game_id", middleware.SSERateLimit(1*time.Minute, 10), SSEGameHandler(sseMgr))
+	r.GET("/game/:passing_id/sse", middleware.SSERateLimit(1*time.Minute, 10), SSEHandler(sseMgr, db, coAuthorSvc))
+	r.GET("/game/sse/:game_id", middleware.SSERateLimit(1*time.Minute, 10), SSEGameHandler(sseMgr, db, coAuthorSvc))
 }

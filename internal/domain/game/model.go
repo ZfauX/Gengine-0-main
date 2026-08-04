@@ -13,7 +13,7 @@ import (
 
 // ---------- локальный тип для голосований (чтобы избежать циклического импорта с monitor) ----------
 
-type gameBlackboxVotingSession struct {
+type GameBlackboxVotingSession struct {
 	gorm.Model
 	GamePassingID uint
 	LevelID       uint
@@ -21,7 +21,7 @@ type gameBlackboxVotingSession struct {
 	WinnerOption  string
 }
 
-func (gameBlackboxVotingSession) TableName() string { return "blackbox_voting_sessions" }
+func (GameBlackboxVotingSession) TableName() string { return "blackbox_voting_sessions" }
 
 // ---------- основные модели ----------
 
@@ -67,7 +67,7 @@ type GamePassing struct {
 	Team           team.Team                   `gorm:"foreignKey:TeamID"`
 	Progresses     []LevelProgress             `gorm:"foreignKey:GamePassingID"`
 	Logs           []Log                       `gorm:"foreignKey:GamePassingID"`
-	VotingSessions []gameBlackboxVotingSession `gorm:"foreignKey:GamePassingID"`
+	VotingSessions []GameBlackboxVotingSession `gorm:"foreignKey:GamePassingID"`
 }
 
 type LevelProgress struct {

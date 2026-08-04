@@ -8,6 +8,8 @@ import (
 
 	"gengine-0/internal/domain/level"
 	apperr "gengine-0/internal/pkg/errors"
+	"gengine-0/internal/pkg/middleware"
+	"gengine-0/internal/pkg/render"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -40,25 +42,25 @@ func NewFullPreviewHandler(
 // @Success 200 {object} map[string]interface{} "Полная структура игры"
 // @Failure 400 {object} map[string]interface{} "Неверный ID"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/full-preview [get]
 // @Security JWT
 func (h *FullPreviewHandler) FullPreview(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
-			"error": "Неверный ID игры",
+			"error": render.Tr(c, "handler.invalid_game_id"),
 			"code":  "bad_request",
 		})
 		return
 	}
 	userID := c.GetUint("userID")
 
-	_, err = h.gameService.GetByID(c.Request.Context(), uint(gameID), userID)
+	_, err = h.gameService.GetByID(c.Request.Context(), uint(gameID), userID, middleware.IsAdmin(c))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.AbortWithStatusJSON(http.StatusNotFound, gin.H{
-				"error": "Игра не найдена",
+				"error": render.Tr(c, "handler.game_not_found"),
 				"code":  "not_found",
 			})
 		} else {

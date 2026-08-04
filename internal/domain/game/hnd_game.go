@@ -54,7 +54,7 @@ func NewGameHandler(
 	}
 }
 
-func limitRequestBody(c *gin.Context, maxBytes int64) error {
+func LimitRequestBody(c *gin.Context, maxBytes int64) error {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes+multipartOverhead)
 	if c.Request.ContentLength > maxBytes+multipartOverhead {
 		return errors.New("размер тела запроса превышает допустимый лимит")
@@ -112,6 +112,14 @@ func (h *GameHandler) List(c *gin.Context) {
 
 	sortField := c.DefaultQuery("sort", "created_at")
 	sortOrder := c.DefaultQuery("order", "desc")
+	validSortFields := map[string]bool{"created_at": true, "starts_at": true, "name": true, "rating": true}
+	validSortOrders := map[string]bool{"asc": true, "desc": true}
+	if !validSortFields[sortField] {
+		sortField = "created_at"
+	}
+	if !validSortOrders[sortOrder] {
+		sortOrder = "desc"
+	}
 
 	filter := GameFilter{
 		Status:   c.Query("status"),
@@ -147,8 +155,8 @@ func (h *GameHandler) List(c *gin.Context) {
 		"Total":         total,
 		"Title":         "Игры",
 		"Breadcrumbs": []map[string]string{
-			{"name": "Главная", "url": "/"},
-			{"name": "Игры"},
+			{"name": "nav.home", "url": "/"},
+			{"name": "nav.games"},
 		},
 	})
 }
@@ -159,20 +167,21 @@ func (h *GameHandler) List(c *gin.Context) {
 // @Produce html
 // @Param id path int true "ID игры"
 // @Success 200 {string} html "Страница игры"
-// @Failure 404 {object} map[string]interface{} "Игра не найдена"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 404 {object} map[string]interface{} render.Tr(c, "handler.game_not_found")
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id} [get]
 func (h *GameHandler) Show(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
 		return
 	}
 	userID := c.GetUint("userID")
+	isAdmin := middleware.IsAdmin(c)
 
-	g, err := h.gameService.GetByID(c.Request.Context(), uint(id), userID)
+	g, reviews, avgRating, reviewsCount, err := h.gameService.ShowGame(c.Request.Context(), uint(id), userID, isAdmin)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, ErrGameNotFound) {
 			render.RenderErrorPage(c, http.StatusNotFound)
 		} else {
 			log.Error().Err(err).Int("game_id", id).Msg("GameHandler.Show: failed to get game")
@@ -186,36 +195,28 @@ func (h *GameHandler) Show(c *gin.Context) {
 		log.Error().Err(err).Int("game_id", id).Msg("GameHandler.Show: failed to check manager")
 		isManager = false
 	}
-
-	reviews, err := h.gameService.ListReviews(c.Request.Context(), uint(id))
-	if err != nil {
-		log.Error().Err(err).Int("game_id", id).Msg("GameHandler.Show: failed to list reviews")
-		reviews = []Review{}
-	}
-	avgRating, reviewsCount, err := h.gameService.GetAverageRating(c.Request.Context(), uint(id))
-	if err != nil {
-		log.Error().Err(err).Int("game_id", id).Msg("GameHandler.Show: failed to get average rating")
-		avgRating = 0
-		reviewsCount = 0
+	if isAdmin {
+		isManager = true
 	}
 
 	canApply := !g.IsDraft &&
 		(g.RegistrationDeadline == nil || g.RegistrationDeadline.After(time.Now()))
 
 	render.Page(c, http.StatusOK, "games-show.html", gin.H{
-		"Game":          g,
-		"CurrentUserID": userID,
-		"IsManager":     isManager,
-		"Reviews":       reviews,
-		"AvgRating":     avgRating,
-		"ReviewsCount":  reviewsCount,
-		"CanApply":      canApply,
-		"csrf":          csrf.GetToken(c),
-		"BaseURL":       c.Request.Host,
-		"Title":         g.Name + " · Encounter Engine",
+		"Game":           g,
+		"CurrentUserID":  userID,
+		"IsManager":      isManager,
+		"Reviews":        reviews,
+		"AvgRating":      avgRating,
+		"ReviewsCount":   reviewsCount,
+		"CanApply":       canApply,
+		"IncludeLeaflet": true,
+		"csrf":           csrf.GetToken(c),
+		"BaseURL":        c.Request.Host,
+		"Title":          g.Name + " · Encounter Engine",
 		"Breadcrumbs": []map[string]string{
-			{"name": "Главная", "url": "/"},
-			{"name": "Игры", "url": "/games"},
+			{"name": "nav.home", "url": "/"},
+			{"name": "nav.games", "url": "/games"},
 			{"name": g.Name},
 		},
 	})
@@ -234,9 +235,9 @@ func (h *GameHandler) NewForm(c *gin.Context) {
 		"csrf":  csrf.GetToken(c),
 		"Title": "Создание игры",
 		"Breadcrumbs": []map[string]string{
-			{"name": "Главная", "url": "/"},
-			{"name": "Игры", "url": "/games"},
-			{"name": "Создание игры"},
+			{"name": "nav.home", "url": "/"},
+			{"name": "nav.games", "url": "/games"},
+			{"name": "nav.new_game"},
 		},
 	})
 }
@@ -258,7 +259,7 @@ func (h *GameHandler) NewForm(c *gin.Context) {
 func (h *GameHandler) Create(c *gin.Context) {
 	userID := c.GetUint("userID")
 
-	if limitErr := limitRequestBody(c, gameFormMaxBodySize); limitErr != nil {
+	if limitErr := LimitRequestBody(c, gameFormMaxBodySize); limitErr != nil {
 		errs := validation.FieldErrors{}
 		errs.Add("form", limitErr)
 		render.Page(c, http.StatusBadRequest, "games-new.html", gin.H{
@@ -364,19 +365,19 @@ func (h *GameHandler) Create(c *gin.Context) {
 // @Param id path int true "ID игры"
 // @Success 200 {string} html "Форма редактирования"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
-// @Failure 404 {object} map[string]interface{} "Игра не найдена"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 404 {object} map[string]interface{} render.Tr(c, "handler.game_not_found")
 // @Router /games/{id}/edit [get]
 // @Security JWT
 func (h *GameHandler) EditForm(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
 		return
 	}
 	userID := c.GetUint("userID")
 
-	g, err := h.gameService.GetByID(c.Request.Context(), uint(id), userID)
+	g, err := h.gameService.GetByID(c.Request.Context(), uint(id), userID, middleware.IsAdmin(c))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			render.RenderErrorPage(c, http.StatusNotFound)
@@ -393,7 +394,7 @@ func (h *GameHandler) EditForm(c *gin.Context) {
 		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
-	if !isManager {
+	if !isManager && !middleware.IsAdmin(c) {
 		render.RenderErrorPage(c, http.StatusForbidden)
 		return
 	}
@@ -405,10 +406,10 @@ func (h *GameHandler) EditForm(c *gin.Context) {
 		"IsAdmin":       middleware.IsAdmin(c),
 		"Title":         "Редактирование игры",
 		"Breadcrumbs": []map[string]string{
-			{"name": "Главная", "url": "/"},
-			{"name": "Игры", "url": "/games"},
+			{"name": "nav.home", "url": "/"},
+			{"name": "nav.games", "url": "/games"},
 			{"name": g.Name, "url": "/games/" + c.Param("id")},
-			{"name": "Редактирование"},
+			{"name": "nav.edit_game"},
 		},
 	})
 }
@@ -426,18 +427,18 @@ func (h *GameHandler) EditForm(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на страницу игры"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/edit [post]
 // @Security JWT
 func (h *GameHandler) Update(c *gin.Context) {
 	id, parseErr := strconv.Atoi(c.Param("id"))
 	if parseErr != nil || id <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
 		return
 	}
 	userID := c.GetUint("userID")
 
-	if limitErr := limitRequestBody(c, gameFormMaxBodySize); limitErr != nil {
+	if limitErr := LimitRequestBody(c, gameFormMaxBodySize); limitErr != nil {
 		errs := validation.FieldErrors{}
 		errs.Add("form", limitErr)
 		render.Page(c, http.StatusBadRequest, "games-edit.html", gin.H{
@@ -467,7 +468,7 @@ func (h *GameHandler) Update(c *gin.Context) {
 		return
 	}
 
-	existingGame, getErr := h.gameService.GetByID(c.Request.Context(), uint(id), userID)
+	existingGame, getErr := h.gameService.GetByID(c.Request.Context(), uint(id), userID, middleware.IsAdmin(c))
 	if getErr != nil {
 		if errors.Is(getErr, gorm.ErrRecordNotFound) {
 			render.RenderErrorPage(c, http.StatusNotFound)
@@ -546,7 +547,8 @@ func (h *GameHandler) Update(c *gin.Context) {
 		updateDTO.CoverFile = input.CoverFile
 	}
 
-	if updateErr := h.gameService.UpdateGameWithCover(c.Request.Context(), uint(id), updateDTO, userID); updateErr != nil {
+	isAdmin := middleware.IsAdmin(c)
+	if updateErr := h.gameService.UpdateGameWithCover(c.Request.Context(), uint(id), updateDTO, userID, isAdmin); updateErr != nil {
 		if errors.Is(updateErr, gorm.ErrRecordNotFound) {
 			render.RenderErrorPage(c, http.StatusNotFound)
 			return
@@ -581,13 +583,13 @@ func (h *GameHandler) Update(c *gin.Context) {
 // @Param id path int true "ID игры"
 // @Success 302 {string} string "Перенаправление на /games"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/delete [post]
 // @Security JWT
 func (h *GameHandler) Delete(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -596,7 +598,8 @@ func (h *GameHandler) Delete(c *gin.Context) {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			render.RenderErrorPage(c, http.StatusNotFound)
 		} else {
-			render.RenderError(c, http.StatusForbidden, err.Error())
+			log.Error().Err(err).Int("game_id", id).Uint("user", userID).Msg("GameHandler.Delete: failed to delete game")
+			render.RenderError(c, http.StatusForbidden, "Ошибка при удалении игры")
 		}
 		return
 	}
@@ -614,13 +617,13 @@ func (h *GameHandler) Delete(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на страницу игры"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/publish [post]
 // @Security JWT
 func (h *GameHandler) Publish(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -629,7 +632,7 @@ func (h *GameHandler) Publish(c *gin.Context) {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			render.RenderErrorPage(c, http.StatusNotFound)
 		} else {
-			render.RenderError(c, http.StatusForbidden, err.Error())
+			render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, err.Error()))
 		}
 		return
 	}

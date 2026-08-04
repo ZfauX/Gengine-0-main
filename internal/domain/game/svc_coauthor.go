@@ -88,9 +88,9 @@ func (s *CoAuthorService) CanEditContent(ctx context.Context, gameID, userID uin
 }
 
 // Add добавляет нового соавтора или восстанавливает удалённого.
-func (s *CoAuthorService) Add(gameID, newCoAuthorID, ownerID uint) error {
+func (s *CoAuthorService) Add(ctx context.Context, gameID, newCoAuthorID, ownerID uint) error {
 	var game Game
-	if err := s.DB.First(&game, gameID).Error; err != nil {
+	if err := s.DB.WithContext(ctx).First(&game, gameID).Error; err != nil {
 		return err
 	}
 	if game.AuthorID != ownerID {
@@ -102,12 +102,12 @@ func (s *CoAuthorService) Add(gameID, newCoAuthorID, ownerID uint) error {
 
 	// Проверяем, есть ли запись (включая мягко удалённые)
 	var co CoAuthor
-	findErr := s.DB.Unscoped().Where("game_id = ? AND user_id = ?", gameID, newCoAuthorID).First(&co).Error
+	findErr := s.DB.WithContext(ctx).Unscoped().Where("game_id = ? AND user_id = ?", gameID, newCoAuthorID).First(&co).Error
 	if findErr == nil {
 		if co.DeletedAt.Valid {
 			// Восстанавливаем мягко удалённую запись
 			co.DeletedAt = gorm.DeletedAt{}
-			if saveErr := s.DB.Save(&co).Error; saveErr != nil {
+			if saveErr := s.DB.WithContext(ctx).Save(&co).Error; saveErr != nil {
 				return saveErr
 			}
 			return nil
@@ -119,20 +119,20 @@ func (s *CoAuthorService) Add(gameID, newCoAuthorID, ownerID uint) error {
 
 	// Нет записи — создаём новую
 	co = CoAuthor{GameID: gameID, UserID: newCoAuthorID, Role: RoleContentEditor}
-	return s.DB.Create(&co).Error
+	return s.DB.WithContext(ctx).Create(&co).Error
 }
 
 // Remove мягко удаляет соавтора (устанавливает deleted_at).
-func (s *CoAuthorService) Remove(gameID, coAuthorUserID, ownerID uint) error {
+func (s *CoAuthorService) Remove(ctx context.Context, gameID, coAuthorUserID, ownerID uint) error {
 	var game Game
-	if err := s.DB.First(&game, gameID).Error; err != nil {
+	if err := s.DB.WithContext(ctx).First(&game, gameID).Error; err != nil {
 		return err
 	}
 	if game.AuthorID != ownerID {
 		return errors.New("только владелец может управлять соавторами")
 	}
 	// Используем Delete, который в GORM v2 автоматически устанавливает deleted_at
-	return s.DB.Where("game_id = ? AND user_id = ?", gameID, coAuthorUserID).Delete(&CoAuthor{}).Error
+	return s.DB.WithContext(ctx).Where("game_id = ? AND user_id = ?", gameID, coAuthorUserID).Delete(&CoAuthor{}).Error
 }
 
 // List возвращает список соавторов игры.

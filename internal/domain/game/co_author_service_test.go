@@ -15,6 +15,9 @@ import (
 
 func setupCoAuthorTest(t *testing.T) (*gorm.DB, *game.CoAuthorService) {
 	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping DB test in short mode")
+	}
 	db := testutil.SetupPostgresDB(t, allModels...)
 	svc := game.NewCoAuthorService(db)
 	return db, svc
@@ -28,7 +31,7 @@ func TestCoAuthorService_AddAndList(t *testing.T) {
 	g := createPublishedGameWithSettings(t, db, author.ID, "Test Game")
 	coAuthor := createUser(t, db, "coauthor@test.com", "pass")
 
-	err := svc.Add(g.ID, coAuthor.ID, author.ID)
+	err := svc.Add(ctx, g.ID, coAuthor.ID, author.ID)
 	require.NoError(t, err)
 
 	list, err := svc.List(ctx, g.ID)
@@ -45,10 +48,10 @@ func TestCoAuthorService_Remove(t *testing.T) {
 	g := createPublishedGameWithSettings(t, db, author.ID, "Test Game")
 	coAuthor := createUser(t, db, "coauthor@test.com", "pass")
 
-	err := svc.Add(g.ID, coAuthor.ID, author.ID)
+	err := svc.Add(ctx, g.ID, coAuthor.ID, author.ID)
 	require.NoError(t, err)
 
-	err = svc.Remove(g.ID, coAuthor.ID, author.ID)
+	err = svc.Remove(ctx, g.ID, coAuthor.ID, author.ID)
 	require.NoError(t, err)
 
 	list, err := svc.List(ctx, g.ID)
@@ -65,7 +68,7 @@ func TestCoAuthorService_IsUserManager(t *testing.T) {
 	coAuthor := createUser(t, db, "coauthor@test.com", "pass")
 	randomUser := createUser(t, db, "random@test.com", "pass")
 
-	err := svc.Add(g.ID, coAuthor.ID, author.ID)
+	err := svc.Add(ctx, g.ID, coAuthor.ID, author.ID)
 	require.NoError(t, err)
 
 	isManager, err := svc.IsUserManager(ctx, g.ID, coAuthor.ID)
@@ -86,13 +89,13 @@ func TestCoAuthorService_HasPermission(t *testing.T) {
 	moderator := createUser(t, db, "moderator@test.com", "pass")
 	observer := createUser(t, db, "observer@test.com", "pass")
 
-	err := svc.Add(g.ID, moderator.ID, author.ID)
+	err := svc.Add(ctx, g.ID, moderator.ID, author.ID)
 	require.NoError(t, err)
 	require.NoError(t, db.Model(&game.CoAuthor{}).
 		Where("game_id = ? AND user_id = ?", g.ID, moderator.ID).
 		Update("role", game.RoleModerator).Error)
 
-	err = svc.Add(g.ID, observer.ID, author.ID)
+	err = svc.Add(ctx, g.ID, observer.ID, author.ID)
 	require.NoError(t, err)
 	require.NoError(t, db.Model(&game.CoAuthor{}).
 		Where("game_id = ? AND user_id = ?", g.ID, observer.ID).
@@ -116,7 +119,7 @@ func TestCoAuthorService_CanModerateGame(t *testing.T) {
 	coAuthor := createUser(t, db, "coauthor@test.com", "pass")
 	randomUser := createUser(t, db, "random@test.com", "pass")
 
-	err := svc.Add(g.ID, coAuthor.ID, author.ID)
+	err := svc.Add(ctx, g.ID, coAuthor.ID, author.ID)
 	require.NoError(t, err)
 	require.NoError(t, db.Model(&game.CoAuthor{}).
 		Where("game_id = ? AND user_id = ?", g.ID, coAuthor.ID).

@@ -41,18 +41,18 @@ func NewTestHandler(
 // @Param id path int true "ID игры"
 // @Success 200 {string} html "Страница тестов"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/test [get]
 // @Security JWT
 func (h *TestHandler) TestPage(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
 		return
 	}
 	userID := c.GetUint("userID")
 
-	g, err := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID)
+	g, err := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID, middleware.IsAdmin(c))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			render.RenderErrorPage(c, http.StatusNotFound)
@@ -71,11 +71,17 @@ func (h *TestHandler) TestPage(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "games-test.html", gin.H{
-		"Title":         "Тестирование",
+		"Title":         render.Tr(c, "nav.test_game"),
 		"Game":          g,
 		"TestPassings":  testPassings,
 		"csrf":          csrf.GetToken(c),
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,
+		"Breadcrumbs": []map[string]string{
+			{"name": "nav.home", "url": "/"},
+			{"name": "nav.games", "url": "/games"},
+			{"name": g.Name, "url": "/games/" + c.Param("id")},
+			{"name": "nav.test_game"},
+		},
 	})
 }

@@ -4,7 +4,9 @@ package game
 import (
 	"context"
 	"errors"
+	"fmt"
 
+	"gengine-0/internal/pkg/cache"
 	"gengine-0/internal/pkg/sanitize"
 
 	"gorm.io/gorm"
@@ -12,10 +14,18 @@ import (
 
 type ReviewService struct {
 	DB *gorm.DB
+	// Cache опционален — используется для инвалидации кэша рейтинга при новых отзывах.
+	Cache cache.CacheStore
 }
 
 func NewReviewService(db *gorm.DB) *ReviewService {
 	return &ReviewService{DB: db}
+}
+
+// WithCache устанавливает кэш для инвалидации рейтинга при создании отзыва.
+func (s *ReviewService) WithCache(c cache.CacheStore) *ReviewService {
+	s.Cache = c
+	return s
 }
 
 func (s *ReviewService) CanReview(gameID, userID uint) (bool, error) {
@@ -52,7 +62,14 @@ func (s *ReviewService) Create(gameID, userID uint, rating int, comment string) 
 	// Санитизация HTML-тегов в комментарии
 	cleanComment := sanitize.StripHTML(comment)
 	review := Review{GameID: gameID, UserID: userID, Rating: rating, Comment: cleanComment}
-	return s.DB.Create(&review).Error
+	if err := s.DB.Create(&review).Error; err != nil {
+		return err
+	}
+	// Инвалидируем кэш рейтинга игры, чтобы новая оценка сразу отобразилась.
+	if s.Cache != nil {
+		s.Cache.DeleteWithCtx(context.Background(), fmt.Sprintf("rating:game:%d", gameID))
+	}
+	return nil
 }
 
 func (s *ReviewService) ListByGame(ctx context.Context, gameID uint) ([]Review, error) {

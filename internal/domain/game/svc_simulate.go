@@ -47,6 +47,7 @@ func (s *SimulateService) Simulate(ctx context.Context, gameID, userID uint) (*S
 	}
 	result := &SimulateResult{}
 	startTime := time.Now()
+	stepStart := startTime
 	for i, lvl := range game.Levels {
 		code := "невозможно определить"
 		if len(lvl.Questions) > 0 && len(lvl.Questions[0].Answers) > 0 {
@@ -61,13 +62,15 @@ func (s *SimulateService) Simulate(ctx context.Context, gameID, userID uint) (*S
 		timer := time.NewTimer(delay)
 		select {
 		case <-timer.C:
+			timer.Stop()
 		case <-ctx.Done():
 			timer.Stop()
 			return nil, ctx.Err()
 		}
-		step := SimulateStep{LevelName: lvl.Name, Code: code, Duration: time.Since(startTime), Success: true}
+		step := SimulateStep{LevelName: lvl.Name, Code: code, Duration: time.Since(stepStart), Success: true}
 		result.Log = append(result.Log, step)
 		result.LevelsPassed++
+		stepStart = time.Now()
 	}
 	result.TotalTime = time.Since(startTime)
 	return result, nil

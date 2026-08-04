@@ -1,51 +1,51 @@
 {{define "games-list.html"}}
 <div class="max-w-7xl mx-auto">
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6">
-        <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100">Игры</h1>
+        <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100">{{ T $.Lang "games.list_title" }}</h1>
         <div class="flex items-center gap-2 mt-3 sm:mt-0">
-            <button id="viewToggle" class="btn btn-outline text-sm flex items-center gap-1" title="Переключить вид">
+            <button id="viewToggle" class="btn btn-outline text-sm flex items-center gap-1" title="{{ T $.Lang "games.toggle_view" }}">
                 <svg id="viewIcon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
-                <span id="viewText">Карточки</span>
+                <span id="viewText">{{ T $.Lang "games.view_cards" }}</span>
             </button>
-            <a href="/games/new" class="btn btn-primary text-sm">+ Создать игру</a>
+            <a href="/games/new" class="btn btn-primary text-sm">{{ T $.Lang "games.create_button" }}</a>
         </div>
     </div>
 
     <!-- Форма фильтрации -->
     <form method="GET" action="/games" class="flex flex-wrap items-end gap-3 mb-6 bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
         <div class="flex-1 min-w-[140px] relative">
-            <label for="search" class="form-label">Поиск</label>
-            <input type="text" name="search" id="search" placeholder="Поиск по названию" value="{{.Filter.Search}}"
-                    class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+            <label for="filter-search" class="form-label">{{ T $.Lang "games.filter_search" }}</label>
+            <input type="text" name="search" id="filter-search" placeholder="{{ T $.Lang "games.filter_search_placeholder" }}" value="{{.Filter.Search}}"
+                    class="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                     autocomplete="off">
         </div>
         <div class="flex-1 min-w-[140px]">
-            <label for="status" class="form-label">Статус</label>
-            <select name="status" id="status" class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                <option value="">Все статусы</option>
-                <option value="draft" {{if eq .Filter.Status "draft"}}selected{{end}}>Черновики</option>
-                <option value="published" {{if eq .Filter.Status "published"}}selected{{end}}>Опубликованные</option>
+            <label for="status" class="form-label">{{ T $.Lang "games.filter_status" }}</label>
+            <select name="status" id="status" class="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                <option value="">{{ T $.Lang "games.all_statuses" }}</option>
+                <option value="draft" {{if eq .Filter.Status "draft"}}selected{{end}}>{{ T $.Lang "games.filter_drafts" }}</option>
+                <option value="published" {{if eq .Filter.Status "published"}}selected{{end}}>{{ T $.Lang "games.filter_published" }}</option>
             </select>
         </div>
         <div class="flex-1 min-w-[140px]">
-            <label for="date_from" class="form-label">Дата начала (с)</label>
+            <label for="date_from" class="form-label">{{ T $.Lang "games.filter_date_from" }}</label>
             <input type="date" name="date_from" id="date_from" value="{{.Filter.DateFrom}}"
-                   class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                   class="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
         </div>
         <div class="flex-1 min-w-[140px]">
-            <label for="date_to" class="form-label">Дата начала (по)</label>
+            <label for="date_to" class="form-label">{{ T $.Lang "games.filter_date_to" }}</label>
             <input type="date" name="date_to" id="date_to" value="{{.Filter.DateTo}}"
-                   class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                   class="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
         </div>
         <div class="flex gap-2 items-center">
-            <button type="submit" class="btn btn-primary text-sm">Найти</button>
-            <a href="/games" class="btn btn-outline text-sm">Сбросить</a>
+            <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "games.filter_submit" }}</button>
+            <a href="/games" class="btn btn-outline text-sm">{{ T $.Lang "games.filter_reset" }}</a>
         </div>
     </form>
 
     <!-- Кнопка создания игры -->
     <div class="mb-6">
-        <a href="/games/new" class="btn btn-primary text-sm">+ Создать новую игру</a>
+        <a href="/games/new" class="btn btn-primary text-sm">{{ T $.Lang "games.create_new" }}</a>
     </div>
 
     <!-- Список игр -->
@@ -53,10 +53,10 @@
     <div id="skeletonLoading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
         {{range loop 0 6}}
         <div class="card animate-pulse">
-            <div class="aspect-video rounded-lg mb-3 bg-gray-200"></div>
-            <div class="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-            <div class="h-3 bg-gray-200 rounded w-1/2 mb-2"></div>
-            <div class="h-3 bg-gray-200 rounded w-1/3"></div>
+            <div class="aspect-video rounded-lg mb-3 bg-gray-200 dark:bg-gray-700"></div>
+            <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4 mb-2"></div>
+            <div class="h-3 bg-gray-200 dark:bg-gray-700 rounded w-1/2 mb-2"></div>
+            <div class="h-3 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
         </div>
         {{end}}
     </div>
@@ -65,7 +65,7 @@
     <!-- Card View -->
     <div id="gamesCardView" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8 hidden">
         {{range .Games}}
-        <div class="card hover-lift cursor-pointer" data-href="/games/{{.ID}}">
+        <div class="card hover-lift cursor-pointer" data-href="/games/{{.ID}}" role="link" tabindex="0">
             <!-- Обложка -->
             {{if .CoverPath}}
             <div class="aspect-video rounded-lg overflow-hidden mb-3 bg-gray-100">
@@ -84,23 +84,23 @@
             <div class="flex items-center justify-between mb-2">
                 <span class="text-sm text-gray-500">{{.Author.Name}}</span>
                 {{if .IsDraft}}
-                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">Черновик</span>
+                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">{{ T $.Lang "games.draft" }}</span>
                 {{else}}
-                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">Опубликована</span>
+                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">{{ T $.Lang "games.published" }}</span>
                 {{end}}
             </div>
 
             <!-- Дата старта -->
             <div class="flex items-center gap-2 text-sm text-gray-500 mb-3">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                {{if .StartsAt}}{{.StartsAt.Format "02.01.2006"}}{{else}}Без даты{{end}}
+                {{if .StartsAt}}{{.StartsAt.Format "02.01.2006"}}{{else}}{{ T $.Lang "games.no_date" }}{{end}}
             </div>
 
             <!-- Кнопки действий -->
             <div class="flex gap-2 pt-2 border-t border-gray-100">
-                <a href="/games/{{.ID}}" class="flex-1 btn btn-outline text-xs py-2">Просмотр</a>
+                <a href="/games/{{.ID}}" class="flex-1 btn btn-outline text-xs py-2">{{ T $.Lang "games.view_button" }}</a>
                 {{if eq .AuthorID $.CurrentUserID}}
-                    <a href="/games/{{.ID}}/edit" class="flex-1 btn btn-outline text-xs py-2">Редактировать</a>
+                    <a href="/games/{{.ID}}/edit" class="flex-1 btn btn-outline text-xs py-2">{{ T $.Lang "games.edit_button" }}</a>
                 {{end}}
             </div>
         </div>
@@ -113,11 +113,11 @@
             <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                 <thead class="bg-gray-50 dark:bg-gray-800">
                     <tr>
-                        <th scope="col" class="table-header">Название</th>
-                        <th scope="col" class="table-header">Автор</th>
-                        <th scope="col" class="table-header">Статус</th>
-                        <th scope="col" class="table-header">Дата старта</th>
-                        <th scope="col" class="table-header">Действия</th>
+                        <th scope="col" class="table-header">{{ T $.Lang "games.table_name" }}</th>
+                        <th scope="col" class="table-header">{{ T $.Lang "games.table_author" }}</th>
+                        <th scope="col" class="table-header">{{ T $.Lang "games.table_status" }}</th>
+                        <th scope="col" class="table-header">{{ T $.Lang "games.table_start_date" }}</th>
+                        <th scope="col" class="table-header">{{ T $.Lang "games.table_actions" }}</th>
                     </tr>
                 </thead>
                 <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
@@ -129,18 +129,18 @@
                         <td class="table-cell">{{.Author.Name}}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm">
                             {{if .IsDraft}}
-                                <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200">Черновик</span>
+                                <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200">{{ T $.Lang "games.draft" }}</span>
                             {{else}}
-                                <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200">Опубликована</span>
+                                <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200">{{ T $.Lang "games.published" }}</span>
                             {{end}}
                         </td>
                         <td class="table-cell">
                             {{if .StartsAt}}{{.StartsAt.Format "02.01.2006"}}{{else}}—{{end}}
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm">
-                            <a href="/games/{{.ID}}" class="btn btn-outline text-xs">Просмотр</a>
+                            <a href="/games/{{.ID}}" class="btn btn-outline text-xs">{{ T $.Lang "games.view_button" }}</a>
                             {{if eq .AuthorID $.CurrentUserID}}
-                                <a href="/games/{{.ID}}/edit" class="btn btn-outline text-xs">Редактировать</a>
+                                <a href="/games/{{.ID}}/edit" class="btn btn-outline text-xs">{{ T $.Lang "games.edit_button" }}</a>
                             {{end}}
                         </td>
                     </tr>
@@ -151,8 +151,8 @@
     </div>
     {{else}}
     <div class="card text-center py-12">
-        <p class="text-gray-500">Игры не найдены</p>
-        <p class="mt-2 text-sm text-gray-400">Попробуйте изменить параметры фильтра или <a href="/games/new" class="text-blue-600 hover:underline">создайте новую игру</a>.</p>
+        <p class="text-gray-500">{{ T $.Lang "games.no_games" }}</p>
+        <p class="mt-2 text-sm text-gray-400">{{ T $.Lang "games.no_games_hint" }}</p>
     </div>
     {{end}}
 
@@ -161,18 +161,18 @@
     <div class="flex items-center justify-between mt-6">
         <div class="flex-1 flex justify-between sm:hidden">
             {{if gt .Page 1}}
-                <a href="?page={{.PrevPage}}&status={{$.Filter.Status}}&search={{$.Filter.Search}}&date_from={{$.Filter.DateFrom}}&date_to={{$.Filter.DateTo}}" class="btn btn-outline text-sm">← Предыдущая</a>
+                <a href="?page={{.PrevPage}}&status={{$.Filter.Status}}&search={{$.Filter.Search}}&date_from={{$.Filter.DateFrom}}&date_to={{$.Filter.DateTo}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_prev" }}</a>
             {{end}}
             {{if lt .Page .TotalPages}}
-                <a href="?page={{.NextPage}}&status={{$.Filter.Status}}&search={{$.Filter.Search}}&date_from={{$.Filter.DateFrom}}&date_to={{$.Filter.DateTo}}" class="btn btn-outline text-sm">Следующая →</a>
+                <a href="?page={{.NextPage}}&status={{$.Filter.Status}}&search={{$.Filter.Search}}&date_from={{$.Filter.DateFrom}}&date_to={{$.Filter.DateTo}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_next" }}</a>
             {{end}}
         </div>
         <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
             <p class="text-sm text-gray-700">
-                Страница <span class="font-medium">{{.Page}}</span> из <span class="font-medium">{{.TotalPages}}</span>
-                <span class="text-gray-500">(всего {{.Total}} записей)</span>
+                {{ TF $.Lang "games.pagination_page" .Page .TotalPages }}
+                <span class="text-gray-500">{{ TF $.Lang "games.pagination_total" .Total }}</span>
             </p>
-            <nav class="inline-flex gap-1" aria-label="Пагинация">
+            <nav class="inline-flex gap-1" aria-label="Pagination">
                 {{if gt .Page 1}}
                     <a href="?page={{.PrevPage}}&status={{$.Filter.Status}}&search={{$.Filter.Search}}&date_from={{$.Filter.DateFrom}}&date_to={{$.Filter.DateTo}}" class="btn btn-outline text-sm px-3 py-1">←</a>
                 {{end}}
@@ -202,7 +202,7 @@
             cardView.classList.remove('hidden');
             tableView.classList.add('hidden');
             icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path>';
-            text.textContent = 'Таблица';
+            text.textContent = '{{ T $.Lang "games.view_table" }}';
         }
 
         toggle.addEventListener('click', function() {
@@ -211,33 +211,19 @@
                 cardView.classList.remove('hidden');
                 tableView.classList.add('hidden');
                 icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path>';
-                text.textContent = 'Таблица';
+                text.textContent = '{{ T $.Lang "games.view_table" }}';
                 localStorage.setItem('gamesView', 'cards');
             } else {
                 cardView.classList.add('hidden');
                 tableView.classList.remove('hidden');
                 icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path>';
-                text.textContent = 'Карточки';
+                text.textContent = '{{ T $.Lang "games.view_cards" }}';
                 localStorage.setItem('gamesView', 'table');
             }
         });
     })();
 
-    // Debounce для поиска — отложенный поиск после прекращения ввода
-    (function() {
-        const searchInput = document.getElementById('search');
-        if (!searchInput) return;
-
-        const form = searchInput.closest('form');
-        let timeout = null;
-
-        searchInput.addEventListener('input', function() {
-            clearTimeout(timeout);
-            timeout = setTimeout(function() {
-                form.submit();
-            }, 300);
-        });
-    })();
+    // Поиск только по кнопке "Найти" — без автопоиска при вводе
 
     // Confirmation для опасных действий (удаление, публикация)
     (function() {
@@ -253,10 +239,22 @@
         });
     })();
 
-    // Навигация по клику на карточку с data-href (CSP-safe)
+    // Навигация по клику на карточку с data-href (CSP-safe).
+    // Клики по вложенным интерактивным элементам (ссылки «Редактировать», кнопки)
+    // НЕ перехватываем — иначе браузер уходит на страницу игры вместо целевого действия.
     document.addEventListener('click', function(e) {
         var card = e.target.closest('[data-href]');
-        if (card) {
+        if (!card) return;
+        if (e.target.closest('a, button, input, select, textarea')) return;
+        window.location.href = card.getAttribute('data-href');
+    });
+
+    // Keyboard navigation for data-href cards (Enter/Space)
+    document.addEventListener('keydown', function(e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        var card = e.target.closest('[data-href]');
+        if (card && e.target === card) {
+            e.preventDefault();
             window.location.href = card.getAttribute('data-href');
         }
     });
@@ -283,9 +281,9 @@
         const table = document.getElementById('gamesTable');
         if (!table) return;
         table.innerHTML = '<div class="p-8 space-y-4">' +
-            '<div class="h-4 bg-gray-200 rounded animate-pulse w-3/4"></div>' +
-            '<div class="h-4 bg-gray-200 rounded animate-pulse w-1/2"></div>' +
-            '<div class="h-4 bg-gray-200 rounded animate-pulse w-2/3"></div>' +
+            '<div class="h-4 bg-gray-200 dark:bg-gray-700 rounded animate-pulse w-3/4"></div>' +
+            '<div class="h-4 bg-gray-200 dark:bg-gray-700 rounded animate-pulse w-1/2"></div>' +
+            '<div class="h-4 bg-gray-200 dark:bg-gray-700 rounded animate-pulse w-2/3"></div>' +
             '</div>';
     };
 

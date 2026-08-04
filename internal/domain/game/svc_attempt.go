@@ -28,9 +28,14 @@ func (s *AttemptService) SubmitCode(ctx context.Context, progress *LevelProgress
 // SubmitCodeWithTx — проверяет код внутри переданной транзакции.
 // Возвращает попытку и флаг успеха.
 func (s *AttemptService) SubmitCodeWithTx(ctx context.Context, tx *gorm.DB, progress *LevelProgress, code string) (*Attempt, bool, error) {
-	var lvl level.Level
-	if err := tx.WithContext(ctx).Preload("Questions.Answers").First(&lvl, progress.LevelID).Error; err != nil {
-		return nil, false, err
+	// Уровень обычно уже прелоажен вместе с прогрессом
+	// (GetCurrentProgressForUpdate прелоадит Level.Questions.Answers).
+	// Догружаем только если вызывающий не сделал preload.
+	lvl := progress.Level
+	if lvl.ID == 0 || (lvl.Type != level.TypeFileUpload && lvl.Type != level.TypeBlackbox && !lvl.RequiresConfirmation && len(lvl.Questions) == 0) {
+		if err := tx.WithContext(ctx).Preload("Questions.Answers").First(&lvl, progress.LevelID).Error; err != nil {
+			return nil, false, err
+		}
 	}
 
 	if lvl.Type == level.TypeFileUpload {
@@ -46,6 +51,7 @@ func (s *AttemptService) SubmitCodeWithTx(ctx context.Context, tx *gorm.DB, prog
 		if err := tx.WithContext(ctx).Create(attempt).Error; err != nil {
 			return nil, false, err
 		}
+		metrics.IncAttempt(false)
 		return attempt, false, nil
 	}
 

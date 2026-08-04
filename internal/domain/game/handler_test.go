@@ -25,10 +25,10 @@ import (
 )
 
 // =============================================================================
-// МОКИ
+// РњРћРљР
 // =============================================================================
 
-// MockGameService — мок для GameServiceInterface
+// MockGameService вЂ” РјРѕРє РґР»СЏ GameServiceInterface
 type MockGameService struct {
 	mock.Mock
 }
@@ -41,13 +41,13 @@ func (m *MockGameService) CreateGameWithCover(ctx context.Context, dto *CreateGa
 	return args.Get(0).(*Game), args.Error(1)
 }
 
-func (m *MockGameService) UpdateGameWithCover(ctx context.Context, gameID uint, dto *UpdateGameDTO, userID uint) error {
-	args := m.Called(ctx, gameID, dto, userID)
+func (m *MockGameService) UpdateGameWithCover(ctx context.Context, gameID uint, dto *UpdateGameDTO, userID uint, isAdmin bool) error {
+	args := m.Called(ctx, gameID, dto, userID, isAdmin)
 	return args.Error(0)
 }
 
-func (m *MockGameService) GetByID(ctx context.Context, id uint, viewerID uint) (*Game, error) {
-	args := m.Called(ctx, id, viewerID)
+func (m *MockGameService) GetByID(ctx context.Context, id uint, viewerID uint, isAdmin bool) (*Game, error) {
+	args := m.Called(ctx, id, viewerID, isAdmin)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -139,6 +139,15 @@ func (m *MockGameService) GetAverageRating(ctx context.Context, gameID uint) (fl
 	return args.Get(0).(float64), args.Get(1).(int64), args.Error(2)
 }
 
+func (m *MockGameService) ShowGame(ctx context.Context, gameID, viewerID uint, isAdmin bool) (*Game, []Review, float64, int64, error) {
+	args := m.Called(ctx, gameID, viewerID, isAdmin)
+	if args.Get(0) == nil {
+		return nil, nil, 0, 0, args.Error(4)
+	}
+	reviews, _ := args.Get(1).([]Review)
+	return args.Get(0).(*Game), reviews, args.Get(2).(float64), args.Get(3).(int64), args.Error(4)
+}
+
 func (m *MockGameService) GetGameWithStats(ctx context.Context, gameID uint) (*Game, []Review, float64, int64, error) {
 	args := m.Called(ctx, gameID)
 	if args.Get(0) == nil {
@@ -168,7 +177,7 @@ func (m *MockGameService) SaveSettings(ctx context.Context, gameID uint, setting
 	return args.Get(0).(*GameSetting), args.Error(1)
 }
 
-// MockCoAuthorService — мок для CoAuthorServiceInterface
+// MockCoAuthorService вЂ” РјРѕРє РґР»СЏ CoAuthorServiceInterface
 type MockCoAuthorService struct {
 	mock.Mock
 }
@@ -193,13 +202,13 @@ func (m *MockCoAuthorService) CanEditContent(ctx context.Context, gameID, userID
 	return args.Bool(0), args.Error(1)
 }
 
-func (m *MockCoAuthorService) Add(gameID, newCoAuthorID, ownerID uint) error {
-	args := m.Called(gameID, newCoAuthorID, ownerID)
+func (m *MockCoAuthorService) Add(ctx context.Context, gameID, newCoAuthorID, ownerID uint) error {
+	args := m.Called(ctx, gameID, newCoAuthorID, ownerID)
 	return args.Error(0)
 }
 
-func (m *MockCoAuthorService) Remove(gameID, coAuthorUserID, ownerID uint) error {
-	args := m.Called(gameID, coAuthorUserID, ownerID)
+func (m *MockCoAuthorService) Remove(ctx context.Context, gameID, coAuthorUserID, ownerID uint) error {
+	args := m.Called(ctx, gameID, coAuthorUserID, ownerID)
 	return args.Error(0)
 }
 
@@ -208,7 +217,7 @@ func (m *MockCoAuthorService) List(ctx context.Context, gameID uint) ([]CoAuthor
 	return args.Get(0).([]CoAuthor), args.Error(1)
 }
 
-// MockAuditService — мок для AuditServiceInterface
+// MockAuditService вЂ” РјРѕРє РґР»СЏ AuditServiceInterface
 type MockAuditService struct {
 	mock.Mock
 }
@@ -217,7 +226,7 @@ func (m *MockAuditService) Log(userID uint, action, objectType string, objectID 
 	m.Called(userID, action, objectType, objectID, details)
 }
 
-// MockStorage — мок для storage.FileStorage
+// MockStorage вЂ” РјРѕРє РґР»СЏ storage.FileStorage
 type MockStorage struct {
 	mock.Mock
 }
@@ -232,7 +241,7 @@ func (m *MockStorage) Delete(webPath string) error {
 	return args.Error(0)
 }
 
-// MockGamePassingService — мок для GamePassingServiceInterface
+// MockGamePassingService вЂ” РјРѕРє РґР»СЏ GamePassingServiceInterface
 type MockGamePassingService struct {
 	mock.Mock
 }
@@ -276,13 +285,13 @@ func (m *MockGamePassingService) ListTestPassings(ctx context.Context, gameID ui
 }
 
 // =============================================================================
-// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+// Р’РЎРџРћРњРћР“РђРўР•Р›Р¬РќР«Р• Р¤РЈРќРљР¦РР
 // =============================================================================
 
 func setupTestRouter() *gin.Engine {
 	gin.SetMode(gin.TestMode)
 
-	// Инициализируем минимальный набор шаблонов для тестов
+	// РРЅРёС†РёР°Р»РёР·РёСЂСѓРµРј РјРёРЅРёРјР°Р»СЊРЅС‹Р№ РЅР°Р±РѕСЂ С€Р°Р±Р»РѕРЅРѕРІ РґР»СЏ С‚РµСЃС‚РѕРІ
 	tmpl := template.New("layout.html")
 	tmpl.Funcs(templatefuncs.FuncMap())
 	// layout.html
@@ -290,7 +299,7 @@ func setupTestRouter() *gin.Engine {
 	if err != nil {
 		panic(err)
 	}
-	// Определяем все шаблоны, которые используются в хендлерах
+	// РћРїСЂРµРґРµР»СЏРµРј РІСЃРµ С€Р°Р±Р»РѕРЅС‹, РєРѕС‚РѕСЂС‹Рµ РёСЃРїРѕР»СЊР·СѓСЋС‚СЃСЏ РІ С…РµРЅРґР»РµСЂР°С…
 	templates := []string{
 		"games-list.html", "games-show.html", "games-new.html", "games-edit.html",
 		"game_passings-list.html", "game_passings-apply.html",
@@ -310,12 +319,12 @@ func setupTestRouter() *gin.Engine {
 	router := gin.New()
 	router.SetHTMLTemplate(tmpl)
 
-	// Добавляем сессии
+	// Р”РѕР±Р°РІР»СЏРµРј СЃРµСЃСЃРёРё
 	store := cookie.NewStore([]byte("test-session-secret-32chars-long!!!"))
 	router.Use(sessions.Sessions("gengine_test_session", store))
 
-	// Вместо полноценной CSRF-защиты добавляем заглушку, которая устанавливает фиктивные значения
-	// Это позволяет хендлерам использовать csrf.GetToken без ошибок
+	// Р’РјРµСЃС‚Рѕ РїРѕР»РЅРѕС†РµРЅРЅРѕР№ CSRF-Р·Р°С‰РёС‚С‹ РґРѕР±Р°РІР»СЏРµРј Р·Р°РіР»СѓС€РєСѓ, РєРѕС‚РѕСЂР°СЏ СѓСЃС‚Р°РЅР°РІР»РёРІР°РµС‚ С„РёРєС‚РёРІРЅС‹Рµ Р·РЅР°С‡РµРЅРёСЏ
+	// Р­С‚Рѕ РїРѕР·РІРѕР»СЏРµС‚ С…РµРЅРґР»РµСЂР°Рј РёСЃРїРѕР»СЊР·РѕРІР°С‚СЊ csrf.GetToken Р±РµР· РѕС€РёР±РѕРє
 	router.Use(func(c *gin.Context) {
 		c.Set("csrfSecret", "test-csrf-secret-32chars-long!!!")
 		c.Set("csrfToken", "test-csrf-token")
@@ -339,7 +348,7 @@ func createTestGame(id uint, name string) *Game {
 }
 
 // =============================================================================
-// ТЕСТЫ
+// РўР•РЎРўР«
 // =============================================================================
 
 func TestGameHandler_List_Success(t *testing.T) {
@@ -418,10 +427,8 @@ func TestGameHandler_Show_Success(t *testing.T) {
 	router.GET("/games/:id", handler.Show)
 
 	game := createTestGame(1, "Test Game")
-	mockGameService.On("GetByID", mock.Anything, uint(1), uint(1)).Return(game, nil)
+	mockGameService.On("ShowGame", mock.Anything, uint(1), uint(1), false).Return(game, []Review{}, 0.0, int64(0), nil)
 	mockCoAuthorService.On("IsUserManager", mock.Anything, uint(1), uint(1)).Return(true, nil)
-	mockGameService.On("ListReviews", mock.Anything, uint(1)).Return([]Review{}, nil)
-	mockGameService.On("GetAverageRating", mock.Anything, uint(1)).Return(0.0, int64(0), nil)
 
 	req := httptest.NewRequest("GET", "/games/1", nil)
 	w := httptest.NewRecorder()
@@ -446,7 +453,7 @@ func TestGameHandler_Show_NotFound(t *testing.T) {
 	router := setupTestRouter()
 	router.GET("/games/:id", handler.Show)
 
-	mockGameService.On("GetByID", mock.Anything, uint(1), uint(1)).Return(nil, gorm.ErrRecordNotFound)
+	mockGameService.On("ShowGame", mock.Anything, uint(1), uint(1), false).Return(nil, nil, 0.0, int64(0), gorm.ErrRecordNotFound)
 
 	req := httptest.NewRequest("GET", "/games/1", nil)
 	w := httptest.NewRecorder()
@@ -559,14 +566,14 @@ func TestGameHandler_Delete_Forbidden(t *testing.T) {
 	}
 
 	router := setupTestRouter()
-	// Переопределяем userID для этого теста
+	// РџРµСЂРµРѕРїСЂРµРґРµР»СЏРµРј userID РґР»СЏ СЌС‚РѕРіРѕ С‚РµСЃС‚Р°
 	router.Use(func(c *gin.Context) {
 		c.Set("userID", uint(2))
 		c.Next()
 	})
 	router.POST("/games/:id/delete", handler.Delete)
 
-	mockGameService.On("Delete", mock.Anything, uint(1), uint(2)).Return(errors.New("только владелец может удалить игру"))
+	mockGameService.On("Delete", mock.Anything, uint(1), uint(2)).Return(errors.New("С‚РѕР»СЊРєРѕ РІР»Р°РґРµР»РµС† РјРѕР¶РµС‚ СѓРґР°Р»РёС‚СЊ РёРіСЂСѓ"))
 
 	req := httptest.NewRequest("POST", "/games/1/delete", nil)
 	w := httptest.NewRecorder()
@@ -599,8 +606,8 @@ func TestGameHandler_Update_Success(t *testing.T) {
 	_ = writer.Close()
 
 	existingGame := createTestGame(1, "Old Game")
-	mockGameService.On("GetByID", mock.Anything, uint(1), uint(1)).Return(existingGame, nil)
-	mockGameService.On("UpdateGameWithCover", mock.Anything, uint(1), mock.Anything, uint(1)).Return(nil)
+	mockGameService.On("GetByID", mock.Anything, uint(1), uint(1), false).Return(existingGame, nil)
+	mockGameService.On("UpdateGameWithCover", mock.Anything, uint(1), mock.Anything, uint(1), false).Return(nil)
 	mockAuditService.On("Log", uint(1), "update", "game", uint(1), "Updated Game").Return()
 
 	req := httptest.NewRequest("POST", "/games/1/update", body)
@@ -659,7 +666,7 @@ func TestGameHandler_Publish_Forbidden(t *testing.T) {
 	})
 	router.POST("/games/:id/publish", handler.Publish)
 
-	mockGameService.On("Publish", mock.Anything, uint(1), uint(2)).Return(errors.New("только автор или контент-менеджер может опубликовать игру"))
+	mockGameService.On("Publish", mock.Anything, uint(1), uint(2)).Return(errors.New("С‚РѕР»СЊРєРѕ Р°РІС‚РѕСЂ РёР»Рё РєРѕРЅС‚РµРЅС‚-РјРµРЅРµРґР¶РµСЂ РјРѕР¶РµС‚ РѕРїСѓР±Р»РёРєРѕРІР°С‚СЊ РёРіСЂСѓ"))
 
 	req := httptest.NewRequest("POST", "/games/1/publish", nil)
 	w := httptest.NewRecorder()
