@@ -24,7 +24,7 @@
             <input type="hidden" name="_csrf" value="{{.csrf}}">
 
             <!-- Step 1: Основные данные -->
-            <div id="step1" class="wizard-step {{if ne $.CurrentStep 0}}hidden{{end}}">
+            <div id="step1" class="wizard-step">
                 <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">{{ T $.Lang "game.new_step_basic_title" }}</h2>
                 <div class="space-y-4">
                     <div>
@@ -64,7 +64,7 @@
             </div>
 
             <!-- Step 2: Даты -->
-            <div id="step2" class="wizard-step {{if ne $.CurrentStep 1}}hidden{{end}}">
+            <div id="step2" class="wizard-step">
                 <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">{{ T $.Lang "game.new_step_dates_title" }}</h2>
                 <div class="space-y-4">
                     <div>
@@ -86,7 +86,7 @@
             </div>
 
             <!-- Step 3: Обложка -->
-            <div id="step3" class="wizard-step {{if ne $.CurrentStep 2}}hidden{{end}}">
+            <div id="step3" class="wizard-step">
                 <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">{{ T $.Lang "game.new_step_cover_title" }}</h2>
                 <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">{{ T $.Lang "game.new_cover_desc" }}</p>
 
@@ -107,7 +107,7 @@
             </div>
 
             <!-- Step 4: Настройки -->
-            <div id="step4" class="wizard-step {{if ne $.CurrentStep 3}}hidden{{end}}">
+            <div id="step4" class="wizard-step">
                 <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">{{ T $.Lang "game.new_step_settings_title" }}</h2>
                 <div class="space-y-4">
                     <label class="flex items-center gap-3">
@@ -131,18 +131,12 @@
                 </div>
             </div>
 
-            <!-- Navigation buttons -->
+            <!-- Navigation buttons: без JS — обычная одна-страничная форма (все шаги видны,
+                 кнопка отправляет форму). С JS — кнопка работает как «Далее»/«Назад». -->
             <div class="flex flex-wrap gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
-                {{if gt $.CurrentStep 0}}
-                <button type="button" id="prevBtn" class="btn btn-outline text-sm">{{ T $.Lang "game.new_prev" }}</button>
-                {{else}}
                 <a href="/games" class="btn btn-outline text-sm">{{ T $.Lang "game.new_cancel" }}</a>
-                {{end}}
-                {{if lt $.CurrentStep 3}}
-                <button type="button" id="nextBtn" class="btn btn-primary text-sm ml-auto">{{ T $.Lang "game.new_next" }}</button>
-                {{else}}
-                <button type="submit" class="btn btn-primary text-sm ml-auto">{{ T $.Lang "game.new_create_button" }}</button>
-                {{end}}
+                <button type="button" id="prevBtn" class="btn btn-outline text-sm hidden">{{ T $.Lang "game.new_prev" }}</button>
+                <button type="submit" id="wizardSubmit" class="btn btn-primary text-sm ml-auto">{{ T $.Lang "game.new_next" }}</button>
             </div>
         </form>
     </div>
@@ -153,22 +147,37 @@
         let currentStep = parseInt('{{$.CurrentStep}}') || 0;
         const totalSteps = 4;
         const form = document.getElementById('wizardForm');
-        const nextBtn = document.getElementById('nextBtn');
+        const submitBtn = document.getElementById('wizardSubmit');
         const prevBtn = document.getElementById('prevBtn');
+        const nextText = '{{ T $.Lang "game.new_next" }}';
+        const createText = '{{ T $.Lang "game.new_create_button" }}';
+
+        const steps = Array.prototype.slice.call(document.querySelectorAll('.wizard-step'));
 
         function showStep(step) {
-            document.querySelectorAll('.wizard-step').forEach(function(el, i) {
+            steps.forEach(function(el, i) {
                 el.classList.toggle('hidden', i !== step);
             });
             if (prevBtn) prevBtn.classList.toggle('hidden', step === 0);
-            if (nextBtn) nextBtn.classList.toggle('hidden', step === totalSteps - 1);
+            if (submitBtn) {
+                submitBtn.textContent = (step === totalSteps - 1) ? createText : nextText;
+            }
             currentStep = step;
         }
 
-        if (nextBtn) {
-            nextBtn.addEventListener('click', function() {
-                if (!validateStep(currentStep)) return;
-                if (currentStep < totalSteps - 1) showStep(currentStep + 1);
+        // Прогрессивное улучшение: без JS все шаги видны и форма отправляется.
+        // С JS — показываем только текущий шаг и управляем навигацией.
+        showStep(Math.min(currentStep, totalSteps - 1));
+
+        if (submitBtn) {
+            submitBtn.addEventListener('click', function(e) {
+                if (currentStep < totalSteps - 1) {
+                    e.preventDefault(); // не отправляем — переходим к следующему шагу
+                    if (!validateStep(currentStep)) return;
+                    showStep(currentStep + 1);
+                    submitBtn.scrollIntoView({ block: 'nearest' });
+                }
+                // на последнем шаге — обычная отправка формы
             });
         }
 

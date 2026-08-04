@@ -32,49 +32,40 @@
     const statusEl = document.getElementById('connection-status');
 
     const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    let socket = null;
-    let reconnectAttempts = 0;
+    let chatClient = null;
 
     function connect() {
-        if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+        if (chatClient && (chatClient.isOpen())) {
             return;
         }
         const wsUrl = wsProtocol + '//' + window.location.host + '/chat/ws?room=' + roomID;
-        socket = new WebSocket(wsUrl);
 
-        socket.onopen = function() {
-            statusEl.textContent = '{{ T $.Lang "chat.connected" }}';
-            statusEl.className = 'mt-2 text-sm text-green-600 dark:text-green-400';
-            reconnectAttempts = 0;
-        };
-
-        socket.onmessage = function(event) {
-            var data = JSON.parse(event.data);
-            if (data.type === 'history' && data.messages) {
-                messagesEl.innerHTML = '';
-                data.messages.forEach(function(msg) { appendMessage(msg, false); });
-                messagesEl.scrollTop = messagesEl.scrollHeight;
-            } else if (data.type === 'message') {
-                removeSendingStatus();
-                appendMessage(data.message || data, true);
+        // Единый reconnecting-клиент (UX15)
+        chatClient = window.createReconnectingWebSocket(wsUrl, {
+            onMessage: function(event) {
+                var data = JSON.parse(event.data);
+                if (data.type === 'history' && data.messages) {
+                    messagesEl.innerHTML = '';
+                    data.messages.forEach(function(msg) { appendMessage(msg, false); });
+                    messagesEl.scrollTop = messagesEl.scrollHeight;
+                } else if (data.type === 'message') {
+                    removeSendingStatus();
+                    appendMessage(data.message || data, true);
+                }
+            },
+            onStatus: function(name) {
+                if (name === 'connected') {
+                    statusEl.textContent = '{{ T $.Lang "chat.connected" }}';
+                    statusEl.className = 'mt-2 text-sm text-green-600 dark:text-green-400';
+                } else if (name === 'reconnecting') {
+                    statusEl.textContent = '{{ T $.Lang "chat.disconnected" }}';
+                    statusEl.className = 'mt-2 text-sm text-red-500';
+                } else if (name === 'error' || name === 'failed') {
+                    statusEl.textContent = '{{ T $.Lang "chat.connection_error" }}';
+                    statusEl.className = 'mt-2 text-sm text-red-500';
+                }
             }
-        };
-
-        socket.onclose = function() {
-            statusEl.textContent = '{{ T $.Lang "chat.disconnected" }}';
-            statusEl.className = 'mt-2 text-sm text-red-500';
-            scheduleReconnect();
-        };
-
-        socket.onerror = function() {
-            socket.close();
-        };
-    }
-
-    function scheduleReconnect() {
-        var delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
-        reconnectAttempts++;
-        setTimeout(function() { connect(); }, delay);
+        });
     }
 
     function appendMessage(msg, scroll) {
@@ -118,13 +109,13 @@
     function sendMessage() {
         var text = inputEl.value.trim();
         if (!text) { return; }
-        if (!socket || socket.readyState !== WebSocket.OPEN) {
+        if (!chatClient || !chatClient.isOpen()) {
             statusEl.textContent = '{{ T $.Lang "chat.connection_error" }}';
             statusEl.className = 'mt-2 text-sm text-red-500';
             return;
         }
         showSendingStatus(text);
-        socket.send(JSON.stringify({
+        chatClient.send(JSON.stringify({
             type: 'message',
             room_id: roomID,
             content: text

@@ -990,7 +990,82 @@ function initHTMXLoading() {
 }
 
 // =============================================================================
-// Initialize on DOM ready
+// UX15: Unified reconnecting WebSocket client
+// Единый механизм соединения/переподключения для чатов и мониторинга.
+// Usage:
+//   const ws = window.createReconnectingWebSocket(url, {
+//       onMessage: function(e) { ... },
+//       onStatus: function(name, detail) { /* 'connecting'|'connected'|'reconnecting'|'error'|'failed'|'closed' */ },
+//       maxAttempts: 5, baseDelay: 1000, maxDelay: 30000
+//   });
+//   ws.send(data); ws.isOpen(); ws.close();
+// =============================================================================
+window.createReconnectingWebSocket = function(url, opts) {
+    opts = opts || {};
+    var maxAttempts = opts.maxAttempts || 5;
+    var baseDelay = opts.baseDelay || 1000;
+    var maxDelay = opts.maxDelay || 30000;
+    var onMessage = opts.onMessage || function() {};
+    var onStatus = opts.onStatus || function() {};
+    var onFinalClose = opts.onFinalClose || function() {};
+
+    var socket = null;
+    var attempts = 0;
+    var reconnectTimer = null;
+    var manuallyClosed = false;
+
+    function connect() {
+        if (manuallyClosed) return;
+        onStatus('connecting');
+        socket = new WebSocket(url);
+        socket.onopen = function() {
+            attempts = 0;
+            onStatus('connected');
+        };
+        socket.onmessage = function(e) { onMessage(e, socket); };
+        socket.onerror = function() { onStatus('error'); };
+        socket.onclose = function(event) {
+            if (manuallyClosed) {
+                onStatus('closed');
+                onFinalClose();
+                return;
+            }
+            if (attempts >= maxAttempts) {
+                onStatus('failed');
+                onFinalClose();
+                return;
+            }
+            var delay = Math.min(maxDelay, baseDelay * Math.pow(2, attempts));
+            attempts++;
+            onStatus('reconnecting', { attempt: attempts, delay: delay });
+            if (reconnectTimer) clearTimeout(reconnectTimer);
+            reconnectTimer = setTimeout(connect, delay);
+        };
+    }
+
+    connect();
+
+    return {
+        send: function(data) {
+            if (socket && socket.readyState === WebSocket.OPEN) socket.send(data);
+        },
+        isOpen: function() {
+            return socket && socket.readyState === WebSocket.OPEN;
+        },
+        close: function() {
+            manuallyClosed = true;
+            if (reconnectTimer) clearTimeout(reconnectTimer);
+            if (socket) {
+                socket.onclose = null;
+                try { socket.close(); } catch (_) {}
+            }
+            onStatus('closed');
+        }
+    };
+};
+
+// =============================================================================
+// Init on DOM ready
 // =============================================================================
 document.addEventListener('DOMContentLoaded', function() {
     initToast();

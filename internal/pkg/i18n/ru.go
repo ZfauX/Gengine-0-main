@@ -1161,6 +1161,7 @@ var ruMessages = map[string]string{
 	"gamechat.input_placeholder": "Введите сообщение...",
 	"gamechat.send_button":       "Отправить",
 	"gamechat.connected":         "Подключено",
+	"gamechat.connecting":        "Подключение...",
 	"gamechat.disconnected":      "Отключено. Переподключение...",
 	"gamechat.reconnecting":      "Переподключение...",
 	"gamechat.connection_error":  "Нет соединения с чатом. Попробуйте позже.",

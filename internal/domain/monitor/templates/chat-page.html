@@ -37,15 +37,11 @@
         const passingID = container.dataset.passingId ? parseInt(container.dataset.passingId, 10) : null;
 
         let currentRoom = 'general';
-        let socket = null;
+        let chat = null;
         let generalRoomID = null;
         let teamRoomID = null;
         let roomsLoaded = false;
-        let reconnectAttempts = 0;
-        let reconnectTimer = null;
-        const MAX_RECONNECT_DELAY = 30000;
-        const BASE_RECONNECT_DELAY = 1000;
-        
+
         const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
 
         const btnGeneral = document.getElementById('btn-general');
@@ -88,62 +84,49 @@
                 return;
             }
 
-            if (socket) {
-                socket.onclose = null;
-                socket.close();
-            }
+            if (chat) chat.close();
 
-            socket = new WebSocket(`${wsProtocol}//${location.host}/chat/ws?room=${room}`);
-            socket.onopen = function() {
-                console.log('Chat: WebSocket connected, room ' + currentRoom);
-                updateConnectionStatus('{{ T $.Lang "gamechat.connected" }}', '#2ecc71');
-                reconnectAttempts = 0;
-            };
-            socket.onmessage = function(e) {
-                try {
-                    const data = JSON.parse(e.data);
-                    if (data.type === 'history') {
-                        chatMessages.innerHTML = '';
-                        renderedIds.clear();
-                        if (Array.isArray(data.messages)) {
-                            data.messages.forEach(msg => {
-                                const id = msg.id || msg.ID || '';
-                                if (id) renderedIds.add(id);
+            // Единый reconnecting-клиент (UX15) — reconnect/status в одном месте.
+            chat = window.createReconnectingWebSocket(
+                `${wsProtocol}//${location.host}/chat/ws?room=${room}`,
+                {
+                    onMessage: function(e) {
+                        try {
+                            const data = JSON.parse(e.data);
+                            if (data.type === 'history') {
+                                chatMessages.innerHTML = '';
+                                renderedIds.clear();
+                                if (Array.isArray(data.messages)) {
+                                    data.messages.forEach(msg => {
+                                        const id = msg.id || msg.ID || '';
+                                        if (id) renderedIds.add(id);
+                                        renderMessage(msg);
+                                    });
+                                }
+                            } else if (data.type === 'message') {
+                                const msg = data.message;
+                                const msgId = msg.id || msg.ID || '';
+                                if (!msgId || renderedIds.has(msgId)) return; // пропускаем дубли
+                                renderedIds.add(msgId);
                                 renderMessage(msg);
-                            });
+                            }
+                        } catch (err) {
+                            console.error('Ошибка обработки сообщения:', err);
                         }
-                    } else if (data.type === 'message') {
-                        const msg = data.message;
-                        const msgId = msg.id || msg.ID || '';
-                        if (!msgId || renderedIds.has(msgId)) return; // пропускаем дубли
-                        renderedIds.add(msgId);
-                        renderMessage(msg);
+                    },
+                    onStatus: function(name) {
+                        if (name === 'connected') {
+                            updateConnectionStatus('{{ T $.Lang "gamechat.connected" }}', '#2ecc71');
+                        } else if (name === 'reconnecting') {
+                            updateConnectionStatus('{{ T $.Lang "gamechat.reconnecting" }}', '#e67e22');
+                        } else if (name === 'error' || name === 'failed') {
+                            updateConnectionStatus('{{ T $.Lang "gamechat.connection_error" }}', '#e74c3c');
+                        } else if (name === 'connecting') {
+                            updateConnectionStatus('{{ T $.Lang "gamechat.connecting" }}', '#888');
+                        }
                     }
-                } catch (err) {
-                    console.error('Ошибка обработки сообщения:', err);
                 }
-            };
-            socket.onclose = function(event) {
-                console.log('Chat: WebSocket closed, reconnecting...');
-                updateConnectionStatus('{{ T $.Lang "gamechat.reconnecting" }}', '#e67e22');
-                scheduleReconnect();
-            };
-            socket.onerror = function(error) {
-                console.error('Chat: WebSocket error', error);
-                updateConnectionStatus('{{ T $.Lang "gamechat.connection_error" }}', '#e74c3c');
-            };
-        }
-
-        function scheduleReconnect() {
-            if (reconnectTimer) clearTimeout(reconnectTimer);
-            const delay = Math.min(MAX_RECONNECT_DELAY, BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts));
-            reconnectAttempts++;
-            console.log(`Chat: reconnecting in ${delay}ms (attempt ${reconnectAttempts})`);
-            var reconnectStr = '{{ T $.Lang "gamechat.reconnecting" }}';
-            updateConnectionStatus(reconnectStr, '#e67e22');
-            reconnectTimer = setTimeout(() => {
-                connect();
-            }, delay);
+            );
         }
 
         function renderMessage(msg) {
@@ -191,11 +174,11 @@
         function sendMessage() {
             const text = chatInput.value.trim();
             if (!text) return;
-            if (!socket || socket.readyState !== WebSocket.OPEN) {
+            if (!chat || !chat.isOpen()) {
                 updateConnectionStatus('{{ T $.Lang "gamechat.connection_error" }}', '#e74c3c');
                 return;
             }
-            socket.send(text);
+            chat.send(text);
             chatInput.value = '';
         }
 
@@ -205,11 +188,7 @@
         });
 
         window.addEventListener('beforeunload', function() {
-            if (socket) {
-                socket.onclose = null;
-                socket.close();
-            }
-            if (reconnectTimer) clearTimeout(reconnectTimer);
+            if (chat) chat.close();
         });
     })();
 </script>

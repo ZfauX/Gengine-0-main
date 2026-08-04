@@ -1158,6 +1158,7 @@ var enMessages = map[string]string{
 	"gamechat.input_placeholder": "Enter message...",
 	"gamechat.send_button":       "Send",
 	"gamechat.connected":         "Connected",
+	"gamechat.connecting":        "Connecting...",
 	"gamechat.disconnected":      "Disconnected. Reconnecting...",
 	"gamechat.reconnecting":      "Reconnecting...",
 	"gamechat.connection_error":  "No chat connection. Try again later.",

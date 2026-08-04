@@ -187,7 +187,7 @@
 </div>
 
 <script nonce="{{.csp_nonce}}">
-    // Переключение вида: карточки / таблица
+    // Переключение вида: карточки / таблица (предпочтение хранится на сервере)
     (function() {
         const toggle = document.getElementById('viewToggle');
         const icon = document.getElementById('viewIcon');
@@ -196,29 +196,52 @@
         const tableView = document.getElementById('gamesTableView');
         if (!toggle || !cardView || !tableView) return;
 
-        // Проверяем сохранённую preference
-        const saved = localStorage.getItem('gamesView');
-        if (saved === 'cards') {
+        function setCardsView() {
             cardView.classList.remove('hidden');
             tableView.classList.add('hidden');
             icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path>';
             text.textContent = '{{ T $.Lang "games.view_table" }}';
         }
 
+        function setTableView() {
+            cardView.classList.add('hidden');
+            tableView.classList.remove('hidden');
+            icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path>';
+            text.textContent = '{{ T $.Lang "games.view_cards" }}';
+        }
+
+        function savePreference(view) {
+            const meta = document.querySelector('meta[name="csrf-token"]');
+            const csrf = meta ? meta.getAttribute('content') : '';
+            fetch('/api/users/preferences/games-view', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrf
+                },
+                body: JSON.stringify({ view: view })
+            }).catch(function() {
+                // Неавторизованные/сбои — просто не сохраняем, вид работает до перезагрузки
+            });
+        }
+
+        // Серверное предпочтение (персонализация). Без JS-ответа/401 — таблица.
+        fetch('/api/users/preferences/games-view')
+            .then(r => r.ok ? r.json() : Promise.resolve({ view: 'table' }))
+            .then(data => {
+                if (data.view === 'cards') setCardsView();
+                else setTableView();
+            })
+            .catch(function() { setTableView(); });
+
         toggle.addEventListener('click', function() {
             const isCardsHidden = cardView.classList.contains('hidden');
             if (isCardsHidden) {
-                cardView.classList.remove('hidden');
-                tableView.classList.add('hidden');
-                icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path>';
-                text.textContent = '{{ T $.Lang "games.view_table" }}';
-                localStorage.setItem('gamesView', 'cards');
+                setCardsView();
+                savePreference('cards');
             } else {
-                cardView.classList.add('hidden');
-                tableView.classList.remove('hidden');
-                icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path>';
-                text.textContent = '{{ T $.Lang "games.view_cards" }}';
-                localStorage.setItem('gamesView', 'table');
+                setTableView();
+                savePreference('table');
             }
         });
     })();
