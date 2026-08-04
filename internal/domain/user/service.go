@@ -1,6 +1,8 @@
 // internal/domain/user/service.go
 //
-//go:generate go run go.uber.org/mock/mockgen -source=service.go -destination=mock_service.go -package=user
+// Note: tests use hand-rolled mocks or real DB; generated file may be incomplete
+//
+//go:generate go run go.uber.org/mock/mockgen -source=repository.go -destination=mock_service.go -package=user
 package user
 
 import (
@@ -15,6 +17,7 @@ import (
 	"time"
 
 	"gengine-0/internal/config"
+	"gengine-0/internal/pkg/cache"
 	"gengine-0/internal/pkg/crypto"
 	"gengine-0/internal/pkg/email"
 	errspkg "gengine-0/internal/pkg/errors"
@@ -46,6 +49,7 @@ type AuthService struct {
 	emailVerifRepo   EmailVerificationRepository
 	refreshTokenRepo RefreshTokenRepository
 	cfg              *config.Config
+	cache            cache.CacheStore
 }
 
 func NewAuthService(
@@ -62,6 +66,12 @@ func NewAuthService(
 		refreshTokenRepo: refreshTokenRepo,
 		cfg:              cfg,
 	}
+}
+
+// WithCache sets the cache store for JWT blacklist support.
+func (s *AuthService) WithCache(c cache.CacheStore) *AuthService {
+	s.cache = c
+	return s
 }
 
 func (s *AuthService) Register(ctx context.Context, emailStr, password, name string) (*User, error) {
@@ -90,6 +100,10 @@ func (s *AuthService) Register(ctx context.Context, emailStr, password, name str
 func (s *AuthService) Login(ctx context.Context, emailStr, password string) (string, error) {
 	user, err := s.userRepo.GetByEmail(ctx, emailStr)
 	if err != nil {
+		if stderrors.Is(err, gorm.ErrRecordNotFound) {
+			// Dummy bcrypt to prevent timing-based email enumeration
+			bcrypt.CompareHashAndPassword([]byte("$2a$10$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW"), []byte(password)) //nolint:errcheck
+		}
 		return "", stderrors.New("неверный email или пароль")
 	}
 
@@ -134,7 +148,7 @@ func (s *AuthService) GenerateJWT(user User) (string, error) {
 	return s.generateJWT(user)
 }
 
-func (s *AuthService) GenerateRefreshToken(ctx context.Context, user User, deviceID string) (string, error) {
+func (s *AuthService) GenerateRefreshToken(ctx context.Context, user User, deviceID, clientFingerprint string) (string, error) {
 	b := make([]byte, refreshTokenBytes)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
@@ -144,10 +158,11 @@ func (s *AuthService) GenerateRefreshToken(ctx context.Context, user User, devic
 	tokenHash := hex.EncodeToString(hash[:])
 
 	refreshToken := &RefreshToken{
-		UserID:    user.ID,
-		TokenHash: tokenHash,
-		DeviceID:  deviceID,
-		ExpiresAt: time.Now().Add(s.cfg.JWT.RefreshExpiry),
+		UserID:            user.ID,
+		TokenHash:         tokenHash,
+		DeviceID:          deviceID,
+		ClientFingerprint: clientFingerprint,
+		ExpiresAt:         time.Now().Add(s.cfg.JWT.RefreshExpiry),
 	}
 	if err := s.refreshTokenRepo.Create(ctx, refreshToken); err != nil {
 		return "", err
@@ -174,24 +189,45 @@ func (s *AuthService) CleanExpiredRefreshTokens(ctx context.Context) error {
 	return s.refreshTokenRepo.DeleteExpired(ctx)
 }
 
-func (s *AuthService) RefreshAccessToken(ctx context.Context, refreshTokenStr string) (string, error) {
+func (s *AuthService) RefreshAccessToken(ctx context.Context, refreshTokenStr, deviceID, clientFingerprint string) (string, string, error) {
 	hash := sha256.Sum256([]byte(refreshTokenStr))
 	tokenHash := hex.EncodeToString(hash[:])
 
 	stored, err := s.refreshTokenRepo.GetByTokenHash(ctx, tokenHash)
 	if err != nil {
-		return "", stderrors.New("невалидный или отозванный refresh-токен")
+		return "", "", stderrors.New("невалидный или отозванный refresh-токен")
 	}
 	if stored.ExpiresAt.Before(time.Now()) {
-		return "", stderrors.New("refresh-токен истёк")
+		return "", "", stderrors.New("refresh-токен истёк")
+	}
+
+	// Token binding: validate client fingerprint if stored
+	if stored.ClientFingerprint != "" && clientFingerprint != "" && stored.ClientFingerprint != clientFingerprint {
+		return "", "", stderrors.New("отпечаток клиента не совпадает — используйте токен с того же устройства")
+	}
+
+	// Revoke old token (rotation)
+	if revokeErr := s.refreshTokenRepo.Revoke(ctx, stored.ID); revokeErr != nil {
+		return "", "", fmt.Errorf("не удалось отозвать старый refresh-токен: %w", revokeErr)
 	}
 
 	user, err := s.userRepo.GetByID(ctx, stored.UserID)
 	if err != nil {
-		return "", stderrors.New("пользователь не найден")
+		return "", "", stderrors.New("пользователь не найден")
 	}
 
-	return s.generateJWT(*user)
+	accessToken, err := s.generateJWT(*user)
+	if err != nil {
+		return "", "", err
+	}
+
+	// Generate new refresh token with same fingerprint binding
+	newRefreshToken, err := s.GenerateRefreshToken(ctx, *user, deviceID, stored.ClientFingerprint)
+	if err != nil {
+		return "", "", err
+	}
+
+	return accessToken, newRefreshToken, nil
 }
 
 func (s *AuthService) ParseToken(tokenStr string) (uint, string, error) {
@@ -211,21 +247,30 @@ func (s *AuthService) ParseToken(tokenStr string) (uint, string, error) {
 		return 0, "", stderrors.New("использование refresh-токена как access запрещено")
 	}
 
-	// Проверяем nbf (not before) — jwt.ParseWithClaims с MapClaims не проверяет автоматически
+	// Проверяем nbf (not before)
 	if nbf, ok := claims["nbf"].(float64); ok {
 		if time.Now().Unix() < int64(nbf) {
 			return 0, "", stderrors.New("токен ещё не действителен")
 		}
 	}
 
-	// Проверяем iat (issued at) — токен не должен быть выдан в будущем
+	// Проверяем iat (issued at)
 	if iat, ok := claims["iat"].(float64); ok {
 		if time.Now().Unix() < int64(iat) {
 			return 0, "", stderrors.New("неверная дата выдачи токена")
 		}
 	}
 
-	// Проверяем user_id с проверкой типа
+	// JTI blacklist check: если токен был отозван (logout, password change), отклоняем его
+	if s.cache != nil {
+		if jti, ok := claims["jti"].(string); ok && jti != "" {
+			if _, found := s.cache.Get("jti_blacklist:" + jti); found {
+				return 0, "", stderrors.New("токен был отозван")
+			}
+		}
+	}
+
+	// Проверяем user_id
 	userIDFloat, ok := claims["user_id"]
 	if !ok {
 		return 0, "", stderrors.New("отсутствует user_id в токене")
@@ -257,12 +302,57 @@ func (s *AuthService) ParseToken(tokenStr string) (uint, string, error) {
 	return userID, role, nil
 }
 
+// RevokeJWT добавляет JWT в blacklist по JTI, чтобы он не мог быть использован даже до истечения срока.
+// Требует настроенного кэша (Valkey). Если кэш не настроен, операция логирует предупреждение.
+func (s *AuthService) RevokeJWT(ctx context.Context, tokenStr string) {
+	claims := jwt.MapClaims{}
+	token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (any, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, stderrors.New("неверный метод подписи")
+		}
+		return []byte(s.cfg.JWT.Secret), nil
+	})
+	if err != nil || token == nil || !token.Valid {
+		return
+	}
+
+	jti, ok := claims["jti"].(string)
+	if !ok || jti == "" {
+		return
+	}
+
+	// Extract remaining TTL for the blacklist entry
+	expFloat, ok := claims["exp"].(float64)
+	if !ok {
+		return
+	}
+	ttl := time.Until(time.Unix(int64(expFloat), 0))
+	if ttl <= 0 {
+		return
+	}
+
+	if s.cache != nil {
+		s.cache.SetWithCtx(ctx, "jti_blacklist:"+jti, true, ttl)
+	} else {
+		// Revocation is best-effort without a cache — log loudly so ops notices
+		log.Warn().Str("jti", jti).Msg("RevokeJWT: no cache configured — JWT revocation is NOT enforced")
+	}
+}
+
 func (s *AuthService) generateJWT(user User) (string, error) {
+	// TODO: Implement JTI blacklist via Valkey for token revocation
+	// Generate unique token ID for potential revocation (jti blacklist via Valkey)
+	jti := make([]byte, 16)
+	if _, err := rand.Read(jti); err != nil {
+		return "", fmt.Errorf("jti generation failed: %w", err)
+	}
+
 	now := time.Now()
 	claims := jwt.MapClaims{
 		"user_id": user.ID,
 		"email":   user.Email,
 		"role":    user.Role,
+		"jti":     hex.EncodeToString(jti),
 		"exp":     now.Add(s.cfg.JWT.AccessExpiry).Unix(),
 		"iat":     now.Unix(),
 		"nbf":     now.Unix(),
@@ -505,14 +595,19 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 		}
 		externalID, _ = token.Extra("user_id").(string)
 
-		userReq, _ := http.NewRequestWithContext(ctxWithClient, "GET",
+		userReq, reqErr := http.NewRequestWithContext(ctxWithClient, "GET",
 			"https://api.vk.com/method/users.get?v=5.131&user_ids="+externalID, nil)
-		userResp, userErr := client.Do(userReq)
-		if userErr == nil {
-			defer userResp.Body.Close()
-			var vkInfo vkUserInfo
-			if decodeErr := json.NewDecoder(userResp.Body).Decode(&vkInfo); decodeErr == nil && len(vkInfo.Response) > 0 {
-				name = vkInfo.Response[0].FirstName + " " + vkInfo.Response[0].LastName
+		if reqErr != nil {
+			log.Warn().Err(reqErr).Str("external_id", externalID).Msg("VK: failed to create user request")
+			name = emailStr
+		} else {
+			userResp, userErr := client.Do(userReq)
+			if userErr == nil {
+				defer userResp.Body.Close()
+				var vkInfo vkUserInfo
+				if decodeErr := json.NewDecoder(userResp.Body).Decode(&vkInfo); decodeErr == nil && len(vkInfo.Response) > 0 {
+					name = vkInfo.Response[0].FirstName + " " + vkInfo.Response[0].LastName
+				}
 			}
 		}
 	default:
@@ -526,7 +621,7 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 		user = &User{
 			Email:         emailStr,
 			Name:          name,
-			EmailVerified: true,
+			EmailVerified: emailVerified,
 			Password:      "",
 		}
 		if createErr := s.userRepo.Create(ctx, user); createErr != nil {
@@ -540,7 +635,7 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 				log.Warn().Err(updateErr).Uint("user_id", user.ID).Msg("не удалось обновить имя пользователя")
 			}
 		}
-		if !user.EmailVerified {
+		if !user.EmailVerified && emailVerified {
 			if updateErr := s.userRepo.Update(ctx, user.ID, map[string]any{"email_verified": true}); updateErr != nil {
 				log.Warn().Err(updateErr).Uint("user_id", user.ID).Msg("не удалось установить email_verified")
 			}
@@ -612,6 +707,15 @@ func (s *PasswordResetService) GenerateToken(ctx context.Context, user User) (st
 	return resetCode, nil
 }
 
+// GetUserIDByResetCode возвращает ID пользователя по коду сброса (без валидации — только для логирования).
+func (s *PasswordResetService) GetUserIDByResetCode(ctx context.Context, resetCode string) uint {
+	token, err := s.passResetRepo.GetTokenByResetCode(ctx, resetCode)
+	if err != nil {
+		return 0
+	}
+	return token.UserID
+}
+
 func (s *PasswordResetService) ResetPassword(ctx context.Context, resetCode, newPassword string) error {
 	token, err := s.passResetRepo.GetTokenByResetCode(ctx, resetCode)
 	if err != nil {
@@ -674,7 +778,7 @@ func (s *EmailVerificationService) SendVerificationEmail(ctx context.Context, us
 	hash := sha256.Sum256([]byte(token))
 
 	// Короткий одноразовый код (8 символов) для ссылки — без токена в URL
-	codeBytes := make([]byte, 4)
+	codeBytes := make([]byte, 6)
 	if _, err := rand.Read(codeBytes); err != nil {
 		return fmt.Errorf("не удалось сгенерировать код верификации: %w", err)
 	}
@@ -715,21 +819,6 @@ func (s *EmailVerificationService) VerifyByCode(ctx context.Context, code string
 		return nil, err
 	}
 	errspkg.LogSilently(s.emailVerifRepo.DeleteToken(ctx, token), "VerifyByCode: cleanup failed")
-	return s.userRepo.GetByID(ctx, token.UserID)
-}
-
-func (s *EmailVerificationService) VerifyToken(ctx context.Context, tokenStr string) (*User, error) {
-	token, err := s.emailVerifRepo.GetToken(ctx, tokenStr)
-	if err != nil {
-		return nil, stderrors.New("токен недействителен или истёк")
-	}
-	if token.ExpiresAt.Before(time.Now()) {
-		return nil, stderrors.New("токен истёк")
-	}
-	if err := s.userRepo.Update(ctx, token.UserID, map[string]any{"email_verified": true}); err != nil {
-		return nil, err
-	}
-	errspkg.LogSilently(s.emailVerifRepo.DeleteToken(ctx, token), "VerifyToken: cleanup failed")
 	return s.userRepo.GetByID(ctx, token.UserID)
 }
 

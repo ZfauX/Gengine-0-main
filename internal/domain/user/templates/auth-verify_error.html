@@ -2,9 +2,9 @@
 <div class="min-h-[60vh] flex items-center justify-center px-4">
     <div class="max-w-md w-full text-center">
         <div class="text-6xl mb-6">❌</div>
-        <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">Ошибка подтверждения</h1>
+        <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">{{ T $.Lang "auth.verify_error_title" }}</h1>
         <p class="text-red-600 mb-6">{{.Error}}</p>
-        <a href="/auth/login" class="btn btn-primary text-sm inline-block">На страницу входа</a>
+        <a href="/auth/login" class="btn btn-primary text-sm inline-block">{{ T $.Lang "auth.verify_error_link" }}</a>
     </div>
 </div>
 {{end}}

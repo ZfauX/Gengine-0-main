@@ -30,11 +30,17 @@ func RegisterRoutes(
 	webauthnHandler *WebAuthnHandler,
 	userRepo UserRepository,
 ) {
-	authHandler := NewAuthHandler(cfg, authSvc, userSvc, passwordResetSvc, emailVerifSvc, oauthSvc, auditSvc, emailSvc)
+	// Inject server config for Secure cookie detection (handles reverse proxy)
+	SetSecureCookieConfig = &cfg.Server
+
+	twoFactorSvc := NewTwoFactorService()
+	authHandler := NewAuthHandler(cfg, authSvc, userSvc, passwordResetSvc, emailVerifSvc, oauthSvc, auditSvc, emailSvc, twoFactorSvc)
 	profileSvc := NewProfileService(db)
 	profileHandler := NewProfileHandler(db, localStorage, authSvc, profileSvc, userSvc, cfg)
 	achievementHandler := NewAchievementHandler(db)
 	dashboardHandler := NewDashboardHandler(NewUserDashboardService(db), db)
+
+	twoFactorHandler := NewTwoFactorHandler(twoFactorSvc, authSvc, userRepo, cfg.JWT.AccessExpiry)
 
 	oauthRateLimit := middleware.LoginRateLimit(5*time.Minute, 5)
 
@@ -44,7 +50,7 @@ func RegisterRoutes(
 
 		authGroup.POST("/login", middleware.LoginRateLimit(5*time.Minute, 5), authHandler.Login)
 
-		authGroup.POST("/refresh", authHandler.RefreshToken)
+		authGroup.POST("/refresh", middleware.LoginRateLimit(1*time.Minute, 10), authHandler.RefreshToken)
 
 		authGroup.GET("/register", authHandler.ShowRegisterForm)
 
@@ -62,7 +68,17 @@ func RegisterRoutes(
 
 		authGroup.POST("/reset", middleware.PasswordResetRateLimit(1*time.Minute, 5), authHandler.ResetPassword)
 
-		authGroup.GET("/verify", authHandler.VerifyEmail)
+		authGroup.POST("/verify", middleware.PasswordResetRateLimit(1*time.Minute, 10), authHandler.VerifyEmail)
+
+		// 2FA login verification (public — used after password login)
+		authGroup.GET("/2fa/login", authHandler.TwoFALoginForm)
+		authGroup.POST("/2fa/login", middleware.LoginRateLimit(5*time.Minute, 5), authHandler.TwoFALoginVerify)
+
+		// 2FA verification routes (authenticated — used for existing sessions)
+		authGroup.GET("/2fa/verify", middleware.AuthRequired(authSvc), twoFactorHandler.VerifyForm)
+		authGroup.POST("/2fa/verify", middleware.LoginRateLimit(5*time.Minute, 5), twoFactorHandler.Verify)
+		authGroup.GET("/2fa/backup", middleware.AuthRequired(authSvc), twoFactorHandler.BackupForm)
+		authGroup.POST("/2fa/backup", middleware.AuthRequired(authSvc), twoFactorHandler.BackupVerify)
 
 		authGroup.GET("/oauth/:provider", oauthRateLimit, authHandler.OAuthLogin)
 
@@ -77,6 +93,7 @@ func RegisterRoutes(
 		authGroup.POST("/webauthn/login/finish", webauthnHandler.FinishLogin)
 	}
 
+	// Profile routes — require auth
 	profileGroup := r.Group("/profile")
 	profileGroup.Use(middleware.AuthRequired(authSvc))
 	{
@@ -85,6 +102,8 @@ func RegisterRoutes(
 		profileGroup.POST("/avatar", profileHandler.UploadAvatar)
 
 		profileGroup.POST("/update", profileHandler.UpdateProfile)
+
+		profileGroup.POST("/theme-settings", profileHandler.UpdateThemeSettings)
 
 		profileGroup.POST("/change-password", profileHandler.ChangePassword)
 
@@ -105,7 +124,7 @@ func RegisterRoutes(
 	}
 
 	// ============================================================
-	// РџРЈР‘Р›РР§РќР«Р™ РџР РћР¤РР›Р¬ РџРћР›Р¬Р—РћР’РђРўР•Р›РЇ
+	// ПУБЛИЧНЫЙ ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ
 	// ============================================================
 	usersGroup := r.Group("/users")
 	usersGroup.Use(middleware.OptionalAuth(authSvc))
@@ -114,7 +133,15 @@ func RegisterRoutes(
 	}
 
 	// ============================================================
-	// WEB PUSH РЈР’Р•Р”РћРњР›Р•РќРРЇ (API)
+	// API
+	// ============================================================
+	apiR := r.Group("/api")
+	{
+		apiR.GET("/users/search", SearchUsersAPI(db))
+	}
+
+	// ============================================================
+	// WEB PUSH УВЕДОМЛЕНИЯ (API)
 	// ============================================================
 	pushHandler := NewPushHandler(db, cfg.VAPID)
 	apiGroup := r.Group("/api/push")
@@ -126,10 +153,8 @@ func RegisterRoutes(
 	}
 
 	// ============================================================
-	// 2FA (настройка)
+	// 2FA (настройка) — защищены 2FA если уже включена
 	// ============================================================
-	twoFactorSvc := NewTwoFactorService()
-	twoFactorHandler := NewTwoFactorHandler(twoFactorSvc, authSvc, userRepo)
 	userGroup := r.Group("/user")
 	userGroup.Use(middleware.AuthRequired(authSvc))
 	{

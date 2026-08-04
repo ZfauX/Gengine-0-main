@@ -4,6 +4,8 @@ package user
 import (
 	"errors"
 	"net/http"
+	"strings"
+	"time"
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/pkg/render"
@@ -46,28 +48,73 @@ func NewProfileHandler(db *gorm.DB, st storage.FileStorage, authSvc *AuthService
 // @Produce html
 // @Success 200 {string} html "Страница профиля"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 404 {object} map[string]interface{} "Пользователь не найден"
+// @Failure 404 {object} map[string]interface{} render.Tr(c, "handler.user_not_found")
 // @Router /profile [get]
 // @Security JWT
 func (h *ProfileHandler) Show(c *gin.Context) {
 	userID := c.GetUint("userID")
 	var user User
-	if err := h.db.WithContext(c.Request.Context()).Preload("Achievements").First(&user, userID).Error; err != nil {
+	// Subscriptions прелоадим для корректного подсчёта заполненности профиля (C12).
+	if err := h.db.WithContext(c.Request.Context()).Preload("Achievements").Preload("Subscriptions").First(&user, userID).Error; err != nil {
 		render.RenderErrorPage(c, http.StatusNotFound)
 		return
+	}
+	// Calculate profile completion percentage
+	completion := calculateProfileCompletion(&user)
+	themeSettings, tsErr := h.profileSvc.GetThemeSettings(c.Request.Context(), userID)
+	if tsErr != nil {
+		log.Warn().Err(tsErr).Uint("user_id", userID).Msg("Show: failed to load theme settings, using defaults")
+		themeSettings = DefaultThemeSettings()
 	}
 	render.Page(c, http.StatusOK, "profile-show.html", gin.H{
 		"Title":          "Профиль",
 		"User":           user.ToPublic(),
+		"UserEmail":      user.Email,
 		"Achievements":   user.Achievements,
 		"VapidPublicKey": h.cfg.VAPID.PublicKey,
+		"ThemeSettings":  themeSettings,
 		"CurrentUserID":  userID,
+		"ProfilePercent": completion,
 		"csrf":           csrf.GetToken(c),
 		"Breadcrumbs": []map[string]string{
-			{"name": "Главная", "url": "/"},
-			{"name": "Профиль"},
+			{"name": "nav.home", "url": "/"},
+			{"name": "nav.profile"},
 		},
 	})
+}
+
+// calculateProfileCompletion вычисляет процент заполнения профиля (0-100).
+func calculateProfileCompletion(u *User) int {
+	if u == nil {
+		return 0
+	}
+	total := 6
+	completed := 0
+
+	if u.Name != "" {
+		completed++
+	}
+	if u.Email != "" {
+		completed++
+	}
+	if u.AvatarPath != "" {
+		completed++
+	}
+	if u.EmailVerified {
+		completed++
+	}
+	if u.TwoFactorEnabled {
+		completed++
+	}
+	if len(u.Subscriptions) > 0 {
+		completed++
+	}
+
+	pct := (completed * 100) / total
+	if pct > 100 {
+		pct = 100
+	}
+	return pct
 }
 
 // PublicProfile отображает публичный профиль пользователя.
@@ -77,12 +124,12 @@ func (h *ProfileHandler) Show(c *gin.Context) {
 // @Produce html
 // @Param id path int true "ID пользователя"
 // @Success 200 {string} html "Публичный профиль"
-// @Failure 404 {object} map[string]interface{} "Пользователь не найден"
+// @Failure 404 {object} map[string]interface{} render.Tr(c, "handler.user_not_found")
 // @Router /users/{id} [get]
 func (h *ProfileHandler) PublicProfile(c *gin.Context) {
 	var req UserIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID пользователя")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_user_id"))
 		return
 	}
 
@@ -99,7 +146,8 @@ func (h *ProfileHandler) PublicProfile(c *gin.Context) {
 		}
 		return
 	}
-	if user.ProfileVisibility == "hidden" {
+	// Скрытый профиль виден только владельцу (и админам через текущую проверку прав).
+	if user.ProfileVisibility == "hidden" && currentUserID != userID {
 		render.RenderError(c, http.StatusForbidden, "Профиль скрыт")
 		return
 	}
@@ -128,6 +176,7 @@ func (h *ProfileHandler) PublicProfile(c *gin.Context) {
 	render.Page(c, http.StatusOK, "profile-public.html", gin.H{
 		"Title":         "Профиль пользователя",
 		"ProfileUser":   &pubUser,
+		"ProfileEmail":  user.Email, // only shown in template if IsOwner
 		"Achievements":  user.Achievements,
 		"CurrentUserID": currentUserID,
 		"IsOwner":       currentUserID == userID,
@@ -139,8 +188,8 @@ func (h *ProfileHandler) PublicProfile(c *gin.Context) {
 		"RecentGames":   recentGames,
 		"csrf":          csrf.GetToken(c),
 		"Breadcrumbs": []map[string]string{
-			{"name": "Главная", "url": "/"},
-			{"name": "Пользователь " + pubUser.Name},
+			{"name": "nav.home", "url": "/"},
+			{"name": "nav.user_profile"},
 		},
 	})
 }
@@ -267,7 +316,11 @@ func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 		if !errs.HasErrors() {
 			errs.Add("form", err)
 		}
-		render.Page(c, http.StatusInternalServerError, "profile-show.html", gin.H{
+		status := http.StatusInternalServerError
+		if errors.Is(err, ErrEmailTaken) {
+			status = http.StatusBadRequest
+		}
+		render.Page(c, status, "profile-show.html", gin.H{
 			"Title":  "Профиль",
 			"Errors": errs,
 			"Error":  errs.Error(),
@@ -298,7 +351,16 @@ func (h *ProfileHandler) ChangePassword(c *gin.Context) {
 	if err := c.ShouldBind(&input); err != nil {
 		render.Page(c, http.StatusBadRequest, "profile-show.html", gin.H{
 			"Title": "Профиль",
-			"Error": "Некорректные данные: " + err.Error(),
+			"Error": render.LocalizeError(c, err.Error()),
+			"csrf":  csrf.GetToken(c),
+		})
+		return
+	}
+
+	if input.OldPassword == input.NewPassword {
+		render.Page(c, http.StatusOK, "profile-show.html", gin.H{
+			"Title": "Профиль",
+			"Error": "Новый пароль должен отличаться от текущего",
 			"csrf":  csrf.GetToken(c),
 		})
 		return
@@ -307,7 +369,7 @@ func (h *ProfileHandler) ChangePassword(c *gin.Context) {
 	if err := validation.ValidatePasswordStrength(input.NewPassword); err != nil {
 		render.Page(c, http.StatusBadRequest, "profile-show.html", gin.H{
 			"Title": "Профиль",
-			"Error": err.Error(),
+			"Error": render.LocalizeError(c, err.Error()),
 			"csrf":  csrf.GetToken(c),
 		})
 		return
@@ -327,7 +389,73 @@ func (h *ProfileHandler) ChangePassword(c *gin.Context) {
 		log.Error().Err(err).Uint("user_id", userID).Msg("ChangePassword: failed to revoke refresh tokens")
 	}
 
+	// Блэклистим текущий JWT и очищаем обе куки — принудительный повторный вход.
+	if jwtCookie, jwtErr := c.Cookie("jwt"); jwtErr == nil && jwtCookie != "" {
+		h.authSvc.RevokeJWT(c.Request.Context(), jwtCookie)
+	}
+	setSecureCookie(c, "jwt", "", -1, "/")
 	setSecureCookie(c, "refresh_token", "", -1, "/auth/refresh")
 
 	c.Redirect(http.StatusFound, "/profile")
+}
+
+// UpdateThemeSettings сохраняет настройки автоматической смены темы.
+// @Summary Настройки темы
+// @Description Сохраняет параметры автосмены темы: включена ли, время начала/конца тёмной темы
+// @Tags profile
+// @Accept x-www-form-urlencoded
+// @Produce html
+// @Param auto_theme formData bool false "Включена ли автоматическая смена темы"
+// @Param dark_from formData string false "Начало тёмной темы (HH:MM)"
+// @Param dark_to formData string false "Конец тёмной темы (HH:MM)"
+// @Success 302 {string} string "Перенаправление на /profile"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Router /profile/theme-settings [post]
+// @Security JWT
+func (h *ProfileHandler) UpdateThemeSettings(c *gin.Context) {
+	userID := c.GetUint("userID")
+
+	autoTheme := c.PostForm("auto_theme") == "on" || c.PostForm("auto_theme") == "true" || c.PostForm("auto_theme") == "1"
+	darkFrom := strings.TrimSpace(c.PostForm("dark_from"))
+	darkTo := strings.TrimSpace(c.PostForm("dark_to"))
+
+	if !autoTheme {
+		darkFrom, darkTo = "", ""
+	}
+
+	if autoTheme {
+		if !validThemeTime(darkFrom) || !validThemeTime(darkTo) {
+			render.Page(c, http.StatusBadRequest, "profile-show.html", gin.H{
+				"Title": "Профиль",
+				"Error": render.Tr(c, "profile.theme_time_error"),
+				"csrf":  csrf.GetToken(c),
+			})
+			return
+		}
+	}
+
+	ts := ThemeSettings{
+		AutoTheme: autoTheme,
+		DarkFrom:  darkFrom,
+		DarkTo:    darkTo,
+	}
+
+	if err := h.profileSvc.SaveThemeSettings(c.Request.Context(), userID, ts); err != nil {
+		log.Error().Err(err).Uint("user_id", userID).Msg("UpdateThemeSettings: failed to save")
+		render.Page(c, http.StatusInternalServerError, "profile-show.html", gin.H{
+			"Title": "Профиль",
+			"Error": render.Tr(c, "profile.theme_save_error"),
+			"csrf":  csrf.GetToken(c),
+		})
+		return
+	}
+
+	render.SetFlash(c, "success", render.Tr(c, "profile.settings_saved"))
+	c.Redirect(http.StatusFound, "/profile")
+}
+
+// validThemeTime проверяет строку времени в формате "HH:MM".
+func validThemeTime(s string) bool {
+	t, err := time.Parse("15:04", s)
+	return err == nil && t != (time.Time{})
 }

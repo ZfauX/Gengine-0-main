@@ -116,14 +116,14 @@ func (h *WebAuthnHandler) BeginRegistration(c *gin.Context) {
 	userID := c.GetUint("userID")
 	user, err := h.userRepo.GetByID(c.Request.Context(), userID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден"})
+		c.JSON(http.StatusNotFound, gin.H{"error": render.Tr(c, "handler.user_not_found")})
 		return
 	}
 
 	creds, err := h.webauthnRepo.ListByUserID(c.Request.Context(), userID)
 	if err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Msg("BeginRegistration: failed to list credentials")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": render.Tr(c, "handler.internal_error")})
 		return
 	}
 
@@ -162,7 +162,7 @@ func (h *WebAuthnHandler) BeginRegistration(c *gin.Context) {
 	sessionDataJSON, err := json.Marshal(sessionData)
 	if err != nil {
 		log.Error().Err(err).Msg("BeginRegistration: failed to marshal session data")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": render.Tr(c, "handler.internal_error")})
 		return
 	}
 	sess.Set(webauthnSessionKey, string(sessionDataJSON))
@@ -171,7 +171,7 @@ func (h *WebAuthnHandler) BeginRegistration(c *gin.Context) {
 	}
 	if err := sess.Save(); err != nil {
 		log.Error().Err(err).Msg("BeginRegistration: failed to save session")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": render.Tr(c, "handler.internal_error")})
 		return
 	}
 
@@ -192,7 +192,7 @@ func (h *WebAuthnHandler) FinishRegistration(c *gin.Context) {
 	userID := c.GetUint("userID")
 	user, err := h.userRepo.GetByID(c.Request.Context(), userID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден"})
+		c.JSON(http.StatusNotFound, gin.H{"error": render.Tr(c, "handler.user_not_found")})
 		return
 	}
 
@@ -225,7 +225,7 @@ func (h *WebAuthnHandler) FinishRegistration(c *gin.Context) {
 
 	creds, err := h.webauthnRepo.ListByUserID(c.Request.Context(), userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": render.Tr(c, "handler.internal_error")})
 		return
 	}
 
@@ -289,7 +289,7 @@ func (h *WebAuthnHandler) FinishRegistration(c *gin.Context) {
 // @Tags webauthn
 // @Produce json
 // @Success 200 {object} map[string]interface{} "Опции аутентификации"
-// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+// @Failure 500 {object} map[string]interface{} render.Tr(c, "handler.internal_error")
 // @Router /auth/webauthn/login/begin [post]
 func (h *WebAuthnHandler) BeginLogin(c *gin.Context) {
 	assertion, sessionData, err := h.webAuthn.BeginDiscoverableLogin()
@@ -303,13 +303,13 @@ func (h *WebAuthnHandler) BeginLogin(c *gin.Context) {
 	sessionDataJSON, err := json.Marshal(sessionData)
 	if err != nil {
 		log.Error().Err(err).Msg("BeginLogin: failed to marshal session data")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": render.Tr(c, "handler.internal_error")})
 		return
 	}
 	sess.Set(webauthnLoginSessionKey, string(sessionDataJSON))
 	if err := sess.Save(); err != nil {
 		log.Error().Err(err).Msg("BeginLogin: failed to save session")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": render.Tr(c, "handler.internal_error")})
 		return
 	}
 
@@ -395,20 +395,20 @@ func (h *WebAuthnHandler) FinishLogin(c *gin.Context) {
 
 	waUserTyped, waOK := waUser.(*WebAuthnUser)
 	if !waOK {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": render.Tr(c, "handler.internal_error")})
 		return
 	}
 
 	token, err := h.authSvc.GenerateJWT(*waUserTyped.user)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Внутренняя ошибка"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": render.Tr(c, "handler.internal_error")})
 		return
 	}
 
 	setSecureCookie(c, "jwt", token, int(h.cfg.JWT.AccessExpiry.Seconds()), "/")
 
 	deviceID := c.GetHeader("X-Device-ID")
-	refreshToken, err := h.authSvc.GenerateRefreshToken(c.Request.Context(), *waUserTyped.user, deviceID)
+	refreshToken, err := h.authSvc.GenerateRefreshToken(c.Request.Context(), *waUserTyped.user, deviceID, clientFingerprint(c))
 	if err == nil {
 		setSecureCookie(c, "refresh_token", refreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/auth/refresh")
 	} else {

@@ -3,9 +3,13 @@ package user
 
 import (
 	"context"
+	"errors"
 
 	"gorm.io/gorm"
 )
+
+// ErrEmailTaken — email уже занят другим пользователем.
+var ErrEmailTaken = errors.New("email уже используется другим пользователем")
 
 // UserStats содержит статистику для публичного профиля.
 type UserStats struct {
@@ -95,8 +99,47 @@ func (s *ProfileService) GetRecentGames(ctx context.Context, authorID uint) ([]R
 
 // UpdateProfile обновляет имя и email пользователя.
 func (s *ProfileService) UpdateProfile(ctx context.Context, userID uint, name, email string) error {
+	// Проверяем уникальность email у другого пользователя (кроме текущего).
+	var count int64
+	if err := s.db.WithContext(ctx).Model(&User{}).
+		Where("email = ? AND id <> ?", email, userID).
+		Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return ErrEmailTaken
+	}
 	return s.db.WithContext(ctx).Model(&User{}).Where("id = ?", userID).Updates(map[string]any{
 		"name":  name,
 		"email": email,
 	}).Error
+}
+
+// GetThemeSettings возвращает настройки темы пользователя (с дефолтами при пустой записи).
+func (s *ProfileService) GetThemeSettings(ctx context.Context, userID uint) (ThemeSettings, error) {
+	var raw string
+	err := s.db.WithContext(ctx).Model(&User{}).Where("id = ?", userID).Select("theme_settings").Scan(&raw).Error
+	if err != nil {
+		// Записи нет — это не ошибка, возвращаем дефолты без ошибки.
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return DefaultThemeSettings(), nil
+		}
+		return DefaultThemeSettings(), err
+	}
+	return ParseThemeSettings(raw)
+}
+
+// SaveThemeSettings сохраняет настройки темы пользователя.
+func (s *ProfileService) SaveThemeSettings(ctx context.Context, userID uint, ts ThemeSettings) error {
+	jsonStr, err := MarshalThemeSettings(ts)
+	if err != nil {
+		return err
+	}
+	return s.db.WithContext(ctx).Model(&User{}).Where("id = ?", userID).Update("theme_settings", jsonStr).Error
+}
+
+// GetUserThemeSettings загружает настройки темы пользователя из БД.
+// Удобная обёртка для middleware (не требует создания сервиса на вызывающей стороне).
+func GetUserThemeSettings(ctx context.Context, db *gorm.DB, userID uint) (ThemeSettings, error) {
+	return NewProfileService(db).GetThemeSettings(ctx, userID)
 }

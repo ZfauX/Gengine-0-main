@@ -1,15 +1,15 @@
 {{define "webauthn-manage.html"}}
 <div class="max-w-4xl mx-auto">
-    <h1 class="page-title">Управление Passkey</h1>
+    <h1 class="page-title">{{ T $.Lang "passkey.manage_title" }}</h1>
 
     <div class="card mb-6">
-        <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">Passkey (ключи доступа) позволяют входить в систему без пароля, используя биометрию или PIN-код вашего устройства.</p>
-        <button id="add-passkey-btn" class="btn btn-primary text-sm">Добавить Passkey</button>
+        <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">{{ T $.Lang "passkey.description" }}</p>
+        <button id="add-passkey-btn" class="btn btn-primary text-sm">{{ T $.Lang "passkey.add_button" }}</button>
     </div>
 
     {{if .Credentials}}
     <div class="card">
-        <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">Сохранённые ключи</h3>
+        <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ T $.Lang "passkey.saved_keys" }}</h3>
         <div class="space-y-3">
             {{range .Credentials}}
             <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-md">
@@ -18,12 +18,12 @@
                         {{if .Name}}{{.Name}}{{else}}Passkey #{{.ID}}{{end}}
                     </div>
                     <div class="text-xs text-gray-500 dark:text-gray-400">
-                        Добавлен: {{.CreatedAt.Format "02.01.2006 15:04"}}
+                        {{ T $.Lang "passkey.added_at" }} {{.CreatedAt.Format "02.01.2006 15:04"}}
                     </div>
                 </div>
-                <form action="/profile/webauthn-keys/delete/{{.ID}}" method="POST" data-confirm-form="Удалить этот ключ?">
+                <form action="/profile/webauthn-keys/delete/{{.ID}}" method="POST" data-confirm-form="{{ T $.Lang "passkey.delete_confirm" }}">
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
-                    <button type="submit" class="btn btn-danger text-xs">Удалить</button>
+                    <button type="submit" class="btn btn-danger text-xs">{{ T $.Lang "passkey.delete_button" }}</button>
                 </form>
             </div>
             {{end}}
@@ -31,7 +31,7 @@
     </div>
     {{else}}
     <div class="card">
-        <p class="text-gray-500 dark:text-gray-400 text-sm">У вас ещё нет сохранённых Passkey.</p>
+        <p class="text-gray-500 dark:text-gray-400 text-sm">{{ T $.Lang "passkey.no_keys" }}</p>
     </div>
     {{end}}
 </div>
@@ -40,11 +40,14 @@
 function registerPasskey() {
     const btn = document.getElementById('add-passkey-btn');
     btn.disabled = true;
-    btn.textContent = 'Регистрация...';
+    btn.textContent = '{{ T $.Lang "passkey.registering" }}';
 
     fetch('/auth/webauthn/register/begin', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+        },
         body: JSON.stringify({ name: '' })
     })
     .then(r => r.json())
@@ -75,7 +78,10 @@ function registerPasskey() {
         };
         return fetch('/auth/webauthn/register/finish', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+            },
             body: JSON.stringify(body)
         });
     })
@@ -84,16 +90,16 @@ function registerPasskey() {
         if (data.status === 'ok') {
             location.reload();
         } else {
-            alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'));
+            alert('{{ T $.Lang "passkey.error_prefix" }}' + (data.error || '{{ T $.Lang "generic.unknown_error" }}'));
             btn.disabled = false;
-            btn.textContent = 'Добавить Passkey';
+            btn.textContent = '{{ T $.Lang "passkey.add_button" }}';
         }
     })
     .catch(err => {
         console.error(err);
-        alert('Ошибка: ' + err.message);
+        alert('{{ T $.Lang "passkey.error_prefix" }}' + err.message);
         btn.disabled = false;
-        btn.textContent = 'Добавить Passkey';
+        btn.textContent = '{{ T $.Lang "passkey.add_button" }}';
     });
 }
 
@@ -107,14 +113,6 @@ function base64ToArrayBuffer(base64) {
     }
     return bytes.buffer;
 }
-
-    // Form confirmation dialogs (CSP-safe)
-    document.addEventListener('submit', function(e) {
-        var form = e.target.closest('[data-confirm-form]');
-        if (form && !confirm(form.getAttribute('data-confirm-form'))) {
-            e.preventDefault();
-        }
-    });
 
 function arrayBufferToBase64(buf) {
     const bytes = new Uint8Array(buf);

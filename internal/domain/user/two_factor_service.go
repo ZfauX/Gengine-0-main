@@ -57,8 +57,17 @@ func (s *TwoFactorService) VerifyCode(secret, code string) (bool, error) {
 	// Убираем пробелы из кода
 	code = strings.ReplaceAll(code, " ", "")
 
-	valid := totp.Validate(code, secret)
+	// Validate code format — must be exactly 6 digits
+	if len(code) != 6 {
+		return false, nil
+	}
+	for _, c := range code {
+		if c < '0' || c > '9' {
+			return false, nil
+		}
+	}
 
+	valid := totp.Validate(code, secret)
 	return valid, nil
 }
 
@@ -76,7 +85,7 @@ func (s *TwoFactorService) GenerateBackupCodes() ([]string, error) {
 			return nil, fmt.Errorf("ошибка генерации резервного кода: %w", err)
 		}
 		hexStr := hex.EncodeToString(bytes)[:6]
-		num, _ := strconv.Atoi(hexStr)
+		num, _ := strconv.ParseInt(hexStr, 16, 64)
 		code := fmt.Sprintf("%06d", num%1000000)
 		codes[i] = code
 	}
@@ -110,6 +119,24 @@ func (s *TwoFactorService) VerifyBackupCode(stored, code string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// VerifyAndRemoveBackupCode проверяет резервный код и удаляет его из списка.
+func (s *TwoFactorService) VerifyAndRemoveBackupCode(stored, code string) (string, error) {
+	codes := strings.Split(stored, ",")
+	for i, hashed := range codes {
+		hashed = strings.TrimSpace(hashed)
+		if hashed == "" {
+			continue
+		}
+		err := bcrypt.CompareHashAndPassword([]byte(hashed), []byte(code))
+		if err == nil {
+			// Remove this code
+			remaining := append(codes[:i], codes[i+1:]...)
+			return strings.Join(remaining, ","), nil
+		}
+	}
+	return stored, fmt.Errorf("неверный резервный код")
 }
 
 // ParseBackupCodeFromString преобразует строку с кодами в массив.

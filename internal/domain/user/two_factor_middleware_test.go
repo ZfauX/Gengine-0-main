@@ -6,8 +6,6 @@ import (
 	"html/template"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
-	"strings"
 	"testing"
 
 	"gengine-0/internal/pkg/render"
@@ -74,6 +72,14 @@ func (m *mockUserRepo) ListPaginated(ctx context.Context, role string, offset, l
 	return nil, nil
 }
 
+func (m *mockUserRepo) CountSearch(ctx context.Context, query, role string) (int64, error) {
+	return 0, nil
+}
+
+func (m *mockUserRepo) SearchPaginated(ctx context.Context, query, role string, offset, limit int) ([]User, error) {
+	return nil, nil
+}
+
 func (m *mockUserRepo) Delete(ctx context.Context, id uint) error {
 	return nil
 }
@@ -126,8 +132,6 @@ func TestTwoFactorRequired_SkipWhenNoUserID(t *testing.T) {
 
 	tmpl := template.Must(template.New("").Parse(`
 {{define "layout.html"}}<html><body>{{.ContentHTML}}</body></html>{{end}}
-{{define "admin-2fa-verify.html"}}<h1>2FA Verify</h1>{{end}}
-{{define "admin-2fa-backup.html"}}<h1>2FA Backup</h1>{{end}}
 `))
 	render.SetTemplate(tmpl)
 
@@ -186,12 +190,12 @@ func TestTwoFactorRequired_RedirectToVerifyWhenNoCode(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "2FA Verify")
-	assert.Contains(t, w.Body.String(), "Введите код из Google Authenticator")
+	assert.Equal(t, http.StatusFound, w.Code)
+	assert.Contains(t, w.Header().Get("Location"), "/auth/2fa/verify")
+	assert.Contains(t, w.Header().Get("Location"), "return_url=%2Ftest")
 }
 
-func TestTwoFactorRequired_InvalidCode(t *testing.T) {
+func TestTwoFactorRequired_RedirectWithQueryPreserved(t *testing.T) {
 	svc := NewTwoFactorService()
 	secret, err := svc.GenerateSecret()
 	require.NoError(t, err)
@@ -208,73 +212,53 @@ func TestTwoFactorRequired_InvalidCode(t *testing.T) {
 	router := newTwoFactorTestRouter(t, TwoFactorRequired(svc, userRepo), 1)
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/test?code=000000", nil)
+	req := httptest.NewRequest(http.MethodGet, "/test?foo=bar", nil)
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "Неверный код")
-}
-
-func TestTwoFactorRequired_ValidCode(t *testing.T) {
-	svc := NewTwoFactorService()
-	secret, err := svc.GenerateSecret()
-	require.NoError(t, err)
-
-	validCode, err := svc.GenerateTOTPCode(secret)
-	require.NoError(t, err)
-
-	userRepo := &mockUserRepo{
-		users: map[uint]*User{
-			1: {
-				Model:            gorm.Model{ID: 1},
-				TwoFactorEnabled: true,
-				TwoFactorSecret:  secret,
-			},
-		},
-	}
-	router := newTwoFactorTestRouter(t, TwoFactorRequired(svc, userRepo), 1)
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/test?code="+validCode, nil)
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "OK", w.Body.String())
+	assert.Equal(t, http.StatusFound, w.Code)
+	assert.Contains(t, w.Header().Get("Location"), "return_url=%2Ftest%3Ffoo%3Dbar")
 }
 
 func TestTwoFactorRequired_AlreadyVerifiedInSession(t *testing.T) {
+	gin.SetMode(gin.TestMode)
 	svc := NewTwoFactorService()
-	secret, err := svc.GenerateSecret()
-	require.NoError(t, err)
-
 	userRepo := &mockUserRepo{
 		users: map[uint]*User{
-			1: {
-				Model:            gorm.Model{ID: 1},
-				TwoFactorEnabled: true,
-				TwoFactorSecret:  secret,
-			},
+			1: {Model: gorm.Model{ID: 1}, TwoFactorEnabled: true},
 		},
 	}
-	router := newTwoFactorTestRouter(t, TwoFactorRequired(svc, userRepo), 1)
 
-	// Первый запрос: устанавливаем флаг верификации в сессии через валидный код
-	validCode, err := svc.GenerateTOTPCode(secret)
-	require.NoError(t, err)
-	w1 := httptest.NewRecorder()
-	req1 := httptest.NewRequest(http.MethodGet, "/test?code="+validCode, nil)
-	router.ServeHTTP(w1, req1)
+	// Создаём router с middleware, который ставит флаг в сессию
+	// с middleware, который ставит флаг в сессию
+	store := cookie.NewStore([]byte("test-session-secret-32chars-long!!!"))
+	tmpl := template.Must(template.New("").Parse(`{{define "layout.html"}}<html><body>{{.ContentHTML}}</body></html>{{end}}`))
+	render.SetTemplate(tmpl)
 
-	// Второй запрос с той же сессией — middleware должен пропустить
-	w2 := httptest.NewRecorder()
-	req2 := httptest.NewRequest(http.MethodGet, "/test", nil)
-	for _, ck := range w1.Result().Cookies() {
-		req2.AddCookie(ck)
-	}
-	router.ServeHTTP(w2, req2)
+	router2 := gin.New()
+	router2.SetHTMLTemplate(tmpl)
+	router2.Use(sessions.Sessions("gengine_test_session", store))
+	router2.Use(func(c *gin.Context) {
+		c.Set("userID", uint(1))
+		// Ставим флаг в сессию до middleware (ключ привязан к userID)
+		sess := sessions.Default(c)
+		sess.Set(session2FAKey(1), true)
+		sess.Save()
+		c.Next()
+	})
+	router2.Use(TwoFactorRequired(svc, userRepo))
+	router2.Any("/test", func(c *gin.Context) {
+		c.String(http.StatusOK, "OK")
+	})
 
-	assert.Equal(t, http.StatusOK, w2.Code)
-	assert.Equal(t, "OK", w2.Body.String())
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	router2.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "OK", w.Body.String())
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "OK", w.Body.String())
 }
 
 func TestTwoFactorRequired_InvalidUserIDType(t *testing.T) {
@@ -284,8 +268,6 @@ func TestTwoFactorRequired_InvalidUserIDType(t *testing.T) {
 
 	tmpl := template.Must(template.New("").Parse(`
 {{define "layout.html"}}<html><body>{{.ContentHTML}}</body></html>{{end}}
-{{define "admin-2fa-verify.html"}}<h1>2FA Verify</h1>{{end}}
-{{define "admin-2fa-backup.html"}}<h1>2FA Backup</h1>{{end}}
 `))
 	render.SetTemplate(tmpl)
 
@@ -343,7 +325,7 @@ func TestTwoFactorBackupCodeRequired_NoUserID(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
-func TestTwoFactorBackupCodeRequired_NoCode(t *testing.T) {
+func TestTwoFactorBackupCodeRequired_RedirectToBackupPage(t *testing.T) {
 	svc := NewTwoFactorService()
 	userRepo := &mockUserRepo{
 		users: map[uint]*User{
@@ -356,105 +338,8 @@ func TestTwoFactorBackupCodeRequired_NoCode(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "Введите резервный код")
-}
-
-func TestTwoFactorBackupCodeRequired_InvalidBackupCode(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	svc := NewTwoFactorService()
-
-	codes, err := svc.GenerateBackupCodes()
-	require.NoError(t, err)
-	hashedCodes, err := svc.HashBackupCodes(codes)
-	require.NoError(t, err)
-
-	userRepo := &mockUserRepo{
-		users: map[uint]*User{
-			1: {
-				Model:                gorm.Model{ID: 1},
-				TwoFactorEnabled:     true,
-				TwoFactorBackupCodes: hashedCodes,
-			},
-		},
-	}
-
-	tmpl := template.Must(template.New("").Parse(`
-{{define "layout.html"}}<html><body>{{.ContentHTML}}</body></html>{{end}}
-{{define "admin-2fa-verify.html"}}<h1>2FA Verify</h1>{{end}}
-{{define "admin-2fa-backup.html"}}<h1>2FA Backup</h1>{{if .Error}}<p class="error">{{.Error}}</p>{{end}}{{end}}
-`))
-	render.SetTemplate(tmpl)
-
-	router := gin.New()
-	router.SetHTMLTemplate(tmpl)
-
-	store := cookie.NewStore([]byte("test-session-secret-32chars-long!!!"))
-	router.Use(sessions.Sessions("gengine_test_session", store))
-	router.Use(func(c *gin.Context) {
-		c.Set("userID", uint(1))
-		c.Next()
-	})
-	router.Use(TwoFactorBackupCodeRequired(svc, userRepo))
-	router.Any("/test", func(c *gin.Context) {
-		c.String(http.StatusOK, "OK")
-	})
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/test?backup_code=999999", nil)
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "Неверный резервный код")
-}
-
-func TestTwoFactorBackupCodeRequired_ValidBackupCode(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	svc := NewTwoFactorService()
-
-	codes, err := svc.GenerateBackupCodes()
-	require.NoError(t, err)
-	hashedCodes, err := svc.HashBackupCodes(codes)
-	require.NoError(t, err)
-
-	userRepo := &mockUserRepo{
-		users: map[uint]*User{
-			1: {
-				Model:                gorm.Model{ID: 1},
-				TwoFactorEnabled:     true,
-				TwoFactorBackupCodes: hashedCodes,
-			},
-		},
-	}
-
-	tmpl := template.Must(template.New("").Parse(`
-{{define "layout.html"}}<html><body>{{.ContentHTML}}</body></html>{{end}}
-{{define "admin-2fa-verify.html"}}<h1>2FA Verify</h1>{{end}}
-{{define "admin-2fa-backup.html"}}<h1>2FA Backup</h1>{{if .Error}}<p class="error">{{.Error}}</p>{{end}}{{end}}
-`))
-	render.SetTemplate(tmpl)
-
-	router := gin.New()
-	router.SetHTMLTemplate(tmpl)
-
-	store := cookie.NewStore([]byte("test-session-secret-32chars-long!!!"))
-	router.Use(sessions.Sessions("gengine_test_session", store))
-	router.Use(func(c *gin.Context) {
-		c.Set("userID", uint(1))
-		c.Next()
-	})
-	router.Use(TwoFactorBackupCodeRequired(svc, userRepo))
-	router.Any("/test", func(c *gin.Context) {
-		c.String(http.StatusOK, "OK")
-	})
-
-	validCode := codes[0]
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/test?backup_code="+validCode, nil)
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "OK", w.Body.String())
+	assert.Equal(t, http.StatusFound, w.Code)
+	assert.Contains(t, w.Header().Get("Location"), "/auth/2fa/backup")
 }
 
 func TestTwoFactorBackupCodeRequired_SkipWhen2FADisabled(t *testing.T) {
@@ -477,36 +362,24 @@ func TestTwoFactorBackupCodeRequired_SkipWhen2FADisabled(t *testing.T) {
 func TestTwoFactorBackupCodeRequired_AlreadyVerifiedInSession(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := NewTwoFactorService()
-
-	codes, err := svc.GenerateBackupCodes()
-	require.NoError(t, err)
-	hashedCodes, err := svc.HashBackupCodes(codes)
-	require.NoError(t, err)
-
 	userRepo := &mockUserRepo{
 		users: map[uint]*User{
-			1: {
-				Model:                gorm.Model{ID: 1},
-				TwoFactorEnabled:     true,
-				TwoFactorBackupCodes: hashedCodes,
-			},
+			1: {Model: gorm.Model{ID: 1}, TwoFactorEnabled: true},
 		},
 	}
 
-	tmpl := template.Must(template.New("").Parse(`
-{{define "layout.html"}}<html><body>{{.ContentHTML}}</body></html>{{end}}
-{{define "admin-2fa-verify.html"}}<h1>2FA Verify</h1>{{end}}
-{{define "admin-2fa-backup.html"}}<h1>2FA Backup</h1>{{if .Error}}<p class="error">{{.Error}}</p>{{end}}{{end}}
-`))
+	store := cookie.NewStore([]byte("test-session-secret-32chars-long!!!"))
+	tmpl := template.Must(template.New("").Parse(`{{define "layout.html"}}<html><body>{{.ContentHTML}}</body></html>{{end}}`))
 	render.SetTemplate(tmpl)
 
 	router := gin.New()
 	router.SetHTMLTemplate(tmpl)
-
-	store := cookie.NewStore([]byte("test-session-secret-32chars-long!!!"))
 	router.Use(sessions.Sessions("gengine_test_session", store))
 	router.Use(func(c *gin.Context) {
 		c.Set("userID", uint(1))
+		sess := sessions.Default(c)
+		sess.Set(session2FAKey(1), true)
+		sess.Save()
 		c.Next()
 	})
 	router.Use(TwoFactorBackupCodeRequired(svc, userRepo))
@@ -514,24 +387,12 @@ func TestTwoFactorBackupCodeRequired_AlreadyVerifiedInSession(t *testing.T) {
 		c.String(http.StatusOK, "OK")
 	})
 
-	// Первый запрос: проходим верификацию
-	validCode := codes[0]
-	form := url.Values{"backup_code": {validCode}}
-	w1 := httptest.NewRecorder()
-	req1 := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader(form.Encode()))
-	req1.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	router.ServeHTTP(w1, req1)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	router.ServeHTTP(w, req)
 
-	// Второй запрос с той же сессией — пропускается
-	w2 := httptest.NewRecorder()
-	req2 := httptest.NewRequest(http.MethodGet, "/test", nil)
-	for _, ck := range w1.Result().Cookies() {
-		req2.AddCookie(ck)
-	}
-	router.ServeHTTP(w2, req2)
-
-	assert.Equal(t, http.StatusOK, w2.Code)
-	assert.Equal(t, "OK", w2.Body.String())
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "OK", w.Body.String())
 }
 
 func TestTwoFactorBackupCodeRequired_InvalidUserIDType(t *testing.T) {
@@ -565,37 +426,4 @@ func TestTwoFactorBackupCodeRequired_InvalidUserIDType(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
-}
-
-// --- withRedirectFlag ---
-
-func TestWithRedirectFlag(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "URL without query params",
-			input:    "/admin/users",
-			expected: "/admin/users?redirect=1",
-		},
-		{
-			name:     "URL with query params",
-			input:    "/admin/users?page=1",
-			expected: "/admin/users?page=1&redirect=1",
-		},
-		{
-			name:     "empty URL",
-			input:    "",
-			expected: "?redirect=1",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := withRedirectFlag(tt.input)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
 }

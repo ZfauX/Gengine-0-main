@@ -28,8 +28,9 @@
   --color-border-light: #e5e7eb;
   --color-nav-bg: #ffffff;
 
-  /* Шрифты */
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  /* Шрифты: 'Inter' не загружается (нет локального файла, внешние CDN вне CSP),
+     поэтому используем системный стек напрямую. */
+  --font-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 
   /* Отступы */
@@ -53,7 +54,7 @@
 
 /* ============================================================
    Базовые стили
-   ============================================================
+   ============================================================ */
 @layer base {
   body {
     font-family: var(--font-sans);
@@ -74,6 +75,13 @@ input, textarea, select {
 .dark input, .dark textarea, .dark select {
   background: #1e293b;
   color: #f1f5f9;
+}
+/* Заставляем браузерные элементы (календарь, спиннер, placeholder) использовать
+   тёмную цветовую схему — иначе индикатор datetime-local остаётся тёмным и невидимым */
+.dark input[type="date"],
+.dark input[type="datetime-local"],
+.dark input[type="time"] {
+  color-scheme: dark;
 }
 
 /* Формы — прямые цвета без CSS-переменных */
@@ -259,6 +267,16 @@ input, textarea, select {
     color: #1e40af;
     border: 1px solid #bfdbfe;
   }
+
+  /* Dark theme: toasts and flashes */
+  .dark .toast-success { background: #052e16; color: #86efac; border: 1px solid #166534; }
+  .dark .toast-error { background: #450a0a; color: #fca5a5; border: 1px solid #991b1b; }
+  .dark .toast-info { background: #172554; color: #93c5fd; border: 1px solid #1e40af; }
+  .dark .toast-warning { background: #451a03; color: #fcd34d; border: 1px solid #854d0e; }
+  .dark .flash-success { background: #052e16; color: #86efac; border: 1px solid #166534; }
+  .dark .flash-error { background: #450a0a; color: #fca5a5; border: 1px solid #991b1b; }
+  .dark .flash-info { background: #172554; color: #93c5fd; border: 1px solid #1e40af; }
+  .dark .skeleton { background: #334155; }
 
   /* Skeleton loading */
   .skeleton {

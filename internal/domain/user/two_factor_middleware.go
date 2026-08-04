@@ -2,27 +2,38 @@
 package user
 
 import (
-	"gengine-0/internal/pkg/render"
+	"fmt"
 	"net/http"
-	"strings"
+	"net/url"
+	"strconv"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 )
 
-const sessionKey2FAMiddlewareVerified = "2fa_verified"
+// session2FAKey возвращает ключ флага 2FA, привязанный к userID, чтобы флаг
+// не "перетекал" между аккаунтами на одном браузере.
+func session2FAKey(userID uint) string {
+	return "2fa_verified_" + strconv.FormatUint(uint64(userID), 10)
+}
 
-// withRedirectFlag добавляет ?redirect=1 или &redirect=1 к URL.
-func withRedirectFlag(rawURL string) string {
-	if strings.Contains(rawURL, "?") {
-		return rawURL + "&redirect=1"
+// clear2FASessionFlag удаляет флаг верификации 2FA из сессии (при logout/disable/reset).
+func clear2FASessionFlag(c *gin.Context) {
+	session := sessions.Default(c)
+	for _, key := range []string{
+		session2FAKey(c.GetUint("userID")),
+		"2fa_verified", // legacy key
+	} {
+		session.Delete(key)
 	}
-	return rawURL + "?redirect=1"
+	if err := session.Save(); err != nil {
+		log.Warn().Err(err).Msg("clear2FASessionFlag: failed to save session")
+	}
 }
 
 // TwoFactorRequired проверяет, что у пользователя включена 2FA и он прошёл проверку.
-// Используется для защиты админ-маршрутов.
+// Используется для защиты чувствительных маршрутов (admin, profile, 2FA settings).
 // Флаг верификации персистируется в сессии, чтобы выдерживать multiple запросы.
 func TwoFactorRequired(twoFactorSvc *TwoFactorService, userRepo UserRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -38,9 +49,9 @@ func TwoFactorRequired(twoFactorSvc *TwoFactorService, userRepo UserRepository) 
 			return
 		}
 
-		// Проверяем, что пользователь прошёл проверку 2FA в этой сессии
+		// Проверяем, что пользователь прошёл проверку 2FA в этой сессии (флаг привязан к userID)
 		session := sessions.Default(c)
-		if session.Get(sessionKey2FAMiddlewareVerified) == true {
+		if session.Get(session2FAKey(userIDVal)) == true {
 			c.Next()
 			return
 		}
@@ -59,58 +70,18 @@ func TwoFactorRequired(twoFactorSvc *TwoFactorService, userRepo UserRepository) 
 			return
 		}
 
-		// Проверяем, что это запрос подтверждения кода
-		code := c.Query("code")
-		if code == "" {
-			code = c.PostForm("code")
+		// 2FA включена, но не верифицирована — перенаправляем на /auth/2fa/verify
+		returnURL := url.URL{Path: c.Request.URL.Path}
+		if c.Request.URL.RawQuery != "" {
+			returnURL.RawQuery = c.Request.URL.RawQuery
 		}
-
-		// Если код не передан — перенаправляем на страницу ввода
-		if code == "" {
-			render.Page(c, http.StatusOK, "admin-2fa-verify.html", gin.H{
-				"Title":     "Подтверждение 2FA",
-				"Message":   "Введите код из Google Authenticator",
-				"ReturnURL": withRedirectFlag(c.Request.URL.String()),
-			})
-			c.Abort()
-			return
-		}
-
-		// Проверяем TOTP-код
-		valid, err := twoFactorSvc.VerifyCode(userObj.TwoFactorSecret, code)
-		if err != nil {
-			log.Error().Err(err).Uint("user_id", userIDVal).Msg("TwoFactorRequired: TOTP verification error")
-			render.Page(c, http.StatusOK, "admin-2fa-verify.html", gin.H{
-				"Title":     "Подтверждение 2FA",
-				"Error":     "Ошибка проверки кода",
-				"ReturnURL": withRedirectFlag(c.Request.URL.String()),
-			})
-			c.Abort()
-			return
-		}
-
-		if !valid {
-			render.Page(c, http.StatusOK, "admin-2fa-verify.html", gin.H{
-				"Title":     "Подтверждение 2FA",
-				"Error":     "Неверный код",
-				"ReturnURL": withRedirectFlag(c.Request.URL.String()),
-			})
-			c.Abort()
-			return
-		}
-
-		// Сохраняем флаг верификации в сессии (персистируется между запросами)
-		session.Set(sessionKey2FAMiddlewareVerified, true)
-		if err := session.Save(); err != nil {
-			log.Warn().Err(err).Uint("user_id", userIDVal).Msg("2FA middleware: failed to save session")
-		}
-		c.Next()
+		redirectURL := fmt.Sprintf("/auth/2fa/verify?return_url=%s", url.QueryEscape(returnURL.String()))
+		c.Redirect(http.StatusFound, redirectURL)
+		c.Abort()
 	}
 }
 
-// TwoFactorBackupCodeRequired проверяет резервный код.
-// Используется когда у пользователя нет доступа к TOTP-генератору.
-// Флаг верификации персистируется в сессии.
+// TwoFactorBackupCodeRequired проверяет резервный код и перенаправляет на /auth/2fa/backup.
 func TwoFactorBackupCodeRequired(twoFactorSvc *TwoFactorService, userRepo UserRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, exists := c.Get("userID")
@@ -125,9 +96,9 @@ func TwoFactorBackupCodeRequired(twoFactorSvc *TwoFactorService, userRepo UserRe
 			return
 		}
 
-		// Проверяем сессию — если уже верифицирован, пропускаем
+		// Проверяем сессию — если уже верифицирован (флаг привязан к userID), пропускаем
 		session := sessions.Default(c)
-		if session.Get(sessionKey2FAMiddlewareVerified) == true {
+		if session.Get(session2FAKey(userIDVal)) == true {
 			c.Next()
 			return
 		}
@@ -135,61 +106,19 @@ func TwoFactorBackupCodeRequired(twoFactorSvc *TwoFactorService, userRepo UserRe
 		// Получаем пользователя для проверки статуса 2FA
 		userObj, err := userRepo.GetByID(c.Request.Context(), userIDVal)
 		if err != nil {
-			render.Page(c, http.StatusOK, "admin-2fa-backup.html", gin.H{
-				"Title": "Резервный код 2FA",
-				"Error": "Ошибка загрузки пользователя",
-			})
-			c.Abort()
+			log.Error().Err(err).Uint("user_id", userIDVal).Msg("TwoFactorBackupCodeRequired: failed to get user")
+			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 
-		// Если 2FA не включена — пропускаем
+		// Если 2FA не включена — пропускаем (флаг не ставим, проверка по userObj актуальна каждый раз)
 		if !userObj.TwoFactorEnabled {
-			session.Set(sessionKey2FAMiddlewareVerified, true)
-			if saveErr := session.Save(); saveErr != nil {
-				log.Warn().Err(saveErr).Uint("user_id", userIDVal).Msg("2FA middleware: failed to save session")
-			}
 			c.Next()
 			return
 		}
 
-		// Проверяем наличие резервного кода в запросе
-		backupCode := c.Query("backup_code")
-		if backupCode == "" {
-			backupCode = c.PostForm("backup_code")
-		}
-		if backupCode == "" {
-			render.Page(c, http.StatusOK, "admin-2fa-backup.html", gin.H{
-				"Title": "Резервный код 2FA",
-				"Error": "Введите резервный код",
-			})
-			c.Abort()
-			return
-		}
-
-		valid, err := twoFactorSvc.VerifyBackupCode(userObj.TwoFactorBackupCodes, backupCode)
-		if err != nil {
-			render.Page(c, http.StatusOK, "admin-2fa-backup.html", gin.H{
-				"Title": "Резервный код 2FA",
-				"Error": "Ошибка проверки кода",
-			})
-			c.Abort()
-			return
-		}
-
-		if !valid {
-			render.Page(c, http.StatusOK, "admin-2fa-backup.html", gin.H{
-				"Title": "Резервный код 2FA",
-				"Error": "Неверный резервный код",
-			})
-			c.Abort()
-			return
-		}
-
-		session.Set(sessionKey2FAMiddlewareVerified, true)
-		if saveErr := session.Save(); saveErr != nil {
-			log.Warn().Err(saveErr).Uint("user_id", userIDVal).Msg("2FA middleware: failed to save session")
-		}
-		c.Next()
+		// Перенаправляем на страницу ввода кода
+		c.Redirect(http.StatusFound, "/auth/2fa/backup")
+		c.Abort()
 	}
 }

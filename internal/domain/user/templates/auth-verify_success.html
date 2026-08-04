@@ -2,9 +2,9 @@
 <div class="min-h-[60vh] flex items-center justify-center px-4">
     <div class="max-w-md w-full text-center">
         <div class="text-6xl mb-6">✅</div>
-        <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">Email подтверждён!</h1>
-        <p class="text-gray-600 dark:text-gray-400 mb-6">Ваш аккаунт успешно активирован.</p>
-        <a href="/auth/login" class="btn btn-primary text-sm inline-block">Войти</a>
+        <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">{{ T $.Lang "auth.verify_success_title" }}</h1>
+        <p class="text-gray-600 dark:text-gray-400 mb-6">{{ T $.Lang "auth.verify_success_message" }}</p>
+        <a href="/auth/login" class="btn btn-primary text-sm inline-block">{{ T $.Lang "auth.verify_success_link" }}</a>
     </div>
 </div>
 {{end}}

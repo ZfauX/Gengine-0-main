@@ -1,19 +1,19 @@
 {{define "webauthn-login-button.html"}}
 <button id="passkey-login-btn" type="button"
         class="w-full btn text-sm bg-green-600 dark:bg-green-700 hover:bg-green-700 dark:hover:bg-green-800 text-white px-4 py-2 rounded-md">
-    Войти с Passkey
+    {{ T $.Lang "passkey.login_button" }}
 </button>
 
 <script nonce="{{.csp_nonce}}">
 function loginWithPasskey() {
     const btn = document.getElementById('passkey-login-btn');
     btn.disabled = true;
-    btn.textContent = 'Ожидание аутентификации...';
+    btn.textContent = '{{ T $.Lang "auth.login_passkey_waiting" }}';
 
     if (!navigator.credentials || !navigator.credentials.get) {
-        alert('WebAuthn не поддерживается вашим браузером');
+        alert('{{ T $.Lang "passkey.not_supported" }}');
         btn.disabled = false;
-        btn.textContent = 'Войти с Passkey';
+        btn.textContent = '{{ T $.Lang "passkey.login_button" }}';
         return;
     }
 
@@ -53,16 +53,16 @@ function loginWithPasskey() {
         if (data.status === 'ok' && data.redirect) {
             window.location.href = data.redirect;
         } else {
-            alert('Ошибка входа: ' + (data.error || 'Неизвестная ошибка'));
+            alert('{{ T $.Lang "passkey.error_prefix" }}' + (data.error || '{{ T $.Lang "generic.unknown_error" }}'));
             btn.disabled = false;
-            btn.textContent = 'Войти с Passkey';
+            btn.textContent = '{{ T $.Lang "passkey.login_button" }}';
         }
     })
     .catch(err => {
         console.error(err);
-        alert('Ошибка: ' + err.message);
+        alert('{{ T $.Lang "passkey.error_prefix" }}' + err.message);
         btn.disabled = false;
-        btn.textContent = 'Войти с Passkey';
+        btn.textContent = '{{ T $.Lang "passkey.login_button" }}';
     });
 }
 

@@ -380,56 +380,6 @@ func TestPasswordResetService_ResetPassword(t *testing.T) {
 }
 
 // =============================================================================
-// Тесты для EmailVerificationService
-// =============================================================================
-
-func TestEmailVerificationService_VerifyToken(t *testing.T) {
-	db := newTestDB(t)
-	cfg := newTestConfig()
-	userRepo, _, _, emailVerifRepo, _, _ := newTestRepos(db)
-	service := NewEmailVerificationService(userRepo, emailVerifRepo, cfg)
-
-	user := createTestUser(t, db, "verify@example.com", "pass", "Verify")
-
-	// Создаём токен вручную (в реальности он создаётся при регистрации)
-	token := &EmailVerificationToken{
-		UserID:           user.ID,
-		TokenHash:        hashToken("validtoken"),
-		VerificationCode: "abcdef12",
-		ExpiresAt:        time.Now().Add(time.Hour),
-	}
-	require.NoError(t, emailVerifRepo.CreateToken(context.Background(), token))
-
-	t.Run("успешная верификация", func(t *testing.T) {
-		verifiedUser, err := service.VerifyToken(context.Background(), "validtoken")
-		require.NoError(t, err)
-		assert.True(t, verifiedUser.EmailVerified)
-		// Токен должен быть удалён
-		_, err = emailVerifRepo.GetToken(context.Background(), "validtoken")
-		assert.Error(t, err)
-	})
-
-	t.Run("истекший токен", func(t *testing.T) {
-		expired := &EmailVerificationToken{
-			UserID:           user.ID,
-			TokenHash:        hashToken("expiredverif"),
-			VerificationCode: "deadbeef",
-			ExpiresAt:        time.Now().Add(-time.Hour),
-		}
-		require.NoError(t, emailVerifRepo.CreateToken(context.Background(), expired))
-		_, err := service.VerifyToken(context.Background(), "expiredverif")
-		assert.Error(t, err)
-		assert.Equal(t, "токен истёк", err.Error())
-	})
-
-	t.Run("недействительный токен", func(t *testing.T) {
-		_, err := service.VerifyToken(context.Background(), "nonexistent")
-		assert.Error(t, err)
-		assert.Equal(t, "токен недействителен или истёк", err.Error())
-	})
-}
-
-// =============================================================================
 // Тесты для OAuthService
 // =============================================================================
 

@@ -57,8 +57,17 @@ func (t *Translator) TF(lang Lang, key string, args ...any) string {
 	return fmt.Sprintf(t.T(lang, key), args...)
 }
 
-func Middleware(lang Lang) gin.HandlerFunc {
+func Middleware(defaultLang Lang) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		lang := defaultLang
+		if cookie, err := c.Cookie("lang"); err == nil {
+			switch cookie {
+			case "ru":
+				lang = LangRU
+			case "en":
+				lang = LangEN
+			}
+		}
 		c.Set("lang", string(lang))
 		c.Next()
 	}

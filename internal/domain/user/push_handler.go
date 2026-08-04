@@ -1,9 +1,13 @@
 package user
 
 import (
+	"errors"
+	"net"
 	"net/http"
+	"net/url"
 
 	"gengine-0/internal/config"
+	"gengine-0/internal/pkg/render"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -17,6 +21,16 @@ type PushHandler struct {
 
 func NewPushHandler(db *gorm.DB, vapidCfg config.VAPIDConfig) *PushHandler {
 	return &PushHandler{db: db, vapidCfg: vapidCfg}
+}
+
+// pushSubscriptionDTO — структура подписки из браузера Push API.
+// Браузер шлёт { endpoint, expirationTime, keys: { p256dh, auth } }.
+type pushSubscriptionDTO struct {
+	Endpoint string `json:"endpoint" binding:"required"`
+	Keys     struct {
+		P256dh string `json:"p256dh"`
+		Auth   string `json:"auth"`
+	} `json:"keys"`
 }
 
 // Subscribe подписывает пользователя на push-уведомления.
@@ -33,21 +47,39 @@ func NewPushHandler(db *gorm.DB, vapidCfg config.VAPIDConfig) *PushHandler {
 func (h *PushHandler) Subscribe(c *gin.Context) {
 	userID := c.GetUint("userID")
 	if userID == 0 {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "требуется аутентификация"})
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": render.Tr(c, "handler.unauthorized")})
 		return
 	}
 
-	var sub PushSubscription
-	if err := c.ShouldBindJSON(&sub); err != nil {
+	var req pushSubscriptionDTO
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "неверный формат подписки"})
 		return
 	}
+	if req.Endpoint == "" || req.Keys.P256dh == "" || req.Keys.Auth == "" {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "подписка должна содержать endpoint и ключи p256dh/auth"})
+		return
+	}
+	// Защита от SSRF: endpoint должен быть https и не указывать на локальные/приватные адреса.
+	if !validPushEndpoint(req.Endpoint) {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "недопустимый endpoint push-подписки"})
+		return
+	}
 
-	sub.UserID = userID
+	sub := PushSubscription{
+		UserID:   userID,
+		Endpoint: req.Endpoint,
+		Auth:     req.Keys.Auth,
+		P256dh:   req.Keys.P256dh,
+	}
 
 	var existing PushSubscription
 	result := h.db.Where("endpoint = ?", sub.Endpoint).First(&existing)
 	if result.Error == nil {
+		if existing.UserID != userID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "subscription belongs to another user"})
+			return
+		}
 		sub.Model = existing.Model
 		if err := h.db.Model(&existing).Updates(map[string]any{
 			"auth":   sub.Auth,
@@ -57,12 +89,17 @@ func (h *PushHandler) Subscribe(c *gin.Context) {
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "ошибка обновления подписки"})
 			return
 		}
-	} else {
+	} else if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 		if err := h.db.Create(&sub).Error; err != nil {
 			log.Error().Err(err).Msg("Push: failed to save subscription")
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "ошибка сохранения подписки"})
 			return
 		}
+	} else {
+		// Реальная ошибка БД — не маскируем под «создать»
+		log.Error().Err(result.Error).Msg("Push: failed to look up subscription")
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "ошибка проверки подписки"})
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "subscribed"})
@@ -82,7 +119,7 @@ func (h *PushHandler) Subscribe(c *gin.Context) {
 func (h *PushHandler) Unsubscribe(c *gin.Context) {
 	userID := c.GetUint("userID")
 	if userID == 0 {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "требуется аутентификация"})
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": render.Tr(c, "handler.unauthorized")})
 		return
 	}
 
@@ -113,4 +150,26 @@ func (h *PushHandler) VapidPublicKey(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"public_key": h.vapidCfg.PublicKey,
 	})
+}
+
+// validPushEndpoint проверяет endpoint push-подписки: https-схема,
+// валидный URL и не локальный/приватный адрес (защита от SSRF).
+func validPushEndpoint(endpoint string) bool {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return false
+	}
+	if u.Scheme != "https" || u.Host == "" {
+		return false
+	}
+	host := u.Hostname()
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			return false
+		}
+	}
+	return true
 }

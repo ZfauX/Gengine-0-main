@@ -1,6 +1,6 @@
 {{define "auth-login.html"}}
 <div class="max-w-md mx-auto">
-    <h1 class="page-title">Вход</h1>
+    <h1 class="page-title">{{ T $.Lang "auth.login_title" }}</h1>
 
     {{if .Error}}
     <div class="flash flash-error">{{.Error}}</div>
@@ -12,49 +12,48 @@
 
             <div>
                 <label for="email" class="form-label">Email</label>
-                <input type="email" name="email" id="email" required
-                       class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Email}}border-red-500{{end}}"
-                       >
+                <input type="email" name="email" id="email" required autocomplete="email"
+                       class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Email}}border-red-500{{end}}">
                 {{if .Errors.Email}}<p class="field-error">{{.Errors.Email}}</p>{{end}}
             </div>
 
             <div>
-                <label for="password" class="form-label">Пароль</label>
-                <input type="password" name="password" id="password" required
-                       class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Password}}border-red-500{{end}}">
+                <label for="password" class="form-label">{{ T $.Lang "auth.password_label" }}</label>
+                <input type="password" name="password" id="password" required autocomplete="current-password"
+                       class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Password}}border-red-500{{end}}">
                 {{if .Errors.Password}}<p class="field-error">{{.Errors.Password}}</p>{{end}}
             </div>
 
-            <button type="submit" id="loginBtn" class="w-full btn btn-primary text-sm">Войти</button>
+            <button type="submit" id="loginBtn" class="w-full btn btn-primary text-sm">{{ T $.Lang "auth.login_button" }}</button>
         </form>
 
         <script nonce="{{.csp_nonce}}">
             document.querySelector('form').addEventListener('submit', function() {
                 const btn = document.getElementById('loginBtn');
                 btn.disabled = true;
-                btn.textContent = 'Вход...';
+                btn.textContent = '{{ T $.Lang "auth.login_loading" }}';
                 btn.classList.add('opacity-50', 'cursor-not-allowed');
             });
         </script>
 
         <div class="mt-4 space-y-2 text-center text-sm">
-            <a href="/auth/register" class="block text-blue-600 dark:text-blue-400 hover:underline">Нет аккаунта? Зарегистрироваться</a>
-            <a href="/auth/forgot" class="block text-blue-600 dark:text-blue-400 hover:underline">Забыли пароль?</a>
+            <a href="/auth/register" class="block text-blue-600 dark:text-blue-400 hover:underline">{{ T $.Lang "auth.no_account" }}</a>
+            <a href="/auth/forgot" class="block text-blue-600 dark:text-blue-400 hover:underline">{{ T $.Lang "auth.forgot_password" }}</a>
         </div>
     </div>
 
     <!-- Passkey -->
     <div class="card mt-6">
-        <p class="text-sm text-gray-600 dark:text-gray-400 text-center mb-3">Войти без пароля:</p>
+        <p class="text-sm text-gray-600 dark:text-gray-400 text-center mb-3">{{ T $.Lang "auth.login_with_passkey" }}</p>
         {{template "webauthn-login-button.html" .}}
     </div>
 
     <!-- OAuth-провайдеры -->
     <div class="card mt-6">
-        <p class="text-sm text-gray-600 dark:text-gray-400 text-center mb-3">Или войдите через:</p>
+        <p class="text-sm text-gray-600 dark:text-gray-400 text-center mb-3">{{ T $.Lang "auth.login_oauth_title" }}</p>
         <div class="flex flex-wrap gap-2 justify-center">
-            <a href="/auth/oauth/vk" class="btn text-sm bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md">VK ID</a>
-            <a href="/auth/oauth/yandex" class="btn text-sm bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-md">Яндекс</a>
+            <a href="/auth/oauth/vk" class="btn text-sm bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md">{{ T $.Lang "auth.login_oauth_vk" }}</a>
+            <a href="/auth/oauth/yandex" class="btn text-sm bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-md">{{ T $.Lang "auth.login_oauth_yandex" }}</a>
         </div>
     </div>
 </div>

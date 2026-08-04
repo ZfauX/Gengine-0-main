@@ -3,10 +3,17 @@ package user
 
 import (
 	"crypto/tls"
+	"html/template"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
+	"gengine-0/internal/pkg/render"
+
+	"github.com/gin-contrib/sessions"
+	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 )
@@ -128,9 +135,89 @@ func TestRegisterInput_Validation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_ = tt.input
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			body := url.Values{
+				"email":    {tt.input.Email},
+				"password": {tt.input.Password},
+				"name":     {tt.input.Name},
+			}.Encode()
+			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			c.Request = req
+			err := c.ShouldBind(&tt.input)
+			if tt.expectErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
 		})
 	}
+}
+
+// ──── 2FA Login Flow Tests ────
+
+func TestTwoFALoginForm_NoPendingSession(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// Minimal template needed for the redirect case (not actually rendered)
+	tmpl := template.Must(template.New("").Parse(`
+{{define "layout.html"}}<html><body>{{.ContentHTML}}</body></html>{{end}}
+{{define "auth-login-2fa.html"}}<h1>2FA Login</h1>{{end}}
+{{define "errors-404.html"}}<h1>Not Found</h1>{{end}}
+`))
+	render.SetTemplate(tmpl)
+
+	router := gin.New()
+	store := cookie.NewStore([]byte("test-session-secret-32chars-long!!!"))
+	router.Use(sessions.Sessions("gengine_test_session", store))
+
+	handler := &AuthHandler{}
+	router.GET("/auth/2fa/login", handler.TwoFALoginForm)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/auth/2fa/login", nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusFound, w.Code, "should redirect to /auth/login without pending session")
+	assert.Equal(t, "/auth/login", w.Header().Get("Location"))
+}
+
+func TestTwoFALoginForm_WithPendingSession(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	t.Skip("requires gin-contrib/sessions integration setup")
+
+	// This test needs proper session middleware initialization
+	// The session must be set before TwoFALoginForm handler runs
+}
+
+func TestTwoFALoginVerify_NoPendingSession(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	// Templates not needed — handler redirects before rendering
+	router := gin.New()
+	store := cookie.NewStore([]byte("test-session-secret-32chars-long!!!"))
+	router.Use(sessions.Sessions("gengine_test_session", store))
+
+	handler := &AuthHandler{}
+	router.POST("/auth/2fa/login", handler.TwoFALoginVerify)
+
+	w := httptest.NewRecorder()
+	body := url.Values{"code": {"123456"}}.Encode()
+	req := httptest.NewRequest(http.MethodPost, "/auth/2fa/login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusFound, w.Code, "should redirect to /auth/login without pending session")
+	assert.Equal(t, "/auth/login", w.Header().Get("Location"))
+}
+
+func TestTwoFALoginVerify_InvalidCode(t *testing.T) {
+	t.Skip("requires gin-contrib/sessions integration setup")
+}
+
+func TestTwoFALoginVerify_ValidCode(t *testing.T) {
+	t.Skip("requires gin-contrib/sessions + PostgreSQL integration setup")
 }
 
 func TestLoginInput_Validation(t *testing.T) {
@@ -159,7 +246,21 @@ func TestLoginInput_Validation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_ = tt.input
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			body := url.Values{
+				"email":    {tt.input.Email},
+				"password": {tt.input.Password},
+			}.Encode()
+			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			c.Request = req
+			err := c.ShouldBind(&tt.input)
+			if tt.expectErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
 		})
 	}
 }

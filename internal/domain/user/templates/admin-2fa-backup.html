@@ -1,0 +1,33 @@
+{{define "admin-2fa-backup.html"}}
+<div class="max-w-md mx-auto mt-10">
+    <div class="card p-8">
+        <h1 class="page-title text-center mb-6">{{ T $.Lang "twofa.backup_title" }}</h1>
+
+        <p class="text-sm text-gray-600 dark:text-gray-400 text-center mb-6">
+            {{ T $.Lang "twofa.backup_instructions" }}
+        </p>
+
+        {{if .Error}}
+        <div class="flash flash-error mb-4">{{.Error}}</div>
+        {{end}}
+
+        <form method="POST" action="/auth/2fa/backup" class="space-y-4">
+            <input type="hidden" name="_csrf" value="{{.csrf}}">
+
+            <div>
+                <label for="backup_code" class="form-label">{{ T $.Lang "twofa.backup_label" }}</label>
+                <input type="text" id="backup_code" name="backup_code" inputmode="numeric" pattern="[0-9]*" maxlength="6" required
+                       class="form-input text-center text-2xl tracking-widest" placeholder="000000">
+            </div>
+
+            <button type="submit" class="btn btn-primary w-full">{{ T $.Lang "twofa.backup_button" }}</button>
+        </form>
+
+        <div class="mt-6 text-center">
+            <a href="/auth/2fa/verify" class="text-sm text-primary-600 dark:text-primary-400 hover:underline">
+                {{ T $.Lang "twofa.backup_return_link" }}
+            </a>
+        </div>
+    </div>
+</div>
+{{end}}

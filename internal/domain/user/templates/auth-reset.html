@@ -1,6 +1,6 @@
 {{define "auth-reset.html"}}
 <div class="max-w-md mx-auto">
-    <h1 class="page-title">Сброс пароля</h1>
+    <h1 class="page-title">{{ T $.Lang "auth.reset_title" }}</h1>
 
     {{if .Error}}
     <div class="flash flash-error">{{.Error}}</div>
@@ -12,27 +12,26 @@
             <input type="hidden" name="reset_code" value="{{.ResetCode}}">
 
             <div>
-                <label for="password" class="form-label">Новый пароль</label>
-                <input type="password" name="password" id="password" required minlength="8"
-                       class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Password}}border-red-500{{end}}"
-                       >
+                <label for="password" class="form-label">{{ T $.Lang "auth.new_password_label" }}</label>
+                <input type="password" name="password" id="password" required minlength="8" autocomplete="new-password"
+                       class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Password}}border-red-500{{end}}">
                 {{if .Errors.Password}}<p class="field-error">{{.Errors.Password}}</p>{{end}}
             </div>
 
-            <button type="submit" id="resetBtn" class="w-full btn btn-primary text-sm">Установить пароль</button>
+            <button type="submit" id="resetBtn" class="w-full btn btn-primary text-sm">{{ T $.Lang "auth.reset_button" }}</button>
         </form>
 
         <script nonce="{{.csp_nonce}}">
             document.querySelector('form').addEventListener('submit', function() {
                 const btn = document.getElementById('resetBtn');
                 btn.disabled = true;
-                btn.textContent = 'Установка...';
+                btn.textContent = '{{ T $.Lang "auth.reset_loading" }}';
                 btn.classList.add('opacity-50', 'cursor-not-allowed');
             });
         </script>
 
         <div class="mt-4 text-center text-sm">
-            <a href="/auth/login" class="text-blue-600 dark:text-blue-400 hover:underline">← Вернуться на страницу входа</a>
+            <a href="/auth/login" class="text-blue-600 dark:text-blue-400 hover:underline">{{ T $.Lang "auth.back_to_login" }}</a>
         </div>
     </div>
 </div>

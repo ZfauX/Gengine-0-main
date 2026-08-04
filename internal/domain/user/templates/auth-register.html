@@ -1,6 +1,6 @@
 {{define "auth-register.html"}}
 <div class="max-w-md mx-auto">
-    <h1 class="page-title">Регистрация</h1>
+    <h1 class="page-title">{{ T $.Lang "auth.register_title" }}</h1>
 
     {{if .Error}}
     <div class="flash flash-error">{{.Error}}</div>
@@ -12,28 +12,27 @@
 
             <!-- Имя -->
             <div>
-                <label for="name" class="form-label">Имя</label>
-                <input type="text" name="name" id="name" required
-                       class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Name}}border-red-500{{end}}"
-                       >
+                <label for="name" class="form-label">{{ T $.Lang "auth.name_label" }}</label>
+                <input type="text" name="name" id="name" required autocomplete="name"
+                       class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Name}}border-red-500{{end}}">
                 {{if .Errors.Name}}<p class="field-error">{{.Errors.Name}}</p>{{end}}
             </div>
 
             <!-- Email -->
             <div>
-                <label for="email" class="form-label">Email</label>
-                <input type="email" name="email" id="email" required
-                       class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Email}}border-red-500{{end}}">
+                <label for="email" class="form-label">{{ T $.Lang "common.email" }}</label>
+                <input type="email" name="email" id="email" required autocomplete="email"
+                       class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Email}}border-red-500{{end}}">
                 {{if .Errors.Email}}<p class="field-error">{{.Errors.Email}}</p>{{end}}
             </div>
 
             <!-- Пароль -->
             <div>
-                <label for="password" class="form-label">Пароль</label>
-                <input type="password" name="password" id="password" required minlength="8"
-                       class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Password}}border-red-500{{end}}"
+                <label for="password" class="form-label">{{ T $.Lang "auth.password_label" }}</label>
+                <input type="password" name="password" id="password" required minlength="8" autocomplete="new-password"
+                       class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Password}}border-red-500{{end}}"
                        aria-describedby="password-hint">
-                <p id="password-hint" class="text-xs text-gray-500 dark:text-gray-400 mt-1">Минимум 8 символов: буквы, цифры и спецсимволы</p>
+                <p id="password-hint" class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ T $.Lang "auth.password_hint" }}</p>
                 {{if .Errors.Password}}<p class="field-error">{{.Errors.Password}}</p>{{end}}
             </div>
 
@@ -45,20 +44,20 @@
             </div>
             {{end}}
 
-            <button type="submit" id="registerBtn" class="w-full btn btn-primary text-sm">Зарегистрироваться</button>
+            <button type="submit" id="registerBtn" class="w-full btn btn-primary text-sm">{{ T $.Lang "auth.register_button" }}</button>
         </form>
 
         <script nonce="{{.csp_nonce}}">
             document.querySelector('form').addEventListener('submit', function() {
                 const btn = document.getElementById('registerBtn');
                 btn.disabled = true;
-                btn.textContent = 'Регистрация...';
+                btn.textContent = '{{ T $.Lang "auth.register_loading" }}';
                 btn.classList.add('opacity-50', 'cursor-not-allowed');
             });
         </script>
 
         <div class="mt-4 text-center text-sm">
-            <a href="/auth/login" class="text-blue-600 dark:text-blue-400 hover:underline">Уже есть аккаунт? Войти</a>
+            <a href="/auth/login" class="text-blue-600 dark:text-blue-400 hover:underline">{{ T $.Lang "auth.have_account" }}</a>
         </div>
     </div>
 </div>

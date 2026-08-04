@@ -1,0 +1,25 @@
+{{define "auth-login-2fa.html"}}
+<div class="max-w-md mx-auto mt-10">
+    <div class="card p-8">
+        <h1 class="page-title text-center mb-6">{{ T $.Lang "twofa.login_title" }}</h1>
+        <p class="text-sm text-gray-600 dark:text-gray-400 text-center mb-6">{{ T $.Lang "twofa.enter_code" }}</p>
+
+        {{if .Error}}
+        <div class="flash flash-error mb-4">{{.Error}}</div>
+        {{end}}
+
+        <form method="POST" action="/auth/2fa/login" class="space-y-4">
+            <input type="hidden" name="_csrf" value="{{.csrf}}">
+            <input type="hidden" name="return_url" value="{{.ReturnURL}}">
+
+            <div>
+                <label for="code" class="form-label">{{ T $.Lang "twofa.code_label" }}</label>
+                <input type="text" id="code" name="code" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" required
+                       class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-center text-2xl tracking-widest shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2" placeholder="000000">
+            </div>
+
+            <button type="submit" class="btn btn-primary w-full">{{ T $.Lang "twofa.verify_button" }}</button>
+        </form>
+    </div>
+</div>
+{{end}}

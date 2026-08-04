@@ -2,13 +2,13 @@
 <div class="min-h-[60vh] flex items-center justify-center px-4">
     <div class="max-w-md w-full text-center">
         <div class="text-6xl mb-6">🔍</div>
-        <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">404 — Страница не найдена</h1>
-        <p class="text-gray-600 dark:text-gray-400 mb-2">Запрашиваемая страница не существует или была перемещена.</p>
-        <p class="text-sm text-gray-400 dark:text-gray-500 mb-6">Проверьте адрес или вернитесь на предыдущую страницу.</p>
+        <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">{{ T $.Lang "error.404_title" }}</h1>
+        <p class="text-gray-600 dark:text-gray-400 mb-2">{{ T $.Lang "error.404_message" }}</p>
+        <p class="text-sm text-gray-400 dark:text-gray-500 mb-6">{{ T $.Lang "error.404_hint" }}</p>
         <div class="flex flex-wrap gap-3 justify-center">
-            <a href="/" class="btn btn-primary text-sm inline-block">На главную</a>
-            <a href="/games" class="btn btn-outline text-sm inline-block">К списку игр</a>
-            <button id="btn-back" class="btn btn-outline text-sm inline-block">← Назад</button>
+            <a href="/" class="btn btn-primary text-sm inline-block">{{ T $.Lang "error.home" }}</a>
+            <a href="/games" class="btn btn-outline text-sm inline-block">{{ T $.Lang "error.to_games" }}</a>
+            <button id="btn-back" class="btn btn-outline text-sm inline-block">{{ T $.Lang "error.back" }}</button>
         </div>
     </div>
 </div>

@@ -1,15 +1,56 @@
-﻿<!DOCTYPE html>
-<html lang="ru">
+<!DOCTYPE html>
+<html lang="{{.Lang}}" data-theme-auto="{{with .ThemeSettings}}{{.AutoTheme}}{{end}}" data-theme-from="{{with .ThemeSettings}}{{.DarkFrom}}{{end}}" data-theme-to="{{with .ThemeSettings}}{{.DarkTo}}{{end}}">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="csrf-token" content="{{.csrf}}" />
-    <meta name="description" content="{{.Description | default "Платформа для создания и проведения квестов"}}">
-    <meta name="keywords" content="квесты, игры, командные игры, urban quest, encounter">
+    <meta name="description" content="{{.Description | default (T $.Lang "layout.meta_description")}}">
+    <meta name="keywords" content="{{ T $.Lang "layout.meta_keywords" }}">
     <meta name="author" content="Encounter Engine">
-    <meta name="theme-color" content="#2563eb">
+    <meta name="theme-color" content="#2563eb" id="theme-color-meta">
     <link rel="manifest" href="/static/manifest.json">
+    <script nonce="{{.csp_nonce}}">
+    (function(){
+        function themeMinutes(v) {
+            var parts = String(v).split(':');
+            return (+parts[0] || 0) * 60 + (+parts[1] || 0);
+        }
+        function isDarkWindow(fromMin, toMin) {
+            if (fromMin === toMin) return false; // период не задан/пустой
+            var now = new Date();
+            var nowMin = now.getHours() * 60 + now.getMinutes();
+            if (fromMin < toMin) return nowMin >= fromMin && nowMin < toMin; // дневной период
+            return nowMin >= fromMin || nowMin < toMin; // через полночь
+        }
+        var ds = document.documentElement.dataset;
+        var autoEnabled = ds.themeAuto !== 'false'; // по умолчанию автосмена включена
+        var darkFrom = themeMinutes(ds.themeFrom || '20:00');
+        var darkTo = themeMinutes(ds.themeTo || '07:00');
+
+        var dark = false;
+        try {
+            var t = localStorage.getItem('theme');
+            if (t === 'dark') {
+                dark = true;
+            } else if (t === 'light') {
+                dark = false;
+            } else if (autoEnabled) {
+                // Авто: тёмная в заданный период времени или когда система предпочитает тёмную.
+                dark = window.matchMedia('(prefers-color-scheme: dark)').matches || isDarkWindow(darkFrom, darkTo);
+            }
+        } catch (e) {
+            // localStorage заблокирован (WebView / приватный режим) — всё равно применяем авто-тему
+            if (autoEnabled) {
+                dark = window.matchMedia('(prefers-color-scheme: dark)').matches || isDarkWindow(darkFrom, darkTo);
+            }
+        }
+        if (dark) { document.documentElement.classList.add('dark'); }
+        var tc = document.getElementById('theme-color-meta');
+        if (tc) tc.setAttribute('content', dark ? '#0f172a' : '#2563eb');
+    })();
+    </script>
     <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png">
+
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -25,8 +66,10 @@
     <!-- Подключаем собранный Tailwind CSS (локально) -->
     <link rel="stylesheet" href="/static/css/output.css">
 
-    <!-- Leaflet CSS для карт (локально) -->
+    <!-- Leaflet CSS для карт (локально) — только на страницах с картами -->
+    {{if .IncludeLeaflet}}
     <link rel="stylesheet" href="/static/css/leaflet.css">
+    {{end}}
 
     <!-- View Transitions API (inline: output.css содержит всё остальное) -->
     <style nonce="{{.csp_nonce}}">
@@ -36,19 +79,66 @@
         @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
         @keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
 
+
         @media (max-width: 640px) {
             .table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-            table { min-width: 600px; }
+            /* min-width только для таблиц в .table-responsive — компактные таблицы
+               не получают ненужный горизонтальный скролл (UX14). */
+            .table-responsive table { min-width: 600px; }
         }
     </style>
     {{.ExtraHead}}
 </head>
-<body class="bg-gray-100 dark:bg-gray-900 min-h-screen">
+<body class="bg-gray-100 dark:bg-gray-900 min-h-screen"
+      data-i18n-offline="{{ T $.Lang "layout.offline_toast" }}"
+      data-i18n-online="{{ T $.Lang "layout.online_toast" }}"
+      data-i18n-confirm-title="{{ T $.Lang "layout.confirm_title" }}"
+      data-i18n-confirm-cancel="{{ T $.Lang "layout.confirm_cancel" }}"
+      data-i18n-confirm-ok="{{ T $.Lang "layout.confirm_ok" }}"
+      data-i18n-loading-already="{{ T $.Lang "js.loading_already" }}"
+      data-i18n-file-uploaded="{{ T $.Lang "js.file_uploaded" }}"
+      data-i18n-file-upload-error="{{ T $.Lang "js.file_upload_error" }}"
+      data-i18n-draft-restored="{{ T $.Lang "js.draft_restored" }}"
+      data-i18n-push-save-failed="{{ T $.Lang "js.push_save_failed" }}"
+      data-i18n-game-started="{{ T $.Lang "js.game_started" }}"
+      data-i18n-game-finished="{{ T $.Lang "js.game_finished" }}"
+      data-i18n-team-disqualified="{{ T $.Lang "js.team_disqualified" }}"
+      data-i18n-level-passed="{{ T $.Lang "js.level_passed" }}"
+      data-i18n-time-left="{{ T $.Lang "js.time_left" }}"
+      data-i18n-hint-available="{{ T $.Lang "js.hint_available" }}"
+      data-i18n-copied="{{ T $.Lang "js.copied" }}"
+      data-i18n-copy-failed="{{ T $.Lang "js.copy_failed" }}"
+      data-i18n-sending="{{ T $.Lang "js.sending" }}"
+      data-i18n-push-active="{{ T $.Lang "js.push_active" }}"
+      data-i18n-push-enable-hint="{{ T $.Lang "js.push_enable_hint" }}"
+      data-i18n-push-allow-browser="{{ T $.Lang "js.push_allow_browser" }}"
+      data-i18n-push-disabled="{{ T $.Lang "js.push_disabled" }}"
+      data-i18n-push-unsupported="{{ T $.Lang "js.push_unsupported" }}"
+      data-i18n-push-https-required="{{ T $.Lang "js.push_https_required" }}"
+      data-i18n-push-misconfigured="{{ T $.Lang "js.push_misconfigured" }}"
+      data-i18n-start-typing-hint="{{ T $.Lang "js.start_typing_hint" }}"
+      data-i18n-nothing-found="{{ T $.Lang "js.nothing_found" }}"
+      data-i18n-minute-unit="{{ T $.Lang "js.minute_unit" }}"
+      data-i18n-minutes-unit="{{ T $.Lang "js.minutes_unit" }}"
+      data-i18n-until-finish="{{ T $.Lang "js.until_finish" }}"
+      data-i18n-rank-1="{{ T $.Lang "js.rank_1" }}"
+      data-i18n-rank-2="{{ T $.Lang "js.rank_2" }}"
+      data-i18n-rank-3="{{ T $.Lang "js.rank_3" }}"
+      data-i18n-rating="{{ T $.Lang "js.rating" }}"
+      data-i18n-connecting="{{ T $.Lang "js.connecting" }}"
+      data-i18n-connected="{{ T $.Lang "js.connected" }}"
+      data-i18n-reconnecting="{{ T $.Lang "js.reconnecting" }}"
+      data-i18n-saved="{{ T $.Lang "js.saved" }}"
+      data-i18n-not-saved="{{ T $.Lang "js.not_saved" }}"
+      data-i18n-click-to-copy="{{ T $.Lang "js.click_to_copy" }}">
+
+    <!-- A11y: skip-link для быстрого перехода к контенту -->
+    <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[10001] focus:px-4 focus:py-2 focus:bg-white focus:text-blue-600 focus:rounded-md focus:shadow-lg" style="position:absolute;left:-9999px;top:-9999px">{{ T $.Lang "layout.skip_to_content" }}</a>
 
     <!-- Flash-сообщения -->
     {{if .Flash}}
     <div class="fixed top-4 right-4 z-[110] max-w-sm">
-        <div class="flash flash-success">{{.Flash}}</div>
+        {{if eq .FlashType "error"}}<div class="flash flash-error">{{.Flash}}</div>{{else if eq .FlashType "info"}}<div class="flash flash-info">{{.Flash}}</div>{{else}}<div class="flash flash-success">{{.Flash}}</div>{{end}}
     </div>
     <script nonce="{{.csp_nonce}}">
         setTimeout(() => {
@@ -58,22 +148,30 @@
     </script>
     {{end}}
 
-    <!-- Leaflet JS (локально) -->
-    <script src="/static/js/leaflet.js"></script>
+    <!-- Leaflet JS (локально) — только на страницах с картами -->
+    {{if .IncludeLeaflet}}
+    <script defer src="/static/js/leaflet.js"></script>
+    {{end}}
 
     <!-- App JS (локально) -->
-    <script src="/static/js/app.js"></script>
+    <script defer src="/static/js/app.js"></script>
+
+    <!-- WebSocket client with auto-reconnect -->
+    <script defer src="/static/js/ws-client.js"></script>
 
     <!-- Top progress bar -->
-    <div id="top-progress-bar" class="fixed top-0 left-0 z-[100] h-1 bg-blue-600 transition-all duration-300 ease-out" style="width:0%;opacity:0"></div>
+    <div id="top-progress-bar" class="fixed top-0 left-0 z-[100] h-1 bg-blue-600 transition-all duration-300 ease-out w-0 opacity-0"></div>
+
+    <!-- Skip link для клавиатурных пользователей -->
+    <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[110] focus:bg-blue-600 focus:text-white focus:px-4 focus:py-2 focus:rounded-md">{{ T $.Lang "layout.skip_to_content" }}</a>
 
     <!-- Навигация -->
-    <nav class="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 shadow-sm" aria-label="Главная навигация">
+    <nav class="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 shadow-sm" aria-label="{{ T $.Lang "layout.nav_aria_label" }}">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between items-center h-16">
                 <!-- Логотип -->
                 <div class="flex items-center space-x-2">
-                    <span class="text-2xl font-bold text-blue-600" aria-label="Encounter Engine">🕵️</span>
+                    <span class="text-2xl font-bold text-blue-600" aria-label="{{ T $.Lang "layout.logo_aria_label" }}" role="img" aria-hidden="true">🕵️</span>
                     <a href="/" class="text-xl font-semibold text-gray-800 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400 transition">
                         Encounter
                     </a>
@@ -84,7 +182,7 @@
                     <!-- Колокольчик уведомлений -->
                     {{if .CurrentUserID}}
                     <div class="relative">
-                        <button id="notificationBell" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400 relative" title="Уведомления" aria-label="Уведомления">
+                        <button id="notificationBell" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400 relative" title="{{ T $.Lang "nav.notifications" }}" aria-label="{{ T $.Lang "nav.notifications" }}">
                             🔔
                             {{if .UnreadNotificationCount}}
                             <span class="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">{{.UnreadNotificationCount}}</span>
@@ -93,41 +191,51 @@
                         <!-- Dropdown уведомлений -->
                         <div id="notificationDropdown" class="hidden absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-50">
                             <div class="p-4 border-b border-gray-200 dark:border-gray-700">
-                                <h3 class="font-semibold text-gray-800">Уведомления</h3>
+                                <h3 class="font-semibold text-center text-gray-800 dark:text-gray-100">{{ T $.Lang "nav.notifications" }}</h3>
                             </div>
                             <div id="notificationList" class="max-h-96 overflow-y-auto">
                             </div>
                             <div class="p-3 border-t border-gray-200 dark:border-gray-700 text-center">
-                                <a href="/notifications" class="text-sm text-blue-600 hover:text-blue-700">Все уведомления</a>
+                                <a href="/notifications" class="text-sm text-blue-600 hover:text-blue-700">{{ T $.Lang "nav.all_notifications" }}</a>
                             </div>
                         </div>
                     </div>
                     {{end}}
                     
                     <!-- Кнопка переключения темы -->
-                    <button id="themeToggle" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400" title="Переключить тему" aria-label="Переключить тему">
+                    <button id="themeToggle" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400" title="{{ T $.Lang "layout.theme_toggle" }}" aria-label="{{ T $.Lang "layout.theme_toggle" }}">
                         🌙
                     </button>
+                    <!-- Language switch -->
+                    <div class="flex items-center space-x-1">
+                        <button data-lang="ru" class="lang-btn px-2 py-1 text-xs rounded {{if eq .Lang "ru"}}bg-primary-600 text-white{{else}}text-gray-500 dark:text-gray-400 hover:text-gray-700{{end}}">RU</button>
+                        <button data-lang="en" class="lang-btn px-2 py-1 text-xs rounded {{if eq .Lang "en"}}bg-primary-600 text-white{{else}}text-gray-500 dark:text-gray-400 hover:text-gray-700{{end}}">EN</button>
+                    </div>
                     {{if .CurrentUserID}}
-                        <a href="/dashboard" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400">Личный кабинет</a>
-                        {{if .IsAdmin}}<a href="/admin" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400">Админка</a>{{end}}
-                        <a href="/games" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400">Игры</a>
-                        <a href="/teams" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400">Команды</a>
-                        <a href="/profile" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400">Профиль</a>
+                        <a href="/dashboard" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400">{{ T $.Lang "nav.dashboard" }}</a>
+                        {{if .IsAdmin}}<a href="/admin" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400">{{ T $.Lang "nav.admin" }}</a>{{end}}
+                        <a href="/games" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400">{{ T $.Lang "nav.games" }}</a>
+                        <a href="/teams" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400">{{ T $.Lang "nav.teams" }}</a>
+                        <a href="/profile" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400">{{ T $.Lang "nav.profile" }}</a>
                         <form action="/auth/logout" method="POST" class="inline">
                             <input type="hidden" name="_csrf" value="{{.csrf}}">
-                            <button type="submit" class="nav-link text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">Выйти</button>
+                            <button type="submit" class="nav-link text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">{{ T $.Lang "nav.logout" }}</button>
                         </form>
                     {{else}}
-                        <a href="/auth/login" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400">Войти</a>
-                        <a href="/auth/register" class="btn btn-primary text-sm">Регистрация</a>
+                        <a href="/auth/login" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400">{{ T $.Lang "nav.login" }}</a>
+                        <a href="/auth/register" class="btn btn-primary text-sm">{{ T $.Lang "nav.register" }}</a>
                     {{end}}
                 </div>
 
                 <!-- Mobile hamburger -->
                 <div class="flex items-center space-x-3 sm:hidden">
-                    <button id="themeToggleMobile" class="nav-link text-gray-600 hover:text-blue-600 text-xl" title="Переключить тему" aria-label="Переключить тему">🌙</button>
-                    <button id="hamburgerBtn" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 focus:outline-none" aria-label="Меню" aria-expanded="false" aria-controls="mobileMenu">
+                    <button id="themeToggleMobile" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400 text-xl" title="{{ T $.Lang "layout.theme_toggle" }}" aria-label="{{ T $.Lang "layout.theme_toggle" }}">🌙</button>
+                    <!-- Language switch mobile -->
+                    <div class="flex items-center space-x-1">
+                        <button data-lang="ru" class="lang-btn px-2 py-1 text-xs rounded {{if eq .Lang "ru"}}bg-primary-600 text-white{{else}}text-gray-500 dark:text-gray-400 hover:text-gray-700{{end}}">RU</button>
+                        <button data-lang="en" class="lang-btn px-2 py-1 text-xs rounded {{if eq .Lang "en"}}bg-primary-600 text-white{{else}}text-gray-500 dark:text-gray-400 hover:text-gray-700{{end}}">EN</button>
+                    </div>
+                    <button id="hamburgerBtn" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 focus:outline-none" aria-label="{{ T $.Lang "layout.mobile_menu" }}" aria-expanded="false" aria-controls="mobileMenu">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
                     </button>
                 </div>
@@ -136,32 +244,32 @@
             <!-- Mobile dropdown menu -->
             <div id="mobileMenu" class="hidden sm:hidden pb-4 space-y-2 text-sm font-medium">
                 {{if .CurrentUserID}}
-                    <a href="/dashboard" class="block px-3 py-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">Личный кабинет</a>
-                    {{if .IsAdmin}}<a href="/admin" class="block px-3 py-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">Админка</a>{{end}}
-                    <a href="/games" class="block px-3 py-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">Игры</a>
-                    <a href="/teams" class="block px-3 py-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">Команды</a>
-                    <a href="/profile" class="block px-3 py-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">Профиль</a>
+                    <a href="/dashboard" class="block px-3 py-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">{{ T $.Lang "nav.dashboard" }}</a>
+                    {{if .IsAdmin}}<a href="/admin" class="block px-3 py-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">{{ T $.Lang "nav.admin" }}</a>{{end}}
+                    <a href="/games" class="block px-3 py-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">{{ T $.Lang "nav.games" }}</a>
+                    <a href="/teams" class="block px-3 py-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">{{ T $.Lang "nav.teams" }}</a>
+                    <a href="/profile" class="block px-3 py-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">{{ T $.Lang "nav.profile" }}</a>
                     <form action="/auth/logout" method="POST" class="block">
                         <input type="hidden" name="_csrf" value="{{.csrf}}">
-                        <button type="submit" class="block w-full text-left px-3 py-2 rounded-md text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30">Выйти</button>
+                        <button type="submit" class="block w-full text-left px-3 py-2 rounded-md text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30">{{ T $.Lang "nav.logout" }}</button>
                     </form>
                 {{else}}
-                    <a href="/auth/login" class="block px-3 py-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">Войти</a>
-                    <a href="/auth/register" class="block px-3 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700">Регистрация</a>
+                    <a href="/auth/login" class="block px-3 py-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">{{ T $.Lang "nav.login" }}</a>
+                    <a href="/auth/register" class="block px-3 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700">{{ T $.Lang "nav.register" }}</a>
                 {{end}}
             </div>
         </div>
     </nav>
 
     <!-- Основной контент -->
-    <main id="main-content" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8" role="main" aria-label="Основной контент">
+    <main id="main-content" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8" role="main" aria-label="{{ T $.Lang "layout.main_content" }}">
         <!-- Breadcrumb навигация -->
         {{if .Breadcrumbs}}
-        <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-4" aria-label="Breadcrumb">
-            <div class="flex items-center gap-1 text-sm">
+        <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-4" aria-label="{{ T $.Lang "layout.breadcrumb_aria" }}">
+            <div class="flex flex-wrap items-center gap-1 text-sm">
                 {{range $i, $crumb := .Breadcrumbs}}
-                    {{if $i}}<span class="text-gray-400 dark:text-gray-600 mx-1">›</span>{{end}}
-                    {{if $crumb.url}}<a href="{{$crumb.url}}" class="text-gray-700 dark:text-gray-300 hover:text-blue-600 whitespace-nowrap">{{$crumb.name}}</a>{{else}}<span class="text-gray-500 dark:text-gray-400 whitespace-nowrap">{{$crumb.name}}</span>{{end}}
+                    {{if $i}}<span class="text-gray-400 dark:text-gray-600 mx-1" aria-hidden="true">›</span>{{end}}
+                    {{if index $crumb "url"}}<a href="{{index $crumb "url"}}" class="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 truncate max-w-[180px] sm:max-w-[240px]">{{ trName $.Lang (index $crumb "name") (index $crumb "name_key") }}</a>{{else}}<span class="text-gray-500 dark:text-gray-400 truncate max-w-[180px] sm:max-w-[240px]" aria-current="page">{{ trName $.Lang (index $crumb "name") (index $crumb "name_key") }}</span>{{end}}
                 {{end}}
             </div>
         </nav>
@@ -169,16 +277,16 @@
         {{if .ContentHTML}}
             {{.ContentHTML}}
         {{else}}
-            <p class="text-gray-500 dark:text-gray-400">Контент не указан.</p>
+            <p class="text-gray-500 dark:text-gray-400">{{ T $.Lang "layout.no_content" }}</p>
         {{end}}
     </main>
 
     <!-- Toast уведомления -->
-    <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2"></div>
+    <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2" aria-live="polite" role="status"></div>
 
     <!-- Футер (опционально) -->
     <footer class="border-t border-gray-200 dark:border-gray-700 mt-12 py-6 text-center text-sm text-gray-500 dark:text-gray-400" role="contentinfo">
-        &copy; 2026 Encounter Engine · Все права защищены
+        &copy; 2026 Encounter Engine · {{ T $.Lang "layout.footer_rights" }}
     </footer>
 
     {{.ExtraScripts}}
@@ -187,7 +295,7 @@
     <script nonce="{{.csp_nonce}}">
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', function() {
-                navigator.serviceWorker.register('/static/sw.js')
+                navigator.serviceWorker.register('/sw.js', { scope: '/' })
                     .then(function(registration) {
                         console.log('SW registered:', registration.scope);
                     })
@@ -229,14 +337,15 @@
                 return document.documentElement.classList.contains('dark');
             }
 
-            function setThemeState(dark) {
+            function applyTheme(dark) {
                 if (dark) {
                     document.documentElement.classList.add('dark');
-                    localStorage.setItem('theme', 'dark');
                 } else {
                     document.documentElement.classList.remove('dark');
-                    localStorage.setItem('theme', 'light');
                 }
+                // Sync theme-color meta (Android toolbar)
+                var tc = document.getElementById('theme-color-meta');
+                if (tc) tc.setAttribute('content', dark ? '#0f172a' : '#2563eb');
                 // Sync both buttons
                 var icon = dark ? '☀️' : '🌙';
                 var dt = document.getElementById('themeToggle');
@@ -245,14 +354,69 @@
                 if (mt) mt.textContent = icon;
             }
 
+            function setThemeState(dark) {
+                applyTheme(dark);
+                // Запоминаем явный выбор и локально, чтобы авто-слушатели его не перебивали
+                stored = dark ? 'dark' : 'light';
+                // Persist only explicit user choice
+                try { localStorage.setItem('theme', dark ? 'dark' : 'light'); }
+                catch (e) { /* localStorage blocked (WebView/private mode) — theme still applied */ }
+            }
+
             function toggleTheme() {
                 setThemeState(!getThemeState());
             }
 
-            // Init from localStorage or system preference
-            var stored = localStorage.getItem('theme');
-            var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-            setThemeState(stored === 'dark' || (!stored && prefersDark));
+            // --- Авто-тема с живым отслеживанием ---
+            var stored = null;
+            try { stored = localStorage.getItem('theme'); }
+            catch (e) { /* localStorage blocked */ }
+
+            var prefersDarkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+            var themeDs = document.documentElement.dataset;
+            var autoEnabled = themeDs.themeAuto !== 'false'; // по умолчанию автосмена включена
+            var darkFromMin = themeMinutes(themeDs.themeFrom || '20:00');
+            var darkToMin = themeMinutes(themeDs.themeTo || '07:00');
+
+            function themeMinutes(v) {
+                var parts = String(v).split(':');
+                return (+parts[0] || 0) * 60 + (+parts[1] || 0);
+            }
+
+            function isDarkWindow() {
+                if (darkFromMin === darkToMin) return false;
+                var now = new Date();
+                var nowMin = now.getHours() * 60 + now.getMinutes();
+                if (darkFromMin < darkToMin) return nowMin >= darkFromMin && nowMin < darkToMin;
+                return nowMin >= darkFromMin || nowMin < darkToMin;
+            }
+
+            function computeDark() {
+                if (stored === 'dark') return true;
+                if (stored === 'light') return false;
+                if (!autoEnabled) return false; // автосмена выключена → светлая
+                return prefersDarkQuery.matches || isDarkWindow();
+            }
+
+            // Применяет авто-тему, уважая явный выбор пользователя.
+            function applyAutoTheme() {
+                applyTheme(computeDark());
+            }
+
+            applyAutoTheme();
+
+            // Живое отслеживание системной темы (смена dark/light на лету).
+            if (prefersDarkQuery.addEventListener) {
+                prefersDarkQuery.addEventListener('change', applyAutoTheme);
+            } else if (prefersDarkQuery.addListener) {
+                prefersDarkQuery.addListener(applyAutoTheme); // Safari <14
+            }
+
+            // Проверка времени каждую минуту — переключение по заданному периоду без перезагрузки.
+            // Интервал запускается только при включённой автосмене (иначе работа впустую).
+            if (autoEnabled) {
+                setInterval(applyAutoTheme, 60 * 1000);
+            }
 
             // Attach toggle to both buttons
             var dt = document.getElementById('themeToggle');
@@ -269,6 +433,20 @@
                 }
             });
         })();
+
+        // Language switcher — force fresh GET so server reads the new cookie.
+        // Cache-buster param guarantees navigation even if URL is unchanged,
+        // while removing previous _lang params so they don't accumulate.
+        document.querySelectorAll('.lang-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                document.cookie = 'lang=' + btn.getAttribute('data-lang') + '; path=/; max-age=31536000; SameSite=Lax';
+                var params = new URLSearchParams(window.location.search);
+                params.delete('_lang'); // remove all accumulated cache-buster params
+                params.set('_lang', Date.now());
+                var qs = params.toString();
+                window.location.href = window.location.pathname + (qs ? '?' + qs : '');
+            });
+        });
 
         // Mobile hamburger menu
         (function() {
@@ -340,9 +518,8 @@
                 if (method !== 'GET' && method !== 'HEAD') {
                     window.startProgress();
                 }
-                return originalFetch.apply(this, args).then(function(resp) {
+                return originalFetch.apply(this, args).finally(function() {
                     window.completeProgress();
-                    return resp;
                 });
             };
         })();
@@ -393,21 +570,21 @@
                     .then(function(resp) { return resp.json(); })
                     .then(function(data) {
                         if (!data.notifications || data.notifications.length === 0) {
-                            list.innerHTML = '<div class="p-4 text-center text-gray-500">Нет уведомлений</div>';
+                            list.innerHTML = '<div class="p-4 text-center text-gray-500 dark:text-gray-400">{{ T $.Lang "layout.notif_none" }}</div>';
                             return;
                         }
                         var html = '';
                         data.notifications.forEach(function(n) {
-                            var readClass = n.read ? '' : 'bg-blue-50';
-                            html += '<a href="' + (n.url || '#') + '" class="block p-3 border-b border-gray-100 ' + readClass + ' hover:bg-gray-50">';
-                            html += '<p class="font-medium text-sm text-gray-800">' + escapeHtml(n.title) + '</p>';
-                            html += '<p class="text-xs text-gray-500 mt-1">' + escapeHtml(n.message) + '</p>';
+                            var readClass = n.read ? '' : 'bg-blue-50 dark:bg-blue-900/20';
+                            html += '<a href="' + (n.url || '#') + '" class="block p-3 border-b border-gray-100 dark:border-gray-700 ' + readClass + ' hover:bg-gray-50 dark:hover:bg-gray-700/50">';
+                            html += '<p class="font-medium text-sm text-gray-800 dark:text-gray-100">' + escapeHtml(n.title) + '</p>';
+                            html += '<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">' + escapeHtml(n.message) + '</p>';
                             html += '</a>';
                         });
                         list.innerHTML = html;
                     })
                     .catch(function(err) {
-                        list.innerHTML = '<div class="p-4 text-center text-red-500">Ошибка загрузки</div>';
+                        list.innerHTML = '<div class="p-4 text-center text-red-500">{{ T $.Lang "layout.notif_load_error" }}</div>';
                     });
             }
 

@@ -34,6 +34,7 @@ type AuthHandler struct {
 	oauthSvc             *OAuthService
 	auditSvc             *audit.Service
 	emailSvc             *email.EmailService
+	twoFactorSvc         *TwoFactorService
 }
 
 func NewAuthHandler(
@@ -45,6 +46,7 @@ func NewAuthHandler(
 	oauthSvc *OAuthService,
 	auditSvc *audit.Service,
 	emailSvc *email.EmailService,
+	twoFactorSvc *TwoFactorService,
 ) *AuthHandler {
 	return &AuthHandler{
 		cfg:                  cfg,
@@ -55,6 +57,7 @@ func NewAuthHandler(
 		oauthSvc:             oauthSvc,
 		auditSvc:             auditSvc,
 		emailSvc:             emailSvc,
+		twoFactorSvc:         twoFactorSvc,
 	}
 }
 
@@ -67,12 +70,15 @@ func NewAuthHandler(
 // @Success 200 {string} html "Страница входа"
 // @Router /auth/login [get]
 func (h *AuthHandler) ShowLoginForm(c *gin.Context) {
+	c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
 	render.Page(c, http.StatusOK, "auth-login.html", gin.H{
-		"Title": "Вход",
+		"Title": render.Tr(c, "auth.login_title"),
 		"csrf":  csrf.GetToken(c),
 		"Breadcrumbs": []map[string]string{
-			{"name": "Главная", "url": "/"},
-			{"name": "Вход"},
+			{"name": "nav.home", "url": "/"},
+			{"name": "nav.login"},
 		},
 	})
 }
@@ -118,19 +124,36 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	userID, _, parseErr := h.authSvc.ParseToken(token)
-	if parseErr != nil {
-		log.Error().Err(parseErr).Msg("Login: failed to parse token for audit")
-	} else {
-		h.auditSvc.Log(userID, "login", "user", userID, input.Email)
+	// Check if user has 2FA enabled — require TOTP before issuing tokens
+	user, err := h.userService.GetByEmail(c.Request.Context(), input.Email)
+	if err != nil {
+		// Fail closed: don't issue tokens if we can't confirm 2FA status
+		log.Error().Err(err).Str("email", input.Email).Msg("Login: failed to fetch user for 2FA check")
+		render.Page(c, http.StatusUnauthorized, "auth-login.html", gin.H{
+			"Title":  "Вход",
+			"Errors": validation.FieldErrors{"email": "Неверный email или пароль"},
+			"Error":  "Неверный email или пароль",
+			"csrf":   csrf.GetToken(c),
+		})
+		return
+	}
+	if user != nil && user.TwoFactorEnabled {
+		// Store pending login info in session (no JWT stored — only issued after TOTP)
+		sess := sessions.Default(c)
+		sess.Set("pending_user_id", user.ID)
+		sess.Set("pending_email", user.Email)
+		if err := sess.Save(); err != nil {
+			log.Error().Err(err).Msg("Login: failed to save 2FA pending session")
+		}
+		c.Redirect(http.StatusFound, "/auth/2fa/login?return_url=/dashboard")
+		return
 	}
 
 	setSecureCookie(c, "jwt", token, int(h.cfg.JWT.AccessExpiry.Seconds()), "/")
 
-	user, err := h.userService.GetByEmail(c.Request.Context(), input.Email)
-	if err == nil {
+	if user != nil {
 		deviceID := c.GetHeader("X-Device-ID")
-		refreshToken, err := h.authSvc.GenerateRefreshToken(c.Request.Context(), *user, deviceID)
+		refreshToken, err := h.authSvc.GenerateRefreshToken(c.Request.Context(), *user, deviceID, clientFingerprint(c))
 		if err == nil {
 			setSecureCookie(c, "refresh_token", refreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/auth/refresh")
 		} else {
@@ -138,8 +161,104 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		}
 	}
 
+	userID, _, parseErr := h.authSvc.ParseToken(token)
+	if parseErr != nil {
+		log.Error().Err(parseErr).Msg("Login: failed to parse token for audit")
+	} else {
+		email := input.Email
+		if user != nil {
+			email = user.Email
+		}
+		h.auditSvc.Log(userID, "login", "user", userID, email)
+	}
+
 	c.Redirect(http.StatusFound, "/dashboard")
 }
+
+// TwoFALoginForm отображает форму ввода TOTP-кода после логина.
+func (h *AuthHandler) TwoFALoginForm(c *gin.Context) {
+	sess := sessions.Default(c)
+	if sess.Get("pending_user_id") == nil {
+		c.Redirect(http.StatusFound, "/auth/login")
+		return
+	}
+	returnURL := safeReturnURL(c.DefaultQuery("return_url", ""), "/dashboard")
+	render.Page(c, http.StatusOK, "auth-login-2fa.html", gin.H{
+		"Title":     "Двухфакторная аутентификация",
+		"ReturnURL": returnURL,
+		"csrf":      csrf.GetToken(c),
+	})
+}
+
+// TwoFALoginVerify проверяет TOTP-код и завершает логин.
+func (h *AuthHandler) TwoFALoginVerify(c *gin.Context) {
+	sess := sessions.Default(c)
+	pendingUserID, ok := sess.Get("pending_user_id").(uint)
+	if !ok || pendingUserID == 0 {
+		c.Redirect(http.StatusFound, "/auth/login")
+		return
+	}
+
+	code := c.PostForm("code")
+	returnURL := safeReturnURL(c.DefaultPostForm("return_url", ""), "/dashboard")
+
+	if err := h.twoFactorSvc.Validate2FAInput(code); err != nil {
+		render.Page(c, http.StatusOK, "auth-login-2fa.html", gin.H{
+			"Title":     "Двухфакторная аутентификация",
+			"Error":     err.Error(),
+			"ReturnURL": returnURL,
+			"csrf":      csrf.GetToken(c),
+		})
+		return
+	}
+
+	// Fetch user to get TOTP secret
+	user, err := h.userService.GetByID(c.Request.Context(), pendingUserID)
+	if err != nil {
+		render.RenderErrorPage(c, http.StatusNotFound)
+		return
+	}
+
+	valid, err := h.twoFactorSvc.VerifyCode(user.TwoFactorSecret, code)
+	if err != nil || !valid {
+		render.Page(c, http.StatusOK, "auth-login-2fa.html", gin.H{
+			"Title":     "Двухфакторная аутентификация",
+			"Error":     render.Tr(c, "handler.wrong_code_try_again"),
+			"ReturnURL": returnURL,
+			"csrf":      csrf.GetToken(c),
+		})
+		return
+	}
+
+	// TOTP verified — generate JWT and issue tokens
+	token, jwtErr := h.authSvc.GenerateJWT(*user)
+	if jwtErr != nil {
+		log.Error().Err(jwtErr).Uint("user_id", user.ID).Msg("TwoFALoginVerify: failed to generate JWT")
+		render.RenderErrorPage(c, http.StatusInternalServerError)
+		return
+	}
+	setSecureCookie(c, "jwt", token, int(h.cfg.JWT.AccessExpiry.Seconds()), "/")
+	deviceID := c.GetHeader("X-Device-ID")
+	refreshToken, err := h.authSvc.GenerateRefreshToken(c.Request.Context(), *user, deviceID, clientFingerprint(c))
+	if err == nil {
+		setSecureCookie(c, "refresh_token", refreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/auth/refresh")
+	} else {
+		log.Error().Err(err).Uint("user_id", user.ID).Msg("TwoFALoginVerify: failed to generate refresh token")
+	}
+
+	// Clear pending login from session
+	sess.Delete("pending_user_id")
+	sess.Delete("pending_email")
+	if err := sess.Save(); err != nil {
+		log.Error().Err(err).Msg("TwoFALoginVerify: failed to clear pending session")
+	}
+
+	h.auditSvc.Log(user.ID, "login", "user", user.ID, user.Email)
+	c.Redirect(http.StatusFound, returnURL)
+}
+
+// TODO: JWT blacklist via jti would need Valkey support — check jti against a denylist
+// before accepting a token in middleware.
 
 // RefreshToken обновляет access-токен.
 // @Summary Обновление access-токена
@@ -166,9 +285,10 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		refreshToken = input.RefreshToken
 	}
 
-	newAccessToken, err := h.authSvc.RefreshAccessToken(c.Request.Context(), refreshToken)
+	deviceID := c.GetHeader("X-Device-ID")
+	accessToken, newRefreshToken, err := h.authSvc.RefreshAccessToken(c.Request.Context(), refreshToken, deviceID, clientFingerprint(c))
 	if err != nil {
-		appErr := apperrors.Unauthorized(err.Error())
+		appErr := apperrors.Unauthorized(render.LocalizeError(c, err.Error()))
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -176,10 +296,11 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	setSecureCookie(c, "jwt", newAccessToken, int(h.cfg.JWT.AccessExpiry.Seconds()), "/")
+	setSecureCookie(c, "jwt", accessToken, int(h.cfg.JWT.AccessExpiry.Seconds()), "/")
+	setSecureCookie(c, "refresh_token", newRefreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/auth/refresh")
 
 	c.JSON(http.StatusOK, gin.H{
-		"access_token": newAccessToken,
+		"access_token": accessToken,
 		"expires_in":   int(h.cfg.JWT.AccessExpiry.Seconds()),
 	})
 }
@@ -190,8 +311,12 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 // @Tags auth
 // @Produce html
 // @Success 302 {string} string "Перенаправление на /"
-// @Router /auth/logout [get]
+// @Router /auth/logout [post]
 func (h *AuthHandler) Logout(c *gin.Context) {
+	// Revoke JWT via JTI blacklist
+	if jwtCookie, err := c.Cookie("jwt"); err == nil && jwtCookie != "" {
+		h.authSvc.RevokeJWT(c.Request.Context(), jwtCookie)
+	}
 	refreshTokenCookie, err := c.Cookie("refresh_token")
 	if err == nil && refreshTokenCookie != "" {
 		if err := h.authSvc.RevokeRefreshToken(c.Request.Context(), refreshTokenCookie); err != nil {
@@ -200,6 +325,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	}
 	setSecureCookie(c, "jwt", "", -1, "/")
 	setSecureCookie(c, "refresh_token", "", -1, "/auth/refresh")
+	clear2FASessionFlag(c)
 	c.Redirect(http.StatusFound, "/")
 }
 
@@ -223,6 +349,7 @@ func (h *AuthHandler) LogoutAll(c *gin.Context) {
 	}
 	setSecureCookie(c, "jwt", "", -1, "/")
 	setSecureCookie(c, "refresh_token", "", -1, "/auth/refresh")
+	clear2FASessionFlag(c)
 	c.Redirect(http.StatusFound, "/")
 }
 
@@ -235,12 +362,15 @@ func (h *AuthHandler) LogoutAll(c *gin.Context) {
 // @Success 200 {string} html "Страница регистрации"
 // @Router /auth/register [get]
 func (h *AuthHandler) ShowRegisterForm(c *gin.Context) {
+	c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
 	render.Page(c, http.StatusOK, "auth-register.html", gin.H{
-		"Title": "Регистрация",
+		"Title": render.Tr(c, "auth.register_title"),
 		"csrf":  csrf.GetToken(c),
 		"Breadcrumbs": []map[string]string{
-			{"name": "Главная", "url": "/"},
-			{"name": "Регистрация"},
+			{"name": "nav.home", "url": "/"},
+			{"name": "nav.register"},
 		},
 	})
 }
@@ -285,7 +415,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		render.Page(c, http.StatusBadRequest, "auth-register.html", gin.H{
 			"Title":  "Регистрация",
 			"Errors": validation.FieldErrors{"password": err.Error()},
-			"Error":  err.Error(),
+			"Error":  render.LocalizeError(c, err.Error()),
 			"csrf":   csrf.GetToken(c),
 		})
 		return
@@ -293,11 +423,10 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	user, err := h.authSvc.Register(c.Request.Context(), cleanEmail, input.Password, cleanName)
 	if err != nil {
-		render.Page(c, http.StatusConflict, "auth-register.html", gin.H{
-			"Title":  "Регистрация",
-			"Errors": validation.FieldErrors{"email": "Email уже зарегистрирован"},
-			"Error":  "Email уже зарегистрирован",
-			"csrf":   csrf.GetToken(c),
+		render.Page(c, http.StatusOK, "auth-register.html", gin.H{
+			"Title":   "Регистрация",
+			"Success": "Если регистрация прошла успешно, проверьте вашу почту",
+			"csrf":    csrf.GetToken(c),
 		})
 		return
 	}
@@ -316,8 +445,11 @@ func (h *AuthHandler) Register(c *gin.Context) {
 // @Success 200 {string} html "Форма восстановления"
 // @Router /auth/forgot [get]
 func (h *AuthHandler) ShowForgotForm(c *gin.Context) {
+	c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
 	render.Page(c, http.StatusOK, "auth-forgot.html", gin.H{
-		"Title": "Восстановление пароля",
+		"Title": render.Tr(c, "auth.forgot_title"),
 		"csrf":  csrf.GetToken(c),
 	})
 }
@@ -357,7 +489,12 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 		if genErr != nil {
 			log.Error().Err(genErr).Str("email", input.Email).Msg("ForgotPassword: failed to generate token")
 		} else if !h.cfg.SMTP.Enabled {
-			log.Info().Str("email", input.Email).Str("reset_code", resetCode).Msg("ForgotPassword: reset link (SMTP disabled, see log)")
+			// Mask reset code in logs for security — show first 4 chars only
+			maskedCode := resetCode
+			if len(maskedCode) > 4 {
+				maskedCode = maskedCode[:4] + "****"
+			}
+			log.Info().Str("email", input.Email).Str("reset_code", maskedCode).Msg("ForgotPassword: reset link (SMTP disabled, see log)")
 		} else if h.emailSvc != nil {
 			resetURL := h.cfg.Server.BaseURL + "/auth/reset/" + resetCode
 			subject := "Восстановление пароля"
@@ -386,17 +523,12 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 // @Success 200 {string} html "Форма сброса пароля"
 // @Router /auth/reset/{resetCode} [get]
 func (h *AuthHandler) ShowResetForm(c *gin.Context) {
+	c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
 	resetCode := sanitize.StripHTML(c.Param("resetCode"))
 	if resetCode == "" {
 		render.RenderErrorPage(c, http.StatusBadRequest)
-		return
-	}
-	if _, err := h.passwordResetSvc.passResetRepo.GetTokenByResetCode(c.Request.Context(), resetCode); err != nil {
-		render.Page(c, http.StatusBadRequest, "auth-reset.html", gin.H{
-			"Title": "Сброс пароля",
-			"Error": "Недействительная или истёкшая ссылка для сброса пароля",
-			"csrf":  csrf.GetToken(c),
-		})
 		return
 	}
 	render.Page(c, http.StatusOK, "auth-reset.html", gin.H{
@@ -435,11 +567,7 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 		return
 	}
 
-	var userID uint
-	token, err := h.passwordResetSvc.passResetRepo.GetTokenByResetCode(c.Request.Context(), input.ResetCode)
-	if err == nil {
-		userID = token.UserID
-	}
+	userID := h.passwordResetSvc.GetUserIDByResetCode(c.Request.Context(), input.ResetCode)
 
 	if err := validation.ValidatePasswordStrength(input.Password); err != nil {
 		render.Page(c, http.StatusBadRequest, "auth-reset.html", gin.H{
@@ -465,9 +593,16 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	}
 
 	if userID != 0 {
+		// Revoke old JWT via JTI blacklist
+		if jwtCookie, jwtErr := c.Cookie("jwt"); jwtErr == nil && jwtCookie != "" {
+			h.authSvc.RevokeJWT(c.Request.Context(), jwtCookie)
+		}
 		if err := h.authSvc.RevokeAllUserTokens(c.Request.Context(), userID); err != nil {
 			log.Error().Err(err).Uint("user_id", userID).Msg("ResetPassword: failed to revoke refresh tokens")
 		}
+		// Clear JWT cookie after password reset to force re-login
+		setSecureCookie(c, "jwt", "", -1, "/")
+		setSecureCookie(c, "refresh_token", "", -1, "/auth/refresh")
 	}
 
 	if userID != 0 {
@@ -503,29 +638,29 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 // @Description Активирует email пользователя по коду из письма
 // @Tags auth
 // @Produce html
-// @Param code query string true "Код подтверждения"
+// @Param code formData string true "Код подтверждения"
 // @Success 200 {string} html "Страница подтверждения"
 // @Failure 400 {object} map[string]interface{} "Неверный или просроченный код"
-// @Router /auth/verify [get]
+// @Router /auth/verify [post]
 func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 	var req VerifyEmailRequest
-	if err := c.ShouldBindQuery(&req); err != nil {
+	if err := c.ShouldBind(&req); err != nil {
 		render.Page(c, http.StatusBadRequest, "auth-verify_error.html", gin.H{
-			"Title": "Ошибка",
-			"Error": "Неверный или отсутствующий код подтверждения",
+			"Title": render.Tr(c, "generic.error"),
+			"Error": render.Tr(c, "handler.verify_code_invalid"),
 		})
 		return
 	}
 
 	if _, err := h.emailVerificationSvc.VerifyByCode(c.Request.Context(), req.Code); err != nil {
 		render.Page(c, http.StatusBadRequest, "auth-verify_error.html", gin.H{
-			"Title": "Ошибка",
-			"Error": err.Error(),
+			"Title": render.Tr(c, "generic.error"),
+			"Error": render.LocalizeError(c, err.Error()),
 		})
 		return
 	}
 	render.Page(c, http.StatusOK, "auth-verify_success.html", gin.H{
-		"Title": "Email подтверждён",
+		"Title": render.Tr(c, "handler.email_verified"),
 	})
 }
 
@@ -540,18 +675,22 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 func (h *AuthHandler) OAuthLogin(c *gin.Context) {
 	var req OAuthProviderRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверный провайдер")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_provider"))
 		return
 	}
 
 	url, state, err := h.oauthSvc.GetAuthURL(req.Provider)
 	if err != nil {
-		render.RenderError(c, http.StatusBadRequest, err.Error())
+		render.RenderError(c, http.StatusBadRequest, render.LocalizeError(c, err.Error()))
 		return
 	}
 
 	session := sessions.Default(c)
 	session.Set("oauth_state", state)
+	session.Set("oauth_state_created", time.Now().Unix())
+	// NOTE: Session fixation is mitigated because auth uses JWT cookies, not session data.
+	// After OAuth callback, the old session is cleared (oauth_state deleted) and a new
+	// session is created implicitly on the next request to the redirect target.
 	if err := session.Save(); err != nil {
 		log.Error().Err(err).Msg("OAuthLogin: failed to save session")
 		render.RenderErrorPage(c, http.StatusInternalServerError)
@@ -575,8 +714,8 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 	var req OAuthProviderRequest
 	if err := c.ShouldBindUri(&req); err != nil {
 		render.Page(c, http.StatusBadRequest, "auth-login.html", gin.H{
-			"Title": "Вход",
-			"Error": "Неверный провайдер",
+			"Title": render.Tr(c, "auth.login_title"),
+			"Error": render.Tr(c, "handler.invalid_provider"),
 			"csrf":  csrf.GetToken(c),
 		})
 		return
@@ -586,8 +725,8 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 	state := c.Query("state")
 	if code == "" {
 		render.Page(c, http.StatusBadRequest, "auth-login.html", gin.H{
-			"Title": "Вход",
-			"Error": "Отсутствует код авторизации",
+			"Title": render.Tr(c, "auth.login_title"),
+			"Error": render.Tr(c, "handler.missing_code"),
 			"csrf":  csrf.GetToken(c),
 		})
 		return
@@ -599,13 +738,24 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 	if !ok || subtle.ConstantTimeCompare([]byte(savedStateStr), []byte(state)) != 1 {
 		log.Warn().Str("provider", req.Provider).Str("state", state).Msg("OAuthCallback: state mismatch")
 		render.Page(c, http.StatusBadRequest, "auth-login.html", gin.H{
-			"Title": "Вход",
-			"Error": "Ошибка авторизации: неверный параметр state",
+			"Title": render.Tr(c, "auth.login_title"),
+			"Error": render.Tr(c, "handler.state_mismatch"),
 			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
+
+	// Check OAuth state expiry — require the created timestamp to exist
+	stateCreatedVal := session.Get("oauth_state_created")
+	stateCreated, ok := stateCreatedVal.(int64)
+	if !ok || time.Now().Unix()-stateCreated > 600 { // 10 minutes
+		log.Warn().Interface("state_created", stateCreatedVal).Msg("OAuthCallback: state expiry missing or expired")
+		render.RenderErrorPage(c, http.StatusBadRequest)
+		return
+	}
+
 	session.Delete("oauth_state")
+	session.Delete("oauth_state_created")
 	if err := session.Save(); err != nil {
 		log.Error().Err(err).Msg("OAuthCallback: failed to clear session")
 	}
@@ -614,25 +764,38 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			render.Page(c, http.StatusBadRequest, "auth-login.html", gin.H{
-				"Title": "Вход",
-				"Error": "Пользователь не найден",
+				"Title": render.Tr(c, "auth.login_title"),
+				"Error": render.Tr(c, "handler.user_not_found"),
 				"csrf":  csrf.GetToken(c),
 			})
 		} else {
 			render.Page(c, http.StatusBadRequest, "auth-login.html", gin.H{
-				"Title": "Вход",
-				"Error": "Ошибка входа через " + req.Provider,
+				"Title": render.Tr(c, "auth.login_title"),
+				"Error": render.Trf(c, "handler.login_error_with", req.Provider),
 				"csrf":  csrf.GetToken(c),
 			})
 		}
 		return
 	}
 
+	// 2FA: если у пользователя включена двухфакторная аутентификация — не выдаём
+	// токены сразу, а перенаправляем на ввод TOTP (защита от обхода 2FA через OAuth).
+	if user.TwoFactorEnabled {
+		sess := sessions.Default(c)
+		sess.Set("pending_user_id", user.ID)
+		sess.Set("pending_email", user.Email)
+		if saveErr := sess.Save(); saveErr != nil {
+			log.Error().Err(saveErr).Msg("OAuthCallback: failed to save 2FA pending session")
+		}
+		c.Redirect(http.StatusFound, "/auth/2fa/login?return_url=/dashboard")
+		return
+	}
+
 	token, err := h.authSvc.GenerateJWT(*user)
 	if err != nil {
 		render.Page(c, http.StatusInternalServerError, "auth-login.html", gin.H{
-			"Title": "Вход",
-			"Error": "Внутренняя ошибка",
+			"Title": render.Tr(c, "auth.login_title"),
+			"Error": render.Tr(c, "handler.internal_error"),
 			"csrf":  csrf.GetToken(c),
 		})
 		return
@@ -640,7 +803,7 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 	setSecureCookie(c, "jwt", token, int(h.cfg.JWT.AccessExpiry.Seconds()), "/")
 
 	deviceID := c.GetHeader("X-Device-ID")
-	refreshToken, err := h.authSvc.GenerateRefreshToken(c.Request.Context(), *user, deviceID)
+	refreshToken, err := h.authSvc.GenerateRefreshToken(c.Request.Context(), *user, deviceID, clientFingerprint(c))
 	if err == nil {
 		setSecureCookie(c, "refresh_token", refreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/auth/refresh")
 	} else {

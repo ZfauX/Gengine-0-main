@@ -2,18 +2,16 @@
 <div class="max-w-lg mx-auto">
     <div class="card text-center">
         <div class="text-5xl mb-4">✅</div>
-        <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">Двухфакторная аутентификация включена</h1>
+        <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">{{ T $.Lang "twofa.enabled_title" }}</h1>
         <p class="text-gray-600 dark:text-gray-400 mb-6">
-            Ваш аккаунт теперь защищён двухфакторной аутентификацией.
-            При каждом входе в систему потребуется код из приложения-аутентификатора.
+            {{ T $.Lang "twofa.enabled_message" }}
         </p>
 
         {{if .BackupCodes}}
         <div class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-md p-4 mb-6 text-left">
-            <h2 class="font-semibold text-yellow-800 dark:text-yellow-200 mb-2">⚠️ Резервные коды</h2>
+            <h2 class="font-semibold text-yellow-800 dark:text-yellow-200 mb-2">{{ T $.Lang "twofa.backup_codes_title" }}</h2>
             <p class="text-sm text-yellow-700 dark:text-yellow-300 mb-3">
-                Сохраните эти коды в надёжном месте. Они понадобятся, если вы потеряете доступ к приложению-аутентификатору.
-                Каждый код можно использовать только один раз.
+                {{ T $.Lang "twofa.backup_codes_message" }}
             </p>
             <div class="grid grid-cols-2 gap-1 font-mono text-sm">
                 {{range .BackupCodes}}
@@ -23,7 +21,7 @@
         </div>
         {{end}}
 
-        <a href="/dashboard" class="btn btn-primary">Перейти в личный кабинет</a>
+        <a href="/dashboard" class="btn btn-primary">{{ T $.Lang "twofa.go_to_dashboard" }}</a>
     </div>
 </div>
 {{end}}

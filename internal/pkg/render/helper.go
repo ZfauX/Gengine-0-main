@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 
 	"gengine-0/internal/pkg/i18n"
@@ -131,17 +132,43 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 	}
 
 	// Добавляем язык в данные шаблона для {{ T }}/{{ TF }} в шаблонах
-	// TODO: data["lang"] is reserved for future use — i18n wiring is in progress
 	lang := i18n.FromCtx(c)
-	data["lang"] = string(lang)
+	data["Lang"] = string(lang)
+
+	// Добавляем информацию о пользователе из контекста (если не переопределено хендлером)
+	if _, exists := data["CurrentUserID"]; !exists {
+		data["CurrentUserID"] = c.GetUint("userID")
+	}
+	if _, exists := data["IsAdmin"]; !exists {
+		data["IsAdmin"] = middleware.IsAdmin(c)
+	}
+
+	// Добавляем настройки темы из контекста (загружены auth-мидлварью для авторизованных)
+	if _, exists := data["ThemeSettings"]; !exists {
+		if ts, ok := middleware.ThemeSettingsFromCtx(c); ok {
+			data["ThemeSettings"] = ts
+		}
+	}
 
 	// Добавляем nonce в данные шаблона
 	nonce := middleware.GetCSPNonce(c)
 	data["csp_nonce"] = nonce
 
-	// Add flash message from session
-	if flash := GetFlash(c, "flash"); flash != "" {
-		data["Flash"] = flash
+	// Add flash message from session — поддерживаем разные ключи (error/success/flash/...)
+	// Хендлеры ставят SetFlash(c, "error"|"success"|"gameplay_error"|"gameplay_hint", msg).
+	for _, key := range []string{"error", "success", "flash", "gameplay_error", "gameplay_hint"} {
+		if flash := GetFlash(c, key); flash != "" {
+			data["Flash"] = flash
+			switch key {
+			case "error", "gameplay_error":
+				data["FlashType"] = "error"
+			case "gameplay_hint":
+				data["FlashType"] = "info"
+			default:
+				data["FlashType"] = "success"
+			}
+			break
+		}
 	}
 
 	// Add canonical URL if not set
@@ -224,6 +251,22 @@ func ParseID(c *gin.Context, paramName string) (uint, bool) {
 	return uint(id), true
 }
 
+// Tr переводит ключ i18n в язык текущего запроса (для использования в хендлерах).
+func Tr(c *gin.Context, key string) string {
+	if i18n.Default == nil {
+		return key
+	}
+	return i18n.Default.T(i18n.FromCtx(c), key)
+}
+
+// Trf переводит ключ i18n с аргументами форматирования в язык текущего запроса.
+func Trf(c *gin.Context, key string, args ...any) string {
+	if i18n.Default == nil {
+		return key
+	}
+	return i18n.Default.TF(i18n.FromCtx(c), key, args...)
+}
+
 // ParseIDQuery парсит ID из query-параметра.
 func ParseIDQuery(c *gin.Context, paramName string) (uint, bool) {
 	idStr := c.Query(paramName)
@@ -237,6 +280,8 @@ func ParseIDQuery(c *gin.Context, paramName string) (uint, bool) {
 
 // SetBreadcrumb добавляет breadcrumb в данные шаблона.
 // data — карта gin.H, items — список элементов навигации.
+// Если Name содержит точку (i18n-ключ вида "nav.home") — выводится через name_key (T),
+// иначе — как raw-имя (например, имя игры/команды) через name без перевода.
 func SetBreadcrumb(data gin.H, items ...BreadcrumbItem) {
 	if data == nil {
 		data = gin.H{}
@@ -244,10 +289,16 @@ func SetBreadcrumb(data gin.H, items ...BreadcrumbItem) {
 	// Конвертируем в формат, понятный шаблону (слайс map'ов)
 	breadcrumbs := make([]map[string]string, len(items))
 	for i, item := range items {
-		breadcrumbs[i] = map[string]string{
-			"name": item.Name,
-			"url":  item.URL,
+		crumb := map[string]string{
+			"url": item.URL,
 		}
+		if strings.Contains(item.Name, ".") {
+			crumb["name_key"] = item.Name
+			crumb["name"] = item.Name
+		} else {
+			crumb["name"] = item.Name
+		}
+		breadcrumbs[i] = crumb
 	}
 	data["Breadcrumbs"] = breadcrumbs
 }

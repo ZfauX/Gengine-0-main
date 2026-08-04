@@ -2,19 +2,45 @@
 // Loading indicators, autocomplete, inline validation, toast notifications, offline detection, push subscriptions, file upload progress, auto-save drafts
 
 // =============================================================================
+// i18n helper: read translated strings from <body> data attributes
+// =============================================================================
+function tI18n(key, fallback) {
+    var body = document.body;
+    if (!body) return fallback || key;
+    var val = body.getAttribute('data-i18n-' + key);
+    return (val != null && val !== '') ? val : (fallback || key);
+}
+
+// =============================================================================
 // UX1: Global online/offline detector with toast notification
 // =============================================================================
 function initOfflineDetector() {
     function updateOnlineStatus() {
+        var offlineMsg = tI18n('offline', 'Соединение потеряно. Изменения могут не сохраниться.');
+        var onlineMsg = tI18n('online', 'Соединение восстановлено.');
         if (!navigator.onLine) {
-            showToast('Соединение потеряно. Изменения могут не сохраниться.', 'warning', 0);
+            showToast(offlineMsg, 'warning', 0);
         } else {
-            showToast('Соединение восстановлено.', 'success', 3000);
+            // Убираем «вечный» warning-тост и показываем восстановление.
+            removeWarningToasts();
+            showToast(onlineMsg, 'success', 3000);
         }
     }
 
     window.addEventListener('offline', updateOnlineStatus);
     window.addEventListener('online', updateOnlineStatus);
+}
+
+// Удаляет «вечные» warning-тосты (duration=0), чтобы они не копились при флапах сети.
+function removeWarningToasts() {
+    var container = document.getElementById('toast-container');
+    if (!container) return;
+    var toasts = container.querySelectorAll('.toast-warning');
+    toasts.forEach(function(t) {
+        t.style.transition = 'opacity .3s';
+        t.style.opacity = '0';
+        setTimeout(function() { t.remove(); }, 350);
+    });
 }
 
 // =============================================================================
@@ -43,8 +69,7 @@ function initToast() {
         var toast = document.createElement('div');
         toast.className = 'toast toast-' + type + ' transition-all duration-300 ease-in-out';
         var closeBtn = document.createElement('button');
-        closeBtn.className = 'shrink-0 text-gray-400 hover:text-gray-600';
-        closeBtn.setAttribute('aria-label', 'Закрыть');
+        closeBtn.className = 'shrink-0 text-gray-400 hover:text-gray-600';        closeBtn.setAttribute('aria-label', tI18n('confirm-cancel') || 'Закрыть');
         closeBtn.innerHTML = '&times;';
         closeBtn.addEventListener('click', function() { toast.remove(); });
         toast.innerHTML = '<div class="flex items-start gap-3">' +
@@ -74,10 +99,14 @@ function initFormLoading() {
     var forms = document.querySelectorAll('form');
     forms.forEach(function(form) {
         form.addEventListener('submit', function(e) {
+            // Формы с кастомным подтверждением (data-confirm-form) могут быть отменены
+            // document-обработчиком — не блокируем кнопку заранее, иначе после «Отмена»
+            // она останется залипшей со спиннером.
+            if (form.hasAttribute('data-confirm-form')) return;
             var btn = this.querySelector('button[type="submit"]');
             if (btn && !btn.dataset.noLoading) {
                 btn.disabled = true;
-                btn.innerHTML = '<span class="inline-block animate-spin mr-1">\u27F3</span> ' + (btn.dataset.loadingText || 'Отправка...');
+                btn.innerHTML = '<span class="inline-block animate-spin mr-1">\u27F3</span> ' + (btn.dataset.loadingText || tI18n('sending'));
                 btn.classList.add('opacity-70', 'cursor-not-allowed');
             }
         });
@@ -96,21 +125,27 @@ function initConfirmDialogs() {
                 delete this.dataset.__confirming;
                 return;
             }
-            var hasHtmx = this.hasAttribute('hx-delete') || this.hasAttribute('hx-post') || this.hasAttribute('hx-put');
-            if (hasHtmx) {
-                e.preventDefault();
-                var confirmed = await showModalConfirm(message, this);
-                if (confirmed) {
-                    this.dataset.__confirming = '1';
-                    this.click();
-                }
-            } else {
-                if (!confirm(message)) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                }
+            e.preventDefault();
+            var confirmed = await showModalConfirm(message, this);
+            if (confirmed) {
+                this.dataset.__confirming = '1';
+                this.click();
             }
         });
+    });
+
+    // Handle data-confirm-form for form submissions (async modal instead of native confirm)
+    document.addEventListener('submit', async function(e) {
+        var form = e.target.closest('[data-confirm-form]');
+        if (!form) return;
+        e.preventDefault();
+        var message = form.getAttribute('data-confirm-form');
+        var confirmed = await showModalConfirm(message, form);
+        if (confirmed) {
+            // Remove the attribute to prevent loop, then submit
+            form.removeAttribute('data-confirm-form');
+            form.submit();
+        }
     });
 }
 
@@ -118,45 +153,97 @@ function showModalConfirm(message, element) {
     var existing = document.getElementById('confirm-modal');
     if (existing) existing.remove();
 
+    var resolvePromise;
+    var promise = new Promise(function(resolve) {
+        resolvePromise = resolve;
+    });
+
+    var body = document.body;
+    var title = body.getAttribute('data-i18n-confirm-title') || 'Подтверждение';
+    var cancelText = body.getAttribute('data-i18n-confirm-cancel') || 'Отмена';
+    var okText = body.getAttribute('data-i18n-confirm-ok') || 'Удалить';
+
     var overlay = document.createElement('div');
     overlay.id = 'confirm-modal';
     overlay.className = 'fixed inset-0 z-[10000] flex items-center justify-center bg-black/50';
     overlay.innerHTML =
         '<div class="bg-white rounded-xl shadow-2xl p-6 max-w-md mx-4 w-full">' +
-        '<div class="text-xl font-semibold mb-2">Подтверждение</div>' +
+        '<div class="text-xl font-semibold mb-2">' + title + '</div>' +
         '<p class="text-gray-600 mb-6">' + escapeHtml(message) + '</p>' +
         '<div class="flex justify-end gap-3">' +
-        '<button id="confirm-cancel" class="px-4 py-2 text-gray-600 hover:text-gray-800 bg-gray-100 rounded-lg hover:bg-gray-200 transition">Отмена</button>' +
-        '<button id="confirm-ok" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition">Удалить</button>' +
+        '<button id="confirm-cancel" class="px-4 py-2 text-gray-600 hover:text-gray-800 bg-gray-100 rounded-lg hover:bg-gray-200 transition">' + cancelText + '</button>' +
+        '<button id="confirm-ok" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition">' + okText + '</button>' +
         '</div>' +
         '</div>';
 
     document.body.appendChild(overlay);
 
-    return new Promise(function(resolve) {
-        document.getElementById('confirm-cancel').addEventListener('click', function() {
+    // Focus trap — Tab/Shift+Tab cycle within modal
+    var focusableSelector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+    var focusableElements = overlay.querySelectorAll(focusableSelector);
+    var firstFocusable = focusableElements[0];
+    var lastFocusable = focusableElements[focusableElements.length - 1];
+
+    overlay.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
             overlay.remove();
-            resolve(false);
-        });
-        document.getElementById('confirm-ok').addEventListener('click', function() {
-            overlay.remove();
-            resolve(true);
-        });
-        overlay.addEventListener('click', function(e) {
-            if (e.target === overlay) {
-                overlay.remove();
-                resolve(false);
+            resolvePromise(false);
+            return;
+        }
+        if (e.key === 'Tab') {
+            if (e.shiftKey) {
+                if (document.activeElement === firstFocusable) {
+                    e.preventDefault();
+                    if (lastFocusable) lastFocusable.focus();
+                }
+            } else {
+                if (document.activeElement === lastFocusable) {
+                    e.preventDefault();
+                    if (firstFocusable) firstFocusable.focus();
+                }
             }
-        });
+        }
     });
+
+    // Move focus to first focusable element in modal
+    if (firstFocusable) {
+        firstFocusable.focus();
+    }
+
+    document.getElementById('confirm-cancel').addEventListener('click', function() {
+        overlay.remove();
+        resolvePromise(false);
+    });
+    document.getElementById('confirm-ok').addEventListener('click', function() {
+        overlay.remove();
+        resolvePromise(true);
+    });
+    overlay.addEventListener('click', function(e) {
+        if (e.target === overlay) {
+            overlay.remove();
+            resolvePromise(false);
+        }
+    });
+
+    return promise;
 }
 
 // =============================================================================
 // UX6: File upload progress bar + image preview
 // =============================================================================
 function initFileUploadProgress() {
+    // Track active upload per form
+    var activeUploads = {};
+
     var fileInputs = document.querySelectorAll('input[type="file"][data-progress]');
     fileInputs.forEach(function(input) {
+        var form = input.closest('form');
+        if (!form) return;
+
+        // Guard: only initialize each form once
+        if (form.dataset.progressInitialized) return;
+        form.dataset.progressInitialized = 'true';
+
         input.addEventListener('change', function() {
             var file = this.files[0];
             if (!file) return;
@@ -171,9 +258,6 @@ function initFileUploadProgress() {
                 reader.readAsDataURL(file);
             }
 
-            var form = this.closest('form');
-            if (!form) return;
-
             var progressContainer = document.getElementById(this.dataset.progress);
             if (!progressContainer) {
                 progressContainer = document.createElement('div');
@@ -181,45 +265,77 @@ function initFileUploadProgress() {
                 progressContainer.className = 'mt-2';
                 this.parentElement.appendChild(progressContainer);
             }
+        });
 
-            form.addEventListener('submit', function(e) {
+        // Attach submit listener ONCE (outside change handler)
+        form.addEventListener('submit', function(e) {
+            var file = input.files[0];
+            if (!file) return;
+
+            // Prevent duplicate submissions
+            var uploadKey = form.id || 'upload';
+            if (activeUploads[uploadKey]) {
+                showToast(tI18n('loading-already'), 'warning');
                 e.preventDefault();
-                var file = input.files[0];
-                if (!file) return;
+                return;
+            }
 
-                var xhr = new XMLHttpRequest();
-                var formData = new FormData(form);
-                var progressBar = progressContainer.querySelector('.progress-bar');
-                var progressText = progressContainer.querySelector('.progress-text');
+            e.preventDefault();
 
-                if (!progressBar) {
-                    progressContainer.innerHTML =
-                        '<div class="w-full bg-gray-200 rounded-full h-3">' +
-                        '<div class="progress-bar bg-blue-600 h-3 rounded-full transition-all duration-300" style="width:0%"></div>' +
-                        '</div>' +
-                        '<div class="progress-text text-sm text-gray-500 mt-1">0%</div>';
+            var xhr = new XMLHttpRequest();
+            var formData = new FormData(form);
+            var progressContainer = document.getElementById(input.dataset.progress);
+            if (!progressContainer) {
+                progressContainer = document.createElement('div');
+                progressContainer.id = input.dataset.progress;
+                progressContainer.className = 'mt-2';
+                input.parentElement.appendChild(progressContainer);
+            }
+
+            var progressBar = progressContainer.querySelector('.progress-bar');
+            var progressText = progressContainer.querySelector('.progress-text');
+
+            if (!progressBar) {
+                progressContainer.innerHTML =
+                    '<div class="w-full bg-gray-200 rounded-full h-3">' +
+                    '<div class="progress-bar bg-blue-600 h-3 rounded-full transition-all duration-300" style="width:0%"></div>' +
+                    '</div>' +
+                    '<div class="progress-text text-sm text-gray-500 mt-1">0%</div>';
+            }
+
+            // Disable submit button
+            var submitBtn = form.querySelector('[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
+
+            xhr.upload.addEventListener('progress', function(e) {
+                if (e.lengthComputable) {
+                    var percent = Math.round((e.loaded / e.total) * 100);
+                    progressContainer.querySelector('.progress-bar').style.width = percent + '%';
+                    progressContainer.querySelector('.progress-text').textContent = percent + '%';
                 }
+            });
 
-                xhr.upload.addEventListener('progress', function(e) {
-                    if (e.lengthComputable) {
-                        var percent = Math.round((e.loaded / e.total) * 100);
-                        progressContainer.querySelector('.progress-bar').style.width = percent + '%';
-                        progressContainer.querySelector('.progress-text').textContent = percent + '%';
-                    }
-                });
+            xhr.addEventListener('load', function() {
+                if (xhr.status === 200) {
+                    showToast(tI18n('file-uploaded'), 'success');
+                } else {
+                    showToast(tI18n('file-upload-error'), 'error');
+                }
+                progressContainer.innerHTML = '';
+            });
 
-                xhr.addEventListener('load', function() {
-                    if (xhr.status === 200) {
-                        showToast('Файл успешно загружен', 'success');
-                    } else {
-                        showToast('Ошибка загрузки файла', 'error');
-                    }
-                    progressContainer.innerHTML = '';
-                });
+            xhr.addEventListener('loadend', function() {
+                // Re-enable submit button
+                if (submitBtn) submitBtn.disabled = false;
+                // Clear active upload flag
+                delete activeUploads[uploadKey];
+            });
 
-                xhr.open(form.method || 'POST', form.action);
-                xhr.send(formData);
-            }, { once: true });
+            // Track active upload
+            activeUploads[uploadKey] = true;
+
+            xhr.open(form.method || 'POST', form.action);
+            xhr.send(formData);
         });
     });
 }
@@ -231,7 +347,7 @@ function initAutoSaveDrafts() {
     var draftForms = document.querySelectorAll('[data-autosave]');
     draftForms.forEach(function(form) {
         var key = form.dataset.autosave;
-        var fields = form.querySelectorAll('input:not([type="password"]):not([type="hidden"]), textarea, select');
+        var fields = form.querySelectorAll('input:not([type="password"]):not([type="hidden"]):not([data-nosave]), textarea:not([data-nosave]), select:not([data-nosave])');
 
         // Restore draft on page load
         var draft = localStorage.getItem(key);
@@ -243,7 +359,7 @@ function initAutoSaveDrafts() {
                         field.value = data[field.name];
                     }
                 });
-                showToast('Черновик восстановлен', 'info', 3000);
+                showToast(tI18n('draft-restored'), 'info', 3000);
             } catch (e) {
                 localStorage.removeItem(key);
             }
@@ -269,28 +385,56 @@ function initAutoSaveDrafts() {
 // =============================================================================
 // UX5: Web Push subscription
 // =============================================================================
-// UX5: Web Push subscription
-// =============================================================================
 function initPushSubscription() {
-    if (!('Notification' in window) || !('serviceWorker' in navigator)) return;
-
     var enableBtn = document.getElementById('enable-push');
     var disableBtn = document.getElementById('disable-push');
     var statusEl = document.getElementById('push-status');
-    if (!enableBtn || !disableBtn || !statusEl) return;
+    // enableBtn обязателен; disable-push и push-status могут отсутствовать
+    // (например, на странице /settings/notifications) — работаем и без них.
+    if (!enableBtn) return;
+
+    function disableEnable(reason) {
+        showDisabled(reason);
+        enableBtn.disabled = true;
+        enableBtn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+
+    // 1. Проверка поддержки Push API.
+    // На не-secure origin (http://<IP>) Notification/ServiceWorker/PushManager недоступны —
+    // раньше кнопка молча ничего не делала, теперь даём понятное сообщение.
+    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+        disableEnable(tI18n('push-unsupported'));
+        return;
+    }
+
+    // 2. Web Push работает только в secure context (HTTPS или localhost).
+    if (window.isSecureContext === false) {
+        disableEnable(tI18n('push-https-required'));
+        return;
+    }
+
+    // 3. Нет VAPID-ключа на сервере — push не настроен.
+    if (!enableBtn.dataset.vapidKey) {
+        disableEnable(tI18n('push-misconfigured'));
+        return;
+    }
 
     function showEnabled() {
-        enableBtn.style.display = 'none';
-        disableBtn.style.display = '';
-        statusEl.textContent = 'Push-уведомления активны';
-        statusEl.className = 'text-xs text-green-600 dark:text-green-400 mt-2';
+        enableBtn.classList.add('hidden');
+        if (disableBtn) disableBtn.classList.remove('hidden');
+        if (statusEl) {
+            statusEl.textContent = tI18n('push-active');
+            statusEl.className = 'text-xs text-green-600 dark:text-green-400 mt-2';
+        }
     }
 
     function showDisabled(reason) {
-        enableBtn.style.display = '';
-        disableBtn.style.display = 'none';
-        statusEl.textContent = reason || 'Нажмите "Включить", чтобы получать push-уведомления';
-        statusEl.className = 'text-xs text-gray-500 dark:text-gray-400 mt-2';
+        enableBtn.classList.remove('hidden');
+        if (disableBtn) disableBtn.classList.add('hidden');
+        if (statusEl) {
+            statusEl.textContent = reason || tI18n('push-enable-hint');
+            statusEl.className = 'text-xs text-gray-500 dark:text-gray-400 mt-2';
+        }
     }
 
     // При загрузке — проверяем Notification.permission
@@ -317,34 +461,37 @@ function initPushSubscription() {
                         body: JSON.stringify(subscription)
                     }).catch(function(e) {
                         console.warn('Push subscribe save failed:', e);
+                        showToast(tI18n('push-save-failed'), 'error');
                     });
                 }).catch(function(err) {
                     console.warn('Push SW subscribe failed:', err);
                 });
             } else {
-                showDisabled('Разрешите уведомления в настройках браузера');
+                showDisabled(tI18n('push-allow-browser'));
             }
         });
     });
 
-    disableBtn.addEventListener('click', function() {
-        showDisabled('Push-уведомления отключены');
-        navigator.serviceWorker.ready.then(function(registration) {
-            return registration.pushManager.getSubscription();
-        }).then(function(subscription) {
-            if (!subscription) return;
-            var endpoint = subscription.endpoint;
-            subscription.unsubscribe().then(function() {
-                fetch('/api/push/unsubscribe', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ endpoint: endpoint })
-                }).catch(function(e) { console.warn('Push unsubscribe save failed:', e); });
+    if (disableBtn) {
+        disableBtn.addEventListener('click', function() {
+            showDisabled(tI18n('push-disabled'));
+            navigator.serviceWorker.ready.then(function(registration) {
+                return registration.pushManager.getSubscription();
+            }).then(function(subscription) {
+                if (!subscription) return;
+                var endpoint = subscription.endpoint;
+                subscription.unsubscribe().then(function() {
+                    fetch('/api/push/unsubscribe', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ endpoint: endpoint })
+                    }).catch(function(e) { console.warn('Push unsubscribe save failed:', e); });
+                });
+            }).catch(function(err) {
+                console.warn('Push unsubscribe failed:', err);
             });
-        }).catch(function(err) {
-            console.warn('Push unsubscribe failed:', err);
         });
-    });
+    }
 }
 
 // =============================================================================
@@ -379,7 +526,7 @@ function initSearchAutocomplete() {
     var dropdown = document.createElement('div');
     dropdown.id = 'searchDropdown';
     dropdown.className = 'absolute z-50 mt-1 w-full bg-white rounded-lg shadow-lg border border-gray-200 max-h-60 overflow-y-auto hidden';
-    dropdown.innerHTML = '<div class="p-3 text-sm text-gray-400 text-center">Начните вводить название игры</div>';
+    dropdown.innerHTML = '<div class="p-3 text-sm text-gray-400 text-center">' + tI18n('start-typing-hint') + '</div>';
     container.style.position = 'relative';
     container.appendChild(dropdown);
 
@@ -397,10 +544,13 @@ function initSearchAutocomplete() {
 
         debounceTimer = setTimeout(function() {
             fetch('/api/search/games?q=' + encodeURIComponent(query))
-                .then(function(r) { return r.json(); })
+                .then(function(r) {
+                    if (!r.ok) { throw new Error('HTTP ' + r.status); }
+                    return r.json();
+                })
                 .then(function(data) {
                     if (!data.results || data.results.length === 0) {
-                        dropdown.innerHTML = '<div class="p-3 text-sm text-gray-400 text-center">Ничего не найдено</div>';
+                        dropdown.innerHTML = '<div class="p-3 text-sm text-gray-400 text-center">' + tI18n('nothing-found') + '</div>';
                         dropdown.classList.remove('hidden');
                         return;
                     }
@@ -416,10 +566,12 @@ function initSearchAutocomplete() {
                     selectedIndex = -1;
 
                     dropdown.querySelectorAll('.search-item').forEach(function(el) {
-                        el.addEventListener('click', function() {
-                            searchInput.value = this.textContent.trim();
-                            dropdown.classList.add('hidden');
-                            if (searchInput.form) searchInput.form.submit();
+                        el.addEventListener('click', function(e) {
+                            e.preventDefault();
+                            var url = this.getAttribute('data-url') || this.getAttribute('href');
+                            if (url) {
+                                window.location.href = url;
+                            }
                         });
                     });
                 })
@@ -499,80 +651,96 @@ function initInlineValidation() {
 // =============================================================================
 // UX8: SSE game status notifications
 // =============================================================================
-var _sseReconnectTimer = null;
 
 function initSSEGameNotifications(gameId) {
     if (!gameId) return;
 
     var eventSource = null;
+    var reconnectTimer = null;      // scoped per instance (not global)
+    var reconnectAttempts = 0;
+    var lastEventId = null;         // track for reconnect (Last-Event-ID)
+    var MAX_RECONNECT_ATTEMPTS = 5;
+    var BASE_RECONNECT_DELAY = 2000;
+    var MAX_RECONNECT_DELAY = 30000;
 
     function connectSSE() {
-        // Закрываем старый EventSource, если был (J4)
+        // Закрываем старый EventSource, если был
         if (eventSource) {
             eventSource.close();
         }
 
-        // Отменяем старый reconnect timer (J3)
-        if (_sseReconnectTimer) {
-            clearTimeout(_sseReconnectTimer);
-            _sseReconnectTimer = null;
+        // Отменяем старый reconnect timer
+        if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
         }
 
         try {
-            eventSource = new EventSource('/game/sse/' + gameId);
+            // Append lastEventId for event replay on reconnect
+            var url = '/game/sse/' + gameId + (lastEventId ? '?lastEventId=' + encodeURIComponent(lastEventId) : '');
+            eventSource = new EventSource(url);
 
             eventSource.onopen = function() {
                 console.debug('SSE connected for game', gameId);
+                reconnectAttempts = 0;
                 document.body.setAttribute('data-sse-active', 'true');
             };
 
             function parseSSEData(e) {
+                // Browser populates e.lastEventId from the SSE "id:" field
+                if (e && e.lastEventId) lastEventId = e.lastEventId;
                 try { return JSON.parse(e.data); } catch (_) { return null; }
             }
 
             eventSource.addEventListener('game_started', function(e) {
                 var data = parseSSEData(e);
-                if (data) showToast('🎮 Игра начата! Удачи всем командам!', 'success', 5000);
+                if (data) showToast(tI18n('game-started'), 'success', 5000);
             });
 
             eventSource.addEventListener('game_finished', function(e) {
                 var data = parseSSEData(e);
-                if (data) showToast('🏁 Игра завершена! Результаты обновлены.', 'info', 8000);
+                if (data) showToast(tI18n('game-finished'), 'info', 8000);
             });
 
             eventSource.addEventListener('team_disqualified', function(e) {
                 var data = parseSSEData(e);
                 if (data && data.team_id) {
-                    showToast('⚠️ Команда дисквалифицирована!', 'error', 10000);
+                    showToast(tI18n('team-disqualified'), 'error', 10000);
                 }
             });
 
             eventSource.addEventListener('level_completed', function(e) {
                 var data = parseSSEData(e);
                 if (data && data.team_id) {
-                    showToast('✅ Уровень пройден! Отличная работа!', 'success', 4000);
+                    showToast(tI18n('level-passed'), 'success', 4000);
                 }
             });
 
             eventSource.addEventListener('time_warning', function(e) {
                 var data = parseSSEData(e);
                 if (data && data.remaining_minutes) {
-                    showToast('⏰ Осталось ' + data.remaining_minutes + ' минут до завершения!', 'warning', 5000);
+                    showToast(tI18n('time-left') + data.remaining_minutes + ' ' + (data.remaining_minutes === 1 ? tI18n('minute-unit') : tI18n('minutes-unit')) + ' ' + tI18n('until-finish'), 'warning', 5000);
                 }
             });
 
             eventSource.addEventListener('hint_available', function(e) {
                 var data = parseSSEData(e);
                 if (data && data.level_number) {
-                    showToast('💡 Подсказка доступна для уровня ' + data.level_number, 'info', 4000);
+                    showToast(tI18n('hint-available') + data.level_number, 'info', 4000);
                 }
             });
 
             eventSource.onerror = function(err) {
-                console.warn('SSE error, reconnecting in 5s...', err);
                 eventSource.close();
                 document.body.removeAttribute('data-sse-active');
-                _sseReconnectTimer = setTimeout(connectSSE, 5000);
+                if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+                    console.warn('SSE: max reconnect attempts reached, stopping');
+                    return;
+                }
+                reconnectAttempts++;
+                var delay = Math.min(MAX_RECONNECT_DELAY, BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts - 1));
+                console.warn('SSE error, reconnecting in ' + Math.round(delay / 1000) + 's (attempt ' + reconnectAttempts + ')', err);
+                reconnectTimer = setTimeout(connectSSE, delay);
             };
         } catch (e) {
             console.warn('SSE not supported, notifications disabled:', e);
@@ -583,7 +751,7 @@ function initSSEGameNotifications(gameId) {
 
     // Cleanup on page unload
     window.addEventListener('beforeunload', function() {
-        if (_sseReconnectTimer) clearTimeout(_sseReconnectTimer);
+        if (reconnectTimer) clearTimeout(reconnectTimer);
         if (eventSource) eventSource.close();
     });
 }
@@ -612,13 +780,13 @@ function initTeamRatingIndicators() {
             placeBadge.className = 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium';
             if (place === 1) {
                 placeBadge.classList.add('bg-yellow-100', 'text-yellow-800');
-                placeBadge.textContent = '🥇 1-е';
+                placeBadge.textContent = tI18n('rank-1');
             } else if (place === 2) {
                 placeBadge.classList.add('bg-gray-100', 'text-gray-800');
-                placeBadge.textContent = '🥈 2-е';
+                placeBadge.textContent = tI18n('rank-2');
             } else if (place === 3) {
                 placeBadge.classList.add('bg-orange-100', 'text-orange-800');
-                placeBadge.textContent = '🥉 3-е';
+                placeBadge.textContent = tI18n('rank-3');
             } else {
                 placeBadge.classList.add('bg-blue-100', 'text-blue-800');
                 placeBadge.textContent = '#' + place;
@@ -648,7 +816,7 @@ function initTeamRatingIndicators() {
                 starHTML += '🌤️';
             }
             starsContainer.textContent = starHTML;
-            starsContainer.title = 'Рейтинг: ' + rating.toFixed(1);
+            starsContainer.title = tI18n('rating') + rating.toFixed(1);
 
             var ratingContainer = row.querySelector('.team-rating-container');
             if (!ratingContainer) {
@@ -678,7 +846,7 @@ function initSSEIndicator() {
     if (!gameId) return;
 
     indicator.className = 'inline-flex items-center text-sm text-yellow-600';
-    indicator.innerHTML = '<span class="animate-spin h-3 w-3 mr-1 border-2 border-yellow-600 border-t-transparent rounded-full"></span> Подключение...';
+    indicator.innerHTML = '<span class="animate-spin h-3 w-3 mr-1 border-2 border-yellow-600 border-t-transparent rounded-full"></span> ' + tI18n('connecting');
 
     // The SSE function will update the indicator on connect/error
     var originalConnect = window.initSSEGameNotifications;
@@ -692,7 +860,7 @@ function initSSEIndicator() {
             var origEventSource = EventSource;
             if (parseInt(id) === parseInt(gameId)) {
                 indicator.className = 'inline-flex items-center text-sm text-green-600';
-                indicator.innerHTML = '<span class="h-2 w-2 mr-1 bg-green-500 rounded-full"></span> Подключено';
+                indicator.innerHTML = '<span class="h-2 w-2 mr-1 bg-green-500 rounded-full"></span> ' + tI18n('connected');
             }
 
             originalConnect(id);
@@ -706,7 +874,7 @@ function initSSEIndicator() {
                 var esCheck = document.querySelector('[data-sse-active]');
                 if (!esCheck) {
                     indicator.className = 'inline-flex items-center text-sm text-yellow-600';
-                    indicator.innerHTML = '<span class="animate-spin h-3 w-3 mr-1 border-2 border-yellow-600 border-t-transparent rounded-full"></span> Переподключение...';
+                    indicator.innerHTML = '<span class="animate-spin h-3 w-3 mr-1 border-2 border-yellow-600 border-t-transparent rounded-full"></span> ' + tI18n('reconnecting');
                 } else {
                     if (window._sseCheckInterval) {
                         clearInterval(window._sseCheckInterval);
@@ -735,7 +903,7 @@ function initAutoSaveIndicator() {
     forms.forEach(function(form) {
         var indicator = document.createElement('div');
         indicator.className = 'text-xs text-gray-400 mt-1';
-        indicator.textContent = '✓ Сохранено';
+        indicator.textContent = tI18n('saved');
         form.appendChild(indicator);
 
         var inputs = form.querySelectorAll('input, textarea, select');
@@ -743,12 +911,12 @@ function initAutoSaveIndicator() {
 
         inputs.forEach(function(input) {
             input.addEventListener('input', function() {
-                indicator.textContent = '✎ Не сохранено';
+                indicator.textContent = tI18n('not-saved');
                 indicator.className = 'text-xs text-orange-500 mt-1';
 
                 if (saveTimer) clearTimeout(saveTimer);
                 saveTimer = setTimeout(function() {
-                    indicator.textContent = '✓ Сохранено';
+                    indicator.textContent = tI18n('saved');
                     indicator.className = 'text-xs text-gray-400 mt-1';
                 }, 2000);
             });
@@ -768,7 +936,7 @@ function initCodeCopy() {
             var text = el.getAttribute('data-copy') || el.textContent;
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(text).then(function() {
-                    showToast('📋 Скопировано', 'success', 2000);
+                    showToast(tI18n('copied'), 'success', 2000);
                 }).catch(function() {
                     fallbackCopy(text);
                 });
@@ -778,7 +946,7 @@ function initCodeCopy() {
         });
 
         el.style.cursor = 'pointer';
-        el.title = 'Нажмите, чтобы скопировать';
+        el.title = tI18n('click-to-copy');
     });
 
     function fallbackCopy(text) {
@@ -790,9 +958,9 @@ function initCodeCopy() {
         ta.select();
         try {
             document.execCommand('copy');
-            showToast('📋 Скопировано', 'success', 2000);
+            showToast(tI18n('copied'), 'success', 2000);
         } catch (e) {
-            showToast('Не удалось скопировать', 'error', 3000);
+            showToast(tI18n('copy-failed'), 'error', 3000);
         }
         document.body.removeChild(ta);
     }
@@ -807,7 +975,7 @@ function initHTMXLoading() {
         if (btn && btn.tagName === 'BUTTON' && !btn.dataset.noLoading) {
             btn.disabled = true;
             btn.dataset.originalText = btn.innerHTML;
-            btn.innerHTML = '<span class="inline-block animate-spin mr-1">\u27F3</span> ' + (btn.dataset.loadingText || 'Отправка...');
+            btn.innerHTML = '<span class="inline-block animate-spin mr-1">\u27F3</span> ' + (btn.dataset.loadingText || tI18n('sending'));
             btn.classList.add('opacity-70', 'cursor-not-allowed');
         }
     });
@@ -837,16 +1005,17 @@ document.addEventListener('DOMContentLoaded', function() {
     initTeamRatingIndicators();
     initCodeCopy();
     initAutoSaveIndicator();
-    initSSEIndicator();
     initSearchAutocomplete();
     initHTMXLoading();
 });
 
-// Auto-detect game ID from page for SSE notifications
+// Auto-detect game ID from page for SSE notifications.
+// Uses data-sse-game-id (only on gameplay pages) so monitor/chat/logs pages,
+// which already use WebSocket, don't open a duplicate SSE connection.
 function initSSEGameNotificationsFromPage() {
-    var gameIdEl = document.querySelector('[data-game-id]');
+    var gameIdEl = document.querySelector('[data-sse-game-id]');
     if (gameIdEl) {
-        var gameId = parseInt(gameIdEl.dataset.gameId);
+        var gameId = parseInt(gameIdEl.dataset.sseGameId);
         if (!isNaN(gameId)) {
             initSSEGameNotifications(gameId);
         }

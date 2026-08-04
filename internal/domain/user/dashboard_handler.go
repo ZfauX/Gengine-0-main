@@ -87,8 +87,8 @@ func (h *DashboardHandler) Index(c *gin.Context) {
 		"IsAdmin":       isAdmin,
 		"SearchQuery":   searchQuery,
 		"Breadcrumbs": []map[string]string{
-			{"name": "Главная", "url": "/"},
-			{"name": "Панель управления"},
+			{"name": "nav.home", "url": "/"},
+			{"name": "nav.dashboard"},
 		},
 	})
 }

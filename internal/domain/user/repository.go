@@ -23,8 +23,10 @@ type UserRepository interface {
 	// Методы для админки с пагинацией
 	Count(ctx context.Context) (int64, error)
 	CountByRole(ctx context.Context, role string) (int64, error)
+	CountSearch(ctx context.Context, query, role string) (int64, error)
 	List(ctx context.Context, role string) ([]User, error)
 	ListPaginated(ctx context.Context, role string, offset, limit int) ([]User, error)
+	SearchPaginated(ctx context.Context, query, role string, offset, limit int) ([]User, error)
 	Delete(ctx context.Context, id uint) error
 
 	// AtomicIncrementFailedAttempts атомарно инкрементирует failed_login_attempts
@@ -74,6 +76,8 @@ type RefreshTokenRepository interface {
 }
 
 // ---------- GORM implementations ----------
+
+var _ UserRepository = (*gormUserRepo)(nil)
 
 type gormUserRepo struct{ db *gorm.DB }
 
@@ -160,8 +164,49 @@ func (r *gormUserRepo) ListPaginated(ctx context.Context, role string, offset, l
 	return users, err
 }
 
+func (r *gormUserRepo) CountSearch(ctx context.Context, query, role string) (int64, error) {
+	var count int64
+	q := r.db.WithContext(ctx).Model(&User{}).Where("name ILIKE ? OR email ILIKE ?", "%"+query+"%", "%"+query+"%")
+	if role != "" {
+		q = q.Where("role = ?", role)
+	}
+	err := q.Count(&count).Error
+	return count, err
+}
+
+func (r *gormUserRepo) SearchPaginated(ctx context.Context, query, role string, offset, limit int) ([]User, error) {
+	var users []User
+	q := r.db.WithContext(ctx).Model(&User{}).Where("name ILIKE ? OR email ILIKE ?", "%"+query+"%", "%"+query+"%")
+	if role != "" {
+		q = q.Where("role = ?", role)
+	}
+	err := q.Offset(offset).Limit(limit).Find(&users).Error
+	return users, err
+}
+
+// Delete удаляет пользователя полностью (hard delete) вместе с его зависимыми записями.
+// Soft delete оставлял email занятым навсегда (uniqueIndex) — повторная регистрация
+// была невозможна. Очистка выполняется только для существующих таблиц.
 func (r *gormUserRepo) Delete(ctx context.Context, id uint) error {
-	return r.db.WithContext(ctx).Delete(&User{}, id).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, model := range []any{
+			&NotificationSetting{},
+			&PushSubscription{},
+			&RefreshToken{},
+			&ExternalLogin{},
+			&EmailVerificationToken{},
+			&PasswordResetToken{},
+			&WebAuthnCredential{},
+		} {
+			if tx.Migrator().HasTable(model) {
+				if err := tx.Where("user_id = ?", id).Delete(model).Error; err != nil {
+					return err
+				}
+			}
+		}
+		// Жёсткое удаление самого пользователя (без soft-delete).
+		return tx.Unscoped().Where("id = ?", id).Delete(&User{}).Error
+	})
 }
 
 // AtomicIncrementFailedAttempts атомарно инкрементирует failed_login_attempts
@@ -179,11 +224,8 @@ type gormAchievementRepo struct{ db *gorm.DB }
 func NewGormAchievementRepo(db *gorm.DB) AchievementRepository { return &gormAchievementRepo{db} }
 
 func (r *gormAchievementRepo) Award(ctx context.Context, userID uint, achievement *Achievement) error {
-	var u User
-	if err := r.db.WithContext(ctx).First(&u, userID).Error; err != nil {
-		return err
-	}
-	return r.db.WithContext(ctx).Model(&u).Association("Achievements").Append(achievement)
+	return r.db.WithContext(ctx).Model(&User{Model: gorm.Model{ID: userID}}).
+		Association("Achievements").Append(achievement)
 }
 func (r *gormAchievementRepo) GetByUserID(ctx context.Context, userID uint) ([]Achievement, error) {
 	var a []Achievement
