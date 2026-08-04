@@ -75,13 +75,52 @@ type RefreshTokenRepository interface {
 	DeleteExpired(ctx context.Context) error
 }
 
+// PushSubscriptionRepository — контракт для работы с push-подписками.
+type PushSubscriptionRepository interface {
+	FindByEndpoint(ctx context.Context, endpoint string) (*PushSubscription, error)
+	Update(ctx context.Context, sub *PushSubscription) error
+	Create(ctx context.Context, sub *PushSubscription) error
+	DeleteByEndpointAndUser(ctx context.Context, endpoint string, userID uint) error
+}
+
 // ---------- GORM implementations ----------
 
 var _ UserRepository = (*gormUserRepo)(nil)
+var _ PushSubscriptionRepository = (*gormPushSubscriptionRepo)(nil)
 
 type gormUserRepo struct{ db *gorm.DB }
 
 func NewGormUserRepo(db *gorm.DB) UserRepository { return &gormUserRepo{db} }
+
+type gormPushSubscriptionRepo struct{ db *gorm.DB }
+
+func NewGormPushSubscriptionRepo(db *gorm.DB) PushSubscriptionRepository {
+	return &gormPushSubscriptionRepo{db}
+}
+
+func (r *gormPushSubscriptionRepo) FindByEndpoint(ctx context.Context, endpoint string) (*PushSubscription, error) {
+	var sub PushSubscription
+	err := r.db.WithContext(ctx).Where("endpoint = ?", endpoint).First(&sub).Error
+	if err != nil {
+		return nil, err
+	}
+	return &sub, nil
+}
+
+func (r *gormPushSubscriptionRepo) Update(ctx context.Context, sub *PushSubscription) error {
+	return r.db.WithContext(ctx).Model(sub).Updates(map[string]any{
+		"auth":   sub.Auth,
+		"p256dh": sub.P256dh,
+	}).Error
+}
+
+func (r *gormPushSubscriptionRepo) Create(ctx context.Context, sub *PushSubscription) error {
+	return r.db.WithContext(ctx).Create(sub).Error
+}
+
+func (r *gormPushSubscriptionRepo) DeleteByEndpointAndUser(ctx context.Context, endpoint string, userID uint) error {
+	return r.db.WithContext(ctx).Where("endpoint = ? AND user_id = ?", endpoint, userID).Delete(&PushSubscription{}).Error
+}
 
 func (r *gormUserRepo) Create(ctx context.Context, user *User) error {
 	return r.db.WithContext(ctx).Create(user).Error

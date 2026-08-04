@@ -143,3 +143,27 @@ func (s *ProfileService) SaveThemeSettings(ctx context.Context, userID uint, ts 
 func GetUserThemeSettings(ctx context.Context, db *gorm.DB, userID uint) (ThemeSettings, error) {
 	return NewProfileService(db).GetThemeSettings(ctx, userID)
 }
+
+// GetGamesView возвращает сохранённое предпочтение вида списка игр.
+func (s *ProfileService) GetGamesView(ctx context.Context, userID uint) (string, error) {
+	var v string
+	err := s.db.WithContext(ctx).Model(&User{}).Where("id = ?", userID).Select("games_view").Scan(&v).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "table", nil
+		}
+		return "table", err
+	}
+	if v == "cards" {
+		return "cards", nil
+	}
+	return "table", nil
+}
+
+// SaveGamesView сохраняет предпочтение вида списка игр.
+func (s *ProfileService) SaveGamesView(ctx context.Context, userID uint, view string) error {
+	if view != "cards" {
+		view = "table"
+	}
+	return s.db.WithContext(ctx).Model(&User{}).Where("id = ?", userID).Update("games_view", view).Error
+}

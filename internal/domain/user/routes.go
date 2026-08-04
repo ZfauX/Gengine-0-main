@@ -2,6 +2,7 @@
 package user
 
 import (
+	"net/http"
 	"time"
 
 	"gengine-0/internal/config"
@@ -11,6 +12,7 @@ import (
 	"gengine-0/internal/pkg/storage"
 
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
 
@@ -140,10 +142,42 @@ func RegisterRoutes(
 		apiR.GET("/users/search", SearchUsersAPI(db))
 	}
 
+	// Предпочтения пользователя (серверная персонализация)
+	prefsAPI := r.Group("/api/users/preferences")
+	prefsAPI.Use(middleware.AuthRequired(authSvc))
+	{
+		prefsAPI.GET("/games-view", func(c *gin.Context) {
+			userID := c.GetUint("userID")
+			view, err := profileSvc.GetGamesView(c.Request.Context(), userID)
+			if err != nil {
+				log.Error().Err(err).Uint("user_id", userID).Msg("games-view: failed to get preference")
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "ошибка загрузки предпочтения"})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"view": view})
+		})
+		prefsAPI.PUT("/games-view", func(c *gin.Context) {
+			userID := c.GetUint("userID")
+			var req struct {
+				View string `json:"view"`
+			}
+			if err := c.ShouldBindJSON(&req); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "неверный формат"})
+				return
+			}
+			if err := profileSvc.SaveGamesView(c.Request.Context(), userID, req.View); err != nil {
+				log.Error().Err(err).Uint("user_id", userID).Msg("games-view: failed to save preference")
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "ошибка сохранения предпочтения"})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		})
+	}
+
 	// ============================================================
 	// WEB PUSH УВЕДОМЛЕНИЯ (API)
 	// ============================================================
-	pushHandler := NewPushHandler(db, cfg.VAPID)
+	pushHandler := NewPushHandler(NewGormPushSubscriptionRepo(db), cfg.VAPID)
 	apiGroup := r.Group("/api/push")
 	apiGroup.Use(middleware.AuthRequired(authSvc))
 	{

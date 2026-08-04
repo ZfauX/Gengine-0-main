@@ -15,12 +15,12 @@ import (
 )
 
 type PushHandler struct {
-	db       *gorm.DB
+	pushRepo PushSubscriptionRepository
 	vapidCfg config.VAPIDConfig
 }
 
-func NewPushHandler(db *gorm.DB, vapidCfg config.VAPIDConfig) *PushHandler {
-	return &PushHandler{db: db, vapidCfg: vapidCfg}
+func NewPushHandler(pushRepo PushSubscriptionRepository, vapidCfg config.VAPIDConfig) *PushHandler {
+	return &PushHandler{pushRepo: pushRepo, vapidCfg: vapidCfg}
 }
 
 // pushSubscriptionDTO — структура подписки из браузера Push API.
@@ -73,31 +73,28 @@ func (h *PushHandler) Subscribe(c *gin.Context) {
 		P256dh:   req.Keys.P256dh,
 	}
 
-	var existing PushSubscription
-	result := h.db.Where("endpoint = ?", sub.Endpoint).First(&existing)
-	if result.Error == nil {
+	existing, findErr := h.pushRepo.FindByEndpoint(c.Request.Context(), sub.Endpoint)
+	if findErr == nil {
 		if existing.UserID != userID {
 			c.JSON(http.StatusForbidden, gin.H{"error": "subscription belongs to another user"})
 			return
 		}
-		sub.Model = existing.Model
-		if err := h.db.Model(&existing).Updates(map[string]any{
-			"auth":   sub.Auth,
-			"p256dh": sub.P256dh,
-		}).Error; err != nil {
+		existing.Auth = sub.Auth
+		existing.P256dh = sub.P256dh
+		if err := h.pushRepo.Update(c.Request.Context(), existing); err != nil {
 			log.Error().Err(err).Msg("Push: failed to update subscription")
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "ошибка обновления подписки"})
 			return
 		}
-	} else if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-		if err := h.db.Create(&sub).Error; err != nil {
+	} else if errors.Is(findErr, gorm.ErrRecordNotFound) {
+		if err := h.pushRepo.Create(c.Request.Context(), &sub); err != nil {
 			log.Error().Err(err).Msg("Push: failed to save subscription")
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "ошибка сохранения подписки"})
 			return
 		}
 	} else {
 		// Реальная ошибка БД — не маскируем под «создать»
-		log.Error().Err(result.Error).Msg("Push: failed to look up subscription")
+		log.Error().Err(findErr).Msg("Push: failed to look up subscription")
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "ошибка проверки подписки"})
 		return
 	}
@@ -131,7 +128,7 @@ func (h *PushHandler) Unsubscribe(c *gin.Context) {
 		return
 	}
 
-	if err := h.db.Where("endpoint = ? AND user_id = ?", req.Endpoint, userID).Delete(&PushSubscription{}).Error; err != nil {
+	if err := h.pushRepo.DeleteByEndpointAndUser(c.Request.Context(), req.Endpoint, userID); err != nil {
 		log.Error().Err(err).Msg("Push: failed to delete subscription")
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "ошибка удаления подписки"})
 		return

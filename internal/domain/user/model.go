@@ -22,6 +22,8 @@ type User struct {
 	StripeCustomerID  string `gorm:"default:''"`
 	// Настройки темы (JSON) — автосмена + время тёмной темы.
 	ThemeSettingsJSON string `gorm:"column:theme_settings;type:text;default:''" json:"-"`
+	// Вид списка игр (table | cards) — серверная персонализация.
+	GamesView string `gorm:"column:games_view;type:varchar(10);default:'table'" json:"-"`
 	// 2FA fields
 	TwoFactorEnabled     bool               `gorm:"default:false"`               // включена ли 2FA
 	TwoFactorSecret      string             `gorm:"default:'';size:64" json:"-"` // секрет для TOTP (Base32)

@@ -8,7 +8,7 @@ SWAGGER_INIT=swag init -g $(MAIN_PATH)/main.go -o ./docs
 GO=go
 GOLANGCI=golangci-lint
 
-.PHONY: all build run test lint swagger clean help
+.PHONY: all build run test lint swagger clean help i18n-check
 
 # По умолчанию: сборка
 all: build
@@ -75,7 +75,12 @@ install-tools:
 	$(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 
 # Команда для CI (полная проверка)
-ci: deps lint test swagger build
+# Проверка синхронизации ключей i18n (ru/en)
+i18n-check:
+	$(GO) test ./internal/pkg/i18n/ -run "TestAllKeysHave" -count=1
+
+# Быстрая проверка для CI (без полного теста)
+ci: deps lint i18n-check test-short swagger build
 
 # Помощь
 help:
