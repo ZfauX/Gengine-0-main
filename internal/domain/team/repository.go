@@ -39,6 +39,10 @@ type TeamRepository interface {
 	GetTeamsByUserID(ctx context.Context, userID uint) ([]Team, error)
 	Update(ctx context.Context, team *Team) error
 	Delete(ctx context.Context, id uint) error
+	Count(ctx context.Context) (int64, error)
+	CountSearch(ctx context.Context, query string) (int64, error)
+	ListAllPaginated(ctx context.Context, offset, limit int) ([]Team, error)
+	SearchPaginated(ctx context.Context, query string, offset, limit int) ([]Team, error)
 	AddMember(ctx context.Context, teamID, userID uint) error
 	RemoveMember(ctx context.Context, teamID, userID uint) error
 	ChangeCaptain(ctx context.Context, teamID, newCaptainID uint) error
@@ -115,6 +119,33 @@ func (r *gormTeamRepo) Update(ctx context.Context, team *Team) error {
 }
 func (r *gormTeamRepo) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&Team{}, id).Error
+}
+func (r *gormTeamRepo) Count(ctx context.Context) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&Team{}).Count(&count).Error
+	return count, err
+}
+func (r *gormTeamRepo) CountSearch(ctx context.Context, query string) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&Team{}).
+		Joins("LEFT JOIN users ON users.id = teams.captain_id").
+		Where("teams.name ILIKE ? OR users.name ILIKE ?", "%"+query+"%", "%"+query+"%").
+		Count(&count).Error
+	return count, err
+}
+func (r *gormTeamRepo) ListAllPaginated(ctx context.Context, offset, limit int) ([]Team, error) {
+	var teams []Team
+	err := r.db.WithContext(ctx).Preload("Captain").Offset(offset).Limit(limit).Order("id DESC").Find(&teams).Error
+	return teams, err
+}
+func (r *gormTeamRepo) SearchPaginated(ctx context.Context, query string, offset, limit int) ([]Team, error) {
+	var teams []Team
+	err := r.db.WithContext(ctx).Preload("Captain").
+		Joins("LEFT JOIN users ON users.id = teams.captain_id").
+		Where("teams.name ILIKE ? OR users.name ILIKE ?", "%"+query+"%", "%"+query+"%").
+		Offset(offset).Limit(limit).Order("id DESC").
+		Find(&teams).Error
+	return teams, err
 }
 func (r *gormTeamRepo) AddMember(ctx context.Context, teamID, userID uint) error {
 	return r.db.WithContext(ctx).Exec("INSERT INTO team_members (team_id, user_id) VALUES (?, ?)", teamID, userID).Error

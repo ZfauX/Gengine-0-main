@@ -11,7 +11,11 @@ import (
 	"gengine-0/internal/pkg/middleware"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+// ErrPositionTaken возвращается, когда позиция уровня уже занята.
+var ErrPositionTaken = errors.New("уровень с такой позицией уже существует")
 
 // ActiveGameManager определяет контракт для операций, влияющих на активную игру.
 type ActiveGameManager interface {
@@ -71,15 +75,14 @@ func (s *LevelService) Create(ctx context.Context, gameID uint, level *Level, us
 		level.Position = maxPos + 1
 	}
 
+	level.GameID = gameID
 	exists, err := s.levelRepo.ExistsByPosition(ctx, gameID, level.Position, 0)
 	if err != nil {
 		return err
 	}
 	if exists {
-		return fmt.Errorf("уровень с позицией %d уже существует в этой игре", level.Position)
+		return ErrPositionTaken
 	}
-
-	level.GameID = gameID
 	return s.levelRepo.Create(ctx, level)
 }
 
@@ -108,7 +111,10 @@ func (s *LevelService) Update(ctx context.Context, levelID uint, updated *Level,
 
 	level.Name = updated.Name
 	level.Description = updated.Description
-	level.Position = updated.Position
+	if updated.Position != 0 {
+		// Позиция 0 = «не менять» — сохраняем текущую, чтобы не сбрасывать уровень на 0.
+		level.Position = updated.Position
+	}
 	level.Type = updated.Type
 	level.ParentID = updated.ParentID
 	level.GroupID = updated.GroupID
@@ -234,20 +240,20 @@ func (s *LevelService) Move(ctx context.Context, levelID uint, direction string,
 
 	// Блокируем обе строки в фиксированном порядке (по ID) для предотвращения deadlock'а
 	if level.ID < sibling.ID {
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&Level{}, level.ID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&Level{}, level.ID).Error; err != nil {
 			tx.Rollback()
 			return err
 		}
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&Level{}, sibling.ID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&Level{}, sibling.ID).Error; err != nil {
 			tx.Rollback()
 			return err
 		}
 	} else {
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&Level{}, sibling.ID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&Level{}, sibling.ID).Error; err != nil {
 			tx.Rollback()
 			return err
 		}
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&Level{}, level.ID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&Level{}, level.ID).Error; err != nil {
 			tx.Rollback()
 			return err
 		}
@@ -294,7 +300,12 @@ func (s *QuestionService) ListByLevel(ctx context.Context, levelID uint) ([]Ques
 }
 
 func (s *QuestionService) GetByID(ctx context.Context, questionID uint) (*Question, error) {
-	return s.questionRepo.GetByIDWithAnswers(ctx, questionID)
+	return s.questionRepo.GetByID(ctx, questionID)
+}
+
+// GetByIDWithGameID возвращает вопрос вместе с GameID через JOIN-запрос (оптимизация).
+func (s *QuestionService) GetByIDWithGameID(ctx context.Context, questionID uint) (*QuestionChain, error) {
+	return s.questionRepo.GetQuestionChain(ctx, questionID)
 }
 
 func (s *QuestionService) Create(ctx context.Context, levelID uint, question *Question, userID uint) error {
@@ -314,36 +325,31 @@ func (s *QuestionService) Create(ctx context.Context, levelID uint, question *Qu
 }
 
 func (s *QuestionService) Update(ctx context.Context, questionID uint, updated *Question, userID uint) error {
-	question, err := s.questionRepo.GetByID(ctx, questionID)
+	// JOIN-оптимизация: question + levelID + gameID в 1 SQL-запросе
+	chain, err := s.questionRepo.GetQuestionChain(ctx, questionID)
 	if err != nil {
 		return err
 	}
-	level, err := s.levelRepo.GetByID(ctx, question.LevelID)
-	if err != nil {
-		return err
-	}
-	ok, err := s.authorizer.IsUserManager(ctx, level.GameID, userID)
+	ok, err := s.authorizer.IsUserManager(ctx, chain.GameID, userID)
 	if err != nil {
 		return err
 	}
 	if !ok {
 		return errors.New("только автор или контент-менеджер может обновлять вопросы")
 	}
-	question.Text = updated.Text
-	question.Hint = updated.Hint
-	return s.questionRepo.Update(ctx, question)
+	// Only update text and hint — preserve the original question's LevelID
+	updated.ID = questionID
+	updated.LevelID = chain.LevelID
+	return s.questionRepo.Update(ctx, updated)
 }
 
 func (s *QuestionService) Delete(ctx context.Context, questionID uint, userID uint) error {
-	question, err := s.questionRepo.GetByID(ctx, questionID)
+	// JOIN-оптимизация: question + levelID + gameID в 1 SQL-запросе
+	chain, err := s.questionRepo.GetQuestionChain(ctx, questionID)
 	if err != nil {
 		return err
 	}
-	level, err := s.levelRepo.GetByID(ctx, question.LevelID)
-	if err != nil {
-		return err
-	}
-	ok, err := s.authorizer.IsUserManager(ctx, level.GameID, userID)
+	ok, err := s.authorizer.IsUserManager(ctx, chain.GameID, userID)
 	if err != nil {
 		return err
 	}
@@ -381,15 +387,12 @@ func (s *AnswerService) ListByQuestion(ctx context.Context, questionID uint) ([]
 }
 
 func (s *AnswerService) Create(ctx context.Context, questionID uint, answer *Answer, userID uint) error {
-	question, err := s.questionRepo.GetByID(ctx, questionID)
+	// JOIN-оптимизация: question + levelID + gameID в 1 SQL-запросе
+	chain, err := s.questionRepo.GetQuestionChain(ctx, questionID)
 	if err != nil {
 		return err
 	}
-	level, err := s.levelRepo.GetByID(ctx, question.LevelID)
-	if err != nil {
-		return err
-	}
-	ok, err := s.authorizer.IsUserManager(ctx, level.GameID, userID)
+	ok, err := s.authorizer.IsUserManager(ctx, chain.GameID, userID)
 	if err != nil {
 		return err
 	}
@@ -401,20 +404,12 @@ func (s *AnswerService) Create(ctx context.Context, questionID uint, answer *Ans
 }
 
 func (s *AnswerService) Delete(ctx context.Context, answerID uint, userID uint) error {
-	// Получаем ответ через репозиторий (добавим метод GetByID)
-	answer, err := s.answerRepo.GetByID(ctx, answerID)
+	// JOIN-оптимизация: получаем answer + questionID + levelID + gameID в 1 SQL-запросе
+	chain, err := s.answerRepo.GetAnswerChain(ctx, answerID)
 	if err != nil {
 		return err
 	}
-	question, err := s.questionRepo.GetByID(ctx, answer.QuestionID)
-	if err != nil {
-		return err
-	}
-	level, err := s.levelRepo.GetByID(ctx, question.LevelID)
-	if err != nil {
-		return err
-	}
-	ok, err := s.authorizer.IsUserManager(ctx, level.GameID, userID)
+	ok, err := s.authorizer.IsUserManager(ctx, chain.GameID, userID)
 	if err != nil {
 		return err
 	}
@@ -422,7 +417,7 @@ func (s *AnswerService) Delete(ctx context.Context, answerID uint, userID uint) 
 		return errors.New("нет прав на удаление ответа")
 	}
 
-	count, err := s.answerRepo.CountByQuestionID(ctx, answer.QuestionID)
+	count, err := s.answerRepo.CountByQuestionID(ctx, chain.QuestionID)
 	if err != nil {
 		return err
 	}

@@ -98,8 +98,8 @@ func (h *TeamHandler) MyTeams(c *gin.Context) {
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,
 		"Breadcrumbs": []map[string]string{
-			{"name": "Главная", "url": "/"},
-			{"name": "Команды"},
+			{"name": "nav.home", "url": "/"},
+			{"name": "nav.teams"},
 		},
 	})
 }
@@ -122,9 +122,9 @@ func (h *TeamHandler) NewTeamForm(c *gin.Context) {
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,
 		"Breadcrumbs": []map[string]string{
-			{"name": "Главная", "url": "/"},
-			{"name": "Команды", "url": "/teams"},
-			{"name": "Создание команды"},
+			{"name": "nav.home", "url": "/"},
+			{"name": "nav.teams", "url": "/teams"},
+			{"name": "nav.new_team"},
 		},
 	})
 }
@@ -166,7 +166,7 @@ func (h *TeamHandler) CreateTeam(c *gin.Context) {
 	if err != nil {
 		render.Page(c, http.StatusBadRequest, "teams-new.html", gin.H{
 			"Title": "Создание команды",
-			"Error": err.Error(),
+			"Error": render.LocalizeError(c, err.Error()),
 			"csrf":  csrf.GetToken(c),
 		})
 		return
@@ -183,13 +183,13 @@ func (h *TeamHandler) CreateTeam(c *gin.Context) {
 // @Param team_id path int true "ID команды"
 // @Success 200 {string} html "Страница команды"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 404 {object} map[string]interface{} "Команда не найдена"
+// @Failure 404 {object} map[string]interface{} render.Tr(c, "handler.team_not_found")
 // @Router /teams/{team_id} [get]
 // @Security JWT
 func (h *TeamHandler) ViewTeam(c *gin.Context) {
 	var req TeamIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID команды")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_team_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -205,9 +205,8 @@ func (h *TeamHandler) ViewTeam(c *gin.Context) {
 		return
 	}
 
-	canManage := h.teamService.CanManageTeam(c.Request.Context(), req.TeamID, userID)
-
 	isAdmin := middleware.IsAdmin(c)
+	canManage := h.teamService.CanManageTeam(c.Request.Context(), req.TeamID, userID) || isAdmin
 
 	render.Page(c, http.StatusOK, "teams-members.html", gin.H{
 		"Title":         "Участники команды",
@@ -218,8 +217,8 @@ func (h *TeamHandler) ViewTeam(c *gin.Context) {
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,
 		"Breadcrumbs": []map[string]string{
-			{"name": "Главная", "url": "/"},
-			{"name": "Команды", "url": "/teams"},
+			{"name": "nav.home", "url": "/"},
+			{"name": "nav.teams", "url": "/teams"},
 			{"name": team.Name},
 		},
 	})
@@ -229,7 +228,7 @@ func (h *TeamHandler) ViewTeam(c *gin.Context) {
 func (h *TeamHandler) Members(c *gin.Context) {
 	var req TeamIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID команды")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_team_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -245,9 +244,8 @@ func (h *TeamHandler) Members(c *gin.Context) {
 		return
 	}
 
-	canManage := h.teamService.CanManageTeam(c.Request.Context(), req.TeamID, userID)
-
 	isAdmin := middleware.IsAdmin(c)
+	canManage := h.teamService.CanManageTeam(c.Request.Context(), req.TeamID, userID) || isAdmin
 
 	render.Page(c, http.StatusOK, "teams-members.html", gin.H{
 		"Title":         "Участники команды",
@@ -260,10 +258,10 @@ func (h *TeamHandler) Members(c *gin.Context) {
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,
 		"Breadcrumbs": []map[string]string{
-			{"name": "Главная", "url": "/"},
-			{"name": "Команды", "url": "/teams"},
+			{"name": "nav.home", "url": "/"},
+			{"name": "nav.teams", "url": "/teams"},
 			{"name": team.Name, "url": "/teams/" + strconv.Itoa(int(team.ID))},
-			{"name": "Участники"},
+			{"name": "nav.members"},
 		},
 	})
 }
@@ -272,7 +270,7 @@ func (h *TeamHandler) Members(c *gin.Context) {
 func (h *TeamHandler) AddMemberForm(c *gin.Context) {
 	var req TeamIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID команды")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_team_id"))
 		return
 	}
 
@@ -301,7 +299,7 @@ func (h *TeamHandler) AddMemberForm(c *gin.Context) {
 func (h *TeamHandler) AddMember(c *gin.Context) {
 	var req TeamIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID команды")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_team_id"))
 		return
 	}
 	actorID := c.GetUint("userID")
@@ -340,7 +338,7 @@ func (h *TeamHandler) AddMember(c *gin.Context) {
 	if err := h.teamService.AddMember(c.Request.Context(), req.TeamID, input.UserID, actorID); err != nil {
 		switch err.Error() {
 		case "пользователь уже в команде", "только капитан может добавлять участников":
-			render.RenderError(c, http.StatusBadRequest, err.Error())
+			render.RenderError(c, http.StatusBadRequest, render.LocalizeError(c, err.Error()))
 		default:
 			log.Error().Err(err).Uint("team_id", req.TeamID).Uint("user_id", input.UserID).Uint("actor_id", actorID).Msg("AddMember: failed to add member")
 			render.RenderError(c, http.StatusInternalServerError, "Ошибка при добавлении участника")
@@ -362,7 +360,7 @@ func (h *TeamHandler) RemoveMember(c *gin.Context) {
 	if err := h.teamService.RemoveMember(c.Request.Context(), req.TeamID, req.MemberID, actorID); err != nil {
 		switch err.Error() {
 		case "невозможно удалить капитана", "нет прав на удаление участников":
-			render.RenderError(c, http.StatusBadRequest, err.Error())
+			render.RenderError(c, http.StatusBadRequest, render.LocalizeError(c, err.Error()))
 		default:
 			log.Error().Err(err).Uint("team_id", req.TeamID).Uint("member_id", req.MemberID).Uint("actor_id", actorID).Msg("RemoveMember: failed to remove member")
 			render.RenderError(c, http.StatusInternalServerError, "Ошибка при удалении участника")
@@ -376,7 +374,7 @@ func (h *TeamHandler) RemoveMember(c *gin.Context) {
 func (h *TeamHandler) ChangeCaptainForm(c *gin.Context) {
 	var req TeamIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID команды")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_team_id"))
 		return
 	}
 
@@ -402,9 +400,9 @@ func (h *TeamHandler) ChangeCaptainForm(c *gin.Context) {
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,
 		"Breadcrumbs": []map[string]string{
-			{"name": "Главная", "url": "/"},
+			{"name": "nav.home", "url": "/"},
 			{"name": team.Name, "url": "/teams/" + strconv.Itoa(int(team.ID))},
-			{"name": "Смена капитана"},
+			{"name": "nav.change_captain"},
 		},
 	})
 }
@@ -413,16 +411,17 @@ func (h *TeamHandler) ChangeCaptainForm(c *gin.Context) {
 func (h *TeamHandler) ChangeCaptain(c *gin.Context) {
 	var req TeamIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID команды")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_team_id"))
 		return
 	}
 	actorID := c.GetUint("userID")
 
 	var input ChangeCaptainInput
 	if err := c.ShouldBind(&input); err != nil {
+		log.Error().Err(err).Uint("team_id", req.TeamID).Uint("user", actorID).Msg("ChangeCaptain: invalid input")
 		render.Page(c, http.StatusBadRequest, "teams-change_captain.html", gin.H{
 			"Title": "Смена капитана",
-			"Error": "Неверные данные: " + err.Error(),
+			"Error": "Неверный формат данных",
 			"csrf":  csrf.GetToken(c),
 		})
 		return
@@ -432,18 +431,18 @@ func (h *TeamHandler) ChangeCaptain(c *gin.Context) {
 	if err := validation.ValidatePositiveUint("ID капитана", input.CaptainID); err != nil {
 		render.Page(c, http.StatusBadRequest, "teams-change_captain.html", gin.H{
 			"Title": "Смена капитана",
-			"Error": err.Error(),
+			"Error": render.LocalizeError(c, err.Error()),
 			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
 
-	if err := h.teamService.ChangeCaptain(c.Request.Context(), req.TeamID, input.CaptainID, actorID); err != nil {
+	if err := h.teamService.ChangeCaptain(c.Request.Context(), req.TeamID, input.CaptainID, actorID, middleware.IsAdmin(c)); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			render.RenderErrorPage(c, http.StatusNotFound)
 		} else {
 			log.Error().Err(err).Uint("team_id", req.TeamID).Uint("captain_id", input.CaptainID).Uint("actor_id", actorID).Msg("ChangeCaptain: failed to change captain")
-			render.RenderError(c, http.StatusForbidden, err.Error())
+			render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, err.Error()))
 		}
 		return
 	}
@@ -455,17 +454,26 @@ func (h *TeamHandler) ChangeCaptain(c *gin.Context) {
 // InvitationHandler обрабатывает приглашения.
 type InvitationHandler struct {
 	invitationService *InvitationService
+	teamService       *TeamService
 }
 
-func NewInvitationHandler(invitationService *InvitationService) *InvitationHandler {
-	return &InvitationHandler{invitationService: invitationService}
+func NewInvitationHandler(invitationService *InvitationService, teamService *TeamService) *InvitationHandler {
+	return &InvitationHandler{invitationService: invitationService, teamService: teamService}
 }
 
 // Index отображает список приглашений команды (для автора/капитана).
 func (h *InvitationHandler) Index(c *gin.Context) {
 	var req TeamIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID команды")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_team_id"))
+		return
+	}
+
+	userID := c.GetUint("userID")
+
+	// Check authorization — only captain/manager can view invitations
+	if !middleware.IsAdmin(c) && !h.teamService.CanManageTeam(c.Request.Context(), req.TeamID, userID) {
+		render.RenderErrorPage(c, http.StatusForbidden)
 		return
 	}
 
@@ -476,7 +484,6 @@ func (h *InvitationHandler) Index(c *gin.Context) {
 		return
 	}
 
-	userID := c.GetUint("userID")
 	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "invitations-index.html", gin.H{
@@ -493,7 +500,7 @@ func (h *InvitationHandler) Index(c *gin.Context) {
 func (h *InvitationHandler) NewForm(c *gin.Context) {
 	var req TeamIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID команды")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_team_id"))
 		return
 	}
 
@@ -514,7 +521,7 @@ func (h *InvitationHandler) NewForm(c *gin.Context) {
 func (h *InvitationHandler) Create(c *gin.Context) {
 	var req TeamIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID команды")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_team_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -557,14 +564,14 @@ func (h *InvitationHandler) Create(c *gin.Context) {
 		case "пользователь не найден", "пользователь уже в команде", "приглашение уже отправлено":
 			render.Page(c, http.StatusBadRequest, "invitations-new.html", gin.H{
 				"Title": "Новое приглашение",
-				"Error": err.Error(),
+				"Error": render.LocalizeError(c, err.Error()),
 				"csrf":  csrf.GetToken(c),
 			})
 		default:
 			log.Error().Err(err).Uint("team_id", req.TeamID).Uint("invited_user", input.UserID).Uint("inviter", userID).Msg("InvitationHandler.Create: failed to create invitation")
 			render.Page(c, http.StatusInternalServerError, "invitations-new.html", gin.H{
 				"Title": "Новое приглашение",
-				"Error": "Внутренняя ошибка",
+				"Error": render.Tr(c, "handler.internal_error"),
 				"csrf":  csrf.GetToken(c),
 			})
 		}
@@ -608,20 +615,20 @@ func (h *InvitationHandler) MyInvitations(c *gin.Context) {
 // @Param id path int true "ID приглашения"
 // @Success 302 {string} string "Перенаправление на страницу команды"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /invitations/{id}/accept [post]
 // @Security JWT
 func (h *InvitationHandler) Accept(c *gin.Context) {
 	var req InvitationIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID приглашения")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_invite_id"))
 		return
 	}
 	userID := c.GetUint("userID")
 
 	if err := h.invitationService.AcceptInvitation(c.Request.Context(), req.ID, userID); err != nil {
 		log.Error().Err(err).Uint("invitation_id", req.ID).Uint("user_id", userID).Msg("Accept: failed to accept invitation")
-		render.RenderError(c, http.StatusForbidden, err.Error())
+		render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, err.Error()))
 		return
 	}
 	c.Redirect(http.StatusFound, "/invitations/my")
@@ -634,20 +641,20 @@ func (h *InvitationHandler) Accept(c *gin.Context) {
 // @Param id path int true "ID приглашения"
 // @Success 302 {string} string "Перенаправление на /invitations/my"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /invitations/{id}/decline [post]
 // @Security JWT
 func (h *InvitationHandler) Decline(c *gin.Context) {
 	var req InvitationIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID приглашения")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_invite_id"))
 		return
 	}
 	userID := c.GetUint("userID")
 
 	if err := h.invitationService.DeclineInvitation(c.Request.Context(), req.ID, userID); err != nil {
 		log.Error().Err(err).Uint("invitation_id", req.ID).Uint("user_id", userID).Msg("Decline: failed to decline invitation")
-		render.RenderError(c, http.StatusForbidden, err.Error())
+		render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, err.Error()))
 		return
 	}
 	c.Redirect(http.StatusFound, "/invitations/my")

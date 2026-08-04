@@ -1,6 +1,6 @@
 {{define "tournaments-add_game.html"}}
 <div class="max-w-3xl mx-auto">
-    <h1 class="page-title">Добавить игру в турнир</h1>
+    <h1 class="page-title">{{ T $.Lang "tournament.add_game_title" }}</h1>
 
     {{if .Error}}
     <div class="flash flash-error">{{.Error}}</div>
@@ -11,14 +11,14 @@
 
         <!-- Выбор игры -->
         <div>
-            <label for="game_id" class="form-label">Игра</label>
+            <label for="game_id" class="form-label">{{ T $.Lang "tournament.add_game_label" }}</label>
             <select name="game_id" id="game_id" required
                     class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.game_id}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
-                <option value="">-- выберите игру --</option>
+                <option value="">{{ T $.Lang "tournament.add_game_no_option" }}</option>
                 {{range .Games}}
                     <option value="{{.ID}}">{{.Name}}</option>
                 {{else}}
-                    <option value="" disabled>Нет доступных игр</option>
+                    <option value="" disabled>{{ T $.Lang "tournament.add_game_no_games" }}</option>
                 {{end}}
             </select>
             {{if .Errors.game_id}}<p class="field-error">{{.Errors.game_id}}</p>{{end}}
@@ -26,8 +26,8 @@
 
         <!-- Кнопки -->
         <div class="flex flex-wrap gap-3 pt-2">
-            <button type="submit" class="btn btn-primary text-sm">Добавить</button>
-            <a href="/tournaments/{{.TournamentID}}" class="btn btn-outline text-sm">Отмена</a>
+            <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "tournament.add_game_button" }}</button>
+            <a href="/tournaments/{{.TournamentID}}" class="btn btn-outline text-sm">{{ T $.Lang "tournament.add_game_cancel" }}</a>
         </div>
     </form>
 </div>

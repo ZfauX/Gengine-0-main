@@ -1,6 +1,6 @@
 {{define "tournaments-new.html"}}
 <div class="max-w-3xl mx-auto">
-    <h1 class="page-title">Новый турнир</h1>
+    <h1 class="page-title">{{ T $.Lang "tournament.new_title" }}</h1>
 
     {{if .Error}}
     <div class="flash flash-error">{{.Error}}</div>
@@ -11,7 +11,7 @@
 
         <!-- Название -->
         <div>
-            <label for="name" class="form-label">Название</label>
+            <label for="name" class="form-label">{{ T $.Lang "tournament.name_label" }}</label>
             <input type="text" name="name" id="name" required
                    class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.name}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
             {{if .Errors.name}}<p class="field-error">{{.Errors.name}}</p>{{end}}
@@ -19,7 +19,7 @@
 
         <!-- Описание -->
         <div>
-            <label for="description" class="form-label">Описание</label>
+            <label for="description" class="form-label">{{ T $.Lang "tournament.desc_label" }}</label>
             <textarea name="description" id="description" rows="4"
                       class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.description}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}"></textarea>
             {{if .Errors.description}}<p class="field-error">{{.Errors.description}}</p>{{end}}
@@ -28,25 +28,25 @@
         <!-- Очки за места -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-                <label for="points_for_first" class="form-label">Очки за 1 место</label>
+                <label for="points_for_first" class="form-label">{{ T $.Lang "tournament.points_first" }}</label>
                 <input type="number" name="points_for_first" id="points_for_first" value="10" min="0"
                        class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.points_for_first}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
                 {{if .Errors.points_for_first}}<p class="field-error">{{.Errors.points_for_first}}</p>{{end}}
             </div>
             <div>
-                <label for="points_for_second" class="form-label">Очки за 2 место</label>
+                <label for="points_for_second" class="form-label">{{ T $.Lang "tournament.points_second" }}</label>
                 <input type="number" name="points_for_second" id="points_for_second" value="7" min="0"
                        class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.points_for_second}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
                 {{if .Errors.points_for_second}}<p class="field-error">{{.Errors.points_for_second}}</p>{{end}}
             </div>
             <div>
-                <label for="points_for_third" class="form-label">Очки за 3 место</label>
+                <label for="points_for_third" class="form-label">{{ T $.Lang "tournament.points_third" }}</label>
                 <input type="number" name="points_for_third" id="points_for_third" value="5" min="0"
                        class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.points_for_third}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
                 {{if .Errors.points_for_third}}<p class="field-error">{{.Errors.points_for_third}}</p>{{end}}
             </div>
             <div>
-                <label for="points_for_participation" class="form-label">Очки за участие</label>
+                <label for="points_for_participation" class="form-label">{{ T $.Lang "tournament.points_participation" }}</label>
                 <input type="number" name="points_for_participation" id="points_for_participation" value="2" min="0"
                        class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.points_for_participation}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
                 {{if .Errors.points_for_participation}}<p class="field-error">{{.Errors.points_for_participation}}</p>{{end}}
@@ -55,8 +55,8 @@
 
         <!-- Кнопки -->
         <div class="flex flex-wrap gap-3 pt-2">
-            <button type="submit" class="btn btn-primary text-sm">Создать</button>
-            <a href="/tournaments" class="btn btn-outline text-sm">Отмена</a>
+            <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "tournament.create_btn_form" }}</button>
+            <a href="/tournaments" class="btn btn-outline text-sm">{{ T $.Lang "tournament.cancel" }}</a>
         </div>
     </form>
 </div>

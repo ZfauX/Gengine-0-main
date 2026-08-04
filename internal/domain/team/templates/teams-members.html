@@ -1,16 +1,16 @@
 {{define "teams-members.html"}}
 <div class="max-w-4xl mx-auto">
-    <h1 class="page-title">Состав команды «{{.Team.Name}}»</h1>
+    <h1 class="page-title">{{ TF $.Lang "teams.members_title" .Team.Name }}</h1>
 
     <!-- Информация о капитане -->
     <div class="card mb-6">
-        <p class="text-gray-700 dark:text-gray-300"><span class="font-medium text-gray-600 dark:text-gray-400">Капитан:</span> {{.Team.Captain.Name}} ({{.Team.Captain.Email}})</p>
+        <p class="text-gray-700 dark:text-gray-300">{{ TF $.Lang "teams.captain_label" .Team.Captain.Name .Team.Captain.Email }}</p>
     </div>
 
     <!-- Список участников -->
     <div class="card mb-6">
         <div class="flex justify-between items-center mb-4">
-            <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300">Участники ({{len .Members}})</h2>
+            <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300">{{ TF $.Lang "teams.member_count" (len .Members) }}</h2>
         </div>
 
         {{if .Members}}
@@ -19,32 +19,32 @@
             <li class="py-3 flex flex-wrap items-center justify-between gap-2">
                 <span class="text-gray-800 dark:text-gray-100">{{.Name}} ({{.Email}})</span>
                 {{if and $.CanManage}}
-                <form action="/teams/{{$.Team.ID}}/members/{{.ID}}/remove" method="POST" class="inline" data-confirm-form="Удалить участника?">
+                <form action="/teams/{{$.Team.ID}}/members/{{.ID}}/remove" method="POST" class="inline" data-confirm-form='{{ T $.Lang "team.remove_member_confirm" }}'>
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
-                    <button type="submit" class="btn btn-danger text-xs">Удалить</button>
+                    <button type="submit" class="btn btn-danger text-xs">{{ T $.Lang "common.delete" }}</button>
                 </form>
                 {{end}}
             </li>
             {{end}}
         </ul>
         {{else}}
-        <p class="text-gray-500 dark:text-gray-400 text-sm">В команде пока нет участников.</p>
+        <p class="text-gray-500 dark:text-gray-400 text-sm">{{ T $.Lang "teams.no_members" }}</p>
         {{end}}
     </div>
 
     <!-- Действия для управления -->
     {{if .CanManage}}
     <div class="flex flex-wrap gap-3 mb-6">
-        <a href="/teams/{{.Team.ID}}/invitations/new" class="btn btn-primary text-sm">+ Пригласить участника</a>
-        <a href="/teams/{{.Team.ID}}/invitations" class="btn btn-outline text-sm">Приглашения</a>
-        <a href="/teams/{{.Team.ID}}/chat" class="btn btn-outline text-sm">💬 Чат команды</a>
-        <a href="/teams/{{.Team.ID}}/change-captain" class="btn btn-outline text-sm">Сменить капитана</a>
+        <a href="/teams/{{.Team.ID}}/invitations/new" class="btn btn-primary text-sm">{{ T $.Lang "teams.add_member" }}</a>
+        <a href="/teams/{{.Team.ID}}/invitations" class="btn btn-outline text-sm">{{ T $.Lang "teams.invitations" }}</a>
+        <a href="/teams/{{.Team.ID}}/chat" class="btn btn-outline text-sm">{{ T $.Lang "teams.team_chat" }}</a>
+        <a href="/teams/{{.Team.ID}}/change-captain" class="btn btn-outline text-sm">{{ T $.Lang "teams.change_captain" }}</a>
     </div>
     {{end}}
 
     <!-- Навигация назад -->
     <div class="mt-6">
-        <a href="/teams" class="btn btn-outline text-sm">← К списку команд</a>
+        <a href="/teams" class="btn btn-outline text-sm">{{ T $.Lang "teams.to_list" }}</a>
     </div>
 </div>
 <script nonce="{{.csp_nonce}}">

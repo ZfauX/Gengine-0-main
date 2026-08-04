@@ -118,13 +118,13 @@ func NewLevelHandler(
 // @Param id path int true "ID игры"
 // @Success 200 {string} html "Список уровней"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/levels [get]
 // @Security JWT
 func (h *LevelHandler) ListByGame(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -163,10 +163,10 @@ func (h *LevelHandler) ListByGame(c *gin.Context) {
 		"IsAdmin":       isAdmin,
 	}
 	render.SetBreadcrumb(data,
-		render.BreadcrumbItem{Name: "Главная", URL: "/"},
-		render.BreadcrumbItem{Name: "Игры", URL: "/games"},
+		render.BreadcrumbItem{Name: "nav.home", URL: "/"},
+		render.BreadcrumbItem{Name: "nav.games", URL: "/games"},
 		render.BreadcrumbItem{Name: gameName, URL: "/games/" + strconv.Itoa(gameID)},
-		render.BreadcrumbItem{Name: "Уровни"},
+		render.BreadcrumbItem{Name: "nav.levels"},
 	)
 
 	render.Page(c, http.StatusOK, "levels-list.html", data)
@@ -179,13 +179,13 @@ func (h *LevelHandler) ListByGame(c *gin.Context) {
 // @Param id path int true "ID игры"
 // @Success 200 {string} html "Форма создания уровня"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/levels/new [get]
 // @Security JWT
 func (h *LevelHandler) NewForm(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -204,11 +204,11 @@ func (h *LevelHandler) NewForm(c *gin.Context) {
 		"IsAdmin":       isAdmin,
 	}
 	render.SetBreadcrumb(data,
-		render.BreadcrumbItem{Name: "Главная", URL: "/"},
-		render.BreadcrumbItem{Name: "Игры", URL: "/games"},
+		render.BreadcrumbItem{Name: "nav.home", URL: "/"},
+		render.BreadcrumbItem{Name: "nav.games", URL: "/games"},
 		render.BreadcrumbItem{Name: gameName, URL: "/games/" + strconv.Itoa(gameID)},
-		render.BreadcrumbItem{Name: "Уровни", URL: "/games/" + strconv.Itoa(gameID) + "/levels"},
-		render.BreadcrumbItem{Name: "Создание уровня"},
+		render.BreadcrumbItem{Name: "nav.levels", URL: "/games/" + strconv.Itoa(gameID) + "/levels"},
+		render.BreadcrumbItem{Name: "nav.new_level"},
 	)
 	render.Page(c, http.StatusOK, "levels-new.html", data)
 }
@@ -226,13 +226,13 @@ func (h *LevelHandler) NewForm(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}/levels"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/levels [post]
 // @Security JWT
 func (h *LevelHandler) Create(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -288,7 +288,7 @@ func (h *LevelHandler) Create(c *gin.Context) {
 		render.Page(c, http.StatusInternalServerError, "levels-new.html", gin.H{
 			"Title":  "Новый уровень",
 			"GameID": gameID,
-			"Error":  err.Error(),
+			"Error":  "Ошибка сервера",
 			"csrf":   csrf.GetToken(c),
 		})
 		return
@@ -305,14 +305,14 @@ func (h *LevelHandler) Create(c *gin.Context) {
 // @Param level_id path int true "ID уровня"
 // @Success 200 {string} html "Форма редактирования уровня"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
-// @Failure 404 {object} map[string]interface{} "Уровень не найден"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 404 {object} map[string]interface{} render.Tr(c, "handler.level_not_found")
 // @Router /games/{id}/levels/{level_id} [get]
 // @Security JWT
 func (h *LevelHandler) EditForm(c *gin.Context) {
 	levelID, err := strconv.Atoi(c.Param("level_id"))
 	if err != nil || levelID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID уровня")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_level_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -357,10 +357,10 @@ func (h *LevelHandler) EditForm(c *gin.Context) {
 		"IsAdmin":       isAdmin,
 	}
 	render.SetBreadcrumb(data,
-		render.BreadcrumbItem{Name: "Главная", URL: "/"},
-		render.BreadcrumbItem{Name: "Игры", URL: "/games"},
+		render.BreadcrumbItem{Name: "nav.home", URL: "/"},
+		render.BreadcrumbItem{Name: "nav.games", URL: "/games"},
 		render.BreadcrumbItem{Name: gameName, URL: "/games/" + strconv.Itoa(int(gameID))},
-		render.BreadcrumbItem{Name: "Уровни", URL: "/games/" + strconv.Itoa(int(gameID)) + "/levels"},
+		render.BreadcrumbItem{Name: "nav.levels", URL: "/games/" + strconv.Itoa(int(gameID)) + "/levels"},
 		render.BreadcrumbItem{Name: level.Name},
 	)
 	render.Page(c, http.StatusOK, "levels-edit.html", data)
@@ -379,13 +379,13 @@ func (h *LevelHandler) EditForm(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}/levels"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/levels/{level_id} [put]
 // @Security JWT
 func (h *LevelHandler) Update(c *gin.Context) {
 	levelID, err := strconv.Atoi(c.Param("level_id"))
 	if err != nil || levelID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID уровня")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_level_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -441,7 +441,7 @@ func (h *LevelHandler) Update(c *gin.Context) {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			render.Page(c, http.StatusNotFound, "levels-edit.html", gin.H{
 				"Title": "Редактирование уровня",
-				"Error": "Уровень не найден",
+				"Error": render.Tr(c, "handler.level_not_found"),
 				"csrf":  csrf.GetToken(c),
 			})
 		} else {
@@ -449,7 +449,7 @@ func (h *LevelHandler) Update(c *gin.Context) {
 			render.Page(c, http.StatusInternalServerError, "levels-edit.html", gin.H{
 				"Title": "Редактирование уровня",
 				"Level": updated,
-				"Error": err.Error(),
+				"Error": "Ошибка сервера",
 				"csrf":  csrf.GetToken(c),
 			})
 		}
@@ -469,24 +469,24 @@ func (h *LevelHandler) Update(c *gin.Context) {
 // @Param level_id path int true "ID уровня"
 // @Success 302 {string} string "Перенаправление на /games/{id}/levels"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/levels/{level_id}/delete [post]
 // @Security JWT
 func (h *LevelHandler) Delete(c *gin.Context) {
 	gameID, err := strconv.Atoi(c.Param("id"))
 	if err != nil || gameID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID игры")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
 		return
 	}
 	levelID, err := strconv.Atoi(c.Param("level_id"))
 	if err != nil || levelID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID уровня")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_level_id"))
 		return
 	}
 	userID := c.GetUint("userID")
 
 	if err := h.levelService.DeleteFromActiveGame(c.Request.Context(), uint(gameID), uint(levelID), userID); err != nil {
-		render.RenderError(c, http.StatusForbidden, err.Error())
+		render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, err.Error()))
 		return
 	}
 
@@ -500,13 +500,13 @@ func (h *LevelHandler) Delete(c *gin.Context) {
 // @Param level_id path int true "ID уровня"
 // @Success 302 {string} string "Перенаправление на /games/{id}/levels"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/levels/{level_id}/duplicate [post]
 // @Security JWT
 func (h *LevelHandler) Duplicate(c *gin.Context) {
 	levelID, err := strconv.Atoi(c.Param("level_id"))
 	if err != nil || levelID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID уровня")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_level_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -514,7 +514,7 @@ func (h *LevelHandler) Duplicate(c *gin.Context) {
 	newLevel, err := h.levelService.Duplicate(c.Request.Context(), uint(levelID), userID)
 	if err != nil {
 		log.Error().Err(err).Int("level_id", levelID).Uint("user", userID).Msg("Duplicate: failed to duplicate level")
-		render.RenderError(c, http.StatusForbidden, err.Error())
+		render.RenderError(c, http.StatusForbidden, "Ошибка дублирования уровня")
 		return
 	}
 
@@ -531,26 +531,27 @@ func (h *LevelHandler) Duplicate(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}/levels"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/levels/{level_id}/move [post]
 // @Security JWT
 func (h *LevelHandler) Move(c *gin.Context) {
 	levelID, err := strconv.Atoi(c.Param("level_id"))
 	if err != nil || levelID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID уровня")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_level_id"))
 		return
 	}
 	userID := c.GetUint("userID")
 
 	var input MoveLevelInput
 	if err := c.ShouldBind(&input); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверные данные: "+err.Error())
+		log.Error().Err(err).Int("level_id", levelID).Uint("user", userID).Msg("Move: invalid input")
+		render.RenderError(c, http.StatusBadRequest, "Неверный формат данных")
 		return
 	}
 
 	if err := h.levelService.Move(c.Request.Context(), uint(levelID), input.Direction, userID); err != nil {
 		log.Error().Err(err).Int("level_id", levelID).Msg("Move: failed to move level")
-		render.RenderError(c, http.StatusForbidden, err.Error())
+		render.RenderError(c, http.StatusForbidden, "Ошибка перемещения уровня")
 		return
 	}
 
@@ -568,13 +569,13 @@ func (h *LevelHandler) Move(c *gin.Context) {
 // @Param level_id path int true "ID уровня"
 // @Success 200 {string} html "Список вопросов"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/levels/{level_id}/questions [get]
 // @Security JWT
 func (h *LevelHandler) ListQuestions(c *gin.Context) {
 	levelID, err := strconv.Atoi(c.Param("level_id"))
 	if err != nil || levelID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID уровня")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_level_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -625,12 +626,12 @@ func (h *LevelHandler) ListQuestions(c *gin.Context) {
 		"IsAdmin":       isAdmin,
 	}
 	render.SetBreadcrumb(data,
-		render.BreadcrumbItem{Name: "Главная", URL: "/"},
-		render.BreadcrumbItem{Name: "Игры", URL: "/games"},
+		render.BreadcrumbItem{Name: "nav.home", URL: "/"},
+		render.BreadcrumbItem{Name: "nav.games", URL: "/games"},
 		render.BreadcrumbItem{Name: gameName, URL: "/games/" + strconv.Itoa(int(level.GameID))},
-		render.BreadcrumbItem{Name: "Уровни", URL: "/games/" + strconv.Itoa(int(level.GameID)) + "/levels"},
+		render.BreadcrumbItem{Name: "nav.levels", URL: "/games/" + strconv.Itoa(int(level.GameID)) + "/levels"},
 		render.BreadcrumbItem{Name: level.Name, URL: "/games/" + strconv.Itoa(int(level.GameID)) + "/levels/" + strconv.Itoa(levelID)},
-		render.BreadcrumbItem{Name: "Вопросы"},
+		render.BreadcrumbItem{Name: "nav.questions"},
 	)
 	render.Page(c, http.StatusOK, "questions-list.html", data)
 }
@@ -643,13 +644,13 @@ func (h *LevelHandler) ListQuestions(c *gin.Context) {
 // @Param level_id path int true "ID уровня"
 // @Success 200 {string} html "Форма создания вопроса"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/levels/{level_id}/questions/new [get]
 // @Security JWT
 func (h *LevelHandler) NewQuestionForm(c *gin.Context) {
 	levelID, err := strconv.Atoi(c.Param("level_id"))
 	if err != nil || levelID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID уровня")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_level_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -687,23 +688,24 @@ func (h *LevelHandler) NewQuestionForm(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}/levels/{level_id}/questions"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/levels/{level_id}/questions [post]
 // @Security JWT
 func (h *LevelHandler) CreateQuestion(c *gin.Context) {
 	levelID, err := strconv.Atoi(c.Param("level_id"))
 	if err != nil || levelID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID уровня")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_level_id"))
 		return
 	}
 	userID := c.GetUint("userID")
 
 	var input CreateQuestionInput
 	if err := c.ShouldBind(&input); err != nil {
+		log.Error().Err(err).Int("level_id", levelID).Uint("user", userID).Msg("CreateQuestion: invalid input")
 		render.Page(c, http.StatusBadRequest, "questions-new.html", gin.H{
 			"Title":   "Новый вопрос",
 			"LevelID": levelID,
-			"Error":   "Неверные данные: " + err.Error(),
+			"Error":   "Неверный формат данных",
 			"csrf":    csrf.GetToken(c),
 		})
 		return
@@ -719,7 +721,7 @@ func (h *LevelHandler) CreateQuestion(c *gin.Context) {
 		render.Page(c, http.StatusInternalServerError, "questions-new.html", gin.H{
 			"Title":   "Новый вопрос",
 			"LevelID": levelID,
-			"Error":   err.Error(),
+			"Error":   "Ошибка сервера",
 			"csrf":    csrf.GetToken(c),
 		})
 		return
@@ -738,19 +740,20 @@ func (h *LevelHandler) CreateQuestion(c *gin.Context) {
 // @Param question_id path int true "ID вопроса"
 // @Success 200 {string} html "Форма редактирования вопроса"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
-// @Failure 404 {object} map[string]interface{} "Вопрос не найден"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 404 {object} map[string]interface{} render.Tr(c, "handler.question_not_found")
 // @Router /games/{id}/levels/{level_id}/questions/{question_id}/edit [get]
 // @Security JWT
 func (h *LevelHandler) EditQuestionForm(c *gin.Context) {
 	questionID, err := strconv.Atoi(c.Param("question_id"))
 	if err != nil || questionID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID вопроса")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_question_id"))
 		return
 	}
 	userID := c.GetUint("userID")
 
-	question, err := h.questionService.GetByID(c.Request.Context(), uint(questionID))
+	// JOIN-оптимизация: question + levelID + gameID в 1 SQL-запросе
+	chain, err := h.questionService.GetByIDWithGameID(c.Request.Context(), uint(questionID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			render.RenderErrorPage(c, http.StatusNotFound)
@@ -761,20 +764,9 @@ func (h *LevelHandler) EditQuestionForm(c *gin.Context) {
 		return
 	}
 
-	level, err := h.levelService.GetByID(c.Request.Context(), question.LevelID)
+	ok, err := h.authorizer.IsUserManager(c.Request.Context(), chain.GameID, userID)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			render.RenderErrorPage(c, http.StatusNotFound)
-		} else {
-			log.Error().Err(err).Uint("level_id", question.LevelID).Msg("EditQuestionForm: failed to get level")
-			render.RenderErrorPage(c, http.StatusInternalServerError)
-		}
-		return
-	}
-
-	ok, err := h.authorizer.IsUserManager(c.Request.Context(), level.GameID, userID)
-	if err != nil {
-		log.Error().Err(err).Uint("game_id", level.GameID).Uint("user", userID).Msg("EditQuestionForm: failed to check manager")
+		log.Error().Err(err).Uint("game_id", chain.GameID).Uint("user", userID).Msg("EditQuestionForm: failed to check manager")
 		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
@@ -785,11 +777,16 @@ func (h *LevelHandler) EditQuestionForm(c *gin.Context) {
 
 	isAdmin := middleware.IsAdmin(c)
 
+	question := &Question{}
+	question.ID = chain.QuestionID
+	question.LevelID = chain.LevelID
+	question.Text = chain.Text
+	question.Hint = chain.Hint
 	render.Page(c, http.StatusOK, "questions-edit.html", gin.H{
 		"Title":         "Редактирование вопроса",
 		"Question":      question,
-		"GameID":        level.GameID,
-		"LevelID":       question.LevelID,
+		"GameID":        chain.GameID,
+		"LevelID":       chain.LevelID,
 		"csrf":          csrf.GetToken(c),
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,
@@ -807,22 +804,23 @@ func (h *LevelHandler) EditQuestionForm(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}/levels/{level_id}/questions"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/levels/{level_id}/questions/{question_id} [put]
 // @Security JWT
 func (h *LevelHandler) UpdateQuestion(c *gin.Context) {
 	questionID, err := strconv.Atoi(c.Param("question_id"))
 	if err != nil || questionID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID вопроса")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_question_id"))
 		return
 	}
 	userID := c.GetUint("userID")
 
 	var input UpdateQuestionInput
 	if err := c.ShouldBind(&input); err != nil {
+		log.Error().Err(err).Int("question_id", questionID).Uint("user", userID).Msg("UpdateQuestion: invalid input")
 		render.Page(c, http.StatusBadRequest, "questions-edit.html", gin.H{
 			"Title": "Редактирование вопроса",
-			"Error": "Неверные данные: " + err.Error(),
+			"Error": "Неверный формат данных",
 			"csrf":  csrf.GetToken(c),
 		})
 		return
@@ -838,7 +836,7 @@ func (h *LevelHandler) UpdateQuestion(c *gin.Context) {
 		render.Page(c, http.StatusInternalServerError, "questions-edit.html", gin.H{
 			"Title":    "Редактирование вопроса",
 			"Question": updated,
-			"Error":    err.Error(),
+			"Error":    "Ошибка сервера",
 			"csrf":     csrf.GetToken(c),
 		})
 		return
@@ -856,20 +854,20 @@ func (h *LevelHandler) UpdateQuestion(c *gin.Context) {
 // @Param question_id path int true "ID вопроса"
 // @Success 302 {string} string "Перенаправление на /games/{id}/levels/{level_id}/questions"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/levels/{level_id}/questions/{question_id}/delete [post]
 // @Security JWT
 func (h *LevelHandler) DeleteQuestion(c *gin.Context) {
 	questionID, err := strconv.Atoi(c.Param("question_id"))
 	if err != nil || questionID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID вопроса")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_question_id"))
 		return
 	}
 	userID := c.GetUint("userID")
 
 	if err := h.questionService.Delete(c.Request.Context(), uint(questionID), userID); err != nil {
 		log.Error().Err(err).Int("question_id", questionID).Uint("user", userID).Msg("DeleteQuestion: failed to delete question")
-		render.RenderError(c, http.StatusForbidden, err.Error())
+		render.RenderError(c, http.StatusForbidden, "Ошибка удаления вопроса")
 		return
 	}
 
@@ -888,13 +886,13 @@ func (h *LevelHandler) DeleteQuestion(c *gin.Context) {
 // @Param question_id path int true "ID вопроса"
 // @Success 200 {string} html "Список ответов"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/levels/{level_id}/questions/{question_id}/answers [get]
 // @Security JWT
 func (h *LevelHandler) ListAnswers(c *gin.Context) {
 	questionID, err := strconv.Atoi(c.Param("question_id"))
 	if err != nil || questionID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID вопроса")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_question_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -957,13 +955,13 @@ func (h *LevelHandler) ListAnswers(c *gin.Context) {
 		"IsAdmin":       isAdmin,
 	}
 	render.SetBreadcrumb(data,
-		render.BreadcrumbItem{Name: "Главная", URL: "/"},
-		render.BreadcrumbItem{Name: "Игры", URL: "/games"},
+		render.BreadcrumbItem{Name: "nav.home", URL: "/"},
+		render.BreadcrumbItem{Name: "nav.games", URL: "/games"},
 		render.BreadcrumbItem{Name: gameName, URL: "/games/" + strconv.Itoa(int(level.GameID))},
-		render.BreadcrumbItem{Name: "Уровни", URL: "/games/" + strconv.Itoa(int(level.GameID)) + "/levels"},
+		render.BreadcrumbItem{Name: "nav.levels", URL: "/games/" + strconv.Itoa(int(level.GameID)) + "/levels"},
 		render.BreadcrumbItem{Name: level.Name, URL: "/games/" + strconv.Itoa(int(level.GameID)) + "/levels/" + strconv.Itoa(int(level.ID))},
-		render.BreadcrumbItem{Name: "Вопросы", URL: "/games/" + strconv.Itoa(int(level.GameID)) + "/levels/" + strconv.Itoa(int(level.ID)) + "/questions"},
-		render.BreadcrumbItem{Name: "Ответы"},
+		render.BreadcrumbItem{Name: "nav.questions", URL: "/games/" + strconv.Itoa(int(level.GameID)) + "/levels/" + strconv.Itoa(int(level.ID)) + "/questions"},
+		render.BreadcrumbItem{Name: "nav.answers"},
 	)
 	render.Page(c, http.StatusOK, "answers-index.html", data)
 }
@@ -978,23 +976,24 @@ func (h *LevelHandler) ListAnswers(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}/levels/{level_id}/questions/{question_id}/answers"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/levels/{level_id}/questions/{question_id}/answers [post]
 // @Security JWT
 func (h *LevelHandler) CreateAnswer(c *gin.Context) {
 	questionID, err := strconv.Atoi(c.Param("question_id"))
 	if err != nil || questionID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID вопроса")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_question_id"))
 		return
 	}
 	userID := c.GetUint("userID")
 
 	var input CreateAnswerInput
 	if err := c.ShouldBind(&input); err != nil {
+		log.Error().Err(err).Int("question_id", questionID).Uint("user", userID).Msg("CreateAnswer: invalid input")
 		render.Page(c, http.StatusBadRequest, "answers-list.html", gin.H{
 			"Title":      "Ответы",
 			"QuestionID": questionID,
-			"Error":      "Неверные данные: " + err.Error(),
+			"Error":      "Неверный формат данных",
 			"csrf":       csrf.GetToken(c),
 		})
 		return
@@ -1009,7 +1008,7 @@ func (h *LevelHandler) CreateAnswer(c *gin.Context) {
 		render.Page(c, http.StatusInternalServerError, "answers-list.html", gin.H{
 			"Title":      "Ответы",
 			"QuestionID": questionID,
-			"Error":      err.Error(),
+			"Error":      "Ошибка сервера",
 			"csrf":       csrf.GetToken(c),
 		})
 		return
@@ -1029,20 +1028,20 @@ func (h *LevelHandler) CreateAnswer(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}/levels/{level_id}/questions/{question_id}/answers"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/levels/{level_id}/questions/{question_id}/answers/{answer_id}/delete [post]
 // @Security JWT
 func (h *LevelHandler) DeleteAnswer(c *gin.Context) {
 	answerID, err := strconv.Atoi(c.Param("answer_id"))
 	if err != nil || answerID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID ответа")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_answer_id"))
 		return
 	}
 	userID := c.GetUint("userID")
 
 	if err := h.answerService.Delete(c.Request.Context(), uint(answerID), userID); err != nil {
 		log.Error().Err(err).Int("answer_id", answerID).Uint("user", userID).Msg("DeleteAnswer: failed to delete answer")
-		render.RenderError(c, http.StatusForbidden, err.Error())
+		render.RenderError(c, http.StatusForbidden, "Ошибка удаления ответа")
 		return
 	}
 

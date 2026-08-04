@@ -1,48 +1,48 @@
 {{define "levels-list.html"}}
 <div class="max-w-7xl mx-auto">
-    <h1 class="page-title" id="page-title">Уровни игры</h1>
+    <h1 class="page-title" id="page-title">{{ T $.Lang "game.levels_title" }}</h1>
 
     {{if .Error}}
     <div class="flash flash-error" role="alert">{{.Error}}</div>
     {{end}}
 
     <div class="mb-6">
-        <a href="/games/{{.GameID}}/levels/new" class="btn btn-primary text-sm" aria-label="Создать новый уровень">+ Добавить уровень</a>
+        <a href="/games/{{.GameID}}/levels/new" class="btn btn-primary text-sm" aria-label='{{ T $.Lang "level.create_new" }}'>{{ T $.Lang "game.levels_add" }}</a>
     </div>
 
     {{if .Levels}}
-    <div id="level-list" class="space-y-3" role="list" aria-label="Список уровней" data-game-id="{{.GameID}}">
+    <div id="level-list" class="space-y-3" role="list" aria-label='{{ T $.Lang "level.list_aria_label" }}' data-game-id="{{.GameID}}">
         {{range .Levels}}
          <div class="card flex flex-wrap items-center gap-3 p-4 hover:shadow-md transition" role="listitem" draggable="true"
               data-level-id="{{.ID}}" data-position="{{.Position}}"
-             aria-label="Уровень {{.Name}}, позиция {{.Position}}">
-            <div class="cursor-grab active:cursor-grabbing touch-none" aria-label="Перетащить для сортировки">
+              aria-label='{{ TF $.Lang "level.level_aria_item" .Name .Position }}'>
+            <div class="cursor-grab active:cursor-grabbing touch-none" aria-label='{{ T $.Lang "level.drag_handle" }}'>
                 <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"/></svg>
             </div>
             <div class="flex-1 min-w-[180px]">
-                <a href="/games/{{$.GameID}}/levels/{{.ID}}" class="text-blue-600 dark:text-blue-400 hover:underline font-medium text-gray-800 dark:text-gray-100" aria-label="Перейти к уровню {{.Name}}">{{.Name}}</a>
-                <span class="text-sm text-gray-500 dark:text-gray-400 ml-2">(позиция: <span class="position-badge">{{.Position}}</span>)</span>
+                <a href="/games/{{$.GameID}}/levels/{{.ID}}" class="text-blue-600 dark:text-blue-400 hover:underline font-medium text-gray-800 dark:text-gray-100" aria-label='{{ TF $.Lang "level.goto_level" .Name }}'>{{.Name}}</a>
+                <span class="text-sm text-gray-500 dark:text-gray-400 ml-2">{{ TF $.Lang "game.levels_position" .Position }}</span>
             </div>
             <div class="flex flex-wrap items-center gap-2">
-                <a href="/games/{{$.GameID}}/levels/{{.ID}}/edit" class="btn btn-outline text-xs" aria-label="Редактировать уровень {{.Name}}">✎</a>
-                <a href="/games/{{$.GameID}}/levels/{{.ID}}/questions" class="btn btn-outline text-xs">Вопросы</a>
-                <button type="button" data-action="duplicate" data-level-id="{{.ID}}" class="btn btn-primary text-xs" aria-label="Дублировать уровень {{.Name}}">Дублировать</button>
-                <button type="button" data-action="move-up" data-level-id="{{.ID}}" class="btn btn-outline text-xs px-2 py-1" aria-label="Переместить уровень {{.Name}} вверх" title="Вверх">↑</button>
-                <button type="button" data-action="move-down" data-level-id="{{.ID}}" class="btn btn-outline text-xs px-2 py-1" aria-label="Переместить уровень {{.Name}} вниз" title="Вниз">↓</button>
-                <button type="button" data-action="delete" data-level-id="{{.ID}}" class="btn btn-danger text-xs" aria-label="Удалить уровень {{.Name}}">Удалить</button>
+                <a href="/games/{{$.GameID}}/levels/{{.ID}}/edit" class="btn btn-outline text-xs" aria-label='{{ TF $.Lang "level.edit_level" .Name }}'>{{ T $.Lang "game.levels_edit" }}</a>
+                <a href="/games/{{$.GameID}}/levels/{{.ID}}/questions" class="btn btn-outline text-xs">{{ T $.Lang "game.levels_questions" }}</a>
+                <button type="button" data-action="duplicate" data-level-id="{{.ID}}" class="btn btn-primary text-xs" aria-label='{{ TF $.Lang "level.duplicate_level" .Name }}'>{{ T $.Lang "game.levels_duplicate" }}</button>
+                <button type="button" data-action="move-up" data-level-id="{{.ID}}" class="btn btn-outline text-xs px-2 py-1" aria-label='{{ TF $.Lang "level.move_up_level" .Name }}' title='{{ T $.Lang "game.levels_move_up" }}'>↑</button>
+                <button type="button" data-action="move-down" data-level-id="{{.ID}}" class="btn btn-outline text-xs px-2 py-1" aria-label='{{ TF $.Lang "level.move_down_level" .Name }}' title='{{ T $.Lang "game.levels_move_down" }}'>↓</button>
+                <button type="button" data-action="delete" data-level-id="{{.ID}}" class="btn btn-danger text-xs" aria-label='{{ TF $.Lang "level.delete_level" .Name }}'>{{ T $.Lang "game.levels_delete" }}</button>
             </div>
         </div>
         {{end}}
     </div>
     {{else}}
     <div class="card text-center py-12" role="status">
-        <p class="text-gray-500 dark:text-gray-400">Уровней пока нет.</p>
-        <p class="mt-2 text-sm text-gray-400"><a href="/games/{{.GameID}}/levels/new" class="text-blue-600 dark:text-blue-400 hover:underline">Создайте первый уровень</a></p>
+        <p class="text-gray-500 dark:text-gray-400">{{ T $.Lang "game.levels_no_levels" }}</p>
+        <p class="mt-2 text-sm text-gray-400"><a href="/games/{{.GameID}}/levels/new" class="text-blue-600 dark:text-blue-400 hover:underline">{{ T $.Lang "game.levels_create_first" }}</a></p>
     </div>
     {{end}}
 
     <div class="mt-6">
-        <a href="/games/{{.GameID}}" class="btn btn-outline text-sm" aria-label="Вернуться к игре">← Назад к игре</a>
+        <a href="/games/{{.GameID}}" class="btn btn-outline text-sm" aria-label='{{ T $.Lang "level.back_to_game" }}'>{{ T $.Lang "game.levels_back" }}</a>
     </div>
 </div>
 
@@ -54,20 +54,20 @@ function moveLevel(gameId, levelId, direction) {
         body: '_csrf={{.csrf}}&direction=' + direction
     }).then(function(r) {
         if (r.ok || r.redirected) window.location.reload();
-        else window.showToast('Ошибка перемещения', 'error');
-    }).catch(function() { window.showToast('Ошибка сети', 'error'); });
+        else window.showToast('{{ T $.Lang "level.move_error" }}', 'error');
+    }).catch(function() { window.showToast('{{ T $.Lang "level.network_error" }}', 'error'); });
 }
 
 function deleteLevel(gameId, levelId) {
-    if (!confirm('Удалить уровень?')) return;
+    if (!confirm('{{ T $.Lang "level.delete_confirm" }}')) return;
     fetch('/games/' + gameId + '/levels/' + levelId + '/delete', {
         method: 'POST',
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
         body: '_csrf={{.csrf}}'
     }).then(function(r) {
         if (r.ok || r.redirected) window.location.reload();
-        else window.showToast('Ошибка удаления', 'error');
-    }).catch(function() { window.showToast('Ошибка сети', 'error'); });
+        else window.showToast('{{ T $.Lang "level.delete_error" }}', 'error');
+    }).catch(function() { window.showToast('{{ T $.Lang "level.network_error" }}', 'error'); });
 }
 
 function duplicateLevel(gameId, levelId) {
@@ -77,8 +77,8 @@ function duplicateLevel(gameId, levelId) {
         body: '_csrf={{.csrf}}'
     }).then(function(r) {
         if (r.ok || r.redirected) window.location.reload();
-        else window.showToast('Ошибка дублирования', 'error');
-    }).catch(function() { window.showToast('Ошибка сети', 'error'); });
+        else window.showToast('{{ T $.Lang "level.duplicate_error" }}', 'error');
+    }).catch(function() { window.showToast('{{ T $.Lang "level.network_error" }}', 'error'); });
 }
 
 // CSP-compliant event binding
@@ -155,7 +155,7 @@ function duplicateLevel(gameId, levelId) {
                 body: '_csrf={{.csrf}}'
             }).then(function(r) {
                 if (r.ok || r.redirected) window.location.reload();
-                else window.showToast('Ошибка сортировки', 'error');
+                else window.showToast('{{ T $.Lang "level.sort_error" }}', 'error');
             });
         }
     });

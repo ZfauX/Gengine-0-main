@@ -1,6 +1,6 @@
 {{define "invitations-new.html"}}
 <div class="max-w-3xl mx-auto">
-    <h1 class="page-title">Новое приглашение</h1>
+    <h1 class="page-title">{{ T $.Lang "invitation.new_title" }}</h1>
 
     {{if .Error}}
     <div class="flash flash-error">{{.Error}}</div>
@@ -12,24 +12,24 @@
 
         <!-- Поиск пользователей -->
         <div>
-            <label for="user_search" class="form-label">Поиск участника</label>
-            <input type="text" id="user_search" placeholder="Введите имя или email..." autocomplete="off" required
-                   class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2">
+            <label for="user_search" class="form-label">{{ T $.Lang "invitation.search_user" }}</label>
+            <input type="text" id="user_search" placeholder='{{ T $.Lang "invitation.search_placeholder" }}' autocomplete="off" required
+                   class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2">
             <div id="search-results" class="mt-1 border border-gray-200 dark:border-gray-700 rounded-md bg-white dark:bg-gray-800 shadow-lg max-h-48 overflow-y-auto hidden"></div>
         </div>
 
         <!-- Выбранный пользователь -->
         <div id="selected-user-info" class="hidden p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-md">
             <p class="text-sm text-blue-800 dark:text-blue-200">
-                Пригласить: <span id="selected-user-name" class="font-semibold"></span>
+                {{ T $.Lang "invitation.invite_label" }} <span id="selected-user-name" class="font-semibold"></span>
                 (<span id="selected-user-email"></span>)
             </p>
         </div>
 
         <!-- Кнопки -->
         <div class="flex flex-wrap gap-3 pt-2">
-            <button type="submit" id="invite-btn" class="btn btn-primary text-sm" disabled>Пригласить</button>
-            <a href="/teams/{{.TeamID}}" class="btn btn-outline text-sm">Отмена</a>
+            <button type="submit" id="invite-btn" class="btn btn-primary text-sm" disabled>{{ T $.Lang "invitation.invite_button" }}</button>
+            <a href="/teams/{{.TeamID}}" class="btn btn-outline text-sm">{{ T $.Lang "invitation.cancel" }}</a>
         </div>
     </form>
 </div>
@@ -63,7 +63,7 @@
             .then(function(data) {
                 resultsEl.innerHTML = '';
                 if (!data.users || data.users.length === 0) {
-                    resultsEl.innerHTML = '<div class="p-3 text-sm text-gray-500">Ничего не найдено</div>';
+                    resultsEl.innerHTML = '<div class="p-3 text-sm text-gray-500">{{ T $.Lang "invitation.no_results" }}</div>';
                     resultsEl.classList.remove('hidden');
                     return;
                 }
@@ -78,7 +78,7 @@
                 resultsEl.classList.remove('hidden');
             })
             .catch(function() {
-                resultsEl.innerHTML = '<div class="p-3 text-sm text-red-500">Ошибка поиска</div>';
+                resultsEl.innerHTML = '<div class="p-3 text-sm text-red-500">{{ T $.Lang "invitation.search_error" }}</div>';
                 resultsEl.classList.remove('hidden');
             });
     }

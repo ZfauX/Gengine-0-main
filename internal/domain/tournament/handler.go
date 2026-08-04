@@ -102,8 +102,8 @@ func (h *TournamentHandler) List(c *gin.Context) {
 		"Title":       "Турниры",
 		"Tournaments": tournaments,
 		"Breadcrumbs": []map[string]string{
-			{"name": "Главная", "url": "/"},
-			{"name": "Турниры"},
+			{"name": "nav.home", "url": "/"},
+			{"name": "nav.tournaments"},
 		},
 	})
 }
@@ -121,7 +121,7 @@ func (h *TournamentHandler) List(c *gin.Context) {
 func (h *TournamentHandler) Show(c *gin.Context) {
 	var req TournamentIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID турнира")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_tournament_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -167,8 +167,8 @@ func (h *TournamentHandler) Show(c *gin.Context) {
 		"CurrentUserID": userID,
 		"csrf":          csrf.GetToken(c),
 		"Breadcrumbs": []map[string]string{
-			{"name": "Главная", "url": "/"},
-			{"name": "Турниры", "url": "/tournaments"},
+			{"name": "nav.home", "url": "/"},
+			{"name": "nav.tournaments", "url": "/tournaments"},
 			{"name": t.Name},
 		},
 	})
@@ -188,9 +188,9 @@ func (h *TournamentHandler) NewForm(c *gin.Context) {
 		"Title": "Создание турнира",
 		"csrf":  csrf.GetToken(c),
 		"Breadcrumbs": []map[string]string{
-			{"name": "Главная", "url": "/"},
-			{"name": "Турниры", "url": "/tournaments"},
-			{"name": "Создание турнира"},
+			{"name": "nav.home", "url": "/"},
+			{"name": "nav.tournaments", "url": "/tournaments"},
+			{"name": "nav.new_tournament"},
 		},
 	})
 }
@@ -256,7 +256,7 @@ func (h *TournamentHandler) Create(c *gin.Context) {
 		log.Error().Err(err).Uint("author_id", userID).Msg("TournamentHandler.Create: failed to create tournament")
 		render.Page(c, http.StatusInternalServerError, "tournaments-new.html", gin.H{
 			"Title": "Создание турнира",
-			"Error": err.Error(),
+			"Error": render.LocalizeError(c, err.Error()),
 			"csrf":  csrf.GetToken(c),
 		})
 		return
@@ -273,14 +273,14 @@ func (h *TournamentHandler) Create(c *gin.Context) {
 // @Param id path int true "ID турнира"
 // @Success 200 {string} html "Форма редактирования"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Failure 404 {object} map[string]interface{} "Турнир не найден"
 // @Router /tournaments/{id}/edit [get]
 // @Security JWT
 func (h *TournamentHandler) EditForm(c *gin.Context) {
 	var req TournamentIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID турнира")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_tournament_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -305,10 +305,10 @@ func (h *TournamentHandler) EditForm(c *gin.Context) {
 		"Tournament": t,
 		"csrf":       csrf.GetToken(c),
 		"Breadcrumbs": []map[string]string{
-			{"name": "Главная", "url": "/"},
-			{"name": "Турниры", "url": "/tournaments"},
+			{"name": "nav.home", "url": "/"},
+			{"name": "nav.tournaments", "url": "/tournaments"},
 			{"name": t.Name, "url": "/tournaments/" + strconv.Itoa(int(t.ID))},
-			{"name": "Редактирование"},
+			{"name": "nav.edit_tournament"},
 		},
 	})
 }
@@ -327,13 +327,13 @@ func (h *TournamentHandler) EditForm(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на страницу турнира"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /tournaments/{id} [put]
 // @Security JWT
 func (h *TournamentHandler) Update(c *gin.Context) {
 	var req TournamentIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID турнира")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_tournament_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -382,7 +382,7 @@ func (h *TournamentHandler) Update(c *gin.Context) {
 		log.Error().Err(err).Uint("tournament_id", req.ID).Uint("user_id", userID).Msg("TournamentHandler.Update: failed to update tournament")
 		render.Page(c, http.StatusInternalServerError, "tournaments-edit.html", gin.H{
 			"Title": "Редактирование турнира",
-			"Error": err.Error(),
+			"Error": render.LocalizeError(c, err.Error()),
 			"csrf":  csrf.GetToken(c),
 		})
 		return
@@ -399,13 +399,13 @@ func (h *TournamentHandler) Update(c *gin.Context) {
 // @Param id path int true "ID турнира"
 // @Success 200 {string} html "Список игр турнира"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /tournaments/{id}/games [get]
 // @Security JWT
 func (h *TournamentHandler) Games(c *gin.Context) {
 	var req TournamentIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID турнира")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_tournament_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -441,7 +441,7 @@ func (h *TournamentHandler) Games(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /tournaments/{id}/games"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /tournaments/{id}/games [post]
 // @Security JWT
 func (h *TournamentHandler) AddGame(c *gin.Context) {
@@ -454,19 +454,20 @@ func (h *TournamentHandler) AddGame(c *gin.Context) {
 
 	var input AddGameInput
 	if err := c.ShouldBind(&input); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверные данные: "+err.Error())
+		log.Error().Err(err).Uint("tournament_id", req.ID).Uint("user", userID).Msg("TournamentHandler.AddGame: invalid input")
+		render.RenderError(c, http.StatusBadRequest, "Неверный формат данных")
 		return
 	}
 
 	// Валидация ID игры
 	if err := validation.ValidatePositiveUint("ID игры", input.GameID); err != nil {
-		render.RenderError(c, http.StatusBadRequest, err.Error())
+		render.RenderError(c, http.StatusBadRequest, render.LocalizeError(c, err.Error()))
 		return
 	}
 
 	if err := h.tournamentService.AddGame(c.Request.Context(), req.ID, input.GameID, userID); err != nil {
 		log.Error().Err(err).Uint("tournament_id", req.ID).Uint("game_id", input.GameID).Uint("user_id", userID).Msg("TournamentHandler.AddGame: failed to add game")
-		render.RenderError(c, http.StatusForbidden, err.Error())
+		render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, err.Error()))
 		return
 	}
 
@@ -481,7 +482,7 @@ func (h *TournamentHandler) AddGame(c *gin.Context) {
 // @Param game_id path int true "ID игры"
 // @Success 302 {string} string "Перенаправление на /tournaments/{id}/games"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /tournaments/{id}/games/{game_id} [delete]
 // @Security JWT
 func (h *TournamentHandler) RemoveGame(c *gin.Context) {
@@ -494,7 +495,7 @@ func (h *TournamentHandler) RemoveGame(c *gin.Context) {
 
 	if err := h.tournamentService.RemoveGame(c.Request.Context(), req.ID, req.GameID, userID); err != nil {
 		log.Error().Err(err).Uint("tournament_id", req.ID).Uint("game_id", req.GameID).Uint("user_id", userID).Msg("TournamentHandler.RemoveGame: failed to remove game")
-		render.RenderError(c, http.StatusForbidden, err.Error())
+		render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, err.Error()))
 		return
 	}
 
@@ -514,7 +515,7 @@ func (h *TournamentHandler) RemoveGame(c *gin.Context) {
 func (h *TournamentHandler) ApplyForm(c *gin.Context) {
 	var req TournamentIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID турнира")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_tournament_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -542,32 +543,33 @@ func (h *TournamentHandler) ApplyForm(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на страницу турнира"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} "Доступ запрещён"
+// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /tournaments/{id}/apply [post]
 // @Security JWT
 func (h *TournamentHandler) Apply(c *gin.Context) {
 	var req TournamentIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID турнира")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_tournament_id"))
 		return
 	}
 	userID := c.GetUint("userID")
 
 	var input ApplyInput
 	if err := c.ShouldBind(&input); err != nil {
-		render.RenderError(c, http.StatusBadRequest, "Неверные данные: "+err.Error())
+		log.Warn().Err(err).Ctx(c.Request.Context()).Msg("tournament apply invalid input")
+		render.RenderError(c, http.StatusBadRequest, "Неверные данные")
 		return
 	}
 
 	// Валидация ID команды
 	if err := validation.ValidatePositiveUint("ID команды", input.TeamID); err != nil {
-		render.RenderError(c, http.StatusBadRequest, err.Error())
+		render.RenderError(c, http.StatusBadRequest, render.LocalizeError(c, err.Error()))
 		return
 	}
 
 	if err := h.tournamentService.Apply(c.Request.Context(), req.ID, input.TeamID, userID); err != nil {
 		log.Error().Err(err).Uint("tournament_id", req.ID).Uint("team_id", input.TeamID).Uint("user_id", userID).Msg("TournamentHandler.Apply: failed to apply")
-		render.RenderError(c, http.StatusForbidden, err.Error())
+		render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, err.Error()))
 		return
 	}
 

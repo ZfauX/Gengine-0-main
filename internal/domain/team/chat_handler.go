@@ -41,7 +41,7 @@ func NewChatHandler(db *gorm.DB, hub *ws.RoomHub, teamSvc *TeamService) *ChatHan
 func (h *ChatHandler) TeamChatPage(c *gin.Context) {
 	teamID, err := strconv.Atoi(c.Param("team_id"))
 	if err != nil || teamID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID команды")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_team_id"))
 		return
 	}
 	userID := c.GetUint("userID")
@@ -84,10 +84,10 @@ func (h *ChatHandler) TeamChatPage(c *gin.Context) {
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,
 		"Breadcrumbs": []map[string]string{
-			{"name": "Главная", "url": "/"},
-			{"name": "Команды", "url": "/teams"},
+			{"name": "nav.home", "url": "/"},
+			{"name": "nav.teams", "url": "/teams"},
 			{"name": team.Name, "url": "/teams/" + strconv.Itoa(int(team.ID))},
-			{"name": "Чат"},
+			{"name": "nav.chat"},
 		},
 	})
 }

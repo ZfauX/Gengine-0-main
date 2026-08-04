@@ -1,6 +1,6 @@
 {{define "questions-edit.html"}}
 <div class="max-w-3xl mx-auto">
-    <h1 class="page-title">Редактирование вопроса</h1>
+    <h1 class="page-title">{{ T $.Lang "question.edit_title" }}</h1>
 
     {{if .Error}}
     <div class="flash flash-error">{{.Error}}</div>
@@ -12,7 +12,7 @@
 
         <!-- Текст вопроса -->
         <div>
-            <label for="text" class="form-label">Текст вопроса</label>
+            <label for="text" class="form-label">{{ T $.Lang "question.text_label" }}</label>
             <input type="text" name="text" id="text" value="{{.Question.Text}}" required
                    class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.text}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
             {{if .Errors.text}}<p class="field-error">{{.Errors.text}}</p>{{end}}
@@ -20,7 +20,7 @@
 
         <!-- Подсказка -->
         <div>
-            <label for="hint" class="form-label">Подсказка</label>
+            <label for="hint" class="form-label">{{ T $.Lang "question.hint_label" }}</label>
             <input type="text" name="hint" id="hint" value="{{.Question.Hint}}"
                    class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.hint}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
             {{if .Errors.hint}}<p class="field-error">{{.Errors.hint}}</p>{{end}}
@@ -28,8 +28,8 @@
 
         <!-- Кнопки -->
         <div class="flex flex-wrap gap-3 pt-2">
-            <button type="submit" class="btn btn-primary text-sm">Сохранить</button>
-            <a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions" class="btn btn-outline text-sm">Отмена</a>
+            <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "question.save_button" }}</button>
+            <a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions" class="btn btn-outline text-sm">{{ T $.Lang "question.cancel" }}</a>
         </div>
     </form>
 </div>

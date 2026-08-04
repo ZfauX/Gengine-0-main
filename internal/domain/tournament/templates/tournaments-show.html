@@ -8,43 +8,43 @@
         {{if .Tournament.Description}}
         <p class="text-gray-600 dark:text-gray-400">{{.Tournament.Description}}</p>
         {{end}}
-        <p><span class="font-medium text-gray-600 dark:text-gray-400">Автор:</span> {{.Tournament.Author.Name}}</p>
+        <p><span class="font-medium text-gray-600 dark:text-gray-400">{{ T $.Lang "tournament.author" }}</span> {{.Tournament.Author.Name}}</p>
     </div>
 
     <!-- Система начисления очков -->
     <div class="card mb-6">
-        <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">Система начисления очков</h3>
+        <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ T $.Lang "tournament.scoring_system" }}</h3>
         <ul class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
             <li class="bg-blue-50 p-2 rounded-md text-center">
-                <span class="block font-medium text-gray-500 dark:text-gray-400">1 место</span>
+                <span class="block font-medium text-gray-500 dark:text-gray-400">{{ T $.Lang "tournament.place_1" }}</span>
                 <span class="text-xl font-bold text-blue-600 dark:text-blue-400">{{.Tournament.PointsForFirst}}</span>
             </li>
             <li class="bg-blue-50 p-2 rounded-md text-center">
-                <span class="block font-medium text-gray-500 dark:text-gray-400">2 место</span>
+                <span class="block font-medium text-gray-500 dark:text-gray-400">{{ T $.Lang "tournament.place_2" }}</span>
                 <span class="text-xl font-bold text-blue-600 dark:text-blue-400">{{.Tournament.PointsForSecond}}</span>
             </li>
             <li class="bg-blue-50 p-2 rounded-md text-center">
-                <span class="block font-medium text-gray-500 dark:text-gray-400">3 место</span>
+                <span class="block font-medium text-gray-500 dark:text-gray-400">{{ T $.Lang "tournament.place_3" }}</span>
                 <span class="text-xl font-bold text-blue-600 dark:text-blue-400">{{.Tournament.PointsForThird}}</span>
             </li>
             <li class="bg-blue-50 p-2 rounded-md text-center">
-                <span class="block font-medium text-gray-500 dark:text-gray-400">Участие</span>
+                <span class="block font-medium text-gray-500 dark:text-gray-400">{{ T $.Lang "tournament.participation" }}</span>
                 <span class="text-xl font-bold text-blue-600 dark:text-blue-400">{{.Tournament.PointsForParticipation}}</span>
             </li>
         </ul>
     </div>
 
     <!-- Турнирная таблица -->
-    <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">Турнирная таблица</h2>
+    <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">{{ T $.Lang "tournament.leaderboard" }}</h2>
     {{if .Results}}
     <div class="card overflow-x-auto mb-6">
         <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50 dark:bg-gray-800">
                 <tr>
-                    <th scope="col" class="table-header">Место</th>
-                    <th scope="col" class="table-header">Команда</th>
-                    <th scope="col" class="table-header">Очки</th>
-                    <th scope="col" class="table-header">Игр сыграно</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "tournament.table_place" }}</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "tournament.table_team" }}</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "tournament.table_points" }}</th>
+                    <th scope="col" class="table-header">{{ T $.Lang "tournament.table_games_played" }}</th>
                 </tr>
             </thead>
             <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200">
@@ -61,12 +61,12 @@
     </div>
     {{else}}
     <div class="card text-center py-12 mb-6">
-        <p class="text-gray-500 dark:text-gray-400">Пока нет результатов. Команды ещё не завершили игры турнира.</p>
+        <p class="text-gray-500 dark:text-gray-400">{{ T $.Lang "tournament.no_results" }}</p>
     </div>
     {{end}}
 
     <!-- Игры турнира -->
-    <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">Игры турнира</h2>
+    <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">{{ T $.Lang "tournament.games_title" }}</h2>
     {{if .Games}}
     <div class="card mb-6">
         <ul class="divide-y divide-gray-100">
@@ -82,7 +82,7 @@
     </div>
     {{else}}
     <div class="card text-center py-12 mb-6">
-        <p class="text-gray-500 dark:text-gray-400">В турнир пока не добавлены игры.</p>
+        <p class="text-gray-500 dark:text-gray-400">{{ T $.Lang "tournament.no_games" }}</p>
     </div>
     {{end}}
 
@@ -92,24 +92,24 @@
         <form action="/tournaments/{{.Tournament.ID}}/apply" method="POST" class="flex flex-wrap items-end gap-3">
             <input type="hidden" name="_csrf" value="{{.csrf}}">
             <div>
-                <label for="team_id" class="form-label">Команда</label>
+                <label for="team_id" class="form-label">{{ T $.Lang "tournament.select_team" }}</label>
                 <select name="team_id" id="team_id" required
                         class="rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                    <option value="">-- выберите команду --</option>
+                    <option value="">{{ T $.Lang "tournament.no_team_option" }}</option>
                     {{range .UserTeams}}
                         <option value="{{.ID}}">{{.Name}}</option>
                     {{end}}
                 </select>
             </div>
-            <button type="submit" class="btn btn-primary text-sm">Подать заявку</button>
+            <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "tournament.apply_button" }}</button>
         </form>
         {{end}}
-        <a href="/tournaments/{{.Tournament.ID}}/edit" class="btn btn-outline text-sm">Редактировать</a>
-        <a href="/tournaments" class="btn btn-outline text-sm">← Назад к списку</a>
+        <a href="/tournaments/{{.Tournament.ID}}/edit" class="btn btn-outline text-sm">{{ T $.Lang "tournament.edit" }}</a>
+        <a href="/tournaments" class="btn btn-outline text-sm">{{ T $.Lang "tournament.back_to_list" }}</a>
     </div>
     {{else}}
     <div class="card text-center py-12 mb-6">
-        <p class="text-gray-500 dark:text-gray-400">Турнир не найден.</p>
+        <p class="text-gray-500 dark:text-gray-400">{{ T $.Lang "tournament.not_found" }}</p>
     </div>
     {{end}}
 </div>

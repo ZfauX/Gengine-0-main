@@ -104,7 +104,7 @@ func TestTeamService_ChangeCaptain(t *testing.T) {
 	tm, _ := ts.CreateTeam(context.Background(), "Test", oldCap.ID)
 	require.NoError(t, ts.AddMember(context.Background(), tm.ID, newCap.ID, oldCap.ID))
 
-	err := ts.ChangeCaptain(context.Background(), tm.ID, newCap.ID, oldCap.ID)
+	err := ts.ChangeCaptain(context.Background(), tm.ID, newCap.ID, oldCap.ID, false)
 	require.NoError(t, err)
 
 	var updated team.Team
@@ -120,7 +120,7 @@ func TestTeamService_ChangeCaptain_NewNotMember(t *testing.T) {
 	newCap := createUser(t, db, "new@test.com", "pass")
 	tm, _ := ts.CreateTeam(context.Background(), "Test", oldCap.ID)
 
-	err := ts.ChangeCaptain(context.Background(), tm.ID, newCap.ID, oldCap.ID)
+	err := ts.ChangeCaptain(context.Background(), tm.ID, newCap.ID, oldCap.ID, false)
 	assert.Error(t, err)
 }
 

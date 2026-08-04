@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"gengine-0/internal/config"
 	"gengine-0/internal/db"
 	"gengine-0/internal/domain/game"
+	"gengine-0/internal/domain/monitor"
 	"gengine-0/internal/pkg/cache"
 	"gengine-0/internal/pkg/email"
 	"gengine-0/internal/pkg/logging"
@@ -217,7 +219,7 @@ func run() error {
 			middleware.InitCodeSubmissionRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitCodeSubmission)
 			middleware.InitSSERateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitSSE)
 			middleware.InitAPIRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitAPI)
-			middleware.InitPasswordResetRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitLoginRequests)
+			middleware.InitPasswordResetRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitPasswordReset)
 		}
 	} else {
 		middleware.InitGlobalRateLimiter(rateLimitWindow, cfg.Server.RateLimitGlobalRequests)
@@ -226,7 +228,7 @@ func run() error {
 		middleware.InitCodeSubmissionRateLimiter(rateLimitWindow, cfg.Server.RateLimitCodeSubmission)
 		middleware.InitSSERateLimiter(rateLimitWindow, cfg.Server.RateLimitSSE)
 		middleware.InitAPIRateLimiter(rateLimitWindow, cfg.Server.RateLimitAPI)
-		middleware.InitPasswordResetRateLimiter(rateLimitWindow, cfg.Server.RateLimitLoginRequests)
+		middleware.InitPasswordResetRateLimiter(rateLimitWindow, cfg.Server.RateLimitPasswordReset)
 	}
 
 	// --- Инициализация persistent-очереди email (только если SMTP включён) ---
@@ -279,6 +281,9 @@ func run() error {
 		}
 	}
 
+	// bgWg отслеживает фоновые горутины для корректного завершения.
+	var bgWg sync.WaitGroup
+
 	// goSafe запускает горутину с recover.
 	goSafe := func(fn func()) {
 		go func() {
@@ -292,11 +297,21 @@ func run() error {
 	}
 
 	// Запуск фоновых задач
-	goSafe(func() { game.CheckTimeouts(database, ctx, onGameFinished) })
-	goSafe(func() { game.CheckAutoStartGames(database, ctx) })
+	bgWg.Add(1)
+	goSafe(func() {
+		defer bgWg.Done()
+		game.CheckTimeouts(database, ctx, onGameFinished)
+	})
+	bgWg.Add(1)
+	goSafe(func() {
+		defer bgWg.Done()
+		game.CheckAutoStartGames(database, ctx)
+	})
 
 	// Мониторинг connection pool (раз в минуту)
+	bgWg.Add(1)
 	goSafe(func() {
+		defer bgWg.Done()
 		ticker := time.NewTicker(config.PoolMonitorInterval)
 		defer ticker.Stop()
 		for {
@@ -323,10 +338,16 @@ func run() error {
 	})
 
 	// WebSocket cleanup — периодическая очистка неактивных соединений
-	goSafe(func() { appInstance.Hub.StartCleanupPeriodic() })
+	bgWg.Add(1)
+	goSafe(func() {
+		defer bgWg.Done()
+		appInstance.Hub.StartCleanupPeriodic()
+	})
 
 	// Фоновая очистка просроченных refresh-токенов (раз в час)
+	bgWg.Add(1)
 	goSafe(func() {
+		defer bgWg.Done()
 		ticker := time.NewTicker(config.RefreshTokenCleanupInterval)
 		defer ticker.Stop()
 		for {
@@ -345,10 +366,13 @@ func run() error {
 	})
 
 	srv := &http.Server{
-		Addr:         ":" + cfg.Server.Port,
-		Handler:      r,
-		ReadTimeout:  config.ServerReadTimeout,
-		WriteTimeout: config.ServerWriteTimeout,
+		Addr:        ":" + cfg.Server.Port,
+		Handler:     r,
+		ReadTimeout: config.ServerReadTimeout,
+		// WriteTimeout = 0 (бесконечность): HTTP/1.1 WriteTimeout обрывает SSE/WebSocket-потоки
+		// через 30 сек с ERR_INCOMPLETE_CHUNKED_ENCODING. Защиту от зависших запросов
+		// обеспечивает middleware.ContextTimeout (30 сек) на уровне Gin.
+		WriteTimeout: 0,
 		IdleTimeout:  config.ServerIdleTimeout,
 	}
 
@@ -374,10 +398,10 @@ func run() error {
 	// ============================================================
 	// GRACEFUL SHUTDOWN — правильный порядок:
 	// 1. Остановить rate limiters (перестать принимать новые запросы)
-	// 2. Остановить HTTP-сервер (дождаться завершения текущих запросов, включая WS upgrade)
-	// 3. Остановить WebSocket-хаб (после HTTP — больше нет активных хендлеров)
-	// 4. Отменить контекст фоновых задач
-	// 5. Остановить email-очередь
+	// 2. Остановить email-очередь (чтобы рабочие завершились до остановки HTTP)
+	// 3. Остановить HTTP-сервер (дождаться завершения текущих запросов, включая WS upgrade)
+	// 4. Остановить WebSocket-хаб (после HTTP — больше нет активных хендлеров)
+	// 5. Отменить контекст фоновых задач
 	// 6. Закрыть кэш (Valkey)
 	// ============================================================
 
@@ -390,7 +414,25 @@ func run() error {
 	middleware.StopSSERateLimiter()
 	middleware.StopAPIRateLimiter()
 
-	// 2. Останавливаем HTTP-сервер (ожидаем завершения текущих запросов)
+	// 2. Останавливаем очередь email (если была запущена) — до HTTP, чтобы
+	//    рабочие завершили отправку, прежде чем сервер перестанет принимать запросы.
+	if cfg.SMTP.Enabled {
+		email.ShutdownQueue()
+		log.Info().Msg("Email-очередь остановлена")
+	}
+
+	// 3. Останавливаем SSE-менеджер ДО HTTP-сервера — закрывает все SSE-сессии
+	//    (иначе srv.Shutdown() ждёт бесконечные SSE-потоки до таймаута).
+	if deps.Services.SSEMgr != nil {
+		deps.Services.SSEMgr.Stop()
+		log.Info().Msg("SSE-менеджер остановлен")
+	}
+
+	// Останавливаем общие сборщики монитора SSE
+	monitor.StopAllMonitorPollers()
+	log.Info().Msg("SSE-сборщики монитора остановлены")
+
+	// 4. Останавливаем HTTP-сервер (ожидаем завершения текущих запросов)
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), config.ShutdownTimeout)
 	defer shutdownCancel()
 
@@ -399,26 +441,18 @@ func run() error {
 	}
 	log.Info().Msg("HTTP-сервер остановлен")
 
-	// 3. Останавливаем WebSocket-хаб (после HTTP — ни один хендлер не использует хаб)
+	// 5. Останавливаем WebSocket-хаб (после HTTP — ни один хендлер не использует хаб)
 	hub.Stop()
 	log.Info().Msg("WebSocket-хаб остановлен")
 
-	// Останавливаем SSE-менеджер
-	if deps.Services.SSEMgr != nil {
-		deps.Services.SSEMgr.Stop()
-		log.Info().Msg("SSE-менеджер остановлен")
-	}
-
-	// 4. Отменяем контекст фоновых задач
+	// 6. Отменяем контекст фоновых задач
 	cancel()
-	log.Info().Msg("Контекст отменён, фоновые задачи останавливаются")
 
-	// 5. Останавливаем очередь email (если была запущена)
-	if cfg.SMTP.Enabled {
-		email.ShutdownQueue()
-	}
+	// Дожидаемся завершения фоновых горутин
+	bgWg.Wait()
+	log.Info().Msg("Фоновые задачи остановлены")
 
-	// 6. Закрываем кэш (Valkey connection)
+	// 7. Закрываем кэш (Valkey connection)
 	if closer, ok := appCache.(interface{ Close() error }); ok {
 		if err := closer.Close(); err != nil {
 			log.Warn().Err(err).Msg("Ошибка закрытия кэша")
@@ -427,7 +461,7 @@ func run() error {
 		}
 	}
 
-	// 7. Закрываем соединение с БД
+	// 8. Закрываем соединение с БД
 	if sqlDB, err := database.DB(); err == nil {
 		if closeErr := sqlDB.Close(); closeErr != nil {
 			log.Warn().Err(closeErr).Msg("Ошибка закрытия БД")

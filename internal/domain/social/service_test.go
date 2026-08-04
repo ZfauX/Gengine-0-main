@@ -118,14 +118,18 @@ func TestFollowService_FollowAndUnfollow(t *testing.T) {
 
 	err := fs.Follow(ctx, follower.ID, author.ID)
 	require.NoError(t, err)
-	assert.True(t, fs.IsFollowing(ctx, follower.ID, author.ID))
+	following, err := fs.IsFollowing(ctx, follower.ID, author.ID)
+	require.NoError(t, err)
+	assert.True(t, following)
 
 	err = fs.Follow(ctx, follower.ID, author.ID)
 	require.NoError(t, err)
 
 	err = fs.Unfollow(ctx, follower.ID, author.ID)
 	require.NoError(t, err)
-	assert.False(t, fs.IsFollowing(ctx, follower.ID, author.ID))
+	following, err = fs.IsFollowing(ctx, follower.ID, author.ID)
+	require.NoError(t, err)
+	assert.False(t, following)
 }
 
 func TestFollowService_GetSubscriptions(t *testing.T) {
@@ -157,7 +161,9 @@ func TestFollowService_UnfollowWhenNotFollowing(t *testing.T) {
 
 	err := fs.Unfollow(ctx, follower.ID, author.ID)
 	assert.NoError(t, err)
-	assert.False(t, fs.IsFollowing(ctx, follower.ID, author.ID))
+	following, err := fs.IsFollowing(ctx, follower.ID, author.ID)
+	require.NoError(t, err)
+	assert.False(t, following)
 }
 
 func TestFollowService_IsFollowingFalse(t *testing.T) {
@@ -169,7 +175,9 @@ func TestFollowService_IsFollowingFalse(t *testing.T) {
 	follower := createUser(t, db, "f@test.com", "pass")
 	author := createUser(t, db, "a@test.com", "pass")
 
-	assert.False(t, fs.IsFollowing(ctx, follower.ID, author.ID))
+	following, err := fs.IsFollowing(ctx, follower.ID, author.ID)
+	require.NoError(t, err)
+	assert.False(t, following)
 }
 
 func TestFollowService_GetSubscriptionsEmpty(t *testing.T) {

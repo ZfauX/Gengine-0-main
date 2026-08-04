@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/pkg/render"
@@ -46,12 +47,12 @@ func NewExportHandler(
 func (h *ExportHandler) checkGameAccess(c *gin.Context, gameID uint) bool {
 	userID := c.GetUint("userID")
 	if userID == 0 {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "требуется аутентификация"})
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": render.Tr(c, "handler.unauthorized")})
 		return false
 	}
 	ok, err := h.gameService.IsUserManager(c.Request.Context(), gameID, userID)
 	if err != nil || !ok {
-		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "доступ запрещён"})
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
 		return false
 	}
 	return true
@@ -79,13 +80,13 @@ func parseGameID(c *gin.Context) (uint, error) {
 // @Failure 400 {object} map[string]interface{} "Неверный ID"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 // @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+// @Failure 500 {object} map[string]interface{} render.Tr(c, "handler.internal_error")
 // @Router /games/{id}/export [get]
 // @Security JWT
 func (h *ExportHandler) ExportGameCSV(c *gin.Context) {
 	gameID, err := parseGameID(c)
 	if err != nil {
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": render.LocalizeError(c, err.Error())})
 		return
 	}
 
@@ -120,7 +121,7 @@ func (h *ExportHandler) ExportGameCSV(c *gin.Context) {
 func (h *ExportHandler) ImportGameForm(c *gin.Context) {
 	gameID, err := parseGameID(c)
 	if err != nil {
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": render.LocalizeError(c, err.Error())})
 		return
 	}
 
@@ -152,7 +153,7 @@ func (h *ExportHandler) ImportGameForm(c *gin.Context) {
 func (h *ExportHandler) ImportGame(c *gin.Context) {
 	gameID, err := parseGameID(c)
 	if err != nil {
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": render.LocalizeError(c, err.Error())})
 		return
 	}
 
@@ -186,8 +187,12 @@ func (h *ExportHandler) ImportGame(c *gin.Context) {
 		return
 	}
 
+	var isCSV bool
+	if strings.HasSuffix(header.Filename, ".csv") {
+		isCSV = true
+	}
 	contentType := header.Header.Get("Content-Type")
-	if contentType != "text/csv" && contentType != "application/csv" {
+	if !isCSV && contentType != "text/csv" && contentType != "application/csv" {
 		render.Page(c, http.StatusBadRequest, "export_import-import.html", gin.H{
 			"Title":  "Импорт",
 			"GameID": gameID,
@@ -221,13 +226,13 @@ func (h *ExportHandler) ImportGame(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "Неверный ID"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 // @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+// @Failure 500 {object} map[string]interface{} render.Tr(c, "handler.internal_error")
 // @Router /games/{id}/export-results [get]
 // @Security JWT
 func (h *ExportHandler) ExportResultsCSV(c *gin.Context) {
 	gameID, err := parseGameID(c)
 	if err != nil {
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": render.LocalizeError(c, err.Error())})
 		return
 	}
 
@@ -257,13 +262,13 @@ func (h *ExportHandler) ExportResultsCSV(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "Неверный ID"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 // @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+// @Failure 500 {object} map[string]interface{} render.Tr(c, "handler.internal_error")
 // @Router /games/{id}/export-pdf [get]
 // @Security JWT
 func (h *ExportHandler) ExportGamePDF(c *gin.Context) {
 	gameID, err := parseGameID(c)
 	if err != nil {
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": render.LocalizeError(c, err.Error())})
 		return
 	}
 
@@ -293,13 +298,13 @@ func (h *ExportHandler) ExportGamePDF(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "Неверный ID"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 // @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+// @Failure 500 {object} map[string]interface{} render.Tr(c, "handler.internal_error")
 // @Router /games/{id}/export-statistics-pdf [get]
 // @Security JWT
 func (h *ExportHandler) ExportStatisticsPDF(c *gin.Context) {
 	gameID, err := parseGameID(c)
 	if err != nil {
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": render.LocalizeError(c, err.Error())})
 		return
 	}
 
@@ -333,13 +338,13 @@ func (h *ExportHandler) ExportStatisticsPDF(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "Неверный ID"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 // @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+// @Failure 500 {object} map[string]interface{} render.Tr(c, "handler.internal_error")
 // @Router /games/{id}/export-excel [get]
 // @Security JWT
 func (h *ExportHandler) ExportGameExcel(c *gin.Context) {
 	gameID, err := parseGameID(c)
 	if err != nil {
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": render.LocalizeError(c, err.Error())})
 		return
 	}
 
@@ -369,13 +374,13 @@ func (h *ExportHandler) ExportGameExcel(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "Неверный ID"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 // @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+// @Failure 500 {object} map[string]interface{} render.Tr(c, "handler.internal_error")
 // @Router /games/{id}/export-results-excel [get]
 // @Security JWT
 func (h *ExportHandler) ExportResultsExcel(c *gin.Context) {
 	gameID, err := parseGameID(c)
 	if err != nil {
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": render.LocalizeError(c, err.Error())})
 		return
 	}
 
@@ -406,20 +411,20 @@ func (h *ExportHandler) ExportResultsExcel(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "Неверный ID"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 // @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Failure 500 {object} map[string]interface{} "Внутренняя ошибка"
+// @Failure 500 {object} map[string]interface{} render.Tr(c, "handler.internal_error")
 // @Router /games/{id}/teams/{team_id}/export-results [get]
 // @Security JWT
 func (h *ExportHandler) ExportTeamResultsCSV(c *gin.Context) {
 	gameID, err := parseGameID(c)
 	if err != nil {
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": render.LocalizeError(c, err.Error())})
 		return
 	}
 
 	teamIDStr := c.Param("team_id")
 	teamID, err := strconv.Atoi(teamIDStr)
 	if err != nil || teamID <= 0 {
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "Неверный ID команды"})
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": render.Tr(c, "handler.invalid_team_id")})
 		return
 	}
 
@@ -434,7 +439,7 @@ func (h *ExportHandler) ExportTeamResultsCSV(c *gin.Context) {
 	if err := h.db.WithContext(c.Request.Context()).
 		Where("game_id = ? AND team_id = ? AND status = ?", gameID, teamID, "finished").
 		First(&passing).Error; err != nil {
-		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Доступ запрещён"})
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
 		return
 	}
 

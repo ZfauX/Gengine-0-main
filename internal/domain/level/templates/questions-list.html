@@ -1,9 +1,9 @@
 {{define "questions-list.html"}}
 <div class="max-w-4xl mx-auto">
-    <h1 class="page-title">Вопросы уровня</h1>
+    <h1 class="page-title">{{ T $.Lang "question.list_title" }}</h1>
 
     <div class="mb-6">
-        <a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions/new" class="btn btn-primary text-sm">+ Добавить вопрос</a>
+        <a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions/new" class="btn btn-primary text-sm">{{ T $.Lang "question.add" }}</a>
     </div>
 
     {{if .Questions}}
@@ -14,12 +14,12 @@
                 <a href="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{.ID}}" class="text-blue-600 dark:text-blue-400 hover:underline font-medium text-gray-800 dark:text-gray-100">{{.Text}}</a>
             </div>
             <div class="flex flex-wrap items-center gap-2">
-                <a href="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{.ID}}/edit" class="btn btn-outline text-xs" title="Редактировать">✎</a>
-                <a href="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{.ID}}/answers" class="btn btn-outline text-xs">Ответы</a>
-                <form action="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{.ID}}" method="POST" class="inline" data-confirm-form="Удалить вопрос?">
+                <a href="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{.ID}}/edit" class="btn btn-outline text-xs" title='{{ T $.Lang "common.edit" }}'>✎</a>
+                <a href="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{.ID}}/answers" class="btn btn-outline text-xs">{{ T $.Lang "question.answers" }}</a>
+                <form action="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{.ID}}" method="POST" class="inline" data-confirm-form='{{ T $.Lang "question.delete_confirm" }}'>
                     <input type="hidden" name="_method" value="DELETE">
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
-                    <button type="submit" class="btn btn-danger text-xs">Удалить</button>
+                    <button type="submit" class="btn btn-danger text-xs">{{ T $.Lang "common.delete" }}</button>
                 </form>
             </div>
         </div>
@@ -27,13 +27,13 @@
     </div>
     {{else}}
     <div class="card text-center py-12">
-        <p class="text-gray-500 dark:text-gray-400">Вопросов пока нет.</p>
-        <p class="mt-2 text-sm text-gray-400"><a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions/new" class="text-blue-600 dark:text-blue-400 hover:underline">Создайте первый вопрос</a></p>
+        <p class="text-gray-500 dark:text-gray-400">{{ T $.Lang "question.no_questions" }}</p>
+        <p class="mt-2 text-sm text-gray-400"><a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions/new" class="text-blue-600 dark:text-blue-400 hover:underline">{{ T $.Lang "question.create_first" }}</a></p>
     </div>
     {{end}}
 
     <div class="mt-6">
-        <a href="/games/{{.GameID}}/levels/{{.LevelID}}" class="btn btn-outline text-sm">← Назад к уровню</a>
+        <a href="/games/{{.GameID}}/levels/{{.LevelID}}" class="btn btn-outline text-sm">{{ T $.Lang "question.back_to_level" }}</a>
     </div>
 </div>
 <script nonce="{{.csp_nonce}}">

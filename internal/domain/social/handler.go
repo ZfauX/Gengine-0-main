@@ -58,7 +58,7 @@ func (h *FollowHandler) Follow(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 	if userID == 0 {
-		appErr := apperrors.Unauthorized("требуется аутентификация")
+		appErr := apperrors.Unauthorized(render.Tr(c, "handler.unauthorized"))
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -75,7 +75,7 @@ func (h *FollowHandler) Follow(c *gin.Context) {
 	if err := h.followService.Follow(c.Request.Context(), userID, req.ID); err != nil {
 		switch err.Error() {
 		case "нельзя подписаться на самого себя", "не подписан":
-			appErr := apperrors.BadRequest(err.Error())
+			appErr := apperrors.BadRequest(render.LocalizeError(c, err.Error()))
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
 		default:
 			log.Error().Err(err).Uint("user_id", userID).Uint("author_id", req.ID).Msg("Follow: failed to follow author")
@@ -110,7 +110,7 @@ func (h *FollowHandler) Unfollow(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 	if userID == 0 {
-		appErr := apperrors.Unauthorized("требуется аутентификация")
+		appErr := apperrors.Unauthorized(render.Tr(c, "handler.unauthorized"))
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -120,7 +120,7 @@ func (h *FollowHandler) Unfollow(c *gin.Context) {
 
 	if err := h.followService.Unfollow(c.Request.Context(), userID, req.ID); err != nil {
 		if errors.Is(err, ErrNotFollowing) {
-			appErr := apperrors.BadRequest(err.Error())
+			appErr := apperrors.BadRequest(render.LocalizeError(c, err.Error()))
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
 		} else {
 			log.Error().Err(err).Uint("user_id", userID).Uint("author_id", req.ID).Msg("Unfollow: failed to unfollow author")
@@ -154,7 +154,7 @@ func (h *FollowHandler) IsFollowing(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 	if userID == 0 {
-		appErr := apperrors.Unauthorized("требуется аутентификация")
+		appErr := apperrors.Unauthorized(render.Tr(c, "handler.unauthorized"))
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,
@@ -162,7 +162,13 @@ func (h *FollowHandler) IsFollowing(c *gin.Context) {
 		return
 	}
 
-	following := h.followService.IsFollowing(c.Request.Context(), userID, req.ID)
+	following, err := h.followService.IsFollowing(c.Request.Context(), userID, req.ID)
+	if err != nil {
+		log.Error().Err(err).Uint("user_id", userID).Uint("author_id", req.ID).Msg("IsFollowing: failed to check")
+		appErr := apperrors.Wrap(err, "IsFollowing: failed to check follow")
+		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"following": following})
 }
 

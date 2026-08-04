@@ -30,6 +30,7 @@ type TournamentGameRepository interface {
 
 type TournamentTeamRepository interface {
 	AddTeam(ctx context.Context, tournamentID, teamID uint) error
+	AddTeamTx(tx *gorm.DB, ctx context.Context, tournamentID, teamID uint) error
 	RemoveTeam(ctx context.Context, tournamentID, teamID uint) error
 	ListTeams(ctx context.Context, tournamentID uint) ([]team.Team, error)
 	GetByTournamentAndTeam(ctx context.Context, tournamentID, teamID uint) (*TournamentTeam, error)
@@ -132,6 +133,14 @@ func (r *gormTournamentTeamRepo) AddTeam(ctx context.Context, tournamentID, team
 		TeamID:       teamID,
 	}
 	return r.db.WithContext(ctx).Create(&tt).Error
+}
+
+func (r *gormTournamentTeamRepo) AddTeamTx(tx *gorm.DB, ctx context.Context, tournamentID, teamID uint) error {
+	tt := TournamentTeam{
+		TournamentID: tournamentID,
+		TeamID:       teamID,
+	}
+	return tx.WithContext(ctx).Create(&tt).Error
 }
 func (r *gormTournamentTeamRepo) RemoveTeam(ctx context.Context, tournamentID, teamID uint) error {
 	return r.db.WithContext(ctx).Where("tournament_id = ? AND team_id = ?", tournamentID, teamID).Delete(&TournamentTeam{}).Error

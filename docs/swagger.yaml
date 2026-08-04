@@ -605,6 +605,68 @@ paths:
       summary: Данные календаря
       tags:
       - calendar
+  /auth/2fa/backup:
+    get:
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Форма резервного кода
+          schema:
+            type: string
+      summary: Форма резервного кода 2FA
+      tags:
+      - 2fa
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      parameters:
+      - description: Резервный код
+        in: formData
+        name: backup_code
+        required: true
+        type: string
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление
+          schema:
+            type: string
+      summary: Проверка резервного кода
+      tags:
+      - 2fa
+  /auth/2fa/verify:
+    get:
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: Форма 2FA
+          schema:
+            type: string
+      summary: Форма 2FA верификации
+      tags:
+      - 2fa
+    post:
+      consumes:
+      - application/x-www-form-urlencoded
+      parameters:
+      - description: TOTP-код
+        in: formData
+        name: code
+        required: true
+        type: string
+      produces:
+      - text/html
+      responses:
+        "302":
+          description: Перенаправление
+          schema:
+            type: string
+      summary: Проверка TOTP-кода
+      tags:
+      - 2fa
   /auth/forgot:
     get:
       consumes:
@@ -696,7 +758,7 @@ paths:
       tags:
       - auth
   /auth/logout:
-    get:
+    post:
       description: Удаляет JWT-куку и завершает сессию
       produces:
       - text/html
@@ -925,11 +987,11 @@ paths:
       tags:
       - auth
   /auth/verify:
-    get:
+    post:
       description: Активирует email пользователя по коду из письма
       parameters:
       - description: Код подтверждения
-        in: query
+        in: formData
         name: code
         required: true
         type: string

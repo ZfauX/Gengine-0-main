@@ -4,6 +4,7 @@ package social
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"gengine-0/internal/domain/user"
 )
@@ -38,9 +39,12 @@ func (s *FollowService) Unfollow(ctx context.Context, followerID, authorID uint)
 	return s.followRepo.Unfollow(ctx, followerID, authorID)
 }
 
-func (s *FollowService) IsFollowing(ctx context.Context, followerID, authorID uint) bool {
-	following, _ := s.followRepo.IsFollowing(ctx, followerID, authorID)
-	return following
+func (s *FollowService) IsFollowing(ctx context.Context, followerID, authorID uint) (bool, error) {
+	following, err := s.followRepo.IsFollowing(ctx, followerID, authorID)
+	if err != nil {
+		return false, fmt.Errorf("check follow: %w", err)
+	}
+	return following, nil
 }
 
 func (s *FollowService) GetSubscriptions(ctx context.Context, userID uint) ([]user.User, error) {

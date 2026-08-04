@@ -30,6 +30,7 @@ type QuestionRepository interface {
 	Create(ctx context.Context, question *Question) error
 	GetByID(ctx context.Context, id uint) (*Question, error)
 	GetByIDWithAnswers(ctx context.Context, id uint) (*Question, error)
+	GetQuestionChain(ctx context.Context, questionID uint) (*QuestionChain, error) // JOIN-оптимизация: question→level→game
 	Update(ctx context.Context, question *Question) error
 	Delete(ctx context.Context, id uint) error
 	ListByLevelID(ctx context.Context, levelID uint) ([]Question, error)
@@ -37,7 +38,8 @@ type QuestionRepository interface {
 
 type AnswerRepository interface {
 	Create(ctx context.Context, answer *Answer) error
-	GetByID(ctx context.Context, id uint) (*Answer, error) // добавлен метод
+	GetByID(ctx context.Context, id uint) (*Answer, error)                   // добавлен метод
+	GetAnswerChain(ctx context.Context, answerID uint) (*AnswerChain, error) // JOIN-оптимизация: answer→question→level→game
 	Delete(ctx context.Context, id uint) error
 	ListByQuestionID(ctx context.Context, questionID uint) ([]Answer, error)
 	CountByQuestionID(ctx context.Context, questionID uint) (int64, error)
@@ -151,9 +153,32 @@ func (r *gormLevelRepo) GetMaxPositionForTransaction(ctx context.Context, tx *go
 	return maxPos, err
 }
 
+// QuestionChain — результат JOIN-запроса для цепочки question→level→game.
+type QuestionChain struct {
+	QuestionID uint   `gorm:"column:question_id"`
+	LevelID    uint   `gorm:"column:level_id"`
+	GameID     uint   `gorm:"column:game_id"`
+	Text       string `gorm:"column:text"`
+	Hint       string `gorm:"column:hint"`
+}
+
 type gormQuestionRepo struct{ db *gorm.DB }
 
 func NewGormQuestionRepo(db *gorm.DB) QuestionRepository { return &gormQuestionRepo{db} }
+
+func (r *gormQuestionRepo) GetQuestionChain(ctx context.Context, questionID uint) (*QuestionChain, error) {
+	var chain QuestionChain
+	err := r.db.WithContext(ctx).
+		Table("questions").
+		Select("questions.id as question_id, questions.level_id, questions.text, questions.hint, levels.id as level_id, levels.game_id").
+		Joins("JOIN levels ON levels.id = questions.level_id AND levels.deleted_at IS NULL").
+		Where("questions.id = ? AND questions.deleted_at IS NULL", questionID).
+		Scan(&chain).Error
+	if err != nil {
+		return nil, err
+	}
+	return &chain, nil
+}
 
 func (r *gormQuestionRepo) Create(ctx context.Context, question *Question) error {
 	return r.db.WithContext(ctx).Create(question).Error
@@ -186,6 +211,15 @@ func (r *gormQuestionRepo) ListByLevelID(ctx context.Context, levelID uint) ([]Q
 	return questions, err
 }
 
+// AnswerChain — результат JOIN-запроса для цепочки answer→question→level→game.
+type AnswerChain struct {
+	AnswerID   uint   `gorm:"column:answer_id"`
+	QuestionID uint   `gorm:"column:question_id"`
+	Code       string `gorm:"column:code"`
+	LevelID    uint   `gorm:"column:level_id"`
+	GameID     uint   `gorm:"column:game_id"`
+}
+
 type gormAnswerRepo struct{ db *gorm.DB }
 
 func NewGormAnswerRepo(db *gorm.DB) AnswerRepository { return &gormAnswerRepo{db} }
@@ -200,6 +234,20 @@ func (r *gormAnswerRepo) GetByID(ctx context.Context, id uint) (*Answer, error) 
 		return nil, err
 	}
 	return &a, nil
+}
+func (r *gormAnswerRepo) GetAnswerChain(ctx context.Context, answerID uint) (*AnswerChain, error) {
+	var chain AnswerChain
+	err := r.db.WithContext(ctx).
+		Table("answers").
+		Select("answers.id as answer_id, answers.question_id, answers.code, questions.id as question_id, levels.id as level_id, levels.game_id").
+		Joins("JOIN questions ON questions.id = answers.question_id AND questions.deleted_at IS NULL").
+		Joins("JOIN levels ON levels.id = questions.level_id AND levels.deleted_at IS NULL").
+		Where("answers.id = ? AND answers.deleted_at IS NULL", answerID).
+		Scan(&chain).Error
+	if err != nil {
+		return nil, err
+	}
+	return &chain, nil
 }
 func (r *gormAnswerRepo) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&Answer{}, id).Error

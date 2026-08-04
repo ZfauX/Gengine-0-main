@@ -31,8 +31,8 @@ import (
 	ws "gengine-0/internal/pkg/websocket"
 	"gengine-0/internal/testutil"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -105,7 +105,9 @@ func setupTestRouter(t *testing.T, db *gorm.DB, cfg *config.Config) *gin.Engine 
 	router.POST("/test/games/:id/disqualify", mwAuth, func(c *gin.Context) {
 		gameID, _ := strconv.Atoi(c.Param("id"))
 		userID := c.GetUint("userID")
-		var input struct{ TeamID uint `form:"team_id"` }
+		var input struct {
+			TeamID uint `form:"team_id"`
+		}
 		if err := c.ShouldBind(&input); err != nil || input.TeamID == 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
 			return

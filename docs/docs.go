@@ -927,6 +927,102 @@ const docTemplate = `{
                 }
             }
         },
+        "/auth/2fa/backup": {
+            "get": {
+                "produces": [
+                    "text/html"
+                ],
+                "tags": [
+                    "2fa"
+                ],
+                "summary": "Форма резервного кода 2FA",
+                "responses": {
+                    "200": {
+                        "description": "Форма резервного кода",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "consumes": [
+                    "application/x-www-form-urlencoded"
+                ],
+                "produces": [
+                    "text/html"
+                ],
+                "tags": [
+                    "2fa"
+                ],
+                "summary": "Проверка резервного кода",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Резервный код",
+                        "name": "backup_code",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "302": {
+                        "description": "Перенаправление",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/2fa/verify": {
+            "get": {
+                "produces": [
+                    "text/html"
+                ],
+                "tags": [
+                    "2fa"
+                ],
+                "summary": "Форма 2FA верификации",
+                "responses": {
+                    "200": {
+                        "description": "Форма 2FA",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "consumes": [
+                    "application/x-www-form-urlencoded"
+                ],
+                "produces": [
+                    "text/html"
+                ],
+                "tags": [
+                    "2fa"
+                ],
+                "summary": "Проверка TOTP-кода",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "TOTP-код",
+                        "name": "code",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "302": {
+                        "description": "Перенаправление",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/forgot": {
             "get": {
                 "description": "Возвращает HTML-страницу с формой запроса на сброс пароля",
@@ -1062,7 +1158,7 @@ const docTemplate = `{
             }
         },
         "/auth/logout": {
-            "get": {
+            "post": {
                 "description": "Удаляет JWT-куку и завершает сессию",
                 "produces": [
                     "text/html"
@@ -1402,7 +1498,7 @@ const docTemplate = `{
             }
         },
         "/auth/verify": {
-            "get": {
+            "post": {
                 "description": "Активирует email пользователя по коду из письма",
                 "produces": [
                     "text/html"
@@ -1416,7 +1512,7 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Код подтверждения",
                         "name": "code",
-                        "in": "query",
+                        "in": "formData",
                         "required": true
                     }
                 ],

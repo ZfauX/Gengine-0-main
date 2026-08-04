@@ -1,6 +1,6 @@
 {{define "team-chat.html"}}
 <div class="max-w-4xl mx-auto" data-room-id="{{.RoomID}}" data-user-id="{{.UserID}}" data-user-name="{{.UserName}}">
-    <h1 class="page-title">Чат команды «{{.Team.Name}}»</h1>
+    <h1 class="page-title">{{ TF $.Lang "team.chat_title_name" .Team.Name }}</h1>
 
     <div class="card">
         <!-- Область сообщений -->
@@ -8,9 +8,9 @@
 
         <!-- Поле ввода и отправка -->
         <div class="flex flex-wrap items-center gap-2">
-            <input type="text" id="chat-input" placeholder="Введите сообщение..." 
+            <input type="text" id="chat-input" placeholder='{{ T $.Lang "chat.input_placeholder" }}' 
                    class="flex-1 min-w-[180px] rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2">
-            <button id="send-btn" class="btn btn-primary text-sm whitespace-nowrap">Отправить</button>
+            <button id="send-btn" class="btn btn-primary text-sm whitespace-nowrap">{{ T $.Lang "chat.send_button" }}</button>
         </div>
 
         <!-- Статус подключения -->
@@ -25,7 +25,7 @@
 
     const roomID = parseInt(container.dataset.roomId, 10);
     const userID = parseInt(container.dataset.userId, 10);
-    const userName = container.dataset.userName || 'Вы';
+    const userName = container.dataset.userName || '{{ T $.Lang "team.yourself" }}';
     const messagesEl = document.getElementById('chat-messages');
     const inputEl = document.getElementById('chat-input');
     const sendBtn = document.getElementById('send-btn');
@@ -43,7 +43,7 @@
         socket = new WebSocket(wsUrl);
 
         socket.onopen = function() {
-            statusEl.textContent = '🟢 Подключено';
+            statusEl.textContent = '{{ T $.Lang "chat.connected" }}';
             statusEl.className = 'mt-2 text-sm text-green-600 dark:text-green-400';
             reconnectAttempts = 0;
         };
@@ -55,12 +55,13 @@
                 data.messages.forEach(function(msg) { appendMessage(msg, false); });
                 messagesEl.scrollTop = messagesEl.scrollHeight;
             } else if (data.type === 'message') {
-                appendMessage(data, true);
+                removeSendingStatus();
+                appendMessage(data.message || data, true);
             }
         };
 
         socket.onclose = function() {
-            statusEl.textContent = '🔴 Отключено. Переподключение...';
+            statusEl.textContent = '{{ T $.Lang "chat.disconnected" }}';
             statusEl.className = 'mt-2 text-sm text-red-500';
             scheduleReconnect();
         };
@@ -77,13 +78,16 @@
     }
 
     function appendMessage(msg, scroll) {
-        var isMine = msg.user_id === userID;
+        var userId = msg.UserID || msg.user_id;
+        var userName = msg.UserName || (msg.User && msg.User.Name) || msg.user_name || '';
+        var content = msg.Content || msg.content || '';
+        var isMine = userId === userID;
         var div = document.createElement('div');
         div.className = 'mb-3 ' + (isMine ? 'text-right' : 'text-left');
         div.innerHTML = '<div class="inline-block max-w-[80%] text-left">' +
-            '<span class="text-xs font-medium text-gray-500 dark:text-gray-400">' + escapeHtml(msg.user_name || '') + '</span>' +
+            '<span class="text-xs font-medium text-gray-500 dark:text-gray-400">' + escapeHtml(userName) + '</span>' +
             '<div class="rounded-lg px-3 py-2 mt-1 ' + (isMine ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100') + '">' +
-            escapeHtml(msg.content) +
+            escapeHtml(content) +
             '</div></div>';
         messagesEl.appendChild(div);
         if (scroll) messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -115,7 +119,7 @@
         var text = inputEl.value.trim();
         if (!text) { return; }
         if (!socket || socket.readyState !== WebSocket.OPEN) {
-            statusEl.textContent = '⚠️ Соединение не установлено. Сообщение не отправлено.';
+            statusEl.textContent = '{{ T $.Lang "chat.connection_error" }}';
             statusEl.className = 'mt-2 text-sm text-red-500';
             return;
         }

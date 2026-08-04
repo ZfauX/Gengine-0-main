@@ -1,6 +1,6 @@
 {{define "levels-new.html"}}
 <div class="max-w-3xl mx-auto">
-    <h1 class="page-title">Новый уровень</h1>
+    <h1 class="page-title">{{ T $.Lang "level.new_title" }}</h1>
 
     {{if .Error}}
     <div class="flash flash-error">{{.Error}}</div>
@@ -11,7 +11,7 @@
 
         <!-- Название -->
         <div>
-            <label for="name" class="form-label">Название</label>
+            <label for="name" class="form-label">{{ T $.Lang "level.name_label" }}</label>
             <input type="text" name="name" id="name" required
                    class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.name}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
             {{if .Errors.name}}<p class="field-error">{{.Errors.name}}</p>{{end}}
@@ -19,7 +19,7 @@
 
         <!-- Описание -->
         <div>
-            <label for="description" class="form-label">Описание</label>
+            <label for="description" class="form-label">{{ T $.Lang "level.desc_label" }}</label>
             <textarea name="description" id="description" rows="4"
                       class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.description}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}"></textarea>
             {{if .Errors.description}}<p class="field-error">{{.Errors.description}}</p>{{end}}
@@ -28,20 +28,20 @@
         <!-- Позиция и тип -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-                <label for="position" class="form-label">Позиция</label>
+                <label for="position" class="form-label">{{ T $.Lang "level.position_label" }}</label>
                 <input type="number" name="position" id="position" value="1" min="1"
                        class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.position}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
                 {{if .Errors.position}}<p class="field-error">{{.Errors.position}}</p>{{end}}
             </div>
             <div>
-                <label for="type" class="form-label">Тип уровня</label>
+                <label for="type" class="form-label">{{ T $.Lang "level.type_label" }}</label>
                 <select name="type" id="type"
                         class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.type}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
-                    <option value="single">Обычный</option>
-                    <option value="checkpoint">Чекпоинт</option>
-                    <option value="parallel_group">Параллельная группа</option>
-                    <option value="blackbox">Чёрный ящик</option>
-                    <option value="file_upload">Файловый ответ</option>
+                    <option value="single">{{ T $.Lang "level.type_single" }}</option>
+                    <option value="checkpoint">{{ T $.Lang "level.type_checkpoint" }}</option>
+                    <option value="parallel_group">{{ T $.Lang "level.type_parallel_group" }}</option>
+                    <option value="blackbox">{{ T $.Lang "level.type_blackbox" }}</option>
+                    <option value="file_upload">{{ T $.Lang "level.type_file_upload" }}</option>
                 </select>
                 {{if .Errors.type}}<p class="field-error">{{.Errors.type}}</p>{{end}}
             </div>
@@ -51,21 +51,21 @@
         <div class="flex items-center">
             <input type="checkbox" name="requires_confirmation" id="requires_confirmation" value="true"
                    class="rounded border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:ring-blue-500 {{if .Errors.requires_confirmation}}border-red-500{{end}}">
-            <label for="requires_confirmation" class="ml-2 text-sm text-gray-700 dark:text-gray-300">Требует подтверждения автором</label>
+            <label for="requires_confirmation" class="ml-2 text-sm text-gray-700 dark:text-gray-300">{{ T $.Lang "level.requires_confirmation" }}</label>
             {{if .Errors.requires_confirmation}}<p class="field-error">{{.Errors.requires_confirmation}}</p>{{end}}
         </div>
 
         <!-- Координаты -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-                <label for="latitude" class="form-label">Широта (Latitude)</label>
-                <input type="text" name="latitude" id="latitude" placeholder="например 55.7558"
+                <label for="latitude" class="form-label">{{ T $.Lang "level.latitude_label" }}</label>
+                <input type="text" name="latitude" id="latitude" placeholder='{{ T $.Lang "level.latitude_placeholder" }}'
                        class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.latitude}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
                 {{if .Errors.latitude}}<p class="field-error">{{.Errors.latitude}}</p>{{end}}
             </div>
             <div>
-                <label for="longitude" class="form-label">Долгота (Longitude)</label>
-                <input type="text" name="longitude" id="longitude" placeholder="например 37.6173"
+                <label for="longitude" class="form-label">{{ T $.Lang "level.longitude_label" }}</label>
+                <input type="text" name="longitude" id="longitude" placeholder='{{ T $.Lang "level.longitude_placeholder" }}'
                        class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.longitude}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
                 {{if .Errors.longitude}}<p class="field-error">{{.Errors.longitude}}</p>{{end}}
             </div>
@@ -73,8 +73,8 @@
 
         <!-- Кнопки -->
         <div class="flex flex-wrap gap-3 pt-2">
-            <button type="submit" class="btn btn-primary text-sm">Создать</button>
-            <a href="/games/{{.GameID}}/levels" class="btn btn-outline text-sm">Отмена</a>
+            <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "level.create_button" }}</button>
+            <a href="/games/{{.GameID}}/levels" class="btn btn-outline text-sm">{{ T $.Lang "level.cancel" }}</a>
         </div>
     </form>
 </div>

@@ -24,6 +24,7 @@ func setupTournamentDB(t *testing.T) *gorm.DB {
 		&tournament.TournamentTeam{},
 		&tournament.TournamentResult{},
 		&game.Game{},
+		&game.GamePassing{},
 		&team.Team{},
 		&user.User{},
 	)

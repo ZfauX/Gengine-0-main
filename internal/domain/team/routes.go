@@ -25,7 +25,7 @@ func RegisterRoutes(
 	hub *ws.RoomHub,
 ) {
 	teamHandler := NewTeamHandler(teamService, localStorage)
-	invitationHandler := NewInvitationHandler(invitationService)
+	invitationHandler := NewInvitationHandler(invitationService, teamService)
 	chatHandler := NewChatHandler(db, hub, teamService)
 	userSearchHandler := NewUserSearchHandler(db, teamService)
 

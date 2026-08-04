@@ -1,18 +1,18 @@
 {{define "questions-show.html"}}
 <div class="max-w-4xl mx-auto">
-    <h1 class="page-title">Вопрос: {{.Question.Text}}</h1>
+    <h1 class="page-title">{{ TF $.Lang "question.show_title" .Question.Text }}</h1>
 
     {{if .Question.Hint}}
     <div class="card mb-6">
-        <p class="text-gray-500 dark:text-gray-400 italic">Подсказка: {{.Question.Hint}}</p>
+        <p class="text-gray-500 dark:text-gray-400 italic">{{ TF $.Lang "level.hint_label" .Question.Hint }}</p>
     </div>
     {{end}}
 
     <!-- Ответы -->
     <div class="card mb-6">
         <div class="flex justify-between items-center mb-4">
-            <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300">Ответы</h2>
-            <a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions/{{.Question.ID}}/answers/new" class="btn btn-primary text-sm">+ Добавить ответ</a>
+            <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300">{{ T $.Lang "question.answers_title" }}</h2>
+            <a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions/{{.Question.ID}}/answers/new" class="btn btn-primary text-sm">{{ T $.Lang "question.add_answer" }}</a>
         </div>
 
         {{if .Question.Answers}}
@@ -20,23 +20,23 @@
             {{range .Question.Answers}}
             <li class="py-3 flex justify-between items-center">
                 <span class="font-mono text-gray-800 dark:text-gray-100">{{.Code}}</span>
-                <form action="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{$.Question.ID}}/answers/{{.ID}}" method="POST" class="inline" data-confirm-form="Удалить ответ?">
+                <form action="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{$.Question.ID}}/answers/{{.ID}}" method="POST" class="inline" data-confirm-form='{{ T $.Lang "answer.delete_confirm" }}'>
                     <input type="hidden" name="_method" value="DELETE">
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
-                    <button type="submit" class="btn btn-danger text-xs">Удалить</button>
+                    <button type="submit" class="btn btn-danger text-xs">{{ T $.Lang "common.delete" }}</button>
                 </form>
             </li>
             {{end}}
         </ul>
         {{else}}
-        <p class="text-gray-500 dark:text-gray-400 text-sm">Ответов пока нет.</p>
+        <p class="text-gray-500 dark:text-gray-400 text-sm">{{ T $.Lang "question.no_answers" }}</p>
         {{end}}
     </div>
 
     <!-- Действия -->
     <div class="flex flex-wrap gap-3">
-        <a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions/{{.Question.ID}}/edit" class="btn btn-outline text-sm">Редактировать</a>
-        <a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions" class="btn btn-outline text-sm">← Назад к вопросам</a>
+        <a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions/{{.Question.ID}}/edit" class="btn btn-outline text-sm">{{ T $.Lang "common.edit" }}</a>
+        <a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions" class="btn btn-outline text-sm">{{ T $.Lang "question.back_to_questions" }}</a>
     </div>
 </div>
 <script nonce="{{.csp_nonce}}">

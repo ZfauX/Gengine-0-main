@@ -67,6 +67,7 @@ func (s *TeamService) GetTeamWithMembers(ctx context.Context, teamID uint) (*Tea
 func (s *TeamService) CanManageTeam(ctx context.Context, teamID, userID uint) bool {
 	team, err := s.teamRepo.GetByID(ctx, teamID)
 	if err != nil {
+		log.Error().Err(err).Uint("team_id", teamID).Msg("CanManageTeam: failed to get team")
 		return false
 	}
 	return team.CaptainID == userID
@@ -112,16 +113,19 @@ func (s *TeamService) RemoveMember(ctx context.Context, teamID, memberID, actorI
 	return nil
 }
 
-func (s *TeamService) ChangeCaptain(ctx context.Context, teamID, newCaptainID, actorID uint) error {
-	if !s.CanManageTeam(ctx, teamID, actorID) {
+func (s *TeamService) ChangeCaptain(ctx context.Context, teamID, newCaptainID, actorID uint, isAdmin bool) error {
+	if !isAdmin && !s.CanManageTeam(ctx, teamID, actorID) {
 		return errors.New("нет прав на смену капитана")
 	}
-	isMember, err := s.teamRepo.IsMember(ctx, teamID, newCaptainID)
-	if err != nil {
-		return err
-	}
-	if !isMember {
-		return errors.New("новый капитан должен состоять в команде")
+	// Captain is always considered a member, even if not in team_members table
+	if newCaptainID != actorID {
+		isMember, err := s.teamRepo.IsMember(ctx, teamID, newCaptainID)
+		if err != nil {
+			return err
+		}
+		if !isMember {
+			return errors.New("новый капитан должен состоять в команде")
+		}
 	}
 	return s.teamRepo.ChangeCaptain(ctx, teamID, newCaptainID)
 }

@@ -1,8 +1,6 @@
 {{define "follow-list.html"}}
 <div class="max-w-4xl mx-auto">
-    <h1 class="page-title">Мои подписки</h1>
-
-    <meta name="csrf-token" content="{{.csrf}}">
+    <h1 class="page-title">{{ T $.Lang "follow.title" }}</h1>
 
     {{if .Authors}}
     <div class="space-y-3">
@@ -12,19 +10,19 @@
                 <span class="font-medium text-gray-800 dark:text-gray-100">{{.Name}}</span>
                 {{if .Email}}<span class="text-sm text-gray-500 dark:text-gray-400 ml-2">{{.Email}}</span>{{end}}
             </div>
-            <button class="btn btn-danger text-sm unfollow-btn" data-author-id="{{.ID}}" data-author-name="{{.Name}}">Отписаться</button>
+            <button class="btn btn-danger text-sm unfollow-btn" data-author-id="{{.ID}}" data-author-name="{{.Name}}">{{ T $.Lang "follow.unfollow" }}</button>
         </div>
         {{end}}
     </div>
     {{else}}
     <div class="card text-center py-12">
-        <p class="text-gray-500 dark:text-gray-400">Вы пока ни на кого не подписаны.</p>
-        <p class="mt-2 text-sm text-gray-400">Подпишитесь на авторов, чтобы первыми узнавать об их новых играх.</p>
+        <p class="text-gray-500 dark:text-gray-400">{{ T $.Lang "follow.no_follows" }}</p>
+        <p class="mt-2 text-sm text-gray-400">{{ T $.Lang "follow.hint" }}</p>
     </div>
     {{end}}
 
     <div class="mt-6">
-        <a href="/dashboard" class="btn btn-outline text-sm">← Назад в личный кабинет</a>
+        <a href="/dashboard" class="btn btn-outline text-sm">{{ T $.Lang "follow.back_to_dashboard" }}</a>
     </div>
 </div>
 
@@ -34,14 +32,17 @@
             const meta = document.querySelector('meta[name="csrf-token"]');
             return meta ? meta.getAttribute('content') : '';
         }
+        var confirmMsg = '{{ T $.Lang "follow.unfollow_confirm" }}';
+        var errorMsg = '{{ T $.Lang "follow.unfollow_error" }}';
 
-        document.addEventListener('click', function(e) {
+        document.addEventListener('click', async function(e) {
             const btn = e.target.closest('.unfollow-btn');
             if (!btn) return;
             const authorID = btn.dataset.authorId;
             const authorName = btn.dataset.authorName;
             if (!authorID) return;
-            if (!confirm(`Отписаться от ${authorName}?`)) return;
+            var confirmed = await showModalConfirm(confirmMsg.replace('%s', authorName), btn);
+            if (!confirmed) return;
             fetch('/follow/' + authorID, {
                 method: 'DELETE',
                 headers: {
@@ -54,11 +55,12 @@
                 if (data.status === 'unfollowed') {
                     location.reload();
                 } else {
-                    alert('Ошибка: ' + (data.error || 'не удалось отписаться'));
+                    showToast(errorMsg, 'error', 4000);
                 }
             })
             .catch(err => {
-                alert('Ошибка: ' + err.message);
+                console.error(err);
+                showToast(errorMsg, 'error', 4000);
             });
         });
     })();

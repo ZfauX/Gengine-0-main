@@ -1,19 +1,19 @@
 {{define "invitations-my.html"}}
 <div class="max-w-4xl mx-auto">
-    <h1 class="page-title">Мои приглашения</h1>
+    <h1 class="page-title">{{ T $.Lang "invitation.my_title" }}</h1>
 
     {{if .Invitations}}
     <div class="space-y-3">
         {{range .Invitations}}
         <div class="card flex flex-wrap items-center justify-between gap-3 p-4 hover:shadow-md transition">
             <div>
-                <span class="font-medium text-gray-800 dark:text-gray-100">Команда: {{.Team.Name}}</span>
+                <span class="font-medium text-gray-800 dark:text-gray-100">{{ TF $.Lang "invitation.team_label" .Team.Name }}</span>
                 {{if eq .Status "pending"}}
-                    <span class="inline-flex ml-2 px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">Ожидает</span>
+                    <span class="inline-flex ml-2 px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">{{ T $.Lang "invitation.status_pending" }}</span>
                 {{else if eq .Status "accepted"}}
-                    <span class="inline-flex ml-2 px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">Принято</span>
+                    <span class="inline-flex ml-2 px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">{{ T $.Lang "invitation.status_accepted" }}</span>
                 {{else if eq .Status "declined"}}
-                    <span class="inline-flex ml-2 px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">Отклонено</span>
+                    <span class="inline-flex ml-2 px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">{{ T $.Lang "invitation.status_declined" }}</span>
                 {{else}}
                     <span class="inline-flex ml-2 px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100">{{.Status}}</span>
                 {{end}}
@@ -22,11 +22,11 @@
             <div class="flex flex-wrap gap-2">
                 <form action="/invitations/{{.ID}}/accept" method="POST" class="inline">
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
-                    <button type="submit" class="btn btn-primary text-sm">Принять</button>
+                    <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "invitation.accept" }}</button>
                 </form>
                 <form action="/invitations/{{.ID}}/decline" method="POST" class="inline">
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
-                    <button type="submit" class="btn btn-danger text-sm">Отклонить</button>
+                    <button type="submit" class="btn btn-danger text-sm">{{ T $.Lang "invitation.decline" }}</button>
                 </form>
             </div>
             {{end}}
@@ -35,7 +35,7 @@
     </div>
     {{else}}
     <div class="card text-center py-12">
-        <p class="text-gray-500 dark:text-gray-400">У вас нет приглашений.</p>
+        <p class="text-gray-500 dark:text-gray-400">{{ T $.Lang "invitation.no_invitations" }}</p>
     </div>
     {{end}}
 </div>

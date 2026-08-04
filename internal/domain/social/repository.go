@@ -60,7 +60,8 @@ func (r *gormFollowRepo) IsFollowing(ctx context.Context, followerID, authorID u
 
 func (r *gormFollowRepo) GetSubscriptions(ctx context.Context, userID uint) ([]user.User, error) {
 	var authors []user.User
-	err := r.db.WithContext(ctx).Joins("JOIN follows ON follows.author_id = users.id").
+	err := r.db.WithContext(ctx).Select("users.id, users.name, users.email, users.avatar_path, users.profile_visibility, users.created_at").
+		Joins("JOIN follows ON follows.author_id = users.id").
 		Where("follows.follower_id = ?", userID).
 		Find(&authors).Error
 	return authors, err
@@ -68,7 +69,8 @@ func (r *gormFollowRepo) GetSubscriptions(ctx context.Context, userID uint) ([]u
 
 func (r *gormFollowRepo) GetFollowers(ctx context.Context, authorID uint) ([]user.User, error) {
 	var followers []user.User
-	err := r.db.WithContext(ctx).Joins("JOIN follows ON follows.follower_id = users.id").
+	err := r.db.WithContext(ctx).Select("users.id, users.name, users.email, users.avatar_path, users.profile_visibility, users.created_at").
+		Joins("JOIN follows ON follows.follower_id = users.id").
 		Where("follows.author_id = ?", authorID).
 		Find(&followers).Error
 	return followers, err

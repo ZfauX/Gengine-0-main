@@ -1,16 +1,16 @@
 {{define "teams-change_captain.html"}}
 <div class="max-w-3xl mx-auto">
-    <h1 class="page-title">Смена капитана</h1>
+    <h1 class="page-title">{{ T $.Lang "team.change_captain_title" }}</h1>
 
     <form action="/teams/{{.TeamID}}/change-captain" method="POST" class="card space-y-4">
         <input type="hidden" name="_csrf" value="{{.csrf}}">
 
         <!-- Выбор нового капитана -->
         <div>
-            <label for="captain_id" class="form-label">Выберите нового капитана</label>
+            <label for="captain_id" class="form-label">{{ T $.Lang "team.select_new_captain" }}</label>
             <select name="captain_id" id="captain_id" required
                     class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                <option value="">-- выберите нового капитана --</option>
+                <option value="">{{ T $.Lang "team.no_new_captain" }}</option>
                 {{range .Members}}
                     <option value="{{.ID}}">{{.Name}} ({{.Email}})</option>
                 {{end}}
@@ -19,8 +19,8 @@
 
         <!-- Кнопки -->
         <div class="flex flex-wrap gap-3 pt-2">
-            <button type="submit" class="btn btn-primary text-sm">Сменить</button>
-            <a href="/teams/{{.TeamID}}" class="btn btn-outline text-sm">Отмена</a>
+            <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "team.change_button" }}</button>
+            <a href="/teams/{{.TeamID}}" class="btn btn-outline text-sm">{{ T $.Lang "common.cancel" }}</a>
         </div>
     </form>
 </div>

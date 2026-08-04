@@ -37,13 +37,12 @@ func (h *UserSearchHandler) SearchUsers(c *gin.Context) {
 	teamID, _ := strconv.Atoi(c.Param("team_id"))
 
 	var users []struct {
-		ID    uint   `json:"id"`
-		Name  string `json:"name"`
-		Email string `json:"email"`
+		ID   uint   `json:"id"`
+		Name string `json:"name"`
 	}
 
 	err := h.db.WithContext(c.Request.Context()).Table("users").
-		Select("id, name, email").
+		Select("id, name").
 		Where("LOWER(name) LIKE ? OR LOWER(email) LIKE ?",
 			"%"+strings.ToLower(query)+"%",
 			"%"+strings.ToLower(query)+"%").
@@ -78,9 +77,8 @@ func (h *UserSearchHandler) SearchUsers(c *gin.Context) {
 		}
 		if !isMember {
 			filtered = append(filtered, gin.H{
-				"id":    u.ID,
-				"name":  u.Name,
-				"email": u.Email,
+				"id":   u.ID,
+				"name": u.Name,
 			})
 		}
 	}
@@ -92,7 +90,7 @@ func (h *UserSearchHandler) SearchUsers(c *gin.Context) {
 func (h *UserSearchHandler) NewInvitationForm(c *gin.Context) {
 	teamID, err := strconv.Atoi(c.Param("team_id"))
 	if err != nil || teamID <= 0 {
-		render.RenderError(c, http.StatusBadRequest, "Неверный ID команды")
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_team_id"))
 		return
 	}
 

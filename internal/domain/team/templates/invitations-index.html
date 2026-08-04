@@ -1,9 +1,9 @@
 {{define "invitations-index.html"}}
 <div class="max-w-4xl mx-auto">
-    <h1 class="page-title">Приглашения в команду</h1>
+    <h1 class="page-title">{{ T $.Lang "invitation.list_title" }}</h1>
 
     <div class="mb-6">
-        <a href="/teams/{{.TeamID}}/invitations/new" class="btn btn-primary text-sm">+ Создать новое приглашение</a>
+        <a href="/teams/{{.TeamID}}/invitations/new" class="btn btn-primary text-sm">{{ T $.Lang "invitation.create_button" }}</a>
     </div>
 
     {{if .Invitations}}
@@ -17,11 +17,11 @@
                 </div>
                 <div>
                     {{if eq .Status "pending"}}
-                        <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">Ожидает</span>
+                        <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">{{ T $.Lang "invitation.status_pending" }}</span>
                     {{else if eq .Status "accepted"}}
-                        <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">Принято</span>
+                        <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">{{ T $.Lang "invitation.status_accepted" }}</span>
                     {{else if eq .Status "declined"}}
-                        <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">Отклонено</span>
+                        <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">{{ T $.Lang "invitation.status_declined" }}</span>
                     {{else}}
                         <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100">{{.Status}}</span>
                     {{end}}
@@ -32,13 +32,13 @@
     </div>
     {{else}}
     <div class="card text-center py-12">
-        <p class="text-gray-500 dark:text-gray-400">Приглашений пока нет.</p>
-        <p class="mt-2 text-sm text-gray-400"><a href="/teams/{{.TeamID}}/invitations/new" class="text-blue-600 dark:text-blue-400 hover:underline">Создайте первое приглашение</a></p>
+        <p class="text-gray-500 dark:text-gray-400">{{ T $.Lang "invitation.no_invitations_list" }}</p>
+        <p class="mt-2 text-sm text-gray-400"><a href="/teams/{{.TeamID}}/invitations/new" class="text-blue-600 dark:text-blue-400 hover:underline">{{ T $.Lang "invitation.create_first" }}</a></p>
     </div>
     {{end}}
 
     <div class="mt-6">
-        <a href="/teams/{{.TeamID}}" class="btn btn-outline text-sm">← Назад к команде</a>
+        <a href="/teams/{{.TeamID}}" class="btn btn-outline text-sm">{{ T $.Lang "invitation.back_to_team" }}</a>
     </div>
 </div>
 {{end}}

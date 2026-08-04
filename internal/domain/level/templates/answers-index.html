@@ -1,6 +1,6 @@
 {{define "answers-index.html"}}
 <div class="max-w-3xl mx-auto">
-    <h1 class="page-title">Ответы на вопрос</h1>
+    <h1 class="page-title">{{ T $.Lang "answer.title" }}</h1>
 
     {{if .Error}}
     <div class="flash flash-error">{{.Error}}</div>
@@ -8,7 +8,7 @@
 
     <!-- Существующие варианты -->
     <div class="card mb-6">
-        <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4">Существующие варианты кодов</h2>
+        <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4">{{ T $.Lang "answer.existing_codes" }}</h2>
         {{if .Answers}}
         <ul class="divide-y divide-gray-100">
             {{range .Answers}}
@@ -16,34 +16,34 @@
                 <span class="font-mono text-gray-800 dark:text-gray-100">{{.Code}}</span>
                 <form action="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{$.QuestionID}}/answers/{{.ID}}/delete" method="POST" class="inline">
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
-                    <button type="submit" class="btn btn-danger text-xs">Удалить</button>
+                    <button type="submit" class="btn btn-danger text-xs">{{ T $.Lang "answer.delete" }}</button>
                 </form>
             </li>
             {{end}}
         </ul>
         {{else}}
-        <p class="text-gray-500 dark:text-gray-400 text-sm">Пока нет ответов.</p>
+        <p class="text-gray-500 dark:text-gray-400 text-sm">{{ T $.Lang "answer.no_answers" }}</p>
         {{end}}
     </div>
 
     <!-- Добавление нового варианта -->
     <div class="card">
-        <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4">Добавить новый вариант</h2>
+        <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4">{{ T $.Lang "answer.add_new" }}</h2>
         <form action="/games/{{.GameID}}/levels/{{.LevelID}}/questions/{{.QuestionID}}/answers" method="POST" class="flex flex-wrap items-end gap-3">
             <input type="hidden" name="_csrf" value="{{.csrf}}">
             <div class="flex-1 min-w-[180px]">
-                <label for="code" class="form-label">Код</label>
-                <input type="text" name="code" id="code" placeholder="Код" required
+                <label for="code" class="form-label">{{ T $.Lang "answer.code_label" }}</label>
+                <input type="text" name="code" id="code" placeholder='{{ T $.Lang "answer.code_placeholder" }}' required
                        class="w-full rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.code}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
                 {{if .Errors.code}}<p class="field-error">{{.Errors.code}}</p>{{end}}
             </div>
-            <button type="submit" class="btn btn-primary text-sm whitespace-nowrap">Добавить</button>
+            <button type="submit" class="btn btn-primary text-sm whitespace-nowrap">{{ T $.Lang "answer.add_button" }}</button>
         </form>
     </div>
 
     <!-- Навигация назад -->
     <div class="mt-6">
-        <a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions" class="btn btn-outline text-sm">← Назад к вопросам</a>
+        <a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions" class="btn btn-outline text-sm">{{ T $.Lang "answer.back_to_questions" }}</a>
     </div>
 </div>
 {{end}}

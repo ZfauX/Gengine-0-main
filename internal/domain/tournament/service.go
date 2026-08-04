@@ -84,17 +84,24 @@ func (s *TournamentService) AddGame(ctx context.Context, tournamentID, gameID, u
 	if t.AuthorID != userID {
 		return stderrors.New("только автор турнира может добавлять игры")
 	}
-	games, err := s.tournamentGameRepo.ListGames(ctx, tournamentID)
-	if err != nil {
-		return err
-	}
-	for _, g := range games {
-		if g.ID == gameID {
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var count int64
+		if err := tx.Model(&TournamentGame{}).Where("tournament_id = ? AND game_id = ?", tournamentID, gameID).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
 			return stderrors.New("игра уже в турнире")
 		}
-	}
-	order := len(games)
-	return s.tournamentGameRepo.AddGame(ctx, tournamentID, gameID, order)
+		var order int64
+		tx.Model(&TournamentGame{}).Where("tournament_id = ?", tournamentID).Count(&order)
+		tg := TournamentGame{
+			TournamentID: tournamentID,
+			GameID:       gameID,
+			OrderIndex:   int(order),
+		}
+		return tx.Create(&tg).Error
+	})
 }
 
 func (s *TournamentService) RemoveGame(ctx context.Context, tournamentID, gameID, userID uint) error {
@@ -114,42 +121,55 @@ func (s *TournamentService) RemoveGame(ctx context.Context, tournamentID, gameID
 		}
 
 		// Deduct points from tournament results for each team that finished this game
-		for _, p := range passings {
-			var result TournamentResult
-			err := tx.Where("tournament_id = ? AND team_id = ?", tournamentID, p.TeamID).First(&result).Error
-			if err != nil {
-				if stderrors.Is(err, gorm.ErrRecordNotFound) {
-					continue
-				}
+		// Bulk-fetch all results first to avoid N+1 queries
+		if len(passings) > 0 {
+			teamIDs := make([]uint, 0, len(passings))
+			for _, p := range passings {
+				teamIDs = append(teamIDs, p.TeamID)
+			}
+			var results []TournamentResult
+			if err := tx.Where("tournament_id = ? AND team_id IN ?", tournamentID, teamIDs).Find(&results).Error; err != nil {
 				return err
 			}
-
-			points := t.PointsForParticipation
-			if p.Place != nil {
-				switch *p.Place {
-				case 1:
-					points = t.PointsForFirst
-				case 2:
-					points = t.PointsForSecond
-				case 3:
-					points = t.PointsForThird
-				}
+			// Build lookup map
+			resultByTeam := make(map[uint]*TournamentResult, len(results))
+			for i := range results {
+				resultByTeam[results[i].TeamID] = &results[i]
 			}
 
-			result.Score -= points
-			result.GamesPlayed--
+			for _, p := range passings {
+				result, found := resultByTeam[p.TeamID]
+				if !found {
+					continue
+				}
 
-			if result.GamesPlayed <= 0 {
-				result.Score = 0
-				if err := tx.Delete(&result).Error; err != nil {
-					return err
+				points := t.PointsForParticipation
+				if p.Place != nil {
+					switch *p.Place {
+					case 1:
+						points = t.PointsForFirst
+					case 2:
+						points = t.PointsForSecond
+					case 3:
+						points = t.PointsForThird
+					}
 				}
-			} else {
-				if result.Score < 0 {
+
+				result.Score -= points
+				result.GamesPlayed--
+
+				if result.GamesPlayed <= 0 {
 					result.Score = 0
-				}
-				if err := s.tournamentResultRepo.Upsert(tx, &result); err != nil {
-					return err
+					if err := tx.Delete(&result).Error; err != nil {
+						return err
+					}
+				} else {
+					if result.Score < 0 {
+						result.Score = 0
+					}
+					if err := s.tournamentResultRepo.Upsert(tx, result); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -182,10 +202,7 @@ func (s *TournamentService) Apply(ctx context.Context, tournamentID, teamID, use
 		return getErr
 	}
 
-	if err := s.tournamentTeamRepo.AddTeam(ctx, tournamentID, teamID); err != nil {
-		return err
-	}
-
+	// Read-only: fetch games outside transaction
 	games, err := s.tournamentGameRepo.ListGames(ctx, tournamentID)
 	if err != nil {
 		log.Error().Err(err).Uint("tournament_id", tournamentID).Msg("Apply: failed to list tournament games")
@@ -200,25 +217,35 @@ func (s *TournamentService) Apply(ctx context.Context, tournamentID, teamID, use
 	existingPassings, err := s.tournamentTeamRepo.FindPassingsByGamesAndTeam(ctx, gameIDs, teamID)
 	if err != nil {
 		log.Error().Err(err).Uint("team_id", teamID).Msg("Apply: FindPassingsByGamesAndTeam failed")
+		return err
 	}
 	existingMap := make(map[uint]bool)
 	for _, p := range existingPassings {
 		existingMap[p.GameID] = true
 	}
 
-	for _, g := range games {
-		if existingMap[g.ID] {
-			continue
-		}
-		passing := game.GamePassing{
-			GameID: g.ID,
-			TeamID: teamID,
-			Status: game.StatusPending,
-		}
-		if err := s.tournamentTeamRepo.CreatePassing(ctx, &passing); err != nil {
-			log.Error().Err(err).Uint("game_id", g.ID).Uint("team_id", teamID).Msg("Apply: failed to create passing")
+	// Transaction: add team + create passings
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.tournamentTeamRepo.AddTeamTx(tx, ctx, tournamentID, teamID); err != nil {
 			return err
 		}
+		for _, g := range games {
+			if existingMap[g.ID] {
+				continue
+			}
+			passing := game.GamePassing{
+				GameID: g.ID,
+				TeamID: teamID,
+				Status: game.StatusPending,
+			}
+			if err := tx.Create(&passing).Error; err != nil {
+				log.Error().Err(err).Uint("game_id", g.ID).Uint("team_id", teamID).Msg("Apply: failed to create passing")
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	if s.cfg != nil && s.cfg.SMTP.Enabled {
