@@ -242,6 +242,7 @@
                     {{if .IsAdmin}}<a href="/admin" class="block px-3 py-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">{{ T $.Lang "nav.admin" }}</a>{{end}}
                     <a href="/games" class="block px-3 py-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">{{ T $.Lang "nav.games" }}</a>
                     <a href="/teams" class="block px-3 py-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">{{ T $.Lang "nav.teams" }}</a>
+                    <a href="/notifications" class="block px-3 py-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">{{ T $.Lang "nav.notifications" }}</a>
                     <a href="/profile" class="block px-3 py-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">{{ T $.Lang "nav.profile" }}</a>
                     <form action="/auth/logout" method="POST" class="block">
                         <input type="hidden" name="_csrf" value="{{.csrf}}">
