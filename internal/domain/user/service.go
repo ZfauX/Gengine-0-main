@@ -968,11 +968,7 @@ func (s *UserDashboardService) GetDashboard(ctx context.Context, userID uint) (*
 		return &dash, fmt.Errorf("failed to get authored games: %w", err)
 	}
 	for _, g := range authoredGames {
-		dash.AuthoredGames = append(dash.AuthoredGames, DashboardGame{
-			ID:      g.ID,
-			Name:    g.Name,
-			IsDraft: g.IsDraft,
-		})
+		dash.AuthoredGames = append(dash.AuthoredGames, DashboardGame(g))
 	}
 
 	// 2. Единый запрос: команды + прохождения + названия игр через JOIN
