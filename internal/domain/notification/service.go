@@ -33,12 +33,9 @@ const (
 )
 
 // Notification represents a user notification stored in the database.
-// TODO: Add ON DELETE CASCADE to notifications foreign keys.
-// Migration needed:
-//
-//	ALTER TABLE notifications DROP CONSTRAINT notifications_user_id_fkey,
-//	ADD CONSTRAINT notifications_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
-//	Same for game_id → games(id), team_id → teams(id).
+// FK-каскады (ON DELETE CASCADE для user_id/game_id/team_id) обеспечены
+// миграцией 000029_notifications_cascade — жёсткое удаление сущности
+// не оставляет осиротевшие уведомления.
 type Notification struct {
 	ID        uint             `gorm:"primaryKey"`
 	CreatedAt time.Time        `gorm:"autoCreateTime"`
