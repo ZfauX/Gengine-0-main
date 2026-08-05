@@ -159,6 +159,21 @@ func (mr *MockUserRepositoryMockRecorder) GetByID(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByID", reflect.TypeOf((*MockUserRepository)(nil).GetByID), ctx, id)
 }
 
+// GetByIDWithAchievementsAndSubscriptions mocks base method.
+func (m *MockUserRepository) GetByIDWithAchievementsAndSubscriptions(ctx context.Context, id uint) (*User, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetByIDWithAchievementsAndSubscriptions", ctx, id)
+	ret0, _ := ret[0].(*User)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetByIDWithAchievementsAndSubscriptions indicates an expected call of GetByIDWithAchievementsAndSubscriptions.
+func (mr *MockUserRepositoryMockRecorder) GetByIDWithAchievementsAndSubscriptions(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByIDWithAchievementsAndSubscriptions", reflect.TypeOf((*MockUserRepository)(nil).GetByIDWithAchievementsAndSubscriptions), ctx, id)
+}
+
 // GetByRole mocks base method.
 func (m *MockUserRepository) GetByRole(ctx context.Context, role string) ([]User, error) {
 	m.ctrl.T.Helper()
