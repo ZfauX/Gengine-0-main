@@ -412,7 +412,13 @@ func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 		log.Error().Err(err).Uint("game_id", req.ID).Msg("MonitorWS: failed to get snapshot")
 	} else {
 		if data, err := json.Marshal(snapshot); err == nil {
-			client.Send <- data
+			// Неблокирующая отправка: если буфер клиента переполнен (write pump ещё не
+			// стартовал или клиент медленный) — дропаем снапшот, не блокируя хендлер (M4).
+			select {
+			case client.Send <- data:
+			default:
+				log.Warn().Str("game_id", gameID).Msg("MonitorWS: client buffer full, dropping snapshot")
+			}
 		} else {
 			log.Error().Err(err).Uint("game_id", req.ID).Msg("MonitorWS: failed to marshal snapshot")
 		}
@@ -588,7 +594,12 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 		}
 		data, err := json.Marshal(gin.H{"type": "history", "messages": msgs})
 		if err == nil {
-			client.Send <- data
+			// Неблокирующая отправка (M4): если буфер переполнен — дропаем историю.
+			select {
+			case client.Send <- data:
+			default:
+				log.Warn().Int("room_id", roomIDUint).Msg("ChatWS: client buffer full, dropping history")
+			}
 		} else {
 			log.Error().Err(err).Int("room_id", roomIDUint).Msg("ChatWS: failed to marshal history")
 		}
