@@ -268,6 +268,11 @@ func StopGlobalRateLimiter() {
 }
 
 func GlobalRateLimit(window time.Duration, limit int) gin.HandlerFunc {
+	// Лимит не настроен (<=0) — middleware пропускает все запросы.
+	// Иначе лимитер с limit=0 блокировал бы повторные запросы из одного окна.
+	if limit <= 0 {
+		return func(c *gin.Context) { c.Next() }
+	}
 	globalRLOnce.Do(func() {
 		globalRateLimiter = NewRateLimiter(window, limit)
 	})

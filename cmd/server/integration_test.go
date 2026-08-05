@@ -432,9 +432,19 @@ func loginDirect(t *testing.T, cfg *config.Config, db *gorm.DB, email string) []
 	t.Helper()
 	var userRecord user.User
 	require.NoError(t, db.Where("email = ?", email).First(&userRecord).Error)
+
+	// Токен должен проходить ParseToken (S1): iss/aud совпадают с BaseURL
+	// (fallback "gengine" как в AuthService), jti — случайный, nbf не ставим.
+	issuer := cfg.Server.BaseURL
+	if issuer == "" {
+		issuer = "gengine"
+	}
 	claims := jwt.MapClaims{
 		"user_id": userRecord.ID,
 		"role":    userRecord.Role,
+		"iss":     issuer,
+		"aud":     issuer,
+		"jti":     fmt.Sprintf("test-%d", time.Now().UnixNano()),
 		"exp":     time.Now().Add(24 * time.Hour).Unix(),
 		"iat":     time.Now().Unix(),
 	}
