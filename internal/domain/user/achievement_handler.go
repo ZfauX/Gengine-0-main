@@ -8,15 +8,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-	"gorm.io/gorm"
 )
 
 type AchievementHandler struct {
-	db *gorm.DB
+	achievementRepo AchievementRepository
 }
 
-func NewAchievementHandler(db *gorm.DB) *AchievementHandler {
-	return &AchievementHandler{db: db}
+func NewAchievementHandler(achievementRepo AchievementRepository) *AchievementHandler {
+	return &AchievementHandler{achievementRepo: achievementRepo}
 }
 
 // List отображает список достижений пользователя.
@@ -30,10 +29,8 @@ func NewAchievementHandler(db *gorm.DB) *AchievementHandler {
 // @Security JWT
 func (h *AchievementHandler) List(c *gin.Context) {
 	userID := c.GetUint("userID")
-	var achievements []Achievement
-	if err := h.db.Joins("JOIN user_achievements ON user_achievements.achievement_id = achievements.id").
-		Where("user_achievements.user_id = ?", userID).
-		Find(&achievements).Error; err != nil {
+	achievements, err := h.achievementRepo.GetByUserID(c.Request.Context(), userID)
+	if err != nil {
 		log.Error().Err(err).Uint("user", userID).Msg("AchievementHandler.List: failed to fetch achievements")
 		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return

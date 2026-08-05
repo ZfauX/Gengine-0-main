@@ -44,6 +44,10 @@ func (m *mockUserRepo) GetPublicProfile(ctx context.Context, id uint) (*User, er
 	return nil, nil
 }
 
+func (m *mockUserRepo) GetByIDWithAchievementsAndSubscriptions(ctx context.Context, id uint) (*User, error) {
+	return nil, nil
+}
+
 func (m *mockUserRepo) Update(ctx context.Context, id uint, fields map[string]any) error {
 	return nil
 }

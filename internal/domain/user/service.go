@@ -456,6 +456,12 @@ func (s *UserService) GetPublicProfile(ctx context.Context, id uint) (*User, err
 	return s.userRepo.GetPublicProfile(ctx, id)
 }
 
+// GetByIDWithAchievementsAndSubscriptions возвращает пользователя с прелоадами
+// (для страницы профиля — C1, без *gorm.DB в хендлере).
+func (s *UserService) GetByIDWithAchievementsAndSubscriptions(ctx context.Context, id uint) (*User, error) {
+	return s.userRepo.GetByIDWithAchievementsAndSubscriptions(ctx, id)
+}
+
 func (s *UserService) UpdateProfile(ctx context.Context, id uint, name, emailStr string) error {
 	return s.userRepo.Update(ctx, id, map[string]any{
 		"name":  name,

@@ -38,8 +38,8 @@ func RegisterRoutes(
 	twoFactorSvc := NewTwoFactorService()
 	authHandler := NewAuthHandler(cfg, authSvc, userSvc, passwordResetSvc, emailVerifSvc, oauthSvc, auditSvc, emailSvc, twoFactorSvc)
 	profileSvc := NewProfileService(db)
-	profileHandler := NewProfileHandler(db, localStorage, authSvc, profileSvc, userSvc, cfg)
-	achievementHandler := NewAchievementHandler(db)
+	profileHandler := NewProfileHandler(localStorage, authSvc, profileSvc, userSvc, cfg)
+	achievementHandler := NewAchievementHandler(NewGormAchievementRepo(db))
 	dashboardHandler := NewDashboardHandler(NewUserDashboardService(db), db)
 
 	twoFactorHandler := NewTwoFactorHandler(twoFactorSvc, authSvc, userRepo, cfg.JWT.AccessExpiry)

@@ -23,7 +23,6 @@ import (
 )
 
 type ProfileHandler struct {
-	db         *gorm.DB
 	storage    storage.FileStorage
 	authSvc    *AuthService
 	profileSvc *ProfileService
@@ -31,9 +30,8 @@ type ProfileHandler struct {
 	cfg        *config.Config
 }
 
-func NewProfileHandler(db *gorm.DB, st storage.FileStorage, authSvc *AuthService, profileSvc *ProfileService, userSvc *UserService, cfg *config.Config) *ProfileHandler {
+func NewProfileHandler(st storage.FileStorage, authSvc *AuthService, profileSvc *ProfileService, userSvc *UserService, cfg *config.Config) *ProfileHandler {
 	return &ProfileHandler{
-		db:         db,
 		storage:    st,
 		authSvc:    authSvc,
 		profileSvc: profileSvc,
@@ -54,14 +52,15 @@ func NewProfileHandler(db *gorm.DB, st storage.FileStorage, authSvc *AuthService
 // @Security JWT
 func (h *ProfileHandler) Show(c *gin.Context) {
 	userID := c.GetUint("userID")
-	var user User
 	// Subscriptions прелоадим для корректного подсчёта заполненности профиля (C12).
-	if err := h.db.WithContext(c.Request.Context()).Preload("Achievements").Preload("Subscriptions").First(&user, userID).Error; err != nil {
+	// Через репозиторий, а не *gorm.DB в хендлере (C1).
+	user, err := h.userSvc.GetByIDWithAchievementsAndSubscriptions(c.Request.Context(), userID)
+	if err != nil {
 		render.RenderErrorPage(c, http.StatusNotFound)
 		return
 	}
 	// Calculate profile completion percentage
-	completion := calculateProfileCompletion(&user)
+	completion := calculateProfileCompletion(user)
 	themeSettings, tsErr := h.profileSvc.GetThemeSettings(c.Request.Context(), userID)
 	if tsErr != nil {
 		log.Warn().Err(tsErr).Uint("user_id", userID).Msg("Show: failed to load theme settings, using defaults")
@@ -137,8 +136,8 @@ func (h *ProfileHandler) PublicProfile(c *gin.Context) {
 	userID := req.ID
 	currentUserID := c.GetUint("userID")
 
-	var user User
-	if err := h.db.WithContext(c.Request.Context()).Preload("Achievements").First(&user, userID).Error; err != nil {
+	user, err := h.userSvc.GetPublicProfile(c.Request.Context(), userID)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			render.RenderErrorPage(c, http.StatusNotFound)
 		} else {

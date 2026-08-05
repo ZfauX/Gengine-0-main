@@ -16,6 +16,7 @@ type UserRepository interface {
 	GetByID(ctx context.Context, id uint) (*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	GetPublicProfile(ctx context.Context, id uint) (*User, error)
+	GetByIDWithAchievementsAndSubscriptions(ctx context.Context, id uint) (*User, error)
 	Update(ctx context.Context, id uint, fields map[string]any) error
 	GetByRole(ctx context.Context, role string) ([]User, error)
 	GetUserRole(ctx context.Context, id uint) (string, error)
@@ -149,6 +150,14 @@ func (r *gormUserRepo) GetByEmail(ctx context.Context, email string) (*User, err
 func (r *gormUserRepo) GetPublicProfile(ctx context.Context, id uint) (*User, error) {
 	var u User
 	err := r.db.WithContext(ctx).Preload("Achievements").First(&u, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+func (r *gormUserRepo) GetByIDWithAchievementsAndSubscriptions(ctx context.Context, id uint) (*User, error) {
+	var u User
+	err := r.db.WithContext(ctx).Preload("Achievements").Preload("Subscriptions").First(&u, id).Error
 	if err != nil {
 		return nil, err
 	}
