@@ -19,7 +19,7 @@ func GetToken(c *gin.Context) string {
 	return ""
 }
 
-func Middleware(secret string, secure bool, trustedOrigins []string) gin.HandlerFunc {
+func Middleware(secret string, secure bool, _ []string) gin.HandlerFunc {
 	opts := []gocsrf.Option{
 		gocsrf.Secure(secure),
 		gocsrf.Path("/"),
@@ -31,9 +31,9 @@ func Middleware(secret string, secure bool, trustedOrigins []string) gin.Handler
 			http.Error(w, "CSRF token mismatch", http.StatusForbidden)
 		})),
 	}
-	if len(trustedOrigins) > 0 {
-		opts = append(opts, gocsrf.TrustedOrigins(trustedOrigins))
-	}
+	// NB: не вызываем gocsrf.TrustedOrigins — CVE-2025-47909 (GO-2025-3884):
+	// он путает HTTP/HTTPS-ориджины доверенных хостов. Формы приложения same-origin,
+	// cross-origin не нужен. Валидация origin выполняется gorilla/csrf автоматически.
 	protector := gocsrf.Protect([]byte(secret), opts...)
 
 	return func(c *gin.Context) {

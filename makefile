@@ -79,8 +79,12 @@ install-tools:
 i18n-check:
 	$(GO) test ./internal/pkg/i18n/ -run "TestAllKeysHave" -count=1
 
+# Скан уязвимостей зависимостей (требует govulncheck: go install golang.org/x/vuln/cmd/govulncheck@latest)
+vuln-check:
+	govulncheck ./...
+
 # Быстрая проверка для CI (без полного теста)
-ci: deps lint i18n-check test-short swagger build
+ci: deps lint i18n-check vuln-check test-short swagger build
 
 # Помощь
 help:

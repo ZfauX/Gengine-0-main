@@ -26,7 +26,7 @@ func setupGameListingTest(t *testing.T) (*gorm.DB, *game.GameListingService) {
 	db.Exec(`ALTER TABLE games ADD COLUMN IF NOT EXISTS search_vector tsvector;`)
 
 	repo := game.NewGormGameRepo(db)
-	svc := game.NewGameListingService(repo)
+	svc := game.NewGameListingService(repo, nil)
 	return db, svc
 }
 

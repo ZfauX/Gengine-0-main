@@ -207,68 +207,62 @@ func (s *LevelService) Move(ctx context.Context, levelID uint, direction string,
 		return errors.New("недостаточно прав")
 	}
 
-	var sibling *Level
-	switch direction {
-	case "up":
-		sibling, err = s.levelRepo.FindPrevLevel(ctx, level.GameID, level.Position)
-		if err != nil {
-			return errors.New("некуда двигать")
-		}
-	case "down":
-		sibling, err = s.levelRepo.FindNextLevel(ctx, level.GameID, level.Position)
-		if err != nil {
-			return errors.New("некуда двигать")
-		}
-	default:
-		return errors.New("неверное направление")
-	}
-
 	tx := s.levelRepo.BeginTransaction(ctx)
 	if tx.Error != nil {
 		return tx.Error
 	}
+	defer tx.Rollback()
 
-	oldLevelPos := level.Position
-	oldSiblingPos := sibling.Position
+	// Сериализация перемещений уровней одной игры (B7): advisory lock на gameID
+	// исключает гонку tempPos между параллельными Move.
+	if lockErr := tx.Exec("SELECT pg_advisory_xact_lock(?)", int64(level.GameID)).Error; lockErr != nil {
+		return lockErr
+	}
 
-	maxPos, err := s.levelRepo.GetMaxPositionForTransaction(ctx, tx, level.GameID)
+	// Перечитываем уровень ВНУТРИ транзакции — позиция могла измениться до lock.
+	var lockedLevel Level
+	if lockErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedLevel, levelID).Error; lockErr != nil {
+		return lockErr
+	}
+
+	// Поиск соседа внутри транзакции (после блокировок) — не по устаревшим данным.
+	var sibling Level
+	switch direction {
+	case "up":
+		err = tx.Where("game_id = ? AND position < ?", lockedLevel.GameID, lockedLevel.Position).
+			Order("position DESC").First(&sibling).Error
+	case "down":
+		err = tx.Where("game_id = ? AND position > ?", lockedLevel.GameID, lockedLevel.Position).
+			Order("position ASC").First(&sibling).Error
+	default:
+		return errors.New("неверное направление")
+	}
 	if err != nil {
-		tx.Rollback()
+		return errors.New("некуда двигать")
+	}
+
+	// Блокируем соседа.
+	if lockErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&Level{}, sibling.ID).Error; lockErr != nil {
+		return lockErr
+	}
+
+	// tempPos безопасен: advisory lock сериализует перемещения этой игры.
+	maxPos, err := s.levelRepo.GetMaxPositionForTransaction(ctx, tx, lockedLevel.GameID)
+	if err != nil {
 		return err
 	}
 	tempPos := maxPos + 1
 
-	// Блокируем обе строки в фиксированном порядке (по ID) для предотвращения deadlock'а
-	if level.ID < sibling.ID {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&Level{}, level.ID).Error; err != nil {
-			tx.Rollback()
-			return err
-		}
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&Level{}, sibling.ID).Error; err != nil {
-			tx.Rollback()
-			return err
-		}
-	} else {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&Level{}, sibling.ID).Error; err != nil {
-			tx.Rollback()
-			return err
-		}
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&Level{}, level.ID).Error; err != nil {
-			tx.Rollback()
-			return err
-		}
-	}
+	oldLevelPos := lockedLevel.Position
+	oldSiblingPos := sibling.Position
 
-	if err := tx.Model(level).Update("position", tempPos).Error; err != nil {
-		tx.Rollback()
+	if err := tx.Model(&Level{}).Where("id = ?", lockedLevel.ID).Update("position", tempPos).Error; err != nil {
 		return err
 	}
-	if err := tx.Model(sibling).Update("position", oldLevelPos).Error; err != nil {
-		tx.Rollback()
+	if err := tx.Model(&Level{}).Where("id = ?", sibling.ID).Update("position", oldLevelPos).Error; err != nil {
 		return err
 	}
-	if err := tx.Model(level).Update("position", oldSiblingPos).Error; err != nil {
-		tx.Rollback()
+	if err := tx.Model(&Level{}).Where("id = ?", lockedLevel.ID).Update("position", oldSiblingPos).Error; err != nil {
 		return err
 	}
 

@@ -3,12 +3,14 @@ package game
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"gengine-0/internal/domain/user"
+	"gengine-0/internal/pkg/cache"
 	"gengine-0/internal/pkg/sqlutil"
 
 	"github.com/rs/zerolog/log"
@@ -17,19 +19,55 @@ import (
 // GameListingService отвечает за списки игр, фильтрацию и сортировку.
 type GameListingService struct {
 	gameRepo            GameRepository
+	cache               cache.CacheStore
 	searchVectorExists  bool
 	searchVectorMu      sync.RWMutex
 	searchVectorChecked bool
 }
 
 // NewGameListingService создаёт новый сервис списков.
-func NewGameListingService(gameRepo GameRepository) *GameListingService {
-	return &GameListingService{gameRepo: gameRepo}
+func NewGameListingService(gameRepo GameRepository, cacheStore cache.CacheStore) *GameListingService {
+	if cacheStore == nil {
+		cacheStore = &cache.NoopCache{}
+	}
+	return &GameListingService{gameRepo: gameRepo, cache: cacheStore}
+}
+
+// listingCacheEntry — кэшированный результат анонимного листинга.
+type listingCacheEntry struct {
+	Games []Game
+	Total int64
+}
+
+// listingCacheKey строит детерминированный ключ кэша по параметрам фильтра/сортировки.
+func listingCacheKey(filter GameFilter, sort *GameSort, page, perPage int) string {
+	field, order := "created_at", "desc"
+	if sort != nil {
+		field = sort.Field
+		order = string(sort.Order)
+	}
+	authorID := uint(0)
+	if filter.AuthorID != nil {
+		authorID = *filter.AuthorID
+	}
+	return fmt.Sprintf("games:list:%d:%d:%s:%s:%s:%s:%d:%s:%s",
+		page, perPage, filter.Status, filter.Search, filter.DateFrom, filter.DateTo, authorID, field, order)
 }
 
 // ListFilteredPaginated returns filtered games with pagination.
 // Uses COUNT(*) OVER() window function to get total in a single query.
+// Анонимный листинг (ViewerID == 0) кэшируется на 30с (P3).
 func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter GameFilter, sort *GameSort, page, perPage int) ([]Game, int64, error) {
+	cacheKey := ""
+	if filter.ViewerID == 0 {
+		cacheKey = listingCacheKey(filter, sort, page, perPage)
+		if cached, ok := s.cache.GetWithCtx(ctx, cacheKey); ok {
+			if entry, ok := cached.(listingCacheEntry); ok {
+				return entry.Games, entry.Total, nil
+			}
+		}
+	}
+
 	var b strings.Builder
 	b.Grow(1500)
 
@@ -143,6 +181,9 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 		if row.AuthorName != "" {
 			games[i].Author = user.User{Name: row.AuthorName}
 		}
+	}
+	if cacheKey != "" {
+		s.cache.SetWithCtx(ctx, cacheKey, listingCacheEntry{Games: games, Total: total}, 30*time.Second)
 	}
 	return games, total, nil
 }

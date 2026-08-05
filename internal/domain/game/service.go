@@ -103,7 +103,7 @@ func NewGameService(
 ) *GameService {
 	crudSvc := NewGameCRUDService(gameRepo, ca, userRepo, ms, rs, ratingSvc)
 	coverSvc := NewGameCoverService(gameRepo, storage, ca, int64(cfg.Server.MaxUploadSize))
-	listingSvc := NewGameListingService(gameRepo)
+	listingSvc := NewGameListingService(gameRepo, cacheStore)
 
 	if cacheStore == nil {
 		cacheStore = &cache.NoopCache{}
