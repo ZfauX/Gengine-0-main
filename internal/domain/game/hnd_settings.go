@@ -188,6 +188,10 @@ func (h *SettingsHandler) SaveSettings(c *gin.Context) {
 	})
 	if err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Msg("SettingsHandler.SaveSettings: failed to save settings")
+		// Спасаем nil-deref (C-C2): SaveSettings возвращает (nil, err) при сбое БД.
+		if settings == nil {
+			settings = &GameSetting{}
+		}
 		render.Page(c, http.StatusInternalServerError, "games-settings.html", gin.H{
 			"Title":    "Настройки игры",
 			"Game":     g,

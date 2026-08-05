@@ -424,6 +424,7 @@ var enMessages = map[string]string{
 	"layout.confirm_title":      "Confirm",
 	"layout.confirm_cancel":     "Cancel",
 	"layout.confirm_ok":         "Delete",
+	"layout.close":              "Close",
 
 	// ── Common ──
 	"common.save":         "Save",
@@ -614,6 +615,9 @@ var enMessages = map[string]string{
 	"profile.save_notif_settings":   "Save settings",
 	"profile.enable_push":           "🔔 Enable push notifications",
 	"profile.disable_push":          "🔕 Disable push notifications",
+	"push.not_supported":            "Push is not supported by this browser",
+	"push.enabled":                  "Push notifications enabled",
+	"push.disabled":                 "Push notifications disabled",
 	"profile.push_status":           "",
 	"profile.2fa_section":           "Two-factor authentication",
 	"profile.2fa_desc_enabled":      "Account protection is enabled. Login will require a code from your authenticator app.",

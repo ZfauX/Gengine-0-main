@@ -94,31 +94,23 @@
     (function() {
         const container = document.querySelector('[data-profile-user-id]');
         if (!container) {
-            console.warn('Container with data-profile-user-id not found');
             return;
         }
 
         function getCsrfToken() {
             const meta = document.querySelector('meta[name="csrf-token"]');
-            const token = meta ? meta.getAttribute('content') : '';
-            if (!token) {
-                console.warn('CSRF token meta tag not found');
-            }
-            return token;
+            return meta ? meta.getAttribute('content') : '';
         }
 
-        console.log('Follow script initialized for user ID:', container.dataset.profileUserId);
 
         document.addEventListener('click', function(e) {
             const btn = e.target.closest('.follow-toggle');
             if (!btn) return;
 
-            console.log('Follow button clicked', btn);
 
             const authorID = btn.dataset.authorId;
             const action = btn.dataset.action;
             if (!authorID) {
-                console.warn('Missing author-id on button');
                 return;
             }
 
@@ -139,14 +131,12 @@
 
             fetch(url, options)
                 .then(r => {
-                    console.log('Response status:', r.status);
                     if (!r.ok) {
                         throw new Error(`HTTP ${r.status}: ${r.statusText}`);
                     }
                     return r.json();
                 })
                 .then(data => {
-                    console.log('Response data:', data);
                     if (data.status === 'followed' || data.status === 'unfollowed') {
                         location.reload();
                     } else {

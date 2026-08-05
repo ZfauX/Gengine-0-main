@@ -95,6 +95,7 @@
       data-i18n-confirm-title="{{ T $.Lang "layout.confirm_title" }}"
       data-i18n-confirm-cancel="{{ T $.Lang "layout.confirm_cancel" }}"
       data-i18n-confirm-ok="{{ T $.Lang "layout.confirm_ok" }}"
+      data-i18n-close="{{ T $.Lang "layout.close" }}"
       data-i18n-loading-already="{{ T $.Lang "js.loading_already" }}"
       data-i18n-file-uploaded="{{ T $.Lang "js.file_uploaded" }}"
       data-i18n-file-upload-error="{{ T $.Lang "js.file_upload_error" }}"
@@ -292,10 +293,9 @@
             window.addEventListener('load', function() {
                 navigator.serviceWorker.register('/sw.js', { scope: '/' })
                     .then(function(registration) {
-                        console.log('SW registered:', registration.scope);
                     })
                     .catch(function(registrationError) {
-                        console.warn('SW registration failed:', registrationError);
+                        console.error('SW registration failed:', registrationError);
                     });
             });
         }

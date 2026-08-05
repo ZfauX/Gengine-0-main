@@ -69,7 +69,8 @@ function initToast() {
         var toast = document.createElement('div');
         toast.className = 'toast toast-' + type + ' transition-all duration-300 ease-in-out';
         var closeBtn = document.createElement('button');
-        closeBtn.className = 'shrink-0 text-gray-400 hover:text-gray-600';        closeBtn.setAttribute('aria-label', tI18n('confirm-cancel') || 'Закрыть');
+        closeBtn.className = 'shrink-0 text-gray-400 hover:text-gray-600';
+        closeBtn.setAttribute('aria-label', tI18n('close', 'Закрыть'));
         closeBtn.innerHTML = '&times;';
         closeBtn.addEventListener('click', function() { toast.remove(); });
         toast.innerHTML = '<div class="flex items-start gap-3">' +
@@ -318,6 +319,89 @@ window.createReconnectingWebSocket = function(url, opts) {
         }
     };
 };
+
+// =============================================================================
+// Push-подписка (Web Push) — кнопки #enable-push / #disable-push в профиле.
+// Бэкенд: /api/push/vapid-public-key, /api/push/subscribe, /api/push/unsubscribe.
+// =============================================================================
+function initPushSubscription() {
+    var enableBtn = document.getElementById('enable-push');
+    var disableBtn = document.getElementById('disable-push');
+    var statusEl = document.getElementById('push-status');
+    if (!enableBtn) return;
+
+    function setStatus(msg) {
+        if (statusEl) statusEl.textContent = msg;
+    }
+
+    function urlBase64ToUint8Array(base64String) {
+        var padding = '='.repeat((4 - base64String.length % 4) % 4);
+        var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+        var raw = window.atob(base64);
+        var arr = new Uint8Array(raw.length);
+        for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+        return arr;
+    }
+
+    enableBtn.addEventListener('click', async function() {
+        try {
+            if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+                setStatus(tI18n('push.not_supported', 'Push не поддерживается этим браузером'));
+                return;
+            }
+            var reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+            var vapid = enableBtn.dataset.vapidKey;
+            if (!vapid) {
+                var resp = await fetch('/api/push/vapid-public-key', { credentials: 'same-origin' });
+                var data = await resp.json();
+                vapid = data.public_key;
+            }
+            if (!vapid) {
+                setStatus(tI18n('push.error', 'Ошибка: ') + 'Не удалось получить VAPID-ключ');
+                return;
+            }
+            var sub = await reg.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(vapid)
+            });
+            var saveResp = await fetch('/api/push/subscribe', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(sub.toJSON())
+            });
+            if (!saveResp.ok) throw new Error('HTTP ' + saveResp.status);
+            setStatus(tI18n('push.enabled', 'Push-уведомления включены'));
+            enableBtn.classList.add('hidden');
+            if (disableBtn) disableBtn.classList.remove('hidden');
+        } catch (e) {
+            setStatus(tI18n('push.error', 'Ошибка: ') + e.message);
+        }
+    });
+
+    if (disableBtn) disableBtn.addEventListener('click', async function() {
+        try {
+            var reg = await navigator.serviceWorker.getRegistration();
+            if (reg) {
+                var sub = await reg.pushManager.getSubscription();
+                if (sub) {
+                    await fetch('/api/push/unsubscribe', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ endpoint: sub.endpoint })
+                    });
+                    await sub.unsubscribe();
+                }
+            }
+            setStatus(tI18n('push.disabled', 'Push-уведомления отключены'));
+            enableBtn.classList.remove('hidden');
+            disableBtn.classList.add('hidden');
+        } catch (e) {
+            setStatus(tI18n('push.error', 'Ошибка: ') + e.message);
+        }
+    });
+}
 
 // =============================================================================
 // Init on DOM ready

@@ -180,7 +180,6 @@
 
         // Обработка уведомления о старте игры
         function handleGameStartedNotification(data) {
-            console.log('Monitor: game started —', data.team_name);
             
             // Update connection status
             updateConnectionStatus('✅ ' + data.team_name + ' {{ T $.Lang "monitor.game_started" }}', '#2ecc71');
@@ -233,7 +232,6 @@
                 return r.text();
             })
             .then(() => {
-                console.log(`Team #${teamId} disqualified`);
             })
             .catch(err => {
                 console.error('Дисквалификация:', err);

@@ -204,7 +204,6 @@
                 return r.json();
             })
             .then(res => {
-                if (window.DEBUG) console.log('Full preview data:', res);
                 previewCache[gameID] = { data: res.data, timestamp: Date.now() };
                 sessionStorage.setItem('previewCache', JSON.stringify(previewCache));
                 renderPreview(res.data);

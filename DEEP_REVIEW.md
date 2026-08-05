@@ -1,42 +1,50 @@
-# Deep Review Gengine-0 — 5 августа 2026 (pass 21)
+# Deep Review Gengine-0 — 5 августа 2026 (pass 22)
 
-Повторный глубокий аудит после волны исправлений pass 20 (C7 i18n, UX/PWA, миграции 000025–000029, репозиторный слой, безопасность, кэш).
+Повторный глубокий аудит после закрытия всех пунктов pass 21 (4 волны исправлений: безопасность, корректность, производительность, UX, тесты; коммиты d4798d5…27396ef).
 
-**Методология:** 5 параллельных ревью-агентов (безопасность, производительность, корректность/архитектура, фронтенд/UX, тестовое покрытие) + **выборочная ручная верификация каждого критического/высокого пункта по коду и по внутренностям GORM v1.26.0**. Ложные срабатывания агентов исключены и перечислены отдельно.
+**Методология:** 5 параллельных ревью-агентов (безопасность, производительность, корректность/архитектура, UX/фронтенд, тесты) + **ручная верификация** каждой критической/высокой находки по коду. Ложные срабатывания исключены (перечислены отдельно).
 
-**Легенда:** 🔴 критично · 🟠 высоко · 🟡 средне · 🟢 хорошо · ✅ проверено-исправлено/подтверждено
+**Легенда:** 🔴 критично · 🟠 высоко · 🟡 средне · 🟢 хорошо · ❌ ложное срабатывание (проверено)
 
 ---
 
 ## 1. 🔴 Критические проблемы
 
-### 1.1 Функциональность (мёртвый код)
+### 1.1 Фронтенд
 
-**H1. Детекция подозрительных команд (`analyzeTeamsBehavior`) никогда не срабатывает** — подтверждено
-- `internal/domain/game/svc_monitor.go:153-158, 424-441`
-- SQL: `SELECT attempts.level_progress_id, attempts.code, attempts.success, attempts.created_at` → в структуру `attemptRecord{PassingID uint; ...}`. GORM мапит колонки **по имени**: `level_progress_id` не соответствует полю `PassingID` (нужна колонка `passing_id`). `PassingID` всегда `0`, все попытки группируются в `attemptsByPassing[0]`, а `passingToTeam[0]` не существует → `suspiciousMap` никогда не содержит реальный `TeamID`.
-- **Результат:** функция «подозрительная частота попыток» и «серия одинаковых неверных кодов» в мониторинге — мёртвая. UI вечно показывает `Suspicious: false`.
-- **Фикс:** переименовать поле в `LevelProgressID uint` и группировать через `level_progresses.game_passing_id`, либо добавить в SELECT алиас `attempts.level_progress_id AS passing_id` (после джойна с `level_progresses` это `lp.game_passing_id`). После включения — **пересмотреть порог** `checkSuspiciousAttempts` (`:478`, считает и успешные попытки, 10/мин — жёсткий).
+**A-1. `initPushSubscription()` вызывается, но функция не определена — ReferenceError на каждой странице** ✅ подтверждено
+- `static/js/app.js:330` — `document.addEventListener('DOMContentLoaded', ... initPushSubscription())`, но определения `function initPushSubscription` в кодовой базе **нет** (удалена в волне 3 вместе с мёртвыми модулями, вызов остался).
+- Каждая страница кидает uncaught ReferenceError; push-кнопки `#enable-push`/`#disable-push` (`profile-show.html`, `notification-settings.html`) мёртвые; `data-i18n-push-*` в layout не используются.
+- **Бэкенд push готов** (`/api/push/subscribe|unsubscribe|vapid-public-key`, `user/routes.go:180-186`) — фичу можно доделать.
+- **Фикс:** либо реализовать `initPushSubscription` (subscribe через `pushManager` + POST `/api/push/subscribe`), либо удалить вызов, кнопки и атрибуты.
 
-### 1.2 Безопасность
+**U-1. Пагинация логов сломана** ✅ подтверждено
+- `monitor/templates/logs-list.html:29,46` — `document.getElementById('current-page')`, но элемента `id="current-page"` в разметке **нет**. На строке 46 — `TypeError` (нет `?.`), `currentPage = NaN` → `?page=NaN`.
+- **Фикс:** инициализировать `currentPage` из `{{.Page}}` и добавить `id="current-page"` в разметку (или убрать обращения).
 
-**S1. Глобальный rate limiter инициализируется, но никогда не регистрируется** — подтверждено
-- `cmd/server/main.go:216,225` вызывает `InitGlobalRateLimiter`, но в `internal/app/router.go:67-126` среди `r.Use(...)` нет `middleware.GlobalRateLimit`. В кодовой базе `GlobalRateLimit` встречается только в определении (`rate_limiter.go:270`) и тестах.
-- **Результат:** `RATE_LIMIT_GLOBAL=100` — мёртвая конфигурация. Нет глобального per-IP лимита: бесконечные подключения SSE/WS (до per-manager-кэпов), скрейпинг поиска, дорогие листинги.
-- **Фикс:** `r.Use(middleware.GlobalRateLimit(cfg.Server.RateLimitWindow, cfg.Server.RateLimitGlobalRequests))` в `setupEngine` (перед gzip).
+### 1.2 Производительность
 
-**S2. Роль доверяется JWT-claims и не перечитывается из БД** — подтверждено
-- `middleware/auth.go:31,43` (`userID, role := parser.ParseToken(...)` → `c.Set("role", role)`); `user/service.go:361-364` кладёт `role` в claims.
-- **Результат:** пониженный/заблокированный/удалённый админ сохраняет admin-права до истечения access-токена (TTL 15 мин). `repository.go:272` есть `GetUserRole`, но он не используется в middleware.
-- **Фикс:** в `AuthRequired`/`AdminRequired` перечитывать `users.role` из БД (короткий TTL-кэш) и перезаписывать контекст; в `DeleteUser`/`ToggleAdmin` — `RevokeJWT` всех токенов пользователя.
+**P-C1. `StaticCacheMiddleware` не зарегистрирован — статика без cache-заголовков** ✅ подтверждено
+- `internal/pkg/middleware/static_cache.go` определён и покрыт тестами, но `r.Use(middleware.StaticCacheMiddleware())` в `internal/app/router.go` **отсутствует**. `r.Static("/static")` и `/uploads` зарегистрированы без middleware.
+- Иммутабельный `?v=`-кэш (P4 из pass 21) фактически не работает: браузер пере-запрашивает CSS/JS на каждой странице; `/uploads` (включая ответы игроков) кэшируются эвристически вместо `no-cache`.
+- **Фикс:** одна строка `r.Use(middleware.StaticCacheMiddleware())` перед `r.Static(...)` в `setupEngine`.
 
-### 1.3 Производительность
+**P-H1. Valkey-кэш листинга/лидерборда/отзывов никогда не хитнит (type-assertion miss)** ✅ подтверждено
+- `svc_listing.go:64-67` (`cached.(listingCacheEntry)`), `svc_rating.go:182-187` (`cached.([]LeaderboardEntry)`), `svc_review.go:81-85` (`cached.([]Review)`) используют `GetWithCtx` + типовая ассерция.
+- На `ValkeyCache` `GetWithCtx` (`valkey.go:144-163`) JSON-десериализует в `map[string]any` → ассерция **всегда падает**. Только `cacheGetGame`/`cacheGetRating` имеют Valkey-aware raw-bytes пути.
+- **Результат:** в проде (с Valkey) кэш 30s-листинга, 5min-лидерборда и 5min-отзывов молча отключён — каждый запрос пере-выполняет SQL на самых горячих анонимных эндпоинтах.
+- **Фикс:** повторить паттерн `cacheGetGame` (store `[]byte` JSON, читать `vc.GetBytesWithCtx` + `json.Unmarshal`, type-switch fallback для in-memory).
 
-**S3. `broadcastSnapshot` + `CalculateResults` синхронно на КАЖДУЮ попытку кода** — подтверждено
-- `svc_play.go:159-172`: после каждого `SubmitCode` (даже неверного): `broadcastLevelComplete` → `broadcastSnapshot` (инвалидация кэша мониторинга → полный пересчёт CTE `GameSnapshot` → `json.Marshal` → broadcast) → `CalculateResults` (два больших `UPDATE ... CASE`). Всё внутри HTTP-запроса. Комментарий явно фиксирует решение «синхронно из-за гонки с закрытием БД в тестах».
-- `svc_monitor.go:424-429` — в каждый снапшот входит оконный запрос по attempts за 5 мин.
-- `broadcastSnapshot` (`:573-578`) маршалит снапшот заново на каждое событие, даже при пустой комнате.
-- **Фикс:** (1) вызывать `CalculateResults` в `SubmitCode` только если уровень не последний (колбэк финиша уже делает это) — убирает двойной проход на финише; (2) broadcast только при верном ответе/изменении видимых полей; (3) вынести снапшот в фоновый per-game worker с debounce ~300–500 мс и singleflight, отдавая подписчикам закэшированные байты снапшота; (4) в тестах закрывать БД после остановки воркера (через WaitGroup), а не через «синхронность».
+### 1.3 Корректность
+
+**C-C1. Tournament `UpdateScoresForGame` — гонка двойного начисления** ✅ подтверждено
+- `tournament/service.go:302-392` + `repository.go:118-123`: фильтр `tournament_scored = false` только в **read**-запросе `ListFinishedPassings` (вне транзакции); внутри транзакции прохождения **не пере-проверяются атомарно**; пометка `tournament_scored=true` — простой `UPDATE ... WHERE id IN ?` **без `RowsAffected`-guard**; **нет `pg_advisory_xact_lock`** (в отличие от `svc_rating.go:34` и `svc_monitor.go:276`).
+- **Trigger:** две команды финишируют в одном окне → два параллельных `UpdateScoresForGame` → оба читают те же `tournament_scored=false` прохождения → двойные очки.
+- **Фикс:** скопировать паттерн `svc_rating.go:45-51` — атомарный claim `UPDATE game_passings SET tournament_scored=true WHERE id=? AND tournament_scored=false` с `RowsAffected` + advisory lock на gameID.
+
+**C-C2. Nil-pointer dereference при ошибке сохранения настроек** ✅ подтверждено
+- `game/hnd_settings.go:189-198`: при ошибке `SaveSettings` возвращает `nil, err`, а хендлер делает `"Settings": *settings` (строка 194) → panic (маскируется gin recovery, но 500-страница не рендерится).
+- **Фикс:** guard `if settings == nil { settings = &GameSetting{} }`.
 
 ---
 
@@ -44,262 +52,260 @@
 
 ### Безопасность
 
-**S4. Refresh-ротация не атомарна — гонка отменяет детект reuse** — подтверждено
-- `user/service.go:237-279`: `GetByTokenHash` → `Revoke(ctx, stored.ID)` → `Create`. Два параллельных запроса с одним токеном оба проходят `GetByTokenHash` до revoke, оба получают новые токены в той же семье — кража не детектится, сессия жертвы не убивается.
-- **Фикс:** атомарный claim: `UPDATE refresh_tokens SET revoked_at=now() WHERE id=? AND revoked_at IS NULL` и проверка `RowsAffected == 1` до генерации наследника (в транзакции).
+**S-H1. Passkey (WebAuthn) — потенциальный backdoor: регистрация не требует 2FA, `FinishLogin` не проверяет 2FA** ✅ подтверждено
+- `user/routes.go:90-91` — `/auth/webauthn/register/begin|finish` только за `AuthRequired`, **не** за `TwoFactorRequired`.
+- `webauthn_handler.go` `FinishLogin` выпускает JWT **без проверки** `user.TwoFactorEnabled`.
+- При смене пароля WebAuthn-ключи **не удаляются** (только при admin-delete).
+- **Риск:** при украденной сессии атакующий регистрирует свой authenticator и логинится без TOTP; backdoor переживает смену пароля.
+- **Фикс:** при `TwoFactorEnabled` требовать 2FA-флаг/код перед регистрацией passkey; при смене пароля удалять WebAuthn-ключи или требовать re-auth; явно определить политику «passkey = второй фактор?» и применять в `FinishLogin`.
 
-**S5. Fingerprint-binding обходится пустой строкой** — подтверждено
-- `user/service.go:256`: `stored.ClientFingerprint != "" && clientFingerprint != "" && stored != client` — если клиент не присылает fingerprint, проверка пропускается.
-- **Фикс:** при непустом `stored.ClientFingerprint` требовать совпадения (отклонять пустой/несовпадающий).
+**S-M5. `LogoutAll` не отзывает текущий JWT** ✅ подтверждено
+- `user/auth_handler.go:340-353`: `Logout` вызывает `RevokeJWT` (строка 317), `LogoutAll` — только `RevokeAllUserTokens` (refresh) + очистку куки. Украденный JWT валиден до expiry.
+- **Фикс:** `RevokeJWT` в `LogoutAll` тоже.
 
-**S6. Просмотр соавторов любой игры (IDOR/информация)** — подтверждено
-- `game/hnd_coauthor.go:45-76`, `svc_coauthor.go:139-144`: `GET /games/:id/co-authors` вызывает `List` без проверки прав менеджера (в отличие от Add/Remove).
-- **Фикс:** гейтить `IsUserManager` (403 иначе).
+**S-M4. Session-cookie `Secure` игнорирует reverse-proxy** ✅ подтверждено
+- `app/router.go:55-60`: `Secure: app.Config.TLS.CertFile != ""`, тогда как JWT-куки используют `isHTTPS()` (X-Forwarded-Proto/ForceSecureCookie). За TLS-терминирующим прокси session-cookie (pending_user_id, oauth_state, 2fa_verified_*, WebAuthn challenge) уходит по HTTP.
+- **Фикс:** тот же `isHTTPS` для session store.
 
-**S7. Session-cookie `Secure` зависит только от локального TLS-сертификата** — подтверждено
-- `app/app.go:88-101`: `gengine_session` получает `Secure` только при `Config.TLS.CertFile != ""`, тогда как JWT-куки учитывают `X-Forwarded-Proto`/`FORCE_SECURE_COOKIE`. За TLS-терминирующим прокси сессионная кука уходит по HTTP.
-- **Фикс:** использовать то же определение HTTPS, что и для JWT-кук.
+**S-M1. 2FA backup-code верификация без rate limit / lockout** ✅ подтверждено
+- `user/routes.go:83`, `two_factor_handler.go:153-207`: `/auth/2fa/backup` только за `AuthRequired`, без per-user лимита; `/auth/2fa/login` — только 5/min per-IP. Backup-коды 6-значные → brute-force через много IP.
+- **Фикс:** rate limiter keyed by userID + счётчик неудач с блокировкой.
 
-**S8. CSP `style-src 'unsafe-inline'`** — подтверждено
-- `middleware/security.go:63`. Остальной CSP сильный (nonce, `form-action 'self'`, без `'unsafe-eval'`). Инлайн-стили ослабляют containment (стилизация/фишинг через инъекцию атрибута). Принять риск или ужесточить.
+**S-M2. `/api/*` state-changing с cookie-auth без CSRF-токена/Origin-check** ✅ подтверждено
+- `app/app.go:93-101` исключает `/api` из CSRF; `csrf_json.go` — мёртвый код. Смягчение: `SameSite=Strict`. Defense-in-depth: Origin/Referer check на не-GET `/api/*`.
 
-**S9. Deleted-пользователь: JWT валиден до expiry; `/api/users/search` без лимита** — подтверждено
-- `user/service.go:337-366` `ParseToken` не проверяет существование/статус пользователя; `/api/users/search` (`user/routes.go:142`, `handler.go:79-103`) — публичный, без rate limit, отдаёт маскированные email + ID (enumeration).
+**S-M3. `/api/users/search` — публичный enumeration без спец-лимита** ✅ подтверждено
+- `user/handler.go:79-104`, `routes.go:142`: без auth, маскированный email (первый символ + домен), имена + ID. Применить `OptionalAuth` + IP-лимит.
 
-### Корректность / транзакции
+**S-L1.** 2FA disable только по паролю (`two_factor_handler.go:435-492`) — стандарт требует TOTP/backup-код.
+**S-L2.** VK OAuth email не верифицирован, аккаунты линкуются по email (`service.go:683-712`) — контроль неверного email мог бы захватить чужой аккаунт.
+**S-L3.** Смена email не сбрасывает `email_verified` (`service.go:479-484`) — флаг становится устаревшим.
 
-**B1. `checkTimeoutsImpl`: колбэк финиша вызывается ДО коммита** — подтверждено
-- `svc_progress.go:366-370`: `defer onCommitCopy()` внутри closure `db.Transaction` — вызывается при возврате из closure, т.е. **до** commit GORM. Противоречит паттерну `svc_play.go:98-156` (вызов `onCommitFn` после возврата `db.Transaction`). Турнирные очки могут считаться по незакоммиченным данным; при провале коммита очки уже начислены.
-- **Фикс:** собирать колбэки в слайс и вызывать после возврата `db.Transaction`.
+### Корректность
 
-**B2. `CalculateResults` не сериализован с параллельными финишами** — подтверждено
-- `svc_monitor.go:270-374`: постит-коммит без транзакции/блокировки; два команды финишируют одновременно → второе выполнение перезаписывает `place` первого, лидерборд/уведомления видят транзиентный неверный порядок.
-- **Фикс:** `db.Transaction` + `FOR UPDATE` на finished passings (паттерн `pg_advisory_xact_lock(gameID)` уже есть в `level/service.go:223`).
+**C-H1. `UpdateRatingsForGame`: log-and-continue портит флаг идемпотентности** ✅ подтверждено
+- `svc_rating.go:45-152`: guard `rating_scored=true` ставится первым, затем 5 точек глотают ошибки (`return nil` — коммит транзакции): ошибка после установки флага → `rating_scored=true` без начисленных очков, повтор не исправит.
+- **Фикс:** возвращать ошибку из транзакции во всех 5 точках (флаг откатится).
 
-**B3. `UpdateRatingsForGame` не идемпотентен и глотает ошибки** — подтверждено
-- `svc_rating.go:29-138`: начисляет автору 5 очков при каждом вызове независимо от того, сколько раз сработал финишный путь; вне транзакции; ошибки логируются и возвращаются как `nil`.
-- **Фикс:** привязать начисление автору и командам к тому же guard'у, что турнирные очки (флаг `tournament_scored`/отдельный `ratings_scored`), в одной транзакции.
+**C-H2. `AcceptInvitation` — гонка дублирования `team_members`** ✅ подтверждено
+- `team/service.go:238-272`: два параллельных accept одного Pending-приглашения → оба читают Pending вне tx, оба `UPDATE` без фильтра `status='pending'` и без RowsAffected, оба INSERT в team_members.
+- **Фикс:** `UPDATE ... WHERE id=? AND status='pending'` + abort при RowsAffected=0; `INSERT ... ON CONFLICT DO NOTHING`.
 
-**B4. Маскировка ошибок БД как пользовательских** — подтверждено
-- `hnd_gameplay.go:359-361` (`AcceptBlackboxAnswer` → 403 с сырым сообщением любой ошибки), `svc_play.go:340-345`.
-- `hnd_gameplay.go:567-582`: `ok, _ := isTeamMember(...)` — ошибка БД трактуется как «не член команды» → 403 вместо 500.
-- `level/service.go:234-247`: `Move` — любая ошибка sibling-запроса → «некуда двигать».
-- **Фикс:** различать `gorm.ErrRecordNotFound`/sentinel-ошибки (403/404) от прочих (500, generic).
+**C-H3. `TournamentService.Apply` — check-then-insert на tournament_teams** ✅ подтверждено
+- `tournament/service.go:194-273`: `GetByTournamentAndTeam` → `AddTeamTx Create` без `ON CONFLICT`.
+- **Фикс:** `ON CONFLICT (tournament_id, team_id) DO NOTHING` + RowsAffected.
 
-**B5. Расхождение дефолтов настроек геймплея** — подтверждено
-- `svc_play.go:596-602` (`GetGameplayData`) падает на zero-value `GameSetting` (hints off), а `svc_play.go:251-258` (`UseHint`) — на `AllowHints:true, HintPenaltySeconds:300, MaxHints:3`. Страница геймплея врёт про доступность подсказок.
-- **Фикс:** общий `defaultGameSetting()` (совпадает с `service.go:486-503`).
+**C-H5. `DeleteLevelFromActiveGame` может оставить команду без активного прогресса** ✅ подтверждено
+- `svc_admin.go:204-220`: цикл `continue` при любой ошибке advance и всё равно удаляет уровень; команда на удаляемом уровне остаётся без прогресса.
+- **Фикс:** abort транзакции при ошибке advance или детерминированно завершать такие passings.
 
-**B6. `GetByID` — общий мутируемый указатель из кэша** — подтверждено
-- `service.go:177-178`: in-memory cache возвращает тот же `*Game` всем запросам. Хендлеры заполняют `Author`, `GameSetting` и т.п. → гонка между запросами + порча кэша.
-- **Фикс:** возвращать копию (`g := *game`) на cache hit (или immutable snapshot).
+**C-H4 (пограничный). `Clauses(Locking{...})` на UPDATE в `checkTimeoutsImpl`** ✅ проверено
+- `svc_progress.go:342-347`: GORM v1.26 не билдит clause `LOCKING` для UPDATE (`updateClauses = ["UPDATE","SET","WHERE","RETURNING"]`) — это **no-op, не синтаксическая ошибка**. Но комментарий «FOR UPDATE сериализует» вводит в заблуждение; защита — только `RowsAffected`. Рекомендуется убрать clause defensive и поправить комментарий.
 
-**B7. `GameService.Delete`: файлы удаляются до удаления строки** — подтверждено
-- `service.go:251-268`: если `crudService.Delete` падает (FK), файлы уже удалены, строка остаётся с битой `cover_path`.
-- **Фикс:** сначала DB, затем best-effort файлы.
+**C-M1. `SaveSettings` (notification) — update-then-insert race** ✅ подтверждено
+- `notification/service.go:150-171`: `GetByUserID` → `Create`. Применить `clause.OnConflict{Columns: user_id}` как в `game/service.go:539`.
 
-**B8. `ManageCoAuthors`/`VotingSession` check-then-insert** — подтверждено
-- `monitor/service.go:59-77` `StartVoting`: `GetSessionByPassingAndLevel` → `CreateSession` без уникального ограничения (в модели нет `uniqueIndex` на `(game_passing_id, level_id)`). Два параллельных открытия → две сессии.
-- `monitor/service.go:238-300` `CloseVoting`: голоса читаются до `UpdateSession(IsOpen=false)` — голос, попавший между чтением и закрытием, не учтён.
-- **Фикс:** частичный unique-индекс `WHERE is_open` + `ON CONFLICT DO NOTHING`; `FOR UPDATE` на сессию и перечитывание голосов в одной транзакции.
+**C-M2. `RemoveGame` списывает очки по текущему месту, а не по начисленным** ✅ подтверждено
+- `tournament/service.go:142-176`: после пересчёта мест/изменения PointsFor списание не совпадает с начисленным; Score может уйти в минус (кламп в 0).
+- **Фикс:** хранить начисленные очки на прохождении (`tournament_points`) и списывать точное значение.
+
+**C-M3. `CloseVoting` tie-break недетерминирован** ✅ подтверждено
+- `monitor/service.go:289-295`: итерация map → при равенстве голосов случайный победитель.
+- **Фикс:** детерминированный тай-брейк (ранний голос / лексикографический option).
+
+**C-M4. `LevelService.Move` маскирует ошибки БД как «некуда двигать»** ✅ подтверждено
+- `level/service.go:234-247`: `First(&sibling)` — и `ErrRecordNotFound`, и реальные ошибки → одно сообщение. Различать через `errors.Is`.
+
+**C-M5. `GetOrCreateTeamChatRoom` — check-then-insert + хардкод «Команда: »** ✅ подтверждено
+- `team/repository.go:218-232`, `service.go:41`: без `ON CONFLICT`; русская строка в сервисе.
+- **Фикс:** upsert + `i18n.TF`.
+
+**C-M6. `MarkAsRead` не ставит `ReadAt`** ✅ подтверждено
+- `notification/service.go:347-360`: обновляет `read=true`, поле `ReadAt *time.Time` в модели мёртвое.
+
+**C-M7. LIKE wildcard injection в поиске пользователей** ✅ подтверждено
+- `team/repository.go:198-215`: `%`/`_` в query не экранируются → `%` = все пользователи. Экранировать `%`, `_`, `\`.
+
+**C-M8. `UpdateScoresForGame` возвращает void и молча глотает ошибки** ✅ подтверждено
+- `tournament/service.go:302-392`: почти все `return` без логов — ops не видят сбои начисления.
+- **Фикс:** логировать каждую точку выхода (или вернуть error, логировать в main).
+
+**C-M9. `GetGameplayData`: ошибка settings оставляет zero-value** ✅ подтверждено
+- `svc_play.go:654-666`: при не-NotFound ошибке `settings` = zero (hints off), не `defaultGameSetting()`.
+
+**C-M10. `SnapshotDispatcher`: лишний flush после debounce-reset** ✅ подтверждено (незначительно)
+- `svc_snapshot.go:37-65`: stale-таймер может удалить из map новый. Безвредно (идемпотентно), но добавить generation/ID.
 
 ### Производительность
 
-**P1. `SubmitCodeWithTx` дважды грузит уровень+ответы** — подтверждено
-- `svc_play.go:102` (`GetCurrentProgressForUpdate` уже `Preload("Level.Questions.Answers")`) + `svc_attempt.go:36` повторно `Preload("Questions.Answers")`. На каждом submit двойные round-trip/аллокации.
-- **Фикс:** принимать уже загруженный Level или грузить только нужные колонки.
+**P-H4. `GetGameplayData` — 5-6 последовательных запросов на загрузку страницы** ✅ подтверждено
+- `svc_play.go:640-725`: passing+Team+Game.GameSetting (3), fallback settings (1), progress+Level (1), attempts LIMIT 50 (1), voting session (1) — всё последовательно.
+- **Фикс:** `errgroup` на независимые запросы (attempts/voting/settings), settings из `game:%d` кэша, `LEVEL`-кэш для GameSetting.
 
-**P2. `GetByID` без singleflight на cache-miss** — подтверждено
-- `service.go:196-238`: ручной `cacheGetGame`+`Set`, нет `GetOrSet`. Горячая только что опубликованная игра с 100 параллельными первыми просмотрами = 100 одинаковых полных запросов с preload.
-- **Фикс:** обернуть fill в `cache.GetOrSetWithCtx` (singleflight), проверку `CanViewGame` после.
+**P-H5. `checkTimeoutsImpl` — `LIMIT 50` без `ORDER BY` + N+1 advance** ✅ подтверждено
+- `svc_progress.go:268-385`: без ORDER BY по partial-индексу `(game_passing_id, finished_at)` одни и те же прохождения могут сканироваться каждые 30с; per-row: `tx.First(passing)` + `AdvanceToNextLevel` (passing + все уровни + create) — до 150 запросов за цикл.
+- **Фикс:** `ORDER BY started_at ASC`, prefetch уровней по игре, cap per-run.
 
-**P3. Листинг: кэш фрагментируется и не инвалидируется на запись** — подтверждено
-- `svc_listing.go:53`: ключ включает сырую search-строку — каждый уникальный поиск создаёт ключ, вытесняя анонимный листинг из LRU (10k).
-- `service.go:145,246,321,330,534`: записи инвалидируют `game:%d`/`rating:game:%d`, но не `games:list:*` — до 30 с устаревшие страницы после публикации/редактирования.
-- **Фикс:** кэшировать только безпоисковый анонимный листинг; `DeleteByPrefixWithCtx(ctx, "games:list:")` на запись.
+**P-H3. `SubmitCode` транзакция — ~10-11 round-trips** ✅ подтверждено
+- `helpers.go:16-40` `CheckTeamMembership` (локирует passing + запросы) + `svc_play.go:112-157` повторно `tx.First(&passing)`. `GetCurrentProgressForUpdate` уже лок.
+- **Фикс:** пробросить teamID/gameID из locked passing, убрать второй `First`, объединить membership+captain в один LEFT JOIN.
 
-**P4. Статика без long-lived cache-заголовков** — подтверждено
-- `app/router.go:216-217`: `r.Static` без `Cache-Control`; `static_cache.go` ставит `immutable` для **всех** `/static/*`, включая неверсионированные `leaflet.js/css` и иконки — устаревшие копии навсегда.
-- **Фикс:** `immutable` только для `?v=`-версионированных URL; `max-age=3600` для остальных; sw.js — `no-cache`.
+**P-M1. Двойной `CalculateResults` на финише** ✅ подтверждено
+- `onGameFinished` (`main.go:267-283`) → `ProcessSnapshot` (`svc_play.go`) снова после debounce. Идемпотентно, но лишний advisory-lock + full query.
+- **Фикс:** флаг «финиш уже обработан» или skip в `ProcessSnapshot`.
 
-**P5. `GetLogsByGameID` без LIMIT** — подтверждено
-- `service.go:457-483`: непагинированная версия грузит все логи игры (пагинированная есть, но не используется на странице).
+**P-M2. `SSEManager.Broadcast` синхронный — один медленный клиент блокирует хендлер до 10s** ✅ подтверждено
+- `hnd_sse.go:203-244`: `session.write()` с 10s deadline в цикле подписчиков на вызывающей стороне (пост-commit хендлер или snapshot worker).
+- **Фикс:** per-session buffered channel + writer goroutine (как WS write pump), либо short-lived goroutine с семафором.
 
-**P6. `notifications` ORDER BY без индекса `(user_id, created_at)`** — подтверждено
-- `migrations/000017`, `notification/service.go:333`: индекс `(user_id, read)` не покрывает сортировку `created_at DESC` → filesort при пагинации.
-- **Фикс:** индекс `(user_id, created_at DESC)`.
+**P-M3. Monitor SSE poller — marshal каждую секунду даже без изменений** ✅ подтверждено
+- `monitor/handler.go:107-156`: всегда `GetOrFetchSnapshot` + `json.Marshal` + broadcast. Пропускать при неизменном `timestamp`.
 
-**P7. `sendWebSocketNotification` — COUNT на каждый вызов** — подтверждено
-- `notification/service.go:300,313-319`: `getUnreadCount` в каждый push. Кэшировать или не слать в payload.
+**P-M6. `notification.getUnreadCount` — COUNT на каждую отправку** ✅ подтверждено
+- `notification/service.go:300,313-319`: кэшировать или отдавать в одном запросе с insert.
 
-### Архитектура / качество
+**P-M7.** gzip применяется ко всем ответам включая уже сжатые JSON API — пропускать некомпрессируемые типы.
+**P-M8.** `ForceFinishGame`/`DisqualifyTeam`/`DeleteLevelFromActiveGame` — O(teams × levels); батчить.
+**P-M9.** `checkAutoStartGamesImpl` — лишний `Preload("GameSetting")` (JOIN уже грузит) + per-passing init.
 
-**C1. `StartTesting` накапливает orphan-тестовые команды** — подтверждено
-- `svc_play.go:428-435`: каждый запуск создаёт `_test_<userID>` и не чистит старые.
+### UX / Фронтенд
 
-**C2. Дублирование/мёртвый код**
-- `GamePassingService.ListByGame` deprecated, но в интерфейсе (`interfaces.go:43`).
-- `GameService` держит поля `hub`, `cfg`, `coAuthorSvc`, `db`, `gameRepo`, часть не используется (`service.go:73-87`).
-- `GamePassingRepository` определён (`repository.go:33`) — проверить wire.
-- `cacheGetGame` fallback `default:` (`service.go:179-190`) — json round-trip на cache hit, только для legacy-значений.
+**U-2. Удаление ответа уровня без подтверждения** ✅ подтверждено
+- `level/templates/answers-index.html:17-20`: голый POST-delete; везде в проекте используется `data-confirm`/`data-confirm-form`.
 
-**C3. `ValkeyCache.GetOrSetStringWithTTLWithCtx` расходится с типизированными accessor'ами** — подтверждено
-- `valkey.go:291-313`: читает через `Get(key)` (не `GetWithCtx`), без singleflight, JSON-маршалит строку → `[]LeaderboardEntry` в Valkey никогда не хитнет (`svc_rating.go:162`).
+**U-3. FOUC + race на переключателе вида списка игр** ✅ подтверждено
+- `games-list.html:229-236`: таблица серверная, карточки подменяются после `GET /api/users/preferences/games-view` → flash; клик до ответа перезаписывается.
 
-**C4. `Cache.Close()` — double-close panic** — подтверждено
-- `cache.go:296-300`: `close(c.stop)` без `sync.Once`.
+**U-4. На мобильном дублируются таблица И карточки прохождений** ✅ подтверждено
+- `game_passings-list.html:6` (таблица без `hidden sm:block`) + `:64` (`sm:hidden` карточки) → на телефонах видно и то и то.
 
-**C5. Миграция 000028 зависит от имени constraint'а**
-- `000028_deferrable_level_position.up.sql`: `DROP CONSTRAINT IF EXISTS levels_game_id_position_key` — если GORM создал `idx_levels_game_position`, DROP — no-op, ADD дублирует. Добавить `pg_constraint`-проверку как в 000029.
+**U-5. Полный re-render мониторинга при каждом WS-снапшоте** — `teamsContainer.innerHTML = ''` + rebuild → фокус/скролл прыгают, анимация повторяется.
+**U-6. Чаты принудительно скроллят вниз, даже если пользователь прочитал выше** — auto-scroll только при близости к низу.
+**U-7. Кнопка подписки без in-flight guard** (`profile-public.html:49-51`) — double-click = race.
+**U-8. Добавление заметки без `.catch` и блокировки кнопки** (`notes-manage.html:55-73`).
+**U-9. Debug-логи в проде** — `console.log/warn` с API-данными (`profile-public.html:110-149`, `monitor-page.html:183,236`, `gameplay-show.html:478`).
+**U-10. aria-label кнопки закрытия тоста = «Отмена»** (`app.js:72`) — нужен `data-i18n-close`.
+**U-11. Поиск соавторов не с клавиатуры** (`co_authors-manage.html:79-93`) — combobox/listbox.
+**U-12. Wizard без aria-current на шагах и без фокуса при смене шага.**
+**U-13. Пустые `<p class="field-error">` рендерятся всегда** (`game_passings-apply.html:22`, `games-new.html:34-64`) — guard `{{if .Errors.X}}`.
 
-**C6. `email`-рассылка из `auth_handler.go:611-628` — untracked goroutine**
-- Вместо глобальной очереди `email.Enqueue` — сырая горутина на запрос, не отслеживается, не ожидается.
+### A11y
+**A-2.** `aria-live` на таймере геймплея озвучивает каждую секунду (`gameplay-show.html:25,193-196`) — объявлять на границах минут / `role="timer"`.
+**A-3.** Preview/delete/photo модалки без focus-trap (восстанавливают фокус, но Tab уходит на фон).
+**A-4.** `alt="Photo"`/`alt="Preview"` — неинформативные.
+**A-5.** Непрочитанное уведомление — только цвет (`notifications-list.html:13`); добавить sr-only.
+**A-6.** Календарные ячейки/фото-миниатюры не с клавиатуры (`calendar-page.html:122-130`, `games-photos.html:149-161`).
+**A-7.** Touch-цели < 44px: гамбургер (24px + `focus:outline-none` убирает фокус), языковые кнопки, колокольчик, пагинация, карандаши, крестик тоста.
+**A-8.** Поля без имени: поиск (`home.html:9`), textarea заметки (`notes-manage.html:9`) — добавить sr-only label.
+**A-9.** Нет `aria-expanded`/`aria-pressed`/`aria-current` на: колокольчике, переключателе вида, активной комнате чата, активном фильтре админки.
+**A-10.** `role="img" aria-hidden="true"` на эмодзи-лого (`layout.html:168`) — противоречиво.
+**A-12.** Пустые `<script nonce>` блоки в 4 шаблонах — мёртвая разметка.
+**A-13.** Логи не в `role="log"` (в отличие от чата) — SR не объявляют новые строки.
 
----
-
-## 3. 🟡 Средние проблемы (UX/фронтенд, тесты)
-
-### UX / фронтенд
-
-**UX1. ~7 мёртвых JS-модулей** — подтверждено
-- `app.js`: `initInlineValidation` (нет `[data-inline-validation]`), `initAutoSaveDrafts`/`initAutoSaveIndicator` (нет `[data-autosave]`), `initFileUploadProgress` (нет `[data-progress]`), `initSSEIndicator`/`initSSEGameNotifications` (нет `#sse-status`/`data-sse-game-id` нигде), `initTeamRatingIndicators` (нет `.team-row`), `initCodeCopy` (нет `[data-copy]`), `initSearchAutocomplete` (нет `#search`), `showSkeleton`/`hideSkeleton` + `skeleton-table.html` (не вызываются). ~200 строк мёртвого JS; SSE-фича «игра началась» фактически не подключена.
-- **Фикс:** либо завести data-атрибуты/вызовы, либо удалить функции и роут `/game/sse`.
-
-**UX2. `alert()` в 7 шаблонах** — подтверждено
-- `monitor-page.html:240`, `games-photos.html:222,227`, `notes-manage.html:71,95`, `webauthn-login-button.html:14,56,63`, `webauthn-manage.html:93,100`, `profile-public.html:153,158`. Заменить на `showToast`.
-
-**UX3. Сырые WebSocket-подключения** — подтверждено
-- `layout.html:600` (`/ws/notifications` — без reconnect), `logs-list.html:75` + дублированный самодельный backoff (`logs-list.html:105-115`); `static/js/ws-client.js` — мёртвый код (~2 КБ/страницу).
-- **Фикс:** мигрировать на `createReconnectingWebSocket`, удалить ws-client.js.
-
-**UX4. A11y-дефициты** — подтверждено
-- Чаты без `aria-live`/`role="log"`, `#connection-status` без `role="status"` (`team-chat.html:7`, `chat-page.html:15`).
-- Модалка подтверждения без `role="dialog"`/`aria-modal` (`app.js:170-181`).
-- Закрытие lightbox — `<span>` без кнопки/aria (`games-photos.html:54`).
-- `layout.html:168` — `role="img" aria-hidden="true"` противоречиво.
-- `layout.html:179`, `games-list.html:6` — bell/toggle без `aria-expanded`/`aria-pressed`.
-
-**UX5. PWA-кэш**
-- Ручная синхронизация трёх версий (`CACHE_NAME='gengine-v17'`, `?v=20260805`, precache-список). Один пропуск = сломанный offline.
-- `manifest.json:5` — `start_url: "/dashboard?source=pwa"` под авторизацией; `/offline` роут есть (`router.go:185`).
-- **Фикс:** версия из build-time константы; `start_url:"/"` + `scope`.
-
-**UX6. Мелочи**
-- `min-w-[180px]` инпуты чата/геймплея давят на ≤360px (`team-chat.html:13`, `chat-page.html:21`, `gameplay-show.html:32`).
-- Дублирующий `<meta name="csrf-token">` в `games-photos.html:5`.
-- `games-photos.html:28,55` generic `alt="Photo"`.
-- Двойной `fetch`-враппер в layout (`:305-326` + `:515-525`) — хрупкая цепочка.
-- Табы не гасятся на `document.hidden` (`layout.html:419`, `gameplay-show.html:192-196`).
-
-### Тесты (покрытие)
-
-**T1. 🔴 Критические пути БЕЗ тестов** — подтверждено
-- Refresh-ротация/reuse/family (`RefreshAccessToken`) — нет тестов (в `user/service_test.go` — 0 упоминаний `RefreshAccessToken|family|reuse`).
-- Lockout-логика (5 попыток → lock, generic-ответ, сброс при успехе).
-- `TournamentService.UpdateScoresForGame` (математика мест, `tournament_scored`, повторный вызов) — тест `TestTournamentService_Leaderboard` вставляет `TournamentResult` напрямую, метод не вызывает.
-- `CheckTimeouts`/`CheckAutoStartGames` — 0 упоминаний в тестах.
-- WebAuthn — 0 тестов.
-
-**T2. 🟡 Средние**
-- Кэш листинга (`svc_listing_test.go` использует `NoopCache`), theme-middleware cache, tie-break голосования, Move на границах, Duplicate сдвиг позиций.
-- 4 скипнутых теста 2FA/OAuth в `user/auth_handler_test.go`, `service_test.go`.
-- Бизнес-логика тестируется только через реальный PG (`-short` всё скипает) — mock-слой есть, но почти не используется; нет mock-based юнит-тестов для auth/tournament/play.
+### Тесты
+**T-H1. Tournament `UpdateScoresForGame`/`RemoveGame` — БЕЗ тестов** (3 теста в пакете, метод не вызывается).
+**T-H2. `CheckTimeouts`/`CheckAutoStartGames` — без тестов** (0 упоминаний).
+**T-H3. `SnapshotDispatcher` — без тестов** (debounce, Close).
+**T-H4. `CalculateResults` — без тестов тай-брейков/штрафов** (только базовый 2-командный).
+**T-H5. SubmitCode last-level finish path — не покрыт** (все тесты проходят только уровень 1 из 2; callback → CalculateResults + tournament + rating не проверен).
+**T-M1.** Админ `DownloadBackup` — нет теста; `DeleteUser` не отзывает refresh-токены (наблюдение в коде) — тест не проверяет.
+**T-M2.** Нет чистых юнит-тестов без БД для доменной логики — всё DB-backed, `-short` в CI ничего не проверяет в domain/*.
+**T-M3.** `t.Parallel()` нигде не используется — DB-набор серийный.
+**T-M4.** Пароли-«hashed» в фикстурах tournament/monitor — foot-gun.
 
 ---
 
-## 4. ⚡ Варианты оптимизации (по приоритету)
+## 3. ⚡ Варианты оптимизации (по приоритету)
 
 ### Быстрые и безопасные (дни)
-1. **H1** — фикс маппинга `attemptRecord.LevelProgressID` (включит мёртвую детекцию) + порог.
-2. **S1** — зарегистрировать `GlobalRateLimit` в `setupEngine` (1 строка).
-3. **B1** — `onCommit` в `checkTimeoutsImpl` вызывать после `db.Transaction` (паттерн уже есть в svc_play).
-4. **P1** — не грузить `Level.Questions.Answers` повторно в `SubmitCodeWithTx`.
-5. **S3 (частично)** — не вызывать `CalculateResults` в `SubmitCode`, если уровень последний (колбэк уже делает).
-6. **B6** — копия `*Game` на cache hit.
-7. **P4** — cache-заголовки: immutable только для `?v=`.
-8. **UX2/UX3** — заменить `alert()` на toasts, мигрировать raw-WS на reconnecting-клиент, удалить ws-client.js.
-9. **UX1** — удалить/подключить мёртвые JS-модули.
-10. **C4** — `sync.Once` в `Cache.Close`.
+1. **A-1** — убрать ReferenceError `initPushSubscription` (реализовать или удалить + кнопки).
+2. **P-C1** — зарегистрировать `StaticCacheMiddleware` (1 строка).
+3. **U-1** — починить пагинацию логов.
+4. **C-C2** — guard nil в `hnd_settings.go`.
+5. **C-H1** — атомарный claim `rating_scored` в 5 точках ошибок (вернуть err вместо log+continue).
+6. **C-C1** — advisory lock + атомарный claim `tournament_scored` (скопировать паттерн rating).
+7. **P-H1** — Valkey-aware чтение для listing/leaderboard/reviews.
+8. **U-2/U-4/U-9** — confirm на удаление ответа, мобильный дубль, убрать console.log.
+9. **C-M3/C-M6/C-M7** — детерминированный tie-break, ReadAt, LIKE escape.
+10. **S-M5** — RevokeJWT в LogoutAll.
 
 ### Средние
-11. **S4/S5** — атомарный claim refresh-токена + строгая fingerprint-проверка.
-12. **S2** — роль из БД в middleware (TTL-кэш).
-13. **B2/B3** — сериализация `CalculateResults`, идемпотентность `UpdateRatingsForGame`.
-14. **S3 (полностью)** — debounced per-game snapshot worker + закэшированные байты снапшота.
-15. **P2/P3** — singleflight `GetByID`, инвалидация `games:list:*`.
-16. **B8** — unique-индекс сессий голосования + перечитывание в транзакции.
-17. **UX4** — a11y-проход (aria-live чатов, dialog-роль, button для lightbox).
-18. **P6/P7** — индекс `(user_id, created_at)`; кэш unread_count.
-19. **C3/C5/C6** — Valkey-строки, миграция 000028, очередь email.
+11. **S-H1** — WebAuthn/2FA политика (регистрация под 2FA, удаление ключей при смене пароля).
+12. **P-H3/P-H4** — оптимизация SubmitCode tx (~10 round-trips) и GetGameplayData (errgroup).
+13. **P-M1/P-M2/P-M3** — двойной CalculateResults, SSE fan-out, poller по изменению.
+14. **C-H2/C-H3** — гонки AcceptInvitation / Tournament.Apply (ON CONFLICT).
+15. **S-M1** — rate limit + lockout для 2FA backup-code.
+16. **S-M4** — Secure session cookie через isHTTPS.
+17. **P-H5** — ORDER BY в CheckTimeouts + prefetch.
+18. **A-7/A-2/A-3/A-9** — touch-цели, aria-live таймера, focus-trap модалок, aria-state toggle.
 
 ### Крупные архитектурные
-20. **T1** — mock-based юнит-тесты для auth (refresh/lockout), tournament, timeouts; реальные PG-интеграционные через `//go:build integration`, а не implicit `-short`.
-21. **C2** — почистить мёртвые интерфейсы/поля сервисов.
-22. **Error-code-контракт API** — машинно-читаемые коды вместо русского текста.
-23. **Единый realtime-клиент** — `createReconnectingWebSocket` для всех чатов/монитора/уведомлений; убрать три стека.
+19. **T-H1…T-H5** — юнит-тесты tournament/CheckTimeouts/SnapshotDispatcher/CalculateResults (mock-based, работают без БД).
+20. **C-M2** — `tournament_points` на прохождении для точного списания.
+21. **C-M8** — возврат ошибки из `UpdateScoresForGame` + логирование.
+22. **S-M2/S-M3** — CSRF/Origin для `/api/*` + лимит публичного поиска.
+23. **Единый подход к тестам**: mock-based слой для доменной логики, чтобы CI (`-short`) реально проверял бизнес-правила.
 
 ---
 
-## 5. 🚀 Предложения по улучшению
+## 4. 🚀 Предложения по улучшению
 
 ### Кодовая база
-- **Адvisory-блокировки** в `CheckTimeouts`/`CalculateResults` (паттерн уже есть в level).
-- **Генератор версии статики**: единая build-time константа для SW/CACHE_NAME/`?v=`.
-- **Index coverage**: `games.name` pg_trgm (сейчас `ILIKE '%..%'` без индекса, `migrations/000023` покрывает только users), `notifications(user_id, created_at DESC)`.
-- **Слой кэша не для `[]LeaderboardEntry`** в Valkey — перейти на `GetBytesWithCtx`/хранение JSON-байт.
-- **`go generate` + wire-проверка** в CI: падать, если DI-граф рассинхронизирован.
-- **Логирование**: request-id, тайминги SQL в hot paths (SubmitCode, листинг).
-- **Prometheus**: метрики на SubmitCode, листинг, SSE/WS-подключения, cache hit-ratio.
-- **Pre-commit guard**: блокировать стейджинг `.env` (сейчас только `.gitignore`).
+- **Атомарные guards единообразно**: паттерн `UPDATE ... WHERE flag=false` + RowsAffected для всех «начислить один раз» (rating ✅, tournament ❌).
+- **Valkey-стратегия**: единый helper `cacheGetTyped(ctx, key, &target)` для всех typed-кэшей (вместо 3 дублей).
+- **Адvisory-локи**: `pg_advisory_xact_lock(gameID)` для всех операций «финиш/начисление/пересчёт» (monitor ✅, rating ✅, tournament ❌, level.Move ✅, level.Duplicate ❌).
+- **CI-гейт**: `make test-integration` в CI с Postgres; `-short` — mock-based доменные тесты.
+- **Логирование ошибок начисления**: `UpdateScoresForGame` должна возвращать ошибку и логироваться в main.
+- **Убрать `Clauses(Locking{...})` с UPDATE** (no-op в GORM, вводит в заблуждение).
+- **Проверка маршрутов**: тест «каждый роут = существующий хендлер».
+- **Pre-commit guard** на стейджинг `.env`/`backups/`.
 
 ### Пользовательский опыт
-- **Офлайн-first PWA**: `start_url:"/"`, `scope`, precache главных страниц, content-hash в URL статики.
-- **Единая система фидбека**: только тосты + модалка, `alert()` удалить.
-- **Пустые состояния** вместо skeleton (админка уже).
-- **Живой статус чата/уведомлений**: единый статус-компонент reconnect (сейчас бэлл умирает молча на flaky-сети).
-- **Адаптивность**: `min-w-0` на чатах, `w-full sm:w-32` в дашборде.
-- **A11y**: `aria-live` чаты, dialog-роль модалки, `aria-pressed` toggle'ы, реальный `<button>` для lightbox, уникальные alt.
-- **Персонализация**: серверные предпочтения (вид списка) — расширить на язык уведомлений (сейчас C7 хранит только ru-строки в БД).
+- **Push-уведомления**: либо доделать (бэкенд готов), либо удалить мёртвые кнопки/атрибуты.
+- **Адаптивность**: скрыть таблицу прохождений на мобильном (U-4).
+- **A11y-проход**: touch-цели 44px, aria-state на всех toggle, focus-trap в модалках, sr-only для цвета.
+- **Чат**: авто-скролл только у низа; мониторинг — обновлять карточки инкрементально (diff).
+- **Формы**: guard от двойного submit (follow, notes), `.catch` для сети.
+- **Отладка**: убрать `console.log` из прода.
+- **Поиск соавторов**: полноценный combobox.
 
 ---
 
-## 6. ✅ Что сделано хорошо (подтверждено ревью)
+## 5. ✅ Что сделано хорошо (подтверждено)
 
-- **Транзакции**: `FOR UPDATE` на игровых путях, broadcast/колбэки после commit в `SubmitCode`/`AcceptBlackboxAnswer`, `SkipDefaultTransaction`, onCommit-дисциплина.
-- **Безопасность**: параметризованные запросы (0 SQL-инъекций найдено), ORDER BY-whitelist, CSP nonce, exact-origin WS/SSE, JWT iss/aud/jti + HMAC-method enforcement, SHA-256 хэши refresh-токенов, dummy-bcrypt cost 12, generic-ошибки логина, CSRF на HTML-формах, size-лимиты, whitelist загрузок + server-side sniffing, open-redirect guard.
-- **Идемпотентность турнирных очков** ✅ — `ListFinishedPassings` фильтрует `tournament_scored = false` (repo:118-122), метка в той же транзакции.
-- **Refresh-семьи**: reuse детектится для отозванных токенов (`RevokeAllByFamily`), fingerprint-binding в штатном случае.
-- **Производительность**: bounded LRU 10k (P11 закрыт), singleflight в кэше и мониторе, batch SQL (`COUNT(*) OVER()`, CTE-снапшот, CASE-UPDATE, unnest), прекомпьютинг `rating_value`/`participant_count` (000027), неблокирующие WS-отправки (M4), partial-индексы на горячих фильтрах.
-- **Фон**: все таски в `bgWg` + `goSafe` + graceful shutdown; монитор-poller без утечек.
-- **UX**: единая модалка (focus-trap, restore, per-action label), reconnecting WS + polling fallback, wizard с progressive enhancement, `prefers-reduced-motion`, skip-link (один, рабочий), keyboard dropzones, локализация через `data-i18n` без видимого хардкода (0 mojibake после чистки).
-- **Архитектура**: C1 закрыт (0 сырых `*gorm.DB` в хендлерах), sentinel-ошибки, idempotent-миграции, DI через wire, i18n ru/en синхронны.
+- **Асинхронный snapshot-воркер (S3)** — debounce 500ms, корректный Close, nil-safe Schedule, 10s timeout в ProcessSnapshot.
+- **Атомарный guard рейтинга** (`svc_rating.go:45-51`) — образцовый паттерн.
+- **`pg_advisory_xact_lock`** в CalculateResults, UpdateRatingsForGame, LevelService.Move.
+- **onCommit после commit** во всех игровых путях (SubmitCode/AcceptBlackboxAnswer/checkTimeoutsImpl/ForceFinishGame).
+- **Refresh-ротация** атомарная + семья + строгий fingerprint; **роль из БД** в AuthRequired; **lockout** с generic-ответом и dummy-bcrypt.
+- **JWT**: HMAC/iss/aud/nbf/iat/jti + blacklist; **CSRF** с узким skip-list; **WS/SSE origin**; **upload** санитайз + sniffing.
+- **Обработка ошибок**: `errors.Is(ErrRecordNotFound)` в AcceptPendingAttempt, DisqualifyTeam, StartVoting (дубликат-ключ).
+- **PWA**: единый источник версии (config.StaticAssetsVersion ⇄ ASSET_VERSION ⇄ ?v=), precache совпадает с URL, /offline публичен, uploads уникальные имена.
+- **Модалка подтверждения**: focus-trap, Escape, focus-restore, per-action labels; **чаты**: role=log + дубли-suppression; **wizard**: progressive enhancement.
+- **Миграции 000025-000032** идемпотентны, 000028 — pg_constraint-поиск.
+- **Индексы** на горячих фильтрах (attempts, logs, partial finished, game_passings, notifications(user_id, created_at), pg_trgm).
+- **Background-задачи**: bgWg/goSafe + корректный порядок shutdown (rate limiters → email → SSE → HTTP → hub → snapshot dispatcher → ctx → cache).
 
 ---
 
-## 7. Ложные срабатывания (проверено и исключено)
+## 6. Ложные срабатывания (проверено и исключено)
 
 | № | Заявка агента | Вердикт |
 |---|---|---|
-| H2 | `UpdateScoresForGame` не идемпотентен | ❌ **Ложь** — `tournamentGameRepo.ListFinishedPassings` фильтрует `tournament_scored = false` (`repository.go:121`) |
-| H4 | `FOR UPDATE` на UPDATE — синтаксическая ошибка PG | ❌ **Ложь** — в GORM v1.26 `updateClauses = ["UPDATE","SET","WHERE","RETURNING"]`, clause `LOCKING` не билдится для UPDATE — молчаливый no-op. Защиту даёт `RowsAffected`-проверка (`svc_progress.go:347`), которая корректна. Поправить вводящий в заблуждение комментарий |
-| S-ChangePassword | Смена пароля не отзывает refresh-токены | ❌ **Ложь** — `profile_handler.go:388-394` вызывает `RevokeAllUserTokens` + `RevokeJWT` |
-| M12 | `ON CONFLICT (game_id, team_id)` без unique-ограничения | ❌ **Ложь** — `000001_init.up.sql:168` создаёт `UNIQUE(game_id, team_id)`. Модель не декларирует его — drift модели, не баг |
-| UX-шрифт | JetBrains Mono не загружается | ❌ **Уже исправлено** — system stacks в `app.css:31-34` |
-| UX-конфликт | `w-full w-auto` | ❌ **Не найдено** — `w-auto` отсутствует в шаблонах |
-| UX-дубли confirm | inline `confirm()` + модалка | ❌ **Уже исправлено** — 0 `confirm()` в шаблонах, всё через `data-confirm-form`/`data-confirm` |
-| UX-чат | разный протокол (JSON vs raw) | ❌ **Уже исправлено** — оба шлют JSON, сервер имеет raw-fallback |
+| C-H6 | Reset/change password не отзывают сессии | ❌ **Ложь** — `profile_handler.go:388-394` вызывает `RevokeAllUserTokens` + `RevokeJWT`; `auth_handler.go:600-606` (ResetPassword) тоже |
+| S-H2 | SQL injection в svc_listing/svc_monitor/svc_rating | ❌ **Не подтверждено** — все Raw/Exec с позиционными `?` и args; ORDER BY whitelist; ILIKE через EscapeLike/placeholders |
+| C-H4 | `FOR UPDATE` на UPDATE = синтаксическая ошибка PG | ❌ **Не ошибка** — GORM v1.26 не билдит Locking для UPDATE (no-op). Защита RowsAffected корректна; комментарий вводит в заблуждение |
+| A-1-часть | `window.fetch` двойной wrap ломается | ❌ **Работает** — progress-враппер перехватывает уже-CSRF-обёрнутый fetch, заголовки добавляются |
 
 ---
 
-## 8. Приоритеты следующей волны
+## 7. Приоритеты следующей волны
 
-1. **H1** — включить мёртвую детекцию подозрительных команд (функциональность мониторинга).
-2. **S1** — зарегистрировать глобальный rate limiter.
-3. **B1** — порядок `onCommit` в `checkTimeoutsImpl` (целостность турнирных данных).
-4. **S4/S5** — атомарная refresh-ротация + строгий fingerprint.
-5. **S2** — роль из БД (пониженный админ теряет права немедленно).
-6. **S3** — асинхронный debounced снапшот + убрать двойной `CalculateResults` (латентность геймплея).
-7. **T1** — юнит-тесты на refresh/lockout/tournament/timeouts.
-8. **UX1/UX2/UX3** — мёртвый JS, `alert()`, raw-WS.
-9. **B2/B3/B8** — сериализация результатов, идемпотентность рейтингов, голосования.
-10. **P4/UX5** — cache-заголовки и PWA-версионирование.
+1. **A-1** (ReferenceError) и **U-1** (пагинация логов) — ломают UX прямо сейчас.
+2. **P-C1** (StaticCacheMiddleware) — 1 строка, возвращает кэширование статики.
+3. **C-C1** (tournament race) и **C-H1** (rating flag) — целостность начислений.
+4. **P-H1** (Valkey no-op) — производительность горячих эндпоинтов в проде.
+5. **C-C2** (nil deref), **S-M5** (LogoutAll JWT), **U-2/U-4/U-9** — быстрые фиксы.
+6. **S-H1** (WebAuthn/2FA) — безопасность учетки.
+7. **T-H1…T-H5** — тесты критичных путей.
+8. **P-H3/P-H4** — оптимизация геймплея.

@@ -339,10 +339,11 @@ func checkTimeoutsImpl(db *gorm.DB, ctx context.Context, onGameFinished GameComp
 		// (вторая транзакция видит finished_at уже не NULL из-за row-блокировки
 		// UPDATE), то advance-петлю пропускаем — иначе создадутся дублирующие
 		// next-level прогрессы (B6).
+		// NB: НЕ добавляем Clauses(Locking{...}) — GORM не билдит его для UPDATE
+		// (no-op), а сам UPDATE уже берёт row-локи (C-H4).
 		res := tx.Model(&LevelProgress{}).
 			Where("id IN ?", timedOutIDs).
 			Where("finished_at IS NULL").
-			Clauses(clause.Locking{Strength: "UPDATE"}).
 			Update("finished_at", now)
 		if res.Error != nil {
 			return res.Error

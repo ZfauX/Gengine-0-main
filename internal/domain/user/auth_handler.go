@@ -346,6 +346,11 @@ func (h *AuthHandler) LogoutAll(c *gin.Context) {
 	if err := h.authSvc.RevokeAllUserTokens(c.Request.Context(), userID); err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Msg("LogoutAll: failed to revoke tokens")
 	}
+	// Текущий JWT тоже добавляем в blacklist (S-M5) — украденный токен не
+	// переживёт LogoutAll, даже если кука была скопирована.
+	if jwtCookie, err := c.Cookie("jwt"); err == nil && jwtCookie != "" {
+		h.authSvc.RevokeJWT(c.Request.Context(), jwtCookie)
+	}
 	setSecureCookie(c, "jwt", "", -1, "/")
 	setSecureCookie(c, "refresh_token", "", -1, "/auth/refresh")
 	clear2FASessionFlag(c)

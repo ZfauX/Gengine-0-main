@@ -1,5 +1,5 @@
 {{define "logs-list.html"}}
-<div class="max-w-4xl mx-auto" data-game-id="{{.GameID}}">
+<div class="max-w-4xl mx-auto" data-game-id="{{.GameID}}" data-page="{{.Page}}">
     <h1 class="page-title">{{ T $.Lang "logs.title" }}</h1>
 
     <div class="card">
@@ -12,7 +12,7 @@
         </ul>
         <div id="pagination" class="flex items-center justify-center gap-2 mt-4 text-sm {{if le .TotalPages 1}}hidden{{end}}">
             <button id="prev-page" class="px-3 py-1 border rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40" disabled>{{ T $.Lang "logs.prev" }}</button>
-            <span class="px-2 text-gray-600 dark:text-gray-400">{{ TF $.Lang "logs.page" .Page .TotalPages }}</span>
+            <span id="current-page" class="px-2 text-gray-600 dark:text-gray-400">{{ TF $.Lang "logs.page" .Page .TotalPages }}</span>
             <button id="next-page" class="px-3 py-1 border rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40" {{if ge .Page .TotalPages}}disabled{{end}}>{{ T $.Lang "logs.next" }}</button>
         </div>
         <div id="connection-status" class="mt-3 text-sm text-gray-500 dark:text-gray-400"></div>
@@ -26,7 +26,8 @@
 
         const gameID = container.dataset.gameId;
         const totalPages = parseInt(document.getElementById('log-list')?.dataset.totalPages || '1', 10);
-        let currentPage = parseInt(document.getElementById('current-page')?.textContent || '1', 10);
+        // U-1: currentPage из data-page (раньше текст спан не парсился → NaN).
+        let currentPage = parseInt(container.dataset.page || '1', 10);
 
         // Pagination
         const prevBtn = document.getElementById('prev-page');
@@ -43,7 +44,9 @@
                     const newList = doc.getElementById('log-list');
                     if (newList) {
                         document.getElementById('log-list').innerHTML = newList.innerHTML;
-                        document.getElementById('current-page').textContent = page;
+                        // Сохраняем формат «Стр. X из Y», обновляя только номер.
+                        const pageSpan = document.getElementById('current-page');
+                        if (pageSpan) pageSpan.textContent = pageSpan.textContent.replace(/\d+/, String(page));
                         currentPage = page;
                         prevBtn.disabled = page <= 1;
                         nextBtn.disabled = page >= totalPages;

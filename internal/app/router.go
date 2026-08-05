@@ -235,6 +235,11 @@ func (app *App) setupEngine(r *gin.Engine) error {
 		}
 	}
 
+	// Cache-Control для /static и /uploads (P4): immutable только для
+	// версионированных ?v= URL, иначе короткий max-age / no-cache.
+	// Зарегистрирован ДО r.Static, чтобы применялся к статическим файлам (P-C1).
+	r.Use(middleware.StaticCacheMiddleware())
+
 	r.Static("/static", filepath.Join(app.BaseDir, app.Config.Server.StaticDir))
 	r.Static("/uploads", filepath.Join(app.BaseDir, app.Config.Server.UploadsDir))
 

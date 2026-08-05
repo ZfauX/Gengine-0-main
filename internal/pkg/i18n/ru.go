@@ -446,6 +446,7 @@ var ruMessages = map[string]string{
 	"layout.confirm_title":      "Подтверждение",
 	"layout.confirm_cancel":     "Отмена",
 	"layout.confirm_ok":         "Удалить",
+	"layout.close":              "Закрыть",
 
 	// ── Common ──
 	"common.save":         "Сохранить",
@@ -636,6 +637,9 @@ var ruMessages = map[string]string{
 	"profile.save_notif_settings":   "Сохранить настройки",
 	"profile.enable_push":           "🔔 Включить push-уведомления",
 	"profile.disable_push":          "🔕 Отключить push-уведомления",
+	"push.not_supported":            "Push не поддерживается этим браузером",
+	"push.enabled":                  "Push-уведомления включены",
+	"push.disabled":                 "Push-уведомления отключены",
 	"profile.push_status":           "",
 	"profile.2fa_section":           "Двухфакторная аутентификация",
 	"profile.2fa_desc_enabled":      "Защита аккаунта включена. При входе потребуется код из приложения-аутентификатора.",
