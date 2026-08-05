@@ -264,6 +264,21 @@ func (mr *MockUserRepositoryMockRecorder) SearchPaginated(ctx, query, role, offs
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SearchPaginated", reflect.TypeOf((*MockUserRepository)(nil).SearchPaginated), ctx, query, role, offset, limit)
 }
 
+// SearchUsersLight mocks base method.
+func (m *MockUserRepository) SearchUsersLight(ctx context.Context, query string, limit int) ([]UserSearchResult, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SearchUsersLight", ctx, query, limit)
+	ret0, _ := ret[0].([]UserSearchResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SearchUsersLight indicates an expected call of SearchUsersLight.
+func (mr *MockUserRepositoryMockRecorder) SearchUsersLight(ctx, query, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SearchUsersLight", reflect.TypeOf((*MockUserRepository)(nil).SearchUsersLight), ctx, query, limit)
+}
+
 // Update mocks base method.
 func (m *MockUserRepository) Update(ctx context.Context, id uint, fields map[string]any) error {
 	m.ctrl.T.Helper()

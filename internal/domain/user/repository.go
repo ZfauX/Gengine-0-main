@@ -12,6 +12,13 @@ import (
 	"gorm.io/gorm"
 )
 
+// UserSearchResult — лёгкий результат поиска пользователей (id/name/email).
+type UserSearchResult struct {
+	ID    uint
+	Name  string
+	Email string
+}
+
 // UserRepository определяет контракт для работы с пользователями.
 type UserRepository interface {
 	Create(ctx context.Context, user *User) error
@@ -19,11 +26,7 @@ type UserRepository interface {
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	GetPublicProfile(ctx context.Context, id uint) (*User, error)
 	GetByIDWithAchievementsAndSubscriptions(ctx context.Context, id uint) (*User, error)
-	SearchUsersLight(ctx context.Context, query string, limit int) ([]struct {
-		ID    uint
-		Name  string
-		Email string
-	}, error)
+	SearchUsersLight(ctx context.Context, query string, limit int) ([]UserSearchResult, error)
 	Update(ctx context.Context, id uint, fields map[string]any) error
 	GetByRole(ctx context.Context, role string) ([]User, error)
 	GetUserRole(ctx context.Context, id uint) (string, error)
@@ -172,16 +175,8 @@ func (r *gormUserRepo) GetByIDWithAchievementsAndSubscriptions(ctx context.Conte
 }
 
 // SearchUsersLight ищет пользователей по имени/email (только id, name, email) — без паролей.
-func (r *gormUserRepo) SearchUsersLight(ctx context.Context, query string, limit int) ([]struct {
-	ID    uint
-	Name  string
-	Email string
-}, error) {
-	items := []struct {
-		ID    uint
-		Name  string
-		Email string
-	}{}
+func (r *gormUserRepo) SearchUsersLight(ctx context.Context, query string, limit int) ([]UserSearchResult, error) {
+	items := []UserSearchResult{}
 	if limit <= 0 || limit > 50 {
 		limit = 10
 	}
