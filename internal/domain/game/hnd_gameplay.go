@@ -95,7 +95,11 @@ func (h *GameplayHandler) ShowGame(c *gin.Context) {
 		return
 	}
 
-	if !h.isTeamMember(c.Request.Context(), data.Passing.TeamID, userID) {
+	if isMember, memErr := h.isTeamMember(c.Request.Context(), data.Passing.TeamID, userID); memErr != nil {
+		log.Error().Err(memErr).Uint("team_id", data.Passing.TeamID).Msg("ShowGame: failed to check team membership")
+		render.RenderErrorPage(c, http.StatusInternalServerError)
+		return
+	} else if !isMember {
 		render.RenderError(c, http.StatusForbidden, "Вы не являетесь участником этой команды")
 		return
 	}
@@ -176,7 +180,11 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 
-	if !h.isUserInPassing(c.Request.Context(), uint(passingID), userID) {
+	if isMember, memErr := h.isUserInPassing(c.Request.Context(), uint(passingID), userID); memErr != nil {
+		log.Error().Err(memErr).Int("passing_id", passingID).Msg("Gameplay: failed to check passing membership")
+		render.RenderErrorPage(c, http.StatusInternalServerError)
+		return
+	} else if !isMember {
 		render.RenderErrorPage(c, http.StatusForbidden)
 		return
 	}
@@ -287,7 +295,11 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 
-	if !h.isUserInPassing(c.Request.Context(), uint(passingID), userID) {
+	if isMember, memErr := h.isUserInPassing(c.Request.Context(), uint(passingID), userID); memErr != nil {
+		log.Error().Err(memErr).Int("passing_id", passingID).Msg("Gameplay: failed to check passing membership")
+		render.RenderErrorPage(c, http.StatusInternalServerError)
+		return
+	} else if !isMember {
 		render.RenderErrorPage(c, http.StatusForbidden)
 		return
 	}
@@ -352,12 +364,26 @@ func (h *GameplayHandler) AcceptAnswer(c *gin.Context) {
 		return
 	}
 	userID := c.GetUint("userID")
-	if !h.isUserInPassing(c.Request.Context(), uint(passingID), userID) {
+	if isMember, memErr := h.isUserInPassing(c.Request.Context(), uint(passingID), userID); memErr != nil {
+		log.Error().Err(memErr).Int("passing_id", passingID).Msg("Gameplay: failed to check passing membership")
+		render.RenderErrorPage(c, http.StatusInternalServerError)
+		return
+	} else if !isMember {
 		render.RenderErrorPage(c, http.StatusForbidden)
 		return
 	}
 	if acceptErr := h.gamePlaySvc.AcceptBlackboxAnswer(c.Request.Context(), uint(passingID), userID); acceptErr != nil {
-		render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, acceptErr.Error()))
+		// Различаем бизнес-отказы (403), «не найдено» (404) и технические
+		// ошибки (500) вместо маскировки всего как 403 (B4/M5).
+		switch {
+		case errors.Is(acceptErr, ErrOnlyAuthor), errors.Is(acceptErr, ErrBlackboxOnly):
+			render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, acceptErr.Error()))
+		case errors.Is(acceptErr, gorm.ErrRecordNotFound):
+			render.RenderErrorPage(c, http.StatusNotFound)
+		default:
+			log.Error().Err(acceptErr).Int("passing_id", passingID).Msg("AcceptAnswer: service error")
+			render.RenderErrorPage(c, http.StatusInternalServerError)
+		}
 		return
 	}
 	gameID, err := strconv.Atoi(c.Query("game_id"))
@@ -564,19 +590,17 @@ func (h *GameplayHandler) SkipTestLevel(c *gin.Context) {
 
 // ---------- Вспомогательные методы ----------
 
-func (h *GameplayHandler) isTeamMember(ctx context.Context, teamID uint, userID uint) bool {
-	ok, _ := h.gamePlaySvc.IsTeamMember(ctx, teamID, userID)
-	return ok
+func (h *GameplayHandler) isTeamMember(ctx context.Context, teamID uint, userID uint) (bool, error) {
+	return h.gamePlaySvc.IsTeamMember(ctx, teamID, userID)
 }
 
-func (h *GameplayHandler) isUserInPassing(ctx context.Context, passingID uint, userID uint) bool {
+func (h *GameplayHandler) isUserInPassing(ctx context.Context, passingID uint, userID uint) (bool, error) {
 	passing, err := h.gamePlaySvc.GetPassingWithGame(ctx, passingID)
 	if err != nil {
-		return false
+		return false, err
 	}
 	if passing.Status != StatusStarted && passing.Status != StatusTesting {
-		return false
+		return false, nil
 	}
-	ok, _ := h.gamePlaySvc.IsTeamMember(ctx, passing.TeamID, userID)
-	return ok
+	return h.gamePlaySvc.IsTeamMember(ctx, passing.TeamID, userID)
 }

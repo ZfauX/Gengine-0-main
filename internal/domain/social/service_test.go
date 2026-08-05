@@ -60,6 +60,38 @@ func TestRatingService_UpdateRatingsForGame(t *testing.T) {
 	assert.Equal(t, 10, playerRating.Score)
 }
 
+// TestRatingService_UpdateRatingsForGame_Idempotent: повторный вызов не
+// удваивает очки (B3 — guard games.rating_scored).
+func TestRatingService_UpdateRatingsForGame_Idempotent(t *testing.T) {
+	db := setupSocialDB(t)
+	rs := game.NewRatingService(db, nil)
+
+	author := createUser(t, db, "author@test.com", "pass")
+	player := createUser(t, db, "player@test.com", "pass")
+	g := createGame(t, db, author.ID, "Rating Idempotent")
+
+	tm := createTeam(t, db, player.ID)
+	passing := &game.GamePassing{
+		GameID: g.ID,
+		TeamID: tm.ID,
+		Status: game.StatusFinished,
+		Place:  intPtr(1),
+	}
+	require.NoError(t, db.Create(passing).Error)
+	require.NoError(t, db.Exec("INSERT INTO team_members (team_id, user_id) VALUES (?, ?)", tm.ID, player.ID).Error)
+
+	require.NoError(t, rs.UpdateRatingsForGame(context.Background(), g.ID))
+	require.NoError(t, rs.UpdateRatingsForGame(context.Background(), g.ID))
+
+	var authorRating game.PlayerRating
+	require.NoError(t, db.Where("user_id = ?", author.ID).First(&authorRating).Error)
+	assert.Equal(t, 5, authorRating.Score, "авторские очки не должны удваиваться")
+
+	var playerRating game.PlayerRating
+	require.NoError(t, db.Where("user_id = ?", player.ID).First(&playerRating).Error)
+	assert.Equal(t, 10, playerRating.Score, "командные очки не должны удваиваться")
+}
+
 func TestRatingService_GetLeaderboard(t *testing.T) {
 	db := setupSocialDB(t)
 	rs := game.NewRatingService(db, nil)

@@ -28,6 +28,15 @@ var ErrGameNotActive = errors.New("игра не активна")
 // передавать клиенту машинно-читаемый код ошибки (UX16, без сравнения строк).
 var ErrHintLimitReached = errors.New("лимит подсказок исчерпан")
 
+// ErrOnlyAuthor — действие доступно только автору игры.
+var ErrOnlyAuthor = errors.New("только автор может подтвердить ответ")
+
+// ErrBlackboxOnly — подтверждение доступно только для уровней типа «чёрный ящик».
+var ErrBlackboxOnly = errors.New("подтверждение ответа доступно только для уровней типа чёрный ящик")
+
+// ErrNotInGame — пользователь не участвует в прохождении игры.
+var ErrNotInGame = errors.New("вы не участвуете в этом прохождении")
+
 // GamePlayService отвечает за игровой процесс: отправку кодов, файлов, подсказок,
 // работу с чёрным ящиком и тестовый режим.
 type GamePlayService struct {
@@ -332,7 +341,7 @@ func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, u
 			return findErr
 		}
 		if lvl.Type != level.TypeBlackbox {
-			return errors.New("подтверждение ответа доступно только для уровней типа чёрный ящик")
+			return ErrBlackboxOnly
 		}
 
 		var passing GamePassing
@@ -344,7 +353,7 @@ func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, u
 		if findErr := tx.First(&game, passing.GameID).Error; findErr != nil {
 			return findErr
 		} else if game.AuthorID != userID {
-			return errors.New("только автор может подтвердить ответ")
+			return ErrOnlyAuthor
 		}
 
 		if acceptErr := s.attemptSvc.AcceptPendingAttemptWithTx(ctx, tx, progress); acceptErr != nil {

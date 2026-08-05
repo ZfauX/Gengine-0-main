@@ -38,14 +38,17 @@ type Game struct {
 	MaxTeamNumber        int        `gorm:"default:10" form:"max_team_number"`
 	CoverPath            string
 	// Прекомпьютинг агрегатов (P3): обновляются триггерами reviews/game_passings.
-	RatingValue      float64       `gorm:"column:rating_value;default:0"`
-	ParticipantCount int           `gorm:"column:participant_count;default:0"`
-	Levels           []level.Level `gorm:"foreignKey:GameID"`
-	GameSetting      GameSetting   `gorm:"foreignKey:GameID"`
-	Passings         []GamePassing `gorm:"foreignKey:GameID"`
-	Reviews          []Review      `gorm:"foreignKey:GameID"`
-	CoAuthors        []CoAuthor    `gorm:"foreignKey:GameID"`
-	Notes            []Note        `gorm:"foreignKey:GameID"`
+	RatingValue      float64 `gorm:"column:rating_value;default:0"`
+	ParticipantCount int     `gorm:"column:participant_count;default:0"`
+	// RatingScored — очки рейтинга за эту игру уже начислены
+	// (идемпотентность UpdateRatingsForGame, B3).
+	RatingScored bool          `gorm:"column:rating_scored;default:false"`
+	Levels       []level.Level `gorm:"foreignKey:GameID"`
+	GameSetting  GameSetting   `gorm:"foreignKey:GameID"`
+	Passings     []GamePassing `gorm:"foreignKey:GameID"`
+	Reviews      []Review      `gorm:"foreignKey:GameID"`
+	CoAuthors    []CoAuthor    `gorm:"foreignKey:GameID"`
+	Notes        []Note        `gorm:"foreignKey:GameID"`
 }
 
 type GameSetting struct {

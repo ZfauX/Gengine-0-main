@@ -22,6 +22,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -84,6 +85,7 @@ type GameService struct {
 	gameRepo       GameRepository
 	db             *gorm.DB
 	coAuthorSvc    *CoAuthorService
+	sg             singleflight.Group
 }
 
 // NewGameService создаёт фасад GameService с подсервисами.
@@ -143,6 +145,7 @@ func (s *GameService) UpdateGameWithCover(ctx context.Context, gameID uint, dto 
 	}
 	// Инвалидируем кэш игры — покрытие/поля игры изменились (P4).
 	s.cache.DeleteWithCtx(ctx, fmt.Sprintf("game:%d", gameID))
+	s.invalidateGameListCache(ctx)
 	return nil
 }
 
@@ -221,9 +224,28 @@ func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint, isAdm
 		return game, nil
 	}
 
-	game, err := s.crudService.GetByID(ctx, id)
-	if err != nil {
-		return nil, err
+	// Кэш-промах: singleflight на загрузку из БД (P2) — при стампеде на
+	// «горячую» игру только один запрос выполняет полный preload, остальные
+	// ждут результат. CanViewGame проверяется вне singleflight (per-viewer).
+	val, sfErr, _ := s.sg.Do(cacheKey, func() (any, error) {
+		if game, ok := cacheGetGame(s.cache, ctx, cacheKey); ok {
+			return game, nil
+		}
+		game, err := s.crudService.GetByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if !game.IsDraft {
+			s.cache.SetWithCtx(ctx, cacheKey, game, 5*time.Minute)
+		}
+		return game, nil
+	})
+	if sfErr != nil {
+		return nil, sfErr
+	}
+	game, ok := val.(*Game)
+	if !ok {
+		return nil, errors.New("game: unexpected cached type")
 	}
 
 	ok, err := s.crudService.CanViewGame(ctx, game, viewerID, role)
@@ -233,11 +255,6 @@ func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint, isAdm
 	if !ok {
 		return nil, ErrGameNotFound
 	}
-
-	if !game.IsDraft {
-		s.cache.SetWithCtx(ctx, cacheKey, game, 5*time.Minute)
-	}
-
 	return game, nil
 }
 
@@ -268,6 +285,7 @@ func (s *GameService) Delete(ctx context.Context, id uint, userID uint) error {
 		return deleteErr
 	}
 	s.invalidateGameCache(ctx, id)
+	s.invalidateGameListCache(ctx)
 	s.deleteGameFiles(ctx, id, game.CoverPath)
 	return nil
 }
@@ -284,6 +302,7 @@ func (s *GameService) AdminDelete(ctx context.Context, id uint) error {
 		return err
 	}
 	s.invalidateGameCache(ctx, id)
+	s.invalidateGameListCache(ctx)
 	s.cache.DeleteWithCtx(ctx, fmt.Sprintf("rating:game:%d", id))
 	// Файлы — после успешного удаления строки (B7).
 	s.deleteGameFiles(ctx, id, game.CoverPath)
@@ -326,6 +345,13 @@ func (s *GameService) invalidateGameCache(ctx context.Context, id uint) {
 	s.cache.DeleteWithCtx(ctx, fmt.Sprintf("game:%d", id))
 }
 
+// invalidateGameListCache сбрасывает анонимный кэш листинга игр (P3):
+// запись/публикация/удаление игры должна отражаться на списках немедленно,
+// а не через TTL 30 с.
+func (s *GameService) invalidateGameListCache(ctx context.Context) {
+	s.cache.DeleteByPrefixWithCtx(ctx, "games:list:")
+}
+
 // Publish делегирует GameCRUDService.
 func (s *GameService) Publish(ctx context.Context, id uint, userID uint) error {
 	err := s.crudService.Publish(ctx, id, userID)
@@ -333,6 +359,7 @@ func (s *GameService) Publish(ctx context.Context, id uint, userID uint) error {
 		return err
 	}
 	s.cache.DeleteWithCtx(ctx, fmt.Sprintf("game:%d", id))
+	s.invalidateGameListCache(ctx)
 	return nil
 }
 
@@ -529,6 +556,7 @@ func (s *GameService) SaveSettings(ctx context.Context, gameID uint, input GameS
 
 	// Инвалидируем кэш game:%d — GameSetting входит в закэшированную игру (P4).
 	s.cache.DeleteWithCtx(ctx, fmt.Sprintf("game:%d", gameID))
+	s.invalidateGameListCache(ctx)
 
 	return &settings, nil
 }

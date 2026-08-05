@@ -73,6 +73,18 @@ func (s *BlackboxVoteService) StartVoting(ctx context.Context, gamePassingID, le
 		IsOpen:        true,
 	}
 	if err := s.blackboxRepo.CreateSession(ctx, session); err != nil {
+		// Конкурентный StartVoting уже создал сессию (unique violation по
+		// idx_passing_level) — перечитываем и отвечаем бизнес-сообщением
+		// вместо 500 (B8: check-then-insert гонка закрыта на уровне БД).
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			existing, rErr := s.blackboxRepo.GetSessionByPassingAndLevel(ctx, gamePassingID, levelID)
+			if rErr == nil {
+				if existing.IsOpen {
+					return errors.New("голосование уже активно")
+				}
+				return errors.New("голосование уже было проведено")
+			}
+		}
 		return err
 	}
 
@@ -256,24 +268,41 @@ func (s *BlackboxVoteService) CloseVoting(ctx context.Context, sessionID, userID
 		return "", errors.New("только автор или модератор может завершить голосование")
 	}
 
-	results, getResultsErr := s.GetVotingResults(ctx, sessionID, userID)
-	if getResultsErr != nil {
-		return "", getResultsErr
-	}
-
-	maxVotes := 0
-	winner := ""
-	for option, count := range results {
-		if count > maxVotes {
-			maxVotes = count
-			winner = option
+	// Закрытие + подсчёт голосов в одной транзакции с блокировкой сессии:
+	// голос, пришедший между чтением результатов и закрытием, учитывается (B8).
+	var winner string
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var lockedSession BlackboxVotingSession
+		if lockErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedSession, sessionID).Error; lockErr != nil {
+			return lockErr
 		}
-	}
 
-	session.IsOpen = false
-	session.WinnerOption = winner
-	if updateErr := s.blackboxRepo.UpdateSession(ctx, session); updateErr != nil {
-		return "", updateErr
+		var votes []BlackboxVote
+		if voteErr := tx.Where("session_id = ?", sessionID).Find(&votes).Error; voteErr != nil {
+			return voteErr
+		}
+
+		results := make(map[string]int)
+		for _, v := range votes {
+			results[v.Option]++
+		}
+		maxVotes := 0
+		for option, count := range results {
+			if count > maxVotes {
+				maxVotes = count
+				winner = option
+			}
+		}
+
+		lockedSession.IsOpen = false
+		lockedSession.WinnerOption = winner
+		if updateErr := tx.Save(&lockedSession).Error; updateErr != nil {
+			return updateErr
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
 	}
 
 	if s.cfg != nil && s.cfg.SMTP.Enabled {

@@ -273,6 +273,13 @@ func run() error {
 		if deps.Services.Tournament != nil {
 			deps.Services.Tournament.UpdateScoresForGame(ctx, gameID)
 		}
+		// Начисление очков рейтинга игрокам (B3): раньше UpdateRatingsForGame
+		// не вызывался в проде — игроки не получали очки за игры.
+		if deps.Services.Rating != nil {
+			if err := deps.Services.Rating.UpdateRatingsForGame(ctx, gameID); err != nil {
+				log.Error().Err(err).Uint("game_id", gameID).Msg("onGameFinished: UpdateRatingsForGame failed")
+			}
+		}
 	}
 
 	// Прокидываем колбэк в обычный игровой путь (SubmitCode/AcceptBlackboxAnswer)

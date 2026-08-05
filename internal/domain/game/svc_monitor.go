@@ -268,110 +268,119 @@ func (s *MonitorService) GameSnapshot(ctx context.Context, gameID uint) ([]TeamP
 }
 
 // CalculateResults пересчитывает итоговое время и места для завершённых прохождений.
+// Сериализовано через pg_advisory_xact_lock(gameID): два параллельных финиша
+// не должны перезаписывать места из частично-закоммиченного набора (B2).
 func (s *MonitorService) CalculateResults(ctx context.Context, gameID uint) error {
-	var passings []GamePassing
-	if err := s.DB.WithContext(ctx).Where("game_id = ? AND status = ?", gameID, StatusFinished).Find(&passings).Error; err != nil {
-		return err
-	}
-	if len(passings) == 0 {
-		return nil
-	}
+	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Advisory xact lock сериализует пересчёт по конкретной игре.
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", int64(gameID)).Error; err != nil {
+			return fmt.Errorf("pg_advisory_xact_lock: %w", err)
+		}
 
-	// Загружаем все progresses одним запросом
-	type progressDuration struct {
-		GamePassingID  uint
-		FinishedAt     *time.Time
-		StartedAt      time.Time
-		PenaltySeconds int
-	}
-	var progresses []progressDuration
-	if err := s.DB.Table("level_progresses").Select("game_passing_id, finished_at, started_at, penalty_seconds").
-		Where("game_passing_id IN ?", func() []uint {
-			ids := make([]uint, len(passings))
-			for i, p := range passings {
-				ids[i] = p.ID
+		var passings []GamePassing
+		if err := tx.Where("game_id = ? AND status = ?", gameID, StatusFinished).Find(&passings).Error; err != nil {
+			return err
+		}
+		if len(passings) == 0 {
+			return nil
+		}
+
+		// Загружаем все progresses одним запросом
+		type progressDuration struct {
+			GamePassingID  uint
+			FinishedAt     *time.Time
+			StartedAt      time.Time
+			PenaltySeconds int
+		}
+		var progresses []progressDuration
+		if err := tx.Table("level_progresses").Select("game_passing_id, finished_at, started_at, penalty_seconds").
+			Where("game_passing_id IN ?", func() []uint {
+				ids := make([]uint, len(passings))
+				for i, p := range passings {
+					ids[i] = p.ID
+				}
+				return ids
+			}()).Find(&progresses).Error; err != nil {
+			return err
+		}
+
+		// Группируем progresses по passing
+		durationMap := make(map[uint]time.Duration)
+		for _, pr := range progresses {
+			if pr.FinishedAt != nil {
+				durationMap[pr.GamePassingID] += pr.FinishedAt.Sub(pr.StartedAt) + time.Duration(pr.PenaltySeconds)*time.Second
 			}
-			return ids
-		}()).Find(&progresses).Error; err != nil {
-		return err
-	}
-
-	// Группируем progresses по passing
-	durationMap := make(map[uint]time.Duration)
-	for _, pr := range progresses {
-		if pr.FinishedAt != nil {
-			durationMap[pr.GamePassingID] += pr.FinishedAt.Sub(pr.StartedAt) + time.Duration(pr.PenaltySeconds)*time.Second
 		}
-	}
 
-	// Рассчитываем места
-	type passingResult struct {
-		ID       uint
-		Duration time.Duration
-	}
-	var results []passingResult
-	for _, p := range passings {
-		total := durationMap[p.ID]
-		results = append(results, passingResult{ID: p.ID, Duration: total})
-	}
+		// Рассчитываем места
+		type passingResult struct {
+			ID       uint
+			Duration time.Duration
+		}
+		var results []passingResult
+		for _, p := range passings {
+			total := durationMap[p.ID]
+			results = append(results, passingResult{ID: p.ID, Duration: total})
+		}
 
-	// Batch update durations и места через отдельные UPDATE (проще и безопаснее)
-	if len(results) == 0 {
+		// Batch update durations и места через отдельные UPDATE (проще и безопаснее)
+		if len(results) == 0 {
+			return nil
+		}
+
+		sort.Slice(results, func(i, j int) bool {
+			return results[i].Duration < results[j].Duration
+		})
+
+		// Строим оба CASE и список ID в одном цикле (гарантирует синхронный порядок)
+		var durationCases []string
+		var durationArgs []any
+		var placeCases []string
+		var placeArgs []any
+		var ids []uint
+
+		lastPlace := 0
+		for i, res := range results {
+			durationCases = append(durationCases, "WHEN ? THEN ?")
+			durationArgs = append(durationArgs, res.ID, res.Duration)
+
+			place := i + 1
+			if i > 0 && results[i].Duration == results[i-1].Duration {
+				place = lastPlace
+			}
+			lastPlace = place
+
+			placeCases = append(placeCases, "WHEN ? THEN ?")
+			placeArgs = append(placeArgs, res.ID, place)
+			ids = append(ids, res.ID)
+		}
+
+		idPlaceholders := joinPlaceholders(len(results))
+
+		// Первый UPDATE: длительность
+		durQuery := fmt.Sprintf(
+			"UPDATE game_passings SET result_duration = CASE id %s ELSE result_duration END WHERE id IN (%s)",
+			strings.Join(durationCases, " "),
+			idPlaceholders,
+		)
+		allDurationArgs := append(durationArgs, toAnySlice(ids)...)
+		if err := tx.Exec(durQuery, allDurationArgs...).Error; err != nil {
+			return fmt.Errorf("обновление длительности: %w", err)
+		}
+
+		// Второй UPDATE: места
+		placeQuery := fmt.Sprintf(
+			"UPDATE game_passings SET place = CASE id %s ELSE place END WHERE id IN (%s)",
+			strings.Join(placeCases, " "),
+			idPlaceholders,
+		)
+		allPlaceArgs := append(placeArgs, toAnySlice(ids)...)
+		if err := tx.Exec(placeQuery, allPlaceArgs...).Error; err != nil {
+			return fmt.Errorf("обновление места: %w", err)
+		}
+
 		return nil
-	}
-
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].Duration < results[j].Duration
 	})
-
-	// Строим оба CASE и список ID в одном цикле (гарантирует синхронный порядок)
-	var durationCases []string
-	var durationArgs []any
-	var placeCases []string
-	var placeArgs []any
-	var ids []uint
-
-	lastPlace := 0
-	for i, res := range results {
-		durationCases = append(durationCases, "WHEN ? THEN ?")
-		durationArgs = append(durationArgs, res.ID, res.Duration)
-
-		place := i + 1
-		if i > 0 && results[i].Duration == results[i-1].Duration {
-			place = lastPlace
-		}
-		lastPlace = place
-
-		placeCases = append(placeCases, "WHEN ? THEN ?")
-		placeArgs = append(placeArgs, res.ID, place)
-		ids = append(ids, res.ID)
-	}
-
-	idPlaceholders := joinPlaceholders(len(results))
-
-	// Первый UPDATE: длительность
-	durQuery := fmt.Sprintf(
-		"UPDATE game_passings SET result_duration = CASE id %s ELSE result_duration END WHERE id IN (%s)",
-		strings.Join(durationCases, " "),
-		idPlaceholders,
-	)
-	allDurationArgs := append(durationArgs, toAnySlice(ids)...)
-	if err := s.DB.WithContext(ctx).Exec(durQuery, allDurationArgs...).Error; err != nil {
-		return fmt.Errorf("обновление длительности: %w", err)
-	}
-
-	// Второй UPDATE: места
-	placeQuery := fmt.Sprintf(
-		"UPDATE game_passings SET place = CASE id %s ELSE place END WHERE id IN (%s)",
-		strings.Join(placeCases, " "),
-		idPlaceholders,
-	)
-	allPlaceArgs := append(placeArgs, toAnySlice(ids)...)
-	if err := s.DB.WithContext(ctx).Exec(placeQuery, allPlaceArgs...).Error; err != nil {
-		return fmt.Errorf("обновление места: %w", err)
-	}
-
-	return nil
 }
 
 func joinPlaceholders(n int) string {
