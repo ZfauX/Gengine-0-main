@@ -84,8 +84,8 @@ func RegisterRoutes(
 	}
 }
 
-// adminOnlyMiddleware РїСЂРѕРІРµСЂСЏРµС‚, С‡С‚Рѕ РїРѕР»СЊР·РѕРІР°С‚РµР»СЊ СЏРІР»СЏРµС‚СЃСЏ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂРѕРј, РёСЃРїРѕР»СЊР·СѓСЏ СЂРѕР»СЊ РёР· РєРѕРЅС‚РµРєСЃС‚Р° (РёР· JWT).
-// РќРµ С‚СЂРµР±СѓРµС‚ РїРµСЂРµРґР°С‡Рё *gorm.DB, С‚Р°Рє РєР°Рє СЂРѕР»СЊ СѓР¶Рµ СЃРѕС…СЂР°РЅРµРЅР° РІ РєРѕРЅС‚РµРєСЃС‚Рµ middleware.AuthRequired.
+// adminOnlyMiddleware проверяет, что пользователь является администратором, используя роль из контекста (из JWT).
+// Не требует передачи *gorm.DB, так как роль уже сохранена в контексте middleware.AuthRequired.
 func adminOnlyMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		role, exists := c.Get("role")

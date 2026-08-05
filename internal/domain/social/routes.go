@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// RegisterRoutes СЂРµРіРёСЃС‚СЂРёСЂСѓРµС‚ РјР°СЂС€СЂСѓС‚С‹ СЃРѕС†РёР°Р»СЊРЅС‹С… С„СѓРЅРєС†РёР№: РїРѕРґРїРёСЃРєРё.
+// RegisterRoutes регистрирует маршруты социальных функций: подписки.
 func RegisterRoutes(
 	router *gin.RouterGroup,
 	db *gorm.DB,

@@ -28,7 +28,7 @@ import (
 // РњРћРљР
 // =============================================================================
 
-// MockGameService вЂ” РјРѕРє РґР»СЏ GameServiceInterface
+// MockGameService — мок для GameServiceInterface
 type MockGameService struct {
 	mock.Mock
 }
@@ -177,7 +177,7 @@ func (m *MockGameService) SaveSettings(ctx context.Context, gameID uint, setting
 	return args.Get(0).(*GameSetting), args.Error(1)
 }
 
-// MockCoAuthorService вЂ” РјРѕРє РґР»СЏ CoAuthorServiceInterface
+// MockCoAuthorService — мок для CoAuthorServiceInterface
 type MockCoAuthorService struct {
 	mock.Mock
 }
@@ -217,7 +217,7 @@ func (m *MockCoAuthorService) List(ctx context.Context, gameID uint) ([]CoAuthor
 	return args.Get(0).([]CoAuthor), args.Error(1)
 }
 
-// MockAuditService вЂ” РјРѕРє РґР»СЏ AuditServiceInterface
+// MockAuditService — мок для AuditServiceInterface
 type MockAuditService struct {
 	mock.Mock
 }
@@ -226,7 +226,7 @@ func (m *MockAuditService) Log(userID uint, action, objectType string, objectID 
 	m.Called(userID, action, objectType, objectID, details)
 }
 
-// MockStorage вЂ” РјРѕРє РґР»СЏ storage.FileStorage
+// MockStorage — мок для storage.FileStorage
 type MockStorage struct {
 	mock.Mock
 }
@@ -241,7 +241,7 @@ func (m *MockStorage) Delete(webPath string) error {
 	return args.Error(0)
 }
 
-// MockGamePassingService вЂ” РјРѕРє РґР»СЏ GamePassingServiceInterface
+// MockGamePassingService — мок для GamePassingServiceInterface
 type MockGamePassingService struct {
 	mock.Mock
 }
@@ -285,13 +285,13 @@ func (m *MockGamePassingService) ListTestPassings(ctx context.Context, gameID ui
 }
 
 // =============================================================================
-// Р’РЎРџРћРњРћР“РђРўР•Р›Р¬РќР«Р• Р¤РЈРќРљР¦РР
+// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 // =============================================================================
 
 func setupTestRouter() *gin.Engine {
 	gin.SetMode(gin.TestMode)
 
-	// РРЅРёС†РёР°Р»РёР·РёСЂСѓРµРј РјРёРЅРёРјР°Р»СЊРЅС‹Р№ РЅР°Р±РѕСЂ С€Р°Р±Р»РѕРЅРѕРІ РґР»СЏ С‚РµСЃС‚РѕРІ
+	// Инициализируем минимальный набор шаблонов для тестов
 	tmpl := template.New("layout.html")
 	tmpl.Funcs(templatefuncs.FuncMap())
 	// layout.html
@@ -299,7 +299,7 @@ func setupTestRouter() *gin.Engine {
 	if err != nil {
 		panic(err)
 	}
-	// РћРїСЂРµРґРµР»СЏРµРј РІСЃРµ С€Р°Р±Р»РѕРЅС‹, РєРѕС‚РѕСЂС‹Рµ РёСЃРїРѕР»СЊР·СѓСЋС‚СЃСЏ РІ С…РµРЅРґР»РµСЂР°С…
+	// Определяем все шаблоны, которые используются в хендлерах
 	templates := []string{
 		"games-list.html", "games-show.html", "games-new.html", "games-edit.html",
 		"game_passings-list.html", "game_passings-apply.html",
@@ -319,12 +319,12 @@ func setupTestRouter() *gin.Engine {
 	router := gin.New()
 	router.SetHTMLTemplate(tmpl)
 
-	// Р”РѕР±Р°РІР»СЏРµРј СЃРµСЃСЃРёРё
+	// Добавляем сессии
 	store := cookie.NewStore([]byte("test-session-secret-32chars-long!!!"))
 	router.Use(sessions.Sessions("gengine_test_session", store))
 
-	// Р’РјРµСЃС‚Рѕ РїРѕР»РЅРѕС†РµРЅРЅРѕР№ CSRF-Р·Р°С‰РёС‚С‹ РґРѕР±Р°РІР»СЏРµРј Р·Р°РіР»СѓС€РєСѓ, РєРѕС‚РѕСЂР°СЏ СѓСЃС‚Р°РЅР°РІР»РёРІР°РµС‚ С„РёРєС‚РёРІРЅС‹Рµ Р·РЅР°С‡РµРЅРёСЏ
-	// Р­С‚Рѕ РїРѕР·РІРѕР»СЏРµС‚ С…РµРЅРґР»РµСЂР°Рј РёСЃРїРѕР»СЊР·РѕРІР°С‚СЊ csrf.GetToken Р±РµР· РѕС€РёР±РѕРє
+	// Вместо полноценной CSRF-защиты добавляем заглушку, которая устанавливает фиктивные значения
+	// Это позволяет хендлерам использовать csrf.GetToken без ошибок
 	router.Use(func(c *gin.Context) {
 		c.Set("csrfSecret", "test-csrf-secret-32chars-long!!!")
 		c.Set("csrfToken", "test-csrf-token")
@@ -348,7 +348,7 @@ func createTestGame(id uint, name string) *Game {
 }
 
 // =============================================================================
-// РўР•РЎРўР«
+// ТЕСТЫ
 // =============================================================================
 
 func TestGameHandler_List_Success(t *testing.T) {
@@ -566,14 +566,14 @@ func TestGameHandler_Delete_Forbidden(t *testing.T) {
 	}
 
 	router := setupTestRouter()
-	// РџРµСЂРµРѕРїСЂРµРґРµР»СЏРµРј userID РґР»СЏ СЌС‚РѕРіРѕ С‚РµСЃС‚Р°
+	// Переопределяем userID для этого теста
 	router.Use(func(c *gin.Context) {
 		c.Set("userID", uint(2))
 		c.Next()
 	})
 	router.POST("/games/:id/delete", handler.Delete)
 
-	mockGameService.On("Delete", mock.Anything, uint(1), uint(2)).Return(errors.New("С‚РѕР»СЊРєРѕ РІР»Р°РґРµР»РµС† РјРѕР¶РµС‚ СѓРґР°Р»РёС‚СЊ РёРіСЂСѓ"))
+	mockGameService.On("Delete", mock.Anything, uint(1), uint(2)).Return(errors.New("только владелец может удалить игру"))
 
 	req := httptest.NewRequest("POST", "/games/1/delete", nil)
 	w := httptest.NewRecorder()
@@ -666,7 +666,7 @@ func TestGameHandler_Publish_Forbidden(t *testing.T) {
 	})
 	router.POST("/games/:id/publish", handler.Publish)
 
-	mockGameService.On("Publish", mock.Anything, uint(1), uint(2)).Return(errors.New("С‚РѕР»СЊРєРѕ Р°РІС‚РѕСЂ РёР»Рё РєРѕРЅС‚РµРЅС‚-РјРµРЅРµРґР¶РµСЂ РјРѕР¶РµС‚ РѕРїСѓР±Р»РёРєРѕРІР°С‚СЊ РёРіСЂСѓ"))
+	mockGameService.On("Publish", mock.Anything, uint(1), uint(2)).Return(errors.New("только автор или контент-менеджер может опубликовать игру"))
 
 	req := httptest.NewRequest("POST", "/games/1/publish", nil)
 	w := httptest.NewRecorder()

@@ -16,13 +16,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// SettingsHandler РѕР±СЂР°Р±Р°С‚С‹РІР°РµС‚ РЅР°СЃС‚СЂРѕР№РєРё РёРіСЂ.
+// SettingsHandler обрабатывает настройки игр.
 type SettingsHandler struct {
 	gameService GameServiceInterface
 	coAuthorSvc CoAuthorServiceInterface
 }
 
-// NewSettingsHandler СЃРѕР·РґР°С‘С‚ РЅРѕРІС‹Р№ SettingsHandler.
+// NewSettingsHandler создаёт новый SettingsHandler.
 func NewSettingsHandler(
 	gameService GameServiceInterface,
 	coAuthorSvc CoAuthorServiceInterface,
@@ -33,13 +33,13 @@ func NewSettingsHandler(
 	}
 }
 
-// SettingsPage РѕС‚РѕР±СЂР°Р¶Р°РµС‚ СЃС‚СЂР°РЅРёС†Сѓ РЅР°СЃС‚СЂРѕРµРє РёРіСЂС‹.
-// @Summary РќР°СЃС‚СЂРѕР№РєРё РёРіСЂС‹
+// SettingsPage отображает страницу настроек игры.
+// @Summary Настройки игры
 // @Tags games
 // @Produce html
-// @Param id path int true "ID РёРіСЂС‹"
-// @Success 200 {string} html "РЎС‚СЂР°РЅРёС†Р° РЅР°СЃС‚СЂРѕРµРє"
-// @Failure 401 {object} map[string]interface{} "РўСЂРµР±СѓРµС‚СЃСЏ Р°СѓС‚РµРЅС‚РёС„РёРєР°С†РёСЏ"
+// @Param id path int true "ID игры"
+// @Success 200 {string} html "Страница настроек"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 // @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Failure 404 {object} map[string]interface{} render.Tr(c, "handler.game_not_found")
 // @Router /games/{id}/settings [get]
@@ -98,13 +98,13 @@ func (h *SettingsHandler) SettingsPage(c *gin.Context) {
 	})
 }
 
-// SaveSettings СЃРѕС…СЂР°РЅСЏРµС‚ РЅР°СЃС‚СЂРѕР№РєРё РёРіСЂС‹.
-// @Summary РЎРѕС…СЂР°РЅРµРЅРёРµ РЅР°СЃС‚СЂРѕРµРє
+// SaveSettings сохраняет настройки игры.
+// @Summary Сохранение настроек
 // @Tags games
-// @Param id path int true "ID РёРіСЂС‹"
-// @Success 302 {string} string "РџРµСЂРµРЅР°РїСЂР°РІР»РµРЅРёРµ РЅР° /games/{id}/settings"
-// @Failure 400 {object} map[string]interface{} "РћС€РёР±РєР° РІР°Р»РёРґР°С†РёРё"
-// @Failure 401 {object} map[string]interface{} "РўСЂРµР±СѓРµС‚СЃСЏ Р°СѓС‚РµРЅС‚РёС„РёРєР°С†РёСЏ"
+// @Param id path int true "ID игры"
+// @Success 302 {string} string "Перенаправление на /games/{id}/settings"
+// @Failure 400 {object} map[string]interface{} "Ошибка валидации"
+// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 // @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
 // @Router /games/{id}/settings [post]
 // @Security JWT
@@ -119,7 +119,7 @@ func (h *SettingsHandler) SaveSettings(c *gin.Context) {
 	if limitErr := LimitRequestBody(c, 1*1024*1024); limitErr != nil {
 		g, _ := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID, middleware.IsAdmin(c))
 		render.Page(c, http.StatusBadRequest, "games-settings.html", gin.H{
-			"Title": "РќР°СЃС‚СЂРѕР№РєРё РёРіСЂС‹",
+			"Title": "Настройки игры",
 			"Game":  g,
 			"Error": limitErr.Error(),
 			"csrf":  csrf.GetToken(c),
@@ -127,7 +127,7 @@ func (h *SettingsHandler) SaveSettings(c *gin.Context) {
 		return
 	}
 
-	// РџР°СЂСЃРёРј С‡РёСЃР»РѕРІС‹Рµ РїРѕР»СЏ
+	// Парсим числовые поля
 	hintPenaltySeconds, _ := strconv.Atoi(c.PostForm("hint_penalty_seconds"))
 	maxHints, _ := strconv.Atoi(c.PostForm("max_hints"))
 	perLevelTimeLimit, _ := strconv.Atoi(c.PostForm("per_level_time_limit"))
@@ -138,7 +138,7 @@ func (h *SettingsHandler) SaveSettings(c *gin.Context) {
 
 	log.Info().Int("hps", hintPenaltySeconds).Int("mh", maxHints).Int("pltl", perLevelTimeLimit).Bool("ah", allowHints).Bool("hauf", hideAnswersUntilFinished).Bool("as", autoStart).Msg("SaveSettings: parsed form values")
 
-	// Р’Р°Р»РёРґР°С†РёСЏ
+	// Валидация
 	if hintPenaltySeconds < 0 {
 		hintPenaltySeconds = 0
 	}
@@ -151,9 +151,9 @@ func (h *SettingsHandler) SaveSettings(c *gin.Context) {
 	if perLevelTimeLimit > 3600 {
 		g, _ := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID, middleware.IsAdmin(c))
 		render.Page(c, http.StatusBadRequest, "games-settings.html", gin.H{
-			"Title": "РќР°СЃС‚СЂРѕР№РєРё РёРіСЂС‹",
+			"Title": "Настройки игры",
 			"Game":  g,
-			"Error": "Р›РёРјРёС‚ РІСЂРµРјРµРЅРё РЅР° СѓСЂРѕРІРµРЅСЊ РЅРµ РјРѕР¶РµС‚ РїСЂРµРІС‹С€Р°С‚СЊ 3600 РјРёРЅСѓС‚",
+			"Error": "Лимит времени на уровень не может превышать 3600 минут",
 			"csrf":  csrf.GetToken(c),
 		})
 		return
@@ -177,7 +177,7 @@ func (h *SettingsHandler) SaveSettings(c *gin.Context) {
 		}
 	}
 
-	// РџРѕРёСЃРє Рё СЃРѕС…СЂР°РЅРµРЅРёРµ РЅР°СЃС‚СЂРѕРµРє
+	// Поиск и сохранение настроек
 	settings, err := h.gameService.SaveSettings(c.Request.Context(), g.ID, GameSetting{
 		AllowHints:               allowHints,
 		HintPenaltySeconds:       hintPenaltySeconds,
@@ -189,7 +189,7 @@ func (h *SettingsHandler) SaveSettings(c *gin.Context) {
 	if err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Msg("SettingsHandler.SaveSettings: failed to save settings")
 		render.Page(c, http.StatusInternalServerError, "games-settings.html", gin.H{
-			"Title":    "РќР°СЃС‚СЂРѕР№РєРё РёРіСЂС‹",
+			"Title":    "Настройки игры",
 			"Game":     g,
 			"Settings": *settings,
 			"Error":    render.LocalizeError(c, err.Error()),

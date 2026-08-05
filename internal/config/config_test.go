@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestMain СѓСЃС‚Р°РЅР°РІР»РёРІР°РµС‚ РѕР±СЏР·Р°С‚РµР»СЊРЅС‹Рµ РїРµСЂРµРјРµРЅРЅС‹Рµ РѕРєСЂСѓР¶РµРЅРёСЏ РїРµСЂРµРґ Р·Р°РїСѓСЃРєРѕРј Р»СЋР±РѕРіРѕ С‚РµСЃС‚Р°,
-// С‡С‚РѕР±С‹ РёР·Р±РµР¶Р°С‚СЊ РѕС€РёР±РѕРє РїСЂРё РІС‹Р·РѕРІРµ LoadConfig РІ С‚РµСЃС‚Р°С….
+// TestMain устанавливает обязательные переменные окружения перед запуском любого теста,
+// чтобы избежать ошибок при вызове LoadConfig в тестах.
 func TestMain(m *testing.M) {
 	_ = os.Setenv("DB_HOST", "localhost")
 	_ = os.Setenv("DB_PORT", "5432")
@@ -28,10 +28,10 @@ func TestMain(m *testing.M) {
 }
 
 // =============================================================================
-// Р’СЃРїРѕРјРѕРіР°С‚РµР»СЊРЅС‹Рµ С„СѓРЅРєС†РёРё РґР»СЏ С‚РµСЃС‚РѕРІ
+// Вспомогательные функции для тестов
 // =============================================================================
 
-// setEnv СѓСЃС‚Р°РЅР°РІР»РёРІР°РµС‚ РїРµСЂРµРјРµРЅРЅСѓСЋ РѕРєСЂСѓР¶РµРЅРёСЏ Рё РІРѕР·РІСЂР°С‰Р°РµС‚ С„СѓРЅРєС†РёСЋ РґР»СЏ РµС‘ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРёСЏ.
+// setEnv устанавливает переменную окружения и возвращает функцию для её восстановления.
 func setEnv(t *testing.T, key, value string) func() {
 	t.Helper()
 	old, exists := os.LookupEnv(key)
@@ -46,7 +46,7 @@ func setEnv(t *testing.T, key, value string) func() {
 }
 
 // =============================================================================
-// РўРµСЃС‚С‹ РґР»СЏ LoadConfig (СѓСЃРїРµС€РЅС‹Рµ СЃС†РµРЅР°СЂРёРё)
+// Тесты для LoadConfig (успешные сценарии)
 // =============================================================================
 
 func TestLoadConfig_Success(t *testing.T) {
@@ -238,15 +238,15 @@ func TestLoadConfig_ReCAPTCHAEnabled(t *testing.T) {
 }
 
 // =============================================================================
-// РўРµСЃС‚С‹ РѕС€РёР±РѕС‡РЅС‹С… СЃРёС‚СѓР°С†РёР№ (РїСЂСЏРјР°СЏ РїСЂРѕРІРµСЂРєР° РѕС€РёР±РѕРє)
+// Тесты ошибочных ситуаций (прямая проверка ошибок)
 // =============================================================================
 
 func TestLoadConfig_MissingRequired(t *testing.T) {
-	// РЈРґР°Р»СЏРµРј РѕР±СЏР·Р°С‚РµР»СЊРЅСѓСЋ РїРµСЂРµРјРµРЅРЅСѓСЋ Рё РїСЂРѕРІРµСЂСЏРµРј РѕС€РёР±РєСѓ
-	cleanup := setEnv(t, "DB_HOST", "") // РїСѓСЃС‚РѕРµ Р·РЅР°С‡РµРЅРёРµ
+	// Удаляем обязательную переменную и проверяем ошибку
+	cleanup := setEnv(t, "DB_HOST", "") // пустое значение
 	defer cleanup()
-	// РўР°РєР¶Рµ РЅСѓР¶РЅРѕ СѓР±РµРґРёС‚СЊСЃСЏ, С‡С‚Рѕ РґСЂСѓРіРёРµ РїРµСЂРµРјРµРЅРЅС‹Рµ СѓСЃС‚Р°РЅРѕРІР»РµРЅС‹ (СѓР¶Рµ РµСЃС‚СЊ РІ TestMain)
-	// РќРѕ DB_HOST РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РїСѓСЃС‚С‹Рј
+	// Также нужно убедиться, что другие переменные установлены (уже есть в TestMain)
+	// Но DB_HOST должен быть пустым
 	_, err := LoadConfig()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "DB_HOST")
@@ -275,9 +275,9 @@ func TestLoadConfig_JWTSecretPrefixNotWeak(t *testing.T) {
 func TestLoadConfig_OAuthEnabledMissingClientID(t *testing.T) {
 	cleanup1 := setEnv(t, "VK_ENABLED", "true")
 	defer cleanup1()
-	cleanup2 := setEnv(t, "VK_CLIENT_ID", "") // РїСѓСЃС‚Рѕ
+	cleanup2 := setEnv(t, "VK_CLIENT_ID", "") // пусто
 	defer cleanup2()
-	cleanup3 := setEnv(t, "VK_CLIENT_SECRET", "") // РїСѓСЃС‚Рѕ
+	cleanup3 := setEnv(t, "VK_CLIENT_SECRET", "") // пусто
 	defer cleanup3()
 	_, err := LoadConfig()
 	assert.Error(t, err)
@@ -289,7 +289,7 @@ func TestLoadConfig_SMTPEnabledMissingFrom(t *testing.T) {
 	defer cleanup1()
 	cleanup2 := setEnv(t, "SMTP_HOST", "smtp.example.com")
 	defer cleanup2()
-	cleanup3 := setEnv(t, "SMTP_FROM", "") // РїСѓСЃС‚Рѕ
+	cleanup3 := setEnv(t, "SMTP_FROM", "") // пусто
 	defer cleanup3()
 	_, err := LoadConfig()
 	assert.Error(t, err)
@@ -305,7 +305,7 @@ func TestLoadConfig_InvalidDuration(t *testing.T) {
 }
 
 // =============================================================================
-// Р‘РµРЅС‡РјР°СЂРє РґР»СЏ LoadConfig
+// Бенчмарк для LoadConfig
 // =============================================================================
 
 func BenchmarkLoadConfig(b *testing.B) {

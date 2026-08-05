@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RegisterRoutes СЂРµРіРёСЃС‚СЂРёСЂСѓРµС‚ РјР°СЂС€СЂСѓС‚С‹ С‚СѓСЂРЅРёСЂРѕРІ.
+// RegisterRoutes регистрирует маршруты турниров.
 func RegisterRoutes(
 	r *gin.RouterGroup,
 	tournamentService *TournamentService,

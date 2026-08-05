@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RegisterRoutes СЂРµРіРёСЃС‚СЂРёСЂСѓРµС‚ РјР°СЂС€СЂСѓС‚С‹ РєР°Р»РµРЅРґР°СЂСЏ.
+// RegisterRoutes регистрирует маршруты календаря.
 func RegisterRoutes(router *gin.RouterGroup, gameRepo game.GameRepository, baseURL string) {
 	calendarHandler := NewCalendarHandler(gameRepo).WithBaseURL(baseURL)
 

@@ -16,8 +16,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// GameDeps СЃРѕРґРµСЂР¶РёС‚ РІСЃРµ Р·Р°РІРёСЃРёРјРѕСЃС‚Рё РґР»СЏ СЂРµРіРёСЃС‚СЂР°С†РёРё РјР°СЂС€СЂСѓС‚РѕРІ РёРіСЂРѕРІРѕРіРѕ РґРѕРјРµРЅР°.
-// РџРѕР·РІРѕР»СЏРµС‚ РёР·Р±РµР¶Р°С‚СЊ РїРµСЂРµРґР°С‡Рё 16+ РїР°СЂР°РјРµС‚СЂРѕРІ РІ RegisterRoutes.
+// GameDeps содержит все зависимости для регистрации маршрутов игрового домена.
+// Позволяет избежать передачи 16+ параметров в RegisterRoutes.
 type GameDeps struct {
 	DB              *gorm.DB
 	GameService     *GameService
@@ -39,7 +39,7 @@ type GameDeps struct {
 	LevelService    *level.LevelService
 }
 
-// RegisterRoutes СЂРµРіРёСЃС‚СЂРёСЂСѓРµС‚ РјР°СЂС€СЂСѓС‚С‹ РґР»СЏ РёРіСЂ, РёСЃРїРѕР»СЊР·СѓСЏ РіРѕС‚РѕРІС‹Рµ РѕР±СЂР°Р±РѕС‚С‡РёРєРё.
+// RegisterRoutes регистрирует маршруты для игр, используя готовые обработчики.
 func RegisterRoutes(r *gin.RouterGroup, deps *GameDeps) {
 	db := deps.DB
 	gameService := deps.GameService
@@ -61,7 +61,7 @@ func RegisterRoutes(r *gin.RouterGroup, deps *GameDeps) {
 		auditSvc,
 	)
 
-	// РЎРѕР·РґР°С‘Рј СЃРїРµС†РёР°Р»РёР·РёСЂРѕРІР°РЅРЅС‹Рµ РѕР±СЂР°Р±РѕС‚С‡РёРєРё РґР»СЏ РєР°Р¶РґРѕРіРѕ РїРѕРґРґРѕРјРµРЅР°
+	// Создаём специализированные обработчики для каждого поддомена
 	passingHandler := NewPassingHandler(
 		passingService,
 		gameAdminSvc,
@@ -80,11 +80,11 @@ func RegisterRoutes(r *gin.RouterGroup, deps *GameDeps) {
 	autocompleteHandler := NewAutocompleteHandler(db)
 	gameStatsHandler := NewGameStatsHandler(gameService, deps.GamePlaySvc)
 
-	// ReviewHandler РґР»СЏ РѕС‚Р·С‹РІРѕРІ
+	// ReviewHandler для отзывов
 	reviewHandler := NewReviewHandler(reviewService)
 
 	// ========================================================================
-	// РџСѓР±Р»РёС‡РЅС‹Рµ РјР°СЂС€СЂСѓС‚С‹ СЃ РћРџР¦РРћРќРђР›Р¬РќРћР™ Р°СѓС‚РµРЅС‚РёС„РёРєР°С†РёРµР№
+	// Публичные маршруты с ОПЦИОНАЛЬНОЙ аутентификацией
 	// ========================================================================
 	optionalAuth := r.Group("/games")
 	optionalAuth.Use(middleware.OptionalAuth(authService))
@@ -95,7 +95,7 @@ func RegisterRoutes(r *gin.RouterGroup, deps *GameDeps) {
 	}
 
 	// ========================================================================
-	// Р—Р°С‰РёС‰С‘РЅРЅС‹Рµ РјР°СЂС€СЂСѓС‚С‹ (С‚СЂРµР±СѓСЋС‚ РѕР±СЏР·Р°С‚РµР»СЊРЅРѕР№ Р°СѓС‚РµРЅС‚РёС„РёРєР°С†РёРё)
+	// Защищённые маршруты (требуют обязательной аутентификации)
 	// ========================================================================
 	protected := r.Group("/games")
 	protected.Use(middleware.AuthRequired(authService))
@@ -151,7 +151,7 @@ func RegisterRoutes(r *gin.RouterGroup, deps *GameDeps) {
 		protected.DELETE("/:id/photos/:photo_id", photoHandler.DeletePhoto)
 
 		// ============================================================
-		// РћРўР—Р«Р’Р«
+		// ОТЗЫВЫ
 		// ============================================================
 
 		protected.GET("/:id/review", reviewHandler.ShowForm)
@@ -159,11 +159,11 @@ func RegisterRoutes(r *gin.RouterGroup, deps *GameDeps) {
 		protected.POST("/:id/review", reviewHandler.Create)
 	}
 
-	// API РґР»СЏ autocomplete РїРѕРёСЃРєР° РёРіСЂ
+	// API для autocomplete поиска игр
 	api := r.Group("/api/search")
 	api.GET("/games", autocompleteHandler.Games)
 
-	// API РґР»СЏ СЃС‚Р°С‚РёСЃС‚РёРєРё РёРіСЂС‹ (AJAX)
+	// API для статистики игры (AJAX)
 	apiStats := r.Group("/api/games")
 	apiStats.Use(middleware.OptionalAuth(authService))
 	{
@@ -171,7 +171,7 @@ func RegisterRoutes(r *gin.RouterGroup, deps *GameDeps) {
 	}
 }
 
-// RegisterGameplayRoutes СЂРµРіРёСЃС‚СЂРёСЂСѓРµС‚ РјР°СЂС€СЂСѓС‚С‹ РёРіСЂРѕРІРѕРіРѕ РїСЂРѕС†РµСЃСЃР°.
+// RegisterGameplayRoutes регистрирует маршруты игрового процесса.
 func RegisterGameplayRoutes(
 	r *gin.RouterGroup,
 	handler *GameplayHandler,
@@ -190,7 +190,7 @@ func RegisterGameplayRoutes(
 	r.POST("/game/:passing_id/accept", middleware.CodeSubmissionRateLimit(1*time.Minute, 20), handler.AcceptAnswer)
 
 	// ============================================================
-	// РўР•РЎРўРћР’Р«Р• РњРђР РЁР РЈРўР«
+	// ТЕСТОВЫЕ МАРШРУТЫ
 	// ============================================================
 
 	r.GET("/testing/:passing_id", handler.ShowTestGame)

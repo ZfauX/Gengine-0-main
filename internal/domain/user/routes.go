@@ -16,7 +16,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// RegisterRoutes СЂРµРіРёСЃС‚СЂРёСЂСѓРµС‚ РІСЃРµ РјР°СЂС€СЂСѓС‚С‹ РїРѕР»СЊР·РѕРІР°С‚РµР»СЊСЃРєРѕРіРѕ РґРѕРјРµРЅР°.
+// RegisterRoutes регистрирует все маршруты пользовательского домена.
 func RegisterRoutes(
 	r *gin.RouterGroup,
 	cfg *config.Config,

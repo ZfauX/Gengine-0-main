@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// RegisterRoutes СЂРµРіРёСЃС‚СЂРёСЂСѓРµС‚ РјР°СЂС€СЂСѓС‚С‹ РґР»СЏ СѓСЂРѕРІРЅРµР№, РІРѕРїСЂРѕСЃРѕРІ Рё РѕС‚РІРµС‚РѕРІ.
+// RegisterRoutes регистрирует маршруты для уровней, вопросов и ответов.
 func RegisterRoutes(
 	r *gin.RouterGroup,
 	levelService *LevelService,
@@ -40,7 +40,7 @@ func RegisterRoutes(
 	protected.Use(middleware.AuthRequired(authService))
 
 	// ========================================================================
-	// РЈР РћР’РќР
+	// УРОВНИ
 	// ========================================================================
 
 	protected.GET("/", handler.ListByGame)
@@ -64,7 +64,7 @@ func RegisterRoutes(
 	protected.POST("/:level_id/move", handler.Move)
 
 	// ========================================================================
-	// Р’РћРџР РћРЎР«
+	// ВОПРОСЫ
 	// ========================================================================
 
 	questions := protected.Group("/:level_id/questions")
@@ -84,7 +84,7 @@ func RegisterRoutes(
 		questions.POST("/:question_id/delete", handler.DeleteQuestion)
 
 		// ====================================================================
-		// РћРўР’Р•РўР«
+		// ОТВЕТЫ
 		// ====================================================================
 
 		answers := questions.Group("/:question_id/answers")

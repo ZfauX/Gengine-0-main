@@ -1,7 +1,7 @@
 package i18n
 
 var enMessages = map[string]string{
-	// в”Ђв”Ђ Generic в”Ђв”Ђ
+	// ── Generic ──
 	"generic.server_error":            "Internal server error",
 	"generic.bad_request":             "Bad request",
 	"generic.not_found":               "Not found",
@@ -27,7 +27,7 @@ var enMessages = map[string]string{
 	"generic.streaming_not_supported": "streaming not supported",
 	"generic.unknown_error":           "Unknown error",
 
-	// в”Ђв”Ђ Auth в”Ђв”Ђ
+	// ── Auth ──
 	"auth.email_not_found":              "Invalid email or password",
 	"auth.invalid_credentials":          "Invalid email or password",
 	"auth.internal_error":               "Internal server error",
@@ -87,7 +87,7 @@ var enMessages = map[string]string{
 	"auth.internal_server":              "internal server error",
 	"auth.invalid_game_id_param":        "invalid game_id",
 
-	// в”Ђв”Ђ 2FA в”Ђв”Ђ
+	// ── 2FA ──
 	"twofa.enter_code":               "Enter verification code",
 	"twofa.code_must_be_6digits":     "Code must be 6 digits",
 	"twofa.code_digits_only":         "Code must contain only digits",
@@ -98,7 +98,7 @@ var enMessages = map[string]string{
 	"twofa.enter_password":           "Enter current password",
 	"twofa.success_disabled":         "2FA disabled",
 
-	// в”Ђв”Ђ Push в”Ђв”Ђ
+	// ── Push ──
 	"push.invalid_subscription": "Invalid subscription format",
 	"push.update_error":         "Failed to update subscription: %w",
 	"push.save_error":           "Failed to save subscription: %w",
@@ -106,7 +106,7 @@ var enMessages = map[string]string{
 	"push.invalid_request":      "Invalid request",
 	"push.error":                "error",
 
-	// в”Ђв”Ђ Game в”Ђв”Ђ
+	// ── Game ──
 	"game.not_found":                    "Game not found",
 	"game.breadcrumb_label":             "Game",
 	"game.only_owner_can_delete":        "Only the owner can delete the game",
@@ -134,7 +134,7 @@ var enMessages = map[string]string{
 	"game.failed_check_perms":           "Failed to check permissions: %w",
 	"game.failed_check_active_passings": "Failed to check active passings: %w",
 
-	// в”Ђв”Ђ Game: Cover в”Ђв”Ђ
+	// ── Game: Cover ──
 	"game.cover.save_failed":     "Failed to save cover: %w",
 	"game.cover.save_new_failed": "Failed to save new cover: %w",
 	"game.cover.open_failed":     "Failed to open file: %w",
@@ -142,13 +142,13 @@ var enMessages = map[string]string{
 	"game.cover.invalid_format":  "Only JPEG, PNG and WebP are allowed",
 	"game.cover.save_error":      "Failed to save cover: %w",
 
-	// в”Ђв”Ђ Game: Co-author в”Ђв”Ђ
+	// ── Game: Co-author ──
 	"game.coauthor.only_owner":       "Only the owner can manage co-authors",
 	"game.coauthor.owner_has_access": "Owner already has full access",
 	"game.coauthor.already_coauthor": "This user is already a co-author",
 	"game.coauthor.unknown_role":     "Unknown role: %s",
 
-	// в”Ђв”Ђ Game: Passing / Application в”Ђв”Ђ
+	// ── Game: Passing / Application ──
 	"game.passing.only_captain":                  "Only the captain can apply",
 	"game.passing.cant_apply_draft":              "Cannot apply to a draft",
 	"game.passing.registration_closed":           "Registration is closed",
@@ -162,7 +162,7 @@ var enMessages = map[string]string{
 	"game.passing.not_accepted_or_started":       "Game has not been accepted or has already started",
 	"game.passing.invalid_status":                "Invalid status",
 
-	// в”Ђв”Ђ Game: Play в”Ђв”Ђ
+	// ── Game: Play ──
 	"game.play.file_not_supported":    "This level does not support file answers",
 	"game.play.not_started":           "Game has not started",
 	"game.play.hints_disabled":        "Hints are disabled",
@@ -175,32 +175,32 @@ var enMessages = map[string]string{
 	"game.play.file_expected":         "A file is expected for this level, not text code",
 	"game.play.no_pending_attempt":    "No pending attempt to confirm",
 
-	// в”Ђв”Ђ Game: Attempt в”Ђв”Ђ
+	// ── Game: Attempt ──
 	"game.attempt.file_expected": "A file is expected for this level, not text code",
 	"game.attempt.no_pending":    "No pending attempt to confirm",
 
-	// в”Ђв”Ђ Game: Review в”Ђв”Ђ
+	// ── Game: Review ──
 	"game.review.rating_1to5":     "Rating must be from 1 to 5",
 	"game.review.rating_1to10":    "Rating must be from 1 to 10",
 	"game.review.comment_max_500": "Comment cannot exceed 500 characters",
 	"game.review.cannot_review":   "You are not allowed to leave a review",
 
-	// в”Ђв”Ђ Game: Notes в”Ђв”Ђ
+	// ── Game: Notes ──
 	"game.note.only_author_view":    "Only the author or co-author can view notes",
 	"game.note.only_author_create":  "Only the author or co-author can create notes",
 	"game.note.no_rights_delete":    "No rights to delete",
 	"game.note.invalid_note_id":     "Invalid note ID",
 	"game.note.invalid_data_format": "Invalid data format: %s",
 
-	// в”Ђв”Ђ Game: Photo в”Ђв”Ђ
+	// ── Game: Photo ──
 	"game.photo.no_rights_delete": "No rights to delete photo",
 
-	// в”Ђв”Ђ Game: Monitor в”Ђв”Ђ
+	// ── Game: Monitor ──
 	"game.monitor.unexpected_type": "unexpected type for result",
 	"game.monitor.update_duration": "Failed to update duration: %w",
 	"game.monitor.update_place":    "Failed to update place: %w",
 
-	// в”Ђв”Ђ Game: Autocomplete в”Ђв”Ђ
+	// ── Game: Autocomplete ──
 	"game.autocomplete.invalid_request": "Invalid request",
 	"game.autocomplete.search_error":    "Search error",
 	"game.autocomplete.invalid_game_id": "Invalid game ID",
@@ -208,16 +208,16 @@ var enMessages = map[string]string{
 	"game.autocomplete.reviews_error":   "Failed to load reviews",
 	"game.autocomplete.rating_error":    "Failed to calculate rating",
 
-	// в”Ђв”Ђ Game: SSE в”Ђв”Ђ
+	// ── Game: SSE ──
 	"game.sse.invalid_game_id":         "Invalid game_id",
 	"game.sse.too_many_connections":    "Too many SSE connections",
 	"game.sse.origin_not_allowed":      "origin not allowed",
 	"game.sse.streaming_not_supported": "streaming not supported",
 
-	// в”Ђв”Ђ Game: Export в”Ђв”Ђ
+	// ── Game: Export ──
 	"game.export.only_captain_or_author": "Only the captain or author can export results",
 
-	// в”Ђв”Ђ Level в”Ђв”Ђ
+	// ── Level ──
 	"level.position_exists":                 "A level with position %d already exists in this game",
 	"level.position_non_negative":           "Position must be a non-negative number",
 	"level.invalid_type":                    "Invalid level type",
@@ -236,11 +236,11 @@ var enMessages = map[string]string{
 	"level.no_rights_delete_answer":         "No rights to delete answer",
 	"level.must_have_one_answer":            "At least one answer must remain",
 
-	// в”Ђв”Ђ Level Progress в”Ђв”Ђ
+	// ── Level Progress ──
 	"level.no_active_level": "No active level",
 	"level.no_levels":       "Game has no levels",
 
-	// в”Ђв”Ђ Team в”Ђв”Ђ
+	// ── Team ──
 	"team.not_found":                     "Team not found",
 	"team.only_captain_or_author_add":    "Only the captain or game author can add members",
 	"team.user_already_member":           "User is already a member",
@@ -261,7 +261,7 @@ var enMessages = map[string]string{
 	"team.only_captain_apply":            "Only the captain can apply",
 	"team.cannot_leave_captain":          "Cannot remove the captain",
 
-	// в”Ђв”Ђ Tournament в”Ђв”Ђ
+	// ── Tournament ──
 	"tournament.only_author_edit":              "Only the author can edit the tournament",
 	"tournament.only_author_add_game":          "Only the tournament author can add games",
 	"tournament.game_already_in":               "Game is already in the tournament",
@@ -273,10 +273,10 @@ var enMessages = map[string]string{
 	"tournament.points_for_third_negative":     "Points for third place cannot be negative",
 	"tournament.points_participation_negative": "Points for participation cannot be negative",
 
-	// в”Ђв”Ђ Social в”Ђв”Ђ
+	// ── Social ──
 	"social.cannot_follow_self": "Cannot subscribe to yourself",
 
-	// в”Ђв”Ђ Monitor в”Ђв”Ђ
+	// ── Monitor ──
 	"monitor.only_author_vote":      "Only the author can start voting",
 	"monitor.vote_already_active":   "Voting is already active",
 	"monitor.vote_already_held":     "Voting has already been held",
@@ -291,12 +291,12 @@ var enMessages = map[string]string{
 	"monitor.too_many_sse":          "Too many SSE connections",
 	"monitor.internal_error":        "Internal error",
 
-	// в”Ђв”Ђ User Profile в”Ђв”Ђ
+	// ── User Profile ──
 	"user.profile.not_found":    "Profile not found",
 	"user.profile.hidden":       "Profile is hidden",
 	"user.profile.invalid_form": "Invalid form data",
 
-	// в”Ђв”Ђ Notification в”Ђв”Ђ
+	// ── Notification ──
 	"notification.settings_load_error":  "Failed to load settings",
 	"notification.invalid_data":         "Invalid data",
 	"notification.save_error":           "Failed to save",
@@ -304,9 +304,9 @@ var enMessages = map[string]string{
 	"notification.too_many_connections": "Too many connections",
 	"notification.internal_error":       "Internal error",
 
-	// в”Ђв”Ђ Admin / Backup в”Ђв”Ђ
+	// ── Admin / Backup ──
 	"admin.backup_dir_failed":      "Failed to create backup directory: %w",
-	"admin.pg_dump_not_found":      "pg_dump not found in PATH: %w вЂ” make sure PostgreSQL is installed and pg_dump is available",
+	"admin.pg_dump_not_found":      "pg_dump not found in PATH: %w — make sure PostgreSQL is installed and pg_dump is available",
 	"admin.pg_dump_failed":         "pg_dump failed: %w, output: %s",
 	"admin.backup_file_not_found":  "Backup file not found",
 	"admin.user_get_error":         "Failed to get user",
@@ -315,14 +315,14 @@ var enMessages = map[string]string{
 	"admin.cannot_delete_self":     "You cannot delete your own account",
 	"admin.game_delete_error":      "Failed to delete game",
 
-	// в”Ђв”Ђ Export в”Ђв”Ђ
+	// ── Export ──
 	"export.empty_id":               "Empty id parameter",
 	"export.invalid_game_id":        "Invalid game id",
 	"export.game_not_found":         "Game not found",
 	"export.access_denied":          "Access denied",
 	"export.only_captain_or_author": "Only the captain or author can export results",
 
-	// в”Ђв”Ђ Rate Limit в”Ђв”Ђ
+	// ── Rate Limit ──
 	"rate_limit.global":                   "Too many requests",
 	"rate_limit.login":                    "Too many login attempts, please try again later",
 	"rate_limit.register":                 "Too many registration attempts, please try again later",
@@ -331,7 +331,7 @@ var enMessages = map[string]string{
 	"rate_limit.api":                      "Too many API requests, please try again later",
 	"rate_limit.notification_connections": "Too many connections",
 
-	// в”Ђв”Ђ Validation в”Ђв”Ђ
+	// ── Validation ──
 	"validation.required":                   "%s cannot be empty",
 	"validation.min_length":                 "%s must be at least %d characters",
 	"validation.max_length":                 "%s cannot exceed %d characters",
@@ -354,14 +354,14 @@ var enMessages = map[string]string{
 	"validation.regex_invalid":              "%s has an invalid format",
 	"validation.regex_error":                "Validation error: %s",
 
-	// в”Ђв”Ђ Middleware в”Ђв”Ђ
+	// ── Middleware ──
 	"middleware.auth_required":       "Authentication required",
 	"middleware.invalid_token":       "Invalid token",
 	"middleware.access_denied":       "Access denied",
 	"middleware.insufficient_rights": "Insufficient rights",
 	"middleware.internal_server":     "Internal server error",
 
-	// в”Ђв”Ђ Navigation / Layout в”Ђв”Ђ
+	// ── Navigation / Layout ──
 	"nav.dashboard":         "Dashboard",
 	"nav.admin":             "Admin",
 	"nav.games":             "Games",
@@ -400,11 +400,11 @@ var enMessages = map[string]string{
 	"nav.language_en":       "EN",
 	"nav.back_to_game":      "Back to game",
 	"nav.back_to_list":      "Back to list",
-	"nav.back_to_dashboard": "в†ђ Back to dashboard",
-	"nav.back_to_profile":   "в†ђ Back to profile",
-	"nav.back":              "в†ђ Back",
+	"nav.back_to_dashboard": "← Back to dashboard",
+	"nav.back_to_profile":   "← Back to profile",
+	"nav.back":              "← Back",
 
-	// в”Ђв”Ђ Layout в”Ђв”Ђ
+	// ── Layout ──
 	"layout.nav_aria_label":     "Main navigation",
 	"layout.logo_aria_label":    "Encounter Engine",
 	"layout.theme_toggle":       "Toggle theme",
@@ -425,12 +425,12 @@ var enMessages = map[string]string{
 	"layout.confirm_cancel":     "Cancel",
 	"layout.confirm_ok":         "Delete",
 
-	// в”Ђв”Ђ Common в”Ђв”Ђ
+	// ── Common ──
 	"common.save":         "Save",
 	"common.cancel":       "Cancel",
 	"common.delete":       "Delete",
 	"common.edit":         "Edit",
-	"common.back":         "в†ђ Back",
+	"common.back":         "← Back",
 	"common.search":       "Search",
 	"common.create":       "Create",
 	"common.save_changes": "Save changes",
@@ -468,7 +468,7 @@ var enMessages = map[string]string{
 	"common.duplicate":    "Duplicate",
 	"common.click_here":   "Click here",
 
-	// в”Ђв”Ђ Home в”Ђв”Ђ
+	// ── Home ──
 	"home.title":              "Welcome to Encounter Engine",
 	"home.subtitle":           "A platform for creating and running urban, field and online quests",
 	"home.search_placeholder": "Search games...",
@@ -480,9 +480,9 @@ var enMessages = map[string]string{
 	"home.teams":              "Teams",
 	"home.no_connection":      "No connection",
 	"home.check_connection":   "Check your internet connection and try again.",
-	"home.try_again":          "рџ”„ Try again",
+	"home.try_again":          "🔄 Try again",
 
-	// в”Ђв”Ђ Auth Pages в”Ђв”Ђ
+	// ── Auth Pages ──
 	"auth.login_title":            "Login",
 	"auth.login_button":           "Login",
 	"auth.login_loading":          "Logging in...",
@@ -498,7 +498,7 @@ var enMessages = map[string]string{
 	"auth.forgot_title":           "Password recovery",
 	"auth.forgot_email_label":     "Enter your email",
 	"auth.forgot_submit":          "Send instructions",
-	"auth.back_to_login":          "в†ђ Back to login page",
+	"auth.back_to_login":          "← Back to login page",
 	"auth.reset_title":            "Reset password",
 	"auth.new_password_label":     "New password",
 	"auth.reset_button":           "Set password",
@@ -515,7 +515,7 @@ var enMessages = map[string]string{
 	"auth.login_oauth_yandex":     "Yandex",
 	"auth.login_with_passkey":     "Login without password:",
 
-	// в”Ђв”Ђ 2FA в”Ђв”Ђ
+	// ── 2FA ──
 	"twofa.page_title":             "Two-factor authentication",
 	"twofa.qr_step":                "1. Scan QR code",
 	"twofa.qr_instructions":        "Open your authenticator app (Google Authenticator, Authy, etc.) and scan the QR code below.",
@@ -530,7 +530,7 @@ var enMessages = map[string]string{
 	"twofa.checking":               "Checking...",
 	"twofa.enabled_title":          "Two-factor authentication enabled",
 	"twofa.enabled_message":        "Your account is now protected by two-factor authentication. Each login will require a code from your authenticator app.",
-	"twofa.backup_codes_title":     "вљ пёЏ Backup codes",
+	"twofa.backup_codes_title":     "⚠️ Backup codes",
 	"twofa.backup_codes_message":   "Save these codes in a safe place. They will be needed if you lose access to your authenticator app. Each code can be used only once.",
 	"twofa.go_to_dashboard":        "Go to dashboard",
 	"twofa.disable_title":          "Disable two-factor authentication",
@@ -548,13 +548,13 @@ var enMessages = map[string]string{
 	"twofa.backup_label":           "Backup code",
 	"twofa.backup_button":          "Verify",
 	"twofa.backup_return_link":     "Back to TOTP code",
-	"twofa.enabled_badge":          "вњ… Enabled",
+	"twofa.enabled_badge":          "✅ Enabled",
 	"twofa.enabled_description":    "Account protection is enabled. Login will require a code from your authenticator app.",
 	"twofa.disabled_description":   "Add an extra layer of security to your account.",
 	"twofa.enable_button":          "Enable 2FA",
 	"twofa.disable_link":           "Disable",
 
-	// в”Ђв”Ђ Dashboard в”Ђв”Ђ
+	// ── Dashboard ──
 	"dashboard.title":                 "Dashboard",
 	"dashboard.admin_panel":           "Administration",
 	"dashboard.admin_panel_link":      "Admin panel",
@@ -563,7 +563,7 @@ var enMessages = map[string]string{
 	"dashboard.my_teams_captain":      "My teams",
 	"dashboard.my_teams_captain_sub":  "(captain)",
 	"dashboard.no_games_yet":          "You don't have any games yet.",
-	"dashboard.onboarding_title":      "Welcome to Encounter! рџљЂ",
+	"dashboard.onboarding_title":      "Welcome to Encounter! 🚂",
 	"dashboard.onboarding_desc":       "Get started with these quick steps:",
 	"dashboard.onboarding_step1":      "Create a game",
 	"dashboard.onboarding_step1_desc": "Design your first quest",
@@ -584,13 +584,13 @@ var enMessages = map[string]string{
 	"dashboard.search_empty":          "Nothing found",
 	"dashboard.search_placeholder":    "Search...",
 	"dashboard.search_button":         "Search",
-	"dashboard.search_query":          "Nothing found for query В«%sВ»",
+	"dashboard.search_query":          "Nothing found for query «%s»",
 	"dashboard.in_game":               "in game",
 	"dashboard.accept":                "Accept",
 	"dashboard.decline":               "Decline",
 	"dashboard.team_label":            "Team ",
 
-	// в”Ђв”Ђ Profile в”Ђв”Ђ
+	// ── Profile ──
 	"profile.title":                 "Profile",
 	"profile.change_avatar":         "Change",
 	"profile.email_label":           "Email",
@@ -603,7 +603,7 @@ var enMessages = map[string]string{
 	"profile.change_password_btn":   "Change password",
 	"profile.achievements":          "Achievements",
 	"profile.no_achievements":       "No achievements yet.",
-	"profile.all_achievements":      "All achievements в†’",
+	"profile.all_achievements":      "All achievements →",
 	"profile.notification_settings": "Notification settings",
 	"profile.notification_desc":     "Configure which notifications you want to receive and through which channels.",
 	"profile.new_game_notif":        "New game",
@@ -611,23 +611,23 @@ var enMessages = map[string]string{
 	"profile.game_finish_notif":     "Game finish",
 	"profile.invitation_notif":      "Invitation",
 	"profile.save_notif_settings":   "Save settings",
-	"profile.enable_push":           "рџ”” Enable push notifications",
-	"profile.disable_push":          "рџ”• Disable push notifications",
+	"profile.enable_push":           "🔔 Enable push notifications",
+	"profile.disable_push":          "🔕 Disable push notifications",
 	"profile.push_status":           "",
 	"profile.2fa_section":           "Two-factor authentication",
 	"profile.2fa_desc_enabled":      "Account protection is enabled. Login will require a code from your authenticator app.",
 	"profile.2fa_desc_disabled":     "Add an extra layer of security to your account.",
-	"profile.2fa_enabled":           "вњ… Enabled",
+	"profile.2fa_enabled":           "✅ Enabled",
 	"profile.2fa_enable":            "Enable 2FA",
 	"profile.2fa_disable":           "Disable",
-	"profile.go_to_dashboard":       "в†ђ Back to dashboard",
+	"profile.go_to_dashboard":       "← Back to dashboard",
 	"profile.public_profile":        "Public profile",
 	"profile.logout":                "Logout",
 	"profile.avatar_alt":            "Avatar",
 	"profile.settings_saved":        "Settings saved",
 	"profile.settings_save_error":   "Save error",
 
-	// в”Ђв”Ђ Theme settings в”Ђв”Ђ
+	// ── Theme settings ──
 	"profile.theme_settings":      "Theme settings",
 	"profile.theme_settings_desc": "Automatic theme switching: the site turns dark at the configured time.",
 	"profile.auto_theme_label":    "Automatic theme switching",
@@ -637,7 +637,7 @@ var enMessages = map[string]string{
 	"profile.theme_time_error":    "Set dark theme start and end times in HH:MM format",
 	"profile.theme_save_error":    "Failed to save theme settings",
 
-	// в”Ђв”Ђ Profile Public в”Ђв”Ђ
+	// ── Profile Public ──
 	"profile.public_title":         "User profile",
 	"profile.games_created":        "games created",
 	"profile.games_played":         "games played",
@@ -649,11 +649,11 @@ var enMessages = map[string]string{
 	"profile.recent_games":         "Recent games by author",
 	"profile.draft":                "Draft",
 	"profile.draft_badge":          "(draft)",
-	"profile.back":                 "в†ђ Back",
+	"profile.back":                 "← Back",
 	"profile.follow_error":         "Error: failed to change subscription",
 	"profile.follow_network_error": "Error: %s",
 
-	// в”Ђв”Ђ Passkey (WebAuthn) в”Ђв”Ђ
+	// ── Passkey (WebAuthn) ──
 	"passkey.manage_title":   "Manage Passkeys",
 	"passkey.description":    "Passkeys allow you to sign in without a password using your device's biometrics or PIN.",
 	"passkey.add_button":     "Add Passkey",
@@ -667,7 +667,7 @@ var enMessages = map[string]string{
 	"passkey.error_prefix":   "Error: ",
 	"passkey.delete_confirm": "Delete this key?",
 
-	// в”Ђв”Ђ Games List в”Ђв”Ђ
+	// ── Games List ──
 	"games.list_title":                "Games",
 	"games.create_button":             "+ Create game",
 	"games.filter_search":             "Search",
@@ -698,11 +698,11 @@ var enMessages = map[string]string{
 	"games.table_actions":             "Actions",
 	"games.pagination_page":           "Page %s of %s",
 	"games.pagination_total":          "(total %s records)",
-	"games.pagination_prev":           "в†ђ Previous",
-	"games.pagination_next":           "Next в†’",
+	"games.pagination_prev":           "← Previous",
+	"games.pagination_next":           "Next →",
 	"games.search_placeholder":        "Search by name",
 
-	// в”Ђв”Ђ Game Show в”Ђв”Ђ
+	// ── Game Show ──
 	"game.show_author":               "Author:",
 	"game.show_start_date":           "Start date:",
 	"game.show_reg_deadline":         "Registration until:",
@@ -719,7 +719,7 @@ var enMessages = map[string]string{
 	"game.show_reviews":              "Reviews",
 	"game.show_rating_score":         "rating: %s/10",
 	"game.show_publish":              "Publish",
-	"game.show_preview":              "рџ‘Ѓ Quick preview",
+	"game.show_preview":              "👁 Quick preview",
 	"game.show_edit":                 "Edit",
 	"game.show_settings":             "Settings",
 	"game.show_levels":               "Levels",
@@ -727,19 +727,19 @@ var enMessages = map[string]string{
 	"game.show_applications":         "Applications",
 	"game.show_monitor":              "Monitor",
 	"game.show_chat":                 "Chat",
-	"game.show_photos":               "рџ“· Gallery",
+	"game.show_photos":               "📷 Gallery",
 	"game.show_export_csv":           "Export CSV",
-	"game.show_export_pdf":           "рџ“„ PDF",
+	"game.show_export_pdf":           "📄 PDF",
 	"game.show_test":                 "Test",
 	"game.show_force_finish":         "Finish game",
 	"game.show_delete":               "Delete",
 	"game.show_apply":                "Apply",
-	"game.show_preview_title":        "Game composition В«%sВ»",
+	"game.show_preview_title":        "Game composition «%s»",
 	"game.show_preview_loading":      "Loading...",
 	"game.show_preview_no_data":      "No data",
 	"game.show_delete_title":         "Delete game?",
 	"game.show_delete_confirm":       "Are you sure you want to delete",
-	"game.show_delete_warning":       "вљ пёЏ This action cannot be undone. All levels, questions and answers will be deleted.",
+	"game.show_delete_warning":       "⚠️ This action cannot be undone. All levels, questions and answers will be deleted.",
 	"game.show_delete_btn":           "Delete",
 	"game.show_delete_undo":          "в†© Cancel deletion",
 	"game.show_delete_scheduled":     "Deletion scheduled...",
@@ -748,7 +748,7 @@ var enMessages = map[string]string{
 	"game.show_delete_cancel_suffix": "sec",
 	"game.show_publish_confirm":      "Publish the game? After publishing it will become visible to players.",
 	"game.show_force_finish_confirm": "Are you sure? Force finish will stop all active passings.",
-	"game.show_back_to_list":         "в†ђ Back to list",
+	"game.show_back_to_list":         "← Back to list",
 	"game.show_preview_hint_label":   "Hint: %s",
 	"game.show_deleting":             "Deleting...",
 	"game.show_delete_error":         "Error deleting",
@@ -757,7 +757,7 @@ var enMessages = map[string]string{
 	"game.show_cover_alt":            "Cover of %s",
 	"game.show_preview_load_error":   "Load error",
 
-	// в”Ђв”Ђ Game New в”Ђв”Ђ
+	// ── Game New ──
 	"game.new_title":               "New game",
 	"game.new_wizard_title":        "New game",
 	"game.new_step_basic":          "Basic info",
@@ -784,25 +784,25 @@ var enMessages = map[string]string{
 	"game.new_cover_desc":          "Add a cover to make the game look more attractive in the list",
 	"game.new_cover_drop":          "Drop image here or click to select file",
 	"game.new_cover_format":        "JPG, PNG or WebP (max 5MB)",
-	"game.new_cover_selected":      "вњ“ File selected",
+	"game.new_cover_selected":      "✓ File selected",
 	"game.new_draft_label":         "Draft",
 	"game.new_draft_desc":          "Save as draft (don't publish immediately)",
-	"game.new_whats_next":          "в„№пёЏ What's next?",
-	"game.new_whats_next_1":        "вЂў After creation you can add levels",
-	"game.new_whats_next_2":        "вЂў Configure game settings",
-	"game.new_whats_next_3":        "вЂў Invite co-authors",
-	"game.new_whats_next_4":        "вЂў Publish the game for participants",
+	"game.new_whats_next":          "ℹ️ What's next?",
+	"game.new_whats_next_1":        "• After creation you can add levels",
+	"game.new_whats_next_2":        "• Configure game settings",
+	"game.new_whats_next_3":        "• Invite co-authors",
+	"game.new_whats_next_4":        "• Publish the game for participants",
 	"game.new_save_draft":          "Save as draft",
 	"game.new_create_button":       "Create",
 	"game.new_cancel":              "Cancel",
-	"game.new_prev":                "в†ђ Back",
-	"game.new_next":                "Next в†’",
+	"game.new_prev":                "← Back",
+	"game.new_next":                "Next →",
 	"game.new_validation_name":     "Enter game name (minimum 3 characters)",
 	"game.new_validation_teams":    "Enter a valid number of teams",
 	"game.new_unsupported_format":  "Unsupported file format. Use JPG, PNG or WebP.",
 	"game.new_file_too_large":      "File too large. Maximum 5MB.",
 
-	// в”Ђв”Ђ Game Edit в”Ђв”Ђ
+	// ── Game Edit ──
 	"game.edit_title":              "Edit game",
 	"game.edit_name_label":         "Name",
 	"game.edit_desc_label":         "Description",
@@ -818,8 +818,8 @@ var enMessages = map[string]string{
 	"game.edit_save":               "Save",
 	"game.edit_cancel":             "Cancel",
 
-	// в”Ђв”Ђ Game Settings в”Ђв”Ђ
-	"game.settings_title":          "Settings for В«%sВ»",
+	// ── Game Settings ──
+	"game.settings_title":          "Settings for «%s»",
 	"game.settings_allow_hints":    "Allow hints",
 	"game.settings_hint_penalty":   "Hint penalty (seconds)",
 	"game.settings_max_hints":      "Max number of hints",
@@ -829,23 +829,23 @@ var enMessages = map[string]string{
 	"game.settings_save":           "Save",
 	"game.settings_cancel":         "Cancel",
 
-	// в”Ђв”Ђ Game Levels в”Ђв”Ђ
+	// ── Game Levels ──
 	"game.levels_title":        "Game levels",
 	"game.levels_add":          "+ Add level",
 	"game.levels_no_levels":    "No levels yet.",
 	"game.levels_create_first": "Create first level",
 	"game.levels_position":     "(position: %d)",
 	"game.levels_view":         "View",
-	"game.levels_edit":         "вњЋ",
+	"game.levels_edit":         "✎",
 	"game.levels_questions":    "Questions",
 	"game.levels_duplicate":    "Duplicate",
 	"game.levels_delete":       "Delete",
 	"game.levels_move_up":      "Up",
 	"game.levels_move_down":    "Down",
 	"game.levels_drag_sort":    "Drag to reorder",
-	"game.levels_back":         "в†ђ Back to game",
+	"game.levels_back":         "← Back to game",
 
-	// в”Ђв”Ђ Level в”Ђв”Ђ
+	// ── Level ──
 	"level.new_title":             "New level",
 	"level.edit_title":            "Edit level",
 	"level.show_title":            "Level: %s",
@@ -866,17 +866,17 @@ var enMessages = map[string]string{
 	"level.create_button":         "Create",
 	"level.save_button":           "Save",
 	"level.cancel":                "Cancel",
-	"level.back_to_levels":        "в†ђ Back to levels",
-	"level.back_to_game":          "в†ђ Back to game",
+	"level.back_to_levels":        "← Back to levels",
+	"level.back_to_game":          "← Back to game",
 	"level.questions_title":       "Questions",
 	"level.add_question":          "+ Add question",
 	"level.no_questions":          "No questions yet.",
 	"level.hint_label":            "Hint:",
 	"level.answers_label":         "Answers:",
 	"level.coordinates_label":     "Coordinates:",
-	"level.back_to_level":         "в†ђ Back to level",
+	"level.back_to_level":         "← Back to level",
 
-	// в”Ђв”Ђ Questions в”Ђв”Ђ
+	// ── Questions ──
 	"question.new_title":         "New question",
 	"question.edit_title":        "Edit question",
 	"question.show_title":        "Question: %s",
@@ -890,8 +890,8 @@ var enMessages = map[string]string{
 	"question.add":               "+ Add question",
 	"question.no_questions":      "No questions yet.",
 	"question.create_first":      "Create first question",
-	"question.back_to_level":     "в†ђ Back to level",
-	"question.back_to_questions": "в†ђ Back to questions",
+	"question.back_to_level":     "← Back to level",
+	"question.back_to_questions": "← Back to questions",
 	"question.answers_title":     "Answers",
 	"question.add_answer":        "+ Add answer",
 	"level.list_aria_label":      "Level list",
@@ -917,7 +917,7 @@ var enMessages = map[string]string{
 	"question.answers":        "Answers",
 	"question.delete_confirm": "Delete question?",
 
-	// в”Ђв”Ђ Answers в”Ђв”Ђ
+	// ── Answers ──
 	"answer.title":             "Answers for question",
 	"answer.existing_codes":    "Existing answer codes",
 	"answer.add_new":           "Add new answer",
@@ -926,15 +926,15 @@ var enMessages = map[string]string{
 	"answer.add_button":        "Add",
 	"answer.delete":            "Delete",
 	"answer.no_answers":        "No answers yet.",
-	"answer.back_to_questions": "в†ђ Back to questions",
+	"answer.back_to_questions": "← Back to questions",
 
-	// в”Ђв”Ђ Gameplay в”Ђв”Ђ
+	// ── Gameplay ──
 	"gameplay.title":                     "Level passing: %s",
 	"gameplay.question_label":            "Question:",
 	"gameplay.hint_label":                "Hint: %s",
 	"gameplay.code_placeholder":          "Enter code",
 	"gameplay.submit_button":             "Submit",
-	"gameplay.hint_button":               "рџ’Ў Hint",
+	"gameplay.hint_button":               "💡 Hint",
 	"gameplay.upload_file":               "Upload file",
 	"gameplay.upload_progress":           "Uploading: %d%% (%s / %s)",
 	"gameplay.upload_complete":           "Uploaded! Refreshing...",
@@ -942,29 +942,29 @@ var enMessages = map[string]string{
 	"gameplay.network_error":             "Network error",
 	"gameplay.history_title":             "Attempt history",
 	"gameplay.no_attempts":               "No attempts yet.",
-	"gameplay.attempt_correct":           "вњ… Correct",
-	"gameplay.attempt_wrong":             "вќЊ Wrong",
+	"gameplay.attempt_correct":           "✅ Correct",
+	"gameplay.attempt_wrong":             "❌ Wrong",
 	"gameplay.submitting":                "Submitting...",
-	"gameplay.time_expired":              "вЏ° Time's up!",
-	"gameplay.time_left":                 "вЏ±пёЏ Remaining: %s",
+	"gameplay.time_expired":              "⏰ Time's up!",
+	"gameplay.time_left":                 "⏱️ Remaining: %s",
 	"gameplay.initiating":                "Starting...",
-	"gameplay.back_to_game":              "в†ђ Back to game",
+	"gameplay.back_to_game":              "← Back to game",
 	"gameplay.sending":                   "Sending...",
 	"gameplay.hint_loading":              "Loading...",
-	"gameplay.level_completed":           "рџЋ‰ Level completed!",
-	"gameplay.level_completed_with_name": "рџЋ‰ Level \"%s\" completed!",
-	"gameplay.time_warning":              "вЏ° %d minutes remaining!",
-	"gameplay.hint_used":                 "рџ’Ў Hint used",
-	"gameplay.code_accepted":             "вњ… Code accepted! Checking...",
-	"gameplay.code_rejected":             "вќЊ Code rejected",
+	"gameplay.level_completed":           "🎉 Level completed!",
+	"gameplay.level_completed_with_name": "🎉 Level \"%s\" completed!",
+	"gameplay.time_warning":              "⏰ %d minutes remaining!",
+	"gameplay.hint_used":                 "💡 Hint used",
+	"gameplay.code_accepted":             "✅ Code accepted! Checking...",
+	"gameplay.code_rejected":             "❌ Code rejected",
 
-	// в”Ђв”Ђ Gameplay Finished в”Ђв”Ђ
+	// ── Gameplay Finished ──
 	"gameplay.finished_title":    "Game finished!",
 	"gameplay.finished_message":  "You have successfully completed all levels.",
 	"gameplay.back_to_game_link": "Back to game",
 	"gameplay.to_dashboard":      "To dashboard",
 
-	// в”Ђв”Ђ Gameplay Test в”Ђв”Ђ
+	// ── Gameplay Test ──
 	"gameplay.test_title":            "Test passing",
 	"gameplay.test_start":            "Start new test passing",
 	"gameplay.test_active":           "Active test sessions",
@@ -972,25 +972,25 @@ var enMessages = map[string]string{
 	"gameplay.test_correct_answers":  "Correct answers:",
 	"gameplay.test_code_placeholder": "Enter code (any)",
 	"gameplay.test_submit_button":    "Submit code",
-	"gameplay.test_skip_button":      "Skip level в†’",
+	"gameplay.test_skip_button":      "Skip level →",
 	"gameplay.test_finished_title":   "Test passing completed!",
 	"gameplay.test_finished_message": "You have successfully completed all levels in test mode.",
 	"gameplay.test_restart":          "Start over",
 	"gameplay.test_back_to_game":     "Back to game",
 
-	// в”Ђв”Ђ Gameplay (additional) в”Ђв”Ђ
+	// ── Gameplay (additional) ──
 	"gameplay.hint_title":         "Use hint (hotkey: H)",
 	"gameplay.submit_error":       "Submit error",
 	"gameplay.already_completed":  "Level already completed.",
 	"gameplay.not_member":         "You are not a member of this team.",
-	"gameplay.progress_not_found": "Progress not found вЂ” time may have expired.",
+	"gameplay.progress_not_found": "Progress not found — time may have expired.",
 	"gameplay.wrong_code":         "Wrong code! Try again.",
 	"gameplay.hint_used_refresh":  "Hint used. Page will refresh...",
 	"gameplay.hint_limit_reached": "Hint limit reached",
 	"gameplay.hint_error":         "Error: failed to use hint",
-	"gameplay.level_done":         "вњ… Level completed!",
+	"gameplay.level_done":         "✅ Level completed!",
 
-	// в”Ђв”Ђ Co-authors в”Ђв”Ђ
+	// ── Co-authors ──
 	"coauthor.manage_title":        "Manage co-authors",
 	"coauthor.current_title":       "Current co-authors",
 	"coauthor.add_title":           "Add co-author",
@@ -1003,9 +1003,9 @@ var enMessages = map[string]string{
 	"coauthor.user_id_placeholder": "User ID",
 	"coauthor.add_button":          "Add",
 	"coauthor.delete_button":       "Delete",
-	"coauthor.back_to_game":        "в†ђ Back to game",
+	"coauthor.back_to_game":        "← Back to game",
 
-	// в”Ђв”Ђ Game Passings (Applications) в”Ђв”Ђ
+	// ── Game Passings (Applications) ──
 	"passing.list_title":          "Game applications and passings",
 	"passing.table_team":          "Team",
 	"passing.table_captain":       "Captain",
@@ -1021,29 +1021,29 @@ var enMessages = map[string]string{
 	"passing.reject":              "Reject",
 	"passing.start_game":          "Start game",
 	"passing.no_passings":         "No applications yet.",
-	"passing.back_to_game":        "в†ђ Back to game",
-	"passing.accept_confirm":      "Accept application from В«%sВ»?",
-	"passing.reject_confirm":      "Reject application from В«%sВ»?",
-	"passing.start_confirm":       "Start game for team В«%sВ»?",
+	"passing.back_to_game":        "← Back to game",
+	"passing.accept_confirm":      "Accept application from «%s»?",
+	"passing.reject_confirm":      "Reject application from «%s»?",
+	"passing.start_confirm":       "Start game for team «%s»?",
 	"passing.captain_label":       "Captain: %s",
 
-	// в”Ђв”Ђ Game Apply в”Ђв”Ђ
+	// ── Game Apply ──
 	"apply.title":         "Apply for game",
 	"apply.select_team":   "Select team",
 	"apply.no_team":       "-- select team --",
 	"apply.submit_button": "Apply",
 	"apply.create_team":   "+ Create new team",
 
-	// в”Ђв”Ђ Notes в”Ђв”Ђ
+	// ── Notes ──
 	"notes.title":            "Game notes",
 	"notes.add_title":        "Add note",
 	"notes.text_placeholder": "Note text...",
 	"notes.save_button":      "Save",
 	"notes.delete_title":     "Delete note?",
 	"notes.level_label":      "Level: %s",
-	"notes.back_to_game":     "в†ђ Back to game",
+	"notes.back_to_game":     "← Back to game",
 
-	// в”Ђв”Ђ Photos в”Ђв”Ђ
+	// ── Photos ──
 	"photos.title":           "Game photo gallery",
 	"photos.upload_button":   "Upload photo",
 	"photos.upload_progress": "Uploading: %d%% (%s / %s)",
@@ -1054,10 +1054,10 @@ var enMessages = map[string]string{
 	"photos.delete":          "Delete",
 	"photos.level_label":     "Level: %s",
 	"photos.delete_confirm":  "Delete this photo? This cannot be undone.",
-	"photos.back_to_game":    "в†ђ Back to game",
-	"photos.modal_caption":   "%s вЂ” %s",
+	"photos.back_to_game":    "← Back to game",
+	"photos.modal_caption":   "%s — %s",
 
-	// в”Ђв”Ђ Simulate в”Ђв”Ђ
+	// ── Simulate ──
 	"simulate.title":          "Simulation results",
 	"simulate.total_time":     "Total time",
 	"simulate.levels_passed":  "Levels passed",
@@ -1066,19 +1066,19 @@ var enMessages = map[string]string{
 	"simulate.table_code":     "Code",
 	"simulate.table_time":     "Time from start",
 	"simulate.table_status":   "Status",
-	"simulate.status_success": "вњ… Success",
-	"simulate.status_error":   "вќЊ Error",
-	"simulate.back_to_game":   "в†ђ Back to game",
+	"simulate.status_success": "✅ Success",
+	"simulate.status_error":   "❌ Error",
+	"simulate.back_to_game":   "← Back to game",
 
-	// в”Ђв”Ђ Game Test в”Ђв”Ђ
-	"gametest.title":           "Testing В«%sВ»",
+	// ── Game Test ──
+	"gametest.title":           "Testing «%s»",
 	"gametest.description":     "Here you can start a test passing to check levels and answers.",
 	"gametest.start_button":    "Start new test passing",
 	"gametest.active_sessions": "Active test sessions",
 	"gametest.passing":         "Passing #%d (%s)",
-	"gametest.back_to_game":    "в†ђ Back to game",
+	"gametest.back_to_game":    "← Back to game",
 
-	// в”Ђв”Ђ Teams в”Ђв”Ђ
+	// ── Teams ──
 	"teams.my_title":         "My teams",
 	"teams.create_title":     "New team",
 	"teams.create_button":    "+ Create new team",
@@ -1088,35 +1088,35 @@ var enMessages = map[string]string{
 	"teams.cancel":           "Cancel",
 	"teams.no_teams":         "You don't have any teams yet.",
 	"teams.create_first":     "Create your first team",
-	"teams.members_title":    "Team В«%sВ» вЂ” members",
+	"teams.members_title":    "Team «%s» — members",
 	"teams.member_count":     "Members (%d)",
 	"teams.no_members":       "No members yet.",
 	"teams.captain_label":    "Captain: %s (%s)",
 	"teams.add_member":       "+ Invite member",
 	"teams.invitations":      "Invitations",
-	"teams.team_chat":        "рџ’¬ Team chat",
+	"teams.team_chat":        "💬 Team chat",
 	"teams.change_captain":   "Change captain",
-	"teams.to_list":          "в†ђ Back to teams",
+	"teams.to_list":          "← Back to teams",
 
-	// в”Ђв”Ђ Teams Add Member в”Ђв”Ђ
+	// ── Teams Add Member ──
 	"team.add_member_title": "Add member",
 	"team.select_user":      "Select user",
 	"team.no_user":          "-- select user --",
 	"team.add_button":       "Add",
 	"team.cancel":           "Cancel",
 
-	// в”Ђв”Ђ Teams Change Captain в”Ђв”Ђ
+	// ── Teams Change Captain ──
 	"team.change_captain_title": "Change captain",
 	"team.select_new_captain":   "Select new captain",
 	"team.no_new_captain":       "-- select new captain --",
 	"team.change_button":        "Change",
 
-	// в”Ђв”Ђ Team Additional в”Ђв”Ђ
+	// ── Team Additional ──
 	"team.remove_member_confirm": "Remove member?",
-	"team.chat_title_name":       "Team В«%sВ» chat",
+	"team.chat_title_name":       "Team «%s» chat",
 	"team.yourself":              "You",
 
-	// в”Ђв”Ђ Invitations в”Ђв”Ђ
+	// ── Invitations ──
 	"invitation.my_title":            "My invitations",
 	"invitation.no_invitations":      "You have no invitations.",
 	"invitation.team_label":          "Team: %s",
@@ -1126,12 +1126,12 @@ var enMessages = map[string]string{
 	"invitation.create_button":       "+ Create new invitation",
 	"invitation.no_invitations_list": "No invitations yet.",
 	"invitation.create_first":        "Create first invitation",
-	"invitation.back_to_team":        "в†ђ Back to team",
+	"invitation.back_to_team":        "← Back to team",
 	"invitation.status_pending":      "Pending",
 	"invitation.status_accepted":     "Accepted",
 	"invitation.status_declined":     "Declined",
 
-	// в”Ђв”Ђ Invitation New в”Ђв”Ђ
+	// ── Invitation New ──
 	"invitation.new_title":          "New invitation",
 	"invitation.search_user":        "Search user",
 	"invitation.search_placeholder": "Enter name or email...",
@@ -1141,17 +1141,17 @@ var enMessages = map[string]string{
 	"invitation.no_results":         "Nothing found",
 	"invitation.search_error":       "Search error",
 
-	// в”Ђв”Ђ Team Chat в”Ђв”Ђ
+	// ── Team Chat ──
 	"chat.title":             "Chat",
 	"chat.input_placeholder": "Enter message...",
 	"chat.send_button":       "Send",
-	"chat.connected":         "рџџў Connected",
-	"chat.disconnected":      "рџ”ґ Disconnected. Reconnecting...",
+	"chat.connected":         "🟢 Connected",
+	"chat.disconnected":      "🔴 Disconnected. Reconnecting...",
 	"chat.reconnecting":      "Reconnecting...",
-	"chat.connection_error":  "вљ пёЏ Connection not established. Message not sent.",
-	"chat.waiting":           "вЏі",
+	"chat.connection_error":  "⚠️ Connection not established. Message not sent.",
+	"chat.waiting":           "⏳",
 
-	// в”Ђв”Ђ Game Chat в”Ђв”Ђ
+	// ── Game Chat ──
 	"gamechat.title":             "Game chats",
 	"gamechat.general":           "General chat",
 	"gamechat.team":              "Team chat",
@@ -1166,7 +1166,7 @@ var enMessages = map[string]string{
 	"gamechat.load_error":        "Failed to load chat rooms",
 	"gamechat.unknown_user":      "Unknown",
 
-	// в”Ђв”Ђ Monitor в”Ђв”Ђ
+	// ── Monitor ──
 	"monitor.page_title":         "Game monitor (real-time updates)",
 	"monitor.connected":          "Connected (real-time)",
 	"monitor.error_connecting":   "Connection error",
@@ -1181,24 +1181,24 @@ var enMessages = map[string]string{
 	"monitor.attempts":           "Attempts:",
 	"monitor.finish":             "Finish!",
 	"monitor.disqualify":         "Disqualify",
-	"monitor.suspicious":         "вљ пёЏ Suspicious activity",
+	"monitor.suspicious":         "⚠️ Suspicious activity",
 	"monitor.levels_count":       "%d/%d",
 	"monitor.current_level":      "#%d",
 	"monitor.disqualify_confirm": "Disqualify team? The captain will receive an email notification.",
 	"monitor.game_started":       "started the game!",
 	"monitor.disqualify_error":   "Error during disqualification: ",
 
-	// в”Ђв”Ђ Logs в”Ђв”Ђ
+	// ── Logs ──
 	"logs.title":        "Game logs",
 	"logs.no_logs":      "No logs yet.",
 	"logs.page":         "Page %s of %s",
-	"logs.prev":         "в†ђ Back",
-	"logs.next":         "Next в†’",
+	"logs.prev":         "← Back",
+	"logs.next":         "Next →",
 	"logs.connected":    "Connected",
 	"logs.reconnecting": "Reconnecting...",
 	"logs.error":        "Connection error",
 
-	// в”Ђв”Ђ Tournament в”Ђв”Ђ
+	// ── Tournament ──
 	"tournament.list_title":           "Tournaments",
 	"tournament.create_button":        "+ Create new tournament",
 	"tournament.no_tournaments":       "No tournaments yet.",
@@ -1234,7 +1234,7 @@ var enMessages = map[string]string{
 	"tournament.apply_button":         "Apply",
 	"tournament.select_team":          "Team",
 	"tournament.no_team_option":       "-- select team --",
-	"tournament.back_to_list":         "в†ђ Back to list",
+	"tournament.back_to_list":         "← Back to list",
 	"tournament.edit":                 "Edit",
 	"tournament.table_name":           "Name",
 	"tournament.table_author":         "Author",
@@ -1242,7 +1242,7 @@ var enMessages = map[string]string{
 	"tournament.table_actions":        "Actions",
 	"tournament.view":                 "View",
 
-	// в”Ђв”Ђ Tournament Add Game в”Ђв”Ђ
+	// ── Tournament Add Game ──
 	"tournament.add_game_title":     "Add game to tournament",
 	"tournament.add_game_label":     "Game",
 	"tournament.add_game_no_option": "-- select game --",
@@ -1250,34 +1250,34 @@ var enMessages = map[string]string{
 	"tournament.add_game_button":    "Add",
 	"tournament.add_game_cancel":    "Cancel",
 
-	// в”Ђв”Ђ Reviews в”Ђв”Ђ
+	// ── Reviews ──
 	"review.new_title":           "Leave a review",
-	"review.rating_label":        "Rating (1вЂ“10)",
-	"review.rating_1":            "1 вЂ” Terrible",
-	"review.rating_5":            "5 вЂ” Average",
-	"review.rating_10":           "10 вЂ” Excellent",
+	"review.rating_label":        "Rating (1–10)",
+	"review.rating_1":            "1 — Terrible",
+	"review.rating_5":            "5 — Average",
+	"review.rating_10":           "10 — Excellent",
 	"review.comment_label":       "Comment (optional)",
 	"review.comment_placeholder": "Your comment...",
 	"review.submit_button":       "Submit",
 	"review.cancel":              "Cancel",
 
-	// в”Ђв”Ђ Ratings в”Ђв”Ђ
+	// ── Ratings ──
 	"rating.title":        "Player ratings",
 	"rating.table_place":  "Place",
 	"rating.table_player": "Player",
 	"rating.table_score":  "Score",
 	"rating.empty":        "Rating is empty",
 
-	// в”Ђв”Ђ Follows в”Ђв”Ђ
+	// ── Follows ──
 	"follow.title":             "My subscriptions",
 	"follow.no_follows":        "You are not subscribed to anyone yet.",
 	"follow.hint":              "Subscribe to authors to be the first to know about their new games.",
 	"follow.unfollow":          "Unfollow",
 	"follow.unfollow_confirm":  "Unfollow %s?",
 	"follow.unfollow_error":    "Failed to unfollow",
-	"follow.back_to_dashboard": "в†ђ Back to dashboard",
+	"follow.back_to_dashboard": "← Back to dashboard",
 
-	// в”Ђв”Ђ Calendar в”Ђв”Ђ
+	// ── Calendar ──
 	"calendar.title":         "Game calendar",
 	"calendar.month_jan":     "January",
 	"calendar.month_feb":     "February",
@@ -1292,9 +1292,9 @@ var enMessages = map[string]string{
 	"calendar.month_nov":     "November",
 	"calendar.month_dec":     "December",
 	"calendar.games_count":   "%d game(s)",
-	"calendar.prev_month":    "в†ђ Previous",
-	"calendar.next_month":    "Next в†’",
-	"calendar.export_ics":    "рџ“… Export .ics",
+	"calendar.prev_month":    "← Previous",
+	"calendar.next_month":    "Next →",
+	"calendar.export_ics":    "📅 Export .ics",
 	"calendar.day_mon":       "Mon",
 	"calendar.day_tue":       "Tue",
 	"calendar.day_wed":       "Wed",
@@ -1309,7 +1309,7 @@ var enMessages = map[string]string{
 	"calendar.starts_at":     "starts at %s",
 	"calendar.not_specified": "not specified",
 
-	// в”Ђв”Ђ Export / Import в”Ђв”Ђ
+	// ── Export / Import ──
 	"export.title":         "Import CSV",
 	"export.csv_label":     "CSV file",
 	"export.upload_button": "Upload",
@@ -1317,14 +1317,14 @@ var enMessages = map[string]string{
 	"export.csv_desc":      "level_position, level_name, question_text, hint, answers (separated by |)",
 	"export.download_csv":  "Download current CSV",
 
-	// в”Ђв”Ђ Notifications List в”Ђв”Ђ
+	// ── Notifications List ──
 	"notif.list_title":       "Notifications",
 	"notif.no_notifications": "You have no notifications yet.",
 	"notif.total":            "Total notifications: %d",
-	"notif.more":             "Details в†’",
-	"notif.back_to_profile":  "в†ђ Back to profile",
+	"notif.more":             "Details →",
+	"notif.back_to_profile":  "← Back to profile",
 
-	// в”Ђв”Ђ Notification Settings в”Ђв”Ђ
+	// ── Notification Settings ──
 	"notif.settings_title":             "Notification settings",
 	"notif.channels_title":             "Communication channels",
 	"notif.email_label":                "Email notifications",
@@ -1336,24 +1336,25 @@ var enMessages = map[string]string{
 	"notif.enable_browser_btn":         "Enable browser notifications",
 	"notif.email_events_title":         "Events for email",
 	"notif.email_events_desc":          "Select which events to send via email",
-	"notif.event_game_started":         "рџЋ® Game started",
+	"notif.event_game_started":         "🎮 Game started",
 	"notif.event_game_started_desc":    "When your application is accepted and game is launched",
-	"notif.event_level_completed":      "вњ… Level completed",
+	"notif.event_level_completed":      "✅ Level completed",
 	"notif.event_level_completed_desc": "After successfully completing a level",
-	"notif.event_app_accepted":         "рџ“© Application accepted",
+	"notif.event_app_accepted":         "📩 Application accepted",
 	"notif.event_app_accepted_desc":    "When your team is accepted for the game",
-	"notif.event_app_rejected":         "вќЊ Application rejected",
+	"notif.event_app_rejected":         "❌ Application rejected",
 	"notif.event_app_rejected_desc":    "If your application is rejected",
-	"notif.event_time_warning":         "вЏ° Time warning",
+	"notif.event_time_warning":         "⏰ Time warning",
 	"notif.event_time_warning_desc":    "5 minutes before time runs out on a level",
-	"notif.event_time_expired":         "вЏ±пёЏ Time expired",
+	"notif.event_time_expired":         "⏱️ Time expired",
 	"notif.event_time_expired_desc":    "When time on a level has expired",
 	"notif.save_button":                "Save settings",
+	"notif.saving":                     "Saving...",
 	"notif.cancel":                     "Cancel",
 	"notif.saved":                      "Settings saved!",
 	"notif.save_error":                 "Error saving settings",
 
-	// в”Ђв”Ђ Admin в”Ђв”Ђ
+	// ── Admin ──
 	"admin.dashboard_title":         "Admin panel",
 	"admin.dashboard":               "Dashboard",
 	"admin.users":                   "Users",
@@ -1436,43 +1437,43 @@ var enMessages = map[string]string{
 	"admin.pagination_page":         "Page %s of %s",
 	"admin.pagination_total":        "(total %s records)",
 
-	// в”Ђв”Ђ Offline в”Ђв”Ђ
+	// ── Offline ──
 	"offline.title":   "No connection",
 	"offline.message": "Check your internet connection and try again.",
-	"offline.retry":   "рџ”„ Try again",
+	"offline.retry":   "🔄 Try again",
 
-	// в”Ђв”Ђ Error Pages в”Ђв”Ђ
-	"error.400_title":   "400 вЂ” Bad request",
+	// ── Error Pages ──
+	"error.400_title":   "400 — Bad request",
 	"error.400_message": "Check your input and try again.",
-	"error.403_title":   "403 вЂ” Access denied",
+	"error.403_title":   "403 — Access denied",
 	"error.403_message": "You don't have enough permissions to view this page. Try logging in with a different account.",
-	"error.404_title":   "404 вЂ” Page not found",
+	"error.404_title":   "404 — Page not found",
 	"error.404_message": "The requested page does not exist or has been moved.",
 	"error.404_hint":    "Check the address or go back to the previous page.",
-	"error.429_title":   "429 вЂ” Too many requests",
+	"error.429_title":   "429 — Too many requests",
 	"error.429_message": "Please wait a moment before trying again.",
-	"error.500_title":   "500 вЂ” Internal server error",
+	"error.500_title":   "500 — Internal server error",
 	"error.500_message": "Something went wrong. We are already working on a fix.",
 	"error.500_hint":    "Try refreshing the page in a few minutes or go back.",
-	"error.503_title":   "503 вЂ” Service unavailable",
+	"error.503_title":   "503 — Service unavailable",
 	"error.503_message": "Technical maintenance in progress. Please try again later.",
 	"error.home":        "Home",
 	"error.login":       "Login",
-	"error.back":        "в†ђ Back",
+	"error.back":        "← Back",
 	"error.refresh":     "Refresh",
 	"error.to_games":    "To games list",
 
-	// в”Ђв”Ђ Achievement в”Ђв”Ђ
+	// ── Achievement ──
 	"achievement.my_title":             "My achievements",
 	"achievement.no_achievements":      "No achievements yet",
-	"achievement.no_achievements_desc": "Participate in games, create levels, win вЂ” and your rewards will appear here.",
-	"achievement.back_to_profile":      "в†ђ Back to profile",
+	"achievement.no_achievements_desc": "Participate in games, create levels, win — and your rewards will appear here.",
+	"achievement.back_to_profile":      "← Back to profile",
 
-	// в”Ђв”Ђ User 2FA в”Ђв”Ђ
-	"user.2fa_enabled":  "вњ… Enabled",
+	// ── User 2FA ──
+	"user.2fa_enabled":  "✅ Enabled",
 	"user.2fa_disabled": "Disabled",
 
-	// в”Ђв”Ђ Handler messages (previously hardcoded Russian) в”Ђв”Ђ
+	// ── Handler messages (previously hardcoded Russian) ──
 	"handler.invalid_game_id":          "Invalid game ID",
 	"handler.invalid_level_id":         "Invalid level ID",
 	"handler.invalid_question_id":      "Invalid question ID",
@@ -1607,14 +1608,14 @@ var enMessages = map[string]string{
 	"js.minute_unit":                   "minute",
 	"js.minutes_unit":                  "minutes",
 	"js.until_finish":                  "until the end!",
-	"js.rank_1":                        "рџҐ‡ 1st",
-	"js.rank_2":                        "рџҐ€ 2nd",
-	"js.rank_3":                        "рџҐ‰ 3rd",
+	"js.rank_1":                        "🥇 1st",
+	"js.rank_2":                        "🥈 2nd",
+	"js.rank_3":                        "🥉 3rd",
 	"js.rating":                        "Rating: ",
 	"js.connecting":                    "Connecting...",
 	"js.connected":                     "Connected",
 	"js.reconnecting":                  "Reconnecting...",
-	"js.saved":                         "вњ“ Saved",
-	"js.not_saved":                     "вњЋ Not saved",
+	"js.saved":                         "✓ Saved",
+	"js.not_saved":                     "✎ Not saved",
 	"js.click_to_copy":                 "Click to copy",
 }

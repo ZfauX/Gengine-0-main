@@ -92,7 +92,7 @@ func NotificationsWS(hub *ws.RoomHub) gin.HandlerFunc {
 	}
 }
 
-// RegisterRoutes СЂРµРіРёСЃС‚СЂРёСЂСѓРµС‚ API-РјР°СЂС€СЂСѓС‚С‹ РґР»СЏ СѓРІРµРґРѕРјР»РµРЅРёР№.
+// RegisterRoutes регистрирует API-маршруты для уведомлений.
 func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *gorm.DB, authService *user.AuthService, hub *ws.RoomHub, sseMgr *game.SSEManager) {
 	service := NewNotificationService(db, hub).WithHub(hub).WithSSEManager(sseMgr).WithVAPID(cfg.VAPID, cfg.Server.BaseURL)
 	settingsHandler := NewSettingsHandler(service, cfg.VAPID)
@@ -106,7 +106,7 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *gorm.DB, authSer
 		api.POST("/notifications", settingsHandler.APIEmailSave)
 	}
 
-	// Р“СЂСѓРїРїР° СЃ РѕР±СЏР·Р°С‚РµР»СЊРЅРѕР№ Р°СѓС‚РµРЅС‚РёС„РёРєР°С†РёРµР№
+	// Группа с обязательной аутентификацией
 	apiNotifs := r.Group("/api/notifications")
 	apiNotifs.Use(middleware.AuthRequired(authService))
 	{
