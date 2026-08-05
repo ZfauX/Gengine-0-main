@@ -90,14 +90,14 @@ function registerPasskey() {
         if (data.status === 'ok') {
             location.reload();
         } else {
-            alert('{{ T $.Lang "passkey.error_prefix" }}' + (data.error || '{{ T $.Lang "generic.unknown_error" }}'));
+            window.showToast('{{ T $.Lang "passkey.error_prefix" }}' + (data.error || '{{ T $.Lang "generic.unknown_error" }}'), 'error');
             btn.disabled = false;
             btn.textContent = '{{ T $.Lang "passkey.add_button" }}';
         }
     })
     .catch(err => {
         console.error(err);
-        alert('{{ T $.Lang "passkey.error_prefix" }}' + err.message);
+        window.showToast('{{ T $.Lang "passkey.error_prefix" }}' + err.message, 'error');
         btn.disabled = false;
         btn.textContent = '{{ T $.Lang "passkey.add_button" }}';
     });

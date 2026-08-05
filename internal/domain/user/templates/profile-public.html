@@ -150,12 +150,12 @@
                     if (data.status === 'followed' || data.status === 'unfollowed') {
                         location.reload();
                     } else {
-                        alert(data.error ? '{{ T $.Lang "profile.follow_network_error" }}'.replace('%s', data.error) : '{{ T $.Lang "profile.follow_error" }}');
+                        window.showToast(data.error ? '{{ T $.Lang "profile.follow_network_error" }}'.replace('%s', data.error) : '{{ T $.Lang "profile.follow_error" }}', 'error');
                     }
                 })
                 .catch(err => {
                     console.error('Follow error:', err);
-                    alert('{{ T $.Lang "profile.follow_network_error" }}'.replace('%s', err.message));
+                    window.showToast('{{ T $.Lang "profile.follow_network_error" }}'.replace('%s', err.message), 'error');
                 });
         });
     })();

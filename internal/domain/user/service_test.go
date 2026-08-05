@@ -30,8 +30,9 @@ func newTestDB(t *testing.T) *gorm.DB {
 func newTestConfig() *config.Config {
 	return &config.Config{
 		JWT: config.JWTConfig{
-			Secret:       "test-secret-secret-secret-secret",
-			AccessExpiry: 24 * time.Hour,
+			Secret:        "test-secret-secret-secret-secret",
+			AccessExpiry:  24 * time.Hour,
+			RefreshExpiry: 7 * 24 * time.Hour,
 		},
 		Server: config.ServerConfig{
 			BaseURL: "http://localhost:8080",
@@ -140,6 +141,106 @@ func TestAuthService_Login(t *testing.T) {
 		assert.Error(t, err)
 		assert.Equal(t, "неверный email или пароль", err.Error())
 	})
+}
+
+// TestAuthService_LoginLockout: 5 неверных попыток блокируют аккаунт на 30 мин,
+// generic-ответ не раскрывает причину (B2/lockout).
+func TestAuthService_LoginLockout(t *testing.T) {
+	db := newTestDB(t)
+	cfg := newTestConfig()
+	userRepo, achievRepo, _, emailVerifRepo, _, refreshTokenRepo := newTestRepos(db)
+	service := NewAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg)
+
+	user := createTestUser(t, db, "lock@example.com", "correctpass", "Lock")
+
+	for i := 0; i < 5; i++ {
+		_, err := service.Login(context.Background(), "lock@example.com", "wrongpass")
+		require.Error(t, err)
+		assert.Equal(t, "неверный email или пароль", err.Error())
+	}
+
+	// Аккаунт заблокирован: даже верный пароль не принимается, ответ generic.
+	_, err := service.Login(context.Background(), "lock@example.com", "correctpass")
+	assert.Equal(t, "неверный email или пароль", err.Error())
+
+	// В БД выставлена блокировка.
+	var stored User
+	require.NoError(t, db.First(&stored, user.ID).Error)
+	require.NotNil(t, stored.LockedUntil)
+	assert.True(t, stored.LockedUntil.After(time.Now()))
+}
+
+// TestAuthService_RefreshRotation: старый refresh-токен не работает после ротации.
+func TestAuthService_RefreshRotation(t *testing.T) {
+	db := newTestDB(t)
+	cfg := newTestConfig()
+	userRepo, achievRepo, _, emailVerifRepo, _, refreshTokenRepo := newTestRepos(db)
+	service := NewAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg)
+
+	user := createTestUser(t, db, "rot@example.com", "pass", "Rot")
+
+	r1, err := service.GenerateRefreshToken(context.Background(), *user, "dev1", "fp1")
+	require.NoError(t, err)
+
+	// Ротация: r1 → r2 (та же семья).
+	_, r2, err := service.RefreshAccessToken(context.Background(), r1, "dev1", "fp1")
+	require.NoError(t, err)
+	require.NotEmpty(t, r2)
+
+	// Старый токен отозван — повторное использование детектится как reuse
+	// и отзывает всю семью (включая r2).
+	_, _, err = service.RefreshAccessToken(context.Background(), r1, "dev1", "fp1")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "отозваны")
+}
+
+// TestAuthService_ReuseRevokesFamily: повторное использование отозванного токена
+// отзывает всю семью (включая уже выданные наследники).
+func TestAuthService_ReuseRevokesFamily(t *testing.T) {
+	db := newTestDB(t)
+	cfg := newTestConfig()
+	userRepo, achievRepo, _, emailVerifRepo, _, refreshTokenRepo := newTestRepos(db)
+	service := NewAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg)
+
+	user := createTestUser(t, db, "fam@example.com", "pass", "Fam")
+
+	r1, err := service.GenerateRefreshToken(context.Background(), *user, "dev1", "fp1")
+	require.NoError(t, err)
+
+	// Ротация r1 → r2 (одна семья).
+	_, r2, err := service.RefreshAccessToken(context.Background(), r1, "dev1", "fp1")
+	require.NoError(t, err)
+
+	// Повторное использование отозванного r1 → детект кражи, семья отзывается.
+	_, _, err = service.RefreshAccessToken(context.Background(), r1, "dev1", "fp1")
+	assert.Error(t, err)
+
+	// r2 (наследник) тоже должен быть мёртв после отзыва семьи.
+	_, _, err = service.RefreshAccessToken(context.Background(), r2, "dev1", "fp1")
+	assert.Error(t, err)
+}
+
+// TestAuthService_FingerprintMismatch: неверный отпечаток клиента отклоняется,
+// пустая строка не обходит привязку (S5).
+func TestAuthService_FingerprintMismatch(t *testing.T) {
+	db := newTestDB(t)
+	cfg := newTestConfig()
+	userRepo, achievRepo, _, emailVerifRepo, _, refreshTokenRepo := newTestRepos(db)
+	service := NewAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg)
+
+	user := createTestUser(t, db, "fp@example.com", "pass", "Fp")
+
+	r1, err := service.GenerateRefreshToken(context.Background(), *user, "dev1", "fp1")
+	require.NoError(t, err)
+
+	// Неверный отпечаток.
+	_, _, err = service.RefreshAccessToken(context.Background(), r1, "dev1", "fp2")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "отпечаток")
+
+	// Пустой отпечаток НЕ обходит привязку (S5) — токен остаётся привязанным.
+	_, _, err = service.RefreshAccessToken(context.Background(), r1, "dev1", "")
+	assert.Error(t, err)
 }
 
 func TestAuthService_ParseToken(t *testing.T) {

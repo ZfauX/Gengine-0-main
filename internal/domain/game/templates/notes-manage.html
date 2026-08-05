@@ -68,7 +68,7 @@
             .then(r => r.json())
             .then(data => {
                 if (data.note) location.reload();
-                else alert('{{ T $.Lang "generic.error" }}');
+                else window.showToast('{{ T $.Lang "generic.error" }}', 'error');
             });
         });
 
@@ -92,7 +92,7 @@
             .then(r => r.json())
             .then(data => {
                 if (data.status === 'ok') location.reload();
-                else alert('{{ T $.Lang "generic.error" }}');
+                else window.showToast('{{ T $.Lang "generic.error" }}', 'error');
             });
         });
     })();

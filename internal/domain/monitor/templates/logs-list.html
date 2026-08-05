@@ -55,11 +55,6 @@
         if (nextBtn) nextBtn.addEventListener('click', function() { loadPage(currentPage + 1); });
         const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${wsProtocol}//${location.host}/games/${gameID}/logs/ws`;
-        let socket;
-        let reconnectAttempts = 0;
-        let reconnectTimer = null;
-        const MAX_RECONNECT_DELAY = 30000;
-        const BASE_RECONNECT_DELAY = 1000;
 
         const statusEl = document.getElementById('connection-status');
         const logList = document.getElementById('log-list');
@@ -71,14 +66,9 @@
             }
         }
 
-        function connect() {
-            socket = new WebSocket(wsUrl);
-            socket.onopen = function() {
-                console.log('Logs: WebSocket connected');
-                updateConnectionStatus('{{ T $.Lang "logs.connected" }}', '#2ecc71');
-                reconnectAttempts = 0;
-            };
-            socket.onmessage = function(e) {
+        // Единый reconnecting-клиент (UX3) вместо самодельного backoff.
+        const logSocket = window.createReconnectingWebSocket(wsUrl, {
+            onMessage: function(e) {
                 const data = JSON.parse(e.data);
                 const li = document.createElement('li');
                 li.className = 'py-2 text-sm text-gray-700 dark:text-gray-300 border-b border-gray-100';
@@ -88,40 +78,18 @@
                 if (emptyMsg) emptyMsg.remove();
                 logList.appendChild(li);
                 logList.scrollTop = logList.scrollHeight;
-            };
-            socket.onclose = function(event) {
-                if (!event.wasClean) {
-                    console.log('Logs: WebSocket broken, reconnecting...');
+            },
+            onStatus: function(name) {
+                if (name === 'connected') {
+                    updateConnectionStatus('{{ T $.Lang "logs.connected" }}', '#2ecc71');
+                } else if (name === 'reconnecting' || name === 'error' || name === 'failed') {
+                    updateConnectionStatus('{{ T $.Lang "logs.reconnecting" }}', '#e67e22');
                 }
-                updateConnectionStatus('{{ T $.Lang "logs.reconnecting" }}', '#e67e22');
-                scheduleReconnect();
-            };
-            socket.onerror = function(error) {
-                console.error('Logs: WebSocket error', error);
-                updateConnectionStatus('{{ T $.Lang "logs.error" }}', '#e74c3c');
-            };
-        }
-
-        function scheduleReconnect() {
-            if (reconnectTimer) clearTimeout(reconnectTimer);
-            const delay = Math.min(MAX_RECONNECT_DELAY, BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts));
-            reconnectAttempts++;
-            console.log(`Logs: reconnecting in ${delay}ms (attempt ${reconnectAttempts})`);
-            var reconnectStr = '{{ T $.Lang "logs.reconnecting" }}';
-            updateConnectionStatus(reconnectStr, '#e67e22');
-            reconnectTimer = setTimeout(() => {
-                connect();
-            }, delay);
-        }
-
-        connect();
+            }
+        });
 
         window.addEventListener('beforeunload', function() {
-            if (socket) {
-                socket.onclose = null;
-                socket.close();
-            }
-            if (reconnectTimer) clearTimeout(reconnectTimer);
+            logSocket.close();
         });
     })();
 </script>

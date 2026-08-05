@@ -1053,6 +1053,8 @@ var enMessages = map[string]string{
 	"photos.network_error":   "Network error",
 	"photos.no_photos":       "No photos yet.",
 	"photos.delete":          "Delete",
+	"photos.close":           "Close view",
+	"photos.preview_alt":     "Photo preview",
 	"photos.level_label":     "Level: %s",
 	"photos.delete_confirm":  "Delete this photo? This cannot be undone.",
 	"photos.back_to_game":    "← Back to game",

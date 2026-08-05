@@ -237,7 +237,7 @@
             })
             .catch(err => {
                 console.error('Дисквалификация:', err);
-                alert('{{ T $.Lang "monitor.disqualify_error" }}' + err.message);
+                window.showToast('{{ T $.Lang "monitor.disqualify_error" }}' + err.message, 'error');
             });
         };
 

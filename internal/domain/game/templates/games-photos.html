@@ -51,8 +51,8 @@
 
     <!-- Модальное окно для просмотра фото -->
     <div id="photo-modal" class="fixed inset-0 z-50 hidden bg-black/90 flex items-center justify-center">
-        <span class="absolute top-4 right-6 text-white text-4xl font-bold cursor-pointer hover:text-gray-300 transition">×</span>
-        <img id="modal-image" src="" alt="Photo" class="max-w-[90%] max-h-[80%] object-contain">
+        <button id="photo-modal-close" type="button" aria-label="{{ T $.Lang "photos.close" }}" class="absolute top-4 right-6 text-white text-4xl font-bold cursor-pointer hover:text-gray-300 transition">×</button>
+        <img id="modal-image" src="" alt="{{ T $.Lang "photos.preview_alt" }}" class="max-w-[90%] max-h-[80%] object-contain">
         <div id="modal-caption" class="absolute bottom-8 left-0 right-0 text-center text-white text-sm px-4"></div>
     </div>
 </div>
@@ -169,8 +169,12 @@
             modal.classList.remove('flex');
         };
 
-        // Закрытие по клику на фон (CSP-safe)
-        modal.addEventListener('click', closePhotoModal);
+        // Закрытие по кнопке и по клику на фон (CSP-safe)
+        const photoCloseBtn = document.getElementById('photo-modal-close');
+        if (photoCloseBtn) photoCloseBtn.addEventListener('click', closePhotoModal);
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) closePhotoModal();
+        });
 
         // Fade-in images when loaded (CSP-safe replacement for onload)
         document.querySelectorAll('.photo-thumb').forEach(function(img) {
@@ -219,12 +223,12 @@
                         setTimeout(() => card.remove(), 300);
                     }
                 } else {
-                    alert('{{ T $.Lang "generic.error" }}');
+                    window.showToast('{{ T $.Lang "generic.error" }}', 'error');
                 }
             })
             .catch(err => {
                 console.error('Delete error:', err);
-                alert('{{ T $.Lang "generic.error" }}: ' + err.message);
+                window.showToast('{{ T $.Lang "generic.error" }}: ' + err.message, 'error');
             });
         });
 

@@ -594,27 +594,24 @@
                 return String(text).replace(/[&<>"']/g, function(m) { return map[m]; });
             }
 
-            // WebSocket для real-time уведомлений
+            // WebSocket для real-time уведомлений — единый reconnecting-клиент (UX3),
+            // чтобы бэлл не умирал молча при флапах сети.
             function initWebSocket() {
                 var protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                var ws = new WebSocket(protocol + '//' + window.location.host + '/ws/notifications');
-                
-                ws.onmessage = function(event) {
-                    var data = JSON.parse(event.data);
-                    if (data.type && data.type !== 'ping') {
-                        showToast(data.message || data.title, 'info');
-                        if (data.unread_count !== undefined) {
-                            updateNotificationBadge(data.unread_count);
+                window.notifSocket = window.createReconnectingWebSocket(protocol + '//' + window.location.host + '/ws/notifications', {
+                    onMessage: function(event) {
+                        var data = JSON.parse(event.data);
+                        if (data.type && data.type !== 'ping') {
+                            showToast(data.message || data.title, 'info');
+                            if (data.unread_count !== undefined) {
+                                updateNotificationBadge(data.unread_count);
+                            }
                         }
                     }
-                };
-
-                ws.onerror = function() {
-                    console.warn('WebSocket notifications error');
-                };
+                });
 
                 window.addEventListener('beforeunload', function() {
-                    ws.close();
+                    if (window.notifSocket) window.notifSocket.close();
                 });
             }
 

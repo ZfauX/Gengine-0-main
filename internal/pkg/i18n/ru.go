@@ -1056,6 +1056,8 @@ var ruMessages = map[string]string{
 	"photos.network_error":   "Ошибка сети",
 	"photos.no_photos":       "Фотографий пока нет.",
 	"photos.delete":          "Удалить",
+	"photos.close":           "Закрыть просмотр",
+	"photos.preview_alt":     "Просмотр фотографии",
 	"photos.level_label":     "Уровень: %s",
 	"photos.delete_confirm":  "Удалить это фото? Действие необратимо.",
 	"photos.back_to_game":    "← Назад к игре",

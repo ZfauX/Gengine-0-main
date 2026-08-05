@@ -4,7 +4,7 @@
 
     <div class="card">
         <!-- Область сообщений -->
-        <div id="chat-messages" class="h-96 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-800 mb-3"></div>
+        <div id="chat-messages" role="log" aria-live="polite" aria-relevant="additions" class="h-96 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-800 mb-3"></div>
 
         <!-- Поле ввода и отправка -->
         <div class="flex flex-wrap items-center gap-2">
@@ -15,7 +15,7 @@
         </div>
 
         <!-- Статус подключения -->
-        <div id="connection-status" class="mt-2 text-sm text-gray-500 dark:text-gray-400"></div>
+        <div id="connection-status" role="status" class="mt-2 text-sm text-gray-500 dark:text-gray-400"></div>
     </div>
 </div>
 

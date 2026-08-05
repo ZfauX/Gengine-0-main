@@ -794,16 +794,27 @@ func TestStaticCacheMiddleware_StaticPath(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.Use(middleware.StaticCacheMiddleware())
-	router.GET("/static/css/style.css", func(c *gin.Context) {
+	router.GET("/static/*file", func(c *gin.Context) {
 		c.String(http.StatusOK, "css")
 	})
 
-	req := httptest.NewRequest("GET", "/static/css/style.css", nil)
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
+	t.Run("версионированный ассет — immutable", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/static/css/style.css?v=20260805", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "public, max-age=31536000, immutable", w.Header().Get("Cache-Control"))
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, "public, max-age=31536000, immutable", w.Header().Get("Cache-Control"))
+	})
+
+	t.Run("неверсионированный ассет — короткий max-age (P4)", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/static/css/style.css", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, "public, max-age=3600", w.Header().Get("Cache-Control"))
+	})
 }
 
 func TestStaticCacheMiddleware_UploadsPath(t *testing.T) {

@@ -11,7 +11,7 @@ function loginWithPasskey() {
     btn.textContent = '{{ T $.Lang "auth.login_passkey_waiting" }}';
 
     if (!navigator.credentials || !navigator.credentials.get) {
-        alert('{{ T $.Lang "passkey.not_supported" }}');
+        window.showToast('{{ T $.Lang "passkey.not_supported" }}', 'error');
         btn.disabled = false;
         btn.textContent = '{{ T $.Lang "passkey.login_button" }}';
         return;
@@ -53,14 +53,14 @@ function loginWithPasskey() {
         if (data.status === 'ok' && data.redirect) {
             window.location.href = data.redirect;
         } else {
-            alert('{{ T $.Lang "passkey.error_prefix" }}' + (data.error || '{{ T $.Lang "generic.unknown_error" }}'));
+            window.showToast('{{ T $.Lang "passkey.error_prefix" }}' + (data.error || '{{ T $.Lang "generic.unknown_error" }}'), 'error');
             btn.disabled = false;
             btn.textContent = '{{ T $.Lang "passkey.login_button" }}';
         }
     })
     .catch(err => {
         console.error(err);
-        alert('{{ T $.Lang "passkey.error_prefix" }}' + err.message);
+        window.showToast('{{ T $.Lang "passkey.error_prefix" }}' + err.message, 'error');
         btn.disabled = false;
         btn.textContent = '{{ T $.Lang "passkey.login_button" }}';
     });

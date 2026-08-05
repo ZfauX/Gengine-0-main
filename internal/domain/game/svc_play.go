@@ -439,13 +439,35 @@ func (s *GamePlayService) StartTesting(ctx context.Context, gameID, userID uint)
 			return findErr
 		}
 
-		// Создаём тестовую команду
+		// Создаём или переиспользуем тестовую команду (C1): старые orphan-
+		// команды `_test_<userID>` без прохождений не должны накапливаться.
 		testTeam := team.Team{
 			Name:      fmt.Sprintf("_test_%d", userID),
 			CaptainID: userID,
 		}
-		if createErr := tx.Create(&testTeam).Error; createErr != nil {
-			return createErr
+		var existingTeam team.Team
+		teamErr := tx.Where("name = ?", testTeam.Name).First(&existingTeam).Error
+		switch {
+		case teamErr == nil:
+			var passingCount int64
+			if countErr := tx.Model(&GamePassing{}).Where("team_id = ?", existingTeam.ID).Count(&passingCount).Error; countErr != nil {
+				return countErr
+			}
+			if passingCount == 0 {
+				// Орфан-команда — переиспользуем её.
+				testTeam = existingTeam
+			} else {
+				// Команда используется — создаём новую (имя не уникально).
+				if createErr := tx.Create(&testTeam).Error; createErr != nil {
+					return createErr
+				}
+			}
+		case errors.Is(teamErr, gorm.ErrRecordNotFound):
+			if createErr := tx.Create(&testTeam).Error; createErr != nil {
+				return createErr
+			}
+		default:
+			return teamErr
 		}
 
 		passing = &GamePassing{

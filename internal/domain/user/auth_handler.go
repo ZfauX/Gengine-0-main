@@ -2,7 +2,6 @@
 package user
 
 import (
-	"context"
 	"crypto/subtle"
 	"errors"
 	"fmt"
@@ -608,24 +607,16 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	if userID != 0 {
 		if h.emailSvc != nil {
 			if user, err := h.userService.GetByID(c.Request.Context(), userID); err == nil {
-				go func() {
-					ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-					defer cancel()
-
-					done := make(chan error, 1)
-					go func() {
-						done <- h.emailSvc.SendPasswordChangedEmail(user.Email, user.Name)
-					}()
-
-					select {
-					case <-ctx.Done():
-						log.Error().Err(ctx.Err()).Uint("user_id", userID).Msg("ResetPassword: timeout sending password changed email")
-					case err := <-done:
-						if err != nil {
-							log.Error().Err(err).Uint("user_id", userID).Msg("ResetPassword: failed to send password changed email")
-						}
-					}
-				}()
+				// Через глобальную очередь (C6): раньше была untracked goroutine
+				// с ручным таймаутом — очередь Enqueue уже асинхронна и не блокирует
+				// ответ, а воркер отслеживается при graceful shutdown.
+				if enqErr := email.Enqueue(
+					user.Email,
+					"Ваш пароль был изменён",
+					fmt.Sprintf("Здравствуйте, %s!\n\nВаш пароль был успешно изменён. Если это были не вы, немедленно свяжитесь с поддержкой.\n\nС уважением,\nКоманда Gengine", user.Name),
+				); enqErr != nil {
+					log.Error().Err(enqErr).Uint("user_id", userID).Msg("ResetPassword: failed to enqueue password changed email")
+				}
 			}
 		}
 	}
