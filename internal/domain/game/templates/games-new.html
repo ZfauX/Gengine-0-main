@@ -68,7 +68,7 @@
         <!-- Обложка -->
         <div>
             <label for="cover" class="form-label">{{ T $.Lang "game.edit_cover_label" }}</label>
-            <div id="coverDropZone" class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:border-blue-500 transition cursor-pointer">
+            <div id="coverDropZone" class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:border-blue-500 transition cursor-pointer" role="button" tabindex="0" aria-label="{{ T $.Lang "game.new_cover_drop" }}">
                 <input type="file" name="cover" id="cover" accept="image/jpeg,image/png,image/webp" class="hidden">
                 <div id="coverPlaceholder">
                     <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
@@ -113,6 +113,14 @@
         // Клик по зоне открывает файловый диалог
         dropZone.addEventListener('click', function(e) {
             if (e.target.tagName !== 'INPUT') {
+                fileInput.click();
+            }
+        });
+
+        // Клавиатура: Enter/Space открывает выбор файла (UX9)
+        dropZone.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
                 fileInput.click();
             }
         });

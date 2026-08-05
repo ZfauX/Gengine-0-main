@@ -51,7 +51,7 @@ function initToast() {
     if (!container) {
         container = document.createElement('div');
         container.id = 'toast-container';
-        container.className = 'fixed top-4 right-4 z-[9999] space-y-2';
+        container.className = 'fixed top-4 right-4 z-[10050] space-y-2';
         document.body.appendChild(container);
     }
 
@@ -161,7 +161,11 @@ function showModalConfirm(message, element) {
     var body = document.body;
     var title = body.getAttribute('data-i18n-confirm-title') || 'Подтверждение';
     var cancelText = body.getAttribute('data-i18n-confirm-cancel') || 'Отмена';
-    var okText = body.getAttribute('data-i18n-confirm-ok') || 'Удалить';
+    // Per-action OK label (UX2): элемент может задать data-confirm-ok,
+    // иначе — глобальный текст (по умолчанию «Удалить» для деструктивных действий).
+    var okText = (element && element.dataset && element.dataset.confirmOk)
+        ? element.dataset.confirmOk
+        : (body.getAttribute('data-i18n-confirm-ok') || 'Удалить');
 
     var overlay = document.createElement('div');
     overlay.id = 'confirm-modal';
@@ -178,6 +182,17 @@ function showModalConfirm(message, element) {
 
     document.body.appendChild(overlay);
 
+    // A11y: возвращаем фокус на элемент, вызвавший модалку (UX9).
+    var trigger = (element && typeof element.focus === 'function') ? element : document.activeElement;
+
+    function finish(result) {
+        overlay.remove();
+        if (trigger && typeof trigger.focus === 'function') {
+            try { trigger.focus(); } catch (_) {}
+        }
+        resolvePromise(result);
+    }
+
     // Focus trap — Tab/Shift+Tab cycle within modal
     var focusableSelector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
     var focusableElements = overlay.querySelectorAll(focusableSelector);
@@ -186,8 +201,7 @@ function showModalConfirm(message, element) {
 
     overlay.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
-            overlay.remove();
-            resolvePromise(false);
+            finish(false);
             return;
         }
         if (e.key === 'Tab') {
@@ -211,17 +225,14 @@ function showModalConfirm(message, element) {
     }
 
     document.getElementById('confirm-cancel').addEventListener('click', function() {
-        overlay.remove();
-        resolvePromise(false);
+        finish(false);
     });
     document.getElementById('confirm-ok').addEventListener('click', function() {
-        overlay.remove();
-        resolvePromise(true);
+        finish(true);
     });
     overlay.addEventListener('click', function(e) {
         if (e.target === overlay) {
-            overlay.remove();
-            resolvePromise(false);
+            finish(false);
         }
     });
 
@@ -649,114 +660,6 @@ function initInlineValidation() {
 }
 
 // =============================================================================
-// UX8: SSE game status notifications
-// =============================================================================
-
-function initSSEGameNotifications(gameId) {
-    if (!gameId) return;
-
-    var eventSource = null;
-    var reconnectTimer = null;      // scoped per instance (not global)
-    var reconnectAttempts = 0;
-    var lastEventId = null;         // track for reconnect (Last-Event-ID)
-    var MAX_RECONNECT_ATTEMPTS = 5;
-    var BASE_RECONNECT_DELAY = 2000;
-    var MAX_RECONNECT_DELAY = 30000;
-
-    function connectSSE() {
-        // Закрываем старый EventSource, если был
-        if (eventSource) {
-            eventSource.close();
-        }
-
-        // Отменяем старый reconnect timer
-        if (reconnectTimer) {
-            clearTimeout(reconnectTimer);
-            reconnectTimer = null;
-        }
-
-        try {
-            // Append lastEventId for event replay on reconnect
-            var url = '/game/sse/' + gameId + (lastEventId ? '?lastEventId=' + encodeURIComponent(lastEventId) : '');
-            eventSource = new EventSource(url);
-
-            eventSource.onopen = function() {
-                console.debug('SSE connected for game', gameId);
-                reconnectAttempts = 0;
-                document.body.setAttribute('data-sse-active', 'true');
-            };
-
-            function parseSSEData(e) {
-                // Browser populates e.lastEventId from the SSE "id:" field
-                if (e && e.lastEventId) lastEventId = e.lastEventId;
-                try { return JSON.parse(e.data); } catch (_) { return null; }
-            }
-
-            eventSource.addEventListener('game_started', function(e) {
-                var data = parseSSEData(e);
-                if (data) showToast(tI18n('game-started'), 'success', 5000);
-            });
-
-            eventSource.addEventListener('game_finished', function(e) {
-                var data = parseSSEData(e);
-                if (data) showToast(tI18n('game-finished'), 'info', 8000);
-            });
-
-            eventSource.addEventListener('team_disqualified', function(e) {
-                var data = parseSSEData(e);
-                if (data && data.team_id) {
-                    showToast(tI18n('team-disqualified'), 'error', 10000);
-                }
-            });
-
-            eventSource.addEventListener('level_completed', function(e) {
-                var data = parseSSEData(e);
-                if (data && data.team_id) {
-                    showToast(tI18n('level-passed'), 'success', 4000);
-                }
-            });
-
-            eventSource.addEventListener('time_warning', function(e) {
-                var data = parseSSEData(e);
-                if (data && data.remaining_minutes) {
-                    showToast(tI18n('time-left') + data.remaining_minutes + ' ' + (data.remaining_minutes === 1 ? tI18n('minute-unit') : tI18n('minutes-unit')) + ' ' + tI18n('until-finish'), 'warning', 5000);
-                }
-            });
-
-            eventSource.addEventListener('hint_available', function(e) {
-                var data = parseSSEData(e);
-                if (data && data.level_number) {
-                    showToast(tI18n('hint-available') + data.level_number, 'info', 4000);
-                }
-            });
-
-            eventSource.onerror = function(err) {
-                eventSource.close();
-                document.body.removeAttribute('data-sse-active');
-                if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-                    console.warn('SSE: max reconnect attempts reached, stopping');
-                    return;
-                }
-                reconnectAttempts++;
-                var delay = Math.min(MAX_RECONNECT_DELAY, BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts - 1));
-                console.warn('SSE error, reconnecting in ' + Math.round(delay / 1000) + 's (attempt ' + reconnectAttempts + ')', err);
-                reconnectTimer = setTimeout(connectSSE, delay);
-            };
-        } catch (e) {
-            console.warn('SSE not supported, notifications disabled:', e);
-        }
-    }
-
-    connectSSE();
-
-    // Cleanup on page unload
-    window.addEventListener('beforeunload', function() {
-        if (reconnectTimer) clearTimeout(reconnectTimer);
-        if (eventSource) eventSource.close();
-    });
-}
-
-// =============================================================================
 // UX9: Team rating indicators in lobby
 // =============================================================================
 function initTeamRatingIndicators() {
@@ -810,10 +713,10 @@ function initTeamRatingIndicators() {
             var hasHalfStar = (rating % 20) >= 10;
             var starHTML = '';
             for (var i = 0; i < fullStars; i++) {
-                starHTML += '⭐';
+                starHTML += '★';
             }
             if (hasHalfStar) {
-                starHTML += '🌤️';
+                starHTML += '⯨'; // половина звезды (UX12 — раньше была 🌤️)
             }
             starsContainer.textContent = starHTML;
             starsContainer.title = tI18n('rating') + rating.toFixed(1);
@@ -1076,23 +979,9 @@ document.addEventListener('DOMContentLoaded', function() {
     initFileUploadProgress();
     initAutoSaveDrafts();
     initPushSubscription();
-    initSSEGameNotificationsFromPage();
     initTeamRatingIndicators();
     initCodeCopy();
     initAutoSaveIndicator();
     initSearchAutocomplete();
     initHTMXLoading();
 });
-
-// Auto-detect game ID from page for SSE notifications.
-// Uses data-sse-game-id (only on gameplay pages) so monitor/chat/logs pages,
-// which already use WebSocket, don't open a duplicate SSE connection.
-function initSSEGameNotificationsFromPage() {
-    var gameIdEl = document.querySelector('[data-sse-game-id]');
-    if (gameIdEl) {
-        var gameId = parseInt(gameIdEl.dataset.sseGameId);
-        if (!isNaN(gameId)) {
-            initSSEGameNotifications(gameId);
-        }
-    }
-}

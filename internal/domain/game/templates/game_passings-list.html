@@ -20,17 +20,17 @@
                     <td class="table-cell">{{.Team.Captain.Name}}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">
                         {{if eq .Status "pending"}}
-                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">{{ T $.Lang "passing.status_pending" }}</span>
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200">{{ T $.Lang "passing.status_pending" }}</span>
                         {{else if eq .Status "accepted"}}
-                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">{{ T $.Lang "passing.status_accepted" }}</span>
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200">{{ T $.Lang "passing.status_accepted" }}</span>
                         {{else if eq .Status "rejected"}}
-                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">{{ T $.Lang "passing.status_rejected" }}</span>
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200">{{ T $.Lang "passing.status_rejected" }}</span>
                         {{else if eq .Status "started"}}
-                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">{{ T $.Lang "passing.status_started" }}</span>
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200">{{ T $.Lang "passing.status_started" }}</span>
                         {{else if eq .Status "finished"}}
-                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">{{ T $.Lang "passing.status_finished" }}</span>
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200">{{ T $.Lang "passing.status_finished" }}</span>
                         {{else if eq .Status "disqualified"}}
-                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-800 text-white">{{ T $.Lang "passing.status_disqualified" }}</span>
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-800 text-white dark:bg-red-900 dark:text-red-100">{{ T $.Lang "passing.status_disqualified" }}</span>
                         {{else}}
                             <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100">{{.Status}}</span>
                         {{end}}

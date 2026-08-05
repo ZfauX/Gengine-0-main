@@ -28,10 +28,10 @@
   --color-border-light: #e5e7eb;
   --color-nav-bg: #ffffff;
 
-  /* Шрифты: 'Inter' не загружается (нет локального файла, внешние CDN вне CSP),
-     поэтому используем системный стек напрямую. */
+  /* Шрифты: 'Inter' и 'JetBrains Mono' не загружаются (нет локальных файлов,
+     внешние CDN вне CSP) — используем системные стеки напрямую. */
   --font-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   /* Отступы */
   --spacing-18: 4.5rem;
@@ -50,6 +50,16 @@
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* Доступность: отключаем анимации/переходы при prefers-reduced-motion (UX9) */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* ============================================================

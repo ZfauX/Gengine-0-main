@@ -74,12 +74,14 @@
 
         // Удаление заметки через делегирование
         const notesList = document.getElementById('notes-list');
-        notesList.addEventListener('click', function(e) {
+        notesList.addEventListener('click', async function(e) {
             const btn = e.target.closest('.delete-note-btn');
             if (!btn) return;
             const noteID = btn.dataset.noteId;
             if (!noteID) return;
-            if (!confirm('{{ T $.Lang "notes.delete_title" }}')) return;
+            // Единая кастомная модалка (UX1) вместо нативного confirm
+            const ok = await window.showModalConfirm('{{ T $.Lang "notes.delete_title" }}', btn);
+            if (!ok) return;
             fetch('/api/notes/' + noteID, {
                 method: 'DELETE',
                 credentials: 'same-origin',

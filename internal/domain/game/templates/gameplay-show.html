@@ -22,7 +22,7 @@
 
         <!-- Таймер -->
         <div id="timer-container" class="mb-4">
-            <p id="timer-display" class="text-xl font-mono font-bold text-gray-700 dark:text-gray-300"></p>
+            <p id="timer-display" class="text-xl font-mono font-bold text-gray-700 dark:text-gray-300" aria-live="polite"></p>
         </div>
 
         <!-- Форма отправки кода -->
@@ -45,7 +45,7 @@
             <input type="hidden" name="_csrf" value="{{.csrf}}">
             <input type="file" name="answer_file" id="file-input" accept="image/jpeg,image/png,image/gif,application/pdf,text/plain"
                    class="flex-1 text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
-            <button type="submit" id="file-submit-btn" class="btn btn-outline text-sm whitespace-nowrap">{{ T $.Lang "gameplay.upload_file" }}</button>
+            <button type="submit" id="file-submit-btn" class="btn btn-outline text-sm whitespace-nowrap" data-no-loading>{{ T $.Lang "gameplay.upload_file" }}</button>
         </form>
 
         <div id="upload-progress" class="mt-2 hidden">
@@ -419,14 +419,17 @@
             }
         });
 
-        // Flash error from session (server-side)
+        // Flash error from session (server-side).
+        // Показываем как тост И удаляем inline-flash, чтобы не дублировать (UX5).
         const flashError = document.querySelector('.flash-error');
         if (flashError) {
             showToast(flashError.textContent.trim(), 'error');
+            flashError.remove();
         }
         const flashHint = document.querySelector('.flash-info');
         if (flashHint) {
             showToast(flashHint.textContent.trim(), 'info');
+            flashHint.remove();
         }
 
         // SSE Client — real-time updates для геймплея

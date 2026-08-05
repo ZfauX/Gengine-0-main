@@ -132,9 +132,6 @@
       data-i18n-not-saved="{{ T $.Lang "js.not_saved" }}"
       data-i18n-click-to-copy="{{ T $.Lang "js.click_to_copy" }}">
 
-    <!-- A11y: skip-link для быстрого перехода к контенту -->
-    <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[10001] focus:px-4 focus:py-2 focus:bg-white focus:text-blue-600 focus:rounded-md focus:shadow-lg" style="position:absolute;left:-9999px;top:-9999px">{{ T $.Lang "layout.skip_to_content" }}</a>
-
     <!-- Flash-сообщения -->
     {{if .Flash}}
     <div class="fixed top-4 right-4 z-[110] max-w-sm">
@@ -155,9 +152,6 @@
 
     <!-- App JS (локально) -->
     <script defer src="/static/js/app.js"></script>
-
-    <!-- WebSocket client with auto-reconnect -->
-    <script defer src="/static/js/ws-client.js"></script>
 
     <!-- Top progress bar -->
     <div id="top-progress-bar" class="fixed top-0 left-0 z-[100] h-1 bg-blue-600 transition-all duration-300 ease-out w-0 opacity-0"></div>
@@ -203,7 +197,7 @@
                     {{end}}
                     
                     <!-- Кнопка переключения темы -->
-                    <button id="themeToggle" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400" title="{{ T $.Lang "layout.theme_toggle" }}" aria-label="{{ T $.Lang "layout.theme_toggle" }}">
+                    <button id="themeToggle" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400" title="{{ T $.Lang "layout.theme_toggle" }}" aria-label="{{ T $.Lang "layout.theme_toggle" }}" aria-pressed="false">
                         🌙
                     </button>
                     <!-- Language switch -->
@@ -229,7 +223,7 @@
 
                 <!-- Mobile hamburger -->
                 <div class="flex items-center space-x-3 sm:hidden">
-                    <button id="themeToggleMobile" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400 text-xl" title="{{ T $.Lang "layout.theme_toggle" }}" aria-label="{{ T $.Lang "layout.theme_toggle" }}">🌙</button>
+                    <button id="themeToggleMobile" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400 text-xl" title="{{ T $.Lang "layout.theme_toggle" }}" aria-label="{{ T $.Lang "layout.theme_toggle" }}" aria-pressed="false">🌙</button>
                     <!-- Language switch mobile -->
                     <div class="flex items-center space-x-1">
                         <button data-lang="ru" class="lang-btn px-2 py-1 text-xs rounded {{if eq .Lang "ru"}}bg-primary-600 text-white{{else}}text-gray-500 dark:text-gray-400 hover:text-gray-700{{end}}">RU</button>
@@ -282,7 +276,7 @@
     </main>
 
     <!-- Toast уведомления -->
-    <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2" aria-live="polite" role="status"></div>
+    <div id="toast-container" class="fixed top-4 right-4 z-[10050] space-y-2" aria-live="polite" role="status"></div>
 
     <!-- Футер (опционально) -->
     <footer class="border-t border-gray-200 dark:border-gray-700 mt-12 py-6 text-center text-sm text-gray-500 dark:text-gray-400" role="contentinfo">
@@ -350,8 +344,14 @@
                 var icon = dark ? '☀️' : '🌙';
                 var dt = document.getElementById('themeToggle');
                 var mt = document.getElementById('themeToggleMobile');
-                if (dt) dt.textContent = icon;
-                if (mt) mt.textContent = icon;
+                if (dt) {
+                    dt.textContent = icon;
+                    dt.setAttribute('aria-pressed', dark ? 'true' : 'false');
+                }
+                if (mt) {
+                    mt.textContent = icon;
+                    mt.setAttribute('aria-pressed', dark ? 'true' : 'false');
+                }
             }
 
             function setThemeState(dark) {

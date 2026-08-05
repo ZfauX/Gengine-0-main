@@ -49,8 +49,9 @@
     </div>
 
     <!-- Список игр -->
-    <!-- Skeleton загрузка -->
-    <div id="skeletonLoading" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+    <!-- Skeleton скрыт по умолчанию: страница сервер-рендерится, скелет нужен
+         только для AJAX-обновлений (UX4 — FOUC). -->
+    <div id="skeletonLoading" class="hidden grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
         {{range loop 0 6}}
         <div class="card animate-pulse">
             <div class="aspect-video rounded-lg mb-3 bg-gray-200 dark:bg-gray-700"></div>
@@ -84,9 +85,9 @@
             <div class="flex items-center justify-between mb-2">
                 <span class="text-sm text-gray-500">{{.Author.Name}}</span>
                 {{if .IsDraft}}
-                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">{{ T $.Lang "games.draft" }}</span>
+                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200">{{ T $.Lang "games.draft" }}</span>
                 {{else}}
-                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">{{ T $.Lang "games.published" }}</span>
+                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200">{{ T $.Lang "games.published" }}</span>
                 {{end}}
             </div>
 
@@ -174,11 +175,11 @@
             </p>
             <nav class="inline-flex gap-1" aria-label="Pagination">
                 {{if gt .Page 1}}
-                    <a href="?page={{.PrevPage}}&status={{$.Filter.Status}}&search={{$.Filter.Search}}&date_from={{$.Filter.DateFrom}}&date_to={{$.Filter.DateTo}}" class="btn btn-outline text-sm px-3 py-1">←</a>
+                    <a href="?page={{.PrevPage}}&status={{$.Filter.Status}}&search={{$.Filter.Search}}&date_from={{$.Filter.DateFrom}}&date_to={{$.Filter.DateTo}}" class="btn btn-outline text-sm px-3 py-1" aria-label="{{ T $.Lang "games.pagination_prev" }}">←</a>
                 {{end}}
                 <span class="px-3 py-1 text-sm text-gray-700 bg-gray-100 rounded-md">{{.Page}}</span>
                 {{if lt .Page .TotalPages}}
-                    <a href="?page={{.NextPage}}&status={{$.Filter.Status}}&search={{$.Filter.Search}}&date_from={{$.Filter.DateFrom}}&date_to={{$.Filter.DateTo}}" class="btn btn-outline text-sm px-3 py-1">→</a>
+                    <a href="?page={{.NextPage}}&status={{$.Filter.Status}}&search={{$.Filter.Search}}&date_from={{$.Filter.DateFrom}}&date_to={{$.Filter.DateTo}}" class="btn btn-outline text-sm px-3 py-1" aria-label="{{ T $.Lang "games.pagination_next" }}">→</a>
                 {{end}}
             </nav>
         </div>
@@ -248,20 +249,6 @@
 
     // Поиск только по кнопке "Найти" — без автопоиска при вводе
 
-    // Confirmation для опасных действий (удаление, публикация)
-    (function() {
-        document.addEventListener('click', function(e) {
-            const btn = e.target.closest('[data-confirm]');
-            if (!btn) return;
-
-            const message = btn.getAttribute('data-confirm');
-            if (!confirm(message)) {
-                e.preventDefault();
-                return false;
-            }
-        });
-    })();
-
     // Навигация по клику на карточку с data-href (CSP-safe).
     // Клики по вложенным интерактивным элементам (ссылки «Редактировать», кнопки)
     // НЕ перехватываем — иначе браузер уходит на страницу игры вместо целевого действия.
@@ -281,24 +268,6 @@
             window.location.href = card.getAttribute('data-href');
         }
     });
-
-    // Skeleton loading для AJAX-запросов
-    (function() {
-        // При загрузке страницы скрываем skeleton, показываем контент
-        var sk = document.getElementById('skeletonLoading');
-        var cv = document.getElementById('gamesCardView');
-        var tv = document.getElementById('gamesTableView');
-        if (sk && cv) {
-            sk.classList.add('hidden');
-            cv.classList.remove('hidden');
-        }
-        if (tv && cv) {
-            if (sk && cv) {
-                // табличный режим тоже скрыт по умолчанию, показываем только card
-                tv.classList.add('hidden');
-            }
-        }
-    })();
 
     window.showSkeleton = function() {
         const table = document.getElementById('gamesTable');

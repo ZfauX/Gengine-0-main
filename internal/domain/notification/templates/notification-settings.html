@@ -142,7 +142,7 @@
 
         <!-- Кнопки -->
         <div class="flex flex-wrap gap-3 pt-2">
-            <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "notif.save_button" }}</button>
+            <button type="submit" class="btn btn-primary text-sm" data-no-loading>{{ T $.Lang "notif.save_button" }}</button>
             <a href="/profile" class="btn btn-outline text-sm">{{ T $.Lang "notif.cancel" }}</a>
         </div>
     </form>
@@ -156,6 +156,13 @@
 
         form.addEventListener('submit', function(e) {
             e.preventDefault();
+
+            const submitBtn = form.querySelector('button[type="submit"]');
+            const originalLabel = submitBtn ? submitBtn.textContent : '';
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = '{{ T $.Lang "notif.saving" }}';
+            }
 
             const formData = new FormData(form);
             const data = {
@@ -173,6 +180,13 @@
             const meta = document.querySelector('meta[name="csrf-token"]');
             const csrf = meta ? meta.getAttribute('content') : '';
 
+            function restoreBtn() {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = originalLabel;
+                }
+            }
+
             fetch('/api/settings/notifications', {
                 method: 'POST',
                 headers: {
@@ -182,6 +196,7 @@
                 body: JSON.stringify(data)
             })
             .then(function(r) {
+                restoreBtn();
                 if (r.ok) {
                     showToast('{{ T $.Lang "notif.saved" }}', 'success');
                 } else {
@@ -189,6 +204,7 @@
                 }
             })
             .catch(function() {
+                restoreBtn();
                 showToast('{{ T $.Lang "gameplay.network_error" }}', 'error');
             });
         });

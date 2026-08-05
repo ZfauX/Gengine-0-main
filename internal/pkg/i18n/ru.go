@@ -1352,6 +1352,7 @@ var ruMessages = map[string]string{
 	"notif.event_time_expired":         "⏱️ Время вышло",
 	"notif.event_time_expired_desc":    "Когда время на уровень истекло",
 	"notif.save_button":                "Сохранить настройки",
+	"notif.saving":                     "Сохранение...",
 	"notif.cancel":                     "Отмена",
 	"notif.saved":                      "Настройки сохранены!",
 	"notif.save_error":                 "Ошибка сохранения настроек",

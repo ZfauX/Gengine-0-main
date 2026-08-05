@@ -83,13 +83,13 @@
             <p class="text-sm text-gray-700 dark:text-gray-300">
                 {{ TF $.Lang "admin.pagination_page" .Page .TotalPages }}
             </p>
-            <nav class="inline-flex gap-1" aria-label="{{ T $.Lang "layout.nav_aria_label" }}">
+            <nav class="inline-flex gap-1" aria-label="Pagination">
                 {{if gt .Page 1}}
-                    <a href="?page={{.PrevPage}}&query={{$.Query}}&action={{$.Action}}" class="btn btn-outline text-sm px-3 py-1">←</a>
+                    <a href="?page={{.PrevPage}}&query={{$.Query}}&action={{$.Action}}" class="btn btn-outline text-sm px-3 py-1" aria-label="{{ T $.Lang "games.pagination_prev" }}">←</a>
                 {{end}}
                 <span class="px-3 py-1 text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 rounded-md">{{.Page}}</span>
                 {{if lt .Page .TotalPages}}
-                    <a href="?page={{.NextPage}}&query={{$.Query}}&action={{$.Action}}" class="btn btn-outline text-sm px-3 py-1">→</a>
+                    <a href="?page={{.NextPage}}&query={{$.Query}}&action={{$.Action}}" class="btn btn-outline text-sm px-3 py-1" aria-label="{{ T $.Lang "games.pagination_next" }}">→</a>
                 {{end}}
             </nav>
         </div>

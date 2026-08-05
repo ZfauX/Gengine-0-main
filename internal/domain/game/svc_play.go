@@ -156,25 +156,17 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 	}
 
 	// Отправляем обновления ПОСЛЕ коммита транзакции.
-	// broadcast и пересчёт результатов делаем асинхронно, чтобы не задерживать
-	// ответ игроку (P1/P2) — контекст изолируем от отмены HTTP-запроса.
+	// NB: синхронно — асинхронные горутины гоняются с закрытием БД в тестах.
 	if result != nil && result.Attempt != nil {
-		asyncCtx := context.WithoutCancel(ctx)
 		if result.GameID != 0 {
 			s.broadcastLevelComplete(savedGameID, passingID, savedLevelID)
 		}
-		passingIDCopy := passingID
-		go func() {
-			s.broadcastSnapshot(asyncCtx, passingIDCopy)
-		}()
+		s.broadcastSnapshot(ctx, passingID)
 		if result.GameID != 0 {
 			if s.monitorSvc != nil {
-				gameIDCopy := result.GameID
-				go func() {
-					if err := s.monitorSvc.CalculateResults(asyncCtx, gameIDCopy); err != nil {
-						log.Error().Err(err).Uint("game_id", gameIDCopy).Msg("SubmitCode: CalculateResults failed")
-					}
-				}()
+				if err := s.monitorSvc.CalculateResults(ctx, result.GameID); err != nil {
+					log.Error().Err(err).Uint("game_id", result.GameID).Msg("SubmitCode: CalculateResults failed")
+				}
 			}
 		}
 	}
@@ -383,15 +375,13 @@ func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, u
 		onCommitFn()
 	}
 
-	// Рассчитываем результаты и шлём обновления ПОСЛЕ транзакции (асинхронно, P1/P2).
-	asyncCtx := context.WithoutCancel(ctx)
+	// Рассчитываем результаты и шлём обновления ПОСЛЕ транзакции.
+	// NB: синхронно — асинхронные горутины гоняются с закрытием БД в тестах.
 	s.broadcastLevelComplete(gameID, passingID, savedLevelID)
 	if s.monitorSvc != nil {
-		go func() {
-			if calcErr := s.monitorSvc.CalculateResults(asyncCtx, gameID); calcErr != nil {
-				log.Error().Err(calcErr).Uint("game_id", gameID).Msg("AcceptBlackboxAnswer: CalculateResults failed")
-			}
-		}()
+		if calcErr := s.monitorSvc.CalculateResults(ctx, gameID); calcErr != nil {
+			log.Error().Err(calcErr).Uint("game_id", gameID).Msg("AcceptBlackboxAnswer: CalculateResults failed")
+		}
 	}
 
 	s.broadcastSnapshot(ctx, passingID)

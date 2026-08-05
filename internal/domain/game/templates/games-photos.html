@@ -182,14 +182,6 @@
             }
         });
 
-        // Form confirmation dialogs (CSP-safe)
-        document.addEventListener('submit', function(e) {
-            var form = e.target.closest('[data-confirm-form]');
-            if (form && !confirm(form.getAttribute('data-confirm-form'))) {
-                e.preventDefault();
-            }
-        });
-
         // Закрытие по Escape
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
@@ -198,12 +190,14 @@
         });
 
         // Удаление фото
-        document.getElementById('photos-grid')?.addEventListener('click', function(e) {
+        document.getElementById('photos-grid')?.addEventListener('click', async function(e) {
             const btn = e.target.closest('.delete-photo-btn');
             if (!btn) return;
             const photoID = btn.dataset.photoId;
             if (!photoID) return;
-            if (!confirm('{{ T $.Lang "photos.delete_confirm" }}')) return;
+            // Единая кастомная модалка (UX1) вместо нативного confirm
+            const ok = await window.showModalConfirm('{{ T $.Lang "photos.delete_confirm" }}', btn);
+            if (!ok) return;
             fetch('/games/' + gameID + '/photos/' + photoID, {
                 method: 'DELETE',
                 credentials: 'same-origin',

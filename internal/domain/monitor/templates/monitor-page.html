@@ -216,10 +216,10 @@
             disqualifyTeam(teamId);
         });
 
-        window.disqualifyTeam = function(teamId) {
-            if (!confirm('{{ T $.Lang "monitor.disqualify_confirm" }}')) {
-                return;
-            }
+        window.disqualifyTeam = async function(teamId) {
+            // Единая кастомная модалка (UX1) вместо нативного confirm
+            const ok = await window.showModalConfirm('{{ T $.Lang "monitor.disqualify_confirm" }}');
+            if (!ok) return;
 
             fetch(`/games/${gameID}/disqualify`, {
                 method: 'POST',
