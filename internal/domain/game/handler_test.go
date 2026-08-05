@@ -148,6 +148,14 @@ func (m *MockGameService) ShowGame(ctx context.Context, gameID, viewerID uint, i
 	return args.Get(0).(*Game), reviews, args.Get(2).(float64), args.Get(3).(int64), args.Error(4)
 }
 
+func (m *MockGameService) AutocompleteSearch(ctx context.Context, query string, limit int) ([]AutocompleteItem, error) {
+	args := m.Called(ctx, query, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]AutocompleteItem), args.Error(1)
+}
+
 func (m *MockGameService) GetGameWithStats(ctx context.Context, gameID uint) (*Game, []Review, float64, int64, error) {
 	args := m.Called(ctx, gameID)
 	if args.Get(0) == nil {

@@ -7,10 +7,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-	"gorm.io/gorm"
 
 	"gengine-0/internal/pkg/middleware"
-	"gengine-0/internal/pkg/sqlutil"
 )
 
 const (
@@ -26,12 +24,12 @@ type AutocompleteInput struct {
 
 // AutocompleteHandler обрабатывает запросы автодополнения поиска игр
 type AutocompleteHandler struct {
-	db *gorm.DB
+	gameService GameServiceInterface
 }
 
 // NewAutocompleteHandler создаёт обработчик автодополнения
-func NewAutocompleteHandler(db *gorm.DB) *AutocompleteHandler {
-	return &AutocompleteHandler{db: db}
+func NewAutocompleteHandler(gameService GameServiceInterface) *AutocompleteHandler {
+	return &AutocompleteHandler{gameService: gameService}
 }
 
 // Games возвращает список названий игр, совпадающих с запросом
@@ -55,20 +53,17 @@ func (h *AutocompleteHandler) Games(c *gin.Context) {
 		return
 	}
 
-	// Ищем игры по названию (full-text + ILIKE fallback) — максимум 10 результатов
-	var results []map[string]any
-	err := h.db.Table("games").
-		Select("id, name").
-		Where("is_draft = false AND visibility = 'public' AND (search_vector @@ plainto_tsquery('russian', ?) OR name ILIKE ?)", q, "%"+sqlutil.EscapeLike(q)+"%").
-		Limit(maxResults).
-		Find(&results).Error
-
+	items, err := h.gameService.AutocompleteSearch(c.Request.Context(), q, maxResults)
 	if err != nil {
 		log.Error().Err(err).Str("query", q).Msg("Autocomplete: failed to search games")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "ошибка поиска"})
 		return
 	}
 
+	results := make([]map[string]any, 0, len(items))
+	for _, it := range items {
+		results = append(results, map[string]any{"id": it.ID, "name": it.Name})
+	}
 	c.JSON(http.StatusOK, gin.H{"results": results})
 }
 

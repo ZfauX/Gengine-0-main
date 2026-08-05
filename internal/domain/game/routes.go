@@ -77,7 +77,7 @@ func RegisterRoutes(r *gin.RouterGroup, deps *GameDeps) {
 	fullPreviewHandler := NewFullPreviewHandler(gameService, levelService)
 
 	// Autocomplete handler
-	autocompleteHandler := NewAutocompleteHandler(db)
+	autocompleteHandler := NewAutocompleteHandler(deps.GameService)
 	gameStatsHandler := NewGameStatsHandler(gameService, deps.GamePlaySvc)
 
 	// ReviewHandler для отзывов

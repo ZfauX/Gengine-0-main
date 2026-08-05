@@ -18,6 +18,7 @@ type GameServiceInterface interface {
 	ListReviews(ctx context.Context, gameID uint) ([]Review, error)
 	GetAverageRating(ctx context.Context, gameID uint) (float64, int64, error)
 	ShowGame(ctx context.Context, gameID, viewerID uint, isAdmin bool) (*Game, []Review, float64, int64, error)
+	AutocompleteSearch(ctx context.Context, query string, limit int) ([]AutocompleteItem, error)
 	IsUserManager(ctx context.Context, gameID, userID uint) (bool, error)
 	GetSettingsWithDefaults(ctx context.Context, gameID uint) (*GameSetting, error)
 	SaveSettings(ctx context.Context, gameID uint, settings GameSetting) (*GameSetting, error)

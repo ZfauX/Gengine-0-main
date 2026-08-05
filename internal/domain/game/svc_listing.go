@@ -193,6 +193,28 @@ func (s *GameListingService) ListByDateRange(ctx context.Context, from, to time.
 	return s.gameRepo.ListByDateRange(ctx, from, to)
 }
 
+// AutocompleteItem — лёгкий результат автодополнения поиска игр.
+type AutocompleteItem struct {
+	ID   uint   `json:"id"`
+	Name string `json:"name"`
+}
+
+// AutocompleteSearch возвращает до limit опубликованных публичных игр по запросу
+// (full-text + ILIKE fallback). Используется /api/search/games (C1 — без *gorm.DB в хендлере).
+func (s *GameListingService) AutocompleteSearch(ctx context.Context, query string, limit int) ([]AutocompleteItem, error) {
+	if limit <= 0 || limit > 20 {
+		limit = 10
+	}
+	items := []AutocompleteItem{}
+	err := s.gameRepo.DB(ctx).Table("games").
+		Select("id, name").
+		Where("is_draft = false AND visibility = 'public' AND (search_vector @@ plainto_tsquery('russian', ?) OR name ILIKE ?)",
+			query, "%"+sqlutil.EscapeLike(query)+"%").
+		Limit(limit).
+		Find(&items).Error
+	return items, err
+}
+
 // useSearchVector проверяет, существует ли столбец search_vector в таблице games.
 // Результат кэшируется на время жизни сервиса.
 func (s *GameListingService) useSearchVector(ctx context.Context) bool {

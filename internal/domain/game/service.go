@@ -419,6 +419,11 @@ func (s *GameService) GetGameWithStats(ctx context.Context, gameID uint) (*Game,
 	return s.crudService.GetGameWithStats(ctx, gameID)
 }
 
+// AutocompleteSearch делегирует GameListingService (для /api/search/games).
+func (s *GameService) AutocompleteSearch(ctx context.Context, query string, limit int) ([]AutocompleteItem, error) {
+	return s.listingService.AutocompleteSearch(ctx, query, limit)
+}
+
 // ShowGame возвращает данные для страницы игры за один вызов:
 // игра (с проверкой прав и кэшем) + отзывы + рейтинг.
 func (s *GameService) ShowGame(ctx context.Context, gameID, viewerID uint, isAdmin bool) (*Game, []Review, float64, int64, error) {

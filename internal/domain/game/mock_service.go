@@ -41,6 +41,21 @@ func (m *MockGameServiceInterface) EXPECT() *MockGameServiceInterfaceMockRecorde
 	return m.recorder
 }
 
+// AutocompleteSearch mocks base method.
+func (m *MockGameServiceInterface) AutocompleteSearch(ctx context.Context, query string, limit int) ([]AutocompleteItem, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AutocompleteSearch", ctx, query, limit)
+	ret0, _ := ret[0].([]AutocompleteItem)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AutocompleteSearch indicates an expected call of AutocompleteSearch.
+func (mr *MockGameServiceInterfaceMockRecorder) AutocompleteSearch(ctx, query, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AutocompleteSearch", reflect.TypeOf((*MockGameServiceInterface)(nil).AutocompleteSearch), ctx, query, limit)
+}
+
 // CreateGameWithCover mocks base method.
 func (m *MockGameServiceInterface) CreateGameWithCover(ctx context.Context, dto *CreateGameDTO, authorID uint) (*Game, error) {
 	m.ctrl.T.Helper()
