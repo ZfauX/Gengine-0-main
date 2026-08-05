@@ -74,14 +74,3 @@ type GameAdminServiceInterface interface {
 	DisqualifyTeam(ctx context.Context, gameID, teamID, userID uint) error
 	DeleteLevelFromActiveGame(ctx context.Context, gameID, levelID, userID uint) error
 }
-
-// LevelIniter — интерфейс для объекта, способного инициализировать первый уровень.
-type LevelIniter interface {
-	InitFirstLevel(ctx context.Context, gamePassingID uint) error
-}
-
-// LevelProgressServiceInterface — интерфейс для LevelProgressService (теперь в gameplay).
-type LevelProgressServiceInterface interface {
-	InitFirstLevel(ctx context.Context, gamePassingID uint) error
-	InitFirstLevelWithTx(ctx context.Context, tx LevelIniter, gamePassingID uint) error
-}

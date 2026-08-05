@@ -35,36 +35,15 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 
 	b.WriteString(`
 		SELECT games.*,
-			COALESCE(ratings.avg_rating, 0) as rating_value,
-			COALESCE(participants.participant_count, 0) as participant_count,
 			users.name as author__name,
 			COUNT(*) OVER() AS total_count
 		FROM games
 		LEFT JOIN users ON users.id = games.author_id
-		LEFT JOIN (
-			SELECT game_id, COALESCE(AVG(rating), 0) as avg_rating
-			FROM reviews
-			WHERE game_id IN (
-				SELECT id FROM games
-				WHERE (visibility = 'public' OR author_id = ?) AND (is_draft = false OR author_id = ?)
-			)
-			GROUP BY game_id
-		) ratings ON ratings.game_id = games.id
-		LEFT JOIN (
-			SELECT game_id, COUNT(DISTINCT team_id) as participant_count
-			FROM game_passings
-			WHERE status IN ('accepted','started','finished')
-			  AND game_id IN (
-				SELECT id FROM games
-				WHERE (visibility = 'public' OR author_id = ?) AND (is_draft = false OR author_id = ?)
-			)
-			GROUP BY game_id
-		) participants ON participants.game_id = games.id
 		WHERE (games.visibility = 'public' OR games.author_id = ?) AND (games.is_draft = false OR games.author_id = ?)`)
 
-	// Агрегаты считаем только для игр, видимых пользователю, а не по всей таблице
-	// (visibility/draft-скоп в подзапросах повторяет условия основного WHERE).
-	args := []any{filter.ViewerID, filter.ViewerID, filter.ViewerID, filter.ViewerID, filter.ViewerID, filter.ViewerID}
+	// Рейтинг и участники прекомпьютится в колонках games.rating_value /
+	// games.participant_count (миграция 000027 + триггеры) — без агрегаций на каждый запрос (P3).
+	args := []any{filter.ViewerID, filter.ViewerID}
 
 	switch filter.Status {
 	case filterDraft:
@@ -140,10 +119,8 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 
 	type gameRow struct {
 		Game
-		RatingValue      float64
-		ParticipantCount int
-		AuthorName       string `gorm:"column:author__name"`
-		TotalCount       int64
+		AuthorName string `gorm:"column:author__name"`
+		TotalCount int64
 	}
 	var rows []gameRow
 	if err := s.gameRepo.Model(ctx).Raw(query, args...).Scan(&rows).Error; err != nil {

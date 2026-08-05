@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gengine-0/internal/config"
+	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/storage"
@@ -449,6 +450,9 @@ func (h *ProfileHandler) UpdateThemeSettings(c *gin.Context) {
 		})
 		return
 	}
+
+	// Сбрасываем кэш темы, чтобы изменения применились сразу (P5).
+	middleware.InvalidateThemeCache(userID)
 
 	render.SetFlash(c, "success", render.Tr(c, "profile.settings_saved"))
 	c.Redirect(http.StatusFound, "/profile")

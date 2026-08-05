@@ -255,36 +255,13 @@ func (s *GameService) Delete(ctx context.Context, id uint, userID uint) error {
 		return errors.New("только владелец может удалить игру")
 	}
 
-	if game.CoverPath != "" {
-		if delErr := s.storage.Delete(game.CoverPath); delErr != nil {
-			log.Error().Err(delErr).Str("path", game.CoverPath).Msg("Delete: failed to delete cover file")
-		}
-	}
-
-	if s.photoService != nil {
-		photos, listErr := s.photoService.List(ctx, id)
-		if listErr == nil {
-			// Параллельное удаление файлов с errgroup для корректной обработки ошибок
-			var g errgroup.Group
-			for _, photo := range photos {
-				photoPath := photo.Path
-				g.Go(func() error {
-					if delErr := s.storage.Delete(photoPath); delErr != nil {
-						log.Error().Err(delErr).Str("path", photoPath).Msg("Delete: failed to delete photo file")
-						return delErr
-					}
-					return nil
-				})
-			}
-			errspkg.LogSilently(g.Wait(), "Delete: parallel photo cleanup failed")
-		}
-	}
+	s.deleteGameFiles(ctx, id, game.CoverPath)
 
 	deleteErr := s.crudService.Delete(ctx, id, userID)
 	if deleteErr != nil {
 		return deleteErr
 	}
-	s.cache.DeleteWithCtx(ctx, fmt.Sprintf("game:%d", id))
+	s.invalidateGameCache(ctx, id)
 	return nil
 }
 
@@ -296,36 +273,50 @@ func (s *GameService) AdminDelete(ctx context.Context, id uint) error {
 		return err
 	}
 
-	if game.CoverPath != "" {
-		if delErr := s.storage.Delete(game.CoverPath); delErr != nil {
-			log.Error().Err(delErr).Str("path", game.CoverPath).Msg("AdminDelete: failed to delete cover file")
-		}
-	}
-
-	if s.photoService != nil {
-		photos, listErr := s.photoService.List(ctx, id)
-		if listErr == nil {
-			var g errgroup.Group
-			for _, photo := range photos {
-				photoPath := photo.Path
-				g.Go(func() error {
-					if delErr := s.storage.Delete(photoPath); delErr != nil {
-						log.Error().Err(delErr).Str("path", photoPath).Msg("AdminDelete: failed to delete photo file")
-						return delErr
-					}
-					return nil
-				})
-			}
-			errspkg.LogSilently(g.Wait(), "AdminDelete: parallel photo cleanup failed")
-		}
-	}
+	s.deleteGameFiles(ctx, id, game.CoverPath)
 
 	if err := s.crudService.Delete(ctx, id, game.AuthorID); err != nil {
 		return err
 	}
-	s.cache.DeleteWithCtx(ctx, fmt.Sprintf("game:%d", id))
+	s.invalidateGameCache(ctx, id)
 	s.cache.DeleteWithCtx(ctx, fmt.Sprintf("rating:game:%d", id))
 	return nil
+}
+
+// deleteGameFiles удаляет обложку и фото игры с диска (общий код Delete/AdminDelete, C2).
+func (s *GameService) deleteGameFiles(ctx context.Context, id uint, coverPath string) {
+	if coverPath != "" {
+		if delErr := s.storage.Delete(coverPath); delErr != nil {
+			log.Error().Err(delErr).Str("path", coverPath).Msg("deleteGameFiles: failed to delete cover file")
+		}
+	}
+
+	if s.photoService == nil {
+		return
+	}
+	photos, listErr := s.photoService.List(ctx, id)
+	if listErr != nil {
+		log.Warn().Err(listErr).Uint("game_id", id).Msg("deleteGameFiles: failed to list photos")
+		return
+	}
+	// Параллельное удаление файлов с errgroup для корректной обработки ошибок.
+	var g errgroup.Group
+	for _, photo := range photos {
+		photoPath := photo.Path
+		g.Go(func() error {
+			if delErr := s.storage.Delete(photoPath); delErr != nil {
+				log.Error().Err(delErr).Str("path", photoPath).Msg("deleteGameFiles: failed to delete photo file")
+				return delErr
+			}
+			return nil
+		})
+	}
+	errspkg.LogSilently(g.Wait(), "deleteGameFiles: parallel photo cleanup failed")
+}
+
+// invalidateGameCache удаляет закэшированную игру по ключу game:%d.
+func (s *GameService) invalidateGameCache(ctx context.Context, id uint) {
+	s.cache.DeleteWithCtx(ctx, fmt.Sprintf("game:%d", id))
 }
 
 // Publish делегирует GameCRUDService.
@@ -399,7 +390,7 @@ func cacheGetRating(store cache.CacheStore, ctx context.Context, key string) (fl
 
 // GetAverageRating делегирует RatingService.
 func (s *GameService) GetAverageRating(ctx context.Context, gameID uint) (float64, int64, error) {
-	if s.reviewService == nil {
+	if s.ratingService == nil {
 		return 0, 0, nil
 	}
 

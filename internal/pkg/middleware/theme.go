@@ -4,6 +4,8 @@ package middleware
 import (
 	"context"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -18,6 +20,69 @@ var themeSettingsLoader ThemeSettingsLoader
 // Вызывается из app-слоя при инициализации.
 func SetThemeSettingsLoader(fn ThemeSettingsLoader) {
 	themeSettingsLoader = fn
+}
+
+// --- Короткий TTL-кэш настроек темы (P5) ---
+// Настройки темы редкоМеняются, но читаются на каждый авторизованный HTML-запрос.
+// Кэш 60с убирает лишний DB-запрос, не давая долго жить устаревшим данным.
+
+const themeCacheTTL = 60 * time.Second
+
+type themeCacheEntry struct {
+	value   any
+	expires time.Time
+}
+
+var (
+	themeCacheMu  sync.Mutex
+	themeCache    = make(map[uint]themeCacheEntry)
+	themeCacheOnc sync.Once
+)
+
+func cachedThemeSettings(userID uint) (any, bool) {
+	themeCacheMu.Lock()
+	defer themeCacheMu.Unlock()
+	e, ok := themeCache[userID]
+	if !ok {
+		return nil, false
+	}
+	if time.Now().After(e.expires) {
+		delete(themeCache, userID)
+		return nil, false
+	}
+	return e.value, true
+}
+
+func cacheThemeSettings(userID uint, value any) {
+	themeCacheMu.Lock()
+	themeCache[userID] = themeCacheEntry{value: value, expires: time.Now().Add(themeCacheTTL)}
+	themeCacheMu.Unlock()
+}
+
+// InvalidateThemeCache сбрасывает кэш темы пользователя после сохранения настроек.
+func InvalidateThemeCache(userID uint) {
+	themeCacheMu.Lock()
+	delete(themeCache, userID)
+	themeCacheMu.Unlock()
+}
+
+// themeCacheCleanup периодически вычищает истёкшие записи (предотвращает рост памяти).
+func themeCacheCleanup() {
+	themeCacheOnc.Do(func() {
+		go func() {
+			for {
+				time.Sleep(5 * time.Minute)
+				now := time.Now()
+				themeCacheMu.Lock()
+				for uid, e := range themeCache {
+					if now.After(e.expires) {
+						delete(themeCache, uid)
+					}
+				}
+				themeCacheMu.Unlock()
+			}
+		}()
+	})
 }
 
 // loadThemeSettings загружает настройки темы текущего пользователя в контекст
@@ -39,8 +104,15 @@ func loadThemeSettings(c *gin.Context) {
 	if userID == 0 {
 		return
 	}
+	themeCacheCleanup()
+
+	if cached, ok := cachedThemeSettings(userID); ok {
+		c.Set("theme_settings", cached)
+		return
+	}
 	ts := themeSettingsLoader(c.Request.Context(), userID)
 	if ts != nil {
+		cacheThemeSettings(userID, ts)
 		c.Set("theme_settings", ts)
 	}
 }

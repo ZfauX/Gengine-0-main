@@ -37,12 +37,15 @@ type Game struct {
 	RegistrationDeadline *time.Time `form:"registration_deadline" time_format:"2006-01-02T15:04"`
 	MaxTeamNumber        int        `gorm:"default:10" form:"max_team_number"`
 	CoverPath            string
-	Levels               []level.Level `gorm:"foreignKey:GameID"`
-	GameSetting          GameSetting   `gorm:"foreignKey:GameID"`
-	Passings             []GamePassing `gorm:"foreignKey:GameID"`
-	Reviews              []Review      `gorm:"foreignKey:GameID"`
-	CoAuthors            []CoAuthor    `gorm:"foreignKey:GameID"`
-	Notes                []Note        `gorm:"foreignKey:GameID"`
+	// Прекомпьютинг агрегатов (P3): обновляются триггерами reviews/game_passings.
+	RatingValue      float64       `gorm:"column:rating_value;default:0"`
+	ParticipantCount int           `gorm:"column:participant_count;default:0"`
+	Levels           []level.Level `gorm:"foreignKey:GameID"`
+	GameSetting      GameSetting   `gorm:"foreignKey:GameID"`
+	Passings         []GamePassing `gorm:"foreignKey:GameID"`
+	Reviews          []Review      `gorm:"foreignKey:GameID"`
+	CoAuthors        []CoAuthor    `gorm:"foreignKey:GameID"`
+	Notes            []Note        `gorm:"foreignKey:GameID"`
 }
 
 type GameSetting struct {
