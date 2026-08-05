@@ -88,6 +88,43 @@ func (m *mockGameRepo) ListByDateRange(ctx context.Context, from, to time.Time) 
 	return args.Get(0).([]game.Game), args.Error(1)
 }
 
+func (m *mockGameRepo) GetPassingByUser(ctx context.Context, gameID, userID uint) (*game.GamePassing, error) {
+	args := m.Called(ctx, gameID, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*game.GamePassing), args.Error(1)
+}
+
+func (m *mockGameRepo) GetFinishedPassingByGameAndTeam(ctx context.Context, gameID, teamID uint) (*game.GamePassing, error) {
+	args := m.Called(ctx, gameID, teamID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*game.GamePassing), args.Error(1)
+}
+
+func (m *mockGameRepo) GetLogsByGameID(ctx context.Context, gameID uint) ([]game.Log, error) {
+	args := m.Called(ctx, gameID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]game.Log), args.Error(1)
+}
+
+func (m *mockGameRepo) GetGameSettingByGameID(ctx context.Context, gameID uint) (*game.GameSetting, error) {
+	args := m.Called(ctx, gameID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*game.GameSetting), args.Error(1)
+}
+
+func (m *mockGameRepo) IsTeamCaptain(ctx context.Context, teamID, userID uint) (bool, error) {
+	args := m.Called(ctx, teamID, userID)
+	return args.Bool(0), args.Error(1)
+}
+
 // =============================================================================
 // Unit-тесты с моками
 // =============================================================================
