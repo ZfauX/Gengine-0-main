@@ -81,6 +81,7 @@ type GameService struct {
 	storage        storage.FileStorage
 	cache          cache.CacheStore
 	ratingService  *RatingService
+	gameRepo       GameRepository
 	db             *gorm.DB
 	coAuthorSvc    *CoAuthorService
 }
@@ -120,6 +121,7 @@ func NewGameService(
 		storage:        storage,
 		cache:          cacheStore,
 		ratingService:  ratingSvc,
+		gameRepo:       gameRepo,
 		db:             db,
 		coAuthorSvc:    ca,
 	}
@@ -428,39 +430,17 @@ func (s *GameService) IsUserManager(ctx context.Context, gameID, userID uint) (b
 // GetPassingByUser возвращает активное passing для игры и пользователя.
 // ORDER BY id: при совпадении нескольких статусов выбираем детерминированно (B10).
 func (s *GameService) GetPassingByUser(ctx context.Context, gameID, userID uint) (*GamePassing, error) {
-	var passing GamePassing
-	err := s.db.WithContext(ctx).
-		Joins("JOIN team_members ON team_members.team_id = game_passings.team_id").
-		Where("game_passings.game_id = ? AND game_passings.status IN (?,?) AND team_members.user_id = ?",
-			gameID, StatusAccepted, StatusStarted, userID).
-		Order("game_passings.id ASC").
-		First(&passing).Error
-	if err != nil {
-		return nil, err
-	}
-	return &passing, nil
+	return s.gameRepo.GetPassingByUser(ctx, gameID, userID)
 }
 
 // GetFinishedPassingForTeam возвращает завершённое прохождение команды (для экспорта результатов).
 func (s *GameService) GetFinishedPassingForTeam(ctx context.Context, gameID, teamID uint) (*GamePassing, error) {
-	var passing GamePassing
-	err := s.db.WithContext(ctx).
-		Where("game_id = ? AND team_id = ? AND status = ?", gameID, teamID, StatusFinished).
-		First(&passing).Error
-	if err != nil {
-		return nil, err
-	}
-	return &passing, nil
+	return s.gameRepo.GetFinishedPassingByGameAndTeam(ctx, gameID, teamID)
 }
 
 // IsTeamCaptain — является ли пользователь капитаном команды (для экспорта результатов).
 func (s *GameService) IsTeamCaptain(ctx context.Context, teamID, userID uint) (bool, error) {
-	var capt struct{ CaptainID uint }
-	err := s.db.WithContext(ctx).Table("teams").Select("captain_id").Where("id = ?", teamID).First(&capt).Error
-	if err != nil {
-		return false, err
-	}
-	return capt.CaptainID == userID, nil
+	return s.gameRepo.IsTeamCaptain(ctx, teamID, userID)
 }
 
 // GetGameByIDUnchecked возвращает игру без кэша и проверки прав (для проверки авторства при экспорте).
@@ -470,13 +450,7 @@ func (s *GameService) GetGameByIDUnchecked(ctx context.Context, gameID uint) (*G
 
 // GetLogsByGameID возвращает логи игры, отсортированные по времени создания.
 func (s *GameService) GetLogsByGameID(ctx context.Context, gameID uint) ([]Log, error) {
-	var logs []Log
-	err := s.db.WithContext(ctx).
-		Joins("JOIN game_passings ON game_passings.id = logs.game_passing_id").
-		Where("game_passings.game_id = ?", gameID).
-		Order("logs.created_at ASC").
-		Find(&logs).Error
-	return logs, err
+	return s.gameRepo.GetLogsByGameID(ctx, gameID)
 }
 
 // GetLogsByGameIDPaginated возвращает страницу логов игры.
@@ -510,8 +484,7 @@ func (s *GameService) GetLogsByGameIDPaginated(ctx context.Context, gameID uint,
 
 // GetSettingsWithDefaults загружает настройки игры или возвращает значения по умолчанию.
 func (s *GameService) GetSettingsWithDefaults(ctx context.Context, gameID uint) (*GameSetting, error) {
-	var settings GameSetting
-	err := s.db.WithContext(ctx).Where("game_id = ?", gameID).First(&settings).Error
+	settings, err := s.gameRepo.GetGameSettingByGameID(ctx, gameID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return &GameSetting{
@@ -526,7 +499,7 @@ func (s *GameService) GetSettingsWithDefaults(ctx context.Context, gameID uint) 
 		}
 		return nil, err
 	}
-	return &settings, nil
+	return settings, nil
 }
 
 // SaveSettings сохраняет или обновляет настройки игры.

@@ -23,6 +23,12 @@ type GameRepository interface {
 	ListByDateRange(ctx context.Context, from, to time.Time) ([]Game, error)
 	// Добавлен метод для получения *gorm.DB с контекстом
 	DB(ctx context.Context) *gorm.DB
+	// Read-хелперы для сервисного слоя (C1 — без прямого *gorm.DB в сервисах).
+	GetPassingByUser(ctx context.Context, gameID, userID uint) (*GamePassing, error)
+	GetFinishedPassingByGameAndTeam(ctx context.Context, gameID, teamID uint) (*GamePassing, error)
+	GetLogsByGameID(ctx context.Context, gameID uint) ([]Log, error)
+	GetGameSettingByGameID(ctx context.Context, gameID uint) (*GameSetting, error)
+	IsTeamCaptain(ctx context.Context, teamID, userID uint) (bool, error)
 }
 
 // GamePassingRepository — контракт для прохождений.
@@ -97,6 +103,59 @@ func (r *gormGameRepo) ListByDateRange(ctx context.Context, from, to time.Time) 
 // DB возвращает *gorm.DB с контекстом.
 func (r *gormGameRepo) DB(ctx context.Context) *gorm.DB {
 	return r.db.WithContext(ctx)
+}
+
+func (r *gormGameRepo) GetPassingByUser(ctx context.Context, gameID, userID uint) (*GamePassing, error) {
+	var passing GamePassing
+	err := r.db.WithContext(ctx).
+		Joins("JOIN team_members ON team_members.team_id = game_passings.team_id").
+		Where("game_passings.game_id = ? AND game_passings.status IN (?,?) AND team_members.user_id = ?",
+			gameID, StatusAccepted, StatusStarted, userID).
+		Order("game_passings.id ASC").
+		First(&passing).Error
+	if err != nil {
+		return nil, err
+	}
+	return &passing, nil
+}
+
+func (r *gormGameRepo) GetFinishedPassingByGameAndTeam(ctx context.Context, gameID, teamID uint) (*GamePassing, error) {
+	var passing GamePassing
+	err := r.db.WithContext(ctx).
+		Where("game_id = ? AND team_id = ? AND status = ?", gameID, teamID, StatusFinished).
+		First(&passing).Error
+	if err != nil {
+		return nil, err
+	}
+	return &passing, nil
+}
+
+func (r *gormGameRepo) GetLogsByGameID(ctx context.Context, gameID uint) ([]Log, error) {
+	var logs []Log
+	err := r.db.WithContext(ctx).
+		Joins("JOIN game_passings ON game_passings.id = logs.game_passing_id").
+		Where("game_passings.game_id = ?", gameID).
+		Order("logs.created_at ASC").
+		Find(&logs).Error
+	return logs, err
+}
+
+func (r *gormGameRepo) GetGameSettingByGameID(ctx context.Context, gameID uint) (*GameSetting, error) {
+	var settings GameSetting
+	err := r.db.WithContext(ctx).Where("game_id = ?", gameID).First(&settings).Error
+	if err != nil {
+		return nil, err
+	}
+	return &settings, nil
+}
+
+func (r *gormGameRepo) IsTeamCaptain(ctx context.Context, teamID, userID uint) (bool, error) {
+	var capt struct{ CaptainID uint }
+	err := r.db.WithContext(ctx).Table("teams").Select("captain_id").Where("id = ?", teamID).First(&capt).Error
+	if err != nil {
+		return false, err
+	}
+	return capt.CaptainID == userID, nil
 }
 
 type gormGamePassingRepo struct{ db *gorm.DB }
