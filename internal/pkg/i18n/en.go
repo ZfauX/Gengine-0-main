@@ -601,6 +601,7 @@ var enMessages = map[string]string{
 	"profile.current_password":      "Current password",
 	"profile.new_password":          "New password",
 	"profile.change_password_btn":   "Change password",
+	"profile.change_password_same":  "New password must differ from the current one",
 	"profile.achievements":          "Achievements",
 	"profile.no_achievements":       "No achievements yet.",
 	"profile.all_achievements":      "All achievements →",

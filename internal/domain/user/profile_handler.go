@@ -360,8 +360,8 @@ func (h *ProfileHandler) ChangePassword(c *gin.Context) {
 
 	if input.OldPassword == input.NewPassword {
 		render.Page(c, http.StatusOK, "profile-show.html", gin.H{
-			"Title": "Профиль",
-			"Error": "Новый пароль должен отличаться от текущего",
+			"Title": render.Tr(c, "nav.profile"),
+			"Error": render.Tr(c, "profile.change_password_same"),
 			"csrf":  csrf.GetToken(c),
 		})
 		return

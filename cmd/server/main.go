@@ -244,17 +244,11 @@ func run() error {
 		appCache = cache.NewValkeyCache(cfg.Valkey.Host, cfg.Valkey.Port, cfg.Valkey.Password, cfg.Valkey.PoolSize, cfg.Valkey.MinIdleConns, cfg.Valkey.MaxRetries)
 		if appCache == nil {
 			log.Warn().Msg("Valkey unavailable, using in-memory cache")
-			appCache, err = cache.NewCache(config.CacheDefaultTTL, config.CacheCleanupInterval)
-			if err != nil {
-				return fmt.Errorf("failed to create in-memory cache: %w", err)
-			}
+			appCache = cache.NewCacheWithLRU(config.CacheDefaultTTL, config.CacheCleanupInterval, config.CacheMaxItems)
 		}
 	} else {
 		log.Info().Msg("Valkey not configured, using in-memory cache")
-		appCache, err = cache.NewCache(config.CacheDefaultTTL, config.CacheCleanupInterval)
-		if err != nil {
-			return fmt.Errorf("failed to create in-memory cache: %w", err)
-		}
+		appCache = cache.NewCacheWithLRU(config.CacheDefaultTTL, config.CacheCleanupInterval, config.CacheMaxItems)
 	}
 
 	deps := app.NewDependencies(database, cfg, hub, localStorage, appCache)

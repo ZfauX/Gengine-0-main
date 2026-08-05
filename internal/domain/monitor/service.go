@@ -161,17 +161,25 @@ func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID, 
 	})
 }
 
-// isGameManager проверяет, что пользователь является автором игры, к которой относится сессия голосования.
+// isGameManager проверяет, что пользователь является автором ИЛИ соавтором игры
+// (единый механизм прав, согласован с game.CoAuthorService.IsUserManager — C4).
 func (s *BlackboxVoteService) isGameManager(ctx context.Context, session *BlackboxVotingSession, userID uint) (bool, error) {
 	var passing game.GamePassing
 	if err := s.gameRepo.DB(ctx).First(&passing, session.GamePassingID).Error; err != nil {
 		return false, err
 	}
-	var g game.Game
-	if err := s.gameRepo.DB(ctx).First(&g, passing.GameID).Error; err != nil {
+	var count int64
+	err := s.gameRepo.DB(ctx).Raw(`
+		SELECT COUNT(*) FROM (
+			SELECT 1 FROM games WHERE id = ? AND author_id = ? AND deleted_at IS NULL
+			UNION
+			SELECT 1 FROM co_authors WHERE game_id = ? AND user_id = ? AND deleted_at IS NULL
+		) sub
+	`, passing.GameID, userID, passing.GameID, userID).Scan(&count).Error
+	if err != nil {
 		return false, err
 	}
-	return g.AuthorID == userID, nil
+	return count > 0, nil
 }
 
 // GetVotingResults возвращает пары «вариант — количество голосов».
