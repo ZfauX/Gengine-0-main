@@ -473,15 +473,6 @@
                 }
             });
 
-            eventSource.addEventListener('code_submitted', function(e) {
-                const data = JSON.parse(e.data);
-                if (data.data.success) {
-                    showToast('{{ T $.Lang "gameplay.code_accepted" }}', 'success', 3000);
-                } else {
-                    showToast('{{ T $.Lang "gameplay.code_rejected" }}', 'error', 3000);
-                }
-            });
-
             eventSource.onerror = function() {
                 // SSE connection lost — try reconnecting
                 console.log('SSE: connection lost, retrying...');
