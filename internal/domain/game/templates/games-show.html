@@ -164,14 +164,21 @@
         const CACHE_TIMEOUT = 5 * 60 * 1000;
         const gameID = '{{.Game.ID}}';
 
+        let previewTrigger = null;
+
         function openModal() {
+            previewTrigger = document.activeElement; // A11y: вернуть фокус при закрытии
             previewModal.classList.remove('hidden');
             previewModal.classList.add('flex');
+            if (closeBtn) closeBtn.focus();
         }
 
         function closeModal() {
             previewModal.classList.add('hidden');
             previewModal.classList.remove('flex');
+            if (previewTrigger && typeof previewTrigger.focus === 'function') {
+                previewTrigger.focus();
+            }
         }
 
         function escapeHtml(text) {
@@ -314,8 +321,10 @@
         let countdown = 5;
         let pendingGameId = null;
         let pendingCsrf = null;
+        let deleteTrigger = null;
 
         deleteBtn.addEventListener('click', function() {
+            deleteTrigger = this; // A11y: вернуть фокус при закрытии
             pendingGameId = this.getAttribute('data-game-id');
             pendingCsrf = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
             deleteGameName.textContent = this.getAttribute('data-game-name');
@@ -324,6 +333,7 @@
             deleteUndoSection.classList.add('hidden');
             confirmDeleteBtn.disabled = false;
             confirmDeleteBtn.textContent = '{{ T $.Lang "game.show_delete_btn" }}';
+            confirmDeleteBtn.focus();
         });
 
         function closeModal() {
@@ -331,6 +341,9 @@
             deleteModal.classList.remove('flex');
             clearTimeout(deleteTimer);
             clearTimeout(undoTimer);
+            if (deleteTrigger && typeof deleteTrigger.focus === 'function') {
+                deleteTrigger.focus();
+            }
         }
 
         cancelDeleteBtn.addEventListener('click', closeModal);
