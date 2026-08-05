@@ -23,6 +23,7 @@ import (
 // ExportService содержит логику экспорта и импорта данных игры.
 type ExportService struct {
 	exportRepo         ExportRepository
+	db                 *gorm.DB
 	dejaVuSansFont     []byte
 	dejaVuSansBoldFont []byte
 }
@@ -30,6 +31,7 @@ type ExportService struct {
 // NewExportService создаёт новый экземпляр ExportService.
 func NewExportService(
 	exportRepo ExportRepository,
+	db *gorm.DB,
 	normalFont, boldFont []byte,
 ) (*ExportService, error) {
 	if len(normalFont) == 0 || len(boldFont) == 0 {
@@ -39,6 +41,7 @@ func NewExportService(
 	}
 	return &ExportService{
 		exportRepo:         exportRepo,
+		db:                 db,
 		dejaVuSansFont:     normalFont,
 		dejaVuSansBoldFont: boldFont,
 	}, nil
@@ -180,8 +183,8 @@ func (s *ExportService) ExportTeamResultsToCSV(ctx context.Context, gameID, team
 }
 
 // ImportGameFromCSV парсит CSV и создаёт уровни/вопросы/ответы для указанной игры.
-func (s *ExportService) ImportGameFromCSV(db *gorm.DB, gameID uint, r io.Reader) error {
-	return db.Transaction(func(tx *gorm.DB) error {
+func (s *ExportService) ImportGameFromCSV(ctx context.Context, gameID uint, r io.Reader) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		reader := csv.NewReader(r)
 
 		if _, err := reader.Read(); err != nil {

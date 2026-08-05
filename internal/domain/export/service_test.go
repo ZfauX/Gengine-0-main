@@ -37,7 +37,7 @@ func setupExportTest(t *testing.T) (*export.ExportService, *gorm.DB, *game.Game)
 
 	// Создаём репозиторий для экспорта
 	exportRepo := export.NewGormExportRepo(db)
-	svc, err := export.NewExportService(exportRepo, fonts.DejaVuSans, fonts.DejaVuSansBold)
+	svc, err := export.NewExportService(exportRepo, db, fonts.DejaVuSans, fonts.DejaVuSansBold)
 	require.NoError(t, err)
 	return svc, db, &g
 }
@@ -84,7 +84,7 @@ func TestImportGameFromCSV(t *testing.T) {
 1,Level One,Question B,,code3
 2,Level Two,Q2,,`
 
-	err := svc.ImportGameFromCSV(db, g.ID, strings.NewReader(csvData))
+	err := svc.ImportGameFromCSV(context.Background(), g.ID, strings.NewReader(csvData))
 	require.NoError(t, err)
 
 	var levels []level.Level
@@ -103,11 +103,11 @@ func TestImportGameFromCSV(t *testing.T) {
 }
 
 func TestImportGameFromCSV_InvalidHeader(t *testing.T) {
-	svc, db, g := setupExportTest(t)
+	svc, _, g := setupExportTest(t)
 
 	csvData := `wrong,header,columns`
 
-	err := svc.ImportGameFromCSV(db, g.ID, strings.NewReader(csvData))
+	err := svc.ImportGameFromCSV(context.Background(), g.ID, strings.NewReader(csvData))
 	require.NoError(t, err) // пустой файл без данных — не ошибка
 }
 

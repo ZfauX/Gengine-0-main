@@ -459,6 +459,33 @@ func (s *GameService) GetPassingByUser(ctx context.Context, gameID, userID uint)
 	return &passing, nil
 }
 
+// GetFinishedPassingForTeam возвращает завершённое прохождение команды (для экспорта результатов).
+func (s *GameService) GetFinishedPassingForTeam(ctx context.Context, gameID, teamID uint) (*GamePassing, error) {
+	var passing GamePassing
+	err := s.db.WithContext(ctx).
+		Where("game_id = ? AND team_id = ? AND status = ?", gameID, teamID, StatusFinished).
+		First(&passing).Error
+	if err != nil {
+		return nil, err
+	}
+	return &passing, nil
+}
+
+// IsTeamCaptain — является ли пользователь капитаном команды (для экспорта результатов).
+func (s *GameService) IsTeamCaptain(ctx context.Context, teamID, userID uint) (bool, error) {
+	var capt struct{ CaptainID uint }
+	err := s.db.WithContext(ctx).Table("teams").Select("captain_id").Where("id = ?", teamID).First(&capt).Error
+	if err != nil {
+		return false, err
+	}
+	return capt.CaptainID == userID, nil
+}
+
+// GetGameByIDUnchecked возвращает игру без кэша и проверки прав (для проверки авторства при экспорте).
+func (s *GameService) GetGameByIDUnchecked(ctx context.Context, gameID uint) (*Game, error) {
+	return s.crudService.GetByID(ctx, gameID)
+}
+
 // GetLogsByGameID возвращает логи игры, отсортированные по времени создания.
 func (s *GameService) GetLogsByGameID(ctx context.Context, gameID uint) ([]Log, error) {
 	var logs []Log

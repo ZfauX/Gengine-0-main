@@ -16,7 +16,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-	"gorm.io/gorm"
 )
 
 const importMaxFileSize = 10 * 1024 * 1024
@@ -26,7 +25,6 @@ type ExportHandler struct {
 	exportService *ExportService
 	gameService   *game.GameService
 	storage       storage.FileStorage
-	db            *gorm.DB
 }
 
 // NewExportHandler создаёт новый экземпляр ExportHandler.
@@ -34,13 +32,11 @@ func NewExportHandler(
 	exportService *ExportService,
 	gameService *game.GameService,
 	storage storage.FileStorage,
-	db *gorm.DB,
 ) *ExportHandler {
 	return &ExportHandler{
 		exportService: exportService,
 		gameService:   gameService,
 		storage:       storage,
-		db:            db,
 	}
 }
 
@@ -202,7 +198,7 @@ func (h *ExportHandler) ImportGame(c *gin.Context) {
 		return
 	}
 
-	if err := h.exportService.ImportGameFromCSV(h.db.WithContext(c.Request.Context()), gameID, file); err != nil {
+	if err := h.exportService.ImportGameFromCSV(c.Request.Context(), gameID, file); err != nil {
 		log.Error().Err(err).Uint("game_id", gameID).Msg("ImportGame: failed to import game from CSV")
 		render.Page(c, http.StatusInternalServerError, "export_import-import.html", gin.H{
 			"Title":  "Импорт",
@@ -435,29 +431,22 @@ func (h *ExportHandler) ExportTeamResultsCSV(c *gin.Context) {
 	}
 
 	// Проверяем, что пользователь — капитан команды или автор игры
-	var passing game.GamePassing
-	if err := h.db.WithContext(c.Request.Context()).
-		Where("game_id = ? AND team_id = ? AND status = ?", gameID, teamID, "finished").
-		First(&passing).Error; err != nil {
+	if _, passingErr := h.gameService.GetFinishedPassingForTeam(c.Request.Context(), gameID, uint(teamID)); passingErr != nil {
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
 		return
 	}
 
 	// Проверяем права: капитан или автор
-	isCaptain := false
-	var t struct{ CaptainID uint }
-	if err := h.db.WithContext(c.Request.Context()).Table("teams").Select("captain_id").Where("id = ?", teamID).First(&t).Error; err != nil {
+	isCaptain, err := h.gameService.IsTeamCaptain(c.Request.Context(), uint(teamID), userID)
+	if err != nil {
 		log.Error().Err(err).Uint("team_id", uint(teamID)).Msg("ExportTeamResultsCSV: failed to find team")
 		render.RenderErrorPage(c, http.StatusNotFound)
 		return
 	}
-	if t.CaptainID == userID {
-		isCaptain = true
-	}
 
 	isAuthor := false
-	var g game.Game
-	if err := h.db.WithContext(c.Request.Context()).First(&g, gameID).Error; err != nil {
+	g, err := h.gameService.GetGameByIDUnchecked(c.Request.Context(), gameID)
+	if err != nil {
 		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportTeamResultsCSV: failed to find game")
 		render.RenderErrorPage(c, http.StatusNotFound)
 		return

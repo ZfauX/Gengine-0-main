@@ -24,11 +24,11 @@ func RegisterRoutes(
 	authService *user.AuthService,
 ) error {
 	exportRepo := NewGormExportRepo(db)
-	exportService, err := NewExportService(exportRepo, fonts.DejaVuSans, fonts.DejaVuSansBold)
+	exportService, err := NewExportService(exportRepo, db, fonts.DejaVuSans, fonts.DejaVuSansBold)
 	if err != nil {
 		return err
 	}
-	exportHandler := NewExportHandler(exportService, gameService, store, db)
+	exportHandler := NewExportHandler(exportService, gameService, store)
 
 	authRequired := middleware.AuthRequired(authService)
 	gameManager := middleware.GameManager(coAuthorSvc)
