@@ -48,6 +48,9 @@ type GamePlayService struct {
 	coAuthorSvc *CoAuthorService
 	cfg         *config.Config
 	sseMgr      *SSEManager
+	// snapshotDispatcher дебаунсит пересчёт снапшота мониторинга (S3).
+	// Если nil — пересчёт выполняется синхронно (fallback для тестов).
+	snapshotDispatcher *SnapshotDispatcher
 	// gameFinishedCallback вызывается при завершении последнего уровня игры
 	// (начисление турнирных очков, пересчёт результатов). Настраивается из app-слоя.
 	gameFinishedCallback GameCompletionCallback
@@ -165,21 +168,14 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 	}
 
 	// Отправляем обновления ПОСЛЕ коммита транзакции.
-	// NB: синхронно — асинхронные горутины гоняются с закрытием БД в тестах.
+	// Тяжёлый пересчёт снапшота и результатов — в дебаунс-воркере (S3).
+	// В тестах воркер не установлен → синхронный fallback.
 	if result != nil && result.Attempt != nil {
 		if result.GameID != 0 {
 			s.broadcastLevelComplete(savedGameID, passingID, savedLevelID)
 		}
-		s.broadcastSnapshot(ctx, passingID)
 		if result.GameID != 0 {
-			// Если это последний уровень, колбэк завершения игры
-			// (onGameFinished → CalculateResults) уже отработал выше —
-			// не дублируем расчёт (S3a).
-			if onCommitFn == nil && s.monitorSvc != nil {
-				if err := s.monitorSvc.CalculateResults(ctx, result.GameID); err != nil {
-					log.Error().Err(err).Uint("game_id", result.GameID).Msg("SubmitCode: CalculateResults failed")
-				}
-			}
+			s.scheduleSnapshot(result.GameID)
 		}
 	}
 
@@ -189,6 +185,7 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 // SubmitFile обрабатывает файловый ответ с транзакцией и блокировкой.
 func (s *GamePlayService) SubmitFile(ctx context.Context, passingID, userID uint, filePath string) (*Attempt, error) {
 	var attempt *Attempt
+	var gameID uint
 
 	fileErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		progress, progressErr := GetCurrentProgressForUpdate(tx, passingID)
@@ -199,6 +196,12 @@ func (s *GamePlayService) SubmitFile(ctx context.Context, passingID, userID uint
 		if checkErr := CheckTeamMembership(tx, passingID, userID); checkErr != nil {
 			return checkErr
 		}
+
+		var passing GamePassing
+		if findErr := tx.Select("game_id").First(&passing, passingID).Error; findErr != nil {
+			return findErr
+		}
+		gameID = passing.GameID
 
 		// Q5: Проверяем, что уровень поддерживает файловые ответы
 		var lvl level.Level
@@ -227,8 +230,8 @@ func (s *GamePlayService) SubmitFile(ctx context.Context, passingID, userID uint
 		return nil, fileErr
 	}
 
-	if attempt != nil {
-		s.broadcastSnapshot(ctx, passingID)
+	if attempt != nil && gameID != 0 {
+		s.scheduleSnapshot(gameID)
 	}
 	return attempt, nil
 }
@@ -309,8 +312,10 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (
 		return "", transactionErr
 	}
 
-	// Отправляем WebSocket-обновление после фиксации транзакции
-	s.broadcastSnapshot(ctx, passingID)
+	// Отправляем WebSocket-обновление после фиксации транзакции (дебаунс, S3)
+	if gameID != 0 {
+		s.scheduleSnapshot(gameID)
+	}
 	// Отправляем SSE-уведомление о доступной подсказке
 	if s.sseMgr != nil {
 		s.sseMgr.Broadcast(gameID, "hint_available", map[string]any{
@@ -387,18 +392,12 @@ func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, u
 		onCommitFn()
 	}
 
-	// Рассчитываем результаты и шлём обновления ПОСЛЕ транзакции.
-	// NB: синхронно — асинхронные горутины гоняются с закрытием БД в тестах.
+	// Шлём обновления ПОСЛЕ транзакции: лёгкое событие — синхронно,
+	// тяжёлый пересчёт снапшота — в дебаунс-воркере (S3).
 	s.broadcastLevelComplete(gameID, passingID, savedLevelID)
-	// Если это последний уровень, колбэк завершения игры уже пересчитал
-	// результаты — не дублируем расчёт (S3a).
-	if onCommitFn == nil && s.monitorSvc != nil {
-		if calcErr := s.monitorSvc.CalculateResults(ctx, gameID); calcErr != nil {
-			log.Error().Err(calcErr).Uint("game_id", gameID).Msg("AcceptBlackboxAnswer: CalculateResults failed")
-		}
+	if gameID != 0 {
+		s.scheduleSnapshot(gameID)
 	}
-
-	s.broadcastSnapshot(ctx, passingID)
 	return nil
 }
 
@@ -537,7 +536,9 @@ func (s *GamePlayService) SubmitTestCode(ctx context.Context, passingID, userID 
 		s.broadcastLevelComplete(gameID, passingID, savedLevelID)
 	}
 
-	s.broadcastSnapshot(ctx, passingID)
+	if attempt != nil && gameID != 0 {
+		s.scheduleSnapshot(gameID)
+	}
 	return attempt, nil
 }
 
@@ -574,34 +575,55 @@ func (s *GamePlayService) SkipLevelTest(ctx context.Context, passingID, userID u
 	})
 }
 
-// broadcastSnapshot отправляет обновление мониторинга в WebSocket.
-func (s *GamePlayService) broadcastSnapshot(ctx context.Context, passingID uint) {
+// WithSnapshotDispatcher подключает асинхронный дебаунс-диспетчер снапшотов (S3).
+// Вызывается из app-слоя после создания сервиса.
+func (s *GamePlayService) WithSnapshotDispatcher(d *SnapshotDispatcher) *GamePlayService {
+	s.snapshotDispatcher = d
+	return s
+}
+
+// scheduleSnapshot планирует пересчёт снапшота игры. Если диспетчер не
+// установлен (тесты) — выполняет синхронно, как раньше.
+func (s *GamePlayService) scheduleSnapshot(gameID uint) {
+	if s.snapshotDispatcher != nil {
+		s.snapshotDispatcher.Schedule(gameID)
+		return
+	}
+	s.ProcessSnapshot(context.Background(), gameID)
+}
+
+// ProcessSnapshot пересчитывает результаты и рассылает снапшот игры в WebSocket.
+// Вызывается асинхронно воркером диспетчера (или синхронно в тестах).
+func (s *GamePlayService) ProcessSnapshot(ctx context.Context, gameID uint) {
+	timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	if s.monitorSvc != nil {
+		// Пересчёт мест/длительности. Повторный вызов на финише (после
+		// onGameFinished) даёт тот же результат — безопасно.
+		if err := s.monitorSvc.CalculateResults(timeoutCtx, gameID); err != nil {
+			log.Error().Err(err).Uint("game_id", gameID).Msg("ProcessSnapshot: CalculateResults failed")
+		}
+	}
+	s.broadcastSnapshotForGame(timeoutCtx, gameID)
+}
+
+// broadcastSnapshotForGame отправляет обновление мониторинга в WebSocket.
+func (s *GamePlayService) broadcastSnapshotForGame(ctx context.Context, gameID uint) {
 	if s.hub == nil {
 		return
 	}
-	// Проверяем, не отменён ли контекст
 	select {
 	case <-ctx.Done():
 		return
 	default:
 	}
-
-	// Используем контекст с таймаутом для всех операций
-	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	var passing GamePassing
-	if err := s.db.WithContext(timeoutCtx).Select("game_id").First(&passing, passingID).Error; err != nil {
-		log.Error().Err(err).Uint("passing", passingID).Msg("GamePlayService.broadcastSnapshot: failed to find passing")
-		return
-	}
-	gameID := passing.GameID
 	if s.monitorSvc == nil {
 		log.Warn().Uint("game_id", gameID).Msg("GamePlayService.broadcastSnapshot: monitorSvc is nil, skipping snapshot")
 		return
 	}
 	s.monitorSvc.InvalidateCache(gameID)
-	snapshot, err := s.monitorSvc.GetOrFetchSnapshot(timeoutCtx, gameID)
+	snapshot, err := s.monitorSvc.GetOrFetchSnapshot(ctx, gameID)
 	if err != nil {
 		log.Error().Err(err).Uint("game", gameID).Msg("GamePlayService.broadcastSnapshot: GetOrFetchSnapshot error")
 		return

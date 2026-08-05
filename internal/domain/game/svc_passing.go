@@ -93,13 +93,6 @@ func (s *GamePassingService) Apply(ctx context.Context, gameID, teamID, userID u
 	})
 }
 
-// Deprecated: Use ListByGamePaginated instead (this method loads all records without limit).
-func (s *GamePassingService) ListByGame(ctx context.Context, gameID uint) ([]GamePassing, error) {
-	var passings []GamePassing
-	err := s.DB.WithContext(ctx).Preload("Team.Captain").Where("game_id = ?", gameID).Find(&passings).Error
-	return passings, err
-}
-
 // ListByGamePaginated возвращает прохождения для игры с пагинацией.
 func (s *GamePassingService) ListByGamePaginated(ctx context.Context, gameID uint, page, perPage int) ([]GamePassing, int64, error) {
 	if page < 1 {

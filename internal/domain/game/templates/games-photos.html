@@ -1,9 +1,6 @@
 {{define "games-photos.html"}}
 <div class="max-w-7xl mx-auto">
     <h1 class="page-title">{{ T $.Lang "photos.title" }}</h1>
-
-    <meta name="csrf-token" content="{{.csrf}}">
-
     <!-- Форма загрузки -->
     <div class="card mb-6">
         <form id="upload-photo-form" enctype="multipart/form-data" class="flex flex-wrap items-center gap-3">

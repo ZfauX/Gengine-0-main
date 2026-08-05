@@ -64,7 +64,7 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/icon-16x16.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/icon-192x192.png">
     <!-- Подключаем собранный Tailwind CSS (локально) -->
-    <link rel="stylesheet" href="/static/css/output.css?v=20260805">
+    <link rel="stylesheet" href="/static/css/output.css?v={{.StaticVersion}}">
 
     <!-- Leaflet CSS для карт (локально) — только на страницах с картами -->
     {{if .IncludeLeaflet}}
@@ -151,7 +151,7 @@
     {{end}}
 
     <!-- App JS (локально) -->
-    <script defer src="/static/js/app.js?v=20260805"></script>
+    <script defer src="/static/js/app.js?v={{.StaticVersion}}"></script>
 
     <!-- Top progress bar -->
     <div id="top-progress-bar" class="fixed top-0 left-0 z-[100] h-1 bg-blue-600 transition-all duration-300 ease-out w-0 opacity-0"></div>

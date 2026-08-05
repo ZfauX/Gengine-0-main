@@ -292,24 +292,30 @@ func (c *ValkeyCache) GetOrSetStringWithTTLWithCtx(ctx context.Context, key stri
 	if c == nil || c.client == nil {
 		return fn()
 	}
-	if val, ok := c.Get(key); ok {
-		if s, ok := val.(string); ok {
-			return s, nil
+	// Singleflight + raw bytes (C3): раньше метод маршалил строку в JSON
+	// (с кавычками) и читал через Get(key) без singleflight — потребители
+	// GetBytesWithCtx получали «"строка"» вместо «строка».
+	v, err, _ := c.sg.Do(key, func() (any, error) {
+		if raw, ok := c.GetBytesWithCtx(ctx, key); ok {
+			return string(raw), nil
 		}
-	}
-	str, fnErr := fn()
-	if fnErr != nil {
-		return "", fnErr
-	}
-	data, marshalErr := json.Marshal(str)
-	if marshalErr != nil {
-		log.Warn().Err(marshalErr).Str("key", key).Msg("Valkey: SetWithTTL marshal error")
+		str, fnErr := fn()
+		if fnErr != nil {
+			return "", fnErr
+		}
+		if setErr := c.client.Set(ctx, key, []byte(str), ttl).Err(); setErr != nil {
+			log.Warn().Err(setErr).Str("key", key).Msg("Valkey: Set error")
+		}
 		return str, nil
+	})
+	if err != nil {
+		return "", err
 	}
-	if setErr := c.client.Set(ctx, key, data, ttl).Err(); setErr != nil {
-		log.Warn().Err(setErr).Str("key", key).Msg("Valkey: SetWithTTL error")
+	s, ok := v.(string)
+	if !ok {
+		return "", fmt.Errorf("unexpected type for key %s", key)
 	}
-	return str, nil
+	return s, nil
 }
 
 // ExtendTTL продлевает TTL существующего ключа. Возвращает true, если ключ найден.

@@ -77,8 +77,6 @@ type GameService struct {
 	listingService *GameListingService
 	reviewService  *ReviewService
 	photoService   *PhotoService
-	hub            *ws.RoomHub
-	cfg            *config.Config
 	storage        storage.FileStorage
 	cache          cache.CacheStore
 	ratingService  *RatingService
@@ -118,8 +116,6 @@ func NewGameService(
 		listingService: listingSvc,
 		reviewService:  rs,
 		photoService:   ps,
-		hub:            hub,
-		cfg:            cfg,
 		storage:        storage,
 		cache:          cacheStore,
 		ratingService:  ratingSvc,

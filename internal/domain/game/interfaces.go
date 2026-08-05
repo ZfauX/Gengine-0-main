@@ -40,7 +40,6 @@ type AuditServiceInterface interface {
 
 type GamePassingServiceInterface interface {
 	Apply(ctx context.Context, gameID, teamID, userID uint) error
-	ListByGame(ctx context.Context, gameID uint) ([]GamePassing, error)
 	ListByGamePaginated(ctx context.Context, gameID uint, page, perPage int) ([]GamePassing, int64, error)
 	ListTestPassings(ctx context.Context, gameID uint, result *[]GamePassing) error
 	UpdateStatus(ctx context.Context, passingID uint, status GamePassingStatus, userID uint) error

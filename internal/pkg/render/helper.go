@@ -32,7 +32,14 @@ var (
 	globalTemplate     *template.Template
 	templateDevPattern string
 	templateFuncMap    template.FuncMap
+	staticVersion      string
 )
+
+// SetStaticVersion задаёт версию статики для ?v= в шаблонах (UX5 — единый
+// источник вместо ручной синхронизации ?v= в layout и precache в sw.js).
+func SetStaticVersion(v string) {
+	staticVersion = v
+}
 
 // SetTemplate сохраняет общий *template.Template для использования в хелпере.
 func SetTemplate(t *template.Template) {
@@ -134,6 +141,9 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 	// Добавляем язык в данные шаблона для {{ T }}/{{ TF }} в шаблонах
 	lang := i18n.FromCtx(c)
 	data["Lang"] = string(lang)
+
+	// Версия статики для ?v= (UX5). Если не задана — пустая строка (нет суффикса).
+	data["StaticVersion"] = staticVersion
 
 	// Добавляем информацию о пользователе из контекста (если не переопределено хендлером)
 	if _, exists := data["CurrentUserID"]; !exists {

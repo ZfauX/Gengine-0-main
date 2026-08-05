@@ -4,10 +4,14 @@ package config
 import "time"
 
 const (
-	SentryFlushTimeout      = 2 * time.Second
-	DBRetryInitialDelay     = 2 * time.Second
-	DBMaxRetryAttempts      = 5
-	RateLimitWindow         = 1 * time.Minute
+	SentryFlushTimeout  = 2 * time.Second
+	DBRetryInitialDelay = 2 * time.Second
+	DBMaxRetryAttempts  = 5
+	RateLimitWindow     = 1 * time.Minute
+	// StaticAssetsVersion — версия статики, подставляемая в ?v= для версионированных
+	// ассетов (layout.html через render.Page). При изменении статики обнови это
+	// значение И константу ASSET_VERSION в static/sw.js (единый источник — Go).
+	StaticAssetsVersion     = "20260805"
 	GlobalRateLimit         = 100
 	LoginRateLimit          = 5
 	RegistrationRateLimit   = 3

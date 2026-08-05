@@ -28,6 +28,8 @@ import (
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/templatefuncs"
 
+	"gengine-0/internal/config"
+
 	_ "gengine-0/docs"
 
 	corsLib "github.com/gin-contrib/cors"
@@ -135,6 +137,8 @@ func (app *App) setupEngine(r *gin.Engine) error {
 	}
 	r.SetHTMLTemplate(tmpl)
 	render.SetTemplate(tmpl)
+	// Единая версия статики для ?v= в шаблонах (UX5).
+	render.SetStaticVersion(config.StaticAssetsVersion)
 
 	if app.Config.Server.GinMode == "debug" {
 		render.EnableDevMode(app.BaseDir, templatefuncs.FuncMap())

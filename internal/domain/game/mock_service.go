@@ -454,21 +454,6 @@ func (mr *MockGamePassingServiceInterfaceMockRecorder) GetTeamsByCaptain(ctx, us
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTeamsByCaptain", reflect.TypeOf((*MockGamePassingServiceInterface)(nil).GetTeamsByCaptain), ctx, userID)
 }
 
-// ListByGame mocks base method.
-func (m *MockGamePassingServiceInterface) ListByGame(ctx context.Context, gameID uint) ([]GamePassing, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListByGame", ctx, gameID)
-	ret0, _ := ret[0].([]GamePassing)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// ListByGame indicates an expected call of ListByGame.
-func (mr *MockGamePassingServiceInterfaceMockRecorder) ListByGame(ctx, gameID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListByGame", reflect.TypeOf((*MockGamePassingServiceInterface)(nil).ListByGame), ctx, gameID)
-}
-
 // ListByGamePaginated mocks base method.
 func (m *MockGamePassingServiceInterface) ListByGamePaginated(ctx context.Context, gameID uint, page, perPage int) ([]GamePassing, int64, error) {
 	m.ctrl.T.Helper()

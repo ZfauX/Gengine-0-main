@@ -291,6 +291,17 @@ func run() error {
 		deps.Services.GameAdmin.WithGameFinishedCallback(onGameFinished)
 	}
 
+	// Асинхронный дебаунс-диспетчер снапшотов мониторинга (S3): тяжёлый
+	// пересчёт (GetOrFetchSnapshot + CalculateResults + broadcast) уходит из
+	// HTTP-запроса игрока в фоновый воркер с дебаунсом ~500 мс на игру.
+	var snapshotDispatcher *game.SnapshotDispatcher
+	if deps.Services.GamePlay != nil {
+		snapshotDispatcher = game.NewSnapshotDispatcher(500*time.Millisecond, func(gameID uint) {
+			deps.Services.GamePlay.ProcessSnapshot(context.Background(), gameID)
+		})
+		deps.Services.GamePlay.WithSnapshotDispatcher(snapshotDispatcher)
+	}
+
 	// bgWg отслеживает фоновые горутины для корректного завершения.
 	var bgWg sync.WaitGroup
 
@@ -454,6 +465,12 @@ func run() error {
 	// 5. Останавливаем WebSocket-хаб (после HTTP — ни один хендлер не использует хаб)
 	hub.Stop()
 	log.Info().Msg("WebSocket-хаб остановлен")
+
+	// 5.1 Останавливаем дебаунс-диспетчер снапшотов (S3) — до закрытия БД.
+	if snapshotDispatcher != nil {
+		snapshotDispatcher.Close()
+		log.Info().Msg("Снапшот-диспетчер остановлен")
+	}
 
 	// 6. Отменяем контекст фоновых задач
 	cancel()

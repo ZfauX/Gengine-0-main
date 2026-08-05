@@ -1,4 +1,6 @@
-const CACHE_NAME = 'gengine-v17';
+// Единая версия статики (UX5): должна совпадать с config.StaticAssetsVersion.
+const ASSET_VERSION = '20260805';
+const CACHE_NAME = 'gengine-' + ASSET_VERSION;
 const OFFLINE_PAGE = '/offline';
 
 const STATIC_ASSETS = [
@@ -6,9 +8,10 @@ const STATIC_ASSETS = [
     '/static/manifest.json',
     '/static/icons/icon-192x192.png',
     '/static/icons/icon-512x512.png',
-    // Версионированные URL — совпадают с тем, что запрашивает layout.html.
-    '/static/css/output.css?v=20260805',
-    '/static/js/app.js?v=20260805',
+    // Версионированные URL — совпадают с тем, что запрашивает layout.html
+    // (?v={{StaticVersion}} генерируется сервером из config.StaticAssetsVersion).
+    '/static/css/output.css?v=' + ASSET_VERSION,
+    '/static/js/app.js?v=' + ASSET_VERSION,
     '/static/js/leaflet.js',
     '/static/css/leaflet.css'
 ];
