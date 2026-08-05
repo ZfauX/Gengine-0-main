@@ -44,8 +44,13 @@ func (s *BlackboxVoteService) StartVoting(ctx context.Context, gamePassingID, le
 		return err
 	}
 	g := passing.Game
-	if g.AuthorID != userID {
-		return errors.New("только автор может запустить голосование")
+	// C4: автор или соавтор (консистентно с доступом к странице мониторинга).
+	ok, err := s.isGameManagerForGame(ctx, g.ID, userID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.New("только автор или модератор может запустить голосование")
 	}
 
 	session, err := s.blackboxRepo.GetSessionByPassingAndLevel(ctx, gamePassingID, levelID)
@@ -168,6 +173,11 @@ func (s *BlackboxVoteService) isGameManager(ctx context.Context, session *Blackb
 	if err := s.gameRepo.DB(ctx).First(&passing, session.GamePassingID).Error; err != nil {
 		return false, err
 	}
+	return s.isGameManagerForGame(ctx, passing.GameID, userID)
+}
+
+// isGameManagerForGame — автор или соавтор игры (author+co_authors UNION).
+func (s *BlackboxVoteService) isGameManagerForGame(ctx context.Context, gameID, userID uint) (bool, error) {
 	var count int64
 	err := s.gameRepo.DB(ctx).Raw(`
 		SELECT COUNT(*) FROM (
@@ -175,7 +185,7 @@ func (s *BlackboxVoteService) isGameManager(ctx context.Context, session *Blackb
 			UNION
 			SELECT 1 FROM co_authors WHERE game_id = ? AND user_id = ? AND deleted_at IS NULL
 		) sub
-	`, passing.GameID, userID, passing.GameID, userID).Scan(&count).Error
+	`, gameID, userID, gameID, userID).Scan(&count).Error
 	if err != nil {
 		return false, err
 	}
@@ -234,8 +244,13 @@ func (s *BlackboxVoteService) CloseVoting(ctx context.Context, sessionID, userID
 		return "", findErr
 	}
 	g := passing.Game
-	if g.AuthorID != userID {
-		return "", errors.New("только автор может завершить голосование")
+	// C4: автор или соавтор (консистентно с доступом к странице мониторинга).
+	ok, err := s.isGameManagerForGame(ctx, g.ID, userID)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", errors.New("только автор или модератор может завершить голосование")
 	}
 
 	results, getResultsErr := s.GetVotingResults(ctx, sessionID, userID)
