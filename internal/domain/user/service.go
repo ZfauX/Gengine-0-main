@@ -1022,11 +1022,6 @@ func (s *UserDashboardService) loadInvitations(ctx context.Context, dash *UserDa
 		return
 	}
 	for _, inv := range invitations {
-		dash.PendingInvitations = append(dash.PendingInvitations, DashboardInvitation{
-			ID:       inv.ID,
-			TeamID:   inv.TeamID,
-			TeamName: inv.TeamName,
-			Status:   inv.Status,
-		})
+		dash.PendingInvitations = append(dash.PendingInvitations, DashboardInvitation(inv))
 	}
 }
