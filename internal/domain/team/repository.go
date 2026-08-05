@@ -3,6 +3,8 @@ package team
 
 import (
 	"context"
+	"strings"
+
 	"gengine-0/internal/domain/user"
 
 	"gorm.io/gorm"
@@ -50,6 +52,10 @@ type TeamRepository interface {
 	GetPassingByTeam(ctx context.Context, teamID uint) (*teamGamePassing, error)
 	GetUserByID(ctx context.Context, userID uint) (*userUser, error)
 	GetGameByID(ctx context.Context, gameID uint) (*teamGameModel, error)
+	SearchUsersForInvitation(ctx context.Context, query string, teamID uint) ([]struct {
+		ID   uint
+		Name string
+	}, error)
 	TeamMembersCount(ctx context.Context) (int64, error)
 	BeginTransaction(ctx context.Context) *gorm.DB
 	DeclineInvitation(ctx context.Context, id uint) error
@@ -184,6 +190,27 @@ func (r *gormTeamRepo) GetGameByID(ctx context.Context, gameID uint) (*teamGameM
 		return nil, err
 	}
 	return &g, nil
+}
+
+// SearchUsersForInvitation ищет пользователей по имени/email и исключает уже
+// состоящих в команде и её капитана (C1 — без *gorm.DB в хендлере).
+func (r *gormTeamRepo) SearchUsersForInvitation(ctx context.Context, query string, teamID uint) ([]struct {
+	ID   uint
+	Name string
+}, error) {
+	items := []struct {
+		ID   uint
+		Name string
+	}{}
+	err := r.db.WithContext(ctx).Table("users").
+		Select("id, name").
+		Where("LOWER(name) LIKE ? OR LOWER(email) LIKE ?",
+			"%"+strings.ToLower(query)+"%", "%"+strings.ToLower(query)+"%").
+		Where("id NOT IN (SELECT user_id FROM team_members WHERE team_id = ?)", teamID).
+		Where("id != (SELECT captain_id FROM teams WHERE id = ?)", teamID).
+		Limit(20).
+		Scan(&items).Error
+	return items, err
 }
 func (r *gormTeamRepo) TeamMembersCount(ctx context.Context) (int64, error) {
 	var count int64

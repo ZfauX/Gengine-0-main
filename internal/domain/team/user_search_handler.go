@@ -12,18 +12,16 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-	"gorm.io/gorm"
 )
 
 // UserSearchHandler обрабатывает поиск пользователей для приглашений.
 type UserSearchHandler struct {
-	db      *gorm.DB
 	teamSvc *TeamService
 }
 
 // NewUserSearchHandler создаёт обработчик поиска пользователей.
-func NewUserSearchHandler(db *gorm.DB, teamSvc *TeamService) *UserSearchHandler {
-	return &UserSearchHandler{db: db, teamSvc: teamSvc}
+func NewUserSearchHandler(teamSvc *TeamService) *UserSearchHandler {
+	return &UserSearchHandler{teamSvc: teamSvc}
 }
 
 // SearchUsers ищет пользователей по имени или email (JSON).
@@ -36,51 +34,20 @@ func (h *UserSearchHandler) SearchUsers(c *gin.Context) {
 
 	teamID, _ := strconv.Atoi(c.Param("team_id"))
 
-	var users []struct {
-		ID   uint   `json:"id"`
-		Name string `json:"name"`
-	}
-
-	err := h.db.WithContext(c.Request.Context()).Table("users").
-		Select("id, name").
-		Where("LOWER(name) LIKE ? OR LOWER(email) LIKE ?",
-			"%"+strings.ToLower(query)+"%",
-			"%"+strings.ToLower(query)+"%").
-		Limit(20).
-		Scan(&users).Error
+	// Поиск + исключение участников/капитана выполняется на стороне репозитория (C1).
+	users, err := h.teamSvc.SearchUsersForInvitation(c.Request.Context(), query, uint(teamID))
 	if err != nil {
 		log.Error().Err(err).Msg("UserSearch: search failed")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "ошибка поиска"})
 		return
 	}
 
-	// Исключаем уже состоящих в команде
-	var memberIDs []uint
-	if teamID > 0 {
-		h.db.WithContext(c.Request.Context()).Table("team_members").
-			Where("team_id = ?", teamID).Pluck("user_id", &memberIDs)
-		// Добавляем капитана
-		var captID uint
-		h.db.WithContext(c.Request.Context()).Table("teams").
-			Where("id = ?", teamID).Pluck("captain_id", &captID)
-		memberIDs = append(memberIDs, captID)
-	}
-
 	filtered := make([]gin.H, 0, len(users))
 	for _, u := range users {
-		isMember := false
-		for _, mid := range memberIDs {
-			if u.ID == mid {
-				isMember = true
-				break
-			}
-		}
-		if !isMember {
-			filtered = append(filtered, gin.H{
-				"id":   u.ID,
-				"name": u.Name,
-			})
-		}
+		filtered = append(filtered, gin.H{
+			"id":   u.ID,
+			"name": u.Name,
+		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{"users": filtered})

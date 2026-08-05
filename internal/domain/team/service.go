@@ -29,6 +29,14 @@ func (s *TeamService) GetMyTeams(ctx context.Context, userID uint) ([]Team, erro
 	return s.teamRepo.GetTeamsByUserID(ctx, userID)
 }
 
+// SearchUsersForInvitation ищет пользователей для приглашения (без уже состоящих в команде).
+func (s *TeamService) SearchUsersForInvitation(ctx context.Context, query string, teamID uint) ([]struct {
+	ID   uint
+	Name string
+}, error) {
+	return s.teamRepo.SearchUsersForInvitation(ctx, query, teamID)
+}
+
 func (s *TeamService) GetTeamsByCaptain(ctx context.Context, captainID uint) ([]Team, error) {
 	return s.teamRepo.GetByCaptainID(ctx, captainID)
 }

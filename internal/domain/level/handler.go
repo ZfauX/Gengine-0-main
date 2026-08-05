@@ -83,7 +83,6 @@ type LevelHandler struct {
 	hub             *ws.RoomHub
 	cfg             *config.Config
 	authorizer      middleware.GameAuthorizer
-	db              *gorm.DB
 }
 
 func NewLevelHandler(
@@ -94,7 +93,6 @@ func NewLevelHandler(
 	hub *ws.RoomHub,
 	cfg *config.Config,
 	authorizer middleware.GameAuthorizer,
-	db *gorm.DB,
 ) *LevelHandler {
 	return &LevelHandler{
 		levelService:    levelService,
@@ -104,7 +102,6 @@ func NewLevelHandler(
 		hub:             hub,
 		cfg:             cfg,
 		authorizer:      authorizer,
-		db:              db,
 	}
 }
 
@@ -148,7 +145,9 @@ func (h *LevelHandler) ListByGame(c *gin.Context) {
 	}
 
 	var gameName string
-	if err := h.db.Table("games").Select("name").Where("id = ?", gameID).Scan(&gameName).Error; err != nil {
+	if name, err := h.levelService.GetGameName(c.Request.Context(), uint(gameID)); err == nil {
+		gameName = name
+	} else {
 		gameName = "Игра"
 	}
 
@@ -191,7 +190,9 @@ func (h *LevelHandler) NewForm(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	var gameName string
-	if err := h.db.Table("games").Select("name").Where("id = ?", gameID).Scan(&gameName).Error; err != nil {
+	if name, err := h.levelService.GetGameName(c.Request.Context(), uint(gameID)); err == nil {
+		gameName = name
+	} else {
 		gameName = "Игра"
 	}
 
@@ -344,7 +345,9 @@ func (h *LevelHandler) EditForm(c *gin.Context) {
 	gameID := level.GameID
 
 	var gameName string
-	if err := h.db.Table("games").Select("name").Where("id = ?", gameID).Scan(&gameName).Error; err != nil {
+	if name, err := h.levelService.GetGameName(c.Request.Context(), gameID); err == nil {
+		gameName = name
+	} else {
 		gameName = "Игра"
 	}
 
@@ -612,7 +615,9 @@ func (h *LevelHandler) ListQuestions(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	var gameName string
-	if err := h.db.Table("games").Select("name").Where("id = ?", level.GameID).Scan(&gameName).Error; err != nil {
+	if name, err := h.levelService.GetGameName(c.Request.Context(), level.GameID); err == nil {
+		gameName = name
+	} else {
 		gameName = "Игра"
 	}
 
@@ -940,7 +945,9 @@ func (h *LevelHandler) ListAnswers(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	var gameName string
-	if err := h.db.Table("games").Select("name").Where("id = ?", level.GameID).Scan(&gameName).Error; err != nil {
+	if name, err := h.levelService.GetGameName(c.Request.Context(), level.GameID); err == nil {
+		gameName = name
+	} else {
 		gameName = "Игра"
 	}
 

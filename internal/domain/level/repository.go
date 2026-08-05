@@ -21,6 +21,7 @@ type LevelRepository interface {
 	ListWithQuestions(ctx context.Context, gameID uint) ([]Level, error)
 	FindPrevLevel(ctx context.Context, gameID uint, position int) (*Level, error)
 	FindNextLevel(ctx context.Context, gameID uint, position int) (*Level, error)
+	GetGameName(ctx context.Context, gameID uint) (string, error)
 	BeginTransaction(ctx context.Context) *gorm.DB
 	ShiftPositions(ctx context.Context, gameID uint, fromPos int, delta int) error
 	GetMaxPositionForTransaction(ctx context.Context, tx *gorm.DB, gameID uint) (int, error)
@@ -135,6 +136,13 @@ func (r *gormLevelRepo) FindNextLevel(ctx context.Context, gameID uint, position
 		return nil, err
 	}
 	return &l, nil
+}
+
+// GetGameName возвращает название игры (кросс-доменный read для хлебных крошек).
+func (r *gormLevelRepo) GetGameName(ctx context.Context, gameID uint) (string, error) {
+	var name string
+	err := r.db.WithContext(ctx).Table("games").Select("name").Where("id = ?", gameID).Scan(&name).Error
+	return name, err
 }
 func (r *gormLevelRepo) BeginTransaction(ctx context.Context) *gorm.DB {
 	return r.db.WithContext(ctx).Begin()

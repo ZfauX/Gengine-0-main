@@ -58,6 +58,11 @@ func (s *LevelService) GetByID(ctx context.Context, levelID uint) (*Level, error
 	return s.levelRepo.GetByIDWithQuestions(ctx, levelID)
 }
 
+// GetGameName возвращает название игры (для хлебных крошек и заголовков).
+func (s *LevelService) GetGameName(ctx context.Context, gameID uint) (string, error) {
+	return s.levelRepo.GetGameName(ctx, gameID)
+}
+
 func (s *LevelService) Create(ctx context.Context, gameID uint, level *Level, userID uint) error {
 	ok, err := s.authorizer.IsUserManager(ctx, gameID, userID)
 	if err != nil {

@@ -33,7 +33,6 @@ func RegisterRoutes(
 		hub,
 		cfg,
 		authorizer,
-		db,
 	)
 
 	protected := r.Group("/games/:id/levels")
