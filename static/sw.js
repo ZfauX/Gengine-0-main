@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gengine-v16';
+const CACHE_NAME = 'gengine-v17';
 const OFFLINE_PAGE = '/offline';
 
 const STATIC_ASSETS = [

@@ -170,7 +170,8 @@
             });
         }
 
-        // Отправка сообщения (без оптимистичного отображения)
+        // Отправка сообщения (без оптимистичного отображения).
+        // Единый JSON-формат с team-chat (UX11): {type, room_id, content}.
         function sendMessage() {
             const text = chatInput.value.trim();
             if (!text) return;
@@ -178,7 +179,12 @@
                 updateConnectionStatus('{{ T $.Lang "gamechat.connection_error" }}', '#e74c3c');
                 return;
             }
-            chat.send(text);
+            const room = currentRoom === 'general' ? generalRoomID : teamRoomID;
+            chat.send(JSON.stringify({
+                type: 'message',
+                room_id: room || 0,
+                content: text
+            }));
             chatInput.value = '';
         }
 
