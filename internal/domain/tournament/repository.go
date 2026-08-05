@@ -9,6 +9,7 @@ import (
 	"gengine-0/internal/domain/user"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type TournamentRepository interface {
@@ -30,7 +31,7 @@ type TournamentGameRepository interface {
 
 type TournamentTeamRepository interface {
 	AddTeam(ctx context.Context, tournamentID, teamID uint) error
-	AddTeamTx(tx *gorm.DB, ctx context.Context, tournamentID, teamID uint) error
+	AddTeamTx(tx *gorm.DB, ctx context.Context, tournamentID, teamID uint) (bool, error)
 	RemoveTeam(ctx context.Context, tournamentID, teamID uint) error
 	ListTeams(ctx context.Context, tournamentID uint) ([]team.Team, error)
 	GetByTournamentAndTeam(ctx context.Context, tournamentID, teamID uint) (*TournamentTeam, error)
@@ -136,12 +137,21 @@ func (r *gormTournamentTeamRepo) AddTeam(ctx context.Context, tournamentID, team
 	return r.db.WithContext(ctx).Create(&tt).Error
 }
 
-func (r *gormTournamentTeamRepo) AddTeamTx(tx *gorm.DB, ctx context.Context, tournamentID, teamID uint) error {
+func (r *gormTournamentTeamRepo) AddTeamTx(tx *gorm.DB, ctx context.Context, tournamentID, teamID uint) (bool, error) {
 	tt := TournamentTeam{
 		TournamentID: tournamentID,
 		TeamID:       teamID,
 	}
-	return tx.WithContext(ctx).Create(&tt).Error
+	// ON CONFLICT DO NOTHING (C-H3): конкурентная заявка не вызовет duplicate-key.
+	// RowsAffected==0 → команда уже добавлена.
+	res := tx.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "tournament_id"}, {Name: "team_id"}},
+		DoNothing: true,
+	}).Create(&tt)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
 }
 func (r *gormTournamentTeamRepo) RemoveTeam(ctx context.Context, tournamentID, teamID uint) error {
 	return r.db.WithContext(ctx).Where("tournament_id = ? AND team_id = ?", tournamentID, teamID).Delete(&TournamentTeam{}).Error

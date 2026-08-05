@@ -51,14 +51,17 @@ func (s *RatingService) UpdateRatingsForGame(ctx context.Context, gameID uint) e
 		}
 
 		// Авторские очки начисляются один раз за игру (за создание).
+		// Ошибка откатывает транзакцию вместе с rating_scored (C-H1) —
+		// иначе игра останется помеченной без начисленных очков.
 		if err := s.awardPointsWith(tx, g.AuthorID, 5, now); err != nil {
 			log.Error().Err(err).Uint("user_id", g.AuthorID).Msg("failed to award author points")
+			return err
 		}
 
 		var passings []GamePassing
 		if err := tx.Where("game_id = ? AND status = ?", gameID, StatusFinished).Find(&passings).Error; err != nil {
 			log.Error().Err(err).Uint("game", gameID).Msg("UpdateRatingsForGame: failed to load passings")
-			return nil
+			return err
 		}
 		if len(passings) == 0 {
 			s.cache.DeleteByPrefixWithCtx(ctx, "leaderboard:")
@@ -97,7 +100,7 @@ func (s *RatingService) UpdateRatingsForGame(ctx context.Context, gameID uint) e
 			Where("team_members.team_id IN ?", teamIDs).
 			Scan(&members).Error; err != nil {
 			log.Error().Err(err).Uint("game", gameID).Msg("UpdateRatingsForGame: team_members query failed")
-			return nil
+			return err
 		}
 
 		// Капитаны одним запросом (команды могут не иметь строк в team_members).
@@ -107,7 +110,7 @@ func (s *RatingService) UpdateRatingsForGame(ctx context.Context, gameID uint) e
 		}
 		if err := tx.Table("teams").Select("id, captain_id").Where("id IN ?", teamIDs).Scan(&teamRows).Error; err != nil {
 			log.Error().Err(err).Uint("game", gameID).Msg("UpdateRatingsForGame: teams query failed")
-			return nil
+			return err
 		}
 		captainByTeam := make(map[uint]uint, len(teamRows))
 		for _, t := range teamRows {
@@ -148,6 +151,7 @@ func (s *RatingService) UpdateRatingsForGame(ctx context.Context, gameID uint) e
 					updated_at = EXCLUDED.updated_at
 			`, pq.Array(userIDs), pq.Array(points), pq.Array(ts)).Error; err != nil {
 				log.Error().Err(err).Uint("game", gameID).Msg("UpdateRatingsForGame: batch upsert failed")
+				return err
 			}
 		}
 

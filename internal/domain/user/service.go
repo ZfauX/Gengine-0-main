@@ -14,6 +14,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"gengine-0/internal/config"
@@ -477,10 +478,20 @@ func (s *UserService) GetByIDWithAchievementsAndSubscriptions(ctx context.Contex
 }
 
 func (s *UserService) UpdateProfile(ctx context.Context, id uint, name, emailStr string) error {
-	return s.userRepo.Update(ctx, id, map[string]any{
+	fields := map[string]any{
 		"name":  name,
 		"email": emailStr,
-	})
+	}
+	// Смена email сбрасывает verified-флаг (S-L3): иначе новый адрес остаётся
+	// «подтверждённым», что влияет на OAuth-линковку и другие email-trust решения.
+	current, getErr := s.userRepo.GetByID(ctx, id)
+	if getErr != nil {
+		return getErr
+	}
+	if !strings.EqualFold(current.Email, emailStr) {
+		fields["email_verified"] = false
+	}
+	return s.userRepo.Update(ctx, id, fields)
 }
 
 func (s *UserService) UpdateAvatarPath(ctx context.Context, id uint, avatarPath string) error {
@@ -723,6 +734,12 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 	} else if getUserErr != nil {
 		return nil, fmt.Errorf("поиск пользователя: %w", getUserErr)
 	} else {
+		// S-L2: VK не даёт подтверждения email — линковка существующего аккаунта
+		// по неверифицированному email может захватить чужую учётку. Логируем.
+		if provider == "vk" && !emailVerified {
+			log.Warn().Uint("user_id", user.ID).Str("email", emailStr).
+				Msg("OAuth: VK email is not verified, linking existing account by email")
+		}
 		if user.Name != name {
 			if updateErr := s.userRepo.Update(ctx, user.ID, map[string]any{"name": name}); updateErr != nil {
 				log.Warn().Err(updateErr).Uint("user_id", user.ID).Msg("не удалось обновить имя пользователя")

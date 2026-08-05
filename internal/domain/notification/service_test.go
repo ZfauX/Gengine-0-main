@@ -119,46 +119,39 @@ func TestGetSettings_RepoError(t *testing.T) {
 }
 
 func TestSaveSettings_CreatesNew(t *testing.T) {
-	db, _ := newMockDB(t)
+	db, mock := newMockDB(t)
 	svc := &NotificationService{
-		db: db,
-		repo: &mockRepo{
-			getByUserIDFn: func(_ context.Context, _ uint) (*user.NotificationSetting, error) {
-				return nil, gorm.ErrRecordNotFound
-			},
-			saveFn: func(_ context.Context, s *user.NotificationSetting) error {
-				assert.Equal(t, uint(1), s.UserID)
-				assert.Contains(t, s.SettingsJSON, "email_enabled")
-				return nil
-			},
-		},
+		db:   db,
+		repo: &mockRepo{},
 	}
+
+	// Upsert через ON CONFLICT (C-M1) — единый INSERT вместо GetByUserID+Save.
+	// GORM использует RETURNING "id" → Query.
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "notification_settings"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
+	mock.ExpectCommit()
 
 	err := svc.SaveSettings(context.Background(), 1, &Settings{EmailEnabled: true})
 	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestSaveSettings_UpdatesExisting(t *testing.T) {
-	db, _ := newMockDB(t)
+	db, mock := newMockDB(t)
 	svc := &NotificationService{
-		db: db,
-		repo: &mockRepo{
-			getByUserIDFn: func(_ context.Context, _ uint) (*user.NotificationSetting, error) {
-				return &user.NotificationSetting{
-					UserID:       1,
-					SettingsJSON: `{"email_enabled":true}`,
-				}, nil
-			},
-			saveFn: func(_ context.Context, s *user.NotificationSetting) error {
-				assert.Equal(t, uint(1), s.UserID)
-				assert.Contains(t, s.SettingsJSON, "push_enabled")
-				return nil
-			},
-		},
+		db:   db,
+		repo: &mockRepo{},
 	}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "notification_settings"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
+	mock.ExpectCommit()
 
 	err := svc.SaveSettings(context.Background(), 1, &Settings{EmailEnabled: false, PushEnabled: true})
 	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestSaveSettings_GetError(t *testing.T) {
@@ -287,7 +280,7 @@ func TestMarkAsRead(t *testing.T) {
 	db, mock := newMockDB(t)
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE "notifications" SET`).
-		WithArgs(true, sqlmock.AnyArg(), uint(10), uint(1)).
+		WithArgs(true, sqlmock.AnyArg(), sqlmock.AnyArg(), uint(10), uint(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 
@@ -301,7 +294,7 @@ func TestMarkAsRead_NotFound(t *testing.T) {
 	db, mock := newMockDB(t)
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE "notifications" SET`).
-		WithArgs(true, sqlmock.AnyArg(), uint(10), uint(1)).
+		WithArgs(true, sqlmock.AnyArg(), sqlmock.AnyArg(), uint(10), uint(1)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectCommit()
 

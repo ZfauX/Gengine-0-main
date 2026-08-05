@@ -205,16 +205,19 @@ func (s *GameAdminService) DeleteLevelFromActiveGame(ctx context.Context, gameID
 			progress, err := GetCurrentProgressForUpdate(tx, p.ID)
 			if err != nil {
 				log.Error().Uint("passing", p.ID).Err(err).Msg("DeleteLevelFromActiveGame: GetCurrentProgress error")
-				continue
+				// Не удаляем уровень, если не можем перевести активные команды —
+				// иначе прохождение останется без прогресса (C-H5).
+				return fmt.Errorf("не удалось получить прогресс прохождения %d: %w", p.ID, err)
 			}
 			if progress.LevelID == levelID {
 				progress.FinishedAt = &now
 				if err := tx.Save(progress).Error; err != nil {
 					log.Error().Uint("progress", progress.ID).Err(err).Msg("DeleteLevelFromActiveGame: Save progress error")
-					continue
+					return fmt.Errorf("не удалось завершить прогресс прохождения %d: %w", p.ID, err)
 				}
 				if _, err := AdvanceToNextLevel(tx, p.ID, levelID, nil); err != nil {
 					log.Error().Uint("passing", p.ID).Err(err).Msg("DeleteLevelFromActiveGame: AdvanceToNextLevel error")
+					return fmt.Errorf("не удалось перевести прохождение %d на следующий уровень: %w", p.ID, err)
 				}
 			}
 		}

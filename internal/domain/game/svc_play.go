@@ -660,7 +660,10 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 				// settings не обязательны — используем единые значения по умолчанию (B5).
 				settings = *defaultGameSetting(passing.GameID)
 			} else {
-				log.Error().Err(err).Uint("game_id", passing.GameID).Msg("GetGameplayData: failed to load settings")
+				// На не-NotFound ошибке тоже используем дефолты (C-M9), а не
+				// zero-value с AllowHints=false.
+				log.Error().Err(err).Uint("game_id", passing.GameID).Msg("GetGameplayData: failed to load settings, using defaults")
+				settings = *defaultGameSetting(passing.GameID)
 			}
 		}
 	}

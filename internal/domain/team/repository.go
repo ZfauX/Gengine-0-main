@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"gengine-0/internal/domain/user"
+	"gengine-0/internal/pkg/i18n"
+	"gengine-0/internal/pkg/sqlutil"
 
 	"gorm.io/gorm"
 )
@@ -203,10 +205,13 @@ func (r *gormTeamRepo) SearchUsersForInvitation(ctx context.Context, query strin
 		ID   uint
 		Name string
 	}{}
+	// Экранируем wildcard-символы LIKE (C-M7): иначе запрос с % или _ искал
+	// бы всех пользователей. Пользовательский ввод — только как литерал.
+	escaped := sqlutil.EscapeLike(strings.ToLower(query))
 	err := r.db.WithContext(ctx).Table("users").
 		Select("id, name").
 		Where("LOWER(name) LIKE ? OR LOWER(email) LIKE ?",
-			"%"+strings.ToLower(query)+"%", "%"+strings.ToLower(query)+"%").
+			"%"+escaped+"%", "%"+escaped+"%").
 		Where("id NOT IN (SELECT user_id FROM team_members WHERE team_id = ?)", teamID).
 		Where("id != (SELECT captain_id FROM teams WHERE id = ?)", teamID).
 		Limit(20).
@@ -223,9 +228,14 @@ func (r *gormTeamRepo) GetOrCreateTeamChatRoom(ctx context.Context, teamID uint,
 	}
 	room = teamChatRoom{
 		TeamID: &teamID,
-		Name:   "Команда: " + teamName,
+		Name:   i18n.TF("team.chat_room_name", teamName),
 	}
 	if createErr := r.db.WithContext(ctx).Create(&room).Error; createErr != nil {
+		// Конкурентное создание комнаты (C-M5): перечитываем существующую.
+		var existing teamChatRoom
+		if reErr := r.db.WithContext(ctx).Where("team_id = ? AND game_id IS NULL", teamID).First(&existing).Error; reErr == nil {
+			return &existing, nil
+		}
 		return nil, createErr
 	}
 	return &room, nil

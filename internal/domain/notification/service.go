@@ -18,6 +18,7 @@ import (
 	webpush "github.com/SherClockHolmes/webpush-go"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // NotificationType определяет тип уведомления
@@ -152,22 +153,18 @@ func (s *NotificationService) SaveSettings(ctx context.Context, userID uint, set
 	if err != nil {
 		return err
 	}
-	// Ищем существующую запись
-	existing, err := s.repo.GetByUserID(ctx, userID)
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
-	}
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		// Создаём новую
-		newSettings := &user.NotificationSetting{
-			UserID:       userID,
-			SettingsJSON: string(jsonData),
-		}
-		return s.repo.Save(ctx, newSettings)
-	}
-	// Обновляем существующую
-	existing.SettingsJSON = string(jsonData)
-	return s.repo.Save(ctx, existing)
+	// Единый upsert по user_id (C-M1): закрывает гонку update-then-insert —
+	// два параллельных первых сохранения больше не дают unique-violation.
+	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "user_id"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			"settings_json": string(jsonData),
+			"updated_at":    time.Now(),
+		}),
+	}).Create(&user.NotificationSetting{
+		UserID:       userID,
+		SettingsJSON: string(jsonData),
+	}).Error
 }
 
 // GetEmailNotificationFlags возвращает только флаги email-уведомлений для фронтенда
@@ -347,7 +344,7 @@ func (s *NotificationService) GetByUser(ctx context.Context, userID uint, page, 
 func (s *NotificationService) MarkAsRead(ctx context.Context, userID, notificationID uint) error {
 	result := s.db.WithContext(ctx).Model(&Notification{}).
 		Where("id = ? AND user_id = ?", notificationID, userID).
-		Update("read", true)
+		Updates(map[string]any{"read": true, "read_at": time.Now()})
 
 	if result.Error != nil {
 		return result.Error

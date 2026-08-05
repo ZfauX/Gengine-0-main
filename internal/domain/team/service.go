@@ -253,10 +253,17 @@ func (s *InvitationService) AcceptInvitation(ctx context.Context, invitationID, 
 	}
 	defer tx.Rollback()
 
-	if updateErr := tx.Model(&Invitation{}).Where("id = ?", invitationID).Update("status", InvitationAccepted).Error; updateErr != nil {
-		return updateErr
+	// Атомарный claim (C-H2): только если приглашение всё ещё pending.
+	// RowsAffected==0 → конкурентный accept уже обработал его.
+	res := tx.Model(&Invitation{}).Where("id = ? AND status = ?", invitationID, InvitationPending).Update("status", InvitationAccepted)
+	if res.Error != nil {
+		return res.Error
 	}
-	if execErr := tx.Exec("INSERT INTO team_members (team_id, user_id) VALUES (?, ?)", inv.TeamID, userID).Error; execErr != nil {
+	if res.RowsAffected == 0 {
+		return errors.New("приглашение уже обработано")
+	}
+	// ON CONFLICT DO NOTHING защищает от дубликата team_members.
+	if execErr := tx.Exec("INSERT INTO team_members (team_id, user_id) VALUES (?, ?) ON CONFLICT DO NOTHING", inv.TeamID, userID).Error; execErr != nil {
 		return execErr
 	}
 

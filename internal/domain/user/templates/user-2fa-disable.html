@@ -24,6 +24,13 @@
                        class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
             </div>
 
+            <div>
+                <label for="code" class="form-label">{{ T $.Lang "twofa.code_label" }}</label>
+                <input type="text" name="code" id="code" required inputmode="numeric" autocomplete="one-time-code"
+                       placeholder="{{ T $.Lang "twofa.code_placeholder" }}"
+                       class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+            </div>
+
             <button type="submit" id="disableBtn" class="w-full btn bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-md transition-colors">
                 {{ T $.Lang "twofa.disable_button" }}
             </button>

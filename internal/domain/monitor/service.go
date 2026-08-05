@@ -4,6 +4,7 @@ package monitor
 import (
 	"context"
 	"errors"
+	"sort"
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/game"
@@ -287,8 +288,16 @@ func (s *BlackboxVoteService) CloseVoting(ctx context.Context, sessionID, userID
 			results[v.Option]++
 		}
 		maxVotes := 0
-		for option, count := range results {
-			if count > maxVotes {
+		// Детерминированный тай-брейк (C-M3): при равенстве голосов побеждает
+		// лексикографически первый вариант — раньше порядок map был случайным.
+		options := make([]string, 0, len(results))
+		for option := range results {
+			options = append(options, option)
+		}
+		sort.Strings(options)
+		for _, option := range options {
+			count := results[option]
+			if count >= maxVotes {
 				maxVotes = count
 				winner = option
 			}

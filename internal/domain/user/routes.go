@@ -80,7 +80,7 @@ func RegisterRoutes(
 		authGroup.GET("/2fa/verify", middleware.AuthRequired(authSvc), twoFactorHandler.VerifyForm)
 		authGroup.POST("/2fa/verify", middleware.LoginRateLimit(5*time.Minute, 5), twoFactorHandler.Verify)
 		authGroup.GET("/2fa/backup", middleware.AuthRequired(authSvc), twoFactorHandler.BackupForm)
-		authGroup.POST("/2fa/backup", middleware.AuthRequired(authSvc), twoFactorHandler.BackupVerify)
+		authGroup.POST("/2fa/backup", middleware.LoginRateLimit(5*time.Minute, 5), twoFactorHandler.BackupVerify)
 
 		authGroup.GET("/oauth/:provider", oauthRateLimit, authHandler.OAuthLogin)
 

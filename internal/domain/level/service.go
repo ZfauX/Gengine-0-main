@@ -243,7 +243,12 @@ func (s *LevelService) Move(ctx context.Context, levelID uint, direction string,
 		return errors.New("неверное направление")
 	}
 	if err != nil {
-		return errors.New("некуда двигать")
+		// «Нет соседа» (нет куда двигать) — пользовательская ошибка; реальные
+		// ошибки БД пробрасываем как 500 (C-M4).
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("некуда двигать")
+		}
+		return err
 	}
 
 	// Блокируем соседа.

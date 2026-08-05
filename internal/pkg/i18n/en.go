@@ -538,6 +538,7 @@ var enMessages = map[string]string{
 	"twofa.disable_confirm":        "Are you sure you want to disable two-factor authentication? Your account will be less secure.",
 	"twofa.password_confirm_label": "Confirm with password",
 	"twofa.password_placeholder":   "Your current password",
+	"twofa.code_placeholder":       "6-digit code from the app",
 	"twofa.disable_button":         "Disable 2FA",
 	"twofa.disabling":              "Disabling...",
 	"twofa.admin_verify_title":     "Two-factor authentication",
@@ -1633,4 +1634,5 @@ var enMessages = map[string]string{
 	"js.saved":                         "✓ Saved",
 	"js.not_saved":                     "✎ Not saved",
 	"js.click_to_copy":                 "Click to copy",
+	"team.chat_room_name":              "Team: %s",
 }

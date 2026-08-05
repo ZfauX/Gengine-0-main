@@ -86,7 +86,10 @@ type GamePassing struct {
 	Place          *int
 	// TournamentScored — очки турнира за это прохождение уже начислены
 	// (защита от двойного начисления при повторном вызове UpdateScoresForGame).
-	TournamentScored bool                        `gorm:"column:tournament_scored;default:false"`
+	TournamentScored bool `gorm:"column:tournament_scored;default:false"`
+	// TournamentPoints — точное значение начисленных турнирных очков (C-M2):
+	// RemoveGame списывает именно его, а не пересчитывает по текущему месту.
+	TournamentPoints int                         `gorm:"column:tournament_points;default:0"`
 	Game             Game                        `gorm:"foreignKey:GameID"`
 	Team             team.Team                   `gorm:"foreignKey:TeamID"`
 	Progresses       []LevelProgress             `gorm:"foreignKey:GamePassingID"`

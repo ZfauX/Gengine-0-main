@@ -145,17 +145,9 @@ func (s *TournamentService) RemoveGame(ctx context.Context, tournamentID, gameID
 					continue
 				}
 
-				points := t.PointsForParticipation
-				if p.Place != nil {
-					switch *p.Place {
-					case 1:
-						points = t.PointsForFirst
-					case 2:
-						points = t.PointsForSecond
-					case 3:
-						points = t.PointsForThird
-					}
-				}
+				// Точное списание начисленного (C-M2): не пересчитываем по
+				// текущему месту/настройкам PointsFor* (они могли измениться).
+				points := p.TournamentPoints
 
 				result.Score -= points
 				result.GamesPlayed--
@@ -228,8 +220,13 @@ func (s *TournamentService) Apply(ctx context.Context, tournamentID, teamID, use
 
 	// Transaction: add team + create passings
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := s.tournamentTeamRepo.AddTeamTx(tx, ctx, tournamentID, teamID); err != nil {
-			return err
+		added, addErr := s.tournamentTeamRepo.AddTeamTx(tx, ctx, tournamentID, teamID)
+		if addErr != nil {
+			return addErr
+		}
+		if !added {
+			// Конкурентная заявка уже добавила команду (C-H3).
+			return stderrors.New("команда уже участвует в турнире")
 		}
 		for _, g := range games {
 			if existingMap[g.ID] {
@@ -302,34 +299,49 @@ func (s *TournamentService) CanApply(ctx context.Context, tournamentID, userID u
 func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint) {
 	tg, err := s.tournamentGameRepo.FindByGameID(ctx, gameID)
 	if err != nil {
+		// C-M8: не глотаем молча — ops должны видеть сбои начисления.
+		log.Warn().Err(err).Uint("game_id", gameID).Msg("UpdateScoresForGame: game not in tournament")
 		return
 	}
 	tournament, err := s.tournamentRepo.GetByID(ctx, tg.TournamentID)
 	if err != nil {
+		log.Warn().Err(err).Uint("game_id", gameID).Uint("tournament_id", tg.TournamentID).Msg("UpdateScoresForGame: failed to load tournament")
 		return
-	}
-
-	passings, err := s.tournamentGameRepo.ListFinishedPassings(ctx, gameID, game.StatusFinished)
-	if err != nil {
-		return
-	}
-
-	teamIDs := make([]uint, len(passings))
-	for i, p := range passings {
-		teamIDs[i] = p.TeamID
-	}
-
-	tournamentTeams, err := s.tournamentTeamRepo.GetByTournamentAndTeamIDs(ctx, tournament.ID, teamIDs)
-	if err != nil {
-		log.Error().Err(err).Uint("tournament_id", tournament.ID).Msg("UpdateScoresForGame: failed to get tournament teams")
-		return
-	}
-	inTournament := make(map[uint]bool)
-	for _, tt := range tournamentTeams {
-		inTournament[tt.TeamID] = true
 	}
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Сериализация начислений по игре (C-C1): параллельные финиши команд
+		// не должны начислить очки дважды — паттерн как в svc_rating.go.
+		if lockErr := tx.Exec("SELECT pg_advisory_xact_lock(?)", int64(gameID)).Error; lockErr != nil {
+			return fmt.Errorf("pg_advisory_xact_lock: %w", lockErr)
+		}
+
+		// Читаем только ещё не начисленные прохождения ВНУТРИ транзакции после
+		// блокировки — второй вызов увидит уже помеченные tournament_scored=true.
+		var passings []game.GamePassing
+		if passErr := tx.Where("game_id = ? AND status = ? AND tournament_scored = false",
+			gameID, game.StatusFinished).Find(&passings).Error; passErr != nil {
+			return passErr
+		}
+		if len(passings) == 0 {
+			return nil
+		}
+
+		teamIDs := make([]uint, len(passings))
+		for i, p := range passings {
+			teamIDs[i] = p.TeamID
+		}
+
+		tournamentTeams, teamsErr := s.tournamentTeamRepo.GetByTournamentAndTeamIDs(ctx, tournament.ID, teamIDs)
+		if teamsErr != nil {
+			log.Error().Err(teamsErr).Uint("tournament_id", tournament.ID).Msg("UpdateScoresForGame: failed to get tournament teams")
+			return teamsErr
+		}
+		inTournament := make(map[uint]bool)
+		for _, tt := range tournamentTeams {
+			inTournament[tt.TeamID] = true
+		}
+
 		// Read existing results inside the transaction to prevent concurrent read races
 		var existingResults []TournamentResult
 		if findErr := tx.Where("tournament_id = ? AND team_id IN ?", tournament.ID, teamIDs).Find(&existingResults).Error; findErr != nil {
@@ -372,6 +384,10 @@ func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint
 			}
 			if upsErr := s.tournamentResultRepo.Upsert(tx, result); upsErr != nil {
 				return upsErr
+			}
+			// Сохраняем точное значение начисленных очков для точного списания (C-M2).
+			if pointsErr := tx.Model(&game.GamePassing{}).Where("id = ?", p.ID).Update("tournament_points", points).Error; pointsErr != nil {
+				return pointsErr
 			}
 			scoredIDs = append(scoredIDs, p.ID)
 		}

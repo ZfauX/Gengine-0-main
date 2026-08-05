@@ -52,11 +52,14 @@ func (app *App) setupEngine(r *gin.Engine) error {
 	sessionSecret := []byte(app.Config.Session.Secret)
 	encryptionKey := sha256.Sum256([]byte(app.Config.Session.Secret + ":enc"))
 	store := cookie.NewStore(sessionSecret, encryptionKey[:])
+	// Secure-флаг сессии (S-M4): как для JWT-кук — TLS, reverse-proxy
+	// (TrustedProxies) или FORCE_SECURE_COOKIE. Иначе session-cookie уходит
+	// по HTTP за TLS-терминирующим прокси.
 	store.Options(sessions.Options{
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
-		Secure:   app.Config.TLS.CertFile != "",
+		Secure:   app.Config.TLS.CertFile != "" || app.Config.Server.TrustedProxies != "" || app.Config.Server.ForceSecureCookie,
 	})
 
 	// Загрузчик настроек темы для авторизованных пользователей (используется auth-мидлварями)

@@ -3,6 +3,7 @@ package user
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"gengine-0/internal/pkg/i18n"
@@ -441,6 +442,7 @@ func (h *TwoFactorHandler) Disable(c *gin.Context) {
 
 	var input struct {
 		Password string `form:"password" binding:"required"`
+		Code     string `form:"code"`
 	}
 	if err := c.ShouldBind(&input); err != nil {
 		render.SetFlash(c, "error", i18n.T("twofa.enter_password"))
@@ -469,6 +471,18 @@ func (h *TwoFactorHandler) Disable(c *gin.Context) {
 		data["Error"] = render.Tr(c, "handler.wrong_password")
 		render.Page(c, http.StatusOK, "user-2fa-disable.html", data)
 		return
+	}
+
+	// Требуем текущий TOTP-код (S-L1): отключение 2FA по одному паролю
+	// позволяло бы атакующему с украденной сессией+паролем снять защиту.
+	if user.TwoFactorEnabled {
+		valid, codeErr := h.twoFactorSvc.VerifyCode(user.TwoFactorSecret, strings.TrimSpace(input.Code))
+		if codeErr != nil || !valid {
+			data := baseData
+			data["Error"] = render.Tr(c, "handler.invalid_code")
+			render.Page(c, http.StatusOK, "user-2fa-disable.html", data)
+			return
+		}
 	}
 
 	// Отключаем 2FA
