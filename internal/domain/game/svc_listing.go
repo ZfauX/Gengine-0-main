@@ -206,7 +206,7 @@ func (s *GameListingService) AutocompleteSearch(ctx context.Context, query strin
 		limit = 10
 	}
 	items := []AutocompleteItem{}
-	err := s.gameRepo.DB(ctx).Table("games").
+	err := s.gameRepo.Model(ctx).
 		Select("id, name").
 		Where("is_draft = false AND visibility = 'public' AND (search_vector @@ plainto_tsquery('russian', ?) OR name ILIKE ?)",
 			query, "%"+sqlutil.EscapeLike(query)+"%").

@@ -32,7 +32,7 @@ func RegisterRoutes(
 	blackboxRepo := NewGormBlackboxRepo(db)
 
 	chatService := NewChatService(chatRepo)
-	blackboxVoteService := NewBlackboxVoteService(blackboxRepo, gameRepo, cfg)
+	blackboxVoteService := NewBlackboxVoteService(blackboxRepo, gameRepo, db, cfg)
 
 	monitorHandler := NewMonitorHandler(monitorSvc, blackboxVoteService, chatService, hub, userService, gameService, coAuthorSvc)
 

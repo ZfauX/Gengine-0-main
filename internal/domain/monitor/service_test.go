@@ -160,7 +160,7 @@ func TestBlackboxVoteService_StartVoteAndClose(t *testing.T) {
 	cfg := &config.Config{}
 	gameRepo := game.NewGormGameRepo(db)
 	blackboxRepo := monitor.NewGormBlackboxRepo(db)
-	voteSvc := monitor.NewBlackboxVoteService(blackboxRepo, gameRepo, cfg)
+	voteSvc := monitor.NewBlackboxVoteService(blackboxRepo, gameRepo, db, cfg)
 
 	author := createUser(t, db, "auth@test.com", "pass")
 	g := createGame(t, db, author.ID, "Vote Game")
@@ -209,7 +209,7 @@ func TestBlackboxVoteService_DuplicateVote(t *testing.T) {
 	)
 	gameRepo := game.NewGormGameRepo(db)
 	blackboxRepo := monitor.NewGormBlackboxRepo(db)
-	voteSvc := monitor.NewBlackboxVoteService(blackboxRepo, gameRepo, &config.Config{})
+	voteSvc := monitor.NewBlackboxVoteService(blackboxRepo, gameRepo, db, &config.Config{})
 
 	author := createUser(t, db, "auth@test.com", "pass")
 	g := createGame(t, db, author.ID, "Dup Vote")
@@ -240,7 +240,7 @@ func TestBlackboxVoteService_CloseVotingNotAuthor(t *testing.T) {
 	)
 	gameRepo := game.NewGormGameRepo(db)
 	blackboxRepo := monitor.NewGormBlackboxRepo(db)
-	voteSvc := monitor.NewBlackboxVoteService(blackboxRepo, gameRepo, &config.Config{})
+	voteSvc := monitor.NewBlackboxVoteService(blackboxRepo, gameRepo, db, &config.Config{})
 
 	author := createUser(t, db, "auth@test.com", "pass")
 	other := createUser(t, db, "other@test.com", "pass")

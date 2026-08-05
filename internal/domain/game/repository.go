@@ -21,8 +21,6 @@ type GameRepository interface {
 	Model(ctx context.Context) *gorm.DB
 	// Новый метод для календаря
 	ListByDateRange(ctx context.Context, from, to time.Time) ([]Game, error)
-	// Добавлен метод для получения *gorm.DB с контекстом
-	DB(ctx context.Context) *gorm.DB
 	// Read-хелперы для сервисного слоя (C1 — без прямого *gorm.DB в сервисах).
 	GetPassingByUser(ctx context.Context, gameID, userID uint) (*GamePassing, error)
 	GetFinishedPassingByGameAndTeam(ctx context.Context, gameID, teamID uint) (*GamePassing, error)
@@ -101,6 +99,7 @@ func (r *gormGameRepo) ListByDateRange(ctx context.Context, from, to time.Time) 
 }
 
 // DB возвращает *gorm.DB с контекстом.
+// DEPRECATED: не используем в новом коде (C1) — добавляйте точечные методы.
 func (r *gormGameRepo) DB(ctx context.Context) *gorm.DB {
 	return r.db.WithContext(ctx)
 }

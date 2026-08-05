@@ -21,17 +21,20 @@ import (
 type BlackboxVoteService struct {
 	blackboxRepo BlackboxRepository
 	gameRepo     game.GameRepository
+	db           *gorm.DB
 	cfg          *config.Config
 }
 
 func NewBlackboxVoteService(
 	blackboxRepo BlackboxRepository,
 	gameRepo game.GameRepository,
+	db *gorm.DB,
 	cfg *config.Config,
 ) *BlackboxVoteService {
 	return &BlackboxVoteService{
 		blackboxRepo: blackboxRepo,
 		gameRepo:     gameRepo,
+		db:           db,
 		cfg:          cfg,
 	}
 }
@@ -40,7 +43,7 @@ func NewBlackboxVoteService(
 func (s *BlackboxVoteService) StartVoting(ctx context.Context, gamePassingID, levelID, userID uint) error {
 	// JOIN-оптимизация: получаем passing + game в 1 SQL-запросе
 	var passing game.GamePassing
-	if err := s.gameRepo.DB(ctx).Joins("Game").First(&passing, gamePassingID).Error; err != nil {
+	if err := s.db.WithContext(ctx).Joins("Game").First(&passing, gamePassingID).Error; err != nil {
 		return err
 	}
 	g := passing.Game
@@ -75,7 +78,7 @@ func (s *BlackboxVoteService) StartVoting(ctx context.Context, gamePassingID, le
 
 	if s.cfg != nil && s.cfg.SMTP.Enabled {
 		var captains []string
-		if err := s.gameRepo.DB(ctx).Model(&user.User{}).
+		if err := s.db.WithContext(ctx).Model(&user.User{}).
 			Select("users.email").
 			Joins("JOIN teams ON teams.captain_id = users.id").
 			Joins("JOIN game_passings ON game_passings.team_id = teams.id").
@@ -110,7 +113,7 @@ func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID, 
 	// Проверка членства: пользователь должен быть участником команды voterTeamID
 	// или автором игры. Иначе любой может голосовать за чужую команду.
 	var memberCount int64
-	if err := s.gameRepo.DB(ctx).Table("team_members").
+	if err := s.db.WithContext(ctx).Table("team_members").
 		Where("team_id = ? AND user_id = ?", voterTeamID, userID).Count(&memberCount).Error; err != nil {
 		return err
 	}
@@ -123,7 +126,7 @@ func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID, 
 	}
 
 	// Валидация опциона внутри транзакции для избежания race condition
-	return s.gameRepo.DB(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Блокируем сессию для сериализации
 		var lockedSession BlackboxVotingSession
 		if lockErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedSession, sessionID).Error; lockErr != nil {
@@ -170,7 +173,7 @@ func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID, 
 // (единый механизм прав, согласован с game.CoAuthorService.IsUserManager — C4).
 func (s *BlackboxVoteService) isGameManager(ctx context.Context, session *BlackboxVotingSession, userID uint) (bool, error) {
 	var passing game.GamePassing
-	if err := s.gameRepo.DB(ctx).First(&passing, session.GamePassingID).Error; err != nil {
+	if err := s.db.WithContext(ctx).First(&passing, session.GamePassingID).Error; err != nil {
 		return false, err
 	}
 	return s.isGameManagerForGame(ctx, passing.GameID, userID)
@@ -179,7 +182,7 @@ func (s *BlackboxVoteService) isGameManager(ctx context.Context, session *Blackb
 // isGameManagerForGame — автор или соавтор игры (author+co_authors UNION).
 func (s *BlackboxVoteService) isGameManagerForGame(ctx context.Context, gameID, userID uint) (bool, error) {
 	var count int64
-	err := s.gameRepo.DB(ctx).Raw(`
+	err := s.db.WithContext(ctx).Raw(`
 		SELECT COUNT(*) FROM (
 			SELECT 1 FROM games WHERE id = ? AND author_id = ? AND deleted_at IS NULL
 			UNION
@@ -207,11 +210,11 @@ func (s *BlackboxVoteService) GetVotingResults(ctx context.Context, sessionID, u
 	}
 	if !isManager {
 		var passing game.GamePassing
-		if findErr := s.gameRepo.DB(ctx).First(&passing, session.GamePassingID).Error; findErr != nil {
+		if findErr := s.db.WithContext(ctx).First(&passing, session.GamePassingID).Error; findErr != nil {
 			return nil, findErr
 		}
 		var memberCount int64
-		if countErr := s.gameRepo.DB(ctx).Table("team_members").
+		if countErr := s.db.WithContext(ctx).Table("team_members").
 			Where("team_id = ? AND user_id = ?", passing.TeamID, userID).Count(&memberCount).Error; countErr != nil {
 			return nil, countErr
 		}
@@ -240,7 +243,7 @@ func (s *BlackboxVoteService) CloseVoting(ctx context.Context, sessionID, userID
 
 	// JOIN-оптимизация: passing + game в 1 SQL-запросе
 	var passing game.GamePassing
-	if findErr := s.gameRepo.DB(ctx).Joins("Game").First(&passing, session.GamePassingID).Error; findErr != nil {
+	if findErr := s.db.WithContext(ctx).Joins("Game").First(&passing, session.GamePassingID).Error; findErr != nil {
 		return "", findErr
 	}
 	g := passing.Game
@@ -275,7 +278,7 @@ func (s *BlackboxVoteService) CloseVoting(ctx context.Context, sessionID, userID
 
 	if s.cfg != nil && s.cfg.SMTP.Enabled {
 		var captains []string
-		if err := s.gameRepo.DB(ctx).Model(&user.User{}).
+		if err := s.db.WithContext(ctx).Model(&user.User{}).
 			Select("users.email").
 			Joins("JOIN teams ON teams.captain_id = users.id").
 			Joins("JOIN game_passings ON game_passings.team_id = teams.id").
