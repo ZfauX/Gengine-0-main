@@ -4,6 +4,7 @@ package app
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -40,6 +41,7 @@ import (
 	"github.com/rs/zerolog/log"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
+	"gorm.io/gorm"
 )
 
 func (app *App) setupEngine(r *gin.Engine) error {
@@ -63,10 +65,26 @@ func (app *App) setupEngine(r *gin.Engine) error {
 		}
 		return ts
 	})
+	// Роль из БД вместо JWT-claims (S2): пониженный/удалённый пользователь
+	// теряет привилегии немедленно.
+	middleware.SetRoleProvider(func(ctx context.Context, userID uint) (string, error) {
+		role, err := app.Deps.Repos.User.GetUserRole(ctx, userID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return "", middleware.ErrTokenUserNotFound
+			}
+			return "", err
+		}
+		return role, nil
+	})
 
 	r.Use(gin.Recovery())
 	r.Use(middleware.ErrorHandler())
 	r.Use(middleware.LoggerMiddleware())
+	// Глобальный per-IP лимит запросов (RATE_LIMIT_GLOBAL). Лимитер
+	// инициализируется в cmd/server/main.go (InitGlobalRateLimiter), здесь
+	// только регистрируем middleware — без него конфигурация была мёртвой.
+	r.Use(middleware.GlobalRateLimit(app.Config.Server.RateLimitWindow, app.Config.Server.RateLimitGlobalRequests))
 	// HSTS форсируем, когда сервер гарантированно по HTTPS: собственный TLS
 	// либо reverse-proxy (TRUSTED_PROXIES задан) — прокси терминирует TLS.
 	forceHSTS := app.Config.TLS.CertFile != "" || app.Config.Server.TrustedProxies != ""

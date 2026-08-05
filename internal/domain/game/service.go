@@ -175,7 +175,11 @@ func cacheGetGame(store cache.CacheStore, ctx context.Context, key string) (*Gam
 	}
 	switch v := cached.(type) {
 	case *Game:
-		return v, true
+		// Shallow-копия: защита от мутации кэшируемого объекта (B6).
+		// Глубокий граф (Levels/Questions) остаётся общим — хендлеры не
+		// должны мутировать элементы, но скалярные поля безопасны.
+		g := *v
+		return &g, true
 	default:
 		data, err := json.Marshal(cached)
 		if err != nil {
@@ -257,13 +261,14 @@ func (s *GameService) Delete(ctx context.Context, id uint, userID uint) error {
 		return errors.New("только владелец может удалить игру")
 	}
 
-	s.deleteGameFiles(ctx, id, game.CoverPath)
-
+	// Сначала строка в БД, затем best-effort файлы (B7): при сбое удаления
+	// (например, FK) не оставляем игру с битой cover_path, а файлы — сиротами.
 	deleteErr := s.crudService.Delete(ctx, id, userID)
 	if deleteErr != nil {
 		return deleteErr
 	}
 	s.invalidateGameCache(ctx, id)
+	s.deleteGameFiles(ctx, id, game.CoverPath)
 	return nil
 }
 
@@ -275,13 +280,13 @@ func (s *GameService) AdminDelete(ctx context.Context, id uint) error {
 		return err
 	}
 
-	s.deleteGameFiles(ctx, id, game.CoverPath)
-
 	if err := s.crudService.Delete(ctx, id, game.AuthorID); err != nil {
 		return err
 	}
 	s.invalidateGameCache(ctx, id)
 	s.cache.DeleteWithCtx(ctx, fmt.Sprintf("rating:game:%d", id))
+	// Файлы — после успешного удаления строки (B7).
+	s.deleteGameFiles(ctx, id, game.CoverPath)
 	return nil
 }
 
@@ -487,15 +492,7 @@ func (s *GameService) GetSettingsWithDefaults(ctx context.Context, gameID uint) 
 	settings, err := s.gameRepo.GetGameSettingByGameID(ctx, gameID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return &GameSetting{
-				GameID:                   gameID,
-				AllowHints:               true,
-				HintPenaltySeconds:       300,
-				MaxHints:                 3,
-				PerLevelTimeLimit:        0,
-				HideAnswersUntilFinished: false,
-				AutoStart:                false,
-			}, nil
+			return defaultGameSetting(gameID), nil
 		}
 		return nil, err
 	}

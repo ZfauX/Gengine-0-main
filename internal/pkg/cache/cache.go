@@ -36,6 +36,7 @@ type Cache struct {
 	maxSize     int
 	stop        chan struct{}
 	sg          singleflight.Group
+	closeOnce   sync.Once
 }
 
 func NewCache(defaultTTL, cleanupInterval time.Duration) (*Cache, error) {
@@ -294,8 +295,11 @@ func (c *Cache) GetOrSetFloat64(key string, ttl time.Duration, fn func() (float6
 }
 
 func (c *Cache) Close() error {
-	close(c.stop)
-	c.Flush()
+	// Double-close panic protection (C4): stop-канал закрывается один раз.
+	c.closeOnce.Do(func() {
+		close(c.stop)
+		c.Flush()
+	})
 	return nil
 }
 

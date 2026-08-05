@@ -329,13 +329,16 @@ func checkTimeoutsImpl(db *gorm.DB, ctx context.Context, onGameFinished GameComp
 		return
 	}
 
-	// Batch UPDATE всех просроченных прогрессов одной транзакцией
+	// Batch UPDATE всех просроченных прогрессов одной транзакцией.
+	// Колбэки завершения игры (турнирные очки) вызываем ПОСЛЕ коммита —
+	// так же, как в svc_play.go (иначе они читают незакоммиченные данные).
+	var onCommitCallbacks []func()
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Batch update finished_at для всех просроченных.
 		// RowsAffected проверяем: если другой инстанс уже обработал те же ID
-		// (FOR UPDATE сериализует, второй видит finished_at уже не NULL), то
-		// advance-петлю пропускаем — иначе создадутся дублирующие next-level
-		// прогрессы (B6).
+		// (вторая транзакция видит finished_at уже не NULL из-за row-блокировки
+		// UPDATE), то advance-петлю пропускаем — иначе создадутся дублирующие
+		// next-level прогрессы (B6).
 		res := tx.Model(&LevelProgress{}).
 			Where("id IN ?", timedOutIDs).
 			Where("finished_at IS NULL").
@@ -365,14 +368,19 @@ func checkTimeoutsImpl(db *gorm.DB, ctx context.Context, onGameFinished GameComp
 			}
 			if onCommit != nil {
 				// callback будет вызван после коммита транзакции
-				onCommitCopy := onCommit
-				defer onCommitCopy()
+				onCommitCallbacks = append(onCommitCallbacks, onCommit)
 			}
 		}
 		return nil
 	})
 	if err != nil {
 		log.Error().Err(err).Msg("CheckTimeouts: batch transaction failed")
+		return
+	}
+
+	// Колбэки завершения — строго после успешного коммита (B1-порядок).
+	for _, cb := range onCommitCallbacks {
+		cb()
 	}
 }
 

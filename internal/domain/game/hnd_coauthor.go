@@ -49,6 +49,22 @@ func (h *CoAuthorHandler) ManageCoAuthors(c *gin.Context) {
 		return
 	}
 	userID := c.GetUint("userID")
+	isAdmin := middleware.IsAdmin(c)
+
+	// Страница соавторов приватна: список соавторов виден только менеджерам
+	// игры и админам (S6 — IDOR). Add/Remove уже проверяют права в сервисе.
+	if !isAdmin {
+		isManager, mgrErr := h.coAuthorSvc.IsUserManager(c.Request.Context(), uint(gameID), userID)
+		if mgrErr != nil {
+			log.Error().Err(mgrErr).Int("game_id", gameID).Msg("CoAuthorHandler.ManageCoAuthors: failed to check manager")
+			render.RenderErrorPage(c, http.StatusInternalServerError)
+			return
+		}
+		if !isManager {
+			render.RenderErrorPage(c, http.StatusForbidden)
+			return
+		}
+	}
 
 	coAuthors, err := h.coAuthorSvc.List(c.Request.Context(), uint(gameID))
 	if err != nil {
@@ -56,8 +72,6 @@ func (h *CoAuthorHandler) ManageCoAuthors(c *gin.Context) {
 		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
-
-	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "co_authors-manage.html", gin.H{
 		"Title":         render.Tr(c, "nav.co_authors"),

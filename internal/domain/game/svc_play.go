@@ -163,7 +163,10 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 		}
 		s.broadcastSnapshot(ctx, passingID)
 		if result.GameID != 0 {
-			if s.monitorSvc != nil {
+			// Если это последний уровень, колбэк завершения игры
+			// (onGameFinished → CalculateResults) уже отработал выше —
+			// не дублируем расчёт (S3a).
+			if onCommitFn == nil && s.monitorSvc != nil {
 				if err := s.monitorSvc.CalculateResults(ctx, result.GameID); err != nil {
 					log.Error().Err(err).Uint("game_id", result.GameID).Msg("SubmitCode: CalculateResults failed")
 				}
@@ -251,7 +254,7 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (
 		var settings GameSetting
 		if findErr := tx.Where("game_id = ?", passing.GameID).First(&settings).Error; findErr != nil {
 			if errors.Is(findErr, gorm.ErrRecordNotFound) {
-				settings = GameSetting{AllowHints: true, HintPenaltySeconds: 300, MaxHints: 3}
+				settings = *defaultGameSetting(passing.GameID)
 			} else {
 				return fmt.Errorf("failed to load game settings: %w", findErr)
 			}
@@ -378,7 +381,9 @@ func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, u
 	// Рассчитываем результаты и шлём обновления ПОСЛЕ транзакции.
 	// NB: синхронно — асинхронные горутины гоняются с закрытием БД в тестах.
 	s.broadcastLevelComplete(gameID, passingID, savedLevelID)
-	if s.monitorSvc != nil {
+	// Если это последний уровень, колбэк завершения игры уже пересчитал
+	// результаты — не дублируем расчёт (S3a).
+	if onCommitFn == nil && s.monitorSvc != nil {
 		if calcErr := s.monitorSvc.CalculateResults(ctx, gameID); calcErr != nil {
 			log.Error().Err(calcErr).Uint("game_id", gameID).Msg("AcceptBlackboxAnswer: CalculateResults failed")
 		}
@@ -596,9 +601,15 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 	var settings GameSetting
 	if passing.Game.GameSetting.ID != 0 {
 		settings = passing.Game.GameSetting
-	} else if err := s.db.WithContext(ctx).Where("game_id = ?", passing.GameID).First(&settings).Error; err != nil {
-		// settings не обязательны — при отсутствии или ошибке используются значения по умолчанию
-		log.Debug().Err(err).Uint("game_id", passing.GameID).Msg("GetGameplayData: settings not found, using defaults")
+	} else {
+		if err := s.db.WithContext(ctx).Where("game_id = ?", passing.GameID).First(&settings).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				// settings не обязательны — используем единые значения по умолчанию (B5).
+				settings = *defaultGameSetting(passing.GameID)
+			} else {
+				log.Error().Err(err).Uint("game_id", passing.GameID).Msg("GetGameplayData: failed to load settings")
+			}
+		}
 	}
 
 	var progress LevelProgress

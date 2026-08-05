@@ -2,15 +2,34 @@
 package middleware
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
 )
 
 // TokenParser – интерфейс для сервиса, умеющего проверять JWT и возвращать ID пользователя и его роль.
 type TokenParser interface {
 	ParseToken(tokenStr string) (uint, string, error) // возвращает userID, role, error
+}
+
+// RoleProvider возвращает актуальную роль пользователя из БД.
+// Настраивается один раз при старте приложения через SetRoleProvider.
+type RoleProvider func(ctx context.Context, userID uint) (string, error)
+
+// ErrTokenUserNotFound — пользователь токена удалён/не существует: токен недействителен.
+var ErrTokenUserNotFound = errors.New("пользователь не найден")
+
+var roleProvider RoleProvider
+
+// SetRoleProvider регистрирует функцию загрузки актуальной роли из БД (S2).
+// Роль в JWT-claims устаревает до истечения токена (15 мин) — пониженный или
+// удалённый пользователь не должен сохранять привилегии.
+func SetRoleProvider(fn RoleProvider) {
+	roleProvider = fn
 }
 
 // AuthRequired возвращает middleware, который проверяет JWT‑токен и сохраняет userID и role в контексте.
@@ -40,6 +59,27 @@ func AuthRequired(parser TokenParser) gin.HandlerFunc {
 		}
 
 		c.Set("userID", userID)
+		// Перечитываем актуальную роль из БД (S2), чтобы пониженный/удалённый
+		// пользователь терял привилегии немедленно, а не по истечении токена.
+		if roleProvider != nil {
+			currentRole, rErr := roleProvider(c.Request.Context(), userID)
+			switch {
+			case errors.Is(rErr, ErrTokenUserNotFound):
+				if strings.HasPrefix(c.Request.URL.Path, "/api/") {
+					c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": ErrInvalidToken.Error()})
+				} else {
+					c.Redirect(http.StatusFound, "/auth/login")
+				}
+				c.Abort()
+				return
+			case rErr != nil:
+				log.Error().Err(rErr).Uint("user_id", userID).Msg("AuthRequired: failed to load role from DB")
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
+			default:
+				role = currentRole
+			}
+		}
 		c.Set("role", role) // сохраняем роль
 		SetIsAdmin(c)
 		loadThemeSettings(c)

@@ -252,14 +252,28 @@ func (s *AuthService) RefreshAccessToken(ctx context.Context, refreshTokenStr, d
 		return "", "", stderrors.New("refresh-токен истёк")
 	}
 
-	// Token binding: validate client fingerprint if stored
-	if stored.ClientFingerprint != "" && clientFingerprint != "" && stored.ClientFingerprint != clientFingerprint {
+	// Token binding: validate client fingerprint if stored.
+	// Пустой fingerprint клиента НЕ обходит проверку (S5): если токен был
+	// привязан к устройству, требуется точное совпадение.
+	if stored.ClientFingerprint != "" && stored.ClientFingerprint != clientFingerprint {
+		log.Warn().Uint("user_id", stored.UserID).Msg("RefreshAccessToken: client fingerprint mismatch")
 		return "", "", stderrors.New("отпечаток клиента не совпадает — используйте токен с того же устройства")
 	}
 
-	// Revoke old token (rotation)
-	if revokeErr := s.refreshTokenRepo.Revoke(ctx, stored.ID); revokeErr != nil {
-		return "", "", fmt.Errorf("не удалось отозвать старый refresh-токен: %w", revokeErr)
+	// Атомарно отзываем старый токен (ротация). RowsAffected==0 означает,
+	// что другой запрос уже потребил этот же токен — параллельный reuse (S4).
+	claimed, claimErr := s.refreshTokenRepo.ClaimForRefresh(ctx, stored.ID)
+	if claimErr != nil {
+		return "", "", fmt.Errorf("не удалось отозвать старый refresh-токен: %w", claimErr)
+	}
+	if !claimed {
+		if stored.FamilyID != "" {
+			if famErr := s.refreshTokenRepo.RevokeAllByFamily(ctx, stored.FamilyID); famErr != nil {
+				log.Error().Err(famErr).Uint("user_id", stored.UserID).Str("family_id", stored.FamilyID).Msg("RefreshAccessToken: family revoke failed")
+			}
+		}
+		log.Warn().Uint("user_id", stored.UserID).Str("family_id", stored.FamilyID).Msg("RefreshAccessToken: concurrent reuse detected — family revoked")
+		return "", "", stderrors.New("refresh-токен уже использован — все сессии отозваны")
 	}
 
 	user, err := s.userRepo.GetByID(ctx, stored.UserID)

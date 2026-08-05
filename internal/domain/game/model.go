@@ -59,6 +59,21 @@ type GameSetting struct {
 	AutoStart                bool `gorm:"default:false"`
 }
 
+// defaultGameSetting возвращает значения настроек по умолчанию.
+// Единый источник правды для UseHint, GetGameplayData и GetSettingsWithDefaults
+// (B5 — раньше GetGameplayData падал на zero-value с AllowHints=false).
+func defaultGameSetting(gameID uint) *GameSetting {
+	return &GameSetting{
+		GameID:                   gameID,
+		AllowHints:               true,
+		HintPenaltySeconds:       300,
+		MaxHints:                 3,
+		PerLevelTimeLimit:        0,
+		HideAnswersUntilFinished: false,
+		AutoStart:                false,
+	}
+}
+
 type GamePassing struct {
 	gorm.Model
 	GameID         uint              `gorm:"not null;index:idx_game_passings_game"`

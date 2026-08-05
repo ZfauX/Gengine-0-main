@@ -149,8 +149,9 @@ type teamAggregatedData struct {
 	GamePassingID uint
 }
 
-// attemptRecord — запись об попытке для batch-анализа.
-type attemptRecord struct {
+// AttemptRecord — запись об попытке для batch-анализа.
+// PassingID мапится из level_progresses.game_passing_id (алиас passing_id в SQL).
+type AttemptRecord struct {
 	PassingID uint
 	Code      string
 	Success   bool
@@ -420,9 +421,9 @@ func (s *MonitorService) analyzeTeamsBehavior(teamData []teamAggregatedData) map
 	}
 
 	fiveMinAgo := time.Now().Add(-5 * time.Minute)
-	var attempts []attemptRecord
+	var attempts []AttemptRecord
 	err := s.DB.Table("attempts").
-		Select("attempts.level_progress_id, attempts.code, attempts.success, attempts.created_at").
+		Select("level_progresses.game_passing_id AS passing_id, attempts.code, attempts.success, attempts.created_at").
 		Joins("JOIN level_progresses ON level_progresses.id = attempts.level_progress_id").
 		Where("level_progresses.game_passing_id IN ? AND attempts.created_at >= ?", allPassingIDs, fiveMinAgo).
 		Order("attempts.created_at ASC").
@@ -435,7 +436,7 @@ func (s *MonitorService) analyzeTeamsBehavior(teamData []teamAggregatedData) map
 	}
 
 	// Группируем attempts по passingID
-	attemptsByPassing := make(map[uint][]attemptRecord)
+	attemptsByPassing := make(map[uint][]AttemptRecord)
 	for _, a := range attempts {
 		attemptsByPassing[a.PassingID] = append(attemptsByPassing[a.PassingID], a)
 	}
@@ -451,7 +452,7 @@ func (s *MonitorService) analyzeTeamsBehavior(teamData []teamAggregatedData) map
 	// Анализируем подозрительное поведение по passingID
 	suspiciousPassings := make(map[uint]string)
 	for pid, atts := range attemptsByPassing {
-		reason := checkSuspiciousAttempts(atts)
+		reason := CheckSuspiciousAttempts(atts)
 		if reason != "" {
 			suspiciousPassings[pid] = reason
 		}
@@ -469,8 +470,8 @@ func (s *MonitorService) analyzeTeamsBehavior(teamData []teamAggregatedData) map
 	return suspiciousMap
 }
 
-// checkSuspiciousAttempts проверяет список попыток на подозрительное поведение.
-func checkSuspiciousAttempts(attempts []attemptRecord) string {
+// CheckSuspiciousAttempts проверяет список попыток на подозрительное поведение.
+func CheckSuspiciousAttempts(attempts []AttemptRecord) string {
 	if len(attempts) == 0 {
 		return ""
 	}
@@ -486,7 +487,8 @@ func checkSuspiciousAttempts(attempts []attemptRecord) string {
 		if !a.Success {
 			if a.Code == lastCode {
 				streak++
-				if streak >= 3 {
+				// streak считает совпадения после первого: 2 совпадения = 3 подряд.
+				if streak >= 2 {
 					return fmt.Sprintf("Брутфорс: код '%s' введён %d раз подряд", a.Code, streak+1)
 				}
 			} else {

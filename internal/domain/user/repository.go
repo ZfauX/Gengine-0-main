@@ -112,6 +112,11 @@ type RefreshTokenRepository interface {
 	// GetByTokenHashIncludingRevoked ищет токен независимо от статуса revoked_at
 	// (нужен для детекции reuse отозванного токена).
 	GetByTokenHashIncludingRevoked(ctx context.Context, tokenHash string) (*RefreshToken, error)
+	// ClaimForRefresh атомарно отзывает токен, если он ещё не отозван
+	// (UPDATE ... WHERE id=? AND revoked_at IS NULL). Возвращает true, если
+	// токен был потреблён этим вызовом. RowsAffected==0 означает, что другой
+	// запрос уже использовал тот же токен — детект reuse без гонки (S4).
+	ClaimForRefresh(ctx context.Context, id uint) (bool, error)
 	Revoke(ctx context.Context, id uint) error
 	// RevokeAllByFamily отзывает всю семью refresh-токенов (при детекции кражи).
 	RevokeAllByFamily(ctx context.Context, familyID string) error
@@ -509,6 +514,17 @@ func (r *gormRefreshTokenRepo) RevokeAllByFamily(ctx context.Context, familyID s
 	return r.db.WithContext(ctx).Model(&RefreshToken{}).
 		Where("family_id = ? AND revoked_at IS NULL", familyID).
 		Update("revoked_at", now).Error
+}
+
+func (r *gormRefreshTokenRepo) ClaimForRefresh(ctx context.Context, id uint) (bool, error) {
+	now := time.Now()
+	res := r.db.WithContext(ctx).Model(&RefreshToken{}).
+		Where("id = ? AND revoked_at IS NULL", id).
+		Update("revoked_at", now)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected == 1, nil
 }
 
 func (r *gormRefreshTokenRepo) Revoke(ctx context.Context, id uint) error {
