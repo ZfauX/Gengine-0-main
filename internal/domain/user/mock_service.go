@@ -115,6 +115,51 @@ func (mr *MockUserRepositoryMockRecorder) Create(ctx, user any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Create", reflect.TypeOf((*MockUserRepository)(nil).Create), ctx, user)
 }
 
+// DashboardAuthoredGames mocks base method.
+func (m *MockUserRepository) DashboardAuthoredGames(ctx context.Context, userID uint) ([]DashboardGameRow, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DashboardAuthoredGames", ctx, userID)
+	ret0, _ := ret[0].([]DashboardGameRow)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DashboardAuthoredGames indicates an expected call of DashboardAuthoredGames.
+func (mr *MockUserRepositoryMockRecorder) DashboardAuthoredGames(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DashboardAuthoredGames", reflect.TypeOf((*MockUserRepository)(nil).DashboardAuthoredGames), ctx, userID)
+}
+
+// DashboardInvitations mocks base method.
+func (m *MockUserRepository) DashboardInvitations(ctx context.Context, userID uint) ([]DashboardInvitationRow, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DashboardInvitations", ctx, userID)
+	ret0, _ := ret[0].([]DashboardInvitationRow)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DashboardInvitations indicates an expected call of DashboardInvitations.
+func (mr *MockUserRepositoryMockRecorder) DashboardInvitations(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DashboardInvitations", reflect.TypeOf((*MockUserRepository)(nil).DashboardInvitations), ctx, userID)
+}
+
+// DashboardTeams mocks base method.
+func (m *MockUserRepository) DashboardTeams(ctx context.Context, userID uint) ([]DashboardTeamRow, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DashboardTeams", ctx, userID)
+	ret0, _ := ret[0].([]DashboardTeamRow)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DashboardTeams indicates an expected call of DashboardTeams.
+func (mr *MockUserRepositoryMockRecorder) DashboardTeams(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DashboardTeams", reflect.TypeOf((*MockUserRepository)(nil).DashboardTeams), ctx, userID)
+}
+
 // Delete mocks base method.
 func (m *MockUserRepository) Delete(ctx context.Context, id uint) error {
 	m.ctrl.T.Helper()

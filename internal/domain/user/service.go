@@ -910,11 +910,11 @@ func (s *EmailVerificationService) VerifyByCode(ctx context.Context, code string
 // ---------- UserDashboardService ----------
 
 type UserDashboardService struct {
-	DB *gorm.DB
+	userRepo UserRepository
 }
 
-func NewUserDashboardService(db *gorm.DB) *UserDashboardService {
-	return &UserDashboardService{DB: db}
+func NewUserDashboardService(userRepo UserRepository) *UserDashboardService {
+	return &UserDashboardService{userRepo: userRepo}
 }
 
 type UserDashboard struct {
@@ -957,20 +957,13 @@ type DashboardInvitation struct {
 }
 
 // GetDashboard собирает данные для дашборда с оптимизированными запросами.
-// Использует 3 запроса вместо 7 за счёт JOIN.
+// Использует 3 запроса вместо 7 за счёт JOIN (запросы — в репозитории, C1).
 func (s *UserDashboardService) GetDashboard(ctx context.Context, userID uint) (*UserDashboard, error) {
 	var dash UserDashboard
 
 	// 1. Авторские игры
-	var authoredGames []struct {
-		ID      uint
-		Name    string
-		IsDraft bool
-	}
-	if err := s.DB.WithContext(ctx).Table("games").
-		Select("id, name, is_draft").
-		Where("author_id = ? AND deleted_at IS NULL", userID).
-		Find(&authoredGames).Error; err != nil {
+	authoredGames, err := s.userRepo.DashboardAuthoredGames(ctx, userID)
+	if err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to get authored games")
 		return &dash, fmt.Errorf("failed to get authored games: %w", err)
 	}
@@ -983,33 +976,8 @@ func (s *UserDashboardService) GetDashboard(ctx context.Context, userID uint) (*
 	}
 
 	// 2. Единый запрос: команды + прохождения + названия игр через JOIN
-	type teamRow struct {
-		TeamID        uint
-		TeamName      string
-		CaptainID     uint
-		PassingID     uint
-		GameID        uint
-		PassingStatus string
-		GameName      string
-	}
-	var rows []teamRow
-	if err := s.DB.WithContext(ctx).Raw(`
-		SELECT t.id as team_id, t.name as team_name, t.captain_id,
-		       COALESCE(gp.id, 0) as passing_id,
-		       COALESCE(gp.game_id, 0) as game_id,
-		       COALESCE(gp.status, '') as passing_status,
-		       COALESCE(g.name, '') as game_name
-		FROM teams t
-		LEFT JOIN game_passings gp ON gp.team_id = t.id AND gp.status IN ('accepted', 'started', 'finished')
-		LEFT JOIN games g ON g.id = gp.game_id AND g.deleted_at IS NULL
-		WHERE t.id IN (
-			SELECT id FROM teams WHERE captain_id = ?
-			UNION
-			SELECT t.id FROM teams t
-			INNER JOIN team_members tm ON tm.team_id = t.id
-			WHERE tm.user_id = ? AND t.captain_id != ?
-		)
-	`, userID, userID, userID).Scan(&rows).Error; err != nil {
+	rows, err := s.userRepo.DashboardTeams(ctx, userID)
+	if err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to get teams data")
 		return &dash, err
 	}
@@ -1048,14 +1016,17 @@ func (s *UserDashboardService) GetDashboard(ctx context.Context, userID uint) (*
 
 // loadInvitations загружает ожидающие приглашения в структуру дашборда.
 func (s *UserDashboardService) loadInvitations(ctx context.Context, dash *UserDashboard, userID uint) {
-	var invitations []DashboardInvitation
-	if err := s.DB.WithContext(ctx).Table("invitations").
-		Select("invitations.id, invitations.team_id, teams.name as team_name, invitations.status").
-		Joins("JOIN teams ON teams.id = invitations.team_id").
-		Where("invitations.user_id = ? AND invitations.status = ?", userID, "pending").
-		Scan(&invitations).Error; err != nil {
+	invitations, err := s.userRepo.DashboardInvitations(ctx, userID)
+	if err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Msg("loadInvitations: failed to load invitations")
-	} else {
-		dash.PendingInvitations = invitations
+		return
+	}
+	for _, inv := range invitations {
+		dash.PendingInvitations = append(dash.PendingInvitations, DashboardInvitation{
+			ID:       inv.ID,
+			TeamID:   inv.TeamID,
+			TeamName: inv.TeamName,
+			Status:   inv.Status,
+		})
 	}
 }

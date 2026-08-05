@@ -52,6 +52,18 @@ func (m *mockUserRepo) SearchUsersLight(ctx context.Context, query string, limit
 	return nil, nil
 }
 
+func (m *mockUserRepo) DashboardAuthoredGames(ctx context.Context, userID uint) ([]DashboardGameRow, error) {
+	return nil, nil
+}
+
+func (m *mockUserRepo) DashboardTeams(ctx context.Context, userID uint) ([]DashboardTeamRow, error) {
+	return nil, nil
+}
+
+func (m *mockUserRepo) DashboardInvitations(ctx context.Context, userID uint) ([]DashboardInvitationRow, error) {
+	return nil, nil
+}
+
 func (m *mockUserRepo) Update(ctx context.Context, id uint, fields map[string]any) error {
 	return nil
 }

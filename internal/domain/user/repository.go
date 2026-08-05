@@ -19,6 +19,30 @@ type UserSearchResult struct {
 	Email string
 }
 
+// Dashboard query rows (C1 — без *gorm.DB в сервисе).
+type DashboardGameRow struct {
+	ID      uint
+	Name    string
+	IsDraft bool
+}
+
+type DashboardTeamRow struct {
+	TeamID        uint
+	TeamName      string
+	CaptainID     uint
+	PassingID     uint
+	GameID        uint
+	PassingStatus string
+	GameName      string
+}
+
+type DashboardInvitationRow struct {
+	ID       uint
+	TeamID   uint
+	TeamName string
+	Status   string
+}
+
 // UserRepository определяет контракт для работы с пользователями.
 type UserRepository interface {
 	Create(ctx context.Context, user *User) error
@@ -27,6 +51,10 @@ type UserRepository interface {
 	GetPublicProfile(ctx context.Context, id uint) (*User, error)
 	GetByIDWithAchievementsAndSubscriptions(ctx context.Context, id uint) (*User, error)
 	SearchUsersLight(ctx context.Context, query string, limit int) ([]UserSearchResult, error)
+	// Dashboard-запросы (C1 — без прямого *gorm.DB в сервисе).
+	DashboardAuthoredGames(ctx context.Context, userID uint) ([]DashboardGameRow, error)
+	DashboardTeams(ctx context.Context, userID uint) ([]DashboardTeamRow, error)
+	DashboardInvitations(ctx context.Context, userID uint) ([]DashboardInvitationRow, error)
 	Update(ctx context.Context, id uint, fields map[string]any) error
 	GetByRole(ctx context.Context, role string) ([]User, error)
 	GetUserRole(ctx context.Context, id uint) (string, error)
@@ -187,6 +215,48 @@ func (r *gormUserRepo) SearchUsersLight(ctx context.Context, query string, limit
 		Limit(limit).
 		Scan(&items).Error
 	return items, err
+}
+
+func (r *gormUserRepo) DashboardAuthoredGames(ctx context.Context, userID uint) ([]DashboardGameRow, error) {
+	rows := []DashboardGameRow{}
+	err := r.db.WithContext(ctx).Table("games").
+		Select("id, name, is_draft").
+		Where("author_id = ? AND deleted_at IS NULL", userID).
+		Find(&rows).Error
+	return rows, err
+}
+
+func (r *gormUserRepo) DashboardTeams(ctx context.Context, userID uint) ([]DashboardTeamRow, error) {
+	rows := []DashboardTeamRow{}
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT t.id as team_id, t.name as team_name, t.captain_id,
+		       COALESCE(gp.id, 0) as passing_id,
+		       COALESCE(gp.game_id, 0) as game_id,
+		       COALESCE(gp.status, '') as passing_status,
+		       COALESCE(g.name, '') as game_name
+		FROM teams t
+		LEFT JOIN game_passings gp ON gp.team_id = t.id AND gp.status IN ('accepted', 'started', 'finished')
+		LEFT JOIN games g ON g.id = gp.game_id AND g.deleted_at IS NULL
+		WHERE t.id IN (
+			SELECT id FROM teams WHERE captain_id = ?
+			UNION
+			SELECT t.id FROM teams t
+			INNER JOIN team_members tm ON tm.team_id = t.id
+			WHERE tm.user_id = ? AND t.captain_id != ?
+		)
+	`, userID, userID, userID).Scan(&rows).Error
+	return rows, err
+}
+
+func (r *gormUserRepo) DashboardInvitations(ctx context.Context, userID uint) ([]DashboardInvitationRow, error) {
+	rows := []DashboardInvitationRow{}
+	err := r.db.WithContext(ctx).Table("invitations").
+		Select("invitations.id, invitations.team_id, teams.name as team_name, invitations.status").
+		Joins("JOIN teams ON teams.id = invitations.team_id").
+		Where("invitations.user_id = ? AND invitations.status = ?", userID, "pending").
+		Order("invitations.created_at DESC").
+		Find(&rows).Error
+	return rows, err
 }
 func (r *gormUserRepo) Update(ctx context.Context, id uint, fields map[string]any) error {
 	return r.db.WithContext(ctx).Model(&User{}).Where("id = ?", id).Updates(fields).Error
