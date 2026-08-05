@@ -13,7 +13,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-	"gorm.io/gorm"
 )
 
 // teamChatRoom — локальная модель chat_rooms для избежания циклического импорта с monitor.
@@ -27,14 +26,13 @@ func (teamChatRoom) TableName() string { return "chat_rooms" }
 
 // ChatHandler обрабатывает чат команды.
 type ChatHandler struct {
-	db      *gorm.DB
 	hub     *ws.RoomHub
 	teamSvc *TeamService
 }
 
 // NewChatHandler создаёт обработчик чата команды.
-func NewChatHandler(db *gorm.DB, hub *ws.RoomHub, teamSvc *TeamService) *ChatHandler {
-	return &ChatHandler{db: db, hub: hub, teamSvc: teamSvc}
+func NewChatHandler(hub *ws.RoomHub, teamSvc *TeamService) *ChatHandler {
+	return &ChatHandler{hub: hub, teamSvc: teamSvc}
 }
 
 // TeamChatPage отображает страницу чата команды.
@@ -92,20 +90,7 @@ func (h *ChatHandler) TeamChatPage(c *gin.Context) {
 	})
 }
 
-// findOrCreateTeamRoom находит или создаёт комнату чата для команды.
+// findOrCreateTeamRoom находит или создаёт комнату чата для команды (C1 — через репозиторий).
 func (h *ChatHandler) findOrCreateTeamRoom(c *gin.Context, teamID uint, teamName string) (*teamChatRoom, error) {
-	var room teamChatRoom
-	err := h.db.WithContext(c.Request.Context()).Where("team_id = ? AND game_id IS NULL", teamID).First(&room).Error
-	if err == nil {
-		return &room, nil
-	}
-
-	room = teamChatRoom{
-		TeamID: &teamID,
-		Name:   "Команда: " + teamName,
-	}
-	if createErr := h.db.WithContext(c.Request.Context()).Create(&room).Error; createErr != nil {
-		return nil, createErr
-	}
-	return &room, nil
+	return h.teamSvc.GetOrCreateTeamChatRoom(c.Request.Context(), teamID, teamName)
 }

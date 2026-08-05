@@ -37,6 +37,11 @@ func (s *TeamService) SearchUsersForInvitation(ctx context.Context, query string
 	return s.teamRepo.SearchUsersForInvitation(ctx, query, teamID)
 }
 
+// GetOrCreateTeamChatRoom находит или создаёт комнату чата команды (C1).
+func (s *TeamService) GetOrCreateTeamChatRoom(ctx context.Context, teamID uint, teamName string) (*teamChatRoom, error) {
+	return s.teamRepo.GetOrCreateTeamChatRoom(ctx, teamID, teamName)
+}
+
 func (s *TeamService) GetTeamsByCaptain(ctx context.Context, captainID uint) ([]Team, error) {
 	return s.teamRepo.GetByCaptainID(ctx, captainID)
 }

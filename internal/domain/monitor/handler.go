@@ -205,7 +205,6 @@ func unsubscribeMonitor(gameID uint, sub *monitorSubscriber) {
 }
 
 type MonitorHandler struct {
-	db                  *gorm.DB
 	monitorService      *game.MonitorService
 	blackboxVoteService *BlackboxVoteService
 	chatService         *ChatService
@@ -216,7 +215,6 @@ type MonitorHandler struct {
 }
 
 func NewMonitorHandler(
-	db *gorm.DB,
 	monitorSvc *game.MonitorService,
 	voteSvc *BlackboxVoteService,
 	chatSvc *ChatService,
@@ -226,7 +224,6 @@ func NewMonitorHandler(
 	coAuthorSvc *game.CoAuthorService,
 ) *MonitorHandler {
 	return &MonitorHandler{
-		db:                  db,
 		monitorService:      monitorSvc,
 		blackboxVoteService: voteSvc,
 		chatService:         chatSvc,
@@ -530,8 +527,8 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 	}
 
 	// Проверка прав доступа к комнате чата
-	var chatRoom ChatRoom
-	if findErr := h.db.WithContext(c.Request.Context()).First(&chatRoom, roomIDUint).Error; findErr != nil {
+	chatRoom, findErr := h.chatService.GetByID(c.Request.Context(), uint(roomIDUint))
+	if findErr != nil {
 		log.Warn().Err(findErr).Str("room_id", roomID).Msg("ChatWS: room not found")
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "комната не найдена"})
 		return
@@ -552,16 +549,11 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 			}
 		}
 	} else if chatRoom.TeamID != nil {
-		// Проверка доступа к командному чату
-		var memberCount int64
-		h.db.WithContext(c.Request.Context()).Table("team_members").
-			Where("team_id = ? AND user_id = ?", *chatRoom.TeamID, userID).Count(&memberCount)
-		if memberCount == 0 {
-			var capt struct{ CaptainID uint }
-			if findErr := h.db.WithContext(c.Request.Context()).Table("teams").Where("id = ?", *chatRoom.TeamID).First(&capt).Error; findErr != nil || capt.CaptainID != userID {
-				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
-				return
-			}
+		// Проверка доступа к командному чату (участник или капитан).
+		ok, memberErr := h.chatService.IsTeamMemberOrCaptain(c.Request.Context(), *chatRoom.TeamID, userID)
+		if memberErr != nil || !ok {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
+			return
 		}
 	}
 
@@ -642,9 +634,6 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 				log.Error().Err(err).Str("room_id", roomID).Uint("user_id", userID).Msg("ChatWS: failed to save message")
 				continue
 			}
-			if preloadErr := h.db.WithContext(wsCtx).First(&msg, msg.ID).Error; preloadErr != nil {
-				log.Error().Err(preloadErr).Uint("msg_id", msg.ID).Msg("ChatWS: failed to preload user")
-			}
 			msg.Content = sanitize.StripHTML(msg.Content)
 			if msg.User.Name != "" {
 				msg.User.Name = sanitize.StripHTML(msg.User.Name)
@@ -713,13 +702,7 @@ func (h *MonitorHandler) ChatRoomIDs(c *gin.Context) {
 	}
 
 	var teamRoom *ChatRoom
-	var passing game.GamePassing
-	findErr := h.db.
-		WithContext(ctx).
-		Joins("JOIN team_members ON team_members.team_id = game_passings.team_id").
-		Where("game_passings.game_id = ? AND game_passings.status IN (?,?) AND team_members.user_id = ?",
-			gameID, game.StatusAccepted, game.StatusStarted, userID).
-		First(&passing).Error
+	passing, findErr := h.gameService.GetPassingByUser(ctx, gameID, userID)
 	if findErr == nil {
 		room, roomErr := h.chatService.GetOrCreateTeamRoom(ctx, gameID, passing.TeamID, passing.ID)
 		if roomErr != nil {

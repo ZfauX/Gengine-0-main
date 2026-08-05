@@ -52,6 +52,7 @@ type TeamRepository interface {
 	GetPassingByTeam(ctx context.Context, teamID uint) (*teamGamePassing, error)
 	GetUserByID(ctx context.Context, userID uint) (*userUser, error)
 	GetGameByID(ctx context.Context, gameID uint) (*teamGameModel, error)
+	GetOrCreateTeamChatRoom(ctx context.Context, teamID uint, teamName string) (*teamChatRoom, error)
 	SearchUsersForInvitation(ctx context.Context, query string, teamID uint) ([]struct {
 		ID   uint
 		Name string
@@ -211,6 +212,23 @@ func (r *gormTeamRepo) SearchUsersForInvitation(ctx context.Context, query strin
 		Limit(20).
 		Scan(&items).Error
 	return items, err
+}
+
+// GetOrCreateTeamChatRoom находит или создаёт общую комнату чата команды (C1).
+func (r *gormTeamRepo) GetOrCreateTeamChatRoom(ctx context.Context, teamID uint, teamName string) (*teamChatRoom, error) {
+	var room teamChatRoom
+	err := r.db.WithContext(ctx).Where("team_id = ? AND game_id IS NULL", teamID).First(&room).Error
+	if err == nil {
+		return &room, nil
+	}
+	room = teamChatRoom{
+		TeamID: &teamID,
+		Name:   "Команда: " + teamName,
+	}
+	if createErr := r.db.WithContext(ctx).Create(&room).Error; createErr != nil {
+		return nil, createErr
+	}
+	return &room, nil
 }
 func (r *gormTeamRepo) TeamMembersCount(ctx context.Context) (int64, error) {
 	var count int64

@@ -26,7 +26,7 @@ func RegisterRoutes(
 ) {
 	teamHandler := NewTeamHandler(teamService, localStorage)
 	invitationHandler := NewInvitationHandler(invitationService, teamService)
-	chatHandler := NewChatHandler(db, hub, teamService)
+	chatHandler := NewChatHandler(hub, teamService)
 	userSearchHandler := NewUserSearchHandler(teamService)
 
 	teamsGroup := r.Group("/teams")

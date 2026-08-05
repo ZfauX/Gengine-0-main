@@ -13,8 +13,11 @@ import (
 type ChatRepository interface {
 	GetOrCreateGameRoom(ctx context.Context, gameID uint) (*ChatRoom, error)
 	GetOrCreateTeamRoom(ctx context.Context, gameID, teamID, passingID uint) (*ChatRoom, error)
+	GetByID(ctx context.Context, roomID uint) (*ChatRoom, error)
+	IsTeamMemberOrCaptain(ctx context.Context, teamID, userID uint) (bool, error)
 	SaveMessage(ctx context.Context, roomID, userID uint, content string) (*ChatMessage, error)
 	GetMessages(ctx context.Context, roomID uint, limit int) ([]ChatMessage, error)
+	GetMessageByID(ctx context.Context, messageID uint) (*ChatMessage, error)
 }
 
 // BlackboxRepository определяет контракт для работы с голосованиями.
@@ -93,7 +96,39 @@ func (r *gormChatRepo) SaveMessage(ctx context.Context, roomID, userID uint, con
 	if err := r.db.WithContext(ctx).Create(&msg).Error; err != nil {
 		return nil, err
 	}
-	if err := r.db.WithContext(ctx).Preload("User").First(&msg, msg.ID).Error; err != nil {
+	return r.GetMessageByID(ctx, msg.ID)
+}
+
+// GetByID возвращает комнату чата по ID (для проверки прав в ChatWS).
+func (r *gormChatRepo) GetByID(ctx context.Context, roomID uint) (*ChatRoom, error) {
+	var room ChatRoom
+	if err := r.db.WithContext(ctx).First(&room, roomID).Error; err != nil {
+		return nil, err
+	}
+	return &room, nil
+}
+
+// IsTeamMemberOrCaptain — участник команды или её капитан (для командного чата).
+func (r *gormChatRepo) IsTeamMemberOrCaptain(ctx context.Context, teamID, userID uint) (bool, error) {
+	var memberCount int64
+	if err := r.db.WithContext(ctx).Table("team_members").
+		Where("team_id = ? AND user_id = ?", teamID, userID).Count(&memberCount).Error; err != nil {
+		return false, err
+	}
+	if memberCount > 0 {
+		return true, nil
+	}
+	var capt struct{ CaptainID uint }
+	if err := r.db.WithContext(ctx).Table("teams").Where("id = ?", teamID).First(&capt).Error; err != nil {
+		return false, err
+	}
+	return capt.CaptainID == userID, nil
+}
+
+// GetMessageByID возвращает сообщение с прелоадом автора.
+func (r *gormChatRepo) GetMessageByID(ctx context.Context, messageID uint) (*ChatMessage, error) {
+	var msg ChatMessage
+	if err := r.db.WithContext(ctx).Preload("User").First(&msg, messageID).Error; err != nil {
 		return nil, err
 	}
 	return &msg, nil

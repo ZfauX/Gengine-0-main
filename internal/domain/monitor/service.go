@@ -322,3 +322,15 @@ func (s *ChatService) SaveMessage(ctx context.Context, roomID, userID uint, cont
 func (s *ChatService) GetMessages(ctx context.Context, roomID uint, limit int) ([]ChatMessage, error) {
 	return s.chatRepo.GetMessages(ctx, roomID, limit)
 }
+
+func (s *ChatService) GetByID(ctx context.Context, roomID uint) (*ChatRoom, error) {
+	return s.chatRepo.GetByID(ctx, roomID)
+}
+
+func (s *ChatService) IsTeamMemberOrCaptain(ctx context.Context, teamID, userID uint) (bool, error) {
+	return s.chatRepo.IsTeamMemberOrCaptain(ctx, teamID, userID)
+}
+
+func (s *ChatService) GetMessageByID(ctx context.Context, messageID uint) (*ChatMessage, error) {
+	return s.chatRepo.GetMessageByID(ctx, messageID)
+}
