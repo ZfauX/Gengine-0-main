@@ -8,6 +8,6 @@ import (
 )
 
 func TestDashboardHandler_New(t *testing.T) {
-	handler := NewDashboardHandler(nil, nil)
+	handler := NewDashboardHandler(nil)
 	assert.NotNil(t, handler)
 }

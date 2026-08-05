@@ -10,16 +10,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-	"gorm.io/gorm"
 )
 
 type DashboardHandler struct {
 	dashboardService *UserDashboardService
-	db               *gorm.DB
 }
 
-func NewDashboardHandler(dashboardService *UserDashboardService, db *gorm.DB) *DashboardHandler {
-	return &DashboardHandler{dashboardService: dashboardService, db: db}
+func NewDashboardHandler(dashboardService *UserDashboardService) *DashboardHandler {
+	return &DashboardHandler{dashboardService: dashboardService}
 }
 
 // Index отображает личный кабинет пользователя.

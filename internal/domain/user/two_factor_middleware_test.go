@@ -48,6 +48,14 @@ func (m *mockUserRepo) GetByIDWithAchievementsAndSubscriptions(ctx context.Conte
 	return nil, nil
 }
 
+func (m *mockUserRepo) SearchUsersLight(ctx context.Context, query string, limit int) ([]struct {
+	ID    uint
+	Name  string
+	Email string
+}, error) {
+	return nil, nil
+}
+
 func (m *mockUserRepo) Update(ctx context.Context, id uint, fields map[string]any) error {
 	return nil
 }

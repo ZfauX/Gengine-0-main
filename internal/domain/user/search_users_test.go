@@ -69,7 +69,7 @@ func TestSearchUsersAPI_Results(t *testing.T) {
 		require.NoError(t, db.Create(&u).Error)
 	}
 
-	handler := SearchUsersAPI(db)
+	handler := SearchUsersAPI(NewGormUserRepo(db))
 
 	tests := []struct {
 		name         string
@@ -176,7 +176,7 @@ func TestSearchUsersAPI_DBError(t *testing.T) {
 	require.NoError(t, err)
 	sqlDB.Close() // close connection to cause query error
 
-	handler := SearchUsersAPI(db)
+	handler := SearchUsersAPI(NewGormUserRepo(db))
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)

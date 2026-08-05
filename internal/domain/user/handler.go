@@ -10,11 +10,9 @@ import (
 	"gengine-0/internal/config"
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
-	"gengine-0/internal/pkg/sqlutil"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-	"gorm.io/gorm"
 )
 
 const avatarMaxSize = 2 * 1024 * 1024
@@ -78,7 +76,7 @@ func setSecureCookie(c *gin.Context, name, value string, maxAge int, path string
 
 // SearchUsersAPI ищет пользователей по имени или email.
 // Email возвращается только для администраторов; для остальных — маскируется.
-func SearchUsersAPI(db *gorm.DB) gin.HandlerFunc {
+func SearchUsersAPI(userRepo UserRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		q := c.DefaultQuery("q", "")
 		if len(q) < 2 {
@@ -86,30 +84,22 @@ func SearchUsersAPI(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 		isAdmin := middleware.IsAdmin(c)
-		type userResult struct {
-			ID    uint   `json:"id"`
-			Name  string `json:"name"`
-			Email string `json:"email"`
-		}
-		var users []userResult
-		escapedQ := sqlutil.EscapeLike(q)
-		err := db.WithContext(c.Request.Context()).
-			Model(&User{}).
-			Where("name ILIKE ? OR email ILIKE ?", "%"+escapedQ+"%", "%"+escapedQ+"%").
-			Limit(10).
-			Scan(&users).Error
+
+		users, err := userRepo.SearchUsersLight(c.Request.Context(), q, 10)
 		if err != nil {
 			log.Error().Err(err).Msg("SearchUsersAPI: query failed")
 			c.JSON(http.StatusInternalServerError, gin.H{"error": render.Tr(c, "handler.operation_failed")})
 			return
 		}
-		// Mask emails for non-admin users
-		if !isAdmin {
-			for i := range users {
-				users[i].Email = maskEmail(users[i].Email)
+		results := make([]gin.H, 0, len(users))
+		for _, u := range users {
+			email := u.Email
+			if !isAdmin {
+				email = maskEmail(email)
 			}
+			results = append(results, gin.H{"id": u.ID, "name": u.Name, "email": email})
 		}
-		c.JSON(http.StatusOK, gin.H{"users": users})
+		c.JSON(http.StatusOK, gin.H{"users": results})
 	}
 }
 

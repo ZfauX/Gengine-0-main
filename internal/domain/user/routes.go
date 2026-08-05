@@ -40,7 +40,7 @@ func RegisterRoutes(
 	profileSvc := NewProfileService(db)
 	profileHandler := NewProfileHandler(localStorage, authSvc, profileSvc, userSvc, cfg)
 	achievementHandler := NewAchievementHandler(NewGormAchievementRepo(db))
-	dashboardHandler := NewDashboardHandler(NewUserDashboardService(db), db)
+	dashboardHandler := NewDashboardHandler(NewUserDashboardService(db))
 
 	twoFactorHandler := NewTwoFactorHandler(twoFactorSvc, authSvc, userRepo, cfg.JWT.AccessExpiry)
 
@@ -139,7 +139,7 @@ func RegisterRoutes(
 	// ============================================================
 	apiR := r.Group("/api")
 	{
-		apiR.GET("/users/search", SearchUsersAPI(db))
+		apiR.GET("/users/search", SearchUsersAPI(NewGormUserRepo(db)))
 	}
 
 	// Предпочтения пользователя (серверная персонализация)

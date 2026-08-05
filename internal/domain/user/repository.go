@@ -7,6 +7,8 @@ import (
 	"encoding/hex"
 	"time"
 
+	"gengine-0/internal/pkg/sqlutil"
+
 	"gorm.io/gorm"
 )
 
@@ -17,6 +19,11 @@ type UserRepository interface {
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	GetPublicProfile(ctx context.Context, id uint) (*User, error)
 	GetByIDWithAchievementsAndSubscriptions(ctx context.Context, id uint) (*User, error)
+	SearchUsersLight(ctx context.Context, query string, limit int) ([]struct {
+		ID    uint
+		Name  string
+		Email string
+	}, error)
 	Update(ctx context.Context, id uint, fields map[string]any) error
 	GetByRole(ctx context.Context, role string) ([]User, error)
 	GetUserRole(ctx context.Context, id uint) (string, error)
@@ -162,6 +169,29 @@ func (r *gormUserRepo) GetByIDWithAchievementsAndSubscriptions(ctx context.Conte
 		return nil, err
 	}
 	return &u, nil
+}
+
+// SearchUsersLight ищет пользователей по имени/email (только id, name, email) — без паролей.
+func (r *gormUserRepo) SearchUsersLight(ctx context.Context, query string, limit int) ([]struct {
+	ID    uint
+	Name  string
+	Email string
+}, error) {
+	items := []struct {
+		ID    uint
+		Name  string
+		Email string
+	}{}
+	if limit <= 0 || limit > 50 {
+		limit = 10
+	}
+	escaped := sqlutil.EscapeLike(query)
+	err := r.db.WithContext(ctx).Model(&User{}).
+		Select("id, name, email").
+		Where("name ILIKE ? OR email ILIKE ?", "%"+escaped+"%", "%"+escaped+"%").
+		Limit(limit).
+		Scan(&items).Error
+	return items, err
 }
 func (r *gormUserRepo) Update(ctx context.Context, id uint, fields map[string]any) error {
 	return r.db.WithContext(ctx).Model(&User{}).Where("id = ?", id).Updates(fields).Error
