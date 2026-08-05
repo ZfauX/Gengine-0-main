@@ -12,6 +12,7 @@ import (
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/user"
+	"gengine-0/internal/pkg/i18n"
 	ws "gengine-0/internal/pkg/websocket"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
@@ -372,8 +373,8 @@ func (s *NotificationService) GetUnreadCount(ctx context.Context, userID uint) i
 
 // SendTimeWarning отправляет предупреждение о таймере
 func (s *NotificationService) SendTimeWarning(ctx context.Context, userID uint, passingID uint, remainingSeconds int) error {
-	title := "Внимание! Ограничение по времени"
-	message := fmt.Sprintf("До завершения уровня осталось %d секунд", remainingSeconds)
+	title := i18n.T("notif.time_warning_title")
+	message := i18n.TF("notif.time_warning_body", remainingSeconds)
 	url := fmt.Sprintf("/game/%d", passingID)
 
 	err := s.Create(ctx, userID, NotificationTypeTimeWarning, title, message, url)
@@ -399,8 +400,8 @@ func (s *NotificationService) SendTimeWarning(ctx context.Context, userID uint, 
 
 // SendTimeExpired отправляет уведомление об истечении времени
 func (s *NotificationService) SendTimeExpired(ctx context.Context, userID uint, passingID uint) error {
-	title := "Время вышло!"
-	message := "Время на прохождение уровня истекло. Уровень автоматически завершён."
+	title := i18n.T("notif.time_expired_title")
+	message := i18n.T("notif.time_expired_body")
 	url := fmt.Sprintf("/game/%d", passingID)
 
 	return s.Create(ctx, userID, NotificationTypeTimeExpired, title, message, url)

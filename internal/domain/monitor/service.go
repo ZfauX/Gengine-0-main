@@ -4,12 +4,12 @@ package monitor
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/email"
+	"gengine-0/internal/pkg/i18n"
 
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
@@ -90,8 +90,8 @@ func (s *BlackboxVoteService) StartVoting(ctx context.Context, gamePassingID, le
 		for _, emailAddr := range captains {
 			if err := email.Enqueue(
 				emailAddr,
-				"Запущено голосование",
-				fmt.Sprintf("В игре «%s» запущено голосование за лучший ответ.", g.Name),
+				i18n.T("monitor.vote_started_subject"),
+				i18n.TF("monitor.vote_started_body", g.Name),
 			); err != nil {
 				log.Error().Err(err).Str("game", g.Name).Msg("failed to enqueue voting start email")
 			}
@@ -290,8 +290,8 @@ func (s *BlackboxVoteService) CloseVoting(ctx context.Context, sessionID, userID
 		for _, emailAddr := range captains {
 			if emailErr := email.Enqueue(
 				emailAddr,
-				"Голосование завершено",
-				fmt.Sprintf("В игре «%s» завершено голосование. Победивший вариант: %s", g.Name, winner),
+				i18n.T("monitor.vote_closed_subject"),
+				i18n.TF("monitor.vote_closed_body", g.Name, winner),
 			); emailErr != nil {
 				log.Error().Err(emailErr).Str("game", g.Name).Str("winner", winner).Msg("failed to enqueue voting end email")
 			}
