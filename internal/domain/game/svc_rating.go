@@ -191,12 +191,25 @@ type avgRatingResult struct {
 }
 
 // GetAverageRating возвращает средний рейтинг и количество отзывов для игры.
+// Кэшируется на 5 минут (rating:game:%d) — вызывается из GetStats/Show и статового API.
 func (s *RatingService) GetAverageRating(ctx context.Context, gameID uint) (float64, int64, error) {
+	cacheKey := fmt.Sprintf("rating:game:%d", gameID)
+	if avg, count, ok := cacheGetRating(s.cache, ctx, cacheKey); ok {
+		return avg, count, nil
+	}
+
 	var result avgRatingResult
 	err := s.DB.WithContext(ctx).Table("reviews").
 		Select("COALESCE(AVG(rating), 0) as avg_rating, COUNT(*) as count").
 		Where("game_id = ?", gameID).
 		Scan(&result).Error
+	if err != nil {
+		return 0, 0, err
+	}
+	s.cache.SetWithCtx(ctx, cacheKey, map[string]any{
+		"avg":   result.AvgRating,
+		"count": result.Count,
+	}, 5*time.Minute)
 
-	return result.AvgRating, result.Count, err
+	return result.AvgRating, result.Count, nil
 }

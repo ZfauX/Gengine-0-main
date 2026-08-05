@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"gengine-0/internal/pkg/cache"
 	"gengine-0/internal/pkg/sanitize"
@@ -65,19 +66,37 @@ func (s *ReviewService) Create(gameID, userID uint, rating int, comment string) 
 	if err := s.DB.Create(&review).Error; err != nil {
 		return err
 	}
-	// Инвалидируем кэш рейтинга игры, чтобы новая оценка сразу отобразилась.
+	// Инвалидируем кэш рейтинга и списка отзывов игры.
 	if s.Cache != nil {
 		s.Cache.DeleteWithCtx(context.Background(), fmt.Sprintf("rating:game:%d", gameID))
+		s.Cache.DeleteWithCtx(context.Background(), fmt.Sprintf("reviews:game:%d", gameID))
 	}
 	return nil
 }
 
+// ListByGame возвращает отзывы игры (с кэшем 5 мин; инвалидируется при Create).
 func (s *ReviewService) ListByGame(ctx context.Context, gameID uint) ([]Review, error) {
+	cacheKey := fmt.Sprintf("reviews:game:%d", gameID)
+	if s.Cache != nil {
+		if cached, ok := s.Cache.GetWithCtx(ctx, cacheKey); ok {
+			if reviews, ok := cached.([]Review); ok {
+				return reviews, nil
+			}
+		}
+	}
+
 	var reviews []Review
 	err := s.DB.WithContext(ctx).Preload("User", func(db *gorm.DB) *gorm.DB {
 		return db.Select("id, name, avatar_path")
 	}).Where("game_id = ?", gameID).Order("created_at DESC").Find(&reviews).Error
-	return reviews, err
+	if err != nil {
+		return nil, err
+	}
+
+	if s.Cache != nil {
+		s.Cache.SetWithCtx(ctx, cacheKey, reviews, 5*time.Minute)
+	}
+	return reviews, nil
 }
 
 func (s *ReviewService) GetAverageRating(ctx context.Context, gameID uint) (float64, int64, error) {

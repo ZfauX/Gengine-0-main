@@ -388,30 +388,12 @@ func cacheGetRating(store cache.CacheStore, ctx context.Context, key string) (fl
 	}
 }
 
-// GetAverageRating делегирует RatingService.
+// GetAverageRating делегирует RatingService (кэш на 5 мин внутри сервиса рейтинга).
 func (s *GameService) GetAverageRating(ctx context.Context, gameID uint) (float64, int64, error) {
 	if s.ratingService == nil {
 		return 0, 0, nil
 	}
-
-	cacheKey := fmt.Sprintf("rating:game:%d", gameID)
-
-	if avg, count, ok := cacheGetRating(s.cache, ctx, cacheKey); ok {
-		log.Debug().Uint("game_id", gameID).Msg("GetAverageRating: cache hit")
-		return avg, count, nil
-	}
-
-	avgRating, count, err := s.ratingService.GetAverageRating(ctx, gameID)
-	if err != nil {
-		return 0, 0, err
-	}
-
-	s.cache.SetWithCtx(ctx, cacheKey, map[string]any{
-		"avg":   avgRating,
-		"count": count,
-	}, 5*time.Minute)
-
-	return avgRating, count, nil
+	return s.ratingService.GetAverageRating(ctx, gameID)
 }
 
 // GetGameWithStats объединяет запросы: игра + отзывы + рейтинг (оптимизация Show).
