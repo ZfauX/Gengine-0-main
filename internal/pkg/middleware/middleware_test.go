@@ -862,3 +862,47 @@ func BenchmarkRateLimiter_Allow(b *testing.B) {
 		rl.Allow(key)
 	}
 }
+
+// =============================================================================
+// APIOriginGuard (pass 24 / S-1)
+// =============================================================================
+
+func TestAPIOriginGuard(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.APIOriginGuard())
+	router.Any("/api/test", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	t.Run("same-origin POST разрешён", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/api/test", nil)
+		req.Host = "example.com"
+		req.Header.Set("Origin", "https://example.com")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("cross-origin POST отклонён", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/api/test", nil)
+		req.Host = "example.com"
+		req.Header.Set("Origin", "https://evil.com")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusForbidden, w.Code)
+	})
+
+	t.Run("Sec-Fetch-Site cross-site отклонён", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/api/test", nil)
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusForbidden, w.Code)
+	})
+
+	t.Run("GET без Origin пропускается", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/test", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+}
