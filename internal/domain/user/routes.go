@@ -139,7 +139,8 @@ func RegisterRoutes(
 	// ============================================================
 	apiR := r.Group("/api")
 	{
-		apiR.GET("/users/search", SearchUsersAPI(NewGormUserRepo(db)))
+		// #9: публичный поиск пользователей — dedicated per-IP лимитер.
+		apiR.GET("/users/search", middleware.LoginRateLimit(time.Minute, 20), SearchUsersAPI(NewGormUserRepo(db)))
 	}
 
 	// Предпочтения пользователя (серверная персонализация)

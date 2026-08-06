@@ -259,7 +259,8 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (
 		var settings GameSetting
 		if findErr := tx.Where("game_id = ?", gameID).First(&settings).Error; findErr != nil {
 			if errors.Is(findErr, gorm.ErrRecordNotFound) {
-				settings = *defaultGameSetting(passing.GameID)
+				// M-1: gameID из CheckTeamMembership (passing загружен Select("status") — GameID=0).
+				settings = *defaultGameSetting(gameID)
 			} else {
 				return fmt.Errorf("failed to load game settings: %w", findErr)
 			}

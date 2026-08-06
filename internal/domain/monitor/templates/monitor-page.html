@@ -257,8 +257,8 @@
             });
         };
 
-        // Запуск
-        connect();
+        // Крит#1: WS после загрузки app.js (defer) — запускаем на DOMContentLoaded.
+        document.addEventListener('DOMContentLoaded', function() { connect(); });
 
         // Очистка при уходе
         window.addEventListener('beforeunload', function() {

@@ -160,7 +160,8 @@ func RegisterRoutes(r *gin.RouterGroup, deps *GameDeps) {
 	}
 
 	// API для autocomplete поиска игр
-	api := r.Group("/api/search")
+	// #9: публичный эндпоинт — dedicated per-IP лимитер (enumeration/scraping).
+	api := r.Group("/api/search", middleware.LoginRateLimit(time.Minute, 20))
 	api.GET("/games", autocompleteHandler.Games)
 
 	// API для статистики игры (AJAX)

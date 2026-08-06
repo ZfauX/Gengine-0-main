@@ -70,7 +70,10 @@
         }
 
         // Единый reconnecting-клиент (UX3) вместо самодельного backoff.
-        const logSocket = window.createReconnectingWebSocket(wsUrl, {
+        // Крит#1: createReconnectingWebSocket доступен после app.js (defer).
+        let logSocket = null;
+        document.addEventListener('DOMContentLoaded', function() {
+            logSocket = window.createReconnectingWebSocket(wsUrl, {
             onMessage: function(e) {
                 // M4: битый фрейм не должен ронять обработчик логов.
                 let data;
@@ -92,9 +95,10 @@
                 }
             }
         });
+        });
 
         window.addEventListener('beforeunload', function() {
-            logSocket.close();
+            if (logSocket) logSocket.close();
         });
     })();
 </script>

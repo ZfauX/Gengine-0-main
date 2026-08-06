@@ -134,7 +134,8 @@
         if (e.key === 'Enter') sendMessage();
     });
 
-    connect();
+    // Крит#1: WS после загрузки app.js (defer).
+    document.addEventListener('DOMContentLoaded', connect);
 })();
 </script>
 {{end}}

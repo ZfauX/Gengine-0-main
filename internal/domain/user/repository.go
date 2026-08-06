@@ -379,6 +379,36 @@ func (r *gormUserRepo) Delete(ctx context.Context, id uint) error {
 				}
 			}
 		}
+
+		// #4: чистим пользовательские данные в остальных таблицах, чтобы
+		// hard-delete не оставлял сирот (reviews, follows, achievements,
+		// notes, photos, co_authors, team_members, invitations, notifications).
+		for _, t := range []string{
+			"reviews", "follows", "user_achievements", "notes", "photos",
+			"co_authors", "team_members", "invitations", "notifications",
+			"chat_messages", "external_logins",
+		} {
+			if tx.Migrator().HasTable(t) {
+				col := "user_id"
+				if t == "follows" {
+					// подписки и подписчики
+					if err := tx.Exec("DELETE FROM follows WHERE follower_id = ? OR author_id = ?", id, id).Error; err != nil {
+						return err
+					}
+					continue
+				}
+				if t == "team_members" || t == "chat_messages" {
+					if err := tx.Exec("DELETE FROM "+t+" WHERE user_id = ?", id).Error; err != nil {
+						return err
+					}
+					continue
+				}
+				if err := tx.Exec("DELETE FROM "+t+" WHERE "+col+" = ?", id).Error; err != nil {
+					return err
+				}
+			}
+		}
+
 		// Жёсткое удаление самого пользователя (без soft-delete).
 		return tx.Unscoped().Where("id = ?", id).Delete(&User{}).Error
 	})

@@ -25,6 +25,7 @@ import (
 	"gengine-0/internal/pkg/metrics"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/lib/pq"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/oauth2"
@@ -267,7 +268,14 @@ func (s *AuthService) RefreshAccessToken(ctx context.Context, refreshTokenStr, d
 	// Пустой fingerprint клиента НЕ обходит проверку (S5): если токен был
 	// привязан к устройству, требуется точное совпадение.
 	if stored.ClientFingerprint != "" && stored.ClientFingerprint != clientFingerprint {
-		log.Warn().Uint("user_id", stored.UserID).Msg("RefreshAccessToken: client fingerprint mismatch")
+		// #5: mismatch с другого устройства = признак кражи — отзываем семью,
+		// как при reuse, и логируем.
+		if stored.FamilyID != "" {
+			if famErr := s.refreshTokenRepo.RevokeAllByFamily(ctx, stored.FamilyID); famErr != nil {
+				log.Error().Err(famErr).Uint("user_id", stored.UserID).Str("family_id", stored.FamilyID).Msg("RefreshAccessToken: family revoke failed on fingerprint mismatch")
+			}
+		}
+		log.Warn().Uint("user_id", stored.UserID).Str("family_id", stored.FamilyID).Msg("RefreshAccessToken: fingerprint mismatch — family revoked")
 		return "", "", stderrors.New("отпечаток клиента не совпадает — используйте токен с того же устройства")
 	}
 
@@ -738,7 +746,19 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 			Password:      "",
 		}
 		if createErr := s.userRepo.Create(ctx, user); createErr != nil {
-			return nil, fmt.Errorf("создание пользователя: %w", createErr)
+			// #7: два параллельных OAuth-колбэка на новый email — один ловит
+			// unique-violation; перечитываем созданного конкурента.
+			var pgErr *pq.Error
+			if stderrors.As(createErr, &pgErr) && pgErr.Code == "23505" {
+				existing, rErr := s.userRepo.GetByEmail(ctx, emailStr)
+				if rErr == nil {
+					user = existing
+				} else {
+					return nil, fmt.Errorf("создание пользователя: %w", createErr)
+				}
+			} else {
+				return nil, fmt.Errorf("создание пользователя: %w", createErr)
+			}
 		}
 	} else if getUserErr != nil {
 		return nil, fmt.Errorf("поиск пользователя: %w", getUserErr)

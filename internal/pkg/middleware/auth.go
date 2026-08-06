@@ -97,6 +97,14 @@ func OptionalAuth(parser TokenParser) gin.HandlerFunc {
 		if err == nil {
 			if userID, role, err := parser.ParseToken(token); err == nil {
 				c.Set("userID", userID)
+				// #8: перечитываем актуальную роль из БД (как AuthRequired) —
+				// иначе пониженный админ сохраняет IsAdmin до истечения токена.
+				if roleProvider != nil {
+					currentRole, rErr := roleProvider(c.Request.Context(), userID)
+					if rErr == nil && currentRole != "" {
+						role = currentRole
+					}
+				}
 				c.Set("role", role)
 				loadThemeSettings(c)
 			}

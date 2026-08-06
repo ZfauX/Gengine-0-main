@@ -345,6 +345,7 @@
         let pendingGameId = null;
         let pendingCsrf = null;
         let deleteTrigger = null;
+        let deleteTrapBound = false;
 
         deleteBtn.addEventListener('click', function() {
             deleteTrigger = this; // A11y: вернуть фокус при закрытии
@@ -356,9 +357,11 @@
             deleteUndoSection.classList.add('hidden');
             confirmDeleteBtn.disabled = false;
             confirmDeleteBtn.textContent = '{{ T $.Lang "game.show_delete_btn" }}';
-            // M8: focus trap — Tab не уходит из модалки на фон.
+            // M3: focus trap — Tab не уходит из модалки; листенер вешаем один раз.
             deleteModal.tabIndex = -1;
             confirmDeleteBtn.focus();
+            if (deleteTrapBound) return;
+            deleteTrapBound = true;
             deleteModal.addEventListener('keydown', function(e) {
                 if (e.key !== 'Tab') return;
                 var focusables = deleteModal.querySelectorAll('button, [href], [tabindex]:not([tabindex="-1"])');

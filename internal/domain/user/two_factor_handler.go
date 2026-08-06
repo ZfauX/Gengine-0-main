@@ -15,6 +15,7 @@ import (
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // TwoFactorHandler обрабатывает HTTP-запросы для 2FA.
@@ -456,7 +457,8 @@ func (h *TwoFactorHandler) Disable(c *gin.Context) {
 		return
 	}
 
-	// Проверяем пароль перед отключением 2FA
+	// Проверяем пароль напрямую (Крит#2): полный authService.Login инкрементит
+	// счётчик неудач и блокирует аккаунт на 30 мин при неверном пароле.
 	baseData := gin.H{
 		"Title":         "Отключить 2FA",
 		"User":          user.ToPublic(),
@@ -465,8 +467,7 @@ func (h *TwoFactorHandler) Disable(c *gin.Context) {
 		"csrf":          csrf.GetToken(c),
 	}
 
-	_, authErr := h.authService.Login(c.Request.Context(), user.Email, input.Password)
-	if authErr != nil {
+	if bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)) != nil {
 		data := baseData
 		data["Error"] = render.Tr(c, "handler.wrong_password")
 		render.Page(c, http.StatusOK, "user-2fa-disable.html", data)

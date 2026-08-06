@@ -30,11 +30,13 @@
             <div id="level-map" class="map-container h-[300px]"></div>
         </div>
         <script nonce="{{.csp_nonce}}">
-            (function() {
+            // #3: leaflet.js подключается с defer — инициализируем карту
+            // после DOMContentLoaded, иначе typeof L === 'undefined'.
+            document.addEventListener('DOMContentLoaded', function() {
                 const lat = {{.Level.Latitude}};
                 const lng = {{.Level.Longitude}};
                 const name = "{{.Level.Name}}";
-                
+
                 if (lat && lng && typeof L !== 'undefined') {
                     const map = L.map('level-map').setView([lat, lng], 15);
                     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -44,7 +46,7 @@
                         .bindPopup(name)
                         .openPopup();
                 }
-            })();
+            });
         </script>
         {{end}}
     </div>

@@ -30,6 +30,7 @@
         <!-- Форма отправки кода -->
         <form id="code-form" action="/game/{{.PassingID}}/submit" method="POST" class="flex flex-wrap items-center gap-3 mt-4 fade-in">
             <input type="hidden" name="_csrf" value="{{.csrf}}">
+            <label for="code-input" class="sr-only">{{ T $.Lang "gameplay.code_placeholder" }}</label>
             <input type="text" name="code" id="code-input" placeholder='{{ T $.Lang "gameplay.code_placeholder" }}' required autocomplete="off"
                     class="flex-1 min-w-0 rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-3 text-base md:text-lg"
                     inputmode="text">

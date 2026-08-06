@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -109,10 +110,23 @@ func (s *ProfileService) UpdateProfile(ctx context.Context, userID uint, name, e
 	if count > 0 {
 		return ErrEmailTaken
 	}
-	return s.db.WithContext(ctx).Model(&User{}).Where("id = ?", userID).Updates(map[string]any{
-		"name":  name,
-		"email": email,
-	}).Error
+	// M-2: консистентно с UserService — смена email сбрасывает email_verified
+	// (S-L3); #6: гонка на unique-индекс ловится как ErrEmailTaken.
+	fields := map[string]any{"name": name, "email": email}
+	var currentEmail string
+	if err := s.db.WithContext(ctx).Model(&User{}).Where("id = ?", userID).Select("email").Scan(&currentEmail).Error; err == nil && currentEmail != email {
+		fields["email_verified"] = false
+	}
+	err := s.db.WithContext(ctx).Model(&User{}).Where("id = ?", userID).Updates(fields).Error
+	if err != nil {
+		// #6: два параллельных сохранения на новый email — второй ловит 23505.
+		var pgErr *pq.Error
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return ErrEmailTaken
+		}
+		return err
+	}
+	return nil
 }
 
 // GetThemeSettings возвращает настройки темы пользователя (с дефолтами при пустой записи).

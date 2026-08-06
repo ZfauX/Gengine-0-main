@@ -128,7 +128,7 @@
 
     <!-- Flash-сообщения -->
     {{if .Flash}}
-    <div class="fixed top-4 right-4 z-[110] max-w-sm">
+    <div class="fixed top-4 right-4 z-[110] max-w-sm" role="alert" aria-live="assertive">
         {{if eq .FlashType "error"}}<div class="flash flash-error">{{.Flash}}</div>{{else if eq .FlashType "info"}}<div class="flash flash-info">{{.Flash}}</div>{{else}}<div class="flash flash-success">{{.Flash}}</div>{{end}}
     </div>
     <script nonce="{{.csp_nonce}}">
@@ -634,10 +634,12 @@
                 }
             }
 
-            // Инициализация
+            // Инициализация — WS после загрузки app.js (defer).
+            // Крит#1: createReconnectingWebSocket определён только после
+            // выполнения app.js (defer) — запускаем на DOMContentLoaded.
             updateNotificationBadge({{.UnreadNotificationCount | default 0}});
             if ({{if .CurrentUserID}}true{{else}}false{{end}}) {
-                initWebSocket();
+                document.addEventListener('DOMContentLoaded', initWebSocket);
             }
         })();
     </script>

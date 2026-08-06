@@ -2,7 +2,10 @@
 package calendar
 
 import (
+	"time"
+
 	"gengine-0/internal/domain/game"
+	"gengine-0/internal/pkg/middleware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -13,7 +16,8 @@ func RegisterRoutes(router *gin.RouterGroup, gameRepo game.GameRepository, baseU
 
 	router.GET("/calendar", calendarHandler.CalendarPage)
 
-	router.GET("/api/v1/calendar", calendarHandler.CalendarData)
+	// #9: публичный API-эндпоинт — dedicated per-IP лимитер.
+	router.GET("/api/v1/calendar", middleware.LoginRateLimit(time.Minute, 30), calendarHandler.CalendarData)
 
 	router.GET("/calendar/export.ics", calendarHandler.CalendarICal)
 }
