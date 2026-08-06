@@ -108,6 +108,10 @@ func (m *mockUserRepo) AtomicIncrementFailedAttempts(ctx context.Context, userID
 	return 0, nil
 }
 
+func (m *mockUserRepo) GetGamesView(ctx context.Context, userID uint) (string, error) {
+	return "table", nil
+}
+
 // newTwoFactorTestRouter создаёт gin.Engine с сессиями и опциональной 2FA middleware.
 func newTwoFactorTestRouter(t *testing.T, middleware gin.HandlerFunc, userID uint) *gin.Engine {
 	t.Helper()

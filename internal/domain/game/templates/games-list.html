@@ -63,8 +63,8 @@
     </div>
 
     {{if .Games}}
-    <!-- Card View -->
-    <div id="gamesCardView" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8 hidden">
+    <!-- Card View (U-3: server-side preference определяет начальный вид) -->
+    <div id="gamesCardView" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8 {{if ne .PreferredView "cards"}}hidden{{end}}">
         {{range .Games}}
         <div class="card hover-lift cursor-pointer" data-href="/games/{{.ID}}" role="link" tabindex="0">
             <!-- Обложка -->
@@ -109,7 +109,7 @@
     </div>
 
     <!-- Table View -->
-    <div id="gamesTableView">
+    <div id="gamesTableView" {{if eq .PreferredView "cards"}}class="hidden"{{end}}>
         <div id="gamesTable" class="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
             <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                 <thead class="bg-gray-50 dark:bg-gray-800">

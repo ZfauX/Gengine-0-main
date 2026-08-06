@@ -58,6 +58,9 @@ type UserRepository interface {
 	Update(ctx context.Context, id uint, fields map[string]any) error
 	GetByRole(ctx context.Context, role string) ([]User, error)
 	GetUserRole(ctx context.Context, id uint) (string, error)
+	// GetGamesView возвращает предпочтение вида списка игр (U-3: server-side,
+	// чтобы не было FOUC при рендере списка).
+	GetGamesView(ctx context.Context, userID uint) (string, error)
 
 	// Методы для админки с пагинацией
 	Count(ctx context.Context) (int64, error)
@@ -278,6 +281,18 @@ func (r *gormUserRepo) GetUserRole(ctx context.Context, id uint) (string, error)
 	var role string
 	err := r.db.WithContext(ctx).Table("users").Select("role").Where("id = ?", id).Scan(&role).Error
 	return role, err
+}
+
+func (r *gormUserRepo) GetGamesView(ctx context.Context, userID uint) (string, error) {
+	var view string
+	err := r.db.WithContext(ctx).Table("users").Select("games_view").Where("id = ?", userID).Scan(&view).Error
+	if err != nil {
+		return "table", err
+	}
+	if view == "" {
+		return "table", nil
+	}
+	return view, nil
 }
 
 // --- Методы для админки ---

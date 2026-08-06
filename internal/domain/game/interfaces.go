@@ -22,6 +22,7 @@ type GameServiceInterface interface {
 	IsUserManager(ctx context.Context, gameID, userID uint) (bool, error)
 	GetSettingsWithDefaults(ctx context.Context, gameID uint) (*GameSetting, error)
 	SaveSettings(ctx context.Context, gameID uint, settings GameSetting) (*GameSetting, error)
+	GetUserGamesView(ctx context.Context, userID uint) string
 }
 
 type CoAuthorServiceInterface interface {

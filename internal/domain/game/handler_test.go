@@ -177,6 +177,14 @@ func (m *MockGameService) GetSettingsWithDefaults(ctx context.Context, gameID ui
 	return args.Get(0).(*GameSetting), args.Error(1)
 }
 
+func (m *MockGameService) GetUserGamesView(ctx context.Context, userID uint) string {
+	args := m.Called(ctx, userID)
+	if s, ok := args.Get(0).(string); ok {
+		return s
+	}
+	return "table"
+}
+
 func (m *MockGameService) SaveSettings(ctx context.Context, gameID uint, settings GameSetting) (*GameSetting, error) {
 	args := m.Called(ctx, gameID, settings)
 	if args.Get(0) == nil {
@@ -381,6 +389,7 @@ func TestGameHandler_List_Success(t *testing.T) {
 		mock.Anything,
 		mock.Anything,
 	).Return(expectedGames, int64(2), nil)
+	mockGameService.On("GetUserGamesView", mock.Anything, mock.AnythingOfType("uint")).Return("table")
 
 	req := httptest.NewRequest("GET", "/games", nil)
 	w := httptest.NewRecorder()

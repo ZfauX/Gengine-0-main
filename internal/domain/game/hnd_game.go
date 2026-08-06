@@ -153,6 +153,8 @@ func (h *GameHandler) List(c *gin.Context) {
 		"PerPage":       perPage,
 		"TotalPages":    totalPages,
 		"Total":         total,
+		// U-3: серверное предпочтение вида — без FOUC и ожидания JS.
+		"PreferredView": h.gameService.GetUserGamesView(c.Request.Context(), userID),
 		"Title":         "Игры",
 		"Breadcrumbs": []map[string]string{
 			{"name": "nav.home", "url": "/"},

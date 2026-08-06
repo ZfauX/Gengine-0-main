@@ -83,6 +83,7 @@ type GameService struct {
 	gameRepo       GameRepository
 	db             *gorm.DB
 	coAuthorSvc    *CoAuthorService
+	userRepo       user.UserRepository
 	sg             singleflight.Group
 }
 
@@ -122,6 +123,7 @@ func NewGameService(
 		gameRepo:       gameRepo,
 		db:             db,
 		coAuthorSvc:    ca,
+		userRepo:       userRepo,
 	}
 }
 
@@ -392,6 +394,22 @@ func (s *GameService) Publish(ctx context.Context, id uint, userID uint) error {
 // ListFilteredPaginated делегирует GameListingService.
 func (s *GameService) ListFilteredPaginated(ctx context.Context, filter GameFilter, sort *GameSort, page, perPage int) ([]Game, int64, error) {
 	return s.listingService.ListFilteredPaginated(ctx, filter, sort, page, perPage)
+}
+
+// GetUserGamesView возвращает предпочтение вида списка игр (U-3): сервер
+// рендерит правильный вид сразу — без FOUC и ожидания /api/preferences.
+func (s *GameService) GetUserGamesView(ctx context.Context, userID uint) string {
+	if userID == 0 {
+		return "table"
+	}
+	view, err := s.userRepo.GetGamesView(ctx, userID)
+	if err != nil {
+		return "table"
+	}
+	if view != "cards" {
+		return "table"
+	}
+	return "cards"
 }
 
 // ListReviews делегирует ReviewService.

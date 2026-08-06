@@ -734,11 +734,11 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 	} else if getUserErr != nil {
 		return nil, fmt.Errorf("поиск пользователя: %w", getUserErr)
 	} else {
-		// S-L2: VK не даёт подтверждения email — линковка существующего аккаунта
-		// по неверифицированному email может захватить чужую учётку. Логируем.
+		// S-L2: VK не подтверждает email. Привязка существующего аккаунта по
+		// неверифицированному email могла бы захватить чужую учётку — отказываем.
+		// Пользователь войдёт по паролю (или по passkey) и привяжет VK сам.
 		if provider == "vk" && !emailVerified {
-			log.Warn().Uint("user_id", user.ID).Str("email", emailStr).
-				Msg("OAuth: VK email is not verified, linking existing account by email")
+			return nil, stderrors.New("вход через VK невозможен: email не подтверждён. Войдите по паролю")
 		}
 		if user.Name != name {
 			if updateErr := s.userRepo.Update(ctx, user.ID, map[string]any{"name": name}); updateErr != nil {
