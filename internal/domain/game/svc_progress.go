@@ -403,10 +403,10 @@ func checkAutoStartGamesImpl(db *gorm.DB, ctx context.Context) {
 
 	var games []Game
 	now := time.Now()
+	// P-M9: JOIN с фильтром auto_start=true заменяет Preload + повторную проверку.
 	if err := db.WithContext(ctx).
-		Preload("GameSetting").
-		Joins("JOIN game_settings ON game_settings.game_id = games.id").
-		Where("games.is_draft = false AND games.starts_at IS NOT NULL AND games.starts_at <= ? AND game_settings.auto_start = true", now).
+		Joins("JOIN game_settings ON game_settings.game_id = games.id AND game_settings.auto_start = true").
+		Where("games.is_draft = false AND games.starts_at IS NOT NULL AND games.starts_at <= ?", now).
 		Limit(batchSize).
 		Find(&games).Error; err != nil {
 		log.Error().Err(err).Msg("CheckAutoStartGames: failed to fetch games")
@@ -414,13 +414,6 @@ func checkAutoStartGamesImpl(db *gorm.DB, ctx context.Context) {
 	}
 
 	for _, g := range games {
-		if g.GameSetting.ID == 0 {
-			log.Warn().Uint("game_id", g.ID).Msg("CheckAutoStartGames: game setting not found, skipping")
-			continue
-		}
-		if !g.GameSetting.AutoStart {
-			continue
-		}
 		var startedCount int64
 		if err := db.WithContext(ctx).Model(&GamePassing{}).Where("game_id = ? AND status = ?", g.ID, StatusStarted).Count(&startedCount).Error; err != nil {
 			log.Error().Err(err).Uint("game_id", g.ID).Msg("CheckAutoStartGames: failed to count started passings")

@@ -99,10 +99,8 @@ func (s *GameAdminService) ForceFinishGame(ctx context.Context, gameID, userID u
 		return err
 	}
 
-	// Отправляем уведомления после фиксации транзакции
-	for _, p := range passings {
-		s.notifyCaptainAboutFinish(ctx, p.TeamID, &game)
-	}
+	// Отправляем уведомления после фиксации транзакции (батч, P-M8).
+	s.notifyCaptainsAboutFinish(ctx, teamIDs, &game)
 
 	// Принудительное завершение = завершение игры: начисляем турнирные очки
 	// и пересчитываем результаты (аналогично обычному финишу).
@@ -233,29 +231,45 @@ func (s *GameAdminService) DeleteLevelFromActiveGame(ctx context.Context, gameID
 	})
 }
 
-// notifyCaptainAboutFinish отправляет уведомление после фиксации транзакции.
-func (s *GameAdminService) notifyCaptainAboutFinish(ctx context.Context, teamID uint, game *Game) {
-	if s.cfg == nil || !s.cfg.SMTP.Enabled {
+// notifyCaptainsAboutFinish отправляет уведомления капитанам после фиксации
+// транзакции. Батч-версия (P-M8): 2 запроса на все команды вместо 2 на команду.
+func (s *GameAdminService) notifyCaptainsAboutFinish(ctx context.Context, teamIDs []uint, game *Game) {
+	if s.cfg == nil || !s.cfg.SMTP.Enabled || len(teamIDs) == 0 {
 		return
 	}
 	notifyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	var t team.Team
-	if err := s.db.WithContext(notifyCtx).First(&t, teamID).Error; err != nil {
-		log.Error().Err(err).Uint("team", teamID).Msg("notifyCaptainAboutFinish: failed to get team")
+
+	var teams []team.Team
+	if err := s.db.WithContext(notifyCtx).Where("id IN ?", teamIDs).Find(&teams).Error; err != nil {
+		log.Error().Err(err).Msg("notifyCaptainsAboutFinish: failed to get teams")
 		return
 	}
-	var captain user.User
-	if err := s.db.WithContext(notifyCtx).First(&captain, t.CaptainID).Error; err != nil {
-		log.Error().Err(err).Uint("captain", t.CaptainID).Msg("notifyCaptainAboutFinish: failed to get captain")
+	captainIDs := make([]uint, 0, len(teams))
+	for i := range teams {
+		captainIDs = append(captainIDs, teams[i].CaptainID)
+	}
+	var captains []user.User
+	if err := s.db.WithContext(notifyCtx).Where("id IN ?", captainIDs).Find(&captains).Error; err != nil {
+		log.Error().Err(err).Msg("notifyCaptainsAboutFinish: failed to get captains")
 		return
 	}
-	if err := email.Enqueue(
-		captain.Email,
-		"Игра завершена",
-		fmt.Sprintf("Игра «%s» была принудительно завершена автором.", game.Name),
-	); err != nil {
-		log.Error().Err(err).Uint("game", game.ID).Uint("team", teamID).Msg("notifyCaptainAboutFinish: failed to enqueue email")
+	emailByID := make(map[uint]string, len(captains))
+	for _, c := range captains {
+		emailByID[c.ID] = c.Email
+	}
+	for _, t := range teams {
+		addr, ok := emailByID[t.CaptainID]
+		if !ok || addr == "" {
+			continue
+		}
+		if err := email.Enqueue(
+			addr,
+			"Игра завершена",
+			fmt.Sprintf("Игра «%s» была принудительно завершена автором.", game.Name),
+		); err != nil {
+			log.Error().Err(err).Uint("game", game.ID).Uint("team", t.ID).Msg("notifyCaptainsAboutFinish: failed to enqueue email")
+		}
 	}
 }
 
