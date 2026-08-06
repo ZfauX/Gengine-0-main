@@ -343,10 +343,31 @@ function initPushSubscription() {
         return arr;
     }
 
+    function setPushButtons(active) {
+        if (active) {
+            enableBtn.classList.add('hidden');
+            if (disableBtn) disableBtn.classList.remove('hidden');
+        } else {
+            enableBtn.classList.remove('hidden');
+            if (disableBtn) disableBtn.classList.add('hidden');
+        }
+    }
+
+    // M2: синхронизируем кнопки с реальным состоянием подписки при загрузке.
+    (function syncPushState() {
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+        navigator.serviceWorker.getRegistration().then(function(reg) {
+            if (!reg) return;
+            return reg.pushManager.getSubscription();
+        }).then(function(sub) {
+            if (sub) setPushButtons(true);
+        }).catch(function() {});
+    })();
+
     enableBtn.addEventListener('click', async function() {
         try {
             if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-                setStatus(tI18n('push.not_supported', 'Push не поддерживается этим браузером'));
+                setStatus(tI18n('push-unsupported', 'Push не поддерживается этим браузером'));
                 return;
             }
             var reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
@@ -357,7 +378,7 @@ function initPushSubscription() {
                 vapid = data.public_key;
             }
             if (!vapid) {
-                setStatus(tI18n('push.error', 'Ошибка: ') + 'Не удалось получить VAPID-ключ');
+                setStatus(tI18n('push-misconfigured', 'Push не настроен'));
                 return;
             }
             var sub = await reg.pushManager.subscribe({
@@ -371,11 +392,17 @@ function initPushSubscription() {
                 body: JSON.stringify(sub.toJSON())
             });
             if (!saveResp.ok) throw new Error('HTTP ' + saveResp.status);
-            setStatus(tI18n('push.enabled', 'Push-уведомления включены'));
-            enableBtn.classList.add('hidden');
-            if (disableBtn) disableBtn.classList.remove('hidden');
+            setStatus(tI18n('push-active', 'Push-уведомления включены'));
+            setPushButtons(true);
         } catch (e) {
-            setStatus(tI18n('push.error', 'Ошибка: ') + e.message);
+            // M2: если браузер подписался, а сервер не сохранил — отписываем
+            // orphaned-подписку, чтобы повторный клик не «успевал» зря.
+            try {
+                var reg = await navigator.serviceWorker.getRegistration();
+                var sub = reg && await reg.pushManager.getSubscription();
+                if (sub) await sub.unsubscribe();
+            } catch (_) {}
+            setStatus(tI18n('push-save-failed', 'Не удалось сохранить подписку') + ': ' + e.message);
         }
     });
 
@@ -394,11 +421,11 @@ function initPushSubscription() {
                     await sub.unsubscribe();
                 }
             }
-            setStatus(tI18n('push.disabled', 'Push-уведомления отключены'));
-            enableBtn.classList.remove('hidden');
+            setStatus(tI18n('push-disabled', 'Push-уведомления отключены'));
+            setPushButtons(false);
             disableBtn.classList.add('hidden');
         } catch (e) {
-            setStatus(tI18n('push.error', 'Ошибка: ') + e.message);
+            setStatus(tI18n('push-save-failed', 'Не удалось сохранить подписку') + ': ' + e.message);
         }
     });
 }

@@ -337,7 +337,9 @@ func (r *gormUserRepo) ListPaginated(ctx context.Context, role string, offset, l
 
 func (r *gormUserRepo) CountSearch(ctx context.Context, query, role string) (int64, error) {
 	var count int64
-	q := r.db.WithContext(ctx).Model(&User{}).Where("name ILIKE ? OR email ILIKE ?", "%"+query+"%", "%"+query+"%")
+	// C-12: экранируем wildcard LIKE, иначе %/_ в запросе матчат всё.
+	esc := sqlutil.EscapeLike(query)
+	q := r.db.WithContext(ctx).Model(&User{}).Where("name ILIKE ? OR email ILIKE ?", "%"+esc+"%", "%"+esc+"%")
 	if role != "" {
 		q = q.Where("role = ?", role)
 	}
@@ -347,7 +349,9 @@ func (r *gormUserRepo) CountSearch(ctx context.Context, query, role string) (int
 
 func (r *gormUserRepo) SearchPaginated(ctx context.Context, query, role string, offset, limit int) ([]User, error) {
 	var users []User
-	q := r.db.WithContext(ctx).Model(&User{}).Where("name ILIKE ? OR email ILIKE ?", "%"+query+"%", "%"+query+"%")
+	// C-12: экранируем wildcard LIKE.
+	esc := sqlutil.EscapeLike(query)
+	q := r.db.WithContext(ctx).Model(&User{}).Where("name ILIKE ? OR email ILIKE ?", "%"+esc+"%", "%"+esc+"%")
 	if role != "" {
 		q = q.Where("role = ?", role)
 	}

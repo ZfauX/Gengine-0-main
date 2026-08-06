@@ -76,7 +76,7 @@
                 <span class="font-mono">{{.Code}}</span>
                 <span class="flex items-center gap-2">
                     {{if .Success}}
-                    <span class="inline-flex items-center gap-1 text-green-600 font-medium">{{ T $.Lang "gameplay.attempt_correct" }}</span>
+                    <span class="inline-flex items-center gap-1 text-green-700 font-medium">{{ T $.Lang "gameplay.attempt_correct" }}</span>
                     {{else}}
                     <span class="inline-flex items-center gap-1 text-red-600 font-medium">{{ T $.Lang "gameplay.attempt_wrong" }}</span>
                     {{end}}
@@ -185,10 +185,10 @@
                     mobileTimerDisplay.className = 'text-center font-mono font-bold text-lg text-red-600 animate-pulse';
                 }
             } else if (timeLeft <= 300) {
-                timerDisplay.className = 'text-yellow-600 font-mono text-xl font-bold';
+                timerDisplay.className = 'text-yellow-700 font-mono text-xl font-bold';
                 if (mobileTimerDisplay) {
                     mobileTimerDisplay.textContent = '{{ T $.Lang "gameplay.time_left" }}'.replace('%s', timeStr);
-                    mobileTimerDisplay.className = 'text-center font-mono font-bold text-lg text-yellow-600';
+                    mobileTimerDisplay.className = 'text-center font-mono font-bold text-lg text-yellow-700';
                 }
             } else {
                 timerDisplay.className = 'text-gray-700 dark:text-gray-300 font-mono text-xl';
@@ -251,7 +251,7 @@
             const now = new Date();
             const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
             const badge = success
-                ? '<span class="inline-flex items-center gap-1 text-green-600 font-medium">{{ T $.Lang "gameplay.attempt_correct" }}</span>'
+                ? '<span class="inline-flex items-center gap-1 text-green-700 font-medium">{{ T $.Lang "gameplay.attempt_correct" }}</span>'
                 : '<span class="inline-flex items-center gap-1 text-red-600 font-medium">{{ T $.Lang "gameplay.attempt_wrong" }}</span>';
             li.innerHTML = `<span class="font-mono">${escapeHtml(code)}</span><span class="flex items-center gap-2">${badge}<span class="text-gray-500 text-xs">${timeStr}</span></span>`;
             attemptsList.prepend(li);
@@ -468,7 +468,7 @@
                 const timerDisplay = document.getElementById('timer-display');
                 if (timerDisplay) {
                     timerDisplay.textContent = '{{ T $.Lang "gameplay.level_done" }}';
-                    timerDisplay.classList.add('text-green-600');
+                    timerDisplay.classList.add('text-green-700');
                 }
             });
 

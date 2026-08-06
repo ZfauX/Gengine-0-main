@@ -154,7 +154,8 @@
         const list = document.getElementById('selected-games-list');
 
         const [y, m, d] = dateStr.split('-');
-        title.textContent = '{{ TF $.Lang "calendar.games_for" "D" "M" "Y" }}'.replace('D', d).replace('M', m).replace('Y', y);
+        // L10: не полагаемся на JS-replace плейсхолдеров D/M/Y в локализованной строке.
+        title.textContent = '{{ T $.Lang "calendar.games_for_date" }}'.replace('%s', d + '.' + m + '.' + y);
         list.innerHTML = '';
 
         if (games.length === 0) {

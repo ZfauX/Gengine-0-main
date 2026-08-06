@@ -170,7 +170,7 @@
         </div>
         <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
             <p class="text-sm text-gray-700">
-                {{ TF $.Lang "games.pagination_page" .Page .TotalPages }}
+                <span aria-current="page">{{ TF $.Lang "games.pagination_page" .Page .TotalPages }}</span>
                 <span class="text-gray-500">{{ TF $.Lang "games.pagination_total" .Total }}</span>
             </p>
             <nav class="inline-flex gap-1" aria-label='{{ T $.Lang "common.pagination" }}'>
@@ -228,16 +228,22 @@
             });
         }
 
+        // M14: если пользователь уже переключил вид — игнорируем поздний ответ
+        // preference-fetch (гонка).
+        let userToggled = false;
+
         // Серверное предпочтение (персонализация). Без JS-ответа/401 — таблица.
         fetch('/api/users/preferences/games-view')
             .then(r => r.ok ? r.json() : Promise.resolve({ view: 'table' }))
             .then(data => {
+                if (userToggled) return;
                 if (data.view === 'cards') setCardsView();
                 else setTableView();
             })
-            .catch(function() { setTableView(); });
+            .catch(function() { if (!userToggled) setTableView(); });
 
         toggle.addEventListener('click', function() {
+            userToggled = true;
             const isCardsHidden = cardView.classList.contains('hidden');
             if (isCardsHidden) {
                 setCardsView();

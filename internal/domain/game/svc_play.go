@@ -272,15 +272,7 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (
 			return ErrHintLimitReached
 		}
 
-		progress.HintsUsed++
-		hintsUsed = progress.HintsUsed
-		penalty := settings.HintPenaltySeconds
-		progress.PenaltySeconds += penalty
-		if saveErr := tx.Save(progress).Error; saveErr != nil {
-			return saveErr
-		}
-
-		// Получаем текст подсказки из вопросов уровня
+		// Получаем текст подсказки из вопросов уровня.
 		// P-4: загружаем только hint первого вопроса, не всю графу Questions.
 		var hintOnly struct {
 			Hint string
@@ -290,7 +282,19 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (
 			Order("id ASC").Limit(1).Scan(&hintOnly).Error; findErr != nil {
 			return findErr
 		}
+		// C-13: у уровня нет вопросов/подсказки — не списываем и не штрафуем.
+		if hintOnly.Hint == "" {
+			return errors.New("на этом уровне нет подсказки")
+		}
 		hintText = hintOnly.Hint
+
+		progress.HintsUsed++
+		hintsUsed = progress.HintsUsed
+		penalty := settings.HintPenaltySeconds
+		progress.PenaltySeconds += penalty
+		if saveErr := tx.Save(progress).Error; saveErr != nil {
+			return saveErr
+		}
 
 		logEntry := Log{
 			GamePassingID: passingID,

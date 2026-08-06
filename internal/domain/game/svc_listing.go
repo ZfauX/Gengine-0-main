@@ -60,10 +60,14 @@ func listingCacheKey(filter GameFilter, sort *GameSort, page, perPage int) strin
 func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter GameFilter, sort *GameSort, page, perPage int) ([]Game, int64, error) {
 	cacheKey := ""
 	if filter.ViewerID == 0 {
-		cacheKey = listingCacheKey(filter, sort, page, perPage)
-		var entry listingCacheEntry
-		if cacheGetJSON(s.cache, ctx, cacheKey, &entry) {
-			return entry.Games, entry.Total, nil
+		// Perf (pass 25): кэшируем только листинг без поиска/даты — иначе каждый
+		// уникальный поисковый запрос создаёт ключ, фрагментируя LRU/Valkey.
+		if filter.Search == "" && filter.DateFrom == "" && filter.DateTo == "" {
+			cacheKey = listingCacheKey(filter, sort, page, perPage)
+			var entry listingCacheEntry
+			if cacheGetJSON(s.cache, ctx, cacheKey, &entry) {
+				return entry.Games, entry.Total, nil
+			}
 		}
 	}
 

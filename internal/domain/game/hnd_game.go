@@ -215,7 +215,6 @@ func (h *GameHandler) Show(c *gin.Context) {
 		"CanApply":       canApply,
 		"IncludeLeaflet": true,
 		"csrf":           csrf.GetToken(c),
-		"BaseURL":        c.Request.Host,
 		"Title":          g.Name + " · Encounter Engine",
 		"Breadcrumbs": []map[string]string{
 			{"name": "nav.home", "url": "/"},

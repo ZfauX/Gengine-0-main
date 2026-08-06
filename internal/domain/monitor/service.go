@@ -145,6 +145,11 @@ func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID, 
 		if lockErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedSession, sessionID).Error; lockErr != nil {
 			return lockErr
 		}
+		// C-10: сессия могла закрыться между первичным чтением и блокировкой —
+		// пере-проверяем IsOpen под локом.
+		if !lockedSession.IsOpen {
+			return errors.New("голосование закрыто")
+		}
 
 		var attempts []game.Attempt
 		if findErr := tx.Where("level_progress_id IN (SELECT id FROM level_progresses WHERE game_passing_id = ? AND level_id = ?)",

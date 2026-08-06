@@ -118,11 +118,11 @@
                             uploadBtn.disabled = false;
                             setTimeout(() => uploadProgress.classList.add('hidden'), 1000);
                         } else {
-                            uploadStatus.innerHTML = '<span class="text-green-600">{{ T $.Lang "photos.uploaded" }}</span>';
+                            uploadStatus.innerHTML = '<span class="text-green-700">{{ T $.Lang "photos.uploaded" }}</span>';
                             setTimeout(() => location.reload(), 800);
                         }
                     } catch(_) {
-                        uploadStatus.innerHTML = '<span class="text-green-600">{{ T $.Lang "photos.uploaded" }}</span>';
+                        uploadStatus.innerHTML = '<span class="text-green-700">{{ T $.Lang "photos.uploaded" }}</span>';
                         setTimeout(() => location.reload(), 800);
                     }
                 } else {

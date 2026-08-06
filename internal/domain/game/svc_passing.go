@@ -82,11 +82,16 @@ func (s *GamePassingService) Apply(ctx context.Context, gameID, teamID, userID u
 			return errors.New("достигнут лимит команд на игру")
 		}
 		passing := GamePassing{GameID: gameID, TeamID: teamID, Status: StatusPending}
-		err := tx.Clauses(clause.OnConflict{
+		res := tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "game_id"}, {Name: "team_id"}},
 			DoNothing: true,
-		}).Create(&passing).Error
-		if err != nil || passing.ID == 0 {
+		}).Create(&passing)
+		if res.Error != nil {
+			return res.Error
+		}
+		// C-3: RowsAffected==0 — дубликат (ON CONFLICT DO NOTHING); реальная
+		// ошибка БД уже возвращена выше.
+		if res.RowsAffected == 0 {
 			return errors.New("заявка уже подана")
 		}
 		return nil
@@ -107,13 +112,15 @@ func (s *GamePassingService) ListByGamePaginated(ctx context.Context, gameID uin
 	var total int64
 	var passings []GamePassing
 
-	query := s.DB.WithContext(ctx).Preload("Team.Captain").Where("game_id = ?", gameID)
-	if err := query.Count(&total).Error; err != nil {
+	// C-7: отдельные цепочки для Count и Find — переиспользование GORM-цепочки
+	// может перенести состояние COUNT в запрос данных.
+	if err := s.DB.WithContext(ctx).Model(&GamePassing{}).Where("game_id = ?", gameID).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
 	offset := (page - 1) * perPage
-	if err := query.Order("created_at DESC").Offset(offset).Limit(perPage).Find(&passings).Error; err != nil {
+	if err := s.DB.WithContext(ctx).Preload("Team.Captain").Where("game_id = ?", gameID).
+		Order("created_at DESC").Offset(offset).Limit(perPage).Find(&passings).Error; err != nil {
 		return nil, 0, err
 	}
 

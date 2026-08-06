@@ -226,7 +226,7 @@
         const saveBtn = document.getElementById('save-notifications-btn');
         const msgContainer = document.getElementById('notification-settings-message');
 
-        function showMessage(text, colorClass = 'text-green-600') {
+        function showMessage(text, colorClass = 'text-green-700') {
             if (!msgContainer) return;
             msgContainer.textContent = text;
             msgContainer.className = 'mt-2 text-sm ' + colorClass;
@@ -257,7 +257,7 @@
                 .then(r => r.json())
                 .then(data => {
                     if (data.status === 'ok') {
-                        showMessage('{{ T $.Lang "profile.settings_saved" }}', 'text-green-600');
+                        showMessage('{{ T $.Lang "profile.settings_saved" }}', 'text-green-700');
                     } else {
                         showMessage('{{ T $.Lang "profile.settings_save_error" }}', 'text-red-600');
                     }

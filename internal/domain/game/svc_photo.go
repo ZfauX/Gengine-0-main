@@ -17,7 +17,12 @@ func NewPhotoService(db *gorm.DB) *PhotoService {
 
 func (s *PhotoService) List(ctx context.Context, gameID uint) ([]Photo, error) {
 	var photos []Photo
-	err := s.DB.WithContext(ctx).Preload("User").Preload("Level").
+	err := s.DB.WithContext(ctx).
+		// C-11: не тянем полного пользователя (email и т.п.) в галерею.
+		Preload("User", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id, name, avatar_path")
+		}).
+		Preload("Level").
 		Where("game_id = ?", gameID).
 		Order("created_at DESC").
 		Find(&photos).Error

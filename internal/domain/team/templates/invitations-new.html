@@ -68,12 +68,14 @@
                     return;
                 }
                 data.users.forEach(function(u) {
-                    var div = document.createElement('div');
-                    div.className = 'p-3 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer';
-                    div.innerHTML = '<div class="font-medium text-gray-800 dark:text-gray-100">' + escapeHtml(u.name) + '</div>' +
+                    // M10: кнопки вместо div — доступны с клавиатуры (Tab/Enter/Space).
+                    var btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'w-full text-left p-3 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer focus-visible:bg-gray-50 dark:focus-visible:bg-gray-700';
+                    btn.innerHTML = '<div class="font-medium text-gray-800 dark:text-gray-100">' + escapeHtml(u.name) + '</div>' +
                         '<div class="text-sm text-gray-500 dark:text-gray-400">' + escapeHtml(u.email) + ' (ID: ' + u.id + ')</div>';
-                    div.addEventListener('click', function() { selectUser(u); });
-                    resultsEl.appendChild(div);
+                    btn.addEventListener('click', function() { selectUser(u); });
+                    resultsEl.appendChild(btn);
                 });
                 resultsEl.classList.remove('hidden');
             })

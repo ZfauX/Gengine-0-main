@@ -305,13 +305,19 @@
             const originalFetch = window.fetch;
             window.fetch = function(url, options) {
                 options = options || {};
-                options.headers = options.headers || {};
-                if (!options.headers['X-CSRF-TOKEN'] && !options.headers['x-csrf-token']) {
-                    const method = (options.method || 'GET').toUpperCase();
-                    if (method !== 'GET' && method !== 'HEAD') {
-                        const token = getCsrfToken();
-                        if (token) {
-                            options.headers['X-CSRF-TOKEN'] = token;
+                const method = (options.method || 'GET').toUpperCase();
+                if (method !== 'GET' && method !== 'HEAD') {
+                    const token = getCsrfToken();
+                    if (token) {
+                        // M5: не мутируем чужой объект; поддерживаем Headers-экземпляры.
+                        if (options.headers instanceof Headers) {
+                            if (!options.headers.has('X-CSRF-TOKEN')) options.headers.set('X-CSRF-TOKEN', token);
+                        } else {
+                            var headers = Object.assign({}, options.headers || {});
+                            if (!headers['X-CSRF-TOKEN'] && !headers['x-csrf-token']) {
+                                headers['X-CSRF-TOKEN'] = token;
+                            }
+                            options.headers = headers;
                         }
                     }
                 }

@@ -145,7 +145,11 @@ func TestGamePlayService_SubmitFile(t *testing.T) {
 
 func TestGamePlayService_UseHint(t *testing.T) {
 	db, playSvc, progressSvc := setupGamePlayTest(t)
-	_, _, passing, author := createGamePlayTestData(t, db)
+	_, lvl, passing, author := createGamePlayTestData(t, db)
+
+	// Добавляем hint к вопросу уровня — иначе UseHint вернёт «нет подсказки».
+	require.NoError(t, db.Model(&level.Question{}).Where("level_id = ?", lvl.ID).
+		Update("hint", "Подсказка").Error)
 
 	progress, err := progressSvc.GetCurrentProgress(context.Background(), passing.ID)
 	require.NoError(t, err)
@@ -154,7 +158,7 @@ func TestGamePlayService_UseHint(t *testing.T) {
 
 	hint, err := playSvc.UseHint(context.Background(), passing.ID, author.ID)
 	require.NoError(t, err)
-	assert.Equal(t, "", hint) // пустая подсказка, т.к. в тесте нет вопроса с hint
+	assert.Equal(t, "Подсказка", hint)
 
 	updatedProgress, err := progressSvc.GetCurrentProgress(context.Background(), passing.ID)
 	require.NoError(t, err)
@@ -190,7 +194,10 @@ func TestGamePlayService_UseHint_Disabled(t *testing.T) {
 
 func TestGamePlayService_UseHint_MaxReached(t *testing.T) {
 	db, playSvc, _ := setupGamePlayTest(t)
-	_, _, passing, author := createGamePlayTestData(t, db)
+	_, lvl, passing, author := createGamePlayTestData(t, db)
+
+	require.NoError(t, db.Model(&level.Question{}).Where("level_id = ?", lvl.ID).
+		Update("hint", "Подсказка").Error)
 
 	var g game.Game
 	db.First(&g, passing.GameID)
