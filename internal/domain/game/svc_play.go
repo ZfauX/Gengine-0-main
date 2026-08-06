@@ -281,13 +281,16 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (
 		}
 
 		// Получаем текст подсказки из вопросов уровня
-		var lvl level.Level
-		if findErr := tx.Preload("Questions").Where("id = ?", progress.LevelID).First(&lvl).Error; findErr != nil {
+		// P-4: загружаем только hint первого вопроса, не всю графу Questions.
+		var hintOnly struct {
+			Hint string
+		}
+		if findErr := tx.Table("questions").Select("hint").
+			Where("level_id = ?", progress.LevelID).
+			Order("id ASC").Limit(1).Scan(&hintOnly).Error; findErr != nil {
 			return findErr
 		}
-		if len(lvl.Questions) > 0 {
-			hintText = lvl.Questions[0].Hint
-		}
+		hintText = hintOnly.Hint
 
 		logEntry := Log{
 			GamePassingID: passingID,

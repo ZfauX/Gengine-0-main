@@ -120,6 +120,9 @@ type RefreshTokenRepository interface {
 	// токен был потреблён этим вызовом. RowsAffected==0 означает, что другой
 	// запрос уже использовал тот же токен — детект reuse без гонки (S4).
 	ClaimForRefresh(ctx context.Context, id uint) (bool, error)
+	// ClaimAndCreate атомарно отзывает старый токен и сохраняет новый в одной
+	// транзакции (C-2): сбой создания не оставляет клиента без refresh-токена.
+	ClaimAndCreate(ctx context.Context, id uint, newToken *RefreshToken) (bool, error)
 	Revoke(ctx context.Context, id uint) error
 	// RevokeAllByFamily отзывает всю семью refresh-токенов (при детекции кражи).
 	RevokeAllByFamily(ctx context.Context, familyID string) error
@@ -540,6 +543,28 @@ func (r *gormRefreshTokenRepo) ClaimForRefresh(ctx context.Context, id uint) (bo
 		return false, res.Error
 	}
 	return res.RowsAffected == 1, nil
+}
+
+func (r *gormRefreshTokenRepo) ClaimAndCreate(ctx context.Context, id uint, newToken *RefreshToken) (bool, error) {
+	claimed := false
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
+		res := tx.Model(&RefreshToken{}).
+			Where("id = ? AND revoked_at IS NULL", id).
+			Update("revoked_at", now)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return nil // другой запрос уже потреблял токен — не создаём наследника
+		}
+		claimed = true
+		return tx.Create(newToken).Error
+	})
+	if err != nil {
+		return false, err
+	}
+	return claimed, nil
 }
 
 func (r *gormRefreshTokenRepo) Revoke(ctx context.Context, id uint) error {

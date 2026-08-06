@@ -182,9 +182,22 @@ func (s *AuthService) GenerateRefreshToken(ctx context.Context, user User, devic
 // generateRefreshToken создаёт refresh-токен. Если familyID пуст — генерируется
 // новая семья (новый вход). Иначе токен относится к той же семье (ротация).
 func (s *AuthService) generateRefreshToken(ctx context.Context, user User, deviceID, clientFingerprint, familyID string) (string, error) {
+	token, record, err := s.buildRefreshToken(user, deviceID, clientFingerprint, familyID)
+	if err != nil {
+		return "", err
+	}
+	if err := s.refreshTokenRepo.Create(ctx, record); err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+// buildRefreshToken формирует refresh-токен и его запись без сохранения
+// (позволяет атомарный ClaimAndCreate при ротации, C-2).
+func (s *AuthService) buildRefreshToken(user User, deviceID, clientFingerprint, familyID string) (string, *RefreshToken, error) {
 	b := make([]byte, refreshTokenBytes)
 	if _, err := rand.Read(b); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	token := hex.EncodeToString(b)
 	hash := sha256.Sum256([]byte(token))
@@ -193,12 +206,12 @@ func (s *AuthService) generateRefreshToken(ctx context.Context, user User, devic
 	if familyID == "" {
 		fam := make([]byte, 16)
 		if _, err := rand.Read(fam); err != nil {
-			return "", err
+			return "", nil, err
 		}
 		familyID = hex.EncodeToString(fam)
 	}
 
-	refreshToken := &RefreshToken{
+	record := &RefreshToken{
 		UserID:            user.ID,
 		TokenHash:         tokenHash,
 		FamilyID:          familyID,
@@ -206,10 +219,7 @@ func (s *AuthService) generateRefreshToken(ctx context.Context, user User, devic
 		ClientFingerprint: clientFingerprint,
 		ExpiresAt:         time.Now().Add(s.cfg.JWT.RefreshExpiry),
 	}
-	if err := s.refreshTokenRepo.Create(ctx, refreshToken); err != nil {
-		return "", err
-	}
-	return token, nil
+	return token, record, nil
 }
 
 func (s *AuthService) RevokeAllUserTokens(ctx context.Context, userID uint) error {
@@ -261,9 +271,24 @@ func (s *AuthService) RefreshAccessToken(ctx context.Context, refreshTokenStr, d
 		return "", "", stderrors.New("отпечаток клиента не совпадает — используйте токен с того же устройства")
 	}
 
-	// Атомарно отзываем старый токен (ротация). RowsAffected==0 означает,
-	// что другой запрос уже потребил этот же токен — параллельный reuse (S4).
-	claimed, claimErr := s.refreshTokenRepo.ClaimForRefresh(ctx, stored.ID)
+	user, err := s.userRepo.GetByID(ctx, stored.UserID)
+	if err != nil {
+		return "", "", stderrors.New("пользователь не найден")
+	}
+
+	accessToken, err := s.generateJWT(*user)
+	if err != nil {
+		return "", "", err
+	}
+
+	// Формируем новый refresh-токен (та же семья, та же привязка) и
+	// атомарно отзываем старый + сохраняем новый в одной транзакции (C-2):
+	// сбой создания не оставляет клиента без refresh-токена.
+	newToken, newRecord, err := s.buildRefreshToken(*user, deviceID, stored.ClientFingerprint, stored.FamilyID)
+	if err != nil {
+		return "", "", err
+	}
+	claimed, claimErr := s.refreshTokenRepo.ClaimAndCreate(ctx, stored.ID, newRecord)
 	if claimErr != nil {
 		return "", "", fmt.Errorf("не удалось отозвать старый refresh-токен: %w", claimErr)
 	}
@@ -277,23 +302,7 @@ func (s *AuthService) RefreshAccessToken(ctx context.Context, refreshTokenStr, d
 		return "", "", stderrors.New("refresh-токен уже использован — все сессии отозваны")
 	}
 
-	user, err := s.userRepo.GetByID(ctx, stored.UserID)
-	if err != nil {
-		return "", "", stderrors.New("пользователь не найден")
-	}
-
-	accessToken, err := s.generateJWT(*user)
-	if err != nil {
-		return "", "", err
-	}
-
-	// Generate new refresh token with same fingerprint binding and SAME family
-	newRefreshToken, err := s.generateRefreshToken(ctx, *user, deviceID, stored.ClientFingerprint, stored.FamilyID)
-	if err != nil {
-		return "", "", err
-	}
-
-	return accessToken, newRefreshToken, nil
+	return accessToken, newToken, nil
 }
 
 func (s *AuthService) ParseToken(tokenStr string) (uint, string, error) {

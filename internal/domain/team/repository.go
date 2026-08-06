@@ -254,7 +254,8 @@ func (r *gormTeamRepo) DeclineInvitation(ctx context.Context, id uint) error {
 func (r *gormTeamRepo) GetAvailableUsers(ctx context.Context, teamID uint) ([]user.User, error) {
 	var users []user.User
 	subQuery := r.db.WithContext(ctx).Table("team_members").Select("user_id").Where("team_id = ?", teamID)
-	err := r.db.WithContext(ctx).Model(&user.User{}).Where("id NOT IN (?)", subQuery).Find(&users).Error
+	// P-5: лимитируем выборку — не тянем всю таблицу пользователей.
+	err := r.db.WithContext(ctx).Model(&user.User{}).Where("id NOT IN (?)", subQuery).Limit(100).Find(&users).Error
 	return users, err
 }
 
