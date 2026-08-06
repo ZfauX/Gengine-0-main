@@ -79,13 +79,6 @@
         @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
         @keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
 
-
-        @media (max-width: 640px) {
-            .table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-            /* min-width только для таблиц в .table-responsive — компактные таблицы
-               не получают ненужный горизонтальный скролл (UX14). */
-            .table-responsive table { min-width: 600px; }
-        }
     </style>
     {{.ExtraHead}}
 </head>
@@ -264,7 +257,7 @@
         <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-4" aria-label="{{ T $.Lang "layout.breadcrumb_aria" }}">
             <div class="flex flex-wrap items-center gap-1 text-sm">
                 {{range $i, $crumb := .Breadcrumbs}}
-                    {{if $i}}<span class="text-gray-400 dark:text-gray-600 mx-1" aria-hidden="true">›</span>{{end}}
+                    {{if $i}}<span class="text-gray-500 dark:text-gray-600 mx-1" aria-hidden="true">›</span>{{end}}
                     {{if index $crumb "url"}}<a href="{{index $crumb "url"}}" class="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 truncate max-w-[180px] sm:max-w-[240px]">{{ trName $.Lang (index $crumb "name") (index $crumb "name_key") }}</a>{{else}}<span class="text-gray-500 dark:text-gray-400 truncate max-w-[180px] sm:max-w-[240px]" aria-current="page">{{ trName $.Lang (index $crumb "name") (index $crumb "name_key") }}</span>{{end}}
                 {{end}}
             </div>

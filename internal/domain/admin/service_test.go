@@ -113,6 +113,41 @@ func TestBackupService_CreateNow(t *testing.T) {
 	assert.Greater(t, info.Size(), int64(0))
 }
 
+// TestBackupService_Download: скачивание существующего бэкапа возвращает путь,
+// несуществующего — ошибку (T-M1).
+func TestBackupService_Download(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test (requires pg_dump)")
+	}
+	_, err := exec.LookPath("pg_dump")
+	if err != nil {
+		t.Skip("pg_dump not found in PATH, skipping test")
+	}
+
+	tmpDir, err := os.MkdirTemp("", "backup_download")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	db := setupAdminTestDB(t)
+	backupRepo := admin.NewGormBackupRepo(db)
+	dbCfg := config.DatabaseConfig{Host: "localhost", Port: "5432", User: "test", Password: "test", Name: "testdb"}
+	svc := admin.NewBackupService(backupRepo, tmpDir, 10, dbCfg)
+
+	require.NoError(t, svc.CreateNow(context.Background()))
+
+	var backup admin.Backup
+	require.NoError(t, db.First(&backup).Error)
+
+	path, err := svc.Download(context.Background(), backup.ID)
+	require.NoError(t, err)
+	info, statErr := os.Stat(path)
+	require.NoError(t, statErr)
+	assert.Greater(t, info.Size(), int64(0))
+
+	_, err = svc.Download(context.Background(), 999999)
+	assert.Error(t, err, "несуществующий бэкап должен давать ошибку")
+}
+
 func TestBackupService_RotateBackups(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "backup_rotate")
 	require.NoError(t, err)

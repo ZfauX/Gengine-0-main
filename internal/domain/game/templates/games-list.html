@@ -16,7 +16,7 @@
         <div class="flex-1 min-w-[140px] relative">
             <label for="filter-search" class="form-label">{{ T $.Lang "games.filter_search" }}</label>
             <input type="text" name="search" id="filter-search" placeholder="{{ T $.Lang "games.filter_search_placeholder" }}" value="{{.Filter.Search}}"
-                    class="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                    class="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-500 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                     autocomplete="off">
         </div>
         <div class="flex-1 min-w-[140px]">
@@ -153,7 +153,7 @@
     {{else}}
     <div class="card text-center py-12">
         <p class="text-gray-500">{{ T $.Lang "games.no_games" }}</p>
-        <p class="mt-2 text-sm text-gray-400">{{ T $.Lang "games.no_games_hint" }}</p>
+        <p class="mt-2 text-sm text-gray-500">{{ T $.Lang "games.no_games_hint" }}</p>
     </div>
     {{end}}
 

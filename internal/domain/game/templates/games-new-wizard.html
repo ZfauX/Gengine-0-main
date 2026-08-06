@@ -42,7 +42,7 @@
                                   class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                                   placeholder="{{ T $.Lang "game.new_desc_placeholder" }}"
                                   maxlength="2000">{{.Description}}</textarea>
-                        <p class="text-xs text-gray-400 mt-1">{{ TF $.Lang "game.new_desc_chars" (len .Description) }}</p>
+                        <p class="text-xs text-gray-500 mt-1">{{ TF $.Lang "game.new_desc_chars" (len .Description) }}</p>
                     </div>
 
                     <div>
@@ -71,7 +71,7 @@
                         <label for="starts_at" class="form-label">{{ T $.Lang "game.new_start_date_label" }}</label>
                         <input type="datetime-local" name="starts_at" id="starts_at" value="{{.StartsAt}}"
                                 class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                        <p class="text-xs text-gray-400 mt-1">{{ T $.Lang "game.new_start_date_hint" }}</p>
+                        <p class="text-xs text-gray-500 mt-1">{{ T $.Lang "game.new_start_date_hint" }}</p>
                         {{if .Errors.StartsAt}}{{if .Errors.StartsAt}}<p class="field-error">{{.Errors.StartsAt}}</p>{{end}}{{end}}
                     </div>
 
@@ -79,7 +79,7 @@
                         <label for="registration_deadline" class="form-label">{{ T $.Lang "game.new_reg_deadline_label" }}</label>
                         <input type="datetime-local" name="registration_deadline" id="registration_deadline" value="{{.RegistrationDeadline}}"
                                 class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                        <p class="text-xs text-gray-400 mt-1">{{ T $.Lang "game.new_reg_deadline_hint" }}</p>
+                        <p class="text-xs text-gray-500 mt-1">{{ T $.Lang "game.new_reg_deadline_hint" }}</p>
                         {{if .Errors.RegistrationDeadline}}{{if .Errors.RegistrationDeadline}}<p class="field-error">{{.Errors.RegistrationDeadline}}</p>{{end}}{{end}}
                     </div>
                 </div>
@@ -93,11 +93,11 @@
                 <div id="coverDropZone" class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center hover:border-blue-500 transition cursor-pointer" role="button" tabindex="0" aria-label="{{ T $.Lang "game.new_cover_drop" }}">
                     <input type="file" name="cover" id="cover" accept="image/jpeg,image/png,image/webp" class="hidden">
                     <div id="coverPlaceholder">
-                        <svg class="mx-auto h-16 w-16 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                        <svg class="mx-auto h-16 w-16 text-gray-500" stroke="currentColor" fill="none" viewBox="0 0 48 48">
                             <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
                         </svg>
                         <p class="mt-3 text-sm text-gray-600 dark:text-gray-400">{{ T $.Lang "game.new_cover_drop" }}</p>
-                        <p class="mt-1 text-xs text-gray-400">{{ T $.Lang "game.new_cover_format" }}</p>
+                        <p class="mt-1 text-xs text-gray-500">{{ T $.Lang "game.new_cover_format" }}</p>
                     </div>
                     <div id="coverPreview" class="hidden">
                         <img id="coverImg" class="mx-auto max-h-48 rounded-lg" alt="Preview">

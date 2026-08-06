@@ -28,7 +28,7 @@
     {{else}}
     <div class="card text-center py-12">
         <p class="text-gray-500 dark:text-gray-400">{{ T $.Lang "question.no_questions" }}</p>
-        <p class="mt-2 text-sm text-gray-400"><a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions/new" class="text-blue-600 dark:text-blue-400 hover:underline">{{ T $.Lang "question.create_first" }}</a></p>
+        <p class="mt-2 text-sm text-gray-500"><a href="/games/{{.GameID}}/levels/{{.LevelID}}/questions/new" class="text-blue-600 dark:text-blue-400 hover:underline">{{ T $.Lang "question.create_first" }}</a></p>
     </div>
     {{end}}
 

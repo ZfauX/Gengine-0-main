@@ -9,7 +9,7 @@
             <li class="py-4 px-2 flex items-start gap-3 {{if not .Read}}bg-blue-50 dark:bg-blue-900/10{{end}}">
                 <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2 mb-1">
-                        <span class="text-xs font-medium text-gray-400 dark:text-gray-500">{{.CreatedAt.Format "02.01.2006 15:04"}}</span>
+                        <span class="text-xs font-medium text-gray-500 dark:text-gray-500">{{.CreatedAt.Format "02.01.2006 15:04"}}</span>
                         {{if not .Read}}<span class="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></span><span class="sr-only">{{ T $.Lang "notif.new" }}</span>{{end}}
                     </div>
                     <p class="text-sm font-medium text-gray-800 dark:text-gray-100">{{.Title}}</p>

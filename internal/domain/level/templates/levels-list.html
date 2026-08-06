@@ -17,7 +17,7 @@
               data-level-id="{{.ID}}" data-position="{{.Position}}"
               aria-label='{{ TF $.Lang "level.level_aria_item" .Name .Position }}'>
             <div class="cursor-grab active:cursor-grabbing touch-none" aria-label='{{ T $.Lang "level.drag_handle" }}'>
-                <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"/></svg>
+                <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"/></svg>
             </div>
             <div class="flex-1 min-w-[180px]">
                 <a href="/games/{{$.GameID}}/levels/{{.ID}}" class="text-blue-600 dark:text-blue-400 hover:underline font-medium text-gray-800 dark:text-gray-100" aria-label='{{ TF $.Lang "level.goto_level" .Name }}'>{{.Name}}</a>
@@ -37,7 +37,7 @@
     {{else}}
     <div class="card text-center py-12" role="status">
         <p class="text-gray-500 dark:text-gray-400">{{ T $.Lang "game.levels_no_levels" }}</p>
-        <p class="mt-2 text-sm text-gray-400"><a href="/games/{{.GameID}}/levels/new" class="text-blue-600 dark:text-blue-400 hover:underline">{{ T $.Lang "game.levels_create_first" }}</a></p>
+        <p class="mt-2 text-sm text-gray-500"><a href="/games/{{.GameID}}/levels/new" class="text-blue-600 dark:text-blue-400 hover:underline">{{ T $.Lang "game.levels_create_first" }}</a></p>
     </div>
     {{end}}
 

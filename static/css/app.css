@@ -106,7 +106,7 @@ input, textarea, select {
   color: #d1d5db;
 }
 .field-error {
-  color: #ef4444;
+  color: #dc2626; /* red-600 — контраст ~4.5:1 на белом (AA) */
   font-size: 0.75rem;
   margin-top: 0.25rem;
 }
