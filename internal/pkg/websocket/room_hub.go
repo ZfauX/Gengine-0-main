@@ -7,7 +7,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-const hubChanCapacity = 64
+const hubChanCapacity = 128
 
 // RoomHub управляет WebSocket-комнатами и клиентами.
 type RoomHub struct {

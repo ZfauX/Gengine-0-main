@@ -7,9 +7,7 @@
     </div>
 
     <div class="card mb-6">
-        <form action="/games/{{.Game.ID}}/testing/start" method="GET">
-            <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "gametest.start_button" }}</button>
-        </form>
+        <a href="/games/{{.Game.ID}}/testing/start" class="btn btn-primary text-sm">{{ T $.Lang "gametest.start_button" }}</a>
     </div>
 
     {{if .TestPassings}}

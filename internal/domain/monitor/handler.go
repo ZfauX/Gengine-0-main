@@ -765,17 +765,32 @@ func (h *MonitorHandler) ListLogs(c *gin.Context) {
 	}
 	gameID := req.ID
 
-	logs, err := h.gameService.GetLogsByGameID(c.Request.Context(), gameID)
+	// Пагинация (P-M5): не грузим все логи игры (поддерживается шаблоном).
+	page, perPage := 1, 50
+	if p, err := strconv.Atoi(c.Query("page")); err == nil && p > 0 {
+		page = p
+	}
+	if pp, err := strconv.Atoi(c.Query("per_page")); err == nil && pp > 0 {
+		perPage = pp
+	}
+
+	logs, total, err := h.gameService.GetLogsByGameIDPaginated(c.Request.Context(), gameID, page, perPage)
 	if err != nil {
 		log.Error().Err(err).Uint("game_id", gameID).Msg("ListLogs: failed to fetch logs")
 		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
+	totalPages := (int(total) + perPage - 1) / perPage
+	if totalPages < 1 {
+		totalPages = 1
+	}
 	render.Page(c, http.StatusOK, "logs-list.html", gin.H{
-		"Title":  "Журнал",
-		"GameID": gameID,
-		"Logs":   logs,
-		"csrf":   csrf.GetToken(c),
+		"Title":      "Журнал",
+		"GameID":     gameID,
+		"Logs":       logs,
+		"Page":       page,
+		"TotalPages": totalPages,
+		"csrf":       csrf.GetToken(c),
 	})
 }
 

@@ -24,7 +24,7 @@
                 {{if .Errors.Password}}{{if .Errors.Password}}<p class="field-error">{{.Errors.Password}}</p>{{end}}{{end}}
             </div>
 
-            <button type="submit" id="loginBtn" class="w-full btn btn-primary text-sm">{{ T $.Lang "auth.login_button" }}</button>
+            <button type="submit" id="loginBtn" data-no-loading class="w-full btn btn-primary text-sm">{{ T $.Lang "auth.login_button" }}</button>
         </form>
 
         <script nonce="{{.csp_nonce}}">
