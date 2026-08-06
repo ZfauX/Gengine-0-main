@@ -332,8 +332,10 @@ func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint
 			teamIDs[i] = p.TeamID
 		}
 
-		tournamentTeams, teamsErr := s.tournamentTeamRepo.GetByTournamentAndTeamIDs(ctx, tournament.ID, teamIDs)
-		if teamsErr != nil {
+		// Читаем турнирные команды ВНУТРИ транзакции через tx — репозиторий
+		// использует внешний r.db (отдельное соединение без search_path в схеме).
+		var tournamentTeams []TournamentTeam
+		if teamsErr := tx.Where("tournament_id = ? AND team_id IN ?", tournament.ID, teamIDs).Find(&tournamentTeams).Error; teamsErr != nil {
 			log.Error().Err(teamsErr).Uint("tournament_id", tournament.ID).Msg("UpdateScoresForGame: failed to get tournament teams")
 			return teamsErr
 		}

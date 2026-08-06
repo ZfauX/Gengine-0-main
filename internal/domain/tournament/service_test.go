@@ -134,3 +134,92 @@ func TestTournamentService_Leaderboard(t *testing.T) {
 	assert.Equal(t, tm1.ID, results[0].TeamID)
 	assert.Equal(t, tm2.ID, results[1].TeamID)
 }
+
+func intPtr(v int) *int { return &v }
+
+// TestTournamentService_UpdateScoresForGame: места 1/2 начисляются, прохождения
+// помечаются tournament_scored, сохраняется точное значение tournament_points,
+// повторный вызов не удваивает очки (T-H1).
+func TestTournamentService_UpdateScoresForGame(t *testing.T) {
+	db := setupTournamentDB(t)
+	teamSvc := newTeamService(db)
+	svc := newTournamentService(db, teamSvc)
+	ctx := context.Background()
+
+	author := createTournamentUser(t, db, "sc@test.com")
+	trn := &tournament.Tournament{
+		Name: "Scoring", AuthorID: author.ID,
+		PointsForFirst: 10, PointsForSecond: 7, PointsForThird: 5, PointsForParticipation: 2,
+	}
+	require.NoError(t, svc.Create(ctx, trn))
+
+	g := createTournamentGame(t, db, author.ID, "G1")
+	require.NoError(t, svc.AddGame(ctx, trn.ID, g.ID, author.ID))
+
+	tm1, _ := teamSvc.CreateTeam(ctx, "T1", author.ID)
+	tm2, _ := teamSvc.CreateTeam(ctx, "T2", author.ID)
+	require.NoError(t, db.Create(&tournament.TournamentTeam{TournamentID: trn.ID, TeamID: tm1.ID}).Error)
+	require.NoError(t, db.Create(&tournament.TournamentTeam{TournamentID: trn.ID, TeamID: tm2.ID}).Error)
+
+	p1 := &game.GamePassing{GameID: g.ID, TeamID: tm1.ID, Status: game.StatusFinished, Place: intPtr(1)}
+	p2 := &game.GamePassing{GameID: g.ID, TeamID: tm2.ID, Status: game.StatusFinished, Place: intPtr(2)}
+	require.NoError(t, db.Create(p1).Error)
+	require.NoError(t, db.Create(p2).Error)
+
+	svc.UpdateScoresForGame(ctx, g.ID)
+
+	var r1, r2 tournament.TournamentResult
+	require.NoError(t, db.Where("team_id = ?", tm1.ID).First(&r1).Error)
+	assert.Equal(t, 10, r1.Score)
+	assert.Equal(t, 1, r1.GamesPlayed)
+	require.NoError(t, db.Where("team_id = ?", tm2.ID).First(&r2).Error)
+	assert.Equal(t, 7, r2.Score)
+
+	var storedP1 game.GamePassing
+	require.NoError(t, db.First(&storedP1, p1.ID).Error)
+	assert.True(t, storedP1.TournamentScored)
+	assert.Equal(t, 10, storedP1.TournamentPoints)
+
+	// Идемпотентность: второй вызов не удваивает.
+	svc.UpdateScoresForGame(ctx, g.ID)
+	require.NoError(t, db.Where("team_id = ?", tm1.ID).First(&r1).Error)
+	assert.Equal(t, 10, r1.Score)
+}
+
+// TestTournamentService_RemoveGame: списывает точное начисленное значение
+// (tournament_points), а не пересчитывает по текущему месту (T-H1 / C-M2).
+func TestTournamentService_RemoveGame(t *testing.T) {
+	db := setupTournamentDB(t)
+	teamSvc := newTeamService(db)
+	svc := newTournamentService(db, teamSvc)
+	ctx := context.Background()
+
+	author := createTournamentUser(t, db, "rm@test.com")
+	trn := &tournament.Tournament{
+		Name: "Remove", AuthorID: author.ID,
+		PointsForFirst: 10, PointsForSecond: 7, PointsForThird: 5, PointsForParticipation: 2,
+	}
+	require.NoError(t, svc.Create(ctx, trn))
+
+	g := createTournamentGame(t, db, author.ID, "G1")
+	require.NoError(t, svc.AddGame(ctx, trn.ID, g.ID, author.ID))
+
+	tm1, _ := teamSvc.CreateTeam(ctx, "T1", author.ID)
+	require.NoError(t, db.Create(&tournament.TournamentTeam{TournamentID: trn.ID, TeamID: tm1.ID}).Error)
+
+	p1 := &game.GamePassing{GameID: g.ID, TeamID: tm1.ID, Status: game.StatusFinished, Place: intPtr(1)}
+	require.NoError(t, db.Create(p1).Error)
+
+	svc.UpdateScoresForGame(ctx, g.ID)
+
+	var r1 tournament.TournamentResult
+	require.NoError(t, db.Where("team_id = ?", tm1.ID).First(&r1).Error)
+	assert.Equal(t, 10, r1.Score)
+
+	require.NoError(t, svc.RemoveGame(ctx, trn.ID, g.ID, author.ID))
+
+	// После удаления единственной игры результат удалён.
+	var count int64
+	require.NoError(t, db.Model(&tournament.TournamentResult{}).Where("team_id = ?", tm1.ID).Count(&count).Error)
+	assert.Equal(t, int64(0), count)
+}
