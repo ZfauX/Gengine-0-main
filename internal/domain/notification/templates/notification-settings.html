@@ -59,6 +59,10 @@
                             class="btn btn-primary text-sm">
                         {{ T $.Lang "notif.enable_browser_btn" }}
                     </button>
+                    <button id="disable-push" class="btn btn-danger text-sm hidden">
+                        {{ T $.Lang "profile.disable_push" }}
+                    </button>
+                    <p id="push-status" class="text-xs text-gray-500 dark:text-gray-400 mt-2"></p>
                 </div>
                 {{end}}
             </div>

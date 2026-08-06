@@ -24,6 +24,13 @@
     <div class="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
         {{ TF $.Lang "notif.total" .Total }}
     </div>
+    {{if gt .TotalPages 1}}
+    <div class="mt-4 flex items-center justify-center gap-2 text-sm">
+        <a href="/notifications?page={{sub .Page 1}}" class="btn btn-outline text-sm {{if le .Page 1}}disabled pointer-events-none opacity-40{{end}}" aria-label='{{ T $.Lang "logs.prev" }}'>←</a>
+        <span aria-current="page">{{ TF $.Lang "logs.page" .Page .TotalPages }}</span>
+        <a href="/notifications?page={{add .Page 1}}" class="btn btn-outline text-sm {{if ge .Page .TotalPages}}disabled pointer-events-none opacity-40{{end}}" aria-label='{{ T $.Lang "logs.next" }}'>→</a>
+    </div>
+    {{end}}
     {{else}}
     <div class="card text-center py-12">
         <div class="text-4xl mb-4">🔔</div>

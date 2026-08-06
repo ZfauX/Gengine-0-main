@@ -2,9 +2,11 @@
 package calendar
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"gengine-0/internal/domain/game"
@@ -26,10 +28,22 @@ type CalendarDataRequest struct {
 type CalendarHandler struct {
 	gameRepo game.GameRepository
 	baseURL  string
+
+	// Кэш данных месяца (5 мин): календарь — публичная страница, часто
+	// опрашивается; данные меняются редко (при публикации/удалении игры).
+	cacheMu sync.Mutex
+	cache   map[string]calendarCacheEntry
 }
 
+type calendarCacheEntry struct {
+	data    []byte
+	expires time.Time
+}
+
+const calendarCacheTTL = 5 * time.Minute
+
 func NewCalendarHandler(gameRepo game.GameRepository) *CalendarHandler {
-	return &CalendarHandler{gameRepo: gameRepo}
+	return &CalendarHandler{gameRepo: gameRepo, cache: make(map[string]calendarCacheEntry)}
 }
 
 // WithBaseURL устанавливает канонический base URL (защита от host-header injection).
@@ -86,6 +100,15 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 	startOfMonth := time.Date(req.Year, time.Month(req.Month), 1, 0, 0, 0, 0, time.UTC)
 	endOfMonth := time.Date(req.Year, time.Month(req.Month)+1, 1, 0, 0, 0, 0, time.UTC).Add(-time.Second)
 
+	cacheKey := fmt.Sprintf("%d-%d", req.Year, req.Month)
+	h.cacheMu.Lock()
+	if e, ok := h.cache[cacheKey]; ok && time.Now().Before(e.expires) {
+		h.cacheMu.Unlock()
+		c.Data(200, "application/json; charset=utf-8", e.data)
+		return
+	}
+	h.cacheMu.Unlock()
+
 	ctx := c.Request.Context()
 	games, err := h.gameRepo.ListByDateRange(ctx, startOfMonth, endOfMonth)
 	if err != nil {
@@ -114,11 +137,21 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 		})
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	body, err := json.Marshal(gin.H{
 		"year":   req.Year,
 		"month":  req.Month,
 		"events": events,
 	})
+	if err != nil {
+		appErr := apperrors.Wrap(err, "CalendarHandler")
+		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
+		return
+	}
+	h.cacheMu.Lock()
+	h.cache[cacheKey] = calendarCacheEntry{data: body, expires: time.Now().Add(calendarCacheTTL)}
+	h.cacheMu.Unlock()
+
+	c.Data(http.StatusOK, "application/json; charset=utf-8", body)
 }
 
 // CalendarICal экспортирует предстоящие игры в формате iCalendar (.ics).

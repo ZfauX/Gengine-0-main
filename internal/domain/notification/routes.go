@@ -201,16 +201,27 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *gorm.DB, authSer
 	{
 		protectedNotifs.GET("/", func(c *gin.Context) {
 			userID := c.GetUint("userID")
-			notifications, total, err := service.GetByUser(c.Request.Context(), userID, 1, 50)
+			page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+			if page < 1 {
+				page = 1
+			}
+			perPage := 50
+			notifications, total, err := service.GetByUser(c.Request.Context(), userID, page, perPage)
 			if err != nil {
 				log.Error().Err(err).Uint("user_id", userID).Msg("Failed to list notifications")
 				render.RenderErrorPage(c, http.StatusInternalServerError)
 				return
 			}
+			totalPages := (int(total) + perPage - 1) / perPage
+			if totalPages < 1 {
+				totalPages = 1
+			}
 			render.Page(c, http.StatusOK, "notifications-list.html", gin.H{
 				"Title":         "Уведомления",
 				"Notifications": notifications,
 				"Total":         total,
+				"Page":          page,
+				"TotalPages":    totalPages,
 				"CurrentUserID": userID,
 				"csrf":          csrf.GetToken(c),
 				"Breadcrumbs": []map[string]string{

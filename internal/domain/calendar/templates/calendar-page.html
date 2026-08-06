@@ -55,9 +55,13 @@
         '{{ T $.Lang "calendar.month_jul" }}', '{{ T $.Lang "calendar.month_aug" }}', '{{ T $.Lang "calendar.month_sep" }}', '{{ T $.Lang "calendar.month_oct" }}', '{{ T $.Lang "calendar.month_nov" }}', '{{ T $.Lang "calendar.month_dec" }}'
     ];
 
+    // M7: игнорируем устаревшие ответы (быстрые prev/next).
+    let calendarReqToken = 0;
+
     function loadCalendar(year, month) {
         currentYear = year;
         currentMonth = month;
+        const token = ++calendarReqToken;
 
         document.getElementById('month-year').textContent = `${monthNames[month]} ${year}`;
 
@@ -66,9 +70,11 @@
         })
             .then(r => r.json())
             .then(data => {
+                if (token !== calendarReqToken) return; // устаревший ответ
                 renderCalendar(data.year, data.month, data.events);
             })
             .catch(err => {
+                if (token !== calendarReqToken) return;
                 console.error('Calendar load error:', err);
                 document.getElementById('calendar-body').innerHTML =
                     `<tr><td colspan="7" class="p-4 text-center text-red-500">{{ T $.Lang "calendar.load_error" }}</td></tr>`;

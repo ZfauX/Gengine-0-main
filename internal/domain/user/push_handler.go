@@ -1,6 +1,7 @@
 package user
 
 import (
+	"context"
 	"errors"
 	"net"
 	"net/http"
@@ -150,7 +151,8 @@ func (h *PushHandler) VapidPublicKey(c *gin.Context) {
 }
 
 // validPushEndpoint проверяет endpoint push-подписки: https-схема,
-// валидный URL и не локальный/приватный адрес (защита от SSRF).
+// валидный URL и не локальный/приватный адрес (защита от SSRF, включая
+// DNS-rebinding — резолвим имя и проверяем все полученные IP).
 func validPushEndpoint(endpoint string) bool {
 	u, err := url.Parse(endpoint)
 	if err != nil {
@@ -164,9 +166,22 @@ func validPushEndpoint(endpoint string) bool {
 		return false
 	}
 	if ip := net.ParseIP(host); ip != nil {
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		return !isPrivateIP(ip)
+	}
+	// DNS-rebinding: имя может резолвиться в приватный адрес на момент отправки.
+	addrs, err := net.DefaultResolver.LookupHost(context.Background(), host)
+	if err != nil {
+		return false
+	}
+	for _, addr := range addrs {
+		ip := net.ParseIP(addr)
+		if ip == nil || isPrivateIP(ip) {
 			return false
 		}
 	}
 	return true
+}
+
+func isPrivateIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
 }
