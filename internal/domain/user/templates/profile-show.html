@@ -202,8 +202,21 @@
             avatarBtn.addEventListener('click', function() {
                 avatarInput.click();
             });
-            // Автоматическая отправка формы при выборе файла
+            // Автоматическая отправка формы при выборе файла + клиентская
+            // валидация (U-14): размер и тип до загрузки.
             avatarInput.addEventListener('change', function() {
+                const file = this.files && this.files[0];
+                if (!file) return;
+                if (!file.type.startsWith('image/')) {
+                    window.showToast('{{ T $.Lang "profile.avatar_type_error" }}', 'error');
+                    this.value = '';
+                    return;
+                }
+                if (file.size > 2 * 1024 * 1024) {
+                    window.showToast('{{ T $.Lang "profile.avatar_size_error" }}', 'error');
+                    this.value = '';
+                    return;
+                }
                 const form = document.getElementById('avatar-form');
                 if (form) form.submit();
             });

@@ -127,7 +127,7 @@
                 {{ TF $.Lang "games.pagination_page" .CurrentPage .TotalPages }}
                 <span class="text-gray-500 dark:text-gray-400">{{ TF $.Lang "games.pagination_total" .TotalItems }}</span>
             </p>
-            <nav class="inline-flex gap-1" aria-label="Pagination">
+            <nav class="inline-flex gap-1" aria-label='{{ T $.Lang "common.pagination" }}'>
                 {{if gt .CurrentPage 1}}
                     <a href="?page={{.CurrentPage | sub 1}}" class="btn btn-outline text-sm px-3 py-1">←</a>
                 {{end}}

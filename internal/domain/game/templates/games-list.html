@@ -173,7 +173,7 @@
                 {{ TF $.Lang "games.pagination_page" .Page .TotalPages }}
                 <span class="text-gray-500">{{ TF $.Lang "games.pagination_total" .Total }}</span>
             </p>
-            <nav class="inline-flex gap-1" aria-label="Pagination">
+            <nav class="inline-flex gap-1" aria-label='{{ T $.Lang "common.pagination" }}'>
                 {{if gt .Page 1}}
                     <a href="?page={{.PrevPage}}&status={{$.Filter.Status}}&search={{$.Filter.Search}}&date_from={{$.Filter.DateFrom}}&date_to={{$.Filter.DateTo}}" class="btn btn-outline text-sm px-3 py-1" aria-label="{{ T $.Lang "games.pagination_prev" }}">←</a>
                 {{end}}

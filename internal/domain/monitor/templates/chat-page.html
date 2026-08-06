@@ -5,9 +5,9 @@
     <div class="card">
         <!-- Кнопки переключения комнат -->
         <div class="flex flex-wrap gap-2 mb-4">
-            <button id="btn-general" class="btn btn-primary text-sm">{{ T $.Lang "gamechat.general" }}</button>
+            <button id="btn-general" class="btn btn-primary text-sm" aria-pressed="true">{{ T $.Lang "gamechat.general" }}</button>
             {{if .PassingID}}
-            <button id="btn-team" class="btn btn-outline text-sm">{{ T $.Lang "gamechat.team" }}</button>
+            <button id="btn-team" class="btn btn-outline text-sm" aria-pressed="false">{{ T $.Lang "gamechat.team" }}</button>
             {{end}}
         </div>
 
@@ -160,7 +160,8 @@
             if (currentRoom === 'general') return;
             currentRoom = 'general';
             btnGeneral.className = 'btn btn-primary text-sm';
-            if (btnTeam) btnTeam.className = 'btn btn-outline text-sm';
+            btnGeneral.setAttribute('aria-pressed', 'true');
+            if (btnTeam) { btnTeam.className = 'btn btn-outline text-sm'; btnTeam.setAttribute('aria-pressed', 'false'); }
             connect();
         });
 
@@ -169,7 +170,9 @@
                 if (currentRoom === 'team') return;
                 currentRoom = 'team';
                 btnTeam.className = 'btn btn-primary text-sm';
+                btnTeam.setAttribute('aria-pressed', 'true');
                 btnGeneral.className = 'btn btn-outline text-sm';
+                btnGeneral.setAttribute('aria-pressed', 'false');
                 connect();
             });
         }

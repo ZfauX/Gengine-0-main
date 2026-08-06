@@ -68,7 +68,7 @@
                         {{end}}
                     </div>
                     <div class="flex flex-wrap items-center gap-2 text-sm">
-                        <a href="/games/{{$.GameID}}/levels/{{$.Level.ID}}/questions/{{.ID}}/edit" class="btn btn-outline text-xs" title='{{ T $.Lang "common.edit" }}'>✎</a>
+                        <a href="/games/{{$.GameID}}/levels/{{$.Level.ID}}/questions/{{.ID}}/edit" class="btn btn-outline text-xs" aria-label='{{ T $.Lang "common.edit" }}' title='{{ T $.Lang "common.edit" }}'>✎</a>
                         <a href="/games/{{$.GameID}}/levels/{{$.Level.ID}}/questions/{{.ID}}/answers" class="btn btn-outline text-xs">{{ T $.Lang "level.answers_label" }}</a>
                         <form action="/games/{{$.GameID}}/levels/{{$.Level.ID}}/questions/{{.ID}}/delete" method="POST" class="inline" data-confirm-form='{{ T $.Lang "question.delete_confirm" }}'>
                             <input type="hidden" name="_csrf" value="{{$.csrf}}">

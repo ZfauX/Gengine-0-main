@@ -177,7 +177,7 @@
                     <!-- Колокольчик уведомлений -->
                     {{if .CurrentUserID}}
                     <div class="relative">
-                        <button id="notificationBell" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400 relative" title="{{ T $.Lang "nav.notifications" }}" aria-label="{{ T $.Lang "nav.notifications" }}">
+                        <button id="notificationBell" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400 relative" title="{{ T $.Lang "nav.notifications" }}" aria-label="{{ T $.Lang "nav.notifications" }}" aria-expanded="false" aria-haspopup="true">
                             🔔
                             {{if .UnreadNotificationCount}}
                             <span class="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">{{.UnreadNotificationCount}}</span>
@@ -203,8 +203,8 @@
                     </button>
                     <!-- Language switch -->
                     <div class="flex items-center space-x-1">
-                        <button data-lang="ru" class="lang-btn px-2 py-1 text-xs rounded {{if eq .Lang "ru"}}bg-primary-600 text-white{{else}}text-gray-500 dark:text-gray-400 hover:text-gray-700{{end}}">RU</button>
-                        <button data-lang="en" class="lang-btn px-2 py-1 text-xs rounded {{if eq .Lang "en"}}bg-primary-600 text-white{{else}}text-gray-500 dark:text-gray-400 hover:text-gray-700{{end}}">EN</button>
+                        <button data-lang="ru" aria-label="Русский" aria-pressed="{{if eq .Lang "ru"}}true{{else}}false{{end}}" class="lang-btn px-3 py-2 text-xs rounded {{if eq .Lang "ru"}}bg-primary-600 text-white{{else}}text-gray-500 dark:text-gray-400 hover:text-gray-700{{end}}">RU</button>
+                        <button data-lang="en" aria-label="English" aria-pressed="{{if eq .Lang "en"}}true{{else}}false{{end}}" class="lang-btn px-3 py-2 text-xs rounded {{if eq .Lang "en"}}bg-primary-600 text-white{{else}}text-gray-500 dark:text-gray-400 hover:text-gray-700{{end}}">EN</button>
                     </div>
                     {{if .CurrentUserID}}
                         <a href="/dashboard" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400">{{ T $.Lang "nav.dashboard" }}</a>
@@ -554,8 +554,10 @@
 
             bell.addEventListener('click', function(e) {
                 e.stopPropagation();
+                const opening = dropdown.classList.contains('hidden');
                 dropdown.classList.toggle('hidden');
-                if (!dropdown.classList.contains('hidden') && list.innerHTML.trim() === '') {
+                bell.setAttribute('aria-expanded', opening ? 'true' : 'false');
+                if (opening && list.innerHTML.trim() === '') {
                     loadNotifications();
                 }
             });
@@ -563,6 +565,7 @@
             document.addEventListener('click', function(e) {
                 if (!dropdown.contains(e.target) && e.target !== bell) {
                     dropdown.classList.add('hidden');
+                    bell.setAttribute('aria-expanded', 'false');
                 }
             });
 

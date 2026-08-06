@@ -3,7 +3,7 @@
     <h1 class="page-title">{{ T $.Lang "admin.users_title" }}</h1>
 
     <!-- Навигация -->
-    <nav class="flex flex-wrap gap-2 p-3 bg-gray-100 dark:bg-gray-800 rounded-lg mb-6">
+    <nav aria-label='{{ T $.Lang "common.admin_nav" }}' class="flex flex-wrap gap-2 p-3 bg-gray-100 dark:bg-gray-800 rounded-lg mb-6">
         <a href="/admin" class="btn btn-outline text-sm">{{ T $.Lang "admin.dashboard" }}</a>
         <a href="/admin/users" class="btn btn-primary text-sm">{{ T $.Lang "admin.users" }}</a>
         <a href="/admin/games" class="btn btn-outline text-sm">{{ T $.Lang "admin.games" }}</a>
@@ -97,7 +97,7 @@
                 {{ TF $.Lang "admin.pagination_page" .Page .TotalPages }}
                 <span class="text-gray-500 dark:text-gray-400">{{ TF $.Lang "admin.pagination_total" .Total }}</span>
             </p>
-            <nav class="inline-flex gap-1" aria-label="Pagination">
+            <nav class="inline-flex gap-1" aria-label='{{ T $.Lang "common.pagination" }}'>
                 {{if gt .Page 1}}
                     <a href="?page={{.PrevPage}}&role={{$.Role}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm px-3 py-1" aria-label="{{ T $.Lang "games.pagination_prev" }}">←</a>
                 {{end}}

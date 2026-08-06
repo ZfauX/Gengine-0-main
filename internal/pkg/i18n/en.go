@@ -434,6 +434,8 @@ var enMessages = map[string]string{
 	"common.edit":         "Edit",
 	"common.back":         "← Back",
 	"common.search":       "Search",
+	"common.pagination":   "Pagination",
+	"common.admin_nav":    "Admin navigation",
 	"common.create":       "Create",
 	"common.save_changes": "Save changes",
 	"common.add":          "Add",
@@ -631,6 +633,8 @@ var enMessages = map[string]string{
 	"profile.public_profile":        "Public profile",
 	"profile.logout":                "Logout",
 	"profile.avatar_alt":            "Avatar",
+	"profile.avatar_type_error":     "Choose an image file (JPEG/PNG)",
+	"profile.avatar_size_error":     "Image must not exceed 2 MB",
 	"profile.settings_saved":        "Settings saved",
 	"profile.settings_save_error":   "Save error",
 

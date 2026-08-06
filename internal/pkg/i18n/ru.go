@@ -456,6 +456,8 @@ var ruMessages = map[string]string{
 	"common.edit":         "Редактировать",
 	"common.back":         "← Назад",
 	"common.search":       "Поиск",
+	"common.pagination":   "Пагинация",
+	"common.admin_nav":    "Навигация по админке",
 	"common.create":       "Создать",
 	"common.save_changes": "Сохранить изменения",
 	"common.add":          "Добавить",
@@ -652,6 +654,8 @@ var ruMessages = map[string]string{
 	"profile.public_profile":        "Публичный профиль",
 	"profile.logout":                "Выйти",
 	"profile.avatar_alt":            "Аватар",
+	"profile.avatar_type_error":     "Выберите файл изображения (JPEG/PNG)",
+	"profile.avatar_size_error":     "Изображение не должно превышать 2 МБ",
 	"profile.settings_saved":        "Настройки сохранены",
 	"profile.settings_save_error":   "Ошибка сохранения",
 
