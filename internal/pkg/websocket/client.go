@@ -30,6 +30,12 @@ type Client struct {
 	closed       bool
 	done         chan struct{} // сигнал о завершении всех горутин
 	LastActivity time.Time     // последнее время активности
+
+	// registered защищается hub.mu: true, пока клиент числится в счётчиках
+	// (totalConns/connsPerIP). Позволяет сделать unregister идемпотентным —
+	// и handler, и writePump вызывают UnregisterClient, и без этого флага
+	// счётчики декрементировались бы дважды (P1).
+	registered bool
 }
 
 func NewClient(conn *websocket.Conn, roomID, remoteIP string) *Client {

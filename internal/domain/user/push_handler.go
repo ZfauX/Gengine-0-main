@@ -183,5 +183,17 @@ func validPushEndpoint(endpoint string) bool {
 }
 
 func isPrivateIP(ip net.IP) bool {
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
+	// Раскрываем IPv4-mapped IPv6 (::ffff:10.x.x.x), иначе приватность теряется.
+	if v4 := ip.To4(); v4 != nil {
+		ip = v4
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		return true
+	}
+	// S4: CGNAT (RFC 6598) — «приватная» сеть операторов, SSRF-таргет.
+	if ip.To4() != nil {
+		cgnat := ip.To4()
+		return cgnat[0] == 100 && cgnat[1] >= 64 && cgnat[1] <= 127
+	}
+	return false
 }

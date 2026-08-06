@@ -123,12 +123,19 @@ func (h *RoomHub) GetHealthStatus() map[string]any {
 		roomCount++
 	}
 
+	// P2: копируем map — caller (admin handler) сериализует её в JSON после
+	// освобождения лока, одновременная запись в живую map = concurrent map panic.
+	perIPCpy := make(map[string]int, len(h.connsPerIP))
+	for k, v := range h.connsPerIP {
+		perIPCpy[k] = v
+	}
+
 	return map[string]any{
 		"status":       "healthy",
 		"total_conns":  h.totalConns,
 		"max_total":    h.maxTotalConns,
 		"rooms":        roomCount,
-		"conns_per_ip": h.connsPerIP,
+		"conns_per_ip": perIPCpy,
 		"timestamp":    time.Now().UTC().Format(time.RFC3339),
 	}
 }

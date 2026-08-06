@@ -522,6 +522,7 @@ var enMessages = map[string]string{
 	// ── 2FA ──
 	"twofa.page_title":             "Two-factor authentication",
 	"twofa.qr_step":                "1. Scan QR code",
+	"twofa.password_label":         "Current password",
 	"twofa.qr_instructions":        "Open your authenticator app (Google Authenticator, Authy, etc.) and scan the QR code below.",
 	"twofa.manual_step":            "2. Or enter key manually",
 	"twofa.key_type":               "Key type: TOTP (time-based)",

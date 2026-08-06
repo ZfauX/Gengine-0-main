@@ -175,14 +175,18 @@ func (s *valkeyStore) Allow(key string) RateLimitResult {
 
 	result, err := rateLimitLua.Run(ctx, s.client, []string{key}, s.limit, windowSec).Result()
 	if err != nil {
-		log.Error().Err(err).Str("key", key).Msg("valkey: Allow check failed, denying request")
-		return RateLimitResult{Allowed: false, Limit: s.limit, Remaining: 0, ResetUnix: resetUnix}
+		// P3: fail-open при сбое Valkey. Если Redis недоступен, каждый запрос
+		// получал 429 (все лимитеры — глобальный, логин, API — держатся на нём),
+		// т.е. outage кэша превращался в полный outage сайта. Доступность
+		// важнее строгого лимита при кратковременном сбое.
+		log.Error().Err(err).Str("key", key).Msg("valkey: Allow check failed, allowing request (fail-open)")
+		return RateLimitResult{Allowed: true, Limit: s.limit, Remaining: s.limit, ResetUnix: resetUnix}
 	}
 
 	vals, ok := result.([]any)
 	if !ok || len(vals) < 3 {
-		log.Error().Str("key", key).Interface("result", result).Msg("valkey: unexpected script result, denying request")
-		return RateLimitResult{Allowed: false, Limit: s.limit, Remaining: 0, ResetUnix: resetUnix}
+		log.Error().Str("key", key).Interface("result", result).Msg("valkey: unexpected script result, allowing request (fail-open)")
+		return RateLimitResult{Allowed: true, Limit: s.limit, Remaining: s.limit, ResetUnix: resetUnix}
 	}
 
 	allowed, _ := vals[0].(int64)

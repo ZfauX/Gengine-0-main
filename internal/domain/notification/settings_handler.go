@@ -151,16 +151,19 @@ func (h *SettingsHandler) APIEmailFlags(c *gin.Context) {
 func (h *SettingsHandler) APIEmailSave(c *gin.Context) {
 	userID := c.GetUint("userID")
 
+	// N3: указатели — клиент может прислать только изменённые флаги.
+	// nil-поля не затирают текущие настройки (раньше partial update
+	// сбрасывал все отсутствующие флаги в false).
 	var input struct {
-		EmailEnabled             bool `json:"email_enabled"`
-		BrowserEnabled           bool `json:"browser_enabled"`
-		PushEnabled              bool `json:"push_enabled"`
-		EmailGameStarted         bool `json:"email_game_started"`
-		EmailLevelCompleted      bool `json:"email_level_completed"`
-		EmailApplicationAccepted bool `json:"email_application_accepted"`
-		EmailApplicationRejected bool `json:"email_application_rejected"`
-		EmailTimeWarning         bool `json:"email_time_warning"`
-		EmailTimeExpired         bool `json:"email_time_expired"`
+		EmailEnabled             *bool `json:"email_enabled"`
+		BrowserEnabled           *bool `json:"browser_enabled"`
+		PushEnabled              *bool `json:"push_enabled"`
+		EmailGameStarted         *bool `json:"email_game_started"`
+		EmailLevelCompleted      *bool `json:"email_level_completed"`
+		EmailApplicationAccepted *bool `json:"email_application_accepted"`
+		EmailApplicationRejected *bool `json:"email_application_rejected"`
+		EmailTimeWarning         *bool `json:"email_time_warning"`
+		EmailTimeExpired         *bool `json:"email_time_expired"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -168,16 +171,38 @@ func (h *SettingsHandler) APIEmailSave(c *gin.Context) {
 		return
 	}
 
-	settings := &Settings{
-		EmailEnabled:             input.EmailEnabled,
-		BrowserEnabled:           input.BrowserEnabled,
-		PushEnabled:              input.PushEnabled,
-		EmailGameStarted:         input.EmailGameStarted,
-		EmailLevelCompleted:      input.EmailLevelCompleted,
-		EmailApplicationAccepted: input.EmailApplicationAccepted,
-		EmailApplicationRejected: input.EmailApplicationRejected,
-		EmailTimeWarning:         input.EmailTimeWarning,
-		EmailTimeExpired:         input.EmailTimeExpired,
+	// Начинаем с текущих настроек и применяем только переданные поля.
+	settings, err := h.svc.GetSettings(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ошибка загрузки настроек"})
+		return
+	}
+	if input.EmailEnabled != nil {
+		settings.EmailEnabled = *input.EmailEnabled
+	}
+	if input.BrowserEnabled != nil {
+		settings.BrowserEnabled = *input.BrowserEnabled
+	}
+	if input.PushEnabled != nil {
+		settings.PushEnabled = *input.PushEnabled
+	}
+	if input.EmailGameStarted != nil {
+		settings.EmailGameStarted = *input.EmailGameStarted
+	}
+	if input.EmailLevelCompleted != nil {
+		settings.EmailLevelCompleted = *input.EmailLevelCompleted
+	}
+	if input.EmailApplicationAccepted != nil {
+		settings.EmailApplicationAccepted = *input.EmailApplicationAccepted
+	}
+	if input.EmailApplicationRejected != nil {
+		settings.EmailApplicationRejected = *input.EmailApplicationRejected
+	}
+	if input.EmailTimeWarning != nil {
+		settings.EmailTimeWarning = *input.EmailTimeWarning
+	}
+	if input.EmailTimeExpired != nil {
+		settings.EmailTimeExpired = *input.EmailTimeExpired
 	}
 
 	if err := h.svc.SaveSettings(c.Request.Context(), userID, settings); err != nil {

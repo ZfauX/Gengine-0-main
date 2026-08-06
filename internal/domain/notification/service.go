@@ -283,11 +283,14 @@ func (s *NotificationService) sendWebPush(ctx context.Context, userID uint, n *N
 			},
 		}
 		resp, err := webpush.SendNotificationWithContext(ctx, payload, wsub, opts)
+		// N2: закрываем body даже при ошибке (иначе утечка соединения).
+		if resp != nil {
+			resp.Body.Close()
+		}
 		if err != nil {
 			log.Warn().Err(err).Uint("user_id", userID).Uint("sub_id", sub.ID).Msg("webpush send error")
 			continue
 		}
-		resp.Body.Close()
 		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone {
 			// Подписка устарела — удаляем
 			if err := s.db.WithContext(ctx).Where("id = ?", sub.ID).Delete(&user.PushSubscription{}).Error; err != nil {

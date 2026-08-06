@@ -493,12 +493,10 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 		if genErr != nil {
 			log.Error().Err(genErr).Str("email", input.Email).Msg("ForgotPassword: failed to generate token")
 		} else if !h.cfg.SMTP.Enabled {
-			// Mask reset code in logs for security — show first 4 chars only
-			maskedCode := resetCode
-			if len(maskedCode) > 4 {
-				maskedCode = maskedCode[:4] + "****"
-			}
-			log.Info().Str("email", input.Email).Str("reset_code", maskedCode).Msg("ForgotPassword: reset link (SMTP disabled, see log)")
+			// S7: код сброса НЕ логируем вовсе (даже частично — 16 бит энтропии
+			// при доступе к логам перебираются). Логируем только факт генерации;
+			// в dev-режиме код доступен в ответе/консоли админа иначе.
+			log.Info().Str("email", input.Email).Msg("ForgotPassword: reset link generated (SMTP disabled)")
 		} else if h.emailSvc != nil {
 			resetURL := h.cfg.Server.BaseURL + "/auth/reset/" + resetCode
 			subject := "Восстановление пароля"
@@ -684,6 +682,9 @@ func (h *AuthHandler) OAuthLogin(c *gin.Context) {
 	session := sessions.Default(c)
 	session.Set("oauth_state", state)
 	session.Set("oauth_state_created", time.Now().Unix())
+	// S8: state привязан к провайдеру — state для Yandex не должен
+	// приниматься в callback VK (provider confusion).
+	session.Set("oauth_provider", req.Provider)
 	// NOTE: Session fixation is mitigated because auth uses JWT cookies, not session data.
 	// After OAuth callback, the old session is cleared (oauth_state deleted) and a new
 	// session is created implicitly on the next request to the redirect target.
@@ -740,6 +741,17 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 		})
 		return
 	}
+	// S8: callback принимается только от того провайдера, которому был
+	// выдан state (state для другого провайдера отклоняется).
+	if savedProvider, hasProvider := session.Get("oauth_provider").(string); hasProvider && savedProvider != "" && savedProvider != req.Provider {
+		log.Warn().Str("saved", savedProvider).Str("callback", req.Provider).Msg("OAuthCallback: provider mismatch")
+		render.Page(c, http.StatusBadRequest, "auth-login.html", gin.H{
+			"Title": render.Tr(c, "auth.login_title"),
+			"Error": render.Tr(c, "handler.state_mismatch"),
+			"csrf":  csrf.GetToken(c),
+		})
+		return
+	}
 
 	// Check OAuth state expiry — require the created timestamp to exist
 	stateCreatedVal := session.Get("oauth_state_created")
@@ -752,6 +764,7 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 
 	session.Delete("oauth_state")
 	session.Delete("oauth_state_created")
+	session.Delete("oauth_provider")
 	if err := session.Save(); err != nil {
 		log.Error().Err(err).Msg("OAuthCallback: failed to clear session")
 	}

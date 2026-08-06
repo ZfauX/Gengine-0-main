@@ -54,8 +54,12 @@ func isHTTPS(c *gin.Context) bool {
 	if c.Request.TLS != nil {
 		return true
 	}
-	// Check X-Forwarded-Proto for reverse proxy setups
-	if fwdProto := c.GetHeader("X-Forwarded-Proto"); fwdProto == "https" {
+	// S9: X-Forwarded-Proto доверяем ТОЛЬКО если запрос реально пришёл через
+	// доверенный прокси. В Gin ClientIP() != RemoteIP() тогда и только тогда,
+	// когда RemoteAddr распознан как доверенный прокси (иначе X-Forwarded-*
+	// игнорируется). При прямом HTTP-доступе подделка заголовка не влияет на
+	// Secure-флаг cookie.
+	if fwdProto := c.GetHeader("X-Forwarded-Proto"); fwdProto == "https" && c.ClientIP() != c.RemoteIP() {
 		return true
 	}
 	// Force Secure if configured (e.g., when behind TLS-terminating proxy)

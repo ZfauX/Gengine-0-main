@@ -225,6 +225,13 @@ func (s *ExportService) ImportGameFromCSV(ctx context.Context, gameID uint, r io
 				err := tx.Where("game_id = ? AND position = ?", gameID, pos).First(&existing).Error
 				if err == nil {
 					lvl = &existing
+					// E3: re-import уровня — заменяем вопросы/ответы, а не
+					// дописываем дубликаты (backup/restore итеративная правка).
+					// Unscoped: DB-каскад answers→questions сработает только на
+					// физическом удалении, soft-delete оставил бы сироты.
+					if delErr := tx.Unscoped().Where("level_id = ?", lvl.ID).Delete(&level.Question{}).Error; delErr != nil {
+						return fmt.Errorf("не удалось удалить старые вопросы уровня: %w", delErr)
+					}
 				} else if stderrors.Is(err, gorm.ErrRecordNotFound) {
 					newLevel := level.Level{
 						GameID:   gameID,

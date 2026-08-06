@@ -79,13 +79,15 @@ func NotificationsWS(hub *ws.RoomHub) gin.HandlerFunc {
 
 		log.Debug().Uint("user_id", userID).Str("room", roomID).Msg("NotificationsWS: connected")
 
-		ctx, cancel := context.WithCancel(c.Request.Context())
-		defer cancel()
+		// N1: контекст не привязываем к c.Request.Context() — после возврата
+		// handler'а Gin отменяет его, что убило бы WS мгновенно.
+		ctx, cancel := context.WithCancel(context.Background())
 
 		go func() {
 			defer func() {
 				hub.UnregisterClient(client)
 				client.Close()
+				cancel()
 			}()
 			ws.HandleWebSocketWithContext(ctx, client)
 		}()

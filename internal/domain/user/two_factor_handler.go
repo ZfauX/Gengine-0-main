@@ -290,7 +290,8 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 	}
 
 	var input struct {
-		Code string `form:"code" binding:"required"`
+		Code     string `form:"code" binding:"required"`
+		Password string `form:"password" binding:"required"`
 	}
 	if err := c.ShouldBind(&input); err != nil {
 		c.Redirect(http.StatusFound, "/user/2fa/enable")
@@ -300,6 +301,21 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 	user, err := h.userRepo.GetByID(c.Request.Context(), userID)
 	if err != nil {
 		render.RenderErrorPage(c, http.StatusNotFound)
+		return
+	}
+
+	// S2: включение 2FA требует подтверждения пароля. Иначе атакующий с
+	// украденной сессией привязал бы свой TOTP-секрет к чужому аккаунту.
+	renderEnableError := func(msg string) {
+		render.Page(c, http.StatusOK, "user-2fa-enable.html", gin.H{
+			"Title": render.Tr(c, "twofa.page_title"),
+			"Error": msg,
+			"User":  user.ToPublic(),
+			"csrf":  csrf.GetToken(c),
+		})
+	}
+	if bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)) != nil {
+		renderEnableError(render.Tr(c, "handler.wrong_password"))
 		return
 	}
 
@@ -319,35 +335,20 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 	// Проверяем код против сохранённого секрета
 	valid, err := h.twoFactorSvc.VerifyCode(pendingSecret, input.Code)
 	if err != nil || !valid {
-		render.Page(c, http.StatusOK, "user-2fa-enable.html", gin.H{
-			"Title": render.Tr(c, "twofa.page_title"),
-			"Error": render.Tr(c, "handler.wrong_code_try_again"),
-			"User":  user.ToPublic(),
-			"csrf":  csrf.GetToken(c),
-		})
+		renderEnableError(render.Tr(c, "handler.wrong_code_try_again"))
 		return
 	}
 
 	// Генерируем резервные коды
 	backupCodes, err := h.twoFactorSvc.GenerateBackupCodes()
 	if err != nil {
-		render.Page(c, http.StatusOK, "user-2fa-enable.html", gin.H{
-			"Title": render.Tr(c, "twofa.page_title"),
-			"Error": render.LocalizeError(c, err.Error()),
-			"User":  user.ToPublic(),
-			"csrf":  csrf.GetToken(c),
-		})
+		renderEnableError(render.LocalizeError(c, err.Error()))
 		return
 	}
 
 	hashedCodes, err := h.twoFactorSvc.HashBackupCodes(backupCodes)
 	if err != nil {
-		render.Page(c, http.StatusOK, "user-2fa-enable.html", gin.H{
-			"Title": render.Tr(c, "twofa.page_title"),
-			"Error": render.LocalizeError(c, err.Error()),
-			"User":  user.ToPublic(),
-			"csrf":  csrf.GetToken(c),
-		})
+		renderEnableError(render.LocalizeError(c, err.Error()))
 		return
 	}
 

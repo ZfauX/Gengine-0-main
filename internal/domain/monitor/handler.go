@@ -97,6 +97,40 @@ var (
 	monitorPollersMu sync.Mutex
 )
 
+// wsMessageLimiter — простой per-connection token bucket для WS-сообщений.
+// Защищает от спама через один сокет (нет глобального состояния, GC-safe).
+type wsMessageLimiter struct {
+	mu    sync.Mutex
+	limit int
+	// Скользящее окно: храним времена последних сообщений.
+	window time.Duration
+	times  []time.Time
+}
+
+// Allow возвращает true, если сообщение можно принять.
+func (l *wsMessageLimiter) Allow() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	now := time.Now()
+	cutoff := now.Add(-l.window)
+
+	// Отбрасываем записи старше окна.
+	kept := l.times[:0]
+	for _, t := range l.times {
+		if t.After(cutoff) {
+			kept = append(kept, t)
+		}
+	}
+	l.times = kept
+
+	if len(l.times) >= l.limit {
+		return false
+	}
+	l.times = append(l.times, now)
+	return true
+}
+
 type monitorGamePoller struct {
 	cancel      context.CancelFunc
 	wg          sync.WaitGroup
@@ -160,6 +194,14 @@ func subscribeMonitor(gameID uint, snapFn func(context.Context) ([]byte, error))
 
 	poller.subMu.Lock()
 	poller.subscribers = append(poller.subscribers, sub)
+	// M2: новый подписчик сразу получает текущий снапшот (если он есть),
+	// иначе при неизменных данных он ждал бы следующего изменения состояния.
+	if poller.lastData != nil {
+		select {
+		case sub.ch <- poller.lastData:
+		default:
+		}
+	}
 	poller.subMu.Unlock()
 
 	return sub
@@ -186,11 +228,17 @@ func StopAllMonitorPollers() {
 func unsubscribeMonitor(gameID uint, sub *monitorSubscriber) {
 	monitorPollersMu.Lock()
 	poller, exists := monitorPollers[gameID]
-	monitorPollersMu.Unlock()
 	if !exists {
+		monitorPollersMu.Unlock()
 		return
 	}
 
+	// M1: держим глобальный мьютекс на время удаления подписчика и решения
+	// об удалении poller из map. subscribeMonitor тоже держит его при append,
+	// поэтому конкурентный subscribe либо увидит poller (remaining>0) и
+	// прицепится к живому, либо не найдёт его (remaining==0) и создаст новый.
+	// Раньше окно между cancel() и delete(monitorPollers) позволяло прицепить
+	// подписчика к отменённому сборщику — тот висел без данных.
 	poller.subMu.Lock()
 	for i, s := range poller.subscribers {
 		if s == sub {
@@ -200,17 +248,16 @@ func unsubscribeMonitor(gameID uint, sub *monitorSubscriber) {
 		}
 	}
 	remaining := len(poller.subscribers)
+	if remaining == 0 {
+		delete(monitorPollers, gameID)
+	}
 	poller.subMu.Unlock()
+	monitorPollersMu.Unlock()
 
 	if remaining == 0 {
 		poller.cancel()
 		// Wait outside the global mutex to avoid blocking other games
 		poller.wg.Wait()
-		monitorPollersMu.Lock()
-		if current, ok := monitorPollers[gameID]; ok && current == poller {
-			delete(monitorPollers, gameID)
-		}
-		monitorPollersMu.Unlock()
 	}
 }
 
@@ -617,6 +664,10 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 
 	go ws.WritePumpWithContext(wsCtx, client)
 
+	// M5: per-connection rate limit — не более 10 сообщений за 5 секунд
+	// (token bucket, защита от спама/DoS через один сокет).
+	msgLimiter := &wsMessageLimiter{limit: 10, window: 5 * time.Second}
+
 	// Set read deadline and pong handler to prevent goroutine leaks on client disconnect
 	conn.SetReadLimit(32 * 1024)
 	conn.SetPongHandler(func(string) error {
@@ -648,6 +699,10 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 			}
 			cleanContent := sanitize.StripHTML(msgData.Content)
 			if cleanContent == "" {
+				continue
+			}
+			if !msgLimiter.Allow() {
+				log.Warn().Str("room_id", roomID).Uint("user_id", userID).Msg("ChatWS: message rate limit exceeded")
 				continue
 			}
 			msg, err := h.chatService.SaveMessage(wsCtx, uint(roomIDUint), userID, cleanContent)
@@ -772,6 +827,11 @@ func (h *MonitorHandler) ListLogs(c *gin.Context) {
 	}
 	if pp, err := strconv.Atoi(c.Query("per_page")); err == nil && pp > 0 {
 		perPage = pp
+	}
+	// M4: сервис ограничивает pageSize до 100 — считаем totalPages по
+	// скорректированному значению, иначе UI показывает неверное число страниц.
+	if perPage > 100 {
+		perPage = 100
 	}
 
 	logs, total, err := h.gameService.GetLogsByGameIDPaginated(c.Request.Context(), gameID, page, perPage)

@@ -42,6 +42,9 @@ func RegisterRoutes(
 		csvGroup.GET("/export", exportHandler.ExportGameCSV)
 
 		csvGroup.GET("/export-results", exportHandler.ExportResultsCSV)
+
+		// E1: endpoint существовал в handler, но маршрут не был зарегистрирован.
+		csvGroup.GET("/teams/:team_id/export-results", exportHandler.ExportTeamResultsCSV)
 	}
 
 	pdfGroup := protected.Group("")

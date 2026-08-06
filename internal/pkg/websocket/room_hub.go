@@ -128,6 +128,7 @@ func (h *RoomHub) runLoop() {
 			h.incConnection(client.RemoteIP)
 			h.mu.Lock()
 			client.Hub = h
+			client.registered = true
 			if _, ok := h.rooms[client.RoomID]; !ok {
 				h.rooms[client.RoomID] = make(map[*Client]bool)
 			}
@@ -137,6 +138,13 @@ func (h *RoomHub) runLoop() {
 
 		case client := <-h.unregister:
 			h.mu.Lock()
+			// P1: handler-defer и writePump оба вызывают UnregisterClient —
+			// обрабатываем только первую отписку.
+			if !client.registered {
+				h.mu.Unlock()
+				continue
+			}
+			client.registered = false
 			h.decConnectionNoLock(client.RemoteIP)
 			if room, ok := h.rooms[client.RoomID]; ok {
 				delete(room, client)

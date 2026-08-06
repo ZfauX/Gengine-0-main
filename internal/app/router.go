@@ -164,10 +164,13 @@ func (app *App) setupEngine(r *gin.Engine) error {
 	// S-1: /swagger и /metrics — только админы с актуальной ролью (AuthRequired
 	// перечитывает роль из БД; OptionalAuth доверял claim, и пониженный админ
 	// сохранял доступ до истечения токена).
-	r.GET("/swagger/*any", middleware.AuthRequired(app.Deps.Services.Auth), middleware.AdminRequired(), func(c *gin.Context) {
+	// S5: добавлен 2FA step-up (как на /admin/*), чтобы украденный JWT не давал
+	// доступ к метрикам и полной документации API.
+	twoFactorMW := user.TwoFactorRequired(user.NewTwoFactorService(), app.Deps.Repos.User)
+	r.GET("/swagger/*any", middleware.AuthRequired(app.Deps.Services.Auth), twoFactorMW, middleware.AdminRequired(), func(c *gin.Context) {
 		ginSwagger.WrapHandler(swaggerFiles.Handler)(c)
 	})
-	r.GET("/metrics", middleware.AuthRequired(app.Deps.Services.Auth), middleware.AdminRequired(), func(c *gin.Context) {
+	r.GET("/metrics", middleware.AuthRequired(app.Deps.Services.Auth), twoFactorMW, middleware.AdminRequired(), func(c *gin.Context) {
 		gin.WrapH(promhttp.Handler())(c)
 	})
 

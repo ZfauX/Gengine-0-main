@@ -421,7 +421,7 @@ func (h *WebAuthnHandler) FinishLogin(c *gin.Context) {
 		h.auditSvc.Log(waUserTyped.user.ID, "webauthn_login_2fa_pending", "user", waUserTyped.user.ID, "Passkey login requires 2FA")
 		c.JSON(http.StatusOK, gin.H{
 			"status":    "2fa_required",
-			"redirect":  "/auth/2fa/verify",
+			"redirect":  "/auth/2fa/login",
 			"user_id":   waUserTyped.user.ID,
 			"user_name": waUserTyped.user.Name,
 		})

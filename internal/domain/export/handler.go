@@ -157,8 +157,22 @@ func (h *ExportHandler) ImportGame(c *gin.Context) {
 		return
 	}
 
+	// E2: ограничиваем тело запроса ДО multipart-разбора — иначе при
+	// отсутствующем/завышенном Content-Length FormFile загрузит весь файл
+	// в память/диск до проверки header.Size.
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, importMaxFileSize+1024)
 	file, header, err := c.Request.FormFile("csvfile")
 	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			render.Page(c, http.StatusRequestEntityTooLarge, "export_import-import.html", gin.H{
+				"Title":  "Импорт",
+				"GameID": gameID,
+				"Error":  "Размер файла не должен превышать 10 МБ",
+				"csrf":   csrf.GetToken(c),
+			})
+			return
+		}
 		render.Page(c, http.StatusBadRequest, "export_import-import.html", gin.H{
 			"Title":  "Импорт",
 			"GameID": gameID,

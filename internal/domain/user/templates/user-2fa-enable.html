@@ -38,6 +38,13 @@
             <input type="hidden" name="_csrf" value="{{.csrf}}">
 
             <div>
+                <label for="password" class="form-label">{{ T $.Lang "twofa.password_label" }}</label>
+                <input type="password" name="password" id="password" required autocomplete="current-password"
+                       placeholder="••••••••"
+                       class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+            </div>
+
+            <div>
                 <label for="code" class="form-label">{{ T $.Lang "twofa.code_label" }}</label>
                 <input type="text" name="code" id="code" required maxlength="6" inputmode="numeric" autocomplete="one-time-code"
                        placeholder="000000"

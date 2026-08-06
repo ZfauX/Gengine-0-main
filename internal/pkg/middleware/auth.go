@@ -96,15 +96,25 @@ func OptionalAuth(parser TokenParser) gin.HandlerFunc {
 		token, err := c.Cookie("jwt")
 		if err == nil {
 			if userID, role, err := parser.ParseToken(token); err == nil {
-				c.Set("userID", userID)
 				// #8: перечитываем актуальную роль из БД (как AuthRequired) —
 				// иначе пониженный админ сохраняет IsAdmin до истечения токена.
+				// P7: при ошибке загрузки роли НЕ доверяем JWT-claim и НЕ
+				// аутентифицируем запрос (fail-closed): при DB-блупе пониженный
+				// админ не должен сохранять admin-привилегии на optional-auth
+				// маршрутах.
 				if roleProvider != nil {
 					currentRole, rErr := roleProvider(c.Request.Context(), userID)
-					if rErr == nil && currentRole != "" {
+					if rErr != nil {
+						log.Error().Err(rErr).Uint("user_id", userID).Msg("OptionalAuth: failed to load role from DB, treating as unauthenticated")
+						SetIsAdmin(c)
+						c.Next()
+						return
+					}
+					if currentRole != "" {
 						role = currentRole
 					}
 				}
+				c.Set("userID", userID)
 				c.Set("role", role)
 				loadThemeSettings(c)
 			}

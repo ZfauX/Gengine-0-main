@@ -8,6 +8,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type FollowRepository interface {
@@ -29,7 +30,12 @@ func (r *gormFollowRepo) Follow(ctx context.Context, followerID, authorID uint) 
 		FollowerID: followerID,
 		AuthorID:   authorID,
 	}
-	return r.db.WithContext(ctx).Create(&follow).Error
+	// S1: гонка «проверка-вставка» из двух параллельных запросов приводила к
+	// 500 по уникальному индексу idx_follow. OnConflict(DoNothing) идемпотентен.
+	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "follower_id"}, {Name: "author_id"}},
+		DoNothing: true,
+	}).Create(&follow).Error
 }
 
 func (r *gormFollowRepo) Unfollow(ctx context.Context, followerID, authorID uint) error {
@@ -60,7 +66,9 @@ func (r *gormFollowRepo) IsFollowing(ctx context.Context, followerID, authorID u
 
 func (r *gormFollowRepo) GetSubscriptions(ctx context.Context, userID uint) ([]user.User, error) {
 	var authors []user.User
-	err := r.db.WithContext(ctx).Select("users.id, users.name, users.email, users.avatar_path, users.profile_visibility, users.created_at").
+	// S2: не выбираем users.email — списки подписок/подписчиков отдаются
+	// любому авторизованному пользователю.
+	err := r.db.WithContext(ctx).Select("users.id, users.name, users.avatar_path, users.profile_visibility, users.created_at").
 		Joins("JOIN follows ON follows.author_id = users.id").
 		Where("follows.follower_id = ?", userID).
 		Find(&authors).Error
@@ -69,7 +77,7 @@ func (r *gormFollowRepo) GetSubscriptions(ctx context.Context, userID uint) ([]u
 
 func (r *gormFollowRepo) GetFollowers(ctx context.Context, authorID uint) ([]user.User, error) {
 	var followers []user.User
-	err := r.db.WithContext(ctx).Select("users.id, users.name, users.email, users.avatar_path, users.profile_visibility, users.created_at").
+	err := r.db.WithContext(ctx).Select("users.id, users.name, users.avatar_path, users.profile_visibility, users.created_at").
 		Joins("JOIN follows ON follows.follower_id = users.id").
 		Where("follows.author_id = ?", authorID).
 		Find(&followers).Error

@@ -544,6 +544,7 @@ var ruMessages = map[string]string{
 	// ── 2FA ──
 	"twofa.page_title":             "Двухфакторная аутентификация",
 	"twofa.qr_step":                "1. Отсканируйте QR-код",
+	"twofa.password_label":         "Текущий пароль",
 	"twofa.qr_instructions":        "Откройте приложение-аутентификатор (Google Authenticator, Authy и т.п.) и отсканируйте QR-код ниже.",
 	"twofa.manual_step":            "2. Или введите ключ вручную",
 	"twofa.key_type":               "Тип ключа: TOTP (на основе времени)",
