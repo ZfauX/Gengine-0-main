@@ -118,10 +118,11 @@
             cell.appendChild(daySpan);
 
             if (dayGames.length > 0) {
-                const indicator = document.createElement('div');
-                indicator.className = 'inline-flex items-center justify-center w-6 h-6 bg-blue-500 text-white text-xs font-semibold rounded-full cursor-pointer hover:bg-blue-600 transition';
+                const indicator = document.createElement('button');
+                indicator.type = 'button';
+                indicator.className = 'inline-flex items-center justify-center w-6 h-6 bg-blue-500 text-white text-xs font-semibold rounded-full cursor-pointer hover:bg-blue-600 transition focus-visible:ring-2 focus-visible:ring-blue-500';
                 indicator.textContent = dayGames.length;
-                indicator.title = '{{ T $.Lang "calendar.games_label" }} ' + dayGames.length;
+                indicator.setAttribute('aria-label', '{{ T $.Lang "calendar.games_label" }} ' + dayGames.length);
                 indicator.onclick = (e) => {
                     e.stopPropagation();
                     showGamesForDate(dateStr, dayGames);

@@ -1061,6 +1061,7 @@ var enMessages = map[string]string{
 	"photos.no_photos":       "No photos yet.",
 	"photos.delete":          "Delete",
 	"photos.close":           "Close view",
+	"photos.open":            "Open photo",
 	"photos.preview_alt":     "Photo preview",
 	"photos.level_label":     "Level: %s",
 	"photos.delete_confirm":  "Delete this photo? This cannot be undone.",

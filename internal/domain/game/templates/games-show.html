@@ -165,11 +165,31 @@
         const gameID = '{{.Game.ID}}';
 
         let previewTrigger = null;
+        let trapBound = false;
+
+        // A-3: focus trap — Tab не уходит из модалки на фон.
+        function trapModalFocus(modal) {
+            modal.addEventListener('keydown', function(e) {
+                if (e.key !== 'Tab') return;
+                const focusables = modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+                if (!focusables.length) return;
+                const first = focusables[0];
+                const last = focusables[focusables.length - 1];
+                if (e.shiftKey && document.activeElement === first) {
+                    e.preventDefault();
+                    last.focus();
+                } else if (!e.shiftKey && document.activeElement === last) {
+                    e.preventDefault();
+                    first.focus();
+                }
+            });
+        }
 
         function openModal() {
             previewTrigger = document.activeElement; // A11y: вернуть фокус при закрытии
             previewModal.classList.remove('hidden');
             previewModal.classList.add('flex');
+            if (!trapBound) { trapModalFocus(previewModal); trapBound = true; }
             if (closeBtn) closeBtn.focus();
         }
 

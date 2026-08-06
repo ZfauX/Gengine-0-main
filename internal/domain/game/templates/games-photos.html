@@ -22,7 +22,7 @@
     <div id="photos-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {{range .Photos}}
         <div class="photo-card bg-white dark:bg-gray-800 rounded-lg overflow-hidden shadow-sm border border-gray-200 dark:border-gray-700 transition hover:shadow-md" data-photo-id="{{.ID}}">
-            <img src="{{.Path}}" alt="Photo" loading="lazy" class="w-full h-48 object-cover cursor-pointer photo-thumb transition-opacity duration-300 opacity-0"
+            <img src="{{.Path}}" alt="{{ T $.Lang "photos.preview_alt" }}: {{.User.Name}}" loading="lazy" tabindex="0" role="button" aria-label="{{ T $.Lang "photos.open" }} {{.User.Name}}" class="w-full h-48 object-cover cursor-pointer photo-thumb transition-opacity duration-300 opacity-0"
                  data-path="{{.Path}}"
                  data-user="{{.User.Name}}"
                  data-date="{{.CreatedAt.Format "2006-01-02 15:04:05"}}"
@@ -149,6 +149,19 @@
         document.getElementById('photos-grid')?.addEventListener('click', function(e) {
             const thumb = e.target.closest('.photo-thumb');
             if (!thumb) return;
+            openPhoto(thumb);
+        });
+
+        // A-6: открытие фото с клавиатуры (Enter/Space).
+        document.getElementById('photos-grid')?.addEventListener('keydown', function(e) {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            const thumb = e.target.closest('.photo-thumb');
+            if (!thumb) return;
+            e.preventDefault();
+            openPhoto(thumb);
+        });
+
+        function openPhoto(thumb) {
             const src = thumb.dataset.path;
             const user = thumb.dataset.user;
             const date = thumb.dataset.date;
@@ -157,6 +170,23 @@
                 modalCaption.textContent = user + ' — ' + date;
                 modal.classList.remove('hidden');
                 modal.classList.add('flex');
+                if (photoCloseBtn) photoCloseBtn.focus();
+            }
+        }
+
+        // A-3: focus trap — Tab не уходит из lightbox на фон.
+        modal.addEventListener('keydown', function(e) {
+            if (e.key !== 'Tab') return;
+            const focusables = modal.querySelectorAll('button, [href], [tabindex]:not([tabindex="-1"])');
+            if (!focusables.length) return;
+            const first = focusables[0];
+            const last = focusables[focusables.length - 1];
+            if (e.shiftKey && document.activeElement === first) {
+                e.preventDefault();
+                last.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+                e.preventDefault();
+                first.focus();
             }
         });
 

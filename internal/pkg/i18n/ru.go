@@ -1063,6 +1063,7 @@ var ruMessages = map[string]string{
 	"photos.no_photos":       "Фотографий пока нет.",
 	"photos.delete":          "Удалить",
 	"photos.close":           "Закрыть просмотр",
+	"photos.open":            "Открыть фото",
 	"photos.preview_alt":     "Просмотр фотографии",
 	"photos.level_label":     "Уровень: %s",
 	"photos.delete_confirm":  "Удалить это фото? Действие необратимо.",
