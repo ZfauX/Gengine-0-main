@@ -600,16 +600,15 @@ func (s *GamePlayService) ProcessSnapshot(ctx context.Context, gameID uint) {
 	defer cancel()
 
 	if s.monitorSvc != nil {
-		// P-M1: если игра уже завершена, колбэк финиша (onGameFinished) уже
-		// выполнил CalculateResults — не дублируем. Для активных игр пересчёт
-		// нужен (места могут меняться по мере финишей команд).
-		var status string
-		if err := s.db.WithContext(timeoutCtx).Model(&Game{}).
-			Select("status").Where("id = ?", gameID).Scan(&status).Error; err != nil {
-			log.Warn().Err(err).Uint("game_id", gameID).Msg("ProcessSnapshot: failed to read game status, skipping recalc")
-			status = string(StatusFinished) // консервативно: не дублировать расчёт при неизвестном статусе
+		// P-M1: если активных прохождений не осталось (игра завершена), колбэк
+		// финиша (onGameFinished) уже выполнил CalculateResults — не дублируем.
+		var active int64
+		if err := s.db.WithContext(timeoutCtx).Model(&GamePassing{}).
+			Where("game_id = ? AND status IN ?", gameID, []string{string(StatusStarted), string(StatusAccepted)}).
+			Count(&active).Error; err != nil {
+			log.Warn().Err(err).Uint("game_id", gameID).Msg("ProcessSnapshot: failed to count active passings")
 		}
-		if status != string(StatusFinished) {
+		if active > 0 {
 			if err := s.monitorSvc.CalculateResults(timeoutCtx, gameID); err != nil {
 				log.Error().Err(err).Uint("game_id", gameID).Msg("ProcessSnapshot: CalculateResults failed")
 			}

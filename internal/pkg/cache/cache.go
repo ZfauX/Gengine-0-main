@@ -85,6 +85,10 @@ func NewCacheWithLRU(defaultTTL, cleanupInterval time.Duration, maxSize int) *Ca
 }
 
 func (c *Cache) startCleanup(interval time.Duration) {
+	// L7: guard от паники time.NewTicker(<=0).
+	if interval <= 0 {
+		interval = time.Minute
+	}
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()

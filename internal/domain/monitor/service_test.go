@@ -109,6 +109,109 @@ func TestMonitorService_CalculateResults(t *testing.T) {
 	assert.Equal(t, 2, *p2.Place)
 }
 
+// TestMonitorService_CalculateResults_Ties: равные длительности получают
+// одинаковое место (T-H4).
+func TestMonitorService_CalculateResults_Ties(t *testing.T) {
+	db := testutil.SetupPostgresDB(t,
+		&monitor.ChatRoom{}, &monitor.ChatMessage{},
+		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
+		&game.LevelProgress{}, &game.Attempt{},
+		&game.CoAuthor{},
+		&monitor.BlackboxVotingSession{}, &monitor.BlackboxVote{},
+		&level.Level{},
+		&team.Team{},
+		&user.User{},
+	)
+	ms := game.NewMonitorService(db)
+
+	author := createUser(t, db, "tie@test.com", "pass")
+	g := createGame(t, db, author.ID, "Ties Game")
+	lvl := createLevel(t, db, g.ID, "L1", 1)
+
+	tm1 := createTeam(t, db, author.ID)
+	tm2 := createTeam(t, db, author.ID)
+	tm3 := createTeam(t, db, author.ID)
+
+	p1 := createPassing(t, db, g.ID, tm1.ID, game.StatusFinished)
+	p2 := createPassing(t, db, g.ID, tm2.ID, game.StatusFinished)
+	p3 := createPassing(t, db, g.ID, tm3.ID, game.StatusFinished)
+
+	baseTime := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	createLevelProgress(t, db, p1.ID, lvl.ID, true)
+	createLevelProgress(t, db, p2.ID, lvl.ID, true)
+	createLevelProgress(t, db, p3.ID, lvl.ID, true)
+
+	// p1 и p2 — одинаково (5 мин), p3 — дольше (10 мин).
+	db.Model(&game.LevelProgress{}).Where("game_passing_id = ?", p1.ID).Updates(map[string]any{
+		"started_at": baseTime, "finished_at": baseTime.Add(5 * time.Minute),
+	})
+	db.Model(&game.LevelProgress{}).Where("game_passing_id = ?", p2.ID).Updates(map[string]any{
+		"started_at": baseTime, "finished_at": baseTime.Add(5 * time.Minute),
+	})
+	db.Model(&game.LevelProgress{}).Where("game_passing_id = ?", p3.ID).Updates(map[string]any{
+		"started_at": baseTime, "finished_at": baseTime.Add(10 * time.Minute),
+	})
+
+	require.NoError(t, ms.CalculateResults(context.Background(), g.ID))
+
+	db.First(p1, p1.ID)
+	db.First(p2, p2.ID)
+	db.First(p3, p3.ID)
+	require.NotNil(t, p1.Place)
+	require.NotNil(t, p2.Place)
+	require.NotNil(t, p3.Place)
+	assert.Equal(t, 1, *p1.Place, "тай: p1 и p2 делят первое место")
+	assert.Equal(t, 1, *p2.Place, "тай: p1 и p2 делят первое место")
+	assert.Equal(t, 3, *p3.Place, "p3 после тай-группы")
+}
+
+// TestMonitorService_CalculateResults_Penalty: штрафные секунды добавляются к
+// длительности (T-H4).
+func TestMonitorService_CalculateResults_Penalty(t *testing.T) {
+	db := testutil.SetupPostgresDB(t,
+		&monitor.ChatRoom{}, &monitor.ChatMessage{},
+		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
+		&game.LevelProgress{}, &game.Attempt{},
+		&game.CoAuthor{},
+		&monitor.BlackboxVotingSession{}, &monitor.BlackboxVote{},
+		&level.Level{},
+		&team.Team{},
+		&user.User{},
+	)
+	ms := game.NewMonitorService(db)
+
+	author := createUser(t, db, "pen@test.com", "pass")
+	g := createGame(t, db, author.ID, "Penalty Game")
+	lvl := createLevel(t, db, g.ID, "L1", 1)
+
+	tm1 := createTeam(t, db, author.ID)
+	tm2 := createTeam(t, db, author.ID)
+
+	p1 := createPassing(t, db, g.ID, tm1.ID, game.StatusFinished)
+	p2 := createPassing(t, db, g.ID, tm2.ID, game.StatusFinished)
+
+	baseTime := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	createLevelProgress(t, db, p1.ID, lvl.ID, true)
+	createLevelProgress(t, db, p2.ID, lvl.ID, true)
+
+	// p1: 5 мин чисто; p2: 5 мин + 60с штрафа → p2 медленнее.
+	db.Model(&game.LevelProgress{}).Where("game_passing_id = ?", p1.ID).Updates(map[string]any{
+		"started_at": baseTime, "finished_at": baseTime.Add(5 * time.Minute), "penalty_seconds": 0,
+	})
+	db.Model(&game.LevelProgress{}).Where("game_passing_id = ?", p2.ID).Updates(map[string]any{
+		"started_at": baseTime, "finished_at": baseTime.Add(5 * time.Minute), "penalty_seconds": 60,
+	})
+
+	require.NoError(t, ms.CalculateResults(context.Background(), g.ID))
+
+	db.First(p1, p1.ID)
+	db.First(p2, p2.ID)
+	require.NotNil(t, p1.Place)
+	require.NotNil(t, p2.Place)
+	assert.Equal(t, 1, *p1.Place)
+	assert.Equal(t, 2, *p2.Place)
+}
+
 func TestMonitorService_Cache(t *testing.T) {
 	db := testutil.SetupPostgresDB(t,
 		&monitor.ChatRoom{}, &monitor.ChatMessage{},

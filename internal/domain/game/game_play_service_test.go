@@ -273,3 +273,42 @@ func TestGamePlayService_SkipLevelTest(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, l2.ID, nextProgress.LevelID)
 }
+
+// TestGamePlayService_SubmitCode_FinishesLastLevel: прохождение всех уровней
+// завершает игру, ставит статус Finished и вызывает onGameFinished (T-H5).
+func TestGamePlayService_SubmitCode_FinishesLastLevel(t *testing.T) {
+	db, playSvc, _ := setupGamePlayTest(t)
+	ctx := context.Background()
+
+	author := createUser(t, db, "fin@test.com", "pass")
+	g := createPublishedGameWithSettings(t, db, author.ID, "Finish Game")
+
+	l1 := createLevelWithAnswer(t, db, g.ID, "L1", 1, "a1")
+	createLevelWithAnswer(t, db, g.ID, "L2", 2, "a2")
+	createLevelWithAnswer(t, db, g.ID, "L3", 3, "a3")
+
+	tm := createTeam(t, db, author.ID)
+	passing := createPassing(t, db, g.ID, tm.ID, game.StatusStarted)
+	createLevelProgress(t, db, passing.ID, l1.ID, false)
+
+	finishedCalled := false
+	playSvc.WithGameFinishedCallback(func(_ context.Context, gameID uint) {
+		finishedCalled = true
+	})
+
+	_, err := playSvc.SubmitCode(ctx, passing.ID, author.ID, "a1")
+	require.NoError(t, err)
+	_, err = playSvc.SubmitCode(ctx, passing.ID, author.ID, "a2")
+	require.NoError(t, err)
+	_, err = playSvc.SubmitCode(ctx, passing.ID, author.ID, "a3")
+	require.NoError(t, err)
+
+	require.NoError(t, db.First(passing, passing.ID).Error)
+	assert.Equal(t, game.StatusFinished, passing.Status)
+	assert.True(t, finishedCalled, "onGameFinished должен сработать на последнем уровне")
+
+	// Прогрессов больше нет (все пройдены).
+	var remaining int64
+	require.NoError(t, db.Model(&game.LevelProgress{}).Where("game_passing_id = ? AND finished_at IS NULL", passing.ID).Count(&remaining).Error)
+	assert.Equal(t, int64(0), remaining)
+}
