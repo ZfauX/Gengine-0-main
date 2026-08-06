@@ -82,7 +82,9 @@
             escapeHtml(content) +
             '</div></div>';
         messagesEl.appendChild(div);
-        if (scroll) messagesEl.scrollTop = messagesEl.scrollHeight;
+        // U-6: авто-скролл только у низа — не дёргаем читающего выше.
+        const nearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 80;
+        if (nearBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
     function escapeHtml(text) {

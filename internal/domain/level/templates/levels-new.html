@@ -14,7 +14,7 @@
             <label for="name" class="form-label">{{ T $.Lang "level.name_label" }}</label>
             <input type="text" name="name" id="name" required
                    class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.name}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
-            {{if .Errors.name}}<p class="field-error">{{.Errors.name}}</p>{{end}}
+            {{if .Errors.name}}{{if .Errors.name}}<p class="field-error">{{.Errors.name}}</p>{{end}}{{end}}
         </div>
 
         <!-- Описание -->
@@ -22,7 +22,7 @@
             <label for="description" class="form-label">{{ T $.Lang "level.desc_label" }}</label>
             <textarea name="description" id="description" rows="4"
                       class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.description}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}"></textarea>
-            {{if .Errors.description}}<p class="field-error">{{.Errors.description}}</p>{{end}}
+            {{if .Errors.description}}{{if .Errors.description}}<p class="field-error">{{.Errors.description}}</p>{{end}}{{end}}
         </div>
 
         <!-- Позиция и тип -->
@@ -31,7 +31,7 @@
                 <label for="position" class="form-label">{{ T $.Lang "level.position_label" }}</label>
                 <input type="number" name="position" id="position" value="1" min="1"
                        class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.position}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
-                {{if .Errors.position}}<p class="field-error">{{.Errors.position}}</p>{{end}}
+                {{if .Errors.position}}{{if .Errors.position}}<p class="field-error">{{.Errors.position}}</p>{{end}}{{end}}
             </div>
             <div>
                 <label for="type" class="form-label">{{ T $.Lang "level.type_label" }}</label>
@@ -43,7 +43,7 @@
                     <option value="blackbox">{{ T $.Lang "level.type_blackbox" }}</option>
                     <option value="file_upload">{{ T $.Lang "level.type_file_upload" }}</option>
                 </select>
-                {{if .Errors.type}}<p class="field-error">{{.Errors.type}}</p>{{end}}
+                {{if .Errors.type}}{{if .Errors.type}}<p class="field-error">{{.Errors.type}}</p>{{end}}{{end}}
             </div>
         </div>
 
@@ -52,7 +52,7 @@
             <input type="checkbox" name="requires_confirmation" id="requires_confirmation" value="true"
                    class="rounded border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:ring-blue-500 {{if .Errors.requires_confirmation}}border-red-500{{end}}">
             <label for="requires_confirmation" class="ml-2 text-sm text-gray-700 dark:text-gray-300">{{ T $.Lang "level.requires_confirmation" }}</label>
-            {{if .Errors.requires_confirmation}}<p class="field-error">{{.Errors.requires_confirmation}}</p>{{end}}
+            {{if .Errors.requires_confirmation}}{{if .Errors.requires_confirmation}}<p class="field-error">{{.Errors.requires_confirmation}}</p>{{end}}{{end}}
         </div>
 
         <!-- Координаты -->
@@ -61,13 +61,13 @@
                 <label for="latitude" class="form-label">{{ T $.Lang "level.latitude_label" }}</label>
                 <input type="text" name="latitude" id="latitude" placeholder='{{ T $.Lang "level.latitude_placeholder" }}'
                        class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.latitude}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
-                {{if .Errors.latitude}}<p class="field-error">{{.Errors.latitude}}</p>{{end}}
+                {{if .Errors.latitude}}{{if .Errors.latitude}}<p class="field-error">{{.Errors.latitude}}</p>{{end}}{{end}}
             </div>
             <div>
                 <label for="longitude" class="form-label">{{ T $.Lang "level.longitude_label" }}</label>
                 <input type="text" name="longitude" id="longitude" placeholder='{{ T $.Lang "level.longitude_placeholder" }}'
                        class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.longitude}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
-                {{if .Errors.longitude}}<p class="field-error">{{.Errors.longitude}}</p>{{end}}
+                {{if .Errors.longitude}}{{if .Errors.longitude}}<p class="field-error">{{.Errors.longitude}}</p>{{end}}{{end}}
             </div>
         </div>
 

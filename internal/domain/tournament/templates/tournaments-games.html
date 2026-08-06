@@ -21,7 +21,7 @@
                     <option value="" disabled>{{ T $.Lang "tournament.add_game_no_games" }}</option>
                 {{end}}
             </select>
-            {{if .Errors.game_id}}<p class="field-error">{{.Errors.game_id}}</p>{{end}}
+            {{if .Errors.game_id}}{{if .Errors.game_id}}<p class="field-error">{{.Errors.game_id}}</p>{{end}}{{end}}
         </div>
 
         <!-- Кнопки -->

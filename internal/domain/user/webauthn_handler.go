@@ -120,6 +120,17 @@ func (h *WebAuthnHandler) BeginRegistration(c *gin.Context) {
 		return
 	}
 
+	// S-H1: регистрация passkey у пользователя с включённой 2FA требует
+	// подтверждённой 2FA-сессии — иначе украденная сессия регистрирует
+	// чужой authenticator как постоянный backdoor.
+	if user.TwoFactorEnabled {
+		sess := sessions.Default(c)
+		if sess.Get(session2FAKey(userID)) != true {
+			c.JSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "webauthn.2fa_required_for_register")})
+			return
+		}
+	}
+
 	creds, err := h.webauthnRepo.ListByUserID(c.Request.Context(), userID)
 	if err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Msg("BeginRegistration: failed to list credentials")
@@ -396,6 +407,24 @@ func (h *WebAuthnHandler) FinishLogin(c *gin.Context) {
 	waUserTyped, waOK := waUser.(*WebAuthnUser)
 	if !waOK {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": render.Tr(c, "handler.internal_error")})
+		return
+	}
+
+	// S-H1: passkey — это первый фактор. Для пользователя с включённой 2FA
+	// JWT не выдаём без TOTP — тот же flow, что и у парольного входа:
+	// ставим pending_user_id и отправляем на /auth/2fa/verify.
+	if waUserTyped.user.TwoFactorEnabled {
+		sess.Set("pending_user_id", waUserTyped.user.ID)
+		if saveErr := sess.Save(); saveErr != nil {
+			log.Error().Err(saveErr).Msg("FinishLogin: failed to set pending 2FA session")
+		}
+		h.auditSvc.Log(waUserTyped.user.ID, "webauthn_login_2fa_pending", "user", waUserTyped.user.ID, "Passkey login requires 2FA")
+		c.JSON(http.StatusOK, gin.H{
+			"status":    "2fa_required",
+			"redirect":  "/auth/2fa/verify",
+			"user_id":   waUserTyped.user.ID,
+			"user_name": waUserTyped.user.Name,
+		})
 		return
 	}
 

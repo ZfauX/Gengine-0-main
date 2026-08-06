@@ -3,7 +3,7 @@
     <h1 class="page-title">{{ T $.Lang "logs.title" }}</h1>
 
     <div class="card">
-        <ul id="log-list" class="divide-y divide-gray-100 max-h-[70vh] overflow-y-auto" data-total-pages="{{.TotalPages}}">
+        <ul id="log-list" role="log" aria-live="polite" aria-relevant="additions" class="divide-y divide-gray-100 max-h-[70vh] overflow-y-auto" data-total-pages="{{.TotalPages}}">
             {{range .Logs}}
             <li class="py-2 text-sm text-gray-700 dark:text-gray-300">{{.CreatedAt.Format "15:04:05"}} — {{.Message}}</li>
             {{else}}

@@ -23,7 +23,7 @@
             <input type="number" name="hint_penalty_seconds" id="hint_penalty_seconds"
                    value="{{.Settings.HintPenaltySeconds}}" min="0"
                    class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.hint_penalty_seconds}}border-red-500{{end}}">
-            {{if .Errors.hint_penalty_seconds}}<p class="field-error">{{.Errors.hint_penalty_seconds}}</p>{{end}}
+            {{if .Errors.hint_penalty_seconds}}{{if .Errors.hint_penalty_seconds}}<p class="field-error">{{.Errors.hint_penalty_seconds}}</p>{{end}}{{end}}
         </div>
 
         <!-- РњР°РєСЃРёРјР°Р»СЊРЅРѕРµ РєРѕР»РёС‡РµСЃС‚РІРѕ РїРѕРґСЃРєР°Р·РѕРє -->
@@ -32,7 +32,7 @@
             <input type="number" name="max_hints" id="max_hints"
                    value="{{.Settings.MaxHints}}" min="0"
                    class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.max_hints}}border-red-500{{end}}">
-            {{if .Errors.max_hints}}<p class="field-error">{{.Errors.max_hints}}</p>{{end}}
+            {{if .Errors.max_hints}}{{if .Errors.max_hints}}<p class="field-error">{{.Errors.max_hints}}</p>{{end}}{{end}}
         </div>
 
         <!-- Р›РёРјРёС‚ РІСЂРµРјРµРЅРё РЅР° СѓСЂРѕРІРµРЅСЊ -->
@@ -41,7 +41,7 @@
             <input type="number" name="per_level_time_limit" id="per_level_time_limit"
                    value="{{.Settings.PerLevelTimeLimit}}" min="0"
                    class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.per_level_time_limit}}border-red-500{{end}}">
-            {{if .Errors.per_level_time_limit}}<p class="field-error">{{.Errors.per_level_time_limit}}</p>{{end}}
+            {{if .Errors.per_level_time_limit}}{{if .Errors.per_level_time_limit}}<p class="field-error">{{.Errors.per_level_time_limit}}</p>{{end}}{{end}}
         </div>
 
         <!-- РЎРєСЂС‹РІР°С‚СЊ РѕС‚РІРµС‚С‹ РґРѕ С„РёРЅРёС€Р° -->

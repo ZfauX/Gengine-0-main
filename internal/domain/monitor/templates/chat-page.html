@@ -138,7 +138,10 @@
             div.innerHTML = `<span class="font-semibold text-gray-800 dark:text-gray-100">${escapeHtml(author)}:</span> ${escapeHtml(msg.Content || msg.content || msg.text)} <span class="text-xs text-gray-400">(${time})</span>`;
             div.dataset.msgId = msg.id || msg.ID || '';
             chatMessages.appendChild(div);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
+            // U-6: авто-скролл только если пользователь уже у низа — иначе
+            // новые сообщения не дёргают читающего выше.
+            const nearBottom = chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight < 80;
+            if (nearBottom) chatMessages.scrollTop = chatMessages.scrollHeight;
         }
 
         function escapeHtml(text) {

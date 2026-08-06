@@ -50,6 +50,11 @@ function loginWithPasskey() {
     })
     .then(r => r.json())
     .then(data => {
+        // S-H1: если включена 2FA — passkey только первый фактор, идём на TOTP.
+        if (data.status === '2fa_required' && data.redirect) {
+            window.location.href = data.redirect;
+            return;
+        }
         if (data.status === 'ok' && data.redirect) {
             window.location.href = data.redirect;
         } else {

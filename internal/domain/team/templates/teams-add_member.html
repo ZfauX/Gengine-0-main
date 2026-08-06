@@ -19,7 +19,7 @@
                     <option value="{{.ID}}">{{.Name}} ({{.Email}})</option>
                 {{end}}
             </select>
-            {{if .Errors.user_id}}<p class="field-error">{{.Errors.user_id}}</p>{{end}}
+            {{if .Errors.user_id}}{{if .Errors.user_id}}<p class="field-error">{{.Errors.user_id}}</p>{{end}}{{end}}
         </div>
 
         <!-- Кнопки -->

@@ -107,10 +107,14 @@
             const btn = e.target.closest('.follow-toggle');
             if (!btn) return;
 
+            // U-7: защита от двойного клика (гонка POST+DELETE).
+            if (btn.disabled) return;
+            btn.disabled = true;
 
             const authorID = btn.dataset.authorId;
             const action = btn.dataset.action;
             if (!authorID) {
+                btn.disabled = false;
                 return;
             }
 
@@ -140,10 +144,12 @@
                     if (data.status === 'followed' || data.status === 'unfollowed') {
                         location.reload();
                     } else {
+                        btn.disabled = false;
                         window.showToast(data.error ? '{{ T $.Lang "profile.follow_network_error" }}'.replace('%s', data.error) : '{{ T $.Lang "profile.follow_error" }}', 'error');
                     }
                 })
                 .catch(err => {
+                    btn.disabled = false;
                     console.error('Follow error:', err);
                     window.showToast('{{ T $.Lang "profile.follow_network_error" }}'.replace('%s', err.message), 'error');
                 });

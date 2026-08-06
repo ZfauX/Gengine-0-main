@@ -15,7 +15,7 @@
             <label for="name" class="form-label">{{ T $.Lang "game.edit_name_label" }}</label>
             <input type="text" name="name" id="name" value="{{.Game.Name}}" required
                    class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.name}}border-red-500{{end}}">
-            <p class="field-error">{{.Errors.name}}</p>
+            {{if .Errors.name}}<p class="field-error">{{.Errors.name}}</p>{{end}}
         </div>
 
         <!-- Описание -->
@@ -23,7 +23,7 @@
             <label for="description" class="form-label">{{ T $.Lang "game.edit_desc_label" }}</label>
             <textarea name="description" id="description" rows="4"
                       class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.description}}border-red-500{{end}}">{{.Game.Description}}</textarea>
-            <p class="field-error">{{.Errors.description}}</p>
+            {{if .Errors.description}}<p class="field-error">{{.Errors.description}}</p>{{end}}
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -33,7 +33,7 @@
                 <input type="datetime-local" name="starts_at" id="starts_at"
                        value="{{if .Game.StartsAt}}{{.Game.StartsAt.Format "2006-01-02T15:04"}}{{end}}"
                        class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.starts_at}}border-red-500{{end}}">
-                <p class="field-error">{{.Errors.starts_at}}</p>
+                {{if .Errors.starts_at}}<p class="field-error">{{.Errors.starts_at}}</p>{{end}}
             </div>
 
             <!-- Крайний срок регистрации -->
@@ -42,7 +42,7 @@
                 <input type="datetime-local" name="registration_deadline" id="registration_deadline"
                        value="{{if .Game.RegistrationDeadline}}{{.Game.RegistrationDeadline.Format "2006-01-02T15:04"}}{{end}}"
                        class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.registration_deadline}}border-red-500{{end}}">
-                <p class="field-error">{{.Errors.registration_deadline}}</p>
+                {{if .Errors.registration_deadline}}<p class="field-error">{{.Errors.registration_deadline}}</p>{{end}}
             </div>
         </div>
 
@@ -53,7 +53,7 @@
                 <input type="number" name="max_team_number" id="max_team_number"
                        value="{{.Game.MaxTeamNumber}}" min="1"
                        class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.max_team_number}}border-red-500{{end}}">
-                <p class="field-error">{{.Errors.max_team_number}}</p>
+                {{if .Errors.max_team_number}}<p class="field-error">{{.Errors.max_team_number}}</p>{{end}}
             </div>
 
             <!-- Видимость -->
@@ -65,7 +65,7 @@
                     <option value="private" {{if eq .Game.Visibility "private"}}selected{{end}}>{{ T $.Lang "game.edit_private" }}</option>
                     <option value="unlisted" {{if eq .Game.Visibility "unlisted"}}selected{{end}}>{{ T $.Lang "game.edit_unlisted" }}</option>
                 </select>
-                <p class="field-error">{{.Errors.visibility}}</p>
+                {{if .Errors.visibility}}<p class="field-error">{{.Errors.visibility}}</p>{{end}}
             </div>
         </div>
 

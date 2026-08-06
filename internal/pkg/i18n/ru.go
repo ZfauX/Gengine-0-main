@@ -11,6 +11,7 @@ var ruMessages = map[string]string{
 	"generic.not_found":               "Не найдено",
 	"generic.forbidden":               "Доступ запрещён",
 	"generic.error":                   "Ошибка",
+	"generic.network_error":           "Ошибка сети",
 	"generic.invalid_id":              "Неверный ID",
 	"generic.invalid_data":            "Неверные данные",
 	"generic.invalid_data_format":     "Неверные данные: %s",
@@ -681,18 +682,19 @@ var ruMessages = map[string]string{
 	"profile.follow_network_error": "Ошибка: %s",
 
 	// ── Passkey (WebAuthn) ──
-	"passkey.manage_title":   "Управление Passkey",
-	"passkey.description":    "Passkey (ключи доступа) позволяют входить в систему без пароля, используя биометрию или PIN-код вашего устройства.",
-	"passkey.add_button":     "Добавить Passkey",
-	"passkey.saved_keys":     "Сохранённые ключи",
-	"passkey.no_keys":        "У вас ещё нет сохранённых Passkey.",
-	"passkey.delete_button":  "Удалить",
-	"passkey.added_at":       "Добавлен:",
-	"passkey.registering":    "Регистрация...",
-	"passkey.login_button":   "Войти с Passkey",
-	"passkey.not_supported":  "WebAuthn не поддерживается вашим браузером",
-	"passkey.error_prefix":   "Ошибка: ",
-	"passkey.delete_confirm": "Удалить этот ключ?",
+	"passkey.manage_title":              "Управление Passkey",
+	"passkey.description":               "Passkey (ключи доступа) позволяют входить в систему без пароля, используя биометрию или PIN-код вашего устройства.",
+	"passkey.2fa_required_for_register": "Для регистрации passkey требуется подтверждение 2FA. Сначала завершите вход с кодом из приложения.",
+	"passkey.add_button":                "Добавить Passkey",
+	"passkey.saved_keys":                "Сохранённые ключи",
+	"passkey.no_keys":                   "У вас ещё нет сохранённых Passkey.",
+	"passkey.delete_button":             "Удалить",
+	"passkey.added_at":                  "Добавлен:",
+	"passkey.registering":               "Регистрация...",
+	"passkey.login_button":              "Войти с Passkey",
+	"passkey.not_supported":             "WebAuthn не поддерживается вашим браузером",
+	"passkey.error_prefix":              "Ошибка: ",
+	"passkey.delete_confirm":            "Удалить этот ключ?",
 
 	// ── Games List ──
 	"games.list_title":                "Игры",
@@ -1332,6 +1334,7 @@ var ruMessages = map[string]string{
 	"notif.no_notifications": "У вас пока нет уведомлений.",
 	"notif.total":            "Всего уведомлений: %d",
 	"notif.more":             "Подробнее →",
+	"notif.new":              "Новое",
 	"notif.back_to_profile":  "← Назад в профиль",
 
 	// ── Notification Settings ──

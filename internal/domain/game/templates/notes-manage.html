@@ -56,6 +56,9 @@
             e.preventDefault();
             const text = noteText.value.trim();
             if (!text) return;
+            // U-8: блокируем кнопку от двойного submit и обрабатываем сеть.
+            const submitBtn = addForm.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
             fetch('/api/games/' + gameID + '/notes', {
                 method: 'POST',
                 credentials: 'same-origin',
@@ -68,7 +71,14 @@
             .then(r => r.json())
             .then(data => {
                 if (data.note) location.reload();
-                else window.showToast('{{ T $.Lang "generic.error" }}', 'error');
+                else {
+                    if (submitBtn) submitBtn.disabled = false;
+                    window.showToast('{{ T $.Lang "generic.error" }}', 'error');
+                }
+            })
+            .catch(() => {
+                if (submitBtn) submitBtn.disabled = false;
+                window.showToast('{{ T $.Lang "generic.network_error" }}', 'error');
             });
         });
 

@@ -7,6 +7,7 @@ var enMessages = map[string]string{
 	"generic.not_found":               "Not found",
 	"generic.forbidden":               "Access denied",
 	"generic.error":                   "Error",
+	"generic.network_error":           "Network error",
 	"generic.invalid_id":              "Invalid ID",
 	"generic.invalid_data":            "Invalid data",
 	"generic.invalid_data_format":     "Invalid data: %s",
@@ -660,18 +661,19 @@ var enMessages = map[string]string{
 	"profile.follow_network_error": "Error: %s",
 
 	// ── Passkey (WebAuthn) ──
-	"passkey.manage_title":   "Manage Passkeys",
-	"passkey.description":    "Passkeys allow you to sign in without a password using your device's biometrics or PIN.",
-	"passkey.add_button":     "Add Passkey",
-	"passkey.saved_keys":     "Saved keys",
-	"passkey.no_keys":        "You don't have any saved Passkeys yet.",
-	"passkey.delete_button":  "Delete",
-	"passkey.added_at":       "Added:",
-	"passkey.registering":    "Registering...",
-	"passkey.login_button":   "Login with Passkey",
-	"passkey.not_supported":  "WebAuthn is not supported by your browser",
-	"passkey.error_prefix":   "Error: ",
-	"passkey.delete_confirm": "Delete this key?",
+	"passkey.manage_title":              "Manage Passkeys",
+	"passkey.description":               "Passkeys allow you to sign in without a password using your device's biometrics or PIN.",
+	"passkey.2fa_required_for_register": "Passkey registration requires 2FA confirmation. Complete sign-in with the app code first.",
+	"passkey.add_button":                "Add Passkey",
+	"passkey.saved_keys":                "Saved keys",
+	"passkey.no_keys":                   "You don't have any saved Passkeys yet.",
+	"passkey.delete_button":             "Delete",
+	"passkey.added_at":                  "Added:",
+	"passkey.registering":               "Registering...",
+	"passkey.login_button":              "Login with Passkey",
+	"passkey.not_supported":             "WebAuthn is not supported by your browser",
+	"passkey.error_prefix":              "Error: ",
+	"passkey.delete_confirm":            "Delete this key?",
 
 	// ── Games List ──
 	"games.list_title":                "Games",
@@ -1330,6 +1332,7 @@ var enMessages = map[string]string{
 	"notif.no_notifications": "You have no notifications yet.",
 	"notif.total":            "Total notifications: %d",
 	"notif.more":             "Details →",
+	"notif.new":              "New",
 	"notif.back_to_profile":  "← Back to profile",
 
 	// ── Notification Settings ──

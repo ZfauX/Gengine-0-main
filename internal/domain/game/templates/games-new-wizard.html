@@ -33,7 +33,7 @@
                                minlength="3" maxlength="100"
                                 class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                                 placeholder="{{ T $.Lang "game.new_name_placeholder" }}">
-                        {{if .Errors.Name}}<p class="field-error">{{.Errors.Name}}</p>{{end}}
+                        {{if .Errors.Name}}{{if .Errors.Name}}<p class="field-error">{{.Errors.Name}}</p>{{end}}{{end}}
                     </div>
 
                     <div>
@@ -49,7 +49,7 @@
                         <label for="max_team_number" class="form-label">{{ T $.Lang "game.new_max_teams_label" }}</label>
                         <input type="number" name="max_team_number" id="max_team_number" value="{{.MaxTeamNumber}}" min="1" max="100" required
                                 class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                        {{if .Errors.MaxTeamNumber}}<p class="field-error">{{.Errors.MaxTeamNumber}}</p>{{end}}
+                        {{if .Errors.MaxTeamNumber}}{{if .Errors.MaxTeamNumber}}<p class="field-error">{{.Errors.MaxTeamNumber}}</p>{{end}}{{end}}
                     </div>
 
                     <div>
@@ -72,7 +72,7 @@
                         <input type="datetime-local" name="starts_at" id="starts_at" value="{{.StartsAt}}"
                                 class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
                         <p class="text-xs text-gray-400 mt-1">{{ T $.Lang "game.new_start_date_hint" }}</p>
-                        {{if .Errors.StartsAt}}<p class="field-error">{{.Errors.StartsAt}}</p>{{end}}
+                        {{if .Errors.StartsAt}}{{if .Errors.StartsAt}}<p class="field-error">{{.Errors.StartsAt}}</p>{{end}}{{end}}
                     </div>
 
                     <div>
@@ -80,7 +80,7 @@
                         <input type="datetime-local" name="registration_deadline" id="registration_deadline" value="{{.RegistrationDeadline}}"
                                 class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
                         <p class="text-xs text-gray-400 mt-1">{{ T $.Lang "game.new_reg_deadline_hint" }}</p>
-                        {{if .Errors.RegistrationDeadline}}<p class="field-error">{{.Errors.RegistrationDeadline}}</p>{{end}}
+                        {{if .Errors.RegistrationDeadline}}{{if .Errors.RegistrationDeadline}}<p class="field-error">{{.Errors.RegistrationDeadline}}</p>{{end}}{{end}}
                     </div>
                 </div>
             </div>

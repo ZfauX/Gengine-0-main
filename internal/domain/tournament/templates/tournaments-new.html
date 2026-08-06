@@ -14,7 +14,7 @@
             <label for="name" class="form-label">{{ T $.Lang "tournament.name_label" }}</label>
             <input type="text" name="name" id="name" required
                    class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.name}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
-            {{if .Errors.name}}<p class="field-error">{{.Errors.name}}</p>{{end}}
+            {{if .Errors.name}}{{if .Errors.name}}<p class="field-error">{{.Errors.name}}</p>{{end}}{{end}}
         </div>
 
         <!-- Описание -->
@@ -22,7 +22,7 @@
             <label for="description" class="form-label">{{ T $.Lang "tournament.desc_label" }}</label>
             <textarea name="description" id="description" rows="4"
                       class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.description}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}"></textarea>
-            {{if .Errors.description}}<p class="field-error">{{.Errors.description}}</p>{{end}}
+            {{if .Errors.description}}{{if .Errors.description}}<p class="field-error">{{.Errors.description}}</p>{{end}}{{end}}
         </div>
 
         <!-- Очки за места -->
@@ -31,25 +31,25 @@
                 <label for="points_for_first" class="form-label">{{ T $.Lang "tournament.points_first" }}</label>
                 <input type="number" name="points_for_first" id="points_for_first" value="10" min="0"
                        class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.points_for_first}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
-                {{if .Errors.points_for_first}}<p class="field-error">{{.Errors.points_for_first}}</p>{{end}}
+                {{if .Errors.points_for_first}}{{if .Errors.points_for_first}}<p class="field-error">{{.Errors.points_for_first}}</p>{{end}}{{end}}
             </div>
             <div>
                 <label for="points_for_second" class="form-label">{{ T $.Lang "tournament.points_second" }}</label>
                 <input type="number" name="points_for_second" id="points_for_second" value="7" min="0"
                        class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.points_for_second}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
-                {{if .Errors.points_for_second}}<p class="field-error">{{.Errors.points_for_second}}</p>{{end}}
+                {{if .Errors.points_for_second}}{{if .Errors.points_for_second}}<p class="field-error">{{.Errors.points_for_second}}</p>{{end}}{{end}}
             </div>
             <div>
                 <label for="points_for_third" class="form-label">{{ T $.Lang "tournament.points_third" }}</label>
                 <input type="number" name="points_for_third" id="points_for_third" value="5" min="0"
                        class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.points_for_third}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
-                {{if .Errors.points_for_third}}<p class="field-error">{{.Errors.points_for_third}}</p>{{end}}
+                {{if .Errors.points_for_third}}{{if .Errors.points_for_third}}<p class="field-error">{{.Errors.points_for_third}}</p>{{end}}{{end}}
             </div>
             <div>
                 <label for="points_for_participation" class="form-label">{{ T $.Lang "tournament.points_participation" }}</label>
                 <input type="number" name="points_for_participation" id="points_for_participation" value="2" min="0"
                        class="w-full rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.points_for_participation}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
-                {{if .Errors.points_for_participation}}<p class="field-error">{{.Errors.points_for_participation}}</p>{{end}}
+                {{if .Errors.points_for_participation}}{{if .Errors.points_for_participation}}<p class="field-error">{{.Errors.points_for_participation}}</p>{{end}}{{end}}
             </div>
         </div>
 

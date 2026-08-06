@@ -19,7 +19,7 @@
                         <option value="{{.ID}}">{{.Name}}</option>
                     {{end}}
                 </select>
-                <p class="field-error">{{.Errors.team_id}}</p>
+                {{if .Errors.team_id}}<p class="field-error">{{.Errors.team_id}}</p>{{end}}
             </div>
 
             <button type="submit" class="btn btn-primary text-sm whitespace-nowrap">{{ T $.Lang "apply.submit_button" }}</button>

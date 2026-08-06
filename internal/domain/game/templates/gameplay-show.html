@@ -22,7 +22,9 @@
 
         <!-- Таймер -->
         <div id="timer-container" class="mb-4">
-            <p id="timer-display" class="text-xl font-mono font-bold text-gray-700 dark:text-gray-300" aria-live="polite"></p>
+            <p id="timer-display" class="text-xl font-mono font-bold text-gray-700 dark:text-gray-300" role="timer"></p>
+            <!-- A-2: скринридер объявляет остаток на смене минуты, а не каждую секунду -->
+            <span id="timer-live" class="sr-only" aria-live="polite"></span>
         </div>
 
         <!-- Форма отправки кода -->
@@ -112,6 +114,7 @@
         const mobileStickyTimer = document.getElementById('mobile-sticky-timer');
         const mobileTimerDisplay = document.getElementById('mobile-timer-display');
         let timeLeft = timeLimitSeconds;
+        let lastAnnouncedMin = -1; // для a11y-объявления таймера (A-2)
         let isSubmitting = false;
 
         // Real-time timer with server sync
@@ -163,6 +166,16 @@
             const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
 
             timerDisplay.textContent = '{{ T $.Lang "gameplay.time_left" }}'.replace('%s', timeStr);
+
+            // A-2: объявляем остаток скринридеру при смене минуты (и при <=60s).
+            var liveEl = document.getElementById('timer-live');
+            if (liveEl) {
+                var announceMin = Math.ceil(timeLeft / 60);
+                if (announceMin !== lastAnnouncedMin || timeLeft <= 60) {
+                    lastAnnouncedMin = announceMin;
+                    liveEl.textContent = '{{ T $.Lang "gameplay.time_left" }}'.replace('%s', timeStr);
+                }
+            }
 
             // Color coding: green > 5min, yellow > 1min, red < 1min
             if (timeLeft <= 60) {
