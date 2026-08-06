@@ -287,6 +287,10 @@ func checkTimeoutsImpl(db *gorm.DB, ctx context.Context, onGameFinished GameComp
 		Joins("LEFT JOIN game_passings ON game_passings.id = level_progresses.game_passing_id").
 		Joins("LEFT JOIN game_settings ON game_settings.game_id = game_passings.game_id").
 		Where("level_progresses.finished_at IS NULL").
+		// ORDER BY started_at ASC (P-H5): без сортировки partial-индекс
+		// (game_passing_id, finished_at) отдавал одни и те же занятые прохождения
+		// каждые 30с, а свежие голодали.
+		Order("level_progresses.started_at ASC").
 		Limit(batchSize).
 		Find(&progressesWithSettings).Error; err != nil {
 		log.Error().Err(err).Msg("CheckTimeouts: failed to fetch progresses with settings")

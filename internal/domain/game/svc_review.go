@@ -78,10 +78,9 @@ func (s *ReviewService) Create(gameID, userID uint, rating int, comment string) 
 func (s *ReviewService) ListByGame(ctx context.Context, gameID uint) ([]Review, error) {
 	cacheKey := fmt.Sprintf("reviews:game:%d", gameID)
 	if s.Cache != nil {
-		if cached, ok := s.Cache.GetWithCtx(ctx, cacheKey); ok {
-			if reviews, ok := cached.([]Review); ok {
-				return reviews, nil
-			}
+		var cached []Review
+		if cacheGetJSON(s.Cache, ctx, cacheKey, &cached) {
+			return cached, nil
 		}
 	}
 

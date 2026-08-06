@@ -194,6 +194,36 @@ func cacheGetGame(store cache.CacheStore, ctx context.Context, key string) (*Gam
 	}
 }
 
+// cacheGetJSON читает typed-значение из кэша (P-H1): для Valkey — raw bytes +
+// json.Unmarshal (иначе type assertion против map[string]any всегда падает и
+// кэш молча не хитнит); для in-memory — JSON round-trip через target.
+// Set выполняется обычным SetWithCtx (который уже маршалит в JSON).
+func cacheGetJSON(store cache.CacheStore, ctx context.Context, key string, target any) bool {
+	if vc, ok := store.(*cache.ValkeyCache); ok {
+		raw, ok := vc.GetBytesWithCtx(ctx, key)
+		if !ok {
+			return false
+		}
+		if err := json.Unmarshal(raw, target); err != nil {
+			vc.DeleteWithCtx(ctx, key)
+			return false
+		}
+		return true
+	}
+	cached, ok := store.GetWithCtx(ctx, key)
+	if !ok {
+		return false
+	}
+	data, err := json.Marshal(cached)
+	if err != nil {
+		return false
+	}
+	if err := json.Unmarshal(data, target); err != nil {
+		return false
+	}
+	return true
+}
+
 // GetByID возвращает игру по ID с кэшированием.
 // isAdmin позволяет админам просматривать черновики и приватные игры, автором которых они не являются.
 func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint, isAdmin bool) (*Game, error) {

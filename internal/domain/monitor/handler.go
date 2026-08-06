@@ -2,6 +2,7 @@
 package monitor
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -101,6 +102,9 @@ type monitorGamePoller struct {
 	wg          sync.WaitGroup
 	subscribers []*monitorSubscriber
 	subMu       sync.Mutex
+	// lastData — последний отправленный payload (P-M3): идентичные снапшоты
+	// не рассылаем повторно каждую секунду.
+	lastData []byte
 }
 
 // subscribeMonitor добавляет подписчика для указанной игры. Если сборщик не запущен — запускает его.
@@ -135,6 +139,12 @@ func subscribeMonitor(gameID uint, snapFn func(context.Context) ([]byte, error))
 						continue
 					}
 					poller.subMu.Lock()
+					// P-M3: снапшот не изменился — не рассылаем дубли.
+					if bytes.Equal(poller.lastData, data) {
+						poller.subMu.Unlock()
+						continue
+					}
+					poller.lastData = data
 					for _, s := range poller.subscribers {
 						select {
 						case s.ch <- data:

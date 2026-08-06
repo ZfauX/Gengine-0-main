@@ -183,11 +183,10 @@ type LeaderboardEntry struct {
 func (s *RatingService) GetLeaderboard(ctx context.Context, limit int) ([]LeaderboardEntry, error) {
 	cacheKey := fmt.Sprintf("leaderboard:limit:%d", limit)
 
-	if cached, ok := s.cache.GetWithCtx(ctx, cacheKey); ok {
-		if entries, ok := cached.([]LeaderboardEntry); ok {
-			log.Debug().Msg("GetLeaderboard: cache hit")
-			return entries, nil
-		}
+	var cached []LeaderboardEntry
+	if cacheGetJSON(s.cache, ctx, cacheKey, &cached) {
+		log.Debug().Msg("GetLeaderboard: cache hit")
+		return cached, nil
 	}
 
 	var entries []LeaderboardEntry

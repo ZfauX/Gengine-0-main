@@ -61,10 +61,9 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 	cacheKey := ""
 	if filter.ViewerID == 0 {
 		cacheKey = listingCacheKey(filter, sort, page, perPage)
-		if cached, ok := s.cache.GetWithCtx(ctx, cacheKey); ok {
-			if entry, ok := cached.(listingCacheEntry); ok {
-				return entry.Games, entry.Total, nil
-			}
+		var entry listingCacheEntry
+		if cacheGetJSON(s.cache, ctx, cacheKey, &entry) {
+			return entry.Games, entry.Total, nil
 		}
 	}
 

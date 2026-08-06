@@ -17,6 +17,7 @@ import (
 	ws "gengine-0/internal/pkg/websocket"
 
 	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -599,10 +600,19 @@ func (s *GamePlayService) ProcessSnapshot(ctx context.Context, gameID uint) {
 	defer cancel()
 
 	if s.monitorSvc != nil {
-		// Пересчёт мест/длительности. Повторный вызов на финише (после
-		// onGameFinished) даёт тот же результат — безопасно.
-		if err := s.monitorSvc.CalculateResults(timeoutCtx, gameID); err != nil {
-			log.Error().Err(err).Uint("game_id", gameID).Msg("ProcessSnapshot: CalculateResults failed")
+		// P-M1: если игра уже завершена, колбэк финиша (onGameFinished) уже
+		// выполнил CalculateResults — не дублируем. Для активных игр пересчёт
+		// нужен (места могут меняться по мере финишей команд).
+		var status string
+		if err := s.db.WithContext(timeoutCtx).Model(&Game{}).
+			Select("status").Where("id = ?", gameID).Scan(&status).Error; err != nil {
+			log.Warn().Err(err).Uint("game_id", gameID).Msg("ProcessSnapshot: failed to read game status, skipping recalc")
+			status = string(StatusFinished) // консервативно: не дублировать расчёт при неизвестном статусе
+		}
+		if status != string(StatusFinished) {
+			if err := s.monitorSvc.CalculateResults(timeoutCtx, gameID); err != nil {
+				log.Error().Err(err).Uint("game_id", gameID).Msg("ProcessSnapshot: CalculateResults failed")
+			}
 		}
 	}
 	s.broadcastSnapshotForGame(timeoutCtx, gameID)
@@ -679,27 +689,40 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 		return nil, err
 	}
 
-	// Оптимизация: загружаем attempts в одном запросе с LIMIT для последних попыток
+	// Оптимизация (P-H4): attempts и voting session независимы — грузим
+	// параллельно через errgroup вместо последовательных round-trips.
 	var attempts []Attempt
-	if err := s.db.WithContext(ctx).
-		Where("level_progress_id = ?", progress.ID).
-		Order("created_at DESC").
-		Limit(50).
-		Find(&attempts).Error; err != nil {
-		log.Error().Err(err).Uint("progress_id", progress.ID).Msg("GetGameplayData: failed to fetch attempts")
-	}
-
 	var votingSession GameBlackboxVotingSession
 	votingActive := false
-	if err := s.db.WithContext(ctx).
-		Where("game_passing_id = ? AND level_id = ? AND is_open = true", passingID, progress.LevelID).
-		First(&votingSession).Error; err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Error().Err(err).Uint("passing_id", passingID).Uint("level_id", progress.LevelID).Msg("GetGameplayData: voting session query failed")
+
+	var g errgroup.Group
+	g.Go(func() error {
+		if err := s.db.WithContext(ctx).
+			Where("level_progress_id = ?", progress.ID).
+			Order("created_at DESC").
+			Limit(50).
+			Find(&attempts).Error; err != nil {
+			log.Error().Err(err).Uint("progress_id", progress.ID).Msg("GetGameplayData: failed to fetch attempts")
+			return err
 		}
-	} else {
-		votingActive = true
-	}
+		return nil
+	})
+	g.Go(func() error {
+		if err := s.db.WithContext(ctx).
+			Where("game_passing_id = ? AND level_id = ? AND is_open = true", passingID, progress.LevelID).
+			First(&votingSession).Error; err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				log.Error().Err(err).Uint("passing_id", passingID).Uint("level_id", progress.LevelID).Msg("GetGameplayData: voting session query failed")
+				return err
+			}
+		} else {
+			votingActive = true
+		}
+		return nil
+	})
+	// Ошибки фоновых запросов не должны валить страницу — данные уже есть,
+	// но логируем результат ожидания.
+	_ = g.Wait()
 
 	timeLimitSec := 0
 	if settings.PerLevelTimeLimit > 0 {

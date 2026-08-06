@@ -28,6 +28,10 @@ type SSESession struct {
 	closeOnce sync.Once
 	remoteIP  string
 	closed    bool // закрыт under s.mu
+	// ch — буферизированный канал событий для writer goroutine (P-M2):
+	// Broadcast больше не пишет в ResponseWriter синхронно, медленный клиент
+	// не блокирует хендлер/воркер — события просто дропаются при переполнении.
+	ch chan []byte
 }
 
 // sseWriteTimeout — таймаут на запись в SSE-соединение (защита от slow-reader DoS).
@@ -148,7 +152,16 @@ func (m *SSEManager) RegisterSession(gameID uint, ip string, w http.ResponseWrit
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	session := &SSESession{w: w, flush: flush, done: make(chan struct{}), remoteIP: ip}
+	session := &SSESession{
+		w:        w,
+		flush:    flush,
+		done:     make(chan struct{}),
+		remoteIP: ip,
+		ch:       make(chan []byte, 16),
+	}
+	// Writer goroutine (P-M2): единственный писатель в ResponseWriter.
+	// Завершается по done (сессия закрыта).
+	go session.writeLoop()
 	m.sessions[gameID] = append(m.sessions[gameID], session)
 	if m.gameMap == nil {
 		m.gameMap = make(map[*SSESession]uint)
@@ -157,6 +170,36 @@ func (m *SSEManager) RegisterSession(gameID uint, ip string, w http.ResponseWrit
 	m.totalConns++
 	m.connsPerIP[ip]++
 	return session
+}
+
+// writeLoop пишет события из канала в SSE-соединение (P-M2).
+func (s *SSESession) writeLoop() {
+	for {
+		select {
+		case <-s.done:
+			return
+		case data := <-s.ch:
+			s.mu.Lock()
+			if s.closed {
+				s.mu.Unlock()
+				return
+			}
+			err := s.write(data)
+			s.mu.Unlock()
+			if err != nil {
+				log.Debug().Err(err).Msg("SSE: writeLoop write error")
+				return
+			}
+		}
+	}
+}
+
+// enqueue ставит событие в канал без блокировки (drop-on-full).
+func (s *SSESession) enqueue(data []byte) {
+	select {
+	case s.ch <- data:
+	default:
+	}
 }
 
 // UnregisterSession удаляет SSE-подключение
@@ -226,20 +269,9 @@ func (m *SSEManager) Broadcast(gameID uint, eventType string, data any) {
 	event := "event: " + eventType + "\ndata: " + payloadJSON + "\n\n"
 
 	for _, s := range sessions {
-		if !s.mu.TryLock() {
-			log.Warn().Msg("SSE broadcast: skipping busy session")
-			continue
-		}
-		if s.closed {
-			s.mu.Unlock()
-			continue
-		}
-		if err := s.write([]byte(event)); err != nil {
-			s.mu.Unlock()
-			log.Debug().Err(err).Msg("SSE: write error")
-			continue
-		}
-		s.mu.Unlock()
+		// Неблокирующая отправка (P-M2): медленный клиент не держит Broadcast.
+		// Канал не закрывается при отписке — отправка в него безопасна.
+		s.enqueue([]byte(event))
 	}
 }
 
@@ -323,14 +355,8 @@ func sseConnect(mgr *SSEManager, c *gin.Context, gameID uint) {
 			log.Debug().Uint("game_id", gameID).Msg("SSE: manager stopped")
 			return
 		case <-ticker.C:
-			// Пишем heartbeat под мьютексом сессии — безопасно с Broadcast()
-			session.mu.Lock()
-			if err := session.write([]byte(": heartbeat\n\n")); err != nil {
-				session.mu.Unlock()
-				log.Debug().Err(err).Uint("game_id", gameID).Msg("SSE: heartbeat write error")
-				return
-			}
-			session.mu.Unlock()
+			// Heartbeat через канал (P-M2) — единый писатель в ResponseWriter.
+			session.enqueue([]byte(": heartbeat\n\n"))
 		}
 	}
 }

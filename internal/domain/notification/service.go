@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"gengine-0/internal/config"
@@ -70,13 +71,26 @@ type NotificationService struct {
 	sseMgr   *game.SSEManager
 	vapidCfg config.VAPIDConfig
 	baseURL  string
+
+	// unreadCache — короткий TTL-кэш счётчика непрочитанных (P-M6):
+	// не делать COUNT на каждое созданное уведомление.
+	unreadMu    sync.Mutex
+	unreadCache map[uint]unreadEntry
 }
+
+type unreadEntry struct {
+	count   int
+	expires time.Time
+}
+
+const unreadCacheTTL = 30 * time.Second
 
 func NewNotificationService(db *gorm.DB, hub *ws.RoomHub) *NotificationService {
 	return &NotificationService{
-		repo: NewNotificationRepository(db),
-		db:   db,
-		hub:  hub,
+		repo:        NewNotificationRepository(db),
+		db:          db,
+		hub:         hub,
+		unreadCache: make(map[uint]unreadEntry),
 	}
 }
 
@@ -201,6 +215,9 @@ func (s *NotificationService) Create(ctx context.Context, userID uint, ntype Not
 		return fmt.Errorf("failed to create notification: %w", err)
 	}
 
+	// Сброс кэша счётчика (P-M6).
+	s.invalidateUnreadCount(userID)
+
 	// Отправляем WebSocket-уведомление в реальном времени
 	if s.hub != nil {
 		s.sendWebSocketNotification(ctx, userID, notification)
@@ -306,13 +323,31 @@ func (s *NotificationService) sendWebSocketNotification(ctx context.Context, use
 	s.hub.BroadcastToRoom(roomID, data)
 }
 
-// getUnreadCount возвращает количество непрочитанных уведомлений
+// getUnreadCount возвращает количество непрочитанных уведомлений (с TTL-кэшем, P-M6).
 func (s *NotificationService) getUnreadCount(ctx context.Context, userID uint) int {
+	s.unreadMu.Lock()
+	if e, ok := s.unreadCache[userID]; ok && time.Now().Before(e.expires) {
+		s.unreadMu.Unlock()
+		return e.count
+	}
+	s.unreadMu.Unlock()
+
 	var count int64
 	if err := s.db.WithContext(ctx).Model(&Notification{}).Where("user_id = ? AND read = ?", userID, false).Count(&count).Error; err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Msg("getUnreadCount: failed")
 	}
+
+	s.unreadMu.Lock()
+	s.unreadCache[userID] = unreadEntry{count: int(count), expires: time.Now().Add(unreadCacheTTL)}
+	s.unreadMu.Unlock()
 	return int(count)
+}
+
+// invalidateUnreadCount сбрасывает кэш счётчика пользователя (Create/MarkAsRead).
+func (s *NotificationService) invalidateUnreadCount(userID uint) {
+	s.unreadMu.Lock()
+	delete(s.unreadCache, userID)
+	s.unreadMu.Unlock()
 }
 
 // GetByUser возвращает уведомления пользователя с пагинацией
@@ -352,15 +387,21 @@ func (s *NotificationService) MarkAsRead(ctx context.Context, userID, notificati
 	if result.RowsAffected == 0 {
 		return fmt.Errorf("notification not found")
 	}
-
+	// Сброс кэша счётчика (P-M6).
+	s.invalidateUnreadCount(userID)
 	return nil
 }
 
 // MarkAllAsRead помечает все уведомления пользователя как прочитанные
 func (s *NotificationService) MarkAllAsRead(ctx context.Context, userID uint) error {
-	return s.db.WithContext(ctx).Model(&Notification{}).
+	err := s.db.WithContext(ctx).Model(&Notification{}).
 		Where("user_id = ? AND read = ?", userID, false).
 		Update("read", true).Error
+	if err != nil {
+		return err
+	}
+	s.invalidateUnreadCount(userID)
+	return nil
 }
 
 // GetUnreadCount возвращает количество непрочитанных уведомлений
