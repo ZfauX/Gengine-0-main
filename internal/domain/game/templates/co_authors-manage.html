@@ -77,19 +77,21 @@
                     return;
                 }
                 data.users.forEach(function(u) {
-                    var div = document.createElement('div');
-                    div.className = 'p-3 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer';
-                    div.textContent = u.name + ' (' + u.email + ')';
-                    div.dataset.userId = u.id;
-                    div.dataset.userName = u.name;
-                    div.addEventListener('click', function() {
+                    // U-11: кнопки вместо div — доступны с клавиатуры (Tab/Enter/Space).
+                    var btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'w-full text-left p-3 border-b border-gray-100 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer focus-visible:bg-gray-50 dark:focus-visible:bg-gray-700';
+                    btn.textContent = u.name + ' (' + u.email + ')';
+                    btn.dataset.userId = u.id;
+                    btn.dataset.userName = u.name;
+                    btn.addEventListener('click', function() {
                         selectedInput.value = this.dataset.userId;
                         searchInput.value = this.dataset.userName;
                         resultsEl.classList.add('hidden');
                         resultsEl.innerHTML = '';
                         addBtn.disabled = false;
                     });
-                    resultsEl.appendChild(div);
+                    resultsEl.appendChild(btn);
                 });
                 resultsEl.classList.remove('hidden');
             })

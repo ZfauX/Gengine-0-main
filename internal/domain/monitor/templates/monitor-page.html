@@ -126,18 +126,32 @@
         }
 
         function renderTeams() {
-            teamsContainer.innerHTML = '';
+            // U-5: дифф-обновление по team_id — карточка создаётся один раз,
+            // при новых снапшотах пересобираем только её содержимое. Это не
+            // сбрасывает фокус/скролл и не повторяет fade-in на каждый тик.
+            const existing = {};
+            teamsContainer.querySelectorAll('.monitor-team-card').forEach(c => { existing[c.dataset.teamId] = c; });
+            const seen = new Set();
+
             if (!teamsData || teamsData.length === 0) {
                 teamsContainer.innerHTML = `<div class="col-span-full text-center text-gray-500 dark:text-gray-400 py-8">{{ T $.Lang "monitor.no_data" }}</div>`;
                 return;
             }
 
             teamsData.forEach(team => {
-                const progressPercent = team.total_levels > 0 ? (team.completed_levels / team.total_levels * 100) : 0;
-                const card = document.createElement('div');
-                card.className = 'card fade-in hover:shadow-md transition-all duration-200 border-l-4 ' + 
-                    (team.suspicious ? 'border-yellow-500 bg-yellow-50' : 'border-blue-500');
+                const key = String(team.team_id);
+                seen.add(key);
+                let card = existing[key];
+                if (!card) {
+                    card = document.createElement('div');
+                    card.className = 'monitor-team-card card hover:shadow-md transition-all duration-200 border-l-4';
+                    card.dataset.teamId = key;
+                    teamsContainer.appendChild(card);
+                }
 
+                const progressPercent = team.total_levels > 0 ? (team.completed_levels / team.total_levels * 100) : 0;
+                card.className = 'monitor-team-card card hover:shadow-md transition-all duration-200 border-l-4 ' +
+                    (team.suspicious ? 'border-yellow-500 bg-yellow-50' : 'border-blue-500');
                 card.innerHTML = `
                     <div class="flex justify-between items-start mb-2">
                         <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100 truncate">${escapeHtml(team.team_name)}</h3>
@@ -170,11 +184,15 @@
                         </div>
                     ` : ''}
                 `;
-                teamsContainer.appendChild(card);
                 // Set progress bar width via JS (CSP-safe)
                 card.querySelectorAll('[data-width]').forEach(function(el) {
                     el.style.width = el.getAttribute('data-width') + '%';
                 });
+            });
+
+            // Удаляем карточки команд, которых больше нет в снапшоте.
+            Object.keys(existing).forEach(id => {
+                if (!seen.has(id)) existing[id].remove();
             });
         }
 
