@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -270,6 +271,9 @@ func (h *GameplayHandler) UseHint(c *gin.Context) {
 	}
 	if hintText != "" {
 		render.SetFlash(c, "gameplay_hint", hintText)
+		// H1: hint передаём и query-параметром — JS-ветка тоста по ?hint= заработает.
+		c.Redirect(http.StatusFound, "/game/"+c.Param("passing_id")+"?hint="+url.QueryEscape(hintText))
+		return
 	}
 	c.Redirect(http.StatusFound, "/game/"+c.Param("passing_id"))
 }
@@ -386,12 +390,13 @@ func (h *GameplayHandler) AcceptAnswer(c *gin.Context) {
 		}
 		return
 	}
-	gameID, err := strconv.Atoi(c.Query("game_id"))
-	if err != nil || gameID <= 0 {
-		render.RenderErrorPage(c, http.StatusBadRequest)
+	// C-4: game_id опционален — если не передан, ведём на страницу прохождения
+	// (сервис уже выполнил работу; 400 на успешную мутацию — некорректно).
+	if gameID, err := strconv.Atoi(c.Query("game_id")); err == nil && gameID > 0 {
+		c.Redirect(http.StatusFound, fmt.Sprintf("/games/%d/monitor", gameID))
 		return
 	}
-	c.Redirect(http.StatusFound, fmt.Sprintf("/games/%d/monitor", gameID))
+	c.Redirect(http.StatusFound, fmt.Sprintf("/game/%d", passingID))
 }
 
 // ---------- Тестовое прохождение ----------

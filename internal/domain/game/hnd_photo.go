@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	apperr "gengine-0/internal/pkg/errors"
+	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/storage"
 	"gengine-0/internal/pkg/validation"
@@ -113,6 +114,21 @@ func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 		return
 	}
 	userID := c.GetUint("userID")
+
+	// #1: загрузка фото — только менеджер игры (автор/соавтор) или админ.
+	// Раньше любой залогиненный мог заливать фото в галерею любой игры.
+	if !middleware.IsAdmin(c) {
+		ok, mErr := h.coAuthorSvc.IsUserManager(c.Request.Context(), uint(gameID), userID)
+		if mErr != nil {
+			log.Error().Err(mErr).Int("game_id", gameID).Msg("UploadPhoto: failed to check manager")
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "internal error", "code": "internal"})
+			return
+		}
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden"), "code": "forbidden"})
+			return
+		}
+	}
 
 	if limitErr := LimitRequestBody(c, photoMaxSize); limitErr != nil {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{

@@ -102,7 +102,28 @@ func (s *TournamentService) AddGame(ctx context.Context, tournamentID, gameID, u
 			GameID:       gameID,
 			OrderIndex:   int(order),
 		}
-		return tx.Create(&tg).Error
+		if err := tx.Create(&tg).Error; err != nil {
+			return err
+		}
+
+		// #4: создаём StatusPending прохождения для всех команд, уже поданных
+		// в турнир — иначе команды, зарегистрированные до добавления игры,
+		// не получат passing и не будут начислены очки в новой игре.
+		var teams []TournamentTeam
+		if err := tx.Where("tournament_id = ?", tournamentID).Find(&teams).Error; err != nil {
+			return err
+		}
+		for _, tt := range teams {
+			passing := game.GamePassing{
+				GameID: gameID,
+				TeamID: tt.TeamID,
+				Status: game.StatusPending,
+			}
+			if err := tx.Create(&passing).Error; err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 }
 
@@ -166,6 +187,14 @@ func (s *TournamentService) RemoveGame(ctx context.Context, tournamentID, gameID
 					}
 				}
 			}
+		}
+
+		// #5: сбрасываем флаги начисления на прохождениях игры — если игру
+		// пере-добавят, команды смогут пройти её заново и будут начислены.
+		if err := tx.Model(&game.GamePassing{}).
+			Where("game_id = ?", gameID).
+			Updates(map[string]any{"tournament_scored": false, "tournament_points": 0}).Error; err != nil {
+			return err
 		}
 
 		// Remove the game from the tournament

@@ -40,6 +40,19 @@ func (s *PhotoService) Delete(photoID, userID uint) error {
 		return err
 	}
 	if photo.UserID != userID {
+		// #2: автор игры может удалять чужие фото (в хендлере автор проходит
+		// IsUserManager, но в co_authors строки у него нет).
+		var game Game
+		if err := s.DB.Select("author_id").First(&game, photo.GameID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			return err
+		}
+		if game.AuthorID == userID {
+			return s.DB.Delete(&photo).Error
+		}
+
 		var coAuthor CoAuthor
 		err := s.DB.Where("game_id = ? AND user_id = ?", photo.GameID, userID).First(&coAuthor).Error
 		if err != nil {

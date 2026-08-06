@@ -176,8 +176,12 @@
                     if (!validateStep(currentStep)) return;
                     showStep(currentStep + 1);
                     submitBtn.scrollIntoView({ block: 'nearest' });
+                } else {
+                    // H4: на финальном шаге — защита от двойного submit (дубли игры).
+                    if (this.disabled) { e.preventDefault(); return; }
+                    this.disabled = true;
+                    this.innerHTML = '<span class="inline-block animate-spin mr-1">\u27F3</span> ' + createText;
                 }
-                // на последнем шаге — обычная отправка формы
             });
         }
 

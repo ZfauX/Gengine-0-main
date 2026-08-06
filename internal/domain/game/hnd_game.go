@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -554,21 +555,14 @@ func (h *GameHandler) Update(c *gin.Context) {
 		if errors.Is(updateErr, gorm.ErrRecordNotFound) {
 			render.RenderErrorPage(c, http.StatusNotFound)
 			return
+		} else if strings.Contains(updateErr.Error(), "только автор") {
+			// Бизнес-ошибка прав — 403 с локализованным сообщением.
+			render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, updateErr.Error()))
+			return
 		} else {
-			errs := validation.FieldErrors{}
-			errs.Add("form", updateErr)
-			render.Page(c, http.StatusForbidden, "games-edit.html", gin.H{
-				"Game":                 existingGame,
-				"Error":                errs.Error(),
-				"Errors":               errs,
-				"csrf":                 csrf.GetToken(c),
-				"Name":                 input.Name,
-				"Description":          input.Description,
-				"MaxTeamNumber":        input.MaxTeamNumber,
-				"Visibility":           input.Visibility,
-				"StartsAt":             input.StartsAt,
-				"RegistrationDeadline": input.RegistrationDeadline,
-			})
+			// Реальная ошибка БД/файлов — 500 generic (C-1), не показываем сырой текст.
+			log.Error().Err(updateErr).Int("game_id", id).Msg("Update: failed to update game")
+			render.RenderErrorPage(c, http.StatusInternalServerError)
 			return
 		}
 	}
@@ -599,9 +593,13 @@ func (h *GameHandler) Delete(c *gin.Context) {
 	if err := h.gameService.Delete(c.Request.Context(), uint(id), userID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			render.RenderErrorPage(c, http.StatusNotFound)
+		} else if strings.Contains(err.Error(), "только владелец") {
+			// Бизнес-ошибка прав — 403 с локализованным сообщением.
+			render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, err.Error()))
 		} else {
+			// Реальная ошибка БД — 500 generic (C-1).
 			log.Error().Err(err).Int("game_id", id).Uint("user", userID).Msg("GameHandler.Delete: failed to delete game")
-			render.RenderError(c, http.StatusForbidden, "Ошибка при удалении игры")
+			render.RenderErrorPage(c, http.StatusInternalServerError)
 		}
 		return
 	}

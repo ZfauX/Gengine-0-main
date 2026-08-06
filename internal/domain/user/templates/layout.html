@@ -596,7 +596,9 @@
                 var protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                 window.notifSocket = window.createReconnectingWebSocket(protocol + '//' + window.location.host + '/ws/notifications', {
                     onMessage: function(event) {
-                        var data = JSON.parse(event.data);
+                        // M4: битый фрейм (прокси/пустой body) не должен ронять обработчик.
+                        var data;
+                        try { data = JSON.parse(event.data); } catch (err) { console.error('notif: invalid frame', err); return; }
                         if (data.type && data.type !== 'ping') {
                             showToast(data.message || data.title, 'info');
                             if (data.unread_count !== undefined) {

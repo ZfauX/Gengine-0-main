@@ -99,10 +99,10 @@ func TestRouter_PublicRoutes(t *testing.T) {
 		wantStatus int
 	}{
 		{
-			name:       "swagger UI",
+			name:       "swagger UI требует авторизации (redirect на login)",
 			method:     "GET",
 			path:       "/swagger/index.html",
-			wantStatus: http.StatusForbidden,
+			wantStatus: http.StatusFound,
 		},
 		{
 			name:       "login page",

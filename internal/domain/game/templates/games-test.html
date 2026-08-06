@@ -7,7 +7,10 @@
     </div>
 
     <div class="card mb-6">
-        <a href="/games/{{.Game.ID}}/testing/start" class="btn btn-primary text-sm">{{ T $.Lang "gametest.start_button" }}</a>
+        <form action="/games/{{.Game.ID}}/testing/start" method="POST">
+            <input type="hidden" name="_csrf" value="{{.csrf}}">
+            <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "gametest.start_button" }}</button>
+        </form>
     </div>
 
     {{if .TestPassings}}

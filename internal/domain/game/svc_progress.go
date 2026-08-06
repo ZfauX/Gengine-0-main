@@ -96,10 +96,11 @@ func (s *LevelProgressService) GetCurrentProgress(ctx context.Context, gamePassi
 
 // GetCurrentProgressForUpdate возвращает текущий незавершённый прогресс с блокировкой FOR UPDATE.
 // Используется внутри транзакций для предотвращения гонок.
+// NB: без Preload уровня (pass 25 / #7) — SubmitCodeWithTx сам догружает
+// Level.Questions.Answers, а UseHint/SubmitFile/AcceptBlackboxAnswer граф не нужен.
 func GetCurrentProgressForUpdate(tx *gorm.DB, gamePassingID uint) (*LevelProgress, error) {
 	var progress LevelProgress
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Preload("Level.Questions.Answers").
 		Where("game_passing_id = ? AND finished_at IS NULL", gamePassingID).
 		First(&progress).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {

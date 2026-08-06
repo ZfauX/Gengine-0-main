@@ -444,6 +444,12 @@ func (s *GamePlayService) StartTesting(ctx context.Context, gameID, userID uint)
 		teamErr := tx.Where("name = ?", testTeam.Name).First(&existingTeam).Error
 		switch {
 		case teamErr == nil:
+			// #3: блокируем строку команды — два параллельных StartTesting не
+			// переиспользуют одну orphan-команду одновременно (второй увидит
+			// уже созданное прохождение и создаст новую команду).
+			if lockErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&existingTeam, existingTeam.ID).Error; lockErr != nil {
+				return lockErr
+			}
 			var passingCount int64
 			if countErr := tx.Model(&GamePassing{}).Where("team_id = ?", existingTeam.ID).Count(&passingCount).Error; countErr != nil {
 				return countErr
@@ -491,6 +497,8 @@ func (s *GamePlayService) SubmitTestCode(ctx context.Context, passingID, userID 
 	var attempt *Attempt
 	var gameID uint
 	var savedLevelID uint
+	// #6: колбэк завершения — после коммита (паттерн onCommit, как в SubmitCode).
+	var onCommitFn func()
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		progress, err := GetCurrentProgressForUpdate(tx, passingID)
@@ -517,15 +525,18 @@ func (s *GamePlayService) SubmitTestCode(ctx context.Context, passingID, userID 
 		if completeErr != nil {
 			return completeErr
 		}
-		if onCommit != nil {
-			onCommit()
-		}
+		onCommitFn = onCommit
 		savedLevelID = progress.LevelID
 		return nil
 	})
 
 	if err != nil {
 		return nil, err
+	}
+
+	// Колбэк завершения — строго после коммита (B1-порядок).
+	if onCommitFn != nil {
+		onCommitFn()
 	}
 
 	if attempt != nil && savedLevelID != 0 {

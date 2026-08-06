@@ -142,7 +142,7 @@ func RegisterRoutes(r *gin.RouterGroup, deps *GameDeps) {
 
 		protected.GET("/:id/test", testHandler.TestPage)
 
-		protected.GET("/:id/testing/start", gameplayHandler.StartTesting)
+		protected.POST("/:id/testing/start", gameplayHandler.StartTesting)
 
 		protected.GET("/:id/photos", photoHandler.PhotosPage)
 

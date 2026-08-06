@@ -47,7 +47,10 @@ func (r *gormExportRepo) GetFinishedPassingsWithDetails(ctx context.Context, gam
 	err := r.db.WithContext(ctx).
 		Preload("Team").
 		Preload("Progresses").
-		Preload("Progresses.Attempts").
+		// #9: загружаем только id попыток (для len) — без огромных кодов ответов.
+		Preload("Progresses.Attempts", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id")
+		}).
 		Preload("Progresses.Level").
 		Where("game_id = ? AND status = ?", gameID, game.StatusFinished).
 		Order("place ASC").

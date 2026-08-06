@@ -201,8 +201,14 @@ func (c *ValkeyCache) DeleteByPrefixWithCtx(ctx context.Context, prefix string) 
 			log.Warn().Err(err).Str("prefix", prefix).Msg("Valkey: DeleteByPrefixWithCtx scan error")
 			return
 		}
-		for _, key := range keys {
-			if err := c.client.Del(ctx, key).Err(); err != nil {
+		// #8: батчим Del(keys...) — раньше один round-trip на ключ (сотни DEL
+		// при инвалидации games:list: на каждую публикацию игры).
+		for i := 0; i < len(keys); i += 100 {
+			end := i + 100
+			if end > len(keys) {
+				end = len(keys)
+			}
+			if err := c.client.Del(ctx, keys[i:end]...).Err(); err != nil {
 				log.Warn().Err(err).Str("prefix", prefix).Msg("Valkey: DeleteByPrefixWithCtx batch error")
 			}
 		}

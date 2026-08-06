@@ -161,20 +161,13 @@ func (app *App) setupEngine(r *gin.Engine) error {
 		c.Next()
 	})
 
-	r.GET("/swagger/*any", middleware.OptionalAuth(app.Deps.Services.Auth), func(c *gin.Context) {
-		role, _ := c.Get("role")
-		if role != "admin" {
-			c.JSON(http.StatusForbidden, gin.H{"error": i18n.T("generic.forbidden")})
-			return
-		}
+	// S-1: /swagger и /metrics — только админы с актуальной ролью (AuthRequired
+	// перечитывает роль из БД; OptionalAuth доверял claim, и пониженный админ
+	// сохранял доступ до истечения токена).
+	r.GET("/swagger/*any", middleware.AuthRequired(app.Deps.Services.Auth), middleware.AdminRequired(), func(c *gin.Context) {
 		ginSwagger.WrapHandler(swaggerFiles.Handler)(c)
 	})
-	r.GET("/metrics", middleware.OptionalAuth(app.Deps.Services.Auth), func(c *gin.Context) {
-		role, _ := c.Get("role")
-		if role != "admin" {
-			c.JSON(http.StatusForbidden, gin.H{"error": i18n.T("generic.forbidden")})
-			return
-		}
+	r.GET("/metrics", middleware.AuthRequired(app.Deps.Services.Auth), middleware.AdminRequired(), func(c *gin.Context) {
 		gin.WrapH(promhttp.Handler())(c)
 	})
 

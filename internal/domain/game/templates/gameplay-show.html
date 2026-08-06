@@ -440,14 +440,16 @@
 
         // Flash error from session (server-side).
         // Показываем как тост И удаляем inline-flash, чтобы не дублировать (UX5).
+        // H2: showToast доступен только после DOMContentLoaded (initToast в app.js
+        // с defer) — guard, чтобы ReferenceError не прерывал SSE-клиент ниже.
         const flashError = document.querySelector('.flash-error');
         if (flashError) {
-            showToast(flashError.textContent.trim(), 'error');
+            if (window.showToast) showToast(flashError.textContent.trim(), 'error');
             flashError.remove();
         }
         const flashHint = document.querySelector('.flash-info');
         if (flashHint) {
-            showToast(flashHint.textContent.trim(), 'info');
+            if (window.showToast) showToast(flashHint.textContent.trim(), 'info');
             flashHint.remove();
         }
 

@@ -157,7 +157,10 @@ func (r *gormTeamRepo) SearchPaginated(ctx context.Context, query string, offset
 	return teams, err
 }
 func (r *gormTeamRepo) AddMember(ctx context.Context, teamID, userID uint) error {
-	return r.db.WithContext(ctx).Exec("INSERT INTO team_members (team_id, user_id) VALUES (?, ?)", teamID, userID).Error
+	// C-9: ON CONFLICT DO NOTHING — два параллельных AddMember не дадут дубликат.
+	return r.db.WithContext(ctx).Exec(
+		"INSERT INTO team_members (team_id, user_id) VALUES (?, ?) ON CONFLICT DO NOTHING", teamID, userID,
+	).Error
 }
 func (r *gormTeamRepo) RemoveMember(ctx context.Context, teamID, userID uint) error {
 	return r.db.WithContext(ctx).Exec("DELETE FROM team_members WHERE team_id = ? AND user_id = ?", teamID, userID).Error

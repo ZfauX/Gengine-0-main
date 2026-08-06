@@ -44,7 +44,9 @@
         // Единый reconnecting-клиент (UX15)
         chatClient = window.createReconnectingWebSocket(wsUrl, {
             onMessage: function(event) {
-                var data = JSON.parse(event.data);
+                // M4: битый фрейм не должен убивать конвейер сообщений.
+                var data;
+                try { data = JSON.parse(event.data); } catch (err) { console.error('chat: invalid frame', err); return; }
                 if (data.type === 'history' && data.messages) {
                     messagesEl.innerHTML = '';
                     data.messages.forEach(function(msg) { appendMessage(msg, false); });

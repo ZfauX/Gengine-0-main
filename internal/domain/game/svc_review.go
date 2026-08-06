@@ -51,8 +51,9 @@ func (s *ReviewService) CanReview(gameID, userID uint) (bool, error) {
 }
 
 func (s *ReviewService) Create(gameID, userID uint, rating int, comment string) error {
-	if rating < 1 || rating > 10 {
-		return errors.New("рейтинг должен быть от 1 до 10")
+	// C-2: максимальный рейтинг 5 — согласовано с хендлером и UI.
+	if rating < 1 || rating > 5 {
+		return errors.New("рейтинг должен быть от 1 до 5")
 	}
 	can, err := s.CanReview(gameID, userID)
 	if err != nil {
