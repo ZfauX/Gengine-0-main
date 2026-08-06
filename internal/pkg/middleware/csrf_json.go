@@ -1,62 +1,55 @@
 // internal/pkg/middleware/csrf_json.go
-//
-// UNUSED: This file is kept for reference only. CSRFJSON() is dead code —
-// no callers exist in the codebase. If needed in the future, remove the
-// UNUSED comment and wire it into routes.
-
 package middleware
 
 import (
-	"crypto/subtle"
 	"net/http"
+	"net/url"
 	"strings"
 
-	csrf "gengine-0/internal/pkg/csrf"
-
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
 )
 
-// CSRFJSON возвращает middleware, которое проверяет CSRF-токен для всех мутирующих запросов.
-// Для GET/HEAD/OPTIONS запросов проверка не выполняется.
-// Токен ожидается в заголовке "X-CSRF-Token" (для JSON) или в теле формы (для HTML-форм).
+// APIOriginGuard защищает cookie-авторизованные JSON-мутации /api/* от CSRF
+// (pass 24 / S-1). SameSite=Strict на куках уже смягчает, но для defense in
+// depth проверяем Origin/Sec-Fetch-Site:
+//   - если заголовок Origin есть и не совпадает с host запроса → 403;
+//   - если Sec-Fetch-Site есть и не same-origin/none → 403.
 //
-// UNUSED: keep for reference.
-func CSRFJSON() gin.HandlerFunc {
+// GET/HEAD/OPTIONS пропускаются. Регистрируется на небезопасные методы
+// группы /api/*.
+func APIOriginGuard() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Для безопасных методов CSRF не требуется
 		if c.Request.Method == "GET" || c.Request.Method == "HEAD" || c.Request.Method == "OPTIONS" {
 			c.Next()
 			return
 		}
 
-		var token string
-		contentType := c.GetHeader("Content-Type")
-		if strings.Contains(contentType, "application/json") {
-			token = c.GetHeader("X-CSRF-Token")
-		} else {
-			// Для form-urlencoded/multipart — токен из тела формы
-			token = c.PostForm("_csrf")
-		}
-
-		if token == "" {
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": "CSRF token missing",
-				"code":  "csrf_missing",
-			})
-			c.Abort()
+		// Sec-Fetch-Site (современные браузеры): разрешены same-origin и none.
+		if sfs := c.GetHeader("Sec-Fetch-Site"); sfs != "" && sfs != "same-origin" && sfs != "none" {
+			abortCSRF(c)
 			return
 		}
 
-		validToken := csrf.GetToken(c)
-		if subtle.ConstantTimeCompare([]byte(token), []byte(validToken)) != 1 {
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": "CSRF token mismatch",
-				"code":  "csrf_mismatch",
-			})
-			c.Abort()
-			return
+		// Origin: если присутствует, должен совпадать с host (без порта-аномалий).
+		if origin := c.GetHeader("Origin"); origin != "" {
+			u, err := url.Parse(origin)
+			if err != nil || !strings.EqualFold(u.Host, c.Request.Host) {
+				abortCSRF(c)
+				return
+			}
 		}
 
 		c.Next()
 	}
+}
+
+func abortCSRF(c *gin.Context) {
+	log.Warn().Str("method", c.Request.Method).Str("path", c.Request.URL.Path).
+		Str("origin", c.GetHeader("Origin")).Str("sec_fetch_site", c.GetHeader("Sec-Fetch-Site")).
+		Msg("API: cross-origin mutating request rejected")
+	c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+		"error": "cross-origin request forbidden",
+		"code":  "csrf_origin",
+	})
 }

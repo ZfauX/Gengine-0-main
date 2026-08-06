@@ -117,26 +117,20 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 			return progressErr
 		}
 
-		// 2. Проверяем членство в команде
-		if checkErr := CheckTeamMembership(tx, passingID, userID); checkErr != nil {
+		// 2. Проверяем членство в команде (возвращает gameID — без повторного load passing)
+		gameID, checkErr := CheckTeamMembership(tx, passingID, userID)
+		if checkErr != nil {
 			return checkErr
 		}
 
-		// 3. Загружаем passing для получения GameID
-		var passing GamePassing
-		if findErr := tx.First(&passing, passingID).Error; findErr != nil {
-			return findErr
-		}
-
-		// 4. Отправляем код через attemptService с передачей tx
+		// 3. Отправляем код через attemptService с передачей tx
 		att, success, submitErr := s.attemptSvc.SubmitCodeWithTx(ctx, tx, progress, code)
 		if submitErr != nil {
 			return submitErr
 		}
 
 		if success {
-			// 5. Завершаем уровень
-			gameID := passing.GameID
+			// 5. Завершаем уровень (gameID получен из CheckTeamMembership)
 			onCommit, completeErr := CompleteLevel(tx, progress, s.finishCallback(ctx, gameID))
 			if completeErr != nil {
 				return completeErr
@@ -194,15 +188,11 @@ func (s *GamePlayService) SubmitFile(ctx context.Context, passingID, userID uint
 			return progressErr
 		}
 
-		if checkErr := CheckTeamMembership(tx, passingID, userID); checkErr != nil {
+		gid, checkErr := CheckTeamMembership(tx, passingID, userID)
+		if checkErr != nil {
 			return checkErr
 		}
-
-		var passing GamePassing
-		if findErr := tx.Select("game_id").First(&passing, passingID).Error; findErr != nil {
-			return findErr
-		}
-		gameID = passing.GameID
+		gameID = gid
 
 		// Q5: Проверяем, что уровень поддерживает файловые ответы
 		var lvl level.Level
@@ -250,22 +240,24 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (
 			return progressErr
 		}
 
-		if checkErr := CheckTeamMembership(tx, passingID, userID); checkErr != nil {
+		gid, checkErr := CheckTeamMembership(tx, passingID, userID)
+		if checkErr != nil {
 			return checkErr
 		}
+		gameID = gid
 
+		// passing нужен только для проверки статуса.
 		var passing GamePassing
-		if findErr := tx.First(&passing, passingID).Error; findErr != nil {
+		if findErr := tx.Select("status").First(&passing, passingID).Error; findErr != nil {
 			return findErr
 		}
-		gameID = passing.GameID
 		levelID = progress.LevelID
 
 		if passing.Status != StatusStarted {
 			return errors.New("игра не запущена")
 		}
 		var settings GameSetting
-		if findErr := tx.Where("game_id = ?", passing.GameID).First(&settings).Error; findErr != nil {
+		if findErr := tx.Where("game_id = ?", gameID).First(&settings).Error; findErr != nil {
 			if errors.Is(findErr, gorm.ErrRecordNotFound) {
 				settings = *defaultGameSetting(passing.GameID)
 			} else {

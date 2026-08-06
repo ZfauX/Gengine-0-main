@@ -171,7 +171,11 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 		// Если страница пуста (за пределами данных), считаем total отдельным запросом
 		// Безопасно: используем тот же query без ORDER BY/LIMIT/OFFSET
 		countSQL := "SELECT COUNT(*) FROM (" + queryBeforeOrder + ") AS subq"
-		_ = s.gameRepo.Model(ctx).Raw(countSQL, args...).Scan(&total)
+		// C-1: не игнорируем ошибку count-запроса — иначе total=0 «нет игр» при сбое БД.
+		if err := s.gameRepo.Model(ctx).Raw(countSQL, args...).Scan(&total).Error; err != nil {
+			log.Error().Err(err).Msg("ListFilteredPaginated: count fallback failed")
+			return nil, 0, err
+		}
 	}
 
 	games := make([]Game, len(rows))

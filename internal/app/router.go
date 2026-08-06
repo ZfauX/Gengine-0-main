@@ -150,6 +150,17 @@ func (app *App) setupEngine(r *gin.Engine) error {
 	r.Use(middleware.MaxBodySize(int64(app.Config.Server.MaxBodySize)))
 	r.Use(middleware.ContextTimeout(30 * time.Second))
 
+	// CSRF/Origin-guard для JSON-мутаций /api/* (S-1): проверяет Origin и
+	// Sec-Fetch-Site на небезопасных методах — defense in depth поверх
+	// SameSite=Strict кук.
+	r.Use(func(c *gin.Context) {
+		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
+			middleware.APIOriginGuard()(c)
+			return
+		}
+		c.Next()
+	})
+
 	r.GET("/swagger/*any", middleware.OptionalAuth(app.Deps.Services.Auth), func(c *gin.Context) {
 		role, _ := c.Get("role")
 		if role != "admin" {

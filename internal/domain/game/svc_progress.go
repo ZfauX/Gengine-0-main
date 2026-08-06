@@ -4,6 +4,7 @@ package game
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"gengine-0/internal/domain/level"
@@ -162,46 +163,45 @@ func AdvanceToNextLevel(db *gorm.DB, gamePassingID, completedLevelID uint, onGam
 		return nil, err
 	}
 
-	// Загружаем все неудалённые уровни игры напрямую, без зависимости от Preload
-	var levels []level.Level
-	if err = db.Where("game_id = ? AND deleted_at IS NULL", passing.GameID).
-		Order("position ASC").Find(&levels).Error; err != nil {
+	// Perf (pass 24): вместо загрузки ВСЕХ уровней игры — один запрос
+	// следующего уровня после завершённого.
+	var nextLevel level.Level
+	err = db.Where("game_id = ? AND deleted_at IS NULL AND position > (SELECT position FROM levels WHERE id = ?)",
+		passing.GameID, completedLevelID).
+		Order("position ASC").First(&nextLevel).Error
+	switch {
+	case err == nil:
+		newProgress := &LevelProgress{
+			GamePassingID: gamePassingID,
+			LevelID:       nextLevel.ID,
+			StartedAt:     time.Now(),
+		}
+		return nil, db.Create(newProgress).Error
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		// Следующего нет: либо это последний уровень, либо завершённый удалён.
+		// Проверяем существование завершённого уровня.
+		var exists int64
+		if countErr := db.Model(&level.Level{}).Where("id = ?", completedLevelID).Count(&exists).Error; countErr != nil {
+			return nil, countErr
+		}
+		if exists == 0 {
+			log.Warn().Uint("game_passing_id", gamePassingID).Uint("level_id", completedLevelID).Msg("AdvanceToNextLevel: completed level not found (possibly deleted)")
+			return nil, errors.New("завершённый уровень не найден")
+		}
+		// Последний уровень — завершаем игру (кроме тестирования).
+		if passing.Status != StatusTesting {
+			passing.Status = StatusFinished
+			if err = db.Save(&passing).Error; err != nil {
+				return nil, err
+			}
+			if onGameFinished != nil {
+				return onGameFinished, nil
+			}
+		}
+		return nil, nil
+	default:
 		return nil, err
 	}
-
-	foundCurrent := false
-	for _, lvl := range levels {
-		if foundCurrent {
-			newProgress := &LevelProgress{
-				GamePassingID: gamePassingID,
-				LevelID:       lvl.ID,
-				StartedAt:     time.Now(),
-			}
-			return nil, db.Create(newProgress).Error
-		}
-		if lvl.ID == completedLevelID {
-			foundCurrent = true
-		}
-	}
-
-	// Если завершённый уровень не найден среди неудалённых (возможно, удалён), не завершаем игру
-	if !foundCurrent {
-		log.Warn().Uint("game_passing_id", gamePassingID).Uint("level_id", completedLevelID).Msg("AdvanceToNextLevel: completed level not found (possibly deleted)")
-		return nil, errors.New("завершённый уровень не найден")
-	}
-
-	// Если нет следующего уровня после найденного, завершаем игру (кроме тестирования)
-	if passing.Status != StatusTesting {
-		passing.Status = StatusFinished
-		if err = db.Save(&passing).Error; err != nil {
-			return nil, err
-		}
-		// Возвращаем callback для вызова после коммита транзакции
-		if onGameFinished != nil {
-			return onGameFinished, nil
-		}
-	}
-	return nil, nil
 }
 
 // AdvanceToNextLevelWithSSE — расширенная версия с SSE broadcast.
@@ -356,12 +356,15 @@ func checkTimeoutsImpl(db *gorm.DB, ctx context.Context, onGameFinished GameComp
 			return nil
 		}
 
-		// Для каждого просроченного прогресса advance to next level
+		// Для каждого просроченного прогресса advance to next level.
+		// C-5: при сбое advance возвращаем ошибку из транзакции — иначе
+		// прохождение остаётся finished_at без next-progress и retry невозможен.
+		// Откат всей партии безопасен: в следующем цикле таймаут повторится.
 		for _, p := range timedOutProgresses {
 			var passing GamePassing
 			if err := tx.First(&passing, p.GamePassingID).Error; err != nil {
 				log.Error().Err(err).Uint("passing_id", p.GamePassingID).Msg("CheckTimeouts: failed to fetch passing")
-				continue
+				return fmt.Errorf("не удалось загрузить прохождение %d: %w", p.GamePassingID, err)
 			}
 			onCommit, err := AdvanceToNextLevel(tx, p.GamePassingID, p.LevelID, func() {
 				if onGameFinished != nil {
@@ -370,6 +373,7 @@ func checkTimeoutsImpl(db *gorm.DB, ctx context.Context, onGameFinished GameComp
 			})
 			if err != nil {
 				log.Error().Err(err).Uint("progress_id", p.ID).Msg("CheckTimeouts: AdvanceToNextLevel failed")
+				return fmt.Errorf("не удалось перевести прохождение %d: %w", p.GamePassingID, err)
 			}
 			if onCommit != nil {
 				// callback будет вызван после коммита транзакции

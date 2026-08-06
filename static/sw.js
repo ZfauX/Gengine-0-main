@@ -128,10 +128,13 @@ function cacheResponse(request, response) {
 // Push-уведомления
 self.addEventListener('push', event => {
     let data = {};
-    try {
-        data = event.data.json();
-    } catch (e) {
-        data = { title: 'Gengine', body: event.data.text() };
+    if (event.data) {
+        try {
+            data = event.data.json();
+        } catch (e) {
+            // Не-JSON payload (простой текст) — показываем как body.
+            data = { title: 'Gengine', body: event.data.text() };
+        }
     }
 
     const options = {

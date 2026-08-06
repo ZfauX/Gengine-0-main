@@ -150,6 +150,12 @@ func (s *LevelService) Duplicate(ctx context.Context, levelID, userID uint) (*Le
 	tx := s.levelRepo.BeginTransaction(ctx)
 	defer tx.Rollback()
 
+	// C-3: сериализуем сдвиг позиций — как в Move, иначе два параллельных
+	// Duplicate дают коллизию position (unique constraint отловит при commit).
+	if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", int64(original.GameID)).Error; err != nil {
+		return nil, err
+	}
+
 	targetPos := original.Position + 1
 	if err := tx.Model(&Level{}).Where("game_id = ? AND position >= ?", original.GameID, targetPos).
 		Update("position", gorm.Expr("position + 1")).Error; err != nil {

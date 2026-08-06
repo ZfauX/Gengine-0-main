@@ -11,32 +11,34 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// checkTeamMembership проверяет, является ли пользователь членом команды,
+// CheckTeamMembership проверяет, является ли пользователь членом команды,
 // связанной с прохождением. Используется внутри транзакций.
-func CheckTeamMembership(tx *gorm.DB, passingID, userID uint) error {
+// Возвращает gameID прохождения (Perf: избавляет от повторного load passing
+// в вызывающих кодах).
+func CheckTeamMembership(tx *gorm.DB, passingID, userID uint) (uint, error) {
 	var passing GamePassing
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&passing, passingID).Error; err != nil {
-		return err
+		return 0, err
 	}
 
 	var count int64
 	if err := tx.Table("team_members").Where("team_id = ? AND user_id = ?", passing.TeamID, userID).Count(&count).Error; err != nil {
-		return err
+		return 0, err
 	}
 	if count > 0 {
-		return nil
+		return passing.GameID, nil
 	}
 
 	// Проверяем капитана (капитан может не быть в team_members)
 	var team team.Team
 	if err := tx.First(&team, passing.TeamID).Error; err != nil {
-		return err
+		return 0, err
 	}
 	if team.CaptainID == userID {
-		return nil
+		return passing.GameID, nil
 	}
 
-	return errors.New("вы не являетесь участником этой команды")
+	return 0, errors.New("вы не являетесь участником этой команды")
 }
 
 // finishPassingProgress завершает все незавершённые прогрессы прохождения

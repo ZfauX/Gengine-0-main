@@ -41,8 +41,13 @@ func (s *PhotoService) Delete(photoID, userID uint) error {
 	}
 	if photo.UserID != userID {
 		var coAuthor CoAuthor
-		if err := s.DB.Where("game_id = ? AND user_id = ?", photo.GameID, userID).First(&coAuthor).Error; err != nil {
-			return errors.New("нет прав на удаление фото")
+		err := s.DB.Where("game_id = ? AND user_id = ?", photo.GameID, userID).First(&coAuthor).Error
+		if err != nil {
+			// C-4: «нет соавтора» — 403; реальная ошибка БД — 500, а не «нет прав».
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("нет прав на удаление фото")
+			}
+			return err
 		}
 	}
 	return s.DB.Delete(&photo).Error

@@ -189,6 +189,20 @@ func (h *LevelHandler) NewForm(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 
+	// S-2: форма создания уровня доступна только менеджерам игры (как ListByGame).
+	if !middleware.IsAdmin(c) {
+		ok, mErr := h.authorizer.IsUserManager(c.Request.Context(), uint(gameID), userID)
+		if mErr != nil {
+			log.Error().Err(mErr).Int("game_id", gameID).Msg("NewForm: failed to check manager")
+			render.RenderErrorPage(c, http.StatusInternalServerError)
+			return
+		}
+		if !ok {
+			render.RenderErrorPage(c, http.StatusForbidden)
+			return
+		}
+	}
+
 	var gameName string
 	if name, err := h.levelService.GetGameName(c.Request.Context(), uint(gameID)); err == nil {
 		gameName = name
@@ -671,6 +685,20 @@ func (h *LevelHandler) NewQuestionForm(c *gin.Context) {
 			render.RenderErrorPage(c, http.StatusInternalServerError)
 		}
 		return
+	}
+
+	// S-2: форма создания вопроса доступна только менеджерам игры.
+	if !isAdmin {
+		ok, mErr := h.authorizer.IsUserManager(c.Request.Context(), level.GameID, userID)
+		if mErr != nil {
+			log.Error().Err(mErr).Uint("game_id", level.GameID).Msg("NewQuestionForm: failed to check manager")
+			render.RenderErrorPage(c, http.StatusInternalServerError)
+			return
+		}
+		if !ok {
+			render.RenderErrorPage(c, http.StatusForbidden)
+			return
+		}
 	}
 
 	render.Page(c, http.StatusOK, "questions-new.html", gin.H{

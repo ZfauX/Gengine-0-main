@@ -11,6 +11,7 @@ import (
 	"gengine-0/internal/pkg/sanitize"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type ReviewService struct {
@@ -63,8 +64,16 @@ func (s *ReviewService) Create(gameID, userID uint, rating int, comment string) 
 	// Санитизация HTML-тегов в комментарии
 	cleanComment := sanitize.StripHTML(comment)
 	review := Review{GameID: gameID, UserID: userID, Rating: rating, Comment: cleanComment}
-	if err := s.DB.Create(&review).Error; err != nil {
-		return err
+	// ON CONFLICT (idx_reviews_game_user) — защита от гонки параллельных POST (C-3).
+	res := s.DB.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "game_id"}, {Name: "user_id"}},
+		DoNothing: true,
+	}).Create(&review)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return errors.New("вы уже оставили отзыв")
 	}
 	// Инвалидируем кэш рейтинга и списка отзывов игры.
 	if s.Cache != nil {

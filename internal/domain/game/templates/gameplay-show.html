@@ -208,6 +208,12 @@
                 renderTimer();
             }, 1000);
 
+            // U-3: фоновые вкладки троттлят setInterval — при возврате
+            // немедленно ре-синкаем время с сервера.
+            document.addEventListener('visibilitychange', function() {
+                if (!document.hidden) updateTimer();
+            });
+
             // Show mobile sticky timer on scroll
             if (mobileStickyTimer && mobileTimerDisplay) {
                 let lastScrollY = 0;

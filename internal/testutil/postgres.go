@@ -45,6 +45,13 @@ func testDSN() string {
 func SetupPostgresDB(t *testing.T, models ...any) *gorm.DB {
 	t.Helper()
 
+	// Единый guard для всех PG-тестов (pass 24): `go test -short` должен
+	// работать без БД — пакеты, использующие SetupPostgresDB, скипаются,
+	// а не падают с t.Fatalf на CI без PostgreSQL.
+	if testing.Short() {
+		t.Skip("skipping integration test (requires PostgreSQL)")
+	}
+
 	// Уникальное имя схемы: test_<случайный hex>
 	randomBytes := make([]byte, 8)
 	if _, err := rand.Read(randomBytes); err != nil {
