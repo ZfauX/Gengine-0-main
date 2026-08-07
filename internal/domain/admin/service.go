@@ -107,15 +107,32 @@ func (s *BackupService) List(ctx context.Context) ([]Backup, error) {
 }
 
 // Download возвращает путь к файлу бекапа по ID.
+// SEC1: путь к файлу проверяется — он обязан лежать внутри BackupDir.
+// Defense-in-depth: даже при компрометации записи в БД бекап-сервис не
+// отдаст произвольный файл файловой системы.
 func (s *BackupService) Download(ctx context.Context, backupID uint) (string, error) {
 	backup, err := s.backupRepo.GetByID(ctx, backupID)
 	if err != nil {
 		return "", err
 	}
-	if _, err := os.Stat(backup.FilePath); os.IsNotExist(err) {
+
+	absBackupDir, err := filepath.Abs(s.BackupDir)
+	if err != nil {
+		return "", fmt.Errorf("некорректная директория бекапов: %w", err)
+	}
+	absPath, err := filepath.Abs(backup.FilePath)
+	if err != nil {
+		return "", fmt.Errorf("некорректный путь бекапа: %w", err)
+	}
+	rel, err := filepath.Rel(absBackupDir, absPath)
+	if err != nil || rel == ".." || len(rel) >= 3 && rel[:3] == ".."+string(os.PathSeparator) {
+		return "", fmt.Errorf("путь бекапа выходит за пределы директории бекапов")
+	}
+
+	if _, err := os.Stat(absPath); os.IsNotExist(err) {
 		return "", fmt.Errorf("файл бекапа не найден")
 	}
-	return backup.FilePath, nil
+	return absPath, nil
 }
 
 // RotateBackups удаляет самые старые бекапы, если их количество превышает MaxBackups.

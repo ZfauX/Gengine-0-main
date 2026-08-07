@@ -245,9 +245,11 @@ func (h *PhotoHandler) DeletePhoto(c *gin.Context) {
 	}
 
 	isOwner := photo.UserID == userID
-	isManager, err := h.coAuthorSvc.IsUserManager(c.Request.Context(), photo.GameID, userID)
+	// G5: удаление чужого фото требует роли content_editor/moderator —
+	// observer не должен модеррировать галерею.
+	canModerate, err := h.coAuthorSvc.HasPermission(c.Request.Context(), photo.GameID, userID, RoleContentEditor)
 	if err != nil {
-		log.Error().Err(err).Int("photo_id", photoID).Msg("DeletePhoto: failed to check manager")
+		log.Error().Err(err).Int("photo_id", photoID).Msg("DeletePhoto: failed to check permission")
 		appErr := apperr.Wrap(err, "PhotoHandler")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
@@ -256,7 +258,7 @@ func (h *PhotoHandler) DeletePhoto(c *gin.Context) {
 		return
 	}
 
-	if !isOwner && !isManager {
+	if !isOwner && !canModerate {
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 			"error": "Нет прав на удаление",
 			"code":  "forbidden",

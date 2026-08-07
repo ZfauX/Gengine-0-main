@@ -281,6 +281,51 @@ func TestGamePlayService_SkipLevelTest(t *testing.T) {
 	assert.Equal(t, l2.ID, nextProgress.LevelID)
 }
 
+// G1: SubmitTestCode не должен работать по реальному прохождению (StatusStarted) —
+// иначе автор мог бы создать Attempt{Success:true} и завершить уровень реальной команды.
+func TestGamePlayService_SubmitTestCode_RejectsRealPassing(t *testing.T) {
+	db, playSvc, _ := setupGamePlayTest(t)
+	author := createUser(t, db, "author-g1@test.com", "pass")
+	g := createPublishedGameWithSettings(t, db, author.ID, "G1 Test")
+	lvl := createLevelWithAnswer(t, db, g.ID, "L1", 1, "secret")
+
+	tm := createTeam(t, db, author.ID)
+	passing := createPassing(t, db, g.ID, tm.ID, game.StatusStarted)
+	createLevelProgress(t, db, passing.ID, lvl.ID, false)
+
+	_, err := playSvc.SubmitTestCode(context.Background(), passing.ID, author.ID, "anything")
+	require.Error(t, err)
+
+	// Реальный прогресс не должен быть завершён.
+	var progress game.LevelProgress
+	err = db.Where("game_passing_id = ? AND level_id = ?", passing.ID, lvl.ID).First(&progress).Error
+	require.NoError(t, err)
+	assert.Nil(t, progress.FinishedAt)
+}
+
+// G1: SkipLevelTest не должен работать по реальному прохождению (StatusStarted) —
+// иначе автор мог бы пропустить уровень реальной команды.
+func TestGamePlayService_SkipLevelTest_RejectsRealPassing(t *testing.T) {
+	db, playSvc, _ := setupGamePlayTest(t)
+	author := createUser(t, db, "author-g1b@test.com", "pass")
+	g := createPublishedGameWithSettings(t, db, author.ID, "G1 Skip")
+	l1 := createLevel(t, db, g.ID, "L1", 1)
+	_ = createLevel(t, db, g.ID, "L2", 2)
+
+	tm := createTeam(t, db, author.ID)
+	passing := createPassing(t, db, g.ID, tm.ID, game.StatusStarted)
+	createLevelProgress(t, db, passing.ID, l1.ID, false)
+
+	err := playSvc.SkipLevelTest(context.Background(), passing.ID, author.ID)
+	require.Error(t, err)
+
+	// Активный прогресс остаётся на L1.
+	var progress game.LevelProgress
+	err = db.Where("game_passing_id = ? AND finished_at IS NULL", passing.ID).First(&progress).Error
+	require.NoError(t, err)
+	assert.Equal(t, l1.ID, progress.LevelID)
+}
+
 // TestGamePlayService_SubmitCode_FinishesLastLevel: прохождение всех уровней
 // завершает игру, ставит статус Finished и вызывает onGameFinished (T-H5).
 func TestGamePlayService_SubmitCode_FinishesLastLevel(t *testing.T) {

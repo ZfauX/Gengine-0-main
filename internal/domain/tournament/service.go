@@ -191,8 +191,11 @@ func (s *TournamentService) RemoveGame(ctx context.Context, tournamentID, gameID
 
 		// #5: сбрасываем флаги начисления на прохождениях игры — если игру
 		// пере-добавят, команды смогут пройти её заново и будут начислены.
+		// G4: ограничиваем командами ЭТОГО турнира — сброс для всех прохождений
+		// игры затронул бы команды других турниров и привёл бы к двойному
+		// начислению очков, если игра участвует в нескольких турнирах.
 		if err := tx.Model(&game.GamePassing{}).
-			Where("game_id = ?", gameID).
+			Where("game_id = ? AND team_id IN (SELECT team_id FROM tournament_teams WHERE tournament_id = ?)", gameID, tournamentID).
 			Updates(map[string]any{"tournament_scored": false, "tournament_points": 0}).Error; err != nil {
 			return err
 		}

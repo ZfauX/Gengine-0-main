@@ -754,7 +754,7 @@ var enMessages = map[string]string{
 	"game.show_delete_confirm":       "Are you sure you want to delete",
 	"game.show_delete_warning":       "⚠️ This action cannot be undone. All levels, questions and answers will be deleted.",
 	"game.show_delete_btn":           "Delete",
-	"game.show_delete_undo":          "в†© Cancel deletion",
+	"game.show_delete_undo":          "↩ Cancel deletion",
 	"game.show_delete_scheduled":     "Deletion scheduled...",
 	"game.show_delete_cancel_in":     "Cancel in %d sec",
 	"game.show_delete_cancel_prefix": "Cancel in",
@@ -1016,6 +1016,7 @@ var enMessages = map[string]string{
 	"coauthor.user_id_placeholder": "User ID",
 	"coauthor.add_button":          "Add",
 	"coauthor.delete_button":       "Delete",
+	"coauthor.delete_confirm":      "Remove co-author «%s»?",
 	"coauthor.back_to_game":        "← Back to game",
 
 	// ── Game Passings (Applications) ──

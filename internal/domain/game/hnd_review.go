@@ -38,7 +38,8 @@ func NewReviewHandler(reviewService *ReviewService) *ReviewHandler {
 // @Router /games/{id}/review [get]
 // @Security JWT
 func (h *ReviewHandler) ShowForm(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("game_id"))
+	// Параметр маршрута — :id (группа /games/:id/review).
+	gameID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
 
 	can, err := h.reviewService.CanReview(uint(gameID), userID)
@@ -69,7 +70,8 @@ func (h *ReviewHandler) ShowForm(c *gin.Context) {
 // @Router /games/{id}/review [post]
 // @Security JWT
 func (h *ReviewHandler) Create(c *gin.Context) {
-	gameID, _ := strconv.Atoi(c.Param("game_id"))
+	// Параметр маршрута — :id (группа /games/:id/review).
+	gameID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
 
 	errs := validation.FieldErrors{}
@@ -100,5 +102,5 @@ func (h *ReviewHandler) Create(c *gin.Context) {
 		return
 	}
 
-	c.Redirect(http.StatusFound, "/games/"+c.Param("game_id"))
+	c.Redirect(http.StatusFound, "/games/"+c.Param("id"))
 }

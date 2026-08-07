@@ -1018,6 +1018,7 @@ var ruMessages = map[string]string{
 	"coauthor.user_id_placeholder": "ID пользователя",
 	"coauthor.add_button":          "Добавить",
 	"coauthor.delete_button":       "Удалить",
+	"coauthor.delete_confirm":      "Удалить соавтора «%s»?",
 	"coauthor.back_to_game":        "← Назад к игре",
 
 	// ── Game Passings (Applications) ──

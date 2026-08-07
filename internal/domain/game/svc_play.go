@@ -517,6 +517,14 @@ func (s *GamePlayService) SubmitTestCode(ctx context.Context, passingID, userID 
 		}
 		gameID = passing.GameID
 
+		// G1: тестовые маршруты не должны влиять на реальные прохождения.
+		// SubmitTestCode создаёт Attempt{Success:true} и вызывает CompleteLevel —
+		// это допустимо только для тестовой сессии (StatusTesting), иначе автор
+		// мог бы завершить уровень реальной команды по passingID.
+		if passing.Status != StatusTesting {
+			return errors.New("тестовый режим доступен только для тестового прохождения")
+		}
+
 		attempt = &Attempt{
 			LevelProgressID: progress.ID,
 			Code:            code,
@@ -566,6 +574,12 @@ func (s *GamePlayService) SkipLevelTest(ctx context.Context, passingID, userID u
 		var passing GamePassing
 		if findErr := tx.First(&passing, passingID).Error; findErr != nil {
 			return findErr
+		}
+
+		// G1: пропуск уровня допустим только для тестовой сессии, иначе автор
+		// мог бы пропустить уровень реальной команды по passingID.
+		if passing.Status != StatusTesting {
+			return errors.New("тестовый режим доступен только для тестового прохождения")
 		}
 
 		ok, permErr := s.coAuthorSvc.HasPermission(ctx, passing.GameID, userID, RoleModerator)

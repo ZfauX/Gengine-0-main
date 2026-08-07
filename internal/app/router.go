@@ -251,7 +251,14 @@ func (app *App) setupEngine(r *gin.Engine) error {
 	r.Use(middleware.StaticCacheMiddleware())
 
 	r.Static("/static", filepath.Join(app.BaseDir, app.Config.Server.StaticDir))
-	r.Static("/uploads", filepath.Join(app.BaseDir, app.Config.Server.UploadsDir))
+
+	// SEC2: /uploads раздаётся кастомным handler'ом с проверкой прав доступа
+	// (avatars — публично; covers/photos — по видимости игры; answers — только
+	// участникам команды и менеджерам игры). OptionalAuth прокидывает userID,
+	// если пользователь авторизован — аноним получает только публичные файлы.
+	uploadsDir := filepath.Join(app.BaseDir, app.Config.Server.UploadsDir)
+	uploadsHandler := newUploadsHandler(app.DB, uploadsDir)
+	r.GET("/uploads/*filepath", middleware.OptionalAuth(app.Deps.Services.Auth), uploadsHandler.Serve)
 
 	// Service Worker at root scope — controls all pages (offline + push)
 	r.GET("/sw.js", func(c *gin.Context) {
