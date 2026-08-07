@@ -19,7 +19,6 @@ import (
 	webpush "github.com/SherClockHolmes/webpush-go"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // NotificationType определяет тип уведомления
@@ -64,8 +63,8 @@ func (Notification) TableName() string {
 }
 
 // NotificationService отвечает за работу с настройками и push-уведомлениями.
+// D1: не зависит от *gorm.DB напрямую — все запросы через NotificationRepository.
 type NotificationService struct {
-	db       *gorm.DB
 	hub      *ws.RoomHub
 	repo     NotificationRepository
 	sseMgr   *game.SSEManager
@@ -85,10 +84,9 @@ type unreadEntry struct {
 
 const unreadCacheTTL = 30 * time.Second
 
-func NewNotificationService(db *gorm.DB, hub *ws.RoomHub) *NotificationService {
+func NewNotificationService(repo NotificationRepository, hub *ws.RoomHub) *NotificationService {
 	return &NotificationService{
-		repo:        NewNotificationRepository(db),
-		db:          db,
+		repo:        repo,
 		hub:         hub,
 		unreadCache: make(map[uint]unreadEntry),
 	}
@@ -169,16 +167,7 @@ func (s *NotificationService) SaveSettings(ctx context.Context, userID uint, set
 	}
 	// Единый upsert по user_id (C-M1): закрывает гонку update-then-insert —
 	// два параллельных первых сохранения больше не дают unique-violation.
-	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "user_id"}},
-		DoUpdates: clause.Assignments(map[string]any{
-			"settings_json": string(jsonData),
-			"updated_at":    time.Now(),
-		}),
-	}).Create(&user.NotificationSetting{
-		UserID:       userID,
-		SettingsJSON: string(jsonData),
-	}).Error
+	return s.repo.UpsertSettings(ctx, userID, string(jsonData))
 }
 
 // GetEmailNotificationFlags возвращает только флаги email-уведомлений для фронтенда
@@ -211,7 +200,7 @@ func (s *NotificationService) Create(ctx context.Context, userID uint, ntype Not
 		Read:   false,
 	}
 
-	if err := s.db.WithContext(ctx).Create(notification).Error; err != nil {
+	if err := s.repo.CreateNotification(ctx, notification); err != nil {
 		return fmt.Errorf("failed to create notification: %w", err)
 	}
 
@@ -241,7 +230,9 @@ func (s *NotificationService) sendWebPush(ctx context.Context, userID uint, n *N
 	}
 
 	var subs []user.PushSubscription
-	if err := s.db.WithContext(ctx).Where("user_id = ?", userID).Find(&subs).Error; err != nil {
+	var err error
+	subs, err = s.repo.ListPushSubscriptions(ctx, userID)
+	if err != nil {
 		return fmt.Errorf("load push subscriptions: %w", err)
 	}
 	if len(subs) == 0 {
@@ -293,7 +284,7 @@ func (s *NotificationService) sendWebPush(ctx context.Context, userID uint, n *N
 		}
 		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone {
 			// Подписка устарела — удаляем
-			if err := s.db.WithContext(ctx).Where("id = ?", sub.ID).Delete(&user.PushSubscription{}).Error; err != nil {
+			if err := s.repo.DeletePushSubscription(ctx, sub.ID); err != nil {
 				log.Warn().Err(err).Uint("sub_id", sub.ID).Msg("webpush: failed to delete stale subscription")
 			}
 		} else if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
@@ -335,9 +326,10 @@ func (s *NotificationService) getUnreadCount(ctx context.Context, userID uint) i
 	}
 	s.unreadMu.Unlock()
 
-	var count int64
-	if err := s.db.WithContext(ctx).Model(&Notification{}).Where("user_id = ? AND read = ?", userID, false).Count(&count).Error; err != nil {
+	count, err := s.repo.CountUnread(ctx, userID)
+	if err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Msg("getUnreadCount: failed")
+		count = 0
 	}
 
 	s.unreadMu.Lock()
@@ -372,32 +364,17 @@ func (s *NotificationService) GetByUser(ctx context.Context, userID uint, page, 
 		perPage = 20
 	}
 
-	var total int64
-	var notifications []Notification
-
-	query := s.db.WithContext(ctx).Model(&Notification{}).Where("user_id = ?", userID).Order("created_at DESC")
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-
 	offset := (page - 1) * perPage
-	if err := query.Offset(offset).Limit(perPage).Find(&notifications).Error; err != nil {
-		return nil, 0, err
-	}
-
-	return notifications, total, nil
+	return s.repo.ListByUser(ctx, userID, offset, perPage)
 }
 
 // MarkAsRead помечает уведомление как прочитанное
 func (s *NotificationService) MarkAsRead(ctx context.Context, userID, notificationID uint) error {
-	result := s.db.WithContext(ctx).Model(&Notification{}).
-		Where("id = ? AND user_id = ?", notificationID, userID).
-		Updates(map[string]any{"read": true, "read_at": time.Now()})
-
-	if result.Error != nil {
-		return result.Error
+	updated, err := s.repo.MarkAsRead(ctx, userID, notificationID)
+	if err != nil {
+		return err
 	}
-	if result.RowsAffected == 0 {
+	if !updated {
 		return fmt.Errorf("notification not found")
 	}
 	// Сброс кэша счётчика (P-M6).
@@ -407,9 +384,7 @@ func (s *NotificationService) MarkAsRead(ctx context.Context, userID, notificati
 
 // MarkAllAsRead помечает все уведомления пользователя как прочитанные
 func (s *NotificationService) MarkAllAsRead(ctx context.Context, userID uint) error {
-	err := s.db.WithContext(ctx).Model(&Notification{}).
-		Where("user_id = ? AND read = ?", userID, false).
-		Update("read", true).Error
+	err := s.repo.MarkAllAsRead(ctx, userID)
 	if err != nil {
 		return err
 	}
@@ -435,10 +410,10 @@ func (s *NotificationService) SendTimeWarning(ctx context.Context, userID uint, 
 
 	// Отправляем SSE-уведомление
 	if s.sseMgr != nil {
-		var passing game.GamePassing
-		if err := s.db.WithContext(ctx).First(&passing, passingID).Error; err == nil {
-			s.sseMgr.Broadcast(passing.GameID, "time_warning", map[string]any{
-				"game_id":           passing.GameID,
+		gameID, err := s.repo.GetGamePassingGameID(ctx, passingID)
+		if err == nil && gameID != 0 {
+			s.sseMgr.Broadcast(gameID, "time_warning", map[string]any{
+				"game_id":           gameID,
 				"passing_id":        passingID,
 				"remaining_seconds": remainingSeconds,
 				"remaining_minutes": remainingSeconds / 60,

@@ -45,6 +45,7 @@ func initRepositories(db *gorm.DB) *repositories {
 
 type services struct {
 	Auth            *user.AuthService
+	RefreshToken    *user.RefreshTokenService
 	User            *user.UserService
 	Achiev          *user.AchievementService
 	OAuth           *user.OAuthService

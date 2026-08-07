@@ -19,6 +19,17 @@ import (
 type mockRepo struct {
 	getByUserIDFn func(ctx context.Context, userID uint) (*user.NotificationSetting, error)
 	saveFn        func(ctx context.Context, settings *user.NotificationSetting) error
+	// D1: новые методы интерфейса — заглушки с возвратом nil/пустых значений.
+	// Конкретные тесты могут переопределять через поля при необходимости.
+	upsertSettingsFn func(ctx context.Context, userID uint, settingsJSON string) error
+	createFn         func(ctx context.Context, n *Notification) error
+	countUnreadFn    func(ctx context.Context, userID uint) (int64, error)
+	listFn           func(ctx context.Context, userID uint, offset, limit int) ([]Notification, int64, error)
+	markAsReadFn     func(ctx context.Context, userID, notificationID uint) (bool, error)
+	markAllAsReadFn  func(ctx context.Context, userID uint) error
+	subsFn           func(ctx context.Context, userID uint) ([]user.PushSubscription, error)
+	deleteSubFn      func(ctx context.Context, id uint) error
+	passingGameIDFn  func(ctx context.Context, passingID uint) (uint, error)
 }
 
 func (m *mockRepo) GetByUserID(ctx context.Context, userID uint) (*user.NotificationSetting, error) {
@@ -27,6 +38,69 @@ func (m *mockRepo) GetByUserID(ctx context.Context, userID uint) (*user.Notifica
 
 func (m *mockRepo) Save(ctx context.Context, settings *user.NotificationSetting) error {
 	return m.saveFn(ctx, settings)
+}
+
+func (m *mockRepo) UpsertSettings(ctx context.Context, userID uint, settingsJSON string) error {
+	if m.upsertSettingsFn != nil {
+		return m.upsertSettingsFn(ctx, userID, settingsJSON)
+	}
+	return nil
+}
+
+func (m *mockRepo) CreateNotification(ctx context.Context, n *Notification) error {
+	if m.createFn != nil {
+		return m.createFn(ctx, n)
+	}
+	return nil
+}
+
+func (m *mockRepo) CountUnread(ctx context.Context, userID uint) (int64, error) {
+	if m.countUnreadFn != nil {
+		return m.countUnreadFn(ctx, userID)
+	}
+	return 0, nil
+}
+
+func (m *mockRepo) ListByUser(ctx context.Context, userID uint, offset, limit int) ([]Notification, int64, error) {
+	if m.listFn != nil {
+		return m.listFn(ctx, userID, offset, limit)
+	}
+	return nil, 0, nil
+}
+
+func (m *mockRepo) MarkAsRead(ctx context.Context, userID, notificationID uint) (bool, error) {
+	if m.markAsReadFn != nil {
+		return m.markAsReadFn(ctx, userID, notificationID)
+	}
+	return true, nil
+}
+
+func (m *mockRepo) MarkAllAsRead(ctx context.Context, userID uint) error {
+	if m.markAllAsReadFn != nil {
+		return m.markAllAsReadFn(ctx, userID)
+	}
+	return nil
+}
+
+func (m *mockRepo) ListPushSubscriptions(ctx context.Context, userID uint) ([]user.PushSubscription, error) {
+	if m.subsFn != nil {
+		return m.subsFn(ctx, userID)
+	}
+	return nil, nil
+}
+
+func (m *mockRepo) DeletePushSubscription(ctx context.Context, id uint) error {
+	if m.deleteSubFn != nil {
+		return m.deleteSubFn(ctx, id)
+	}
+	return nil
+}
+
+func (m *mockRepo) GetGamePassingGameID(ctx context.Context, passingID uint) (uint, error) {
+	if m.passingGameIDFn != nil {
+		return m.passingGameIDFn(ctx, passingID)
+	}
+	return 0, nil
 }
 
 func newMockDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock) {
@@ -53,23 +127,21 @@ func TestDefaultSettings(t *testing.T) {
 
 func TestNewNotificationService(t *testing.T) {
 	db, _ := newMockDB(t)
-	svc := NewNotificationService(db, nil)
+	svc := NewNotificationService(NewNotificationRepository(db), nil)
 	require.NotNil(t, svc)
-	assert.Equal(t, db, svc.db)
 	assert.Nil(t, svc.hub)
 }
 
 func TestWithHub(t *testing.T) {
 	db, _ := newMockDB(t)
 	hub := ws.NewRoomHub()
-	svc := NewNotificationService(db, nil).WithHub(hub)
+	svc := NewNotificationService(NewNotificationRepository(db), nil).WithHub(hub)
 	assert.Equal(t, hub, svc.hub)
 }
 
 func TestGetSettings_ReturnsFromRepo(t *testing.T) {
-	db, _ := newMockDB(t)
+	_, _ = newMockDB(t)
 	svc := &NotificationService{
-		db: db,
 		repo: &mockRepo{
 			getByUserIDFn: func(_ context.Context, _ uint) (*user.NotificationSetting, error) {
 				return &user.NotificationSetting{
@@ -88,9 +160,8 @@ func TestGetSettings_ReturnsFromRepo(t *testing.T) {
 }
 
 func TestGetSettings_NotFound_ReturnsDefaults(t *testing.T) {
-	db, _ := newMockDB(t)
+	_, _ = newMockDB(t)
 	svc := &NotificationService{
-		db: db,
 		repo: &mockRepo{
 			getByUserIDFn: func(_ context.Context, _ uint) (*user.NotificationSetting, error) {
 				return nil, gorm.ErrRecordNotFound
@@ -104,9 +175,8 @@ func TestGetSettings_NotFound_ReturnsDefaults(t *testing.T) {
 }
 
 func TestGetSettings_RepoError(t *testing.T) {
-	db, _ := newMockDB(t)
+	_, _ = newMockDB(t)
 	svc := &NotificationService{
-		db: db,
 		repo: &mockRepo{
 			getByUserIDFn: func(_ context.Context, _ uint) (*user.NotificationSetting, error) {
 				return nil, errors.New("db error")
@@ -119,48 +189,37 @@ func TestGetSettings_RepoError(t *testing.T) {
 }
 
 func TestSaveSettings_CreatesNew(t *testing.T) {
-	db, mock := newMockDB(t)
 	svc := &NotificationService{
-		db:   db,
-		repo: &mockRepo{},
+		repo: &mockRepo{
+			upsertSettingsFn: func(_ context.Context, _ uint, _ string) error {
+				return nil
+			},
+		},
 	}
 
-	// Upsert через ON CONFLICT (C-M1) — единый INSERT вместо GetByUserID+Save.
-	// GORM использует RETURNING "id" → Query.
-	mock.ExpectBegin()
-	mock.ExpectQuery(`INSERT INTO "notification_settings"`).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
-	mock.ExpectCommit()
-
+	// Upsert через repo (ON CONFLICT в gorm-реализации, C-M1).
 	err := svc.SaveSettings(context.Background(), 1, &Settings{EmailEnabled: true})
 	require.NoError(t, err)
-	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestSaveSettings_UpdatesExisting(t *testing.T) {
-	db, mock := newMockDB(t)
 	svc := &NotificationService{
-		db:   db,
-		repo: &mockRepo{},
+		repo: &mockRepo{
+			upsertSettingsFn: func(_ context.Context, _ uint, _ string) error {
+				return nil
+			},
+		},
 	}
-
-	mock.ExpectBegin()
-	mock.ExpectQuery(`INSERT INTO "notification_settings"`).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
-	mock.ExpectCommit()
 
 	err := svc.SaveSettings(context.Background(), 1, &Settings{EmailEnabled: false, PushEnabled: true})
 	require.NoError(t, err)
-	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestSaveSettings_GetError(t *testing.T) {
-	db, _ := newMockDB(t)
 	svc := &NotificationService{
-		db: db,
 		repo: &mockRepo{
-			getByUserIDFn: func(_ context.Context, _ uint) (*user.NotificationSetting, error) {
-				return nil, errors.New("get error")
+			upsertSettingsFn: func(_ context.Context, _ uint, _ string) error {
+				return errors.New("upsert error")
 			},
 		},
 	}
@@ -170,14 +229,9 @@ func TestSaveSettings_GetError(t *testing.T) {
 }
 
 func TestSaveSettings_SaveError(t *testing.T) {
-	db, _ := newMockDB(t)
 	svc := &NotificationService{
-		db: db,
 		repo: &mockRepo{
-			getByUserIDFn: func(_ context.Context, _ uint) (*user.NotificationSetting, error) {
-				return nil, gorm.ErrRecordNotFound
-			},
-			saveFn: func(_ context.Context, _ *user.NotificationSetting) error {
+			upsertSettingsFn: func(_ context.Context, _ uint, _ string) error {
 				return errors.New("save error")
 			},
 		},
@@ -188,9 +242,8 @@ func TestSaveSettings_SaveError(t *testing.T) {
 }
 
 func TestGetEmailNotificationFlags(t *testing.T) {
-	db, _ := newMockDB(t)
+	_, _ = newMockDB(t)
 	svc := &NotificationService{
-		db: db,
 		repo: &mockRepo{
 			getByUserIDFn: func(_ context.Context, _ uint) (*user.NotificationSetting, error) {
 				return &user.NotificationSetting{
@@ -208,9 +261,8 @@ func TestGetEmailNotificationFlags(t *testing.T) {
 }
 
 func TestGetEmailNotificationFlags_Error(t *testing.T) {
-	db, _ := newMockDB(t)
+	_, _ = newMockDB(t)
 	svc := &NotificationService{
-		db: db,
 		repo: &mockRepo{
 			getByUserIDFn: func(_ context.Context, _ uint) (*user.NotificationSetting, error) {
 				return nil, errors.New("err")
@@ -229,7 +281,7 @@ func TestCreate_SavesToDB(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
 	mock.ExpectCommit()
 
-	svc := NewNotificationService(db, nil)
+	svc := NewNotificationService(NewNotificationRepository(db), nil)
 	err := svc.Create(context.Background(), 1, NotificationTypeGameStarted, "Title", "Message", "/url")
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -249,7 +301,7 @@ func TestCreate_WithHub_SendsWebSocket(t *testing.T) {
 	hub.Run()
 	t.Cleanup(hub.Stop)
 
-	svc := NewNotificationService(db, hub)
+	svc := NewNotificationService(NewNotificationRepository(db), hub)
 	err := svc.Create(context.Background(), 1, NotificationTypeGameStarted, "Title", "Message", "/url")
 	assert.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -262,7 +314,7 @@ func TestCreate_DBError(t *testing.T) {
 		WillReturnError(errors.New("insert error"))
 	mock.ExpectRollback()
 
-	svc := NewNotificationService(db, ws.NewRoomHub())
+	svc := NewNotificationService(NewNotificationRepository(db), ws.NewRoomHub())
 	err := svc.Create(context.Background(), 1, NotificationTypeGameStarted, "T", "M", "")
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -284,7 +336,7 @@ func TestMarkAsRead(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 
-	svc := NewNotificationService(db, nil)
+	svc := NewNotificationService(NewNotificationRepository(db), nil)
 	err := svc.MarkAsRead(context.Background(), 1, 10)
 	assert.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -298,7 +350,7 @@ func TestMarkAsRead_NotFound(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectCommit()
 
-	svc := NewNotificationService(db, nil)
+	svc := NewNotificationService(NewNotificationRepository(db), nil)
 	err := svc.MarkAsRead(context.Background(), 1, 10)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "notification not found")
@@ -313,7 +365,7 @@ func TestMarkAllAsRead(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 3))
 	mock.ExpectCommit()
 
-	svc := NewNotificationService(db, nil)
+	svc := NewNotificationService(NewNotificationRepository(db), nil)
 	err := svc.MarkAllAsRead(context.Background(), 1)
 	assert.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -324,7 +376,7 @@ func TestGetUnreadCount(t *testing.T) {
 	mock.ExpectQuery(`SELECT count\(\*\) FROM "notifications"`).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(5))
 
-	svc := NewNotificationService(db, nil)
+	svc := NewNotificationService(NewNotificationRepository(db), nil)
 	count := svc.GetUnreadCount(context.Background(), 1)
 	assert.Equal(t, 5, count)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -344,7 +396,7 @@ func TestSendTimeWarning(t *testing.T) {
 	hub.Run()
 	t.Cleanup(hub.Stop)
 
-	svc := NewNotificationService(db, hub)
+	svc := NewNotificationService(NewNotificationRepository(db), hub)
 	err := svc.SendTimeWarning(context.Background(), 1, 42, 300)
 	assert.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -364,7 +416,7 @@ func TestSendTimeExpired(t *testing.T) {
 	hub.Run()
 	t.Cleanup(hub.Stop)
 
-	svc := NewNotificationService(db, hub)
+	svc := NewNotificationService(NewNotificationRepository(db), hub)
 	err := svc.SendTimeExpired(context.Background(), 1, 42)
 	assert.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())

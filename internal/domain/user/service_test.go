@@ -64,6 +64,14 @@ func newTestRepos(db *gorm.DB) (
 		NewGormRefreshTokenRepo(db)
 }
 
+// newTestAuthService собирает AuthService, связанный с RefreshTokenService
+// (D2) — иначе refresh-методы возвращают «refresh-сервис не инициализирован».
+func newTestAuthService(userRepo UserRepository, achievRepo AchievementRepository, emailVerifRepo EmailVerificationRepository, refreshTokenRepo RefreshTokenRepository, cfg *config.Config) *AuthService {
+	svc := NewAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg)
+	refreshSvc := NewRefreshTokenService(refreshTokenRepo, userRepo, cfg, svc)
+	return svc.WithRefreshService(refreshSvc)
+}
+
 // Создаёт тестового пользователя в БД
 func createTestUser(t *testing.T, db *gorm.DB, email, password, name string) *User {
 	t.Helper()
@@ -92,7 +100,7 @@ func TestAuthService_Register(t *testing.T) {
 	db := newTestDB(t)
 	cfg := newTestConfig()
 	userRepo, achievRepo, _, emailVerifRepo, _, refreshTokenRepo := newTestRepos(db)
-	service := NewAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg)
+	service := newTestAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg)
 
 	t.Run("успешная регистрация", func(t *testing.T) {
 		user, err := service.Register(context.Background(), "test@example.com", "password123", "Test User")
@@ -119,7 +127,7 @@ func TestAuthService_Login(t *testing.T) {
 	db := newTestDB(t)
 	cfg := newTestConfig()
 	userRepo, achievRepo, _, emailVerifRepo, _, refreshTokenRepo := newTestRepos(db)
-	service := NewAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg)
+	service := newTestAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg)
 
 	// Создаём пользователя
 	createTestUser(t, db, "login@example.com", "correctpass", "Login User")
@@ -149,7 +157,7 @@ func TestAuthService_LoginLockout(t *testing.T) {
 	db := newTestDB(t)
 	cfg := newTestConfig()
 	userRepo, achievRepo, _, emailVerifRepo, _, refreshTokenRepo := newTestRepos(db)
-	service := NewAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg)
+	service := newTestAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg)
 
 	user := createTestUser(t, db, "lock@example.com", "correctpass", "Lock")
 
@@ -175,7 +183,7 @@ func TestAuthService_RefreshRotation(t *testing.T) {
 	db := newTestDB(t)
 	cfg := newTestConfig()
 	userRepo, achievRepo, _, emailVerifRepo, _, refreshTokenRepo := newTestRepos(db)
-	service := NewAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg)
+	service := newTestAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg)
 
 	user := createTestUser(t, db, "rot@example.com", "pass", "Rot")
 
@@ -200,7 +208,7 @@ func TestAuthService_ReuseRevokesFamily(t *testing.T) {
 	db := newTestDB(t)
 	cfg := newTestConfig()
 	userRepo, achievRepo, _, emailVerifRepo, _, refreshTokenRepo := newTestRepos(db)
-	service := NewAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg)
+	service := newTestAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg)
 
 	user := createTestUser(t, db, "fam@example.com", "pass", "Fam")
 
@@ -226,7 +234,7 @@ func TestAuthService_FingerprintMismatch(t *testing.T) {
 	db := newTestDB(t)
 	cfg := newTestConfig()
 	userRepo, achievRepo, _, emailVerifRepo, _, refreshTokenRepo := newTestRepos(db)
-	service := NewAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg)
+	service := newTestAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg)
 
 	user := createTestUser(t, db, "fp@example.com", "pass", "Fp")
 
@@ -247,7 +255,7 @@ func TestAuthService_ParseToken(t *testing.T) {
 	db := newTestDB(t)
 	cfg := newTestConfig()
 	userRepo, achievRepo, _, emailVerifRepo, _, refreshTokenRepo := newTestRepos(db)
-	service := NewAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg)
+	service := newTestAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg)
 
 	user := createTestUser(t, db, "parse@example.com", "pass", "Parse")
 	tokenStr, err := service.GenerateJWT(*user)

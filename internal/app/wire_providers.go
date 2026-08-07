@@ -82,7 +82,18 @@ func wrapEmailService(cfg *config.Config, db *gorm.DB) *email.EmailService {
 }
 
 func wrapAuthService(userRepo user.UserRepository, achievRepo user.AchievementRepository, emailVerifRepo user.EmailVerificationRepository, refreshTokenRepo user.RefreshTokenRepository, cfg *config.Config, cacheStore cache.CacheStore) *user.AuthService {
+	// D2: RefreshTokenService создаётся и связывается с AuthService.
+	// accessGen = AuthService (реализует AccessTokenGenerator через GenerateJWT).
 	return user.NewAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg).WithCache(cacheStore)
+}
+
+// wrapRefreshTokenService собирает RefreshTokenService (D2) и связывает его
+// с AuthService через WithRefreshService (side-effect: authSvc.refreshSvc
+// заполняется). accessGen — AuthService, реализующий AccessTokenGenerator.
+func wrapRefreshTokenService(refreshTokenRepo user.RefreshTokenRepository, userRepo user.UserRepository, cfg *config.Config, authSvc *user.AuthService) *user.RefreshTokenService {
+	refreshSvc := user.NewRefreshTokenService(refreshTokenRepo, userRepo, cfg, authSvc)
+	authSvc.WithRefreshService(refreshSvc)
+	return refreshSvc
 }
 
 func wrapUserService(userRepo user.UserRepository) *user.UserService {

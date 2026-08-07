@@ -96,7 +96,7 @@ func NotificationsWS(hub *ws.RoomHub) gin.HandlerFunc {
 
 // RegisterRoutes регистрирует API-маршруты для уведомлений.
 func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *gorm.DB, authService *user.AuthService, hub *ws.RoomHub, sseMgr *game.SSEManager) {
-	service := NewNotificationService(db, hub).WithHub(hub).WithSSEManager(sseMgr).WithVAPID(cfg.VAPID, cfg.Server.BaseURL)
+	service := NewNotificationService(NewNotificationRepository(db), hub).WithHub(hub).WithSSEManager(sseMgr).WithVAPID(cfg.VAPID, cfg.Server.BaseURL)
 	settingsHandler := NewSettingsHandler(service, cfg.VAPID)
 
 	// API для настроек уведомлений (используется AJAX на странице профиля)

@@ -3,16 +3,36 @@ package notification
 
 import (
 	"context"
+	"time"
 
 	"gengine-0/internal/domain/user"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-// NotificationRepository определяет контракт для работы с настройками уведомлений.
+// NotificationRepository определяет контракт для работы с уведомлениями
+// и настройками (D1: изолирует SQL от NotificationService — бизнес-логика
+// тестируема с моком без PostgreSQL).
 type NotificationRepository interface {
+	// Settings
 	GetByUserID(ctx context.Context, userID uint) (*user.NotificationSetting, error)
-	Save(ctx context.Context, settings *user.NotificationSetting) error
+	// UpsertSettings атомарно создаёт/обновляет настройки пользователя (ON CONFLICT).
+	UpsertSettings(ctx context.Context, userID uint, settingsJSON string) error
+
+	// Notifications
+	CreateNotification(ctx context.Context, n *Notification) error
+	CountUnread(ctx context.Context, userID uint) (int64, error)
+	ListByUser(ctx context.Context, userID uint, offset, limit int) ([]Notification, int64, error)
+	MarkAsRead(ctx context.Context, userID, notificationID uint) (bool, error)
+	MarkAllAsRead(ctx context.Context, userID uint) error
+
+	// Push subscriptions
+	ListPushSubscriptions(ctx context.Context, userID uint) ([]user.PushSubscription, error)
+	DeletePushSubscription(ctx context.Context, id uint) error
+
+	// Passing lookup (для SSE broadcast времени)
+	GetGamePassingGameID(ctx context.Context, passingID uint) (uint, error)
 }
 
 type gormNotificationRepo struct {
@@ -32,6 +52,71 @@ func (r *gormNotificationRepo) GetByUserID(ctx context.Context, userID uint) (*u
 	return &settings, nil
 }
 
-func (r *gormNotificationRepo) Save(ctx context.Context, settings *user.NotificationSetting) error {
-	return r.db.WithContext(ctx).Save(settings).Error
+func (r *gormNotificationRepo) UpsertSettings(ctx context.Context, userID uint, settingsJSON string) error {
+	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "user_id"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			"settings_json": settingsJSON,
+			"updated_at":    time.Now(),
+		}),
+	}).Create(&user.NotificationSetting{
+		UserID:       userID,
+		SettingsJSON: settingsJSON,
+	}).Error
+}
+
+func (r *gormNotificationRepo) CreateNotification(ctx context.Context, n *Notification) error {
+	return r.db.WithContext(ctx).Create(n).Error
+}
+
+func (r *gormNotificationRepo) CountUnread(ctx context.Context, userID uint) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&Notification{}).
+		Where("user_id = ? AND read = ?", userID, false).Count(&count).Error
+	return count, err
+}
+
+func (r *gormNotificationRepo) ListByUser(ctx context.Context, userID uint, offset, limit int) ([]Notification, int64, error) {
+	var total int64
+	var notifications []Notification
+	query := r.db.WithContext(ctx).Model(&Notification{}).Where("user_id = ?", userID).Order("created_at DESC")
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if err := query.Offset(offset).Limit(limit).Find(&notifications).Error; err != nil {
+		return nil, 0, err
+	}
+	return notifications, total, nil
+}
+
+func (r *gormNotificationRepo) MarkAsRead(ctx context.Context, userID, notificationID uint) (bool, error) {
+	res := r.db.WithContext(ctx).Model(&Notification{}).
+		Where("id = ? AND user_id = ?", notificationID, userID).
+		Updates(map[string]any{"read": true, "read_at": time.Now()})
+	return res.RowsAffected > 0, res.Error
+}
+
+func (r *gormNotificationRepo) MarkAllAsRead(ctx context.Context, userID uint) error {
+	return r.db.WithContext(ctx).Model(&Notification{}).
+		Where("user_id = ? AND read = ?", userID, false).
+		Update("read", true).Error
+}
+
+func (r *gormNotificationRepo) ListPushSubscriptions(ctx context.Context, userID uint) ([]user.PushSubscription, error) {
+	var subs []user.PushSubscription
+	err := r.db.WithContext(ctx).Where("user_id = ?", userID).Find(&subs).Error
+	return subs, err
+}
+
+func (r *gormNotificationRepo) DeletePushSubscription(ctx context.Context, id uint) error {
+	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&user.PushSubscription{}).Error
+}
+
+func (r *gormNotificationRepo) GetGamePassingGameID(ctx context.Context, passingID uint) (uint, error) {
+	var passing struct {
+		GameID uint
+	}
+	err := r.db.WithContext(ctx).Table("game_passings").
+		Select("game_id").Where("id = ?", passingID).Scan(&passing).Error
+	return passing.GameID, err
 }
