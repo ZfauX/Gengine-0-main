@@ -45,7 +45,6 @@ Makefile
 makefile
 docker-compose.yml
 Dockerfile
-entrypoint.sh
 
 # Uploads and backups (mounted as volumes)
 uploads/
