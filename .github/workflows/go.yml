@@ -164,13 +164,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set lowercase repository owner
+        # GHCR требует имена репозиториев в нижнем регистре (ghcr.io/owner/image).
+        # github.repository_owner может содержать заглавные буквы (ZfauX),
+        # поэтому приводим его к нижнему регистру через bash-подстановку.
+        run: echo "GHCR_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.DOCKER_IMAGE_NAME }}:latest
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.DOCKER_IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.GHCR_OWNER }}/${{ env.DOCKER_IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.GHCR_OWNER }}/${{ env.DOCKER_IMAGE_NAME }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
