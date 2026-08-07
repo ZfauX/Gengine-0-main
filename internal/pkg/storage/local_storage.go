@@ -182,11 +182,18 @@ func (s *LocalStorage) Delete(webPath string) error {
 		return nil
 	}
 
-	// webPath — путь, возвращённый Save
-	// Если путь начинается с "/", это абсолютный файловый путь (например, /C:/Users/.../file.txt)
+	// webPath — путь, возвращённый Save, либо произвольный абсолютный/относительный путь.
+	// Save возвращает "/" + filepath.ToSlash(fullPath), где fullPath абсолютный:
+	//   - Windows: "/C:/Users/.../file.txt"
+	//   - Unix:    "//tmp/.../file.txt"  (ведущий "/" + уже абсолютный путь)
+	// Снимаем один ведущий "/" только если остаток остаётся абсолютным —
+	// иначе абсолютный Unix-путь вроде "/tmp/x" стал бы относительным и
+	// обошёл бы проверку выхода за пределы директории хранения.
 	relPath := webPath
 	if strings.HasPrefix(webPath, "/") {
-		relPath = webPath[1:]
+		if stripped := filepath.FromSlash(webPath[1:]); filepath.IsAbs(stripped) {
+			relPath = webPath[1:]
+		}
 	}
 
 	// Path traversal protection: запрещаем ".."
@@ -212,7 +219,11 @@ func (s *LocalStorage) Delete(webPath string) error {
 		if err != nil {
 			return fmt.Errorf("некорректная базовая директория: %w", err)
 		}
-		if !strings.HasPrefix(absPath, absBase) {
+		// Точная проверка границы директории: файл обязан лежать внутри baseDir.
+		// filepath.Rel корректно обрабатывает разделители и префиксы на всех ОС,
+		// в отличие от простого HasPrefix (который пропустил бы "/tmp/storage_evil").
+		rel, err := filepath.Rel(absBase, absPath)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 			return fmt.Errorf("путь файла выходит за пределы директории хранения")
 		}
 	}
