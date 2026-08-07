@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mockFlusher вЂ” mock РґР»СЏ http.Flusher, РєРѕС‚РѕСЂС‹Р№ РїСЂРѕСЃС‚Рѕ РІС‹Р·С‹РІР°РµС‚ recorder
+// mockFlusher РІР‚вЂќ mock Р Т‘Р В»РЎРЏ http.Flusher, Р С”Р С•РЎвЂљР С•РЎР‚РЎвЂ№Р в„– Р С—РЎР‚Р С•РЎРѓРЎвЂљР С• Р Р†РЎвЂ№Р В·РЎвЂ№Р Р†Р В°Р ВµРЎвЂљ recorder
 type mockFlusher struct {
 	recorder *httptest.ResponseRecorder
 }
@@ -22,8 +22,8 @@ func (m *mockFlusher) Flush() {
 	m.recorder.Flush()
 }
 
-// safeRecorder вЂ” thread-safe РѕР±С‘СЂС‚РєР° РЅР°Рґ ResponseRecorder: writeLoop РїРёС€РµС‚ РёР·
-// СЃРІРѕРµР№ РіРѕСЂСѓС‚РёРЅС‹, Р° С‚РµСЃС‚ С‡РёС‚Р°РµС‚ body вЂ” Р±РµР· РјСЊСЋС‚РµРєСЃР° СЌС‚Рѕ data race (-race).
+// safeRecorder РІР‚вЂќ thread-safe Р С•Р В±РЎвЂРЎР‚РЎвЂљР С”Р В° Р Р…Р В°Р Т‘ ResponseRecorder: writeLoop Р С—Р С‘РЎв‚¬Р ВµРЎвЂљ Р С‘Р В·
+// РЎРѓР Р†Р С•Р ВµР в„– Р С–Р С•РЎР‚РЎС“РЎвЂљР С‘Р Р…РЎвЂ№, Р В° РЎвЂљР ВµРЎРѓРЎвЂљ РЎвЂЎР С‘РЎвЂљР В°Р ВµРЎвЂљ body РІР‚вЂќ Р В±Р ВµР В· Р СРЎРЉРЎР‹РЎвЂљР ВµР С”РЎРѓР В° РЎРЊРЎвЂљР С• data race (-race).
 type safeRecorder struct {
 	mu  sync.Mutex
 	rec *httptest.ResponseRecorder
@@ -73,10 +73,8 @@ func TestSSEHandler_Broadcast(t *testing.T) {
 	mgr := newTestSSEMgr()
 
 	sr := newSafeRecorder()
-	w := sr.rec
-	flusher := sr.fl
 
-	session := mgr.RegisterSession(1, "127.0.0.1", w, flusher)
+	session := mgr.RegisterSession(1, "127.0.0.1", sr, sr.fl)
 	require.NotNil(t, session)
 
 	mgr.Broadcast(1, "test_event", map[string]any{"key": "value"})
@@ -99,8 +97,8 @@ func TestSSEHandler_Broadcast_MultipleSessions(t *testing.T) {
 	sr1 := newSafeRecorder()
 	sr2 := newSafeRecorder()
 
-	mgr.RegisterSession(2, "127.0.0.1", sr1.rec, sr1.fl)
-	mgr.RegisterSession(2, "127.0.0.1", sr2.rec, sr2.fl)
+	mgr.RegisterSession(2, "127.0.0.1", sr1, sr1.fl)
+	mgr.RegisterSession(2, "127.0.0.1", sr2, sr2.fl)
 
 	mgr.Broadcast(2, "multi_event", nil)
 
@@ -124,9 +122,7 @@ func TestSSEHandler_ConcurrentBroadcast(t *testing.T) {
 	mgr := newTestSSEMgr()
 
 	sr := newSafeRecorder()
-	w := sr.rec
-	flusher := sr.fl
-	session := mgr.RegisterSession(4, "127.0.0.1", w, flusher)
+	session := mgr.RegisterSession(4, "127.0.0.1", sr, sr.fl)
 	defer mgr.UnregisterSession(session)
 
 	for i := 0; i < 10; i++ {
@@ -143,9 +139,7 @@ func TestSSEHandler_ConnectionClose(t *testing.T) {
 	mgr := newTestSSEMgr()
 
 	sr := newSafeRecorder()
-	w := sr.rec
-	flusher := sr.fl
-	session := mgr.RegisterSession(3, "127.0.0.1", w, flusher)
+	session := mgr.RegisterSession(3, "127.0.0.1", sr, sr.fl)
 
 	mgr.Broadcast(3, "before_close", map[string]any{"status": "ok"})
 
@@ -161,9 +155,7 @@ func TestSSEHandler_Stop_ClosesSessions(t *testing.T) {
 	mgr := newTestSSEMgr()
 
 	sr := newSafeRecorder()
-	w := sr.rec
-	flusher := sr.fl
-	session := mgr.RegisterSession(1, "127.0.0.1", w, flusher)
+	session := mgr.RegisterSession(1, "127.0.0.1", sr, sr.fl)
 	require.NotNil(t, session)
 
 	// Stop should close session.done
@@ -171,7 +163,7 @@ func TestSSEHandler_Stop_ClosesSessions(t *testing.T) {
 
 	select {
 	case <-session.done:
-		// session closed вЂ” OK
+		// session closed РІР‚вЂќ OK
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("session.done was not closed after Stop()")
 	}
@@ -187,9 +179,7 @@ func TestSSEHandler_Stop_NoBroadcastAfterStop(t *testing.T) {
 	mgr := newTestSSEMgr()
 
 	sr := newSafeRecorder()
-	w := sr.rec
-	flusher := sr.fl
-	_ = mgr.RegisterSession(1, "127.0.0.1", w, flusher)
+	_ = mgr.RegisterSession(1, "127.0.0.1", sr, sr.fl)
 
 	mgr.Stop()
 
@@ -202,7 +192,7 @@ func TestSSEHandler_Stop_NoBroadcastAfterStop(t *testing.T) {
 
 	select {
 	case <-done:
-		// Broadcast returned without hanging вЂ” OK
+		// Broadcast returned without hanging РІР‚вЂќ OK
 	case <-time.After(1 * time.Second):
 		t.Fatal("Broadcast after Stop() hung (WaitGroup misuse?)")
 	}
@@ -215,7 +205,7 @@ func TestSSEHandler_CanAccept_Limits(t *testing.T) {
 	assert.True(t, mgr.CanAccept("1.2.3.4"))
 	_ = mgr.RegisterSession(1, "1.2.3.4", httptest.NewRecorder(), &mockFlusher{})
 	_ = mgr.RegisterSession(1, "1.2.3.4", httptest.NewRecorder(), &mockFlusher{})
-	// maxConnsPerIP = 100 in test mgr вЂ” so still accepted
+	// maxConnsPerIP = 100 in test mgr РІР‚вЂќ so still accepted
 	assert.True(t, mgr.CanAccept("1.2.3.4"))
 
 	// Set low per-IP limit

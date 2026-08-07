@@ -21,7 +21,7 @@ func setupGamePlayTest(t *testing.T) (*gorm.DB, *game.GamePlayService, *game.Lev
 	t.Helper()
 	db := testutil.SetupPostgresDB(t, allModels...)
 	hub := websocket.NewRoomHub()
-	go hub.Run()
+	hub.Run()
 	t.Cleanup(hub.Stop)
 
 	attemptSvc := game.NewAttemptService(db)

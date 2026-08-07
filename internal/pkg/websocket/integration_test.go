@@ -17,7 +17,7 @@ import (
 func setUpWebsocketServer(t *testing.T) (*httptest.Server, *RoomHub) {
 	t.Helper()
 	hub := NewRoomHub()
-	go hub.Run()
+	hub.Run()
 	t.Cleanup(hub.Stop)
 
 	upgrader := websocket.Upgrader{

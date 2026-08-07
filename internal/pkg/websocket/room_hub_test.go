@@ -15,7 +15,7 @@ import (
 
 func TestRoomHub_RegisterClient(t *testing.T) {
 	hub := NewRoomHub()
-	go hub.Run()
+	hub.Run()
 	t.Cleanup(hub.Stop)
 	client := &Client{
 		Send:   make(chan []byte, 10),
@@ -44,7 +44,7 @@ func TestRoomHub_RegisterClient(t *testing.T) {
 
 func TestRoomHub_RegisterClient_Multiple(t *testing.T) {
 	hub := NewRoomHub()
-	go hub.Run()
+	hub.Run()
 	t.Cleanup(hub.Stop)
 	c1 := &Client{Send: make(chan []byte, 10), RoomID: "room1", done: make(chan struct{})}
 	c2 := &Client{Send: make(chan []byte, 10), RoomID: "room1", done: make(chan struct{})}
@@ -63,7 +63,7 @@ func TestRoomHub_RegisterClient_Multiple(t *testing.T) {
 
 func TestRoomHub_UnregisterClient(t *testing.T) {
 	hub := NewRoomHub()
-	go hub.Run()
+	hub.Run()
 	t.Cleanup(hub.Stop)
 	client := &Client{Send: make(chan []byte, 10), RoomID: "room1", done: make(chan struct{})}
 	hub.RegisterClient(client)
@@ -81,7 +81,7 @@ func TestRoomHub_UnregisterClient(t *testing.T) {
 
 func TestRoomHub_UnregisterClient_NotExists(t *testing.T) {
 	hub := NewRoomHub()
-	go hub.Run()
+	hub.Run()
 	t.Cleanup(hub.Stop)
 	client := &Client{Send: make(chan []byte, 10), RoomID: "room1", done: make(chan struct{})}
 	hub.UnregisterClient(client)
@@ -89,7 +89,7 @@ func TestRoomHub_UnregisterClient_NotExists(t *testing.T) {
 
 func TestRoomHub_BroadcastToRoom(t *testing.T) {
 	hub := NewRoomHub()
-	go hub.Run()
+	hub.Run()
 	t.Cleanup(hub.Stop)
 	roomID := "testroom"
 
@@ -146,14 +146,14 @@ func TestRoomHub_BroadcastToRoom(t *testing.T) {
 
 func TestRoomHub_BroadcastToRoom_NoClients(t *testing.T) {
 	hub := NewRoomHub()
-	go hub.Run()
+	hub.Run()
 	t.Cleanup(hub.Stop)
 	hub.BroadcastToRoom("nonexistent", []byte("test"))
 }
 
 func TestRoomHub_BroadcastToRoom_WithClosedClient(t *testing.T) {
 	hub := NewRoomHub()
-	go hub.Run()
+	hub.Run()
 	t.Cleanup(hub.Stop)
 	roomID := "testroom"
 
@@ -204,7 +204,7 @@ func TestRoomHub_BroadcastToRoom_WithClosedClient(t *testing.T) {
 
 func TestRoomHub_BroadcastToRoom_FullChannel(t *testing.T) {
 	hub := NewRoomHub()
-	go hub.Run()
+	hub.Run()
 	t.Cleanup(hub.Stop)
 	roomID := "testroom"
 
@@ -269,7 +269,7 @@ func TestClient_Close_ChannelClosedOnce(t *testing.T) {
 
 func BenchmarkRoomHub_BroadcastToRoom(b *testing.B) {
 	hub := NewRoomHub()
-	go hub.Run()
+	hub.Run()
 	b.Cleanup(hub.Stop)
 	roomID := "benchroom"
 	clients := make([]*Client, 100)

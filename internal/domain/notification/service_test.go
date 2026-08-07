@@ -246,7 +246,7 @@ func TestCreate_WithHub_SendsWebSocket(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 
 	hub := ws.NewRoomHub()
-	go hub.Run()
+	hub.Run()
 	t.Cleanup(hub.Stop)
 
 	svc := NewNotificationService(db, hub)
@@ -341,7 +341,7 @@ func TestSendTimeWarning(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 
 	hub := ws.NewRoomHub()
-	go hub.Run()
+	hub.Run()
 	t.Cleanup(hub.Stop)
 
 	svc := NewNotificationService(db, hub)
@@ -361,7 +361,7 @@ func TestSendTimeExpired(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 
 	hub := ws.NewRoomHub()
-	go hub.Run()
+	hub.Run()
 	t.Cleanup(hub.Stop)
 
 	svc := NewNotificationService(db, hub)

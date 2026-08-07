@@ -16,7 +16,7 @@ import (
 
 func TestClient_WritePump_SendMessage(t *testing.T) {
 	hub := NewRoomHub()
-	go hub.Run()
+	hub.Run()
 	t.Cleanup(hub.Stop)
 
 	upgrader := websocket.Upgrader{
@@ -84,7 +84,7 @@ func TestClient_WritePump_SendMessage(t *testing.T) {
 
 func TestClient_WritePump_CloseOnSendChannelClose(t *testing.T) {
 	hub := NewRoomHub()
-	go hub.Run()
+	hub.Run()
 	t.Cleanup(hub.Stop)
 
 	upgrader := websocket.Upgrader{
@@ -150,7 +150,7 @@ func TestClient_WritePump_CloseOnSendChannelClose(t *testing.T) {
 
 func TestClient_WritePump_Ping(t *testing.T) {
 	hub := NewRoomHub()
-	go hub.Run()
+	hub.Run()
 	t.Cleanup(hub.Stop)
 
 	upgrader := websocket.Upgrader{
