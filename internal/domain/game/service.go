@@ -226,6 +226,29 @@ func cacheGetJSON(store cache.CacheStore, ctx context.Context, key string, targe
 	return true
 }
 
+// cacheGetInt64 читает int64 из кэша (число хранится как JSON-число/строка в
+// обоих реализациях). Используется для version-ключа листинга (PF3).
+func cacheGetInt64(store cache.CacheStore, ctx context.Context, key string) (int64, bool) {
+	cached, ok := store.GetWithCtx(ctx, key)
+	if !ok {
+		return 0, false
+	}
+	switch v := cached.(type) {
+	case int64:
+		return v, true
+	case int:
+		return int64(v), true
+	case float64:
+		return int64(v), true
+	case string:
+		var n int64
+		if _, err := fmt.Sscanf(v, "%d", &n); err == nil {
+			return n, true
+		}
+	}
+	return 0, false
+}
+
 // GetByID возвращает игру по ID с кэшированием.
 // isAdmin позволяет админам просматривать черновики и приватные игры, автором которых они не являются.
 func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint, isAdmin bool) (*Game, error) {
@@ -373,11 +396,13 @@ func (s *GameService) invalidateGameCache(ctx context.Context, id uint) {
 	s.cache.DeleteWithCtx(ctx, fmt.Sprintf("game:%d", id))
 }
 
-// invalidateGameListCache сбрасывает анонимный кэш листинга игр (P3):
-// запись/публикация/удаление игры должна отражаться на списках немедленно,
-// а не через TTL 30 с.
+// invalidateGameListCache сбрасывает анонимный кэш листинга игр (P3/PF3):
+// запись/публикация/удаление игры должна отражаться на списках немедленно.
+// Версионный ключ (PF3): меняем ОДИН ключ games:list:version — старые
+// games:list:vN:... ключи перестают читаться и истекают по TTL. Это O(1)
+// вместо DeleteByPrefix (Valkey SCAN + DEL по всем ключам на каждый write).
 func (s *GameService) invalidateGameListCache(ctx context.Context) {
-	s.cache.DeleteByPrefixWithCtx(ctx, "games:list:")
+	s.cache.SetWithCtx(ctx, "games:list:version", time.Now().UnixNano(), 24*time.Hour)
 }
 
 // Publish делегирует GameCRUDService.

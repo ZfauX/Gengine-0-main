@@ -199,12 +199,16 @@ func (s *MonitorService) GameSnapshot(ctx context.Context, gameID uint) ([]TeamP
 		CROSS JOIN total_levels_cte tl
 		LEFT JOIN level_progresses lp ON lp.game_passing_id = gp.id
 		LEFT JOIN (
+			-- PF1: считаем только свежие попытки (окно 1 час). GameSnapshot
+			-- выполняется каждую секунду на активных играх — агрегация ВСЕХ
+			-- попыток за всё время нагружала БД при долгих играх.
 			SELECT level_progress_id, COUNT(*) AS total_attempts
 			FROM attempts
 			WHERE level_progress_id IN (
 				SELECT id FROM level_progresses
 				WHERE game_passing_id IN (SELECT id FROM game_passings WHERE game_id = ?)
 			)
+			AND created_at >= NOW() - INTERVAL '1 hour'
 			GROUP BY level_progress_id
 		) ac ON ac.level_progress_id = lp.id
 		LEFT JOIN LATERAL (

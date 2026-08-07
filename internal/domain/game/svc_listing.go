@@ -40,7 +40,7 @@ type listingCacheEntry struct {
 }
 
 // listingCacheKey строит детерминированный ключ кэша по параметрам фильтра/сортировки.
-func listingCacheKey(filter GameFilter, sort *GameSort, page, perPage int) string {
+func (s *GameListingService) listingCacheKey(ctx context.Context, filter GameFilter, sort *GameSort, page, perPage int) string {
 	field, order := "created_at", "desc"
 	if sort != nil {
 		field = sort.Field
@@ -50,8 +50,21 @@ func listingCacheKey(filter GameFilter, sort *GameSort, page, perPage int) strin
 	if filter.AuthorID != nil {
 		authorID = *filter.AuthorID
 	}
-	return fmt.Sprintf("games:list:%d:%d:%s:%s:%s:%s:%d:%s:%s",
-		page, perPage, filter.Status, filter.Search, filter.DateFrom, filter.DateTo, authorID, field, order)
+	// PF3: версия листинга в ключе — при инвалидации меняем один ключ
+	// games:list:version (O(1)) вместо DeleteByPrefix (Valkey SCAN+DEL).
+	version := s.listingVersion(ctx)
+	return fmt.Sprintf("games:list:v%d:%d:%d:%s:%s:%s:%s:%d:%s:%s",
+		version, page, perPage, filter.Status, filter.Search, filter.DateFrom, filter.DateTo, authorID, field, order)
+}
+
+// listingVersion возвращает текущую версию анонимного листинга.
+// 0 — если версия ещё не устанавливалась (первый запуск, кэш пуст).
+func (s *GameListingService) listingVersion(ctx context.Context) int64 {
+	v, ok := cacheGetInt64(s.cache, ctx, "games:list:version")
+	if !ok {
+		return 0
+	}
+	return v
 }
 
 // ListFilteredPaginated returns filtered games with pagination.
@@ -63,7 +76,7 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 		// Perf (pass 25): кэшируем только листинг без поиска/даты — иначе каждый
 		// уникальный поисковый запрос создаёт ключ, фрагментируя LRU/Valkey.
 		if filter.Search == "" && filter.DateFrom == "" && filter.DateTo == "" {
-			cacheKey = listingCacheKey(filter, sort, page, perPage)
+			cacheKey = s.listingCacheKey(ctx, filter, sort, page, perPage)
 			var entry listingCacheEntry
 			if cacheGetJSON(s.cache, ctx, cacheKey, &entry) {
 				return entry.Games, entry.Total, nil

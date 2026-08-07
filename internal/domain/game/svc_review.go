@@ -78,11 +78,12 @@ func (s *ReviewService) Create(gameID, userID uint, rating int, comment string) 
 	}
 	// Инвалидируем кэш рейтинга, отзывов, карточки игры и анонимного листинга —
 	// иначе Game.RatingValue остаётся устаревшим до 5 мин (pass 26).
+	// Листинг: версионный ключ (PF3) — один Set вместо DeleteByPrefix.
 	if s.Cache != nil {
 		s.Cache.DeleteWithCtx(context.Background(), fmt.Sprintf("rating:game:%d", gameID))
 		s.Cache.DeleteWithCtx(context.Background(), fmt.Sprintf("reviews:game:%d", gameID))
 		s.Cache.DeleteWithCtx(context.Background(), fmt.Sprintf("game:%d", gameID))
-		s.Cache.DeleteByPrefixWithCtx(context.Background(), "games:list:")
+		s.Cache.SetWithCtx(context.Background(), "games:list:version", time.Now().UnixNano(), 24*time.Hour)
 	}
 	return nil
 }

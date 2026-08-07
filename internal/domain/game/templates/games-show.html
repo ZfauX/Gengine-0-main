@@ -120,7 +120,7 @@
         <div class="bg-white dark:bg-gray-800 w-full max-w-4xl max-h-[90vh] rounded-lg shadow-xl overflow-hidden mx-4">
             <div class="flex justify-between items-center p-4 border-b border-gray-200 dark:border-gray-700">
                 <h2 id="preview-title" class="text-xl font-bold text-gray-800 dark:text-gray-100">{{ TF $.Lang "game.show_preview_title" .Game.Name }}</h2>
-                <button id="close-preview" class="text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-2xl font-bold">&times;</button>
+                <button id="close-preview" class="text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-2xl font-bold" aria-label="{{ T $.Lang "common.close" }}">&times;</button>
             </div>
             <div id="preview-content" class="p-6 overflow-y-auto max-h-[70vh]">
                 <p class="text-gray-500 dark:text-gray-400">{{ T $.Lang "game.show_preview_loading" }}</p>

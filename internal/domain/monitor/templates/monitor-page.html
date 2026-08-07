@@ -165,8 +165,8 @@
 
                     <div class="grid grid-cols-2 gap-1 text-sm">
                         <div><span class="text-gray-500 dark:text-gray-400">{{ T $.Lang "monitor.levels" }}</span> <span class="font-medium">${team.completed_levels}/${team.total_levels}</span></div>
-                        <div><span class="text-gray-500 dark:text-gray-400">{{ T $.Lang "monitor.current" }}</span> <span class="font-medium">${team.current_level ? '#' + team.current_level : '—'}</span></div>
-                        <div><span class="text-gray-500 dark:text-gray-400">{{ T $.Lang "monitor.time" }}</span> <span class="font-mono">${team.total_time || '—'}</span></div>
+                        <div><span class="text-gray-500 dark:text-gray-400">{{ T $.Lang "monitor.current" }}</span> <span class="font-medium">${team.current_level ? '#' + escapeHtml(team.current_level) : '—'}</span></div>
+                        <div><span class="text-gray-500 dark:text-gray-400">{{ T $.Lang "monitor.time" }}</span> <span class="font-mono">${escapeHtml(team.total_time || '—')}</span></div>
                         <div><span class="text-gray-500 dark:text-gray-400">{{ T $.Lang "monitor.attempts" }}</span> <span class="font-medium">${team.attempts || 0}</span></div>
                     </div>
 
