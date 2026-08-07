@@ -74,7 +74,7 @@
             <li class="py-3 flex flex-wrap items-center justify-between gap-2">
                 <a href="/games/{{.ID}}" class="text-blue-600 dark:text-blue-400 hover:underline font-medium">{{.Name}}</a>
                 {{if .StartsAt}}
-                <span class="text-sm text-gray-500 dark:text-gray-400">{{.StartsAt.Format "02.01.2006 15:04"}}</span>
+                <span class="text-sm text-gray-500 dark:text-gray-400">{{ formatDateTime $.Lang .StartsAt }}</span>
                 {{end}}
             </li>
             {{end}}

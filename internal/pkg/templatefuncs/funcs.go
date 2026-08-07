@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html/template"
 	"strings"
+	"time"
 
 	"gengine-0/internal/pkg/i18n"
 )
@@ -49,15 +50,17 @@ func FuncMap() template.FuncMap {
 				return i18n.Default.T(i18n.LangRU, key)
 			}
 		},
-		"add1":        add1,
-		"sub":         sub,
-		"add":         add,
-		"loop":        loop,
-		"mod":         mod,
-		"formatBytes": formatBytes,
-		"csrfToken":   csrfToken,
-		"default":     defaultValue,
-		"truncate":    truncate,
+		"add1":           add1,
+		"sub":            sub,
+		"add":            add,
+		"loop":           loop,
+		"mod":            mod,
+		"formatBytes":    formatBytes,
+		"formatDate":     formatDate,
+		"formatDateTime": formatDateTime,
+		"csrfToken":      csrfToken,
+		"default":        defaultValue,
+		"truncate":       truncate,
 	}
 }
 
@@ -130,4 +133,39 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return string(runes[:maxLen]) + "..."
+}
+
+// formatDate форматирует дату локализованно (C9): ru → "02.01.2006",
+// en → "02 Jan 2006". Вместо жёсткого "02.01.2006" в шаблонах.
+// Принимает interface{} — nil и не-time значения возвращают пустую строку.
+func formatDate(lang interface{}, t interface{}) string {
+	ts, ok := t.(time.Time)
+	if !ok {
+		return ""
+	}
+	loc := "ru"
+	if v, ok := lang.(string); ok && v == "en" {
+		loc = "en"
+	}
+	if loc == "en" {
+		return ts.Format("02 Jan 2006")
+	}
+	return ts.Format("02.01.2006")
+}
+
+// formatDateTime форматирует дату и время локализованно (C9).
+// ru → "02.01.2006 15:04", en → "02 Jan 2006 15:04".
+func formatDateTime(lang interface{}, t interface{}) string {
+	ts, ok := t.(time.Time)
+	if !ok {
+		return ""
+	}
+	loc := "ru"
+	if v, ok := lang.(string); ok && v == "en" {
+		loc = "en"
+	}
+	if loc == "en" {
+		return ts.Format("02 Jan 2006 15:04")
+	}
+	return ts.Format("02.01.2006 15:04")
 }

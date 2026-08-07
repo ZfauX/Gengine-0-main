@@ -303,6 +303,11 @@ input, textarea, select {
     transform: translateY(-2px);
     box-shadow: var(--shadow-hover);
   }
+  /* C5: pressed-состояние на тач/клик — мгновенная обратная связь */
+  .hover-lift:active {
+    transform: translateY(0) scale(0.98);
+    box-shadow: var(--shadow-soft);
+  }
 
   /* Навигация */
   .nav-link {

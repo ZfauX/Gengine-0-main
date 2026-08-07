@@ -79,6 +79,27 @@
         @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
         @keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
 
+        /* C7: печать результатов/таблиц без навигации и модалок (UX6) */
+        @media print {
+            nav, footer, #toast-container, .no-print,
+            [class*="modal"], [id$="-modal"], [id="notificationDropdown"] {
+                display: none !important;
+            }
+            body {
+                background: #fff !important;
+                color: #000 !important;
+            }
+            main, #main-content {
+                max-width: 100% !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+            a { color: #000 !important; text-decoration: underline; }
+            .shadow-sm, .shadow, .shadow-md, .shadow-lg, .shadow-xl {
+                box-shadow: none !important;
+                border: 1px solid #ccc;
+            }
+        }
     </style>
     {{.ExtraHead}}
 </head>

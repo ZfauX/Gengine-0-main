@@ -57,11 +57,14 @@ var errKeyMap = map[string]string{
 	"неверный тип уровня":                       "handler.invalid_level_type",
 
 	// gameplay
-	"нет активного уровня":                              "handler.no_active_level",
-	"лимит подсказок исчерпан":                          "handler.no_hints_left",
-	"игра завершена":                                    "handler.game_finished",
-	"завершённый уровень не найден":                     "handler.finished_level_not_found",
-	"на этом уровне ожидается файл, а не текстовый код": "handler.file_expected",
+	"нет активного уровня":                                    "handler.no_active_level",
+	"лимит подсказок исчерпан":                                "handler.no_hints_left",
+	"подсказки запрещены":                                     "handler.hints_disabled",
+	"на этом уровне нет подсказки":                            "handler.no_hint_on_level",
+	"только автор или модератор может запускать тестирование": "handler.testing_author_only",
+	"игра завершена":                                          "handler.game_finished",
+	"завершённый уровень не найден":                           "handler.finished_level_not_found",
+	"на этом уровне ожидается файл, а не текстовый код":       "handler.file_expected",
 
 	// voting
 	"голосование уже активно":        "handler.voting_active",
