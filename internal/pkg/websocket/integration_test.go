@@ -168,9 +168,13 @@ func TestWebSocket_Integration_ClientDisconnect(t *testing.T) {
 
 	hub.mu.Lock()
 	room, roomExists := hub.rooms["testroom"]
+	roomLen := 0
+	if room != nil {
+		roomLen = len(room)
+	}
 	hub.mu.Unlock()
 	assert.True(t, roomExists)
-	assert.Len(t, room, 1)
+	assert.Equal(t, 1, roomLen)
 
 	_ = conn.Close()
 	// Ждём удаления комнаты

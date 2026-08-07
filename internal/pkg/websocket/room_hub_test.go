@@ -27,14 +27,18 @@ func TestRoomHub_RegisterClient(t *testing.T) {
 
 	assert.Eventually(t, func() bool {
 		hub.mu.RLock()
+		defer hub.mu.RUnlock()
 		room, ok := hub.rooms["room1"]
-		hub.mu.RUnlock()
-		return ok && len(room) == 1 && func() bool {
-			for c := range room {
-				return c == client
-			}
+		if !ok {
 			return false
-		}()
+		}
+		if len(room) != 1 {
+			return false
+		}
+		for c := range room {
+			return c == client
+		}
+		return false
 	}, time.Second, 50*time.Millisecond)
 }
 
@@ -176,17 +180,18 @@ func TestRoomHub_BroadcastToRoom_WithClosedClient(t *testing.T) {
 	// Ждём обработки закрытия
 	assert.Eventually(t, func() bool {
 		hub.mu.RLock()
-		room := hub.rooms[roomID]
-		hub.mu.RUnlock()
-		_, exists := room[c1]
+		defer hub.mu.RUnlock()
+		_, exists := hub.rooms[roomID][c1]
 		return !exists
 	}, 1*time.Second, 50*time.Millisecond)
 
 	hub.mu.RLock()
 	room := hub.rooms[roomID]
+	_, hasC1 := room[c1]
+	_, hasC2 := room[c2]
 	hub.mu.RUnlock()
-	assert.NotContains(t, room, c1, "closed client should be removed")
-	assert.Contains(t, room, c2, "open client should remain")
+	assert.False(t, hasC1, "closed client should be removed")
+	assert.True(t, hasC2, "open client should remain")
 
 	var received bool
 	select {
@@ -220,16 +225,16 @@ func TestRoomHub_BroadcastToRoom_FullChannel(t *testing.T) {
 	// Ждём обработки (сообщение будет отброшено, клиент не отключится)
 	assert.Eventually(t, func() bool {
 		hub.mu.RLock()
-		room := hub.rooms[roomID]
-		hub.mu.RUnlock()
-		return len(room) == 1
+		defer hub.mu.RUnlock()
+		return len(hub.rooms[roomID]) == 1
 	}, 500*time.Millisecond, 50*time.Millisecond)
 
 	hub.mu.RLock()
-	room := hub.rooms[roomID]
+	roomLen := len(hub.rooms[roomID])
+	roomExists := hub.rooms[roomID] != nil
 	hub.mu.RUnlock()
-	assert.NotNil(t, room, "client should NOT be removed - message is dropped instead of disconnecting")
-	assert.Len(t, room, 1, "client should remain connected after buffer full")
+	assert.True(t, roomExists, "client should NOT be removed - message is dropped instead of disconnecting")
+	assert.Equal(t, 1, roomLen, "client should remain connected after buffer full")
 }
 
 func TestClient_Close(t *testing.T) {
@@ -277,8 +282,8 @@ func BenchmarkRoomHub_BroadcastToRoom(b *testing.B) {
 	// Ждём регистрации клиентов
 	assert.Eventually(b, func() bool {
 		hub.mu.RLock()
+		defer hub.mu.RUnlock()
 		room, ok := hub.rooms[roomID]
-		hub.mu.RUnlock()
 		return ok && len(room) == 100
 	}, 2*time.Second, 50*time.Millisecond)
 
