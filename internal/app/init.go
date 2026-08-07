@@ -51,9 +51,11 @@ type services struct {
 	PasswordReset   *user.PasswordResetService
 	EmailVerif      *user.EmailVerificationService
 	Email           *email.EmailService
+	TwoFactor       *user.TwoFactorService
 	Game            *game.GameService
 	GamePlay        *game.GamePlayService
 	GameAdmin       *game.GameAdminService
+	GamePassing     *game.GamePassingService
 	GameplayHandler *game.GameplayHandler
 	CoAuthor        *game.CoAuthorService
 	Review          *game.ReviewService

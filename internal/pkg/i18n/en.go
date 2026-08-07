@@ -471,6 +471,7 @@ var enMessages = map[string]string{
 	"common.download":     "Download",
 	"common.duplicate":    "Duplicate",
 	"common.click_here":   "Click here",
+	"common.characters":   "characters",
 
 	// ── Home ──
 	"home.title":              "Welcome to Encounter Engine",

@@ -48,6 +48,24 @@ func SetTemplate(t *template.Template) {
 	mu.Unlock()
 }
 
+// GetTemplate возвращает текущий общий шаблон (nil, если не установлен).
+// Используется тестами для восстановления глобального шаблона после
+// переопределения (D6) — исключает interference между тест-пакетами.
+func GetTemplate() *template.Template {
+	mu.RLock()
+	defer mu.RUnlock()
+	return globalTemplate
+}
+
+// SetTemplateForTest временно устанавливает шаблон и возвращает cleanup,
+// который восстанавливает предыдущий. Удобно в handler-тестах: не нужно
+// вручную помнить/восстанавливать глобальное состояние.
+func SetTemplateForTest(t *template.Template) func() {
+	prev := GetTemplate()
+	SetTemplate(t)
+	return func() { SetTemplate(prev) }
+}
+
 // EnableDevMode включает горячую перезагрузку шаблонов для режима разработки.
 // При каждом вызове Page() шаблоны будут перечитываться с диска.
 func EnableDevMode(baseDir string, funcMap template.FuncMap) {

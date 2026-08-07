@@ -126,7 +126,7 @@ func (h *WebAuthnHandler) BeginRegistration(c *gin.Context) {
 	if user.TwoFactorEnabled {
 		sess := sessions.Default(c)
 		if sess.Get(session2FAKey(userID)) != true {
-			c.JSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "webauthn.2fa_required_for_register")})
+			c.JSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "passkey.2fa_required_for_register")})
 			return
 		}
 	}

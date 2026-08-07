@@ -63,6 +63,8 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 		wrapGameService,
 		wrapGamePlayService,
 		wrapGameAdminService,
+		wrapGamePassingService,
+		wrapTwoFactorService,
 		wrapLevelProgressService,
 		wrapTournamentService,
 		wrapTeamService,

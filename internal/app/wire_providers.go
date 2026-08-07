@@ -39,6 +39,20 @@ func wrapLevelProgressService(db *gorm.DB, sseMgr *game.SSEManager, gameService 
 	return game.NewLevelProgressService(db).WithSSEManager(sseMgr).WithGameService(gameService)
 }
 
+// wrapGamePassingService собирает GamePassingService с method-chaining
+// (D4): раньше создавался вручную в router.go и не был в DI-манифесте.
+func wrapGamePassingService(db *gorm.DB, ts *team.TeamService, ca *game.CoAuthorService, progressSvc *game.LevelProgressService, hub *ws.RoomHub, monitorSvc *game.MonitorService, sseMgr *game.SSEManager) *game.GamePassingService {
+	return game.NewGamePassingService(db, ts, ca, progressSvc).
+		WithHub(hub).
+		WithMonitorService(monitorSvc).
+		WithSSEManager(sseMgr)
+}
+
+// wrapTwoFactorService возвращает сервис 2FA (stateless, без зависимостей).
+func wrapTwoFactorService() *user.TwoFactorService {
+	return user.NewTwoFactorService()
+}
+
 func wrapTournamentService(db *gorm.DB, tournamentRepo tournament.TournamentRepository, tournamentGameRepo tournament.TournamentGameRepository, tournamentTeamRepo tournament.TournamentTeamRepository, tournamentResultRepo tournament.TournamentResultRepository, teamService *team.TeamService, cfg *config.Config) *tournament.TournamentService {
 	return tournament.NewTournamentService(db, tournamentRepo, tournamentGameRepo, tournamentTeamRepo, tournamentResultRepo, teamService, cfg)
 }

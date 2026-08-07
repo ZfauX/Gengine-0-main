@@ -166,6 +166,9 @@
 
         if (games.length === 0) {
             list.innerHTML = '<li class="text-gray-500 dark:text-gray-400">{{ T $.Lang "calendar.no_games" }}</li>';
+            {{if .CurrentUserID}}
+            list.innerHTML += '<li class="mt-2"><a href="/games/new" class="btn btn-primary text-sm">{{ T $.Lang "games.create_button" }}</a></li>';
+            {{end}}
         } else {
             games.forEach(game => {
                 const li = document.createElement('li');

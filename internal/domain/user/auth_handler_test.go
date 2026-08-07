@@ -166,7 +166,8 @@ func TestTwoFALoginForm_NoPendingSession(t *testing.T) {
 {{define "auth-login-2fa.html"}}<h1>2FA Login</h1>{{end}}
 {{define "errors-404.html"}}<h1>Not Found</h1>{{end}}
 `))
-	render.SetTemplate(tmpl)
+	// D6: восстанавливаем глобальный шаблон после теста.
+	t.Cleanup(render.SetTemplateForTest(tmpl))
 
 	router := gin.New()
 	store := cookie.NewStore([]byte("test-session-secret-32chars-long!!!"))
@@ -185,10 +186,51 @@ func TestTwoFALoginForm_NoPendingSession(t *testing.T) {
 
 func TestTwoFALoginForm_WithPendingSession(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	t.Skip("requires gin-contrib/sessions integration setup")
 
-	// This test needs proper session middleware initialization
-	// The session must be set before TwoFALoginForm handler runs
+	tmpl := template.Must(template.New("").Parse(`
+{{define "layout.html"}}<html><body>{{.ContentHTML}}</body></html>{{end}}
+{{define "auth-login-2fa.html"}}<h1>2FA Login</h1>{{end}}
+{{define "errors-404.html"}}<h1>Not Found</h1>{{end}}
+`))
+	t.Cleanup(render.SetTemplateForTest(tmpl))
+
+	router := gin.New()
+	router.SetHTMLTemplate(tmpl)
+	store := cookie.NewStore([]byte("test-session-secret-32chars-long!!!"))
+	router.Use(sessions.Sessions("gengine_test_session", store))
+	router.Use(func(c *gin.Context) {
+		c.Set("csrfSecret", "test-csrf-secret-32chars-long!!!")
+		c.Set("csrfToken", "test-csrf-token")
+		c.Next()
+	})
+
+	handler := &AuthHandler{}
+	router.GET("/auth/2fa/login", handler.TwoFALoginForm)
+
+	// Устанавливаем pending_user_id через сессию.
+	router.GET("/setup-session", func(c *gin.Context) {
+		sess := sessions.Default(c)
+		sess.Set("pending_user_id", uint(42))
+		if err := sess.Save(); err != nil {
+			t.Fatal(err)
+		}
+		c.Status(http.StatusOK)
+	})
+
+	w0 := httptest.NewRecorder()
+	req0 := httptest.NewRequest(http.MethodGet, "/setup-session", nil)
+	router.ServeHTTP(w0, req0)
+
+	// Новый запрос с сохранённой сессией.
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/auth/2fa/login", nil)
+	for _, ck := range w0.Result().Cookies() {
+		req.AddCookie(ck)
+	}
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code, "form should render with pending session")
+	assert.Contains(t, w.Body.String(), "2FA Login")
 }
 
 func TestTwoFALoginVerify_NoPendingSession(t *testing.T) {
@@ -213,11 +255,57 @@ func TestTwoFALoginVerify_NoPendingSession(t *testing.T) {
 }
 
 func TestTwoFALoginVerify_InvalidCode(t *testing.T) {
-	t.Skip("requires gin-contrib/sessions integration setup")
+	gin.SetMode(gin.TestMode)
+
+	tmpl := template.Must(template.New("").Parse(`
+{{define "layout.html"}}<html><body>{{.ContentHTML}}</body></html>{{end}}
+{{define "auth-login-2fa.html"}}<h1>2FA Login</h1>{{if .Error}}<p class="error">{{.Error}}</p>{{end}}{{end}}
+{{define "errors-404.html"}}<h1>Not Found</h1>{{end}}
+`))
+	t.Cleanup(render.SetTemplateForTest(tmpl))
+
+	router := gin.New()
+	router.SetHTMLTemplate(tmpl)
+	store := cookie.NewStore([]byte("test-session-secret-32chars-long!!!"))
+	router.Use(sessions.Sessions("gengine_test_session", store))
+	router.Use(func(c *gin.Context) {
+		c.Set("csrfSecret", "test-csrf-secret-32chars-long!!!")
+		c.Set("csrfToken", "test-csrf-token")
+		c.Next()
+	})
+
+	handler := &AuthHandler{twoFactorSvc: NewTwoFactorService()}
+	router.POST("/auth/2fa/login", handler.TwoFALoginVerify)
+
+	// Устанавливаем pending_user_id.
+	router.GET("/setup-session", func(c *gin.Context) {
+		sess := sessions.Default(c)
+		sess.Set("pending_user_id", uint(42))
+		if err := sess.Save(); err != nil {
+			t.Fatal(err)
+		}
+		c.Status(http.StatusOK)
+	})
+
+	w0 := httptest.NewRecorder()
+	req0 := httptest.NewRequest(http.MethodGet, "/setup-session", nil)
+	router.ServeHTTP(w0, req0)
+
+	w := httptest.NewRecorder()
+	body := url.Values{"code": {"12"}}.Encode() // слишком короткий
+	req := httptest.NewRequest(http.MethodPost, "/auth/2fa/login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	for _, ck := range w0.Result().Cookies() {
+		req.AddCookie(ck)
+	}
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code, "should render error for invalid code format")
+	assert.Contains(t, w.Body.String(), "2FA Login")
 }
 
 func TestTwoFALoginVerify_ValidCode(t *testing.T) {
-	t.Skip("requires gin-contrib/sessions + PostgreSQL integration setup")
+	t.Skip("requires PostgreSQL: userService.GetByID + authSvc.GenerateJWT (integration test)")
 }
 
 func TestLoginInput_Validation(t *testing.T) {

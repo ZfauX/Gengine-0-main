@@ -123,7 +123,7 @@ func newTwoFactorTestRouter(t *testing.T, middleware gin.HandlerFunc, userID uin
 {{define "admin-2fa-verify.html"}}<h1>2FA Verify</h1>{{if .Error}}<p class="error">{{.Error}}</p>{{end}}<form>{{if .Message}}<p>{{.Message}}</p>{{end}}{{.ReturnURL}}</form>{{end}}
 {{define "admin-2fa-backup.html"}}<h1>2FA Backup</h1>{{if .Error}}<p class="error">{{.Error}}</p>{{end}}<form><input name="backup_code"></form>{{end}}
 `))
-	render.SetTemplate(tmpl)
+	t.Cleanup(render.SetTemplateForTest(tmpl))
 
 	router := gin.New()
 	router.SetHTMLTemplate(tmpl)
@@ -158,7 +158,7 @@ func TestTwoFactorRequired_SkipWhenNoUserID(t *testing.T) {
 	tmpl := template.Must(template.New("").Parse(`
 {{define "layout.html"}}<html><body>{{.ContentHTML}}</body></html>{{end}}
 `))
-	render.SetTemplate(tmpl)
+	t.Cleanup(render.SetTemplateForTest(tmpl))
 
 	router := gin.New()
 	router.SetHTMLTemplate(tmpl)
@@ -257,7 +257,7 @@ func TestTwoFactorRequired_AlreadyVerifiedInSession(t *testing.T) {
 	// с middleware, который ставит флаг в сессию
 	store := cookie.NewStore([]byte("test-session-secret-32chars-long!!!"))
 	tmpl := template.Must(template.New("").Parse(`{{define "layout.html"}}<html><body>{{.ContentHTML}}</body></html>{{end}}`))
-	render.SetTemplate(tmpl)
+	t.Cleanup(render.SetTemplateForTest(tmpl))
 
 	router2 := gin.New()
 	router2.SetHTMLTemplate(tmpl)
@@ -297,7 +297,7 @@ func TestTwoFactorRequired_ExpiredVerifiedFlag(t *testing.T) {
 
 	store := cookie.NewStore([]byte("test-session-secret-32chars-long!!!"))
 	tmpl := template.Must(template.New("").Parse(`{{define "layout.html"}}<html><body>{{.ContentHTML}}</body></html>{{end}}`))
-	render.SetTemplate(tmpl)
+	t.Cleanup(render.SetTemplateForTest(tmpl))
 
 	router := gin.New()
 	router.SetHTMLTemplate(tmpl)
@@ -331,7 +331,7 @@ func TestTwoFactorRequired_InvalidUserIDType(t *testing.T) {
 	tmpl := template.Must(template.New("").Parse(`
 {{define "layout.html"}}<html><body>{{.ContentHTML}}</body></html>{{end}}
 `))
-	render.SetTemplate(tmpl)
+	t.Cleanup(render.SetTemplateForTest(tmpl))
 
 	router := gin.New()
 	router.SetHTMLTemplate(tmpl)
@@ -367,7 +367,7 @@ func TestTwoFactorBackupCodeRequired_NoUserID(t *testing.T) {
 {{define "admin-2fa-verify.html"}}<h1>2FA Verify</h1>{{end}}
 {{define "admin-2fa-backup.html"}}<h1>2FA Backup</h1>{{if .Error}}<p class="error">{{.Error}}</p>{{end}}{{end}}
 `))
-	render.SetTemplate(tmpl)
+	t.Cleanup(render.SetTemplateForTest(tmpl))
 
 	router := gin.New()
 	router.SetHTMLTemplate(tmpl)
@@ -432,7 +432,7 @@ func TestTwoFactorBackupCodeRequired_AlreadyVerifiedInSession(t *testing.T) {
 
 	store := cookie.NewStore([]byte("test-session-secret-32chars-long!!!"))
 	tmpl := template.Must(template.New("").Parse(`{{define "layout.html"}}<html><body>{{.ContentHTML}}</body></html>{{end}}`))
-	render.SetTemplate(tmpl)
+	t.Cleanup(render.SetTemplateForTest(tmpl))
 
 	router := gin.New()
 	router.SetHTMLTemplate(tmpl)
@@ -467,7 +467,7 @@ func TestTwoFactorBackupCodeRequired_InvalidUserIDType(t *testing.T) {
 {{define "admin-2fa-verify.html"}}<h1>2FA Verify</h1>{{end}}
 {{define "admin-2fa-backup.html"}}<h1>2FA Backup</h1>{{if .Error}}<p class="error">{{.Error}}</p>{{end}}{{end}}
 `))
-	render.SetTemplate(tmpl)
+	t.Cleanup(render.SetTemplateForTest(tmpl))
 
 	router := gin.New()
 	router.SetHTMLTemplate(tmpl)

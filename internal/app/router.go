@@ -166,7 +166,7 @@ func (app *App) setupEngine(r *gin.Engine) error {
 	// сохранял доступ до истечения токена).
 	// S5: добавлен 2FA step-up (как на /admin/*), чтобы украденный JWT не давал
 	// доступ к метрикам и полной документации API.
-	twoFactorMW := user.TwoFactorRequired(user.NewTwoFactorService(), app.Deps.Repos.User)
+	twoFactorMW := user.TwoFactorRequired(app.Deps.Services.TwoFactor, app.Deps.Repos.User)
 	r.GET("/swagger/*any", middleware.AuthRequired(app.Deps.Services.Auth), twoFactorMW, middleware.AdminRequired(), func(c *gin.Context) {
 		ginSwagger.WrapHandler(swaggerFiles.Handler)(c)
 	})
@@ -307,12 +307,8 @@ func (app *App) registerUserRoutes(r *gin.RouterGroup) {
 }
 
 func (app *App) registerGameRoutes(r *gin.RouterGroup) {
-	passingSvc := game.NewGamePassingService(app.DB, app.Deps.Services.Team, app.Deps.Services.CoAuthor, app.Deps.Services.Progress).
-		WithHub(app.Hub).
-		WithMonitorService(app.Deps.Services.Monitor).
-		WithSSEManager(app.Deps.Services.SSEMgr)
 	game.RegisterRoutes(r, &game.GameDeps{
-		DB: app.DB, GameService: app.Deps.Services.Game, PassingService: passingSvc,
+		DB: app.DB, GameService: app.Deps.Services.Game, PassingService: app.Deps.Services.GamePassing,
 		CoAuthorSvc: app.Deps.Services.CoAuthor, AttemptSvc: app.Deps.Services.Attempt,
 		ProgressSvc: app.Deps.Services.Progress, MonitorSvc: app.Deps.Services.Monitor,
 		LocalStorage: app.LocalStorage, Hub: app.Hub, Cfg: app.Config,

@@ -493,6 +493,7 @@ var ruMessages = map[string]string{
 	"common.download":     "Скачать",
 	"common.duplicate":    "Дублировать",
 	"common.click_here":   "Нажмите здесь",
+	"common.characters":   "символов",
 
 	// ── Home ──
 	"home.title":              "Добро пожаловать в Encounter Engine",

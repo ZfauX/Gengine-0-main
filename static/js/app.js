@@ -176,11 +176,11 @@ function showModalConfirm(message, element) {
     overlay.setAttribute('aria-modal', 'true');
     overlay.setAttribute('aria-labelledby', 'confirm-modal-title');
     overlay.innerHTML =
-        '<div class="bg-white rounded-xl shadow-2xl p-6 max-w-md mx-4 w-full">' +
-        '<div id="confirm-modal-title" class="text-xl font-semibold mb-2">' + title + '</div>' +
-        '<p class="text-gray-600 mb-6">' + escapeHtml(message) + '</p>' +
+        '<div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 max-w-md mx-4 w-full">' +
+        '<div id="confirm-modal-title" class="text-xl font-semibold mb-2 text-gray-800 dark:text-gray-100">' + title + '</div>' +
+        '<p class="text-gray-600 dark:text-gray-300 mb-6">' + escapeHtml(message) + '</p>' +
         '<div class="flex justify-end gap-3">' +
-        '<button id="confirm-cancel" class="px-4 py-2 text-gray-600 hover:text-gray-800 bg-gray-100 rounded-lg hover:bg-gray-200 transition">' + cancelText + '</button>' +
+        '<button id="confirm-cancel" class="px-4 py-2 text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition">' + cancelText + '</button>' +
         '<button id="confirm-ok" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition">' + okText + '</button>' +
         '</div>' +
         '</div>';

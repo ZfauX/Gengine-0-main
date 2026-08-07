@@ -81,6 +81,7 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	passwordResetService := wrapPasswordResetService(userRepository, passwordResetRepository, cfg)
 	emailVerificationService := wrapEmailVerificationService(userRepository, emailVerificationRepository, cfg)
 	emailService := wrapEmailService(cfg, db)
+	twoFactorService := wrapTwoFactorService()
 	gameRepository := repos.Game
 	gamePassingRepository := repos.GamePassing
 	coAuthorService := game.NewCoAuthorService(db)
@@ -94,6 +95,9 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	levelProgressService := wrapLevelProgressService(db, sseManager, gameService)
 	gamePlayService := wrapGamePlayService(db, attemptService, levelProgressService, monitorService, hub, coAuthorService, cfg, sseManager)
 	gameAdminService := wrapGameAdminService(db, coAuthorService, cfg, sseManager)
+	teamRepository := repos.Team
+	teamService := wrapTeamService(teamRepository)
+	gamePassingService := wrapGamePassingService(db, teamService, coAuthorService, levelProgressService, hub, monitorService, sseManager)
 	gameplayHandler := wrapGameplayHandler(gameService, gamePlayService, attemptService, levelProgressService, monitorService, hub, localStorage)
 	levelRepository := repos.Level
 	questionRepository := repos.Question
@@ -101,8 +105,6 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	levelService := wrapLevelService(levelRepository, questionRepository, answerRepository, coAuthorService, gameAdminService)
 	questionService := wrapQuestionService(questionRepository, levelRepository, coAuthorService)
 	answerService := wrapAnswerService(answerRepository, questionRepository, levelRepository, coAuthorService)
-	teamRepository := repos.Team
-	teamService := wrapTeamService(teamRepository)
 	invitationRepository := repos.Invitation
 	invitationService := wrapInvitationService(invitationRepository, teamRepository, cfg)
 	tournamentRepository := repos.Tournament
@@ -118,9 +120,11 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 		PasswordReset:   passwordResetService,
 		EmailVerif:      emailVerificationService,
 		Email:           emailService,
+		TwoFactor:       twoFactorService,
 		Game:            gameService,
 		GamePlay:        gamePlayService,
 		GameAdmin:       gameAdminService,
+		GamePassing:     gamePassingService,
 		GameplayHandler: gameplayHandler,
 		CoAuthor:        coAuthorService,
 		Review:          reviewService,

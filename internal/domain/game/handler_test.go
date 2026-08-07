@@ -304,7 +304,7 @@ func (m *MockGamePassingService) ListTestPassings(ctx context.Context, gameID ui
 // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 // =============================================================================
 
-func setupTestRouter() *gin.Engine {
+func setupTestRouter(t *testing.T) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 
 	// Инициализируем минимальный набор шаблонов для тестов
@@ -330,7 +330,9 @@ func setupTestRouter() *gin.Engine {
 			panic(err)
 		}
 	}
-	render.SetTemplate(tmpl)
+	// D6: временно переопределяем глобальный шаблон и восстанавливаем после теста —
+	// исключает interference между тест-пакетами (раньше глобал оставался мок-шаблоном).
+	t.Cleanup(render.SetTemplateForTest(tmpl))
 
 	router := gin.New()
 	router.SetHTMLTemplate(tmpl)
@@ -378,7 +380,7 @@ func TestGameHandler_List_Success(t *testing.T) {
 		auditService:    mockAuditService,
 	}
 
-	router := setupTestRouter()
+	router := setupTestRouter(t)
 	router.GET("/games", handler.List)
 
 	expectedGames := []Game{*createTestGame(1, "Game 1"), *createTestGame(2, "Game 2")}
@@ -410,7 +412,7 @@ func TestGameHandler_List_Error(t *testing.T) {
 		auditService:    mockAuditService,
 	}
 
-	router := setupTestRouter()
+	router := setupTestRouter(t)
 	router.GET("/games", handler.List)
 
 	mockGameService.On("ListFilteredPaginated",
@@ -440,7 +442,7 @@ func TestGameHandler_Show_Success(t *testing.T) {
 		auditService:    mockAuditService,
 	}
 
-	router := setupTestRouter()
+	router := setupTestRouter(t)
 	router.GET("/games/:id", handler.Show)
 
 	game := createTestGame(1, "Test Game")
@@ -467,7 +469,7 @@ func TestGameHandler_Show_NotFound(t *testing.T) {
 		auditService:    mockAuditService,
 	}
 
-	router := setupTestRouter()
+	router := setupTestRouter(t)
 	router.GET("/games/:id", handler.Show)
 
 	mockGameService.On("ShowGame", mock.Anything, uint(1), uint(1), false).Return(nil, nil, 0.0, int64(0), gorm.ErrRecordNotFound)
@@ -491,7 +493,7 @@ func TestGameHandler_Create_Success(t *testing.T) {
 		auditService:    mockAuditService,
 	}
 
-	router := setupTestRouter()
+	router := setupTestRouter(t)
 	router.POST("/games", handler.Create)
 
 	body := &bytes.Buffer{}
@@ -528,7 +530,7 @@ func TestGameHandler_Create_BadRequest(t *testing.T) {
 		auditService:    mockAuditService,
 	}
 
-	router := setupTestRouter()
+	router := setupTestRouter(t)
 	router.POST("/games", handler.Create)
 
 	body := &bytes.Buffer{}
@@ -555,7 +557,7 @@ func TestGameHandler_Delete_Success(t *testing.T) {
 		auditService:    mockAuditService,
 	}
 
-	router := setupTestRouter()
+	router := setupTestRouter(t)
 	router.POST("/games/:id/delete", handler.Delete)
 
 	mockGameService.On("Delete", mock.Anything, uint(1), uint(1)).Return(nil)
@@ -582,7 +584,7 @@ func TestGameHandler_Delete_Forbidden(t *testing.T) {
 		auditService:    mockAuditService,
 	}
 
-	router := setupTestRouter()
+	router := setupTestRouter(t)
 	// Переопределяем userID для этого теста
 	router.Use(func(c *gin.Context) {
 		c.Set("userID", uint(2))
@@ -611,7 +613,7 @@ func TestGameHandler_Update_Success(t *testing.T) {
 		auditService:    mockAuditService,
 	}
 
-	router := setupTestRouter()
+	router := setupTestRouter(t)
 	router.POST("/games/:id/update", handler.Update)
 
 	body := &bytes.Buffer{}
@@ -649,7 +651,7 @@ func TestGameHandler_Publish_Success(t *testing.T) {
 		auditService:    mockAuditService,
 	}
 
-	router := setupTestRouter()
+	router := setupTestRouter(t)
 	router.POST("/games/:id/publish", handler.Publish)
 
 	mockGameService.On("Publish", mock.Anything, uint(1), uint(1)).Return(nil)
@@ -676,7 +678,7 @@ func TestGameHandler_Publish_Forbidden(t *testing.T) {
 		auditService:    mockAuditService,
 	}
 
-	router := setupTestRouter()
+	router := setupTestRouter(t)
 	router.Use(func(c *gin.Context) {
 		c.Set("userID", uint(2))
 		c.Next()
