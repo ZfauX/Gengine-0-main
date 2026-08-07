@@ -17,7 +17,9 @@ COPY . .
 RUN CGO_ENABLED=0 go build -o gengine -ldflags="-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo 'dev') -X main.buildDate=$(date -u '+%Y-%m-%d_%H:%M:%S')" ./cmd/server
 
 # Финальный образ
-FROM alpine:3.20
+# alpine:3.23 — первый стабильный выпуск с пакетом postgresql18-client,
+# который нужен для pg_dump (бэкапы) против PostgreSQL 18.
+FROM alpine:3.23
 
 WORKDIR /app
 
