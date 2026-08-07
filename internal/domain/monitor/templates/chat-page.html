@@ -12,7 +12,16 @@
         </div>
 
         <!-- Область сообщений -->
-        <div id="chat-messages" role="log" aria-live="polite" aria-relevant="additions" class="h-96 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-800 mb-3"></div>
+        <div id="chat-messages" role="log" aria-live="polite" aria-relevant="additions" class="h-96 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-800 mb-3">
+            <!-- C1: skeleton-заглушка до загрузки истории -->
+            <div id="chat-skeleton" class="space-y-3" aria-hidden="true">
+                <div class="skeleton h-4 w-1/2"></div>
+                <div class="skeleton h-4 w-2/3"></div>
+                <div class="skeleton h-4 w-1/3"></div>
+                <div class="skeleton h-4 w-3/4"></div>
+                <div class="skeleton h-4 w-1/2"></div>
+            </div>
+        </div>
 
         <!-- Поле ввода и отправка -->
         <div class="flex flex-wrap items-center gap-2">
@@ -108,6 +117,19 @@
                                 const msg = data.message;
                                 const msgId = msg.id || msg.ID || '';
                                 if (!msgId || renderedIds.has(msgId)) return; // пропускаем дубли
+                                // C2: серверное echo уже показанного optimistic-сообщения — не дублируем.
+                                const author = (msg.User && msg.User.Name) || msg.user_name || (msg.user && msg.user.name) || '';
+                                const content = msg.Content || msg.content || msg.text || '';
+                                const now = Date.now();
+                                for (let i = recentSends.length - 1; i >= 0; i--) {
+                                    const rs = recentSends[i];
+                                    if (now - rs.ts > 3000) { recentSends.splice(0, i + 1); break; }
+                                    if (rs.author === author && rs.content === content) {
+                                        recentSends.splice(i, 1);
+                                        renderedIds.add(msgId);
+                                        return;
+                                    }
+                                }
                                 renderedIds.add(msgId);
                                 renderMessage(msg);
                             }
@@ -177,8 +199,13 @@
             });
         }
 
-        // Отправка сообщения (без оптимистичного отображения).
-        // Единый JSON-формат с team-chat (UX11): {type, room_id, content}.
+        // Отправка сообщения с оптимистичным отображением (C2):
+        // пузырь появляется мгновенно, реальное сообщение с сервера
+        // дедуплицируется по renderedIds (сервер вернёт его с id).
+        // recentSends хранит недавние локальные отправки — если серверное
+        // сообщение совпадает по автору+тексту, не рисуем второй пузырь.
+        const recentSends = [];
+
         function sendMessage() {
             const text = chatInput.value.trim();
             if (!text) return;
@@ -192,6 +219,16 @@
                 room_id: room || 0,
                 content: text
             }));
+            // Оптимистичный пузырь — собственное сообщение видно сразу.
+            const optimisticId = 'local-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+            renderMessage({
+                id: optimisticId,
+                user_name: userName,
+                content: text,
+                created_at: new Date().toISOString()
+            });
+            recentSends.push({ author: userName, content: text, ts: Date.now() });
+            if (recentSends.length > 20) recentSends.shift();
             chatInput.value = '';
         }
 

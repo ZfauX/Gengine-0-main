@@ -276,5 +276,23 @@
             window.location.href = card.getAttribute('data-href');
         }
     });
+
+    // C3b: клавиатурные шорткаты.
+    // '/' — фокус на поиск (если не вводим текст в поле/textarea).
+    // 'n' — новая игра (для авторизованных; если не вводим текст).
+    document.addEventListener('keydown', function(e) {
+        var tag = e.target && e.target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target && e.target.isContentEditable)) return;
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+        if (e.key === '/') {
+            e.preventDefault();
+            var searchInput = document.getElementById('filter-search');
+            if (searchInput) searchInput.focus();
+        } else if (e.key.toLowerCase() === 'n') {
+            e.preventDefault();
+            window.location.href = '/games/new';
+        }
+    });
 </script>
 {{end}}

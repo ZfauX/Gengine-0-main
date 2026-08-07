@@ -4,7 +4,26 @@
 
     <div class="card">
         <div id="teams-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <!-- Карточки команд будут отображаться здесь -->
+            <!-- C1: skeleton-заглушка — видна до первого снапшота (данные приходят
+                 по WebSocket/SSE, начальное состояние пустое) -->
+            <div class="monitor-skeleton card" aria-hidden="true">
+                <div class="skeleton h-6 w-2/3 mb-4"></div>
+                <div class="skeleton h-2.5 w-full mb-3"></div>
+                <div class="skeleton h-4 w-1/2 mb-2"></div>
+                <div class="skeleton h-4 w-3/4"></div>
+            </div>
+            <div class="monitor-skeleton card" aria-hidden="true">
+                <div class="skeleton h-6 w-1/2 mb-4"></div>
+                <div class="skeleton h-2.5 w-full mb-3"></div>
+                <div class="skeleton h-4 w-2/3 mb-2"></div>
+                <div class="skeleton h-4 w-1/2"></div>
+            </div>
+            <div class="monitor-skeleton card" aria-hidden="true">
+                <div class="skeleton h-6 w-3/4 mb-4"></div>
+                <div class="skeleton h-2.5 w-full mb-3"></div>
+                <div class="skeleton h-4 w-1/3 mb-2"></div>
+                <div class="skeleton h-4 w-2/3"></div>
+            </div>
         </div>
         <div id="connection-status" role="status" aria-live="polite" class="mt-4 text-sm text-gray-500 dark:text-gray-400"></div>
     </div>
@@ -129,6 +148,7 @@
             // U-5: дифф-обновление по team_id — карточка создаётся один раз,
             // при новых снапшотах пересобираем только её содержимое. Это не
             // сбрасывает фокус/скролл и не повторяет fade-in на каждый тик.
+            // C1: при первом реальном снапшоте убираем skeleton-заглушку.
             const existing = {};
             teamsContainer.querySelectorAll('.monitor-team-card').forEach(c => { existing[c.dataset.teamId] = c; });
             const seen = new Set();
@@ -137,6 +157,7 @@
                 teamsContainer.innerHTML = `<div class="col-span-full text-center text-gray-500 dark:text-gray-400 py-8">{{ T $.Lang "monitor.no_data" }}</div>`;
                 return;
             }
+            teamsContainer.querySelectorAll('.monitor-skeleton').forEach(s => s.remove());
 
             teamsData.forEach(team => {
                 const key = String(team.team_id);
