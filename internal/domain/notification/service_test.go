@@ -320,12 +320,42 @@ func TestCreate_DBError(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// MED-3 (pass 29): был двойной t.Skip — метод GetByUser не покрывался.
 func TestGetByUser_DefaultPagination(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test (requires DB)")
+	svc := &NotificationService{
+		repo: &mockRepo{
+			listFn: func(_ context.Context, _ uint, offset, limit int) ([]Notification, int64, error) {
+				// page=1, perPage=0 → дефолты page=1, perPage=20 → offset=0, limit=20.
+				assert.Equal(t, 0, offset)
+				assert.Equal(t, 20, limit)
+				return []Notification{{ID: 1}}, 1, nil
+			},
+		},
 	}
-	// This method requires Model() to be set for Count — tested in integration.
-	t.Skip("requires real DB (GORM needs Model for Count with sqlmock)")
+
+	notifs, total, err := svc.GetByUser(context.Background(), 7, 0, 0)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	assert.Len(t, notifs, 1)
+	assert.Equal(t, uint(1), notifs[0].ID)
+}
+
+func TestGetByUser_Paginated(t *testing.T) {
+	svc := &NotificationService{
+		repo: &mockRepo{
+			listFn: func(_ context.Context, _ uint, offset, limit int) ([]Notification, int64, error) {
+				// page=3, perPage=10 → offset=20, limit=10.
+				assert.Equal(t, 20, offset)
+				assert.Equal(t, 10, limit)
+				return nil, 25, nil
+			},
+		},
+	}
+
+	notifs, total, err := svc.GetByUser(context.Background(), 7, 3, 10)
+	require.NoError(t, err)
+	assert.Equal(t, int64(25), total)
+	assert.Empty(t, notifs)
 }
 
 func TestMarkAsRead(t *testing.T) {

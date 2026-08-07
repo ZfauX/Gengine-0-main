@@ -319,9 +319,9 @@ func TestCalendarHandler_Integration_CalendarData(t *testing.T) {
 	events, ok := resp["events"].(map[string]interface{})
 	assert.True(t, ok)
 
-	if len(events) == 0 {
-		t.Skip("no events returned from integration test (possible environment issue)")
-	}
+	// MED-14 (pass 29): раньше пустой результат тихо скипался — регрессии
+	// ListByDateRange оставались незамеченными. Данные гарантированно созданы.
+	require.NotEmpty(t, events, "в календаре должны быть события созданных игр")
 
 	date1 := startsAt1.Format("2006-01-02")
 	date2 := startsAt2.Format("2006-01-02")
@@ -404,9 +404,8 @@ func TestCalendarHandler_Integration_CalendarData_OtherMonth(t *testing.T) {
 
 	events, ok := resp["events"].(map[string]interface{})
 	assert.True(t, ok)
-	if len(events) == 0 {
-		t.Skip("no events returned for other month (possible environment issue)")
-	}
+	// MED-14 (pass 29): вместо тихого skip — жёсткая проверка.
+	require.NotEmpty(t, events, "события для января должны быть в календаре")
 	assert.Contains(t, events, "2025-01-10")
 	assert.Len(t, events["2025-01-10"].([]interface{}), 1)
 }

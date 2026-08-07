@@ -11,7 +11,7 @@
         <a href="/admin/backups" class="btn btn-outline text-sm">{{ T $.Lang "admin.backups" }}</a>
     </nav>
 
-    <!-- Форма фильтрации -->
+    <!-- Р¤РѕСЂРјР° С„РёР»СЊС‚СЂР°С†РёРё -->
     <form method="GET" action="/admin/audit" class="flex flex-wrap items-end gap-3 mb-6 bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
         <div class="flex-1 min-w-[180px]">
             <label for="query" class="form-label">{{ T $.Lang "admin.search_by_email_or_name" }}</label>
@@ -36,7 +36,7 @@
         </div>
     </form>
 
-    <!-- Таблица -->
+    <!-- РўР°Р±Р»РёС†Р° -->
     <div class="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
         <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50 dark:bg-gray-800">
@@ -68,15 +68,15 @@
         </table>
     </div>
 
-    <!-- Пагинация -->
+    <!-- РџР°РіРёРЅР°С†РёСЏ -->
     {{if gt .TotalPages 1}}
     <div class="flex items-center justify-between mt-6">
         <div class="flex-1 flex justify-between sm:hidden">
             {{if gt .Page 1}}
-                <a href="?page={{.PrevPage}}&query={{$.Query}}&action={{$.Action}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_prev" }}</a>
+                <a href="?page={{.PrevPage}}&query={{$.Query | urlquery}}&action={{$.Action | urlquery}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_prev" }}</a>
             {{end}}
             {{if lt .Page .TotalPages}}
-                <a href="?page={{.NextPage}}&query={{$.Query}}&action={{$.Action}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_next" }}</a>
+                <a href="?page={{.NextPage}}&query={{$.Query | urlquery}}&action={{$.Action | urlquery}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_next" }}</a>
             {{end}}
         </div>
         <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
@@ -85,11 +85,11 @@
             </p>
             <nav class="inline-flex gap-1" aria-label='{{ T $.Lang "common.pagination" }}'>
                 {{if gt .Page 1}}
-                    <a href="?page={{.PrevPage}}&query={{$.Query}}&action={{$.Action}}" class="btn btn-outline text-sm px-3 py-1" aria-label="{{ T $.Lang "games.pagination_prev" }}">←</a>
+                    <a href="?page={{.PrevPage}}&query={{$.Query | urlquery}}&action={{$.Action | urlquery}}" class="btn btn-outline text-sm px-3 py-1" aria-label="{{ T $.Lang "games.pagination_prev" }}">в†ђ</a>
                 {{end}}
                 <span class="px-3 py-1 text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 rounded-md">{{.Page}}</span>
                 {{if lt .Page .TotalPages}}
-                    <a href="?page={{.NextPage}}&query={{$.Query}}&action={{$.Action}}" class="btn btn-outline text-sm px-3 py-1" aria-label="{{ T $.Lang "games.pagination_next" }}">→</a>
+                    <a href="?page={{.NextPage}}&query={{$.Query | urlquery}}&action={{$.Action | urlquery}}" class="btn btn-outline text-sm px-3 py-1" aria-label="{{ T $.Lang "games.pagination_next" }}">в†’</a>
                 {{end}}
             </nav>
         </div>

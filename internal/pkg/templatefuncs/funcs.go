@@ -58,6 +58,7 @@ func FuncMap() template.FuncMap {
 		"formatBytes":    formatBytes,
 		"formatDate":     formatDate,
 		"formatDateTime": formatDateTime,
+		"initials":       initials,
 		"csrfToken":      csrfToken,
 		"default":        defaultValue,
 		"truncate":       truncate,
@@ -133,6 +134,18 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return string(runes[:maxLen]) + "..."
+}
+
+// initials возвращает первую руну строки в верхнем регистре (HIGH-2).
+// Go-шаблонный `slice` режет строку по байтам — для кириллицы это даёт
+// битый символ. Здесь работаем по рунам.
+func initials(s interface{}) string {
+	str, ok := s.(string)
+	if !ok || str == "" {
+		return "?"
+	}
+	runes := []rune(str)
+	return strings.ToUpper(string(runes[0]))
 }
 
 // formatDate форматирует дату локализованно (C9): ru → "02.01.2006",

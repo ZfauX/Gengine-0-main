@@ -19,6 +19,16 @@ import (
 
 // ---------- BlackboxVoteService ----------
 
+// Sentinel-ошибки голосования (HIGH-4 / MED-4): хендлеры различают
+// «нет прав» от остальных случаев через errors.Is, а не строки.
+var (
+	ErrNotTeamMember   = errors.New("вы не являетесь участником этой команды")
+	ErrVotingClosed    = errors.New("голосование закрыто")
+	ErrInvalidOption   = errors.New("недопустимый вариант ответа")
+	ErrVoteAlreadyCast = errors.New("ваш голос уже учтён")
+	ErrAccessDenied    = errors.New("доступ запрещён")
+)
+
 type BlackboxVoteService struct {
 	blackboxRepo BlackboxRepository
 	gameRepo     game.GameRepository
@@ -134,7 +144,7 @@ func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID, 
 		// Менеджер/автор игры может голосовать от любой команды
 		isManager, mgrErr := s.isGameManager(ctx, session, userID)
 		if mgrErr != nil || !isManager {
-			return errors.New("вы не являетесь участником этой команды")
+			return ErrNotTeamMember
 		}
 	}
 
@@ -148,7 +158,7 @@ func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID, 
 		// C-10: сессия могла закрыться между первичным чтением и блокировкой —
 		// пере-проверяем IsOpen под локом.
 		if !lockedSession.IsOpen {
-			return errors.New("голосование закрыто")
+			return ErrVotingClosed
 		}
 
 		var attempts []game.Attempt
@@ -165,14 +175,14 @@ func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID, 
 			}
 		}
 		if !valid {
-			return errors.New("недопустимый вариант ответа")
+			return ErrInvalidOption
 		}
 
 		// Проверяем существование голоса внутри транзакции
 		var existingVote BlackboxVote
 		getVoteErr := tx.Where("session_id = ? AND voter_id = ?", sessionID, voterTeamID).First(&existingVote).Error
 		if getVoteErr == nil {
-			return errors.New("ваш голос уже учтён")
+			return ErrVoteAlreadyCast
 		}
 		if !errors.Is(getVoteErr, gorm.ErrRecordNotFound) {
 			return getVoteErr
@@ -237,7 +247,7 @@ func (s *BlackboxVoteService) GetVotingResults(ctx context.Context, sessionID, u
 			return nil, countErr
 		}
 		if memberCount == 0 {
-			return nil, errors.New("доступ запрещён")
+			return nil, ErrAccessDenied
 		}
 	}
 

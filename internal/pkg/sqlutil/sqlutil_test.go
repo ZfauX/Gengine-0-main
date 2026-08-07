@@ -26,6 +26,13 @@ func TestEscapeLike_Empty(t *testing.T) {
 	assert.Equal(t, "", EscapeLike(""))
 }
 
+// MED-1: висячий backslash должен экранироваться, а не ломать паттерн.
+func TestEscapeLike_Backslash(t *testing.T) {
+	assert.Equal(t, `\\`, EscapeLike(`\`))
+	assert.Equal(t, `a\\b`, EscapeLike(`a\b`))
+	assert.Equal(t, `\%\\`, EscapeLike(`%\`))
+}
+
 func TestBuildLikePattern(t *testing.T) {
 	assert.Equal(t, "%test%", BuildLikePattern("test"))
 }

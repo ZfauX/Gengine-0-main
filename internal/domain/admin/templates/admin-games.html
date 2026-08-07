@@ -2,7 +2,7 @@
 <div class="max-w-7xl mx-auto">
     <h1 class="page-title">{{ T $.Lang "admin.games_title" }}</h1>
 
-    <!-- Навигация -->
+    <!-- РќР°РІРёРіР°С†РёСЏ -->
     <nav aria-label='{{ T $.Lang "common.admin_nav" }}' class="flex flex-wrap gap-2 p-3 bg-gray-100 dark:bg-gray-800 rounded-lg mb-6">
         <a href="/admin" class="btn btn-outline text-sm">{{ T $.Lang "admin.dashboard" }}</a>
         <a href="/admin/users" class="btn btn-outline text-sm">{{ T $.Lang "admin.users" }}</a>
@@ -12,7 +12,7 @@
         <a href="/admin/backups" class="btn btn-outline text-sm">{{ T $.Lang "admin.backups" }}</a>
     </nav>
 
-    <!-- Поиск -->
+    <!-- РџРѕРёСЃРє -->
     <form method="GET" action="/admin/games" class="mb-4">
         <div class="flex gap-2">
             <input type="text" name="query" placeholder="{{ T $.Lang "admin.search_games" }}" value="{{.Query}}"
@@ -26,17 +26,17 @@
     <div class="flash flash-error mb-4">{{.Error}}</div>
     {{end}}
 
-    <!-- Фильтр по статусу -->
+    <!-- Р¤РёР»СЊС‚СЂ РїРѕ СЃС‚Р°С‚СѓСЃСѓ -->
     <div class="flex flex-wrap gap-2 mb-6">
         <a href="?status=draft" class="btn btn-outline text-sm {{if eq .Status "draft"}}bg-blue-50 border-blue-300 text-blue-700{{end}}">{{ T $.Lang "admin.filter_drafts" }}</a>
         <a href="?status=published" class="btn btn-outline text-sm {{if eq .Status "published"}}bg-blue-50 border-blue-300 text-blue-700{{end}}">{{ T $.Lang "admin.filter_published" }}</a>
         <a href="?" class="btn btn-outline text-sm {{if eq .Status ""}}bg-blue-50 border-blue-300 text-blue-700{{end}}">{{ T $.Lang "admin.filter_all_statuses" }}</a>
     </div>
 
-    <!-- Скрытый CSRF-токен для возможных AJAX-запросов -->
+    <!-- РЎРєСЂС‹С‚С‹Р№ CSRF-С‚РѕРєРµРЅ РґР»СЏ РІРѕР·РјРѕР¶РЅС‹С… AJAX-Р·Р°РїСЂРѕСЃРѕРІ -->
     <input type="hidden" id="csrf_token" value="{{.csrf}}">
 
-    <!-- Таблица игр -->
+    <!-- РўР°Р±Р»РёС†Р° РёРіСЂ -->
     <div class="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
         <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50 dark:bg-gray-800">
@@ -75,15 +75,15 @@
         </table>
     </div>
 
-    <!-- Пагинация -->
+    <!-- РџР°РіРёРЅР°С†РёСЏ -->
     {{if gt .TotalPages 1}}
     <div class="flex items-center justify-between mt-6">
         <div class="flex-1 flex justify-between sm:hidden">
             {{if gt .Page 1}}
-                <a href="?page={{.PrevPage}}&status={{$.Status}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_prev" }}</a>
+                <a href="?page={{.PrevPage}}&status={{$.Status | urlquery}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_prev" }}</a>
             {{end}}
             {{if lt .Page .TotalPages}}
-                <a href="?page={{.NextPage}}&status={{$.Status}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_next" }}</a>
+                <a href="?page={{.NextPage}}&status={{$.Status | urlquery}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_next" }}</a>
             {{end}}
         </div>
         <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
@@ -93,11 +93,11 @@
                 </p>
                 <nav class="inline-flex gap-1" aria-label='{{ T $.Lang "common.pagination" }}'>
                 {{if gt .Page 1}}
-                    <a href="?page={{.PrevPage}}&status={{$.Status}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm px-3 py-1" aria-label="{{ T $.Lang "games.pagination_prev" }}">←</a>
+                    <a href="?page={{.PrevPage}}&status={{$.Status | urlquery}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm px-3 py-1" aria-label="{{ T $.Lang "games.pagination_prev" }}">в†ђ</a>
                 {{end}}
                 <span class="px-3 py-1 text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 rounded-md">{{.Page}}</span>
                 {{if lt .Page .TotalPages}}
-                    <a href="?page={{.NextPage}}&status={{$.Status}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm px-3 py-1" aria-label="{{ T $.Lang "games.pagination_next" }}">→</a>
+                    <a href="?page={{.NextPage}}&status={{$.Status | urlquery}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm px-3 py-1" aria-label="{{ T $.Lang "games.pagination_next" }}">в†’</a>
                 {{end}}
             </nav>
         </div>

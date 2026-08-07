@@ -86,10 +86,10 @@
     <div class="flex items-center justify-between mt-6">
         <div class="flex-1 flex justify-between sm:hidden">
             {{if gt .Page 1}}
-                <a href="?page={{.PrevPage}}&role={{$.Role}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_prev" }}</a>
+                <a href="?page={{.PrevPage}}&role={{$.Role | urlquery}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_prev" }}</a>
             {{end}}
             {{if lt .Page .TotalPages}}
-                <a href="?page={{.NextPage}}&role={{$.Role}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_next" }}</a>
+                <a href="?page={{.NextPage}}&role={{$.Role | urlquery}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_next" }}</a>
             {{end}}
         </div>
         <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
@@ -99,11 +99,11 @@
             </p>
             <nav class="inline-flex gap-1" aria-label='{{ T $.Lang "common.pagination" }}'>
                 {{if gt .Page 1}}
-                    <a href="?page={{.PrevPage}}&role={{$.Role}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm px-3 py-1" aria-label="{{ T $.Lang "games.pagination_prev" }}">←</a>
+                    <a href="?page={{.PrevPage}}&role={{$.Role | urlquery}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm px-3 py-1" aria-label="{{ T $.Lang "games.pagination_prev" }}">←</a>
                 {{end}}
                 <span class="px-3 py-1 text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 rounded-md">{{.Page}}</span>
                 {{if lt .Page .TotalPages}}
-                    <a href="?page={{.NextPage}}&role={{$.Role}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm px-3 py-1" aria-label="{{ T $.Lang "games.pagination_next" }}">→</a>
+                    <a href="?page={{.NextPage}}&role={{$.Role | urlquery}}&per_page={{$.PerPage}}" class="btn btn-outline text-sm px-3 py-1" aria-label="{{ T $.Lang "games.pagination_next" }}">→</a>
                 {{end}}
             </nav>
         </div>

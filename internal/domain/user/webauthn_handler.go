@@ -123,9 +123,12 @@ func (h *WebAuthnHandler) BeginRegistration(c *gin.Context) {
 	// S-H1: регистрация passkey у пользователя с включённой 2FA требует
 	// подтверждённой 2FA-сессии — иначе украденная сессия регистрирует
 	// чужой authenticator как постоянный backdoor.
+	// HIGH-1 (pass 29): используем is2FAVerified (int64 timestamp + TTL),
+	// а не сравнение с bool — старое условие было всегда истинно и ломало
+	// регистрацию passkey у пользователей с 2FA.
 	if user.TwoFactorEnabled {
 		sess := sessions.Default(c)
-		if sess.Get(session2FAKey(userID)) != true {
+		if !is2FAVerified(sess, userID) {
 			c.JSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "passkey.2fa_required_for_register")})
 			return
 		}

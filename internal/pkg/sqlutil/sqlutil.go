@@ -117,13 +117,14 @@ func ScanWithTotal[T any](ctx context.Context, db *gorm.DB, query string, args [
 	return result, total, nil
 }
 
-// EscapeLike экранирует спецсимволы LIKE (% и _) для безопасного поиска.
+// EscapeLike экранирует спецсимволы LIKE (% и _) и сам backslash для
+// безопасного поиска (MED-1, pass 29): висячий `\` ломал паттерн.
 func EscapeLike(s string) string {
 	var b strings.Builder
 	b.Grow(len(s) + 10)
 	for _, char := range s {
 		switch char {
-		case '%', '_':
+		case '%', '_', '\\':
 			b.WriteByte(92)
 			b.WriteRune(char)
 		default:

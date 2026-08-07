@@ -1026,8 +1026,15 @@ func (h *MonitorHandler) Vote(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	if err := h.blackboxVoteService.Vote(c.Request.Context(), input.SessionID, input.TeamID, userID, cleanOption); err != nil {
+		// HIGH-4: «не участник» — это 403 Forbidden, а не 400. Раньше 400
+		// позволял перечислять session_id/team_id по разнице кодов.
+		if errors.Is(err, ErrNotTeamMember) {
+			appErr := apperrors.Forbidden(render.LocalizeError(c, err.Error()))
+			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
+			return
+		}
 		switch err.Error() {
-		case "голосование закрыто", "недопустимый вариант ответа", "ваш голос уже учтён", "вы не являетесь участником этой команды":
+		case ErrVotingClosed.Error(), ErrInvalidOption.Error(), ErrVoteAlreadyCast.Error():
 			appErr := apperrors.BadRequest(render.LocalizeError(c, err.Error()))
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
 		default:

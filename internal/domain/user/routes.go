@@ -197,5 +197,7 @@ func RegisterRoutes(
 		userGroup.POST("/2fa/enable", twoFactorHandler.Enable)
 		userGroup.GET("/2fa/disable", twoFactorHandler.DisableForm)
 		userGroup.POST("/2fa/disable", twoFactorHandler.Disable)
+		// CRIT-1: QR-код генерируется локально, секрет не уходит наружу.
+		userGroup.GET("/2fa/qr", twoFactorHandler.QRCode)
 	}
 }

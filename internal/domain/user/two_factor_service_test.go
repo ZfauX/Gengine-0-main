@@ -23,16 +23,17 @@ func TestTwoFactorService_GenerateSecret(t *testing.T) {
 	assert.NotEqual(t, secret1, secret2)
 }
 
-func TestTwoFactorService_GenerateQRCodeURL(t *testing.T) {
+// CRIT-1: QR генерируется локально в PNG, секрет не уходит на внешние сервисы.
+func TestTwoFactorService_GenerateQRCodePNG(t *testing.T) {
 	t.Parallel()
 	svc := NewTwoFactorService()
 
 	secret := "JBSWY3DPEHPK3PXP"
-	qrURL, err := svc.GenerateQRCodeURL(secret, "test@example.com", "Gengine-0")
+	png, err := svc.GenerateQRCodePNG(secret, "test@example.com", "Gengine-0", 200)
 	require.NoError(t, err)
-	assert.Contains(t, qrURL, "otpauth://totp")
-	assert.Contains(t, qrURL, "Gengine-0")
-	assert.Contains(t, qrURL, "test@example.com")
+	// PNG-сигнатура.
+	require.Greater(t, len(png), 8)
+	assert.Equal(t, []byte{0x89, 'P', 'N', 'G'}, png[:4])
 }
 
 func TestTwoFactorService_VerifyCode_Valid(t *testing.T) {

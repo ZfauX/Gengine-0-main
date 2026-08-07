@@ -12,6 +12,7 @@ import (
 
 	"github.com/pquerna/otp/totp"
 	"github.com/rs/zerolog/log"
+	qrcode "github.com/skip2/go-qrcode"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -40,6 +41,9 @@ func (s *TwoFactorService) GenerateSecret() (string, error) {
 }
 
 // GenerateQRCodeURL создаёт URL для QR-кода Google Authenticator.
+// ВНИМАНИЕ (pass 29 / CRIT-1): URL содержит сам TOTP-секрет — его нельзя
+// передавать сторонним сервисам (например, api.qrserver.com). Используйте
+// GenerateQRCodePNG для локальной генерации QR-картинки.
 func (s *TwoFactorService) GenerateQRCodeURL(secret, email, appName string) (string, error) {
 	key, err := totp.Generate(totp.GenerateOpts{
 		Issuer:      appName,
@@ -50,6 +54,28 @@ func (s *TwoFactorService) GenerateQRCodeURL(secret, email, appName string) (str
 		return "", fmt.Errorf("ошибка генерации QR-кода: %w", err)
 	}
 	return key.URL(), nil
+}
+
+// GenerateQRCodePNG генерирует PNG-картинку QR-кода локально (CRIT-1).
+// Секрет никуда не уходит: картинка создаётся на сервере и отдаётся
+// только самому пользователю.
+func (s *TwoFactorService) GenerateQRCodePNG(secret, email, appName string, size int) ([]byte, error) {
+	key, err := totp.Generate(totp.GenerateOpts{
+		Issuer:      appName,
+		AccountName: email,
+		Secret:      []byte(secret),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("ошибка генерации QR-кода: %w", err)
+	}
+	if size <= 0 {
+		size = 200
+	}
+	code, err := qrcode.New(key.URL(), qrcode.Medium)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка создания QR-кода: %w", err)
+	}
+	return code.PNG(size)
 }
 
 // VerifyCode проверяет TOTP-код.
