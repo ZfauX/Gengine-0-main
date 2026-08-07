@@ -105,43 +105,35 @@ func NewAdminHandler(
 func (h *AdminHandler) Dashboard(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	userCount, err := h.userRepo.Count(ctx)
-	if err != nil {
-		log.Error().Err(err).Msg("Dashboard: failed to count users")
-		userCount = 0
+	// PF-6 (pass 29): 5 COUNT были 5 round-trip на каждый заход; теперь один
+	// запрос с подзапросами. Ошибка одного счётчика не роняет весь дашборд.
+	var counts struct {
+		UserCount   int64
+		GameCount   int64
+		TeamCount   int64
+		AuditCount  int64
+		BackupCount int64
 	}
-
-	gameCount, err := h.gameRepo.Count(ctx, h.gameRepo.Model(ctx))
+	err := h.gameRepo.Model(ctx).
+		Select(`
+			(SELECT COUNT(*) FROM users WHERE deleted_at IS NULL) AS user_count,
+			(SELECT COUNT(*) FROM games WHERE deleted_at IS NULL) AS game_count,
+			(SELECT COUNT(*) FROM teams WHERE deleted_at IS NULL) AS team_count,
+			(SELECT COUNT(*) FROM audit_logs WHERE deleted_at IS NULL) AS audit_count,
+			(SELECT COUNT(*) FROM backups WHERE deleted_at IS NULL) AS backup_count
+		`).
+		Scan(&counts).Error
 	if err != nil {
-		log.Error().Err(err).Msg("Dashboard: failed to count games")
-		gameCount = 0
-	}
-
-	auditCount, err := h.auditService.Count(ctx)
-	if err != nil {
-		log.Error().Err(err).Msg("Dashboard: failed to count audit logs")
-		auditCount = 0
-	}
-
-	backupCount, err := h.backupService.backupRepo.Count(ctx)
-	if err != nil {
-		log.Error().Err(err).Msg("Dashboard: failed to count backups")
-		backupCount = 0
-	}
-
-	teamCount, err := h.teamRepo.Count(ctx)
-	if err != nil {
-		log.Error().Err(err).Msg("Dashboard: failed to count teams")
-		teamCount = 0
+		log.Error().Err(err).Msg("Dashboard: failed to count dashboard stats")
 	}
 
 	render.Page(c, http.StatusOK, "admin-dashboard.html", gin.H{
 		"Title":         "Админ-панель",
-		"UserCount":     userCount,
-		"GameCount":     gameCount,
-		"TeamCount":     teamCount,
-		"AuditCount":    auditCount,
-		"BackupCount":   backupCount,
+		"UserCount":     counts.UserCount,
+		"GameCount":     counts.GameCount,
+		"TeamCount":     counts.TeamCount,
+		"AuditCount":    counts.AuditCount,
+		"BackupCount":   counts.BackupCount,
 		"CurrentUserID": c.GetUint("userID"),
 		"IsAdmin":       true,
 		"csrf":          csrf.GetToken(c),

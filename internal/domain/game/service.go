@@ -249,6 +249,13 @@ func cacheGetInt64(store cache.CacheStore, ctx context.Context, key string) (int
 	return 0, false
 }
 
+// publicGame возвращает true, если игра публичная и не черновик — видимость
+// такой игры не зависит от зрителя, поэтому CanViewGame (2 запроса) можно
+// пропустить на самом горячем пути (PF-4, pass 29).
+func publicGame(g *Game) bool {
+	return g != nil && !g.IsDraft && g.Visibility != "private"
+}
+
 // GetByID возвращает игру по ID с кэшированием.
 // isAdmin позволяет админам просматривать черновики и приватные игры, автором которых они не являются.
 func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint, isAdmin bool) (*Game, error) {
@@ -263,13 +270,16 @@ func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint, isAdm
 	}
 
 	if game, ok := cacheGetGame(s.cache, ctx, cacheKey); ok {
-		canView, err := s.crudService.CanViewGame(ctx, game, viewerID, role)
-		if err != nil {
-			return nil, err
-		}
-		if !canView {
-			s.cache.DeleteWithCtx(ctx, cacheKey)
-			return nil, ErrGameNotFound
+		// PF-4: публичные не-draft игры видимы всем — без permission-запросов.
+		if !publicGame(game) {
+			canView, err := s.crudService.CanViewGame(ctx, game, viewerID, role)
+			if err != nil {
+				return nil, err
+			}
+			if !canView {
+				s.cache.DeleteWithCtx(ctx, cacheKey)
+				return nil, ErrGameNotFound
+			}
 		}
 		log.Debug().Uint("game_id", id).Msg("GetByID: cache hit")
 		return game, nil
@@ -299,12 +309,15 @@ func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint, isAdm
 		return nil, errors.New("game: unexpected cached type")
 	}
 
-	ok, err := s.crudService.CanViewGame(ctx, game, viewerID, role)
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
-		return nil, ErrGameNotFound
+	// PF-4: публичные не-draft игры видимы всем — без permission-запросов.
+	if !publicGame(game) {
+		canView, err := s.crudService.CanViewGame(ctx, game, viewerID, role)
+		if err != nil {
+			return nil, err
+		}
+		if !canView {
+			return nil, ErrGameNotFound
+		}
 	}
 	return game, nil
 }

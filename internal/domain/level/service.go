@@ -184,23 +184,34 @@ func (s *LevelService) Duplicate(ctx context.Context, levelID, userID uint) (*Le
 		return nil, err
 	}
 
+	// PF-8a (pass 29): батч-вставка вопросов одним Create вместо N по одному.
+	// Ответы всё ещё требуют questionID — один батч на вопрос.
+	newQuestions := make([]Question, 0, len(original.Questions))
 	for _, q := range original.Questions {
-		newQ := Question{
+		newQuestions = append(newQuestions, Question{
 			LevelID: newLevel.ID,
 			Text:    q.Text,
 			Hint:    q.Hint,
-		}
-		if err := tx.Create(&newQ).Error; err != nil {
+		})
+	}
+	if len(newQuestions) > 0 {
+		if err := tx.Create(&newQuestions).Error; err != nil {
 			return nil, err
 		}
+	}
+	for i, q := range original.Questions {
+		if len(q.Answers) == 0 {
+			continue
+		}
+		newAnswers := make([]Answer, 0, len(q.Answers))
 		for _, a := range q.Answers {
-			newA := Answer{
-				QuestionID: newQ.ID,
+			newAnswers = append(newAnswers, Answer{
+				QuestionID: newQuestions[i].ID,
 				Code:       a.Code,
-			}
-			if err := tx.Create(&newA).Error; err != nil {
-				return nil, err
-			}
+			})
+		}
+		if err := tx.Create(&newAnswers).Error; err != nil {
+			return nil, err
 		}
 	}
 

@@ -40,40 +40,27 @@ func NewProfileService(db *gorm.DB) *ProfileService {
 }
 
 // GetPublicProfileStats загружает статистику пользователя.
+// PF-3 (pass 29): 3 COUNT + rating ранее были 4 round-trip; теперь один
+// запрос с агрегатами через подзапросы.
 func (s *ProfileService) GetPublicProfileStats(ctx context.Context, userID uint) (*UserStats, error) {
 	var stats UserStats
-
-	// Игры, созданные пользователем
-	if err := s.db.WithContext(ctx).Table("games").
-		Where("author_id = ? AND deleted_at IS NULL", userID).
-		Count(&stats.GamesCreated).Error; err != nil {
+	err := s.db.WithContext(ctx).Table("users").
+		Select(`
+			(SELECT COUNT(*) FROM games WHERE author_id = ? AND deleted_at IS NULL) AS games_created,
+			(SELECT COUNT(*) FROM game_passings
+			   JOIN team_members ON team_members.team_id = game_passings.team_id
+			  WHERE game_passings.status = 'finished' AND team_members.user_id = ?) AS games_played,
+			(SELECT COUNT(*) FROM game_passings
+			   JOIN team_members ON team_members.team_id = game_passings.team_id
+			  WHERE game_passings.status = 'finished' AND game_passings.place = 1
+			    AND team_members.user_id = ?) AS wins,
+			COALESCE((SELECT score FROM player_ratings WHERE user_id = ?), 0) AS rating`,
+			userID, userID, userID, userID).
+		Where("id = ?", userID).
+		Scan(&stats).Error
+	if err != nil {
 		return nil, err
 	}
-
-	// Прохождения (через team_members)
-	if err := s.db.WithContext(ctx).Table("game_passings").
-		Joins("JOIN team_members ON team_members.team_id = game_passings.team_id").
-		Where("game_passings.status = ? AND team_members.user_id = ?", "finished", userID).
-		Count(&stats.GamesPlayed).Error; err != nil {
-		return nil, err
-	}
-
-	// Победы
-	if err := s.db.WithContext(ctx).Table("game_passings").
-		Joins("JOIN team_members ON team_members.team_id = game_passings.team_id").
-		Where("game_passings.status = ? AND game_passings.place = 1 AND team_members.user_id = ?", "finished", userID).
-		Count(&stats.Wins).Error; err != nil {
-		return nil, err
-	}
-
-	// Рейтинг
-	if err := s.db.WithContext(ctx).Table("player_ratings").
-		Where("user_id = ?", userID).
-		Select("score").
-		Scan(&stats.Rating).Error; err != nil {
-		return nil, err
-	}
-
 	return &stats, nil
 }
 
