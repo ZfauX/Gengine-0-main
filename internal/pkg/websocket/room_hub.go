@@ -127,7 +127,7 @@ func (h *RoomHub) runLoop() {
 			}
 			h.incConnection(client.RemoteIP)
 			h.mu.Lock()
-			client.Hub = h
+			client.setHub(h)
 			client.registered = true
 			if _, ok := h.rooms[client.RoomID]; !ok {
 				h.rooms[client.RoomID] = make(map[*Client]bool)

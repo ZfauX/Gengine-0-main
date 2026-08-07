@@ -50,6 +50,22 @@ func NewClient(conn *websocket.Conn, roomID, remoteIP string) *Client {
 	}
 }
 
+// setHub сохраняет ссылку на хаб под мутексом клиента. Поле Hub пишется из
+// runLoop (горутина хаба) при регистрации, а читается из writePump (defer) —
+// без синхронизации это data race, который ловит -race.
+func (c *Client) setHub(h *RoomHub) {
+	c.mu.Lock()
+	c.Hub = h
+	c.mu.Unlock()
+}
+
+// getHub возвращает хаб клиента под мутексом.
+func (c *Client) getHub() *RoomHub {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Hub
+}
+
 func (c *Client) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -89,8 +105,8 @@ func (c *Client) writePump(ctx context.Context) {
 		if err := c.Conn.Close(); err != nil && !isClosedConnError(err) {
 			log.Debug().Err(err).Str("client_id", c.ID).Msg("writePump: conn close failed")
 		}
-		if c.Hub != nil {
-			c.Hub.UnregisterClient(c)
+		if hub := c.getHub(); hub != nil {
+			hub.UnregisterClient(c)
 		}
 	}()
 

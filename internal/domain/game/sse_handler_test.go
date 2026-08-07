@@ -2,8 +2,10 @@
 package game
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -11,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mockFlusher — mock для http.Flusher, который просто вызывает recorder
+// mockFlusher вЂ” mock РґР»СЏ http.Flusher, РєРѕС‚РѕСЂС‹Р№ РїСЂРѕСЃС‚Рѕ РІС‹Р·С‹РІР°РµС‚ recorder
 type mockFlusher struct {
 	recorder *httptest.ResponseRecorder
 }
@@ -19,6 +21,42 @@ type mockFlusher struct {
 func (m *mockFlusher) Flush() {
 	m.recorder.Flush()
 }
+
+// safeRecorder вЂ” thread-safe РѕР±С‘СЂС‚РєР° РЅР°Рґ ResponseRecorder: writeLoop РїРёС€РµС‚ РёР·
+// СЃРІРѕРµР№ РіРѕСЂСѓС‚РёРЅС‹, Р° С‚РµСЃС‚ С‡РёС‚Р°РµС‚ body вЂ” Р±РµР· РјСЊСЋС‚РµРєСЃР° СЌС‚Рѕ data race (-race).
+type safeRecorder struct {
+	mu  sync.Mutex
+	rec *httptest.ResponseRecorder
+	fl  *mockFlusher
+}
+
+func newSafeRecorder() *safeRecorder {
+	rec := httptest.NewRecorder()
+	return &safeRecorder{
+		rec: rec,
+		fl:  &mockFlusher{recorder: rec},
+	}
+}
+
+func (s *safeRecorder) Header() http.Header { return s.rec.Header() }
+
+func (s *safeRecorder) Write(b []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.rec.Write(b)
+}
+
+func (s *safeRecorder) WriteHeader(statusCode int) { s.rec.WriteHeader(statusCode) }
+
+func (s *safeRecorder) Flush() { s.fl.Flush() }
+
+func (s *safeRecorder) body() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.rec.Body.String()
+}
+
+func (s *safeRecorder) code() int { return s.rec.Code }
 
 func newTestSSEMgr() *SSEManager {
 	return &SSEManager{
@@ -34,8 +72,9 @@ func newTestSSEMgr() *SSEManager {
 func TestSSEHandler_Broadcast(t *testing.T) {
 	mgr := newTestSSEMgr()
 
-	w := httptest.NewRecorder()
-	flusher := &mockFlusher{recorder: w}
+	sr := newSafeRecorder()
+	w := sr.rec
+	flusher := sr.fl
 
 	session := mgr.RegisterSession(1, "127.0.0.1", w, flusher)
 	require.NotNil(t, session)
@@ -43,13 +82,13 @@ func TestSSEHandler_Broadcast(t *testing.T) {
 	mgr.Broadcast(1, "test_event", map[string]any{"key": "value"})
 
 	assert.Eventually(t, func() bool {
-		body := w.Body.String()
+		body := sr.body()
 		return len(body) > 0
 	}, 1*time.Second, 50*time.Millisecond)
 
-	assert.Equal(t, 200, w.Code)
-	assert.Contains(t, w.Body.String(), "event: test_event")
-	assert.Contains(t, w.Body.String(), `"key":"value"`)
+	assert.Equal(t, 200, sr.code())
+	assert.Contains(t, sr.body(), "event: test_event")
+	assert.Contains(t, sr.body(), `"key":"value"`)
 
 	mgr.UnregisterSession(session)
 }
@@ -57,22 +96,20 @@ func TestSSEHandler_Broadcast(t *testing.T) {
 func TestSSEHandler_Broadcast_MultipleSessions(t *testing.T) {
 	mgr := newTestSSEMgr()
 
-	w1 := httptest.NewRecorder()
-	w2 := httptest.NewRecorder()
-	flusher1 := &mockFlusher{recorder: w1}
-	flusher2 := &mockFlusher{recorder: w2}
+	sr1 := newSafeRecorder()
+	sr2 := newSafeRecorder()
 
-	mgr.RegisterSession(2, "127.0.0.1", w1, flusher1)
-	mgr.RegisterSession(2, "127.0.0.1", w2, flusher2)
+	mgr.RegisterSession(2, "127.0.0.1", sr1.rec, sr1.fl)
+	mgr.RegisterSession(2, "127.0.0.1", sr2.rec, sr2.fl)
 
 	mgr.Broadcast(2, "multi_event", nil)
 
 	assert.Eventually(t, func() bool {
-		return len(w1.Body.String()) > 0 && len(w2.Body.String()) > 0
+		return len(sr1.body()) > 0 && len(sr2.body()) > 0
 	}, 1*time.Second, 50*time.Millisecond)
 
-	assert.Contains(t, w1.Body.String(), "event: multi_event")
-	assert.Contains(t, w2.Body.String(), "event: multi_event")
+	assert.Contains(t, sr1.body(), "event: multi_event")
+	assert.Contains(t, sr2.body(), "event: multi_event")
 }
 
 func TestToJSON(t *testing.T) {
@@ -86,8 +123,9 @@ func TestToJSON(t *testing.T) {
 func TestSSEHandler_ConcurrentBroadcast(t *testing.T) {
 	mgr := newTestSSEMgr()
 
-	w := httptest.NewRecorder()
-	flusher := &mockFlusher{recorder: w}
+	sr := newSafeRecorder()
+	w := sr.rec
+	flusher := sr.fl
 	session := mgr.RegisterSession(4, "127.0.0.1", w, flusher)
 	defer mgr.UnregisterSession(session)
 
@@ -96,7 +134,7 @@ func TestSSEHandler_ConcurrentBroadcast(t *testing.T) {
 	}
 
 	assert.Eventually(t, func() bool {
-		body := w.Body.String()
+		body := sr.body()
 		return strings.Count(body, "event: concurrent_event") >= 10
 	}, 2*time.Second, 50*time.Millisecond)
 }
@@ -104,8 +142,9 @@ func TestSSEHandler_ConcurrentBroadcast(t *testing.T) {
 func TestSSEHandler_ConnectionClose(t *testing.T) {
 	mgr := newTestSSEMgr()
 
-	w := httptest.NewRecorder()
-	flusher := &mockFlusher{recorder: w}
+	sr := newSafeRecorder()
+	w := sr.rec
+	flusher := sr.fl
 	session := mgr.RegisterSession(3, "127.0.0.1", w, flusher)
 
 	mgr.Broadcast(3, "before_close", map[string]any{"status": "ok"})
@@ -121,8 +160,9 @@ func TestSSEHandler_ConnectionClose(t *testing.T) {
 func TestSSEHandler_Stop_ClosesSessions(t *testing.T) {
 	mgr := newTestSSEMgr()
 
-	w := httptest.NewRecorder()
-	flusher := &mockFlusher{recorder: w}
+	sr := newSafeRecorder()
+	w := sr.rec
+	flusher := sr.fl
 	session := mgr.RegisterSession(1, "127.0.0.1", w, flusher)
 	require.NotNil(t, session)
 
@@ -131,7 +171,7 @@ func TestSSEHandler_Stop_ClosesSessions(t *testing.T) {
 
 	select {
 	case <-session.done:
-		// session closed — OK
+		// session closed вЂ” OK
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("session.done was not closed after Stop()")
 	}
@@ -146,8 +186,9 @@ func TestSSEHandler_Stop_ClosesSessions(t *testing.T) {
 func TestSSEHandler_Stop_NoBroadcastAfterStop(t *testing.T) {
 	mgr := newTestSSEMgr()
 
-	w := httptest.NewRecorder()
-	flusher := &mockFlusher{recorder: w}
+	sr := newSafeRecorder()
+	w := sr.rec
+	flusher := sr.fl
 	_ = mgr.RegisterSession(1, "127.0.0.1", w, flusher)
 
 	mgr.Stop()
@@ -161,7 +202,7 @@ func TestSSEHandler_Stop_NoBroadcastAfterStop(t *testing.T) {
 
 	select {
 	case <-done:
-		// Broadcast returned without hanging — OK
+		// Broadcast returned without hanging вЂ” OK
 	case <-time.After(1 * time.Second):
 		t.Fatal("Broadcast after Stop() hung (WaitGroup misuse?)")
 	}
@@ -174,7 +215,7 @@ func TestSSEHandler_CanAccept_Limits(t *testing.T) {
 	assert.True(t, mgr.CanAccept("1.2.3.4"))
 	_ = mgr.RegisterSession(1, "1.2.3.4", httptest.NewRecorder(), &mockFlusher{})
 	_ = mgr.RegisterSession(1, "1.2.3.4", httptest.NewRecorder(), &mockFlusher{})
-	// maxConnsPerIP = 100 in test mgr — so still accepted
+	// maxConnsPerIP = 100 in test mgr вЂ” so still accepted
 	assert.True(t, mgr.CanAccept("1.2.3.4"))
 
 	// Set low per-IP limit

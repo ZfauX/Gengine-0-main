@@ -91,7 +91,10 @@ func TestClient_WritePump_CloseOnSendChannelClose(t *testing.T) {
 		CheckOrigin: func(r *http.Request) bool { return true },
 	}
 
-	var client *Client
+	// client передаётся из серверной горутины в тест через канал — прямая
+	// запись в разделяемую переменную была data race (читалась в тесте и
+	// писалась в handler без синхронизации).
+	clientCh := make(chan *Client, 1)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
@@ -102,7 +105,8 @@ func TestClient_WritePump_CloseOnSendChannelClose(t *testing.T) {
 		if roomID == "" {
 			roomID = "default"
 		}
-		client = NewClient(conn, roomID, "127.0.0.1")
+		client := NewClient(conn, roomID, "127.0.0.1")
+		clientCh <- client
 		hub.RegisterClient(client)
 		defer hub.UnregisterClient(client)
 
@@ -125,11 +129,10 @@ func TestClient_WritePump_CloseOnSendChannelClose(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = conn.Close() }()
 
+	client := <-clientCh
+
 	// Ждём обработки закрытия
 	assert.Eventually(t, func() bool {
-		if client == nil {
-			return false
-		}
 		return client.IsClosed()
 	}, 2*time.Second, 50*time.Millisecond)
 
