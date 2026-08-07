@@ -47,7 +47,7 @@
     {{end}}
 
     <!-- Модальное окно для просмотра фото -->
-    <div id="photo-modal" class="fixed inset-0 z-50 hidden bg-black/90 flex items-center justify-center">
+    <div id="photo-modal" class="fixed inset-0 z-50 hidden bg-black/90 flex items-center justify-center" role="dialog" aria-modal="true" aria-label="{{ T $.Lang "photos.preview_alt" }}">
         <button id="photo-modal-close" type="button" aria-label="{{ T $.Lang "photos.close" }}" class="absolute top-4 right-6 text-white text-4xl font-bold cursor-pointer hover:text-gray-300 transition">×</button>
         <img id="modal-image" src="" alt="{{ T $.Lang "photos.preview_alt" }}" class="max-w-[90%] max-h-[80%] object-contain">
         <div id="modal-caption" class="absolute bottom-8 left-0 right-0 text-center text-white text-sm px-4"></div>
@@ -161,11 +161,15 @@
             openPhoto(thumb);
         });
 
+        // MED-6: возврат фокуса на вызвавшую миниатюру при закрытии.
+        let photoTrigger = null;
+
         function openPhoto(thumb) {
             const src = thumb.dataset.path;
             const user = thumb.dataset.user;
             const date = thumb.dataset.date;
             if (src) {
+                photoTrigger = thumb;
                 modalImage.src = src;
                 modalCaption.textContent = user + ' — ' + date;
                 modal.classList.remove('hidden');
@@ -194,6 +198,10 @@
         window.closePhotoModal = function() {
             modal.classList.add('hidden');
             modal.classList.remove('flex');
+            // MED-6: возвращаем фокус на миниатюру (a11y).
+            if (photoTrigger && typeof photoTrigger.focus === 'function') {
+                photoTrigger.focus();
+            }
         };
 
         // Закрытие по кнопке и по клику на фон (CSP-safe)

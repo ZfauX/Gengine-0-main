@@ -232,7 +232,9 @@
         // preference-fetch (гонка).
         let userToggled = false;
 
-        // Серверное предпочтение (персонализация). Без JS-ответа/401 — таблица.
+        // Серверное предпочтение (персонализация). MED-9: для гостей не
+        // делаем запрос (всегда 401+fallback) — рендер уже серверный.
+        {{if .CurrentUserID}}
         fetch('/api/users/preferences/games-view')
             .then(r => r.ok ? r.json() : Promise.resolve({ view: 'table' }))
             .then(data => {
@@ -241,6 +243,9 @@
                 else setTableView();
             })
             .catch(function() { if (!userToggled) setTableView(); });
+        {{else}}
+        setTableView();
+        {{end}}
 
         toggle.addEventListener('click', function() {
             userToggled = true;

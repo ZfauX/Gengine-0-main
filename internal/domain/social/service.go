@@ -36,7 +36,14 @@ func (s *FollowService) Follow(ctx context.Context, followerID, authorID uint) e
 }
 
 func (s *FollowService) Unfollow(ctx context.Context, followerID, authorID uint) error {
-	return s.followRepo.Unfollow(ctx, followerID, authorID)
+	deleted, err := s.followRepo.Unfollow(ctx, followerID, authorID)
+	if err != nil {
+		return err
+	}
+	if !deleted {
+		return ErrNotFollowing
+	}
+	return nil
 }
 
 func (s *FollowService) IsFollowing(ctx context.Context, followerID, authorID uint) (bool, error) {

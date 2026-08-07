@@ -1207,6 +1207,7 @@ var ruMessages = map[string]string{
 	"monitor.disqualify_confirm": "Дисквалифицировать команду? Капитан получит уведомление по email.",
 	"monitor.game_started":       "начала игру!",
 	"monitor.disqualify_error":   "Ошибка при дисквалификации: ",
+	"monitor.disqualify_success": "Команда дисквалифицирована",
 
 	// ── Logs ──
 	"logs.title":        "Логи игры",

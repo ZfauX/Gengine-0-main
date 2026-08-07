@@ -5,6 +5,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -513,7 +518,102 @@ func TestOAuthService_GetAuthURL(t *testing.T) {
 	})
 }
 
-// Тест Authenticate требует реального обмена кодами, поэтому пропускаем его.
+// HIGH-5 (pass 29): Authenticate тестируется через httptest + кастомный
+// RoundTripper, перенаправляющий запросы провайдеров на локальные серверы.
+// Раньше тест был пустым t.Skip — security-critical путь без покрытия.
 func TestOAuthService_Authenticate(t *testing.T) {
-	t.Skip("Для выполнения требуется реальный OAuth-сервер, используйте интеграционные тесты")
+	cfg := newTestConfig()
+	db := newTestDB(t)
+	userRepo, _, _, _, extLoginRepo, _ := newTestRepos(db)
+	service := NewOAuthService(userRepo, extLoginRepo, cfg)
+
+	// httptest-серверы: token-эндпоинт + info-эндпоинт провайдера.
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// oauth2.Exchange ждёт access_token; для VK — ещё user_id и email.
+		fmt.Fprintf(w, `{"access_token":"tok123","token_type":"Bearer","user_id":"vk42","email":"vk@example.com"}`)
+	}))
+	defer tokenServer.Close()
+
+	infoServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Ответ в формате Yandex info API.
+		fmt.Fprintf(w, `{"id":"ya42","email":"ya@example.com","is_verified":true,"first_name":"Yandex","last_name":"User"}`)
+	}))
+	defer infoServer.Close()
+
+	// Кастомный RoundTripper: token-запросы → tokenServer, info → infoServer.
+	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		switch {
+		case strings.Contains(r.URL.String(), "/token"):
+			return tokenServer.Client().Transport.RoundTrip(rewriteURL(r, tokenServer.URL))
+		case strings.Contains(r.URL.String(), "/info"), strings.Contains(r.URL.String(), "/method/users.get"):
+			return infoServer.Client().Transport.RoundTrip(rewriteURL(r, infoServer.URL))
+		default:
+			return http.DefaultTransport.RoundTrip(r)
+		}
+	})
+	service.httpClient = &http.Client{Transport: rt}
+	// Перенаправляем token-эндпоинты провайдеров на тестовый сервер.
+	service.configs["yandex"].Endpoint.TokenURL = tokenServer.URL + "/token"
+	service.configs["vk"].Endpoint.TokenURL = tokenServer.URL + "/token"
+
+	t.Run("новый пользователь через Yandex", func(t *testing.T) {
+		u, err := service.Authenticate(context.Background(), "yandex", "code123", "state123")
+		require.NoError(t, err)
+		assert.Equal(t, "ya@example.com", u.Email)
+		assert.True(t, u.EmailVerified)
+		assert.Equal(t, "Yandex", u.Name)
+		// Пользователь сохранён в БД.
+		stored, err := userRepo.GetByEmail(context.Background(), "ya@example.com")
+		require.NoError(t, err)
+		assert.NotZero(t, stored.ID)
+	})
+
+	t.Run("новый пользователь через VK", func(t *testing.T) {
+		u, err := service.Authenticate(context.Background(), "vk", "code456", "state123")
+		require.NoError(t, err)
+		assert.Equal(t, "vk@example.com", u.Email)
+		assert.NotEmpty(t, u.Name)
+	})
+
+	t.Run("существующий пользователь не дублируется", func(t *testing.T) {
+		_, err := service.Authenticate(context.Background(), "yandex", "code789", "state123")
+		require.NoError(t, err)
+		// Оба колбэка вернули одного пользователя.
+		count, err := userRepo.Count(context.Background())
+		require.NoError(t, err)
+		assert.Equal(t, int64(2), count) // ya + vk
+	})
+
+	t.Run("пустой state отклоняется", func(t *testing.T) {
+		_, err := service.Authenticate(context.Background(), "yandex", "code", "")
+		assert.Error(t, err)
+		assert.Equal(t, "неверный state-параметр", err.Error())
+	})
+
+	t.Run("неподдерживаемый провайдер", func(t *testing.T) {
+		_, err := service.Authenticate(context.Background(), "facebook", "code", "state")
+		assert.Error(t, err)
+		assert.Equal(t, "неподдерживаемый провайдер", err.Error())
+	})
+}
+
+// roundTripFunc — http.RoundTripper из функции.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// rewriteURL копирует запрос на другой origin (для тестового RoundTripper).
+func rewriteURL(r *http.Request, base string) *http.Request {
+	u := *r.URL
+	parsed, err := url.Parse(base)
+	if err != nil {
+		return r
+	}
+	u.Scheme = parsed.Scheme
+	u.Host = parsed.Host
+	r2 := r.Clone(r.Context())
+	r2.URL = &u
+	return r2
 }

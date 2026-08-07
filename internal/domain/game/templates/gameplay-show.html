@@ -239,6 +239,15 @@
             return String(text).replace(/[&<>"']/g, m => map[m]);
         }
 
+        // MED-11: same-origin проверка для редиректов (защита в глубину).
+        function isSameOrigin(url) {
+            try {
+                return new URL(url, window.location.href).origin === window.location.origin;
+            } catch (e) {
+                return false;
+            }
+        }
+
         function showMessage(text, type) {
             const cls = type === 'error' ? 'flash flash-error' : 'flash flash-success';
             msgArea.innerHTML = `<div class="${cls}">${escapeHtml(text)}</div>`;
@@ -277,7 +286,9 @@
             .then(r => {
                 if (r.redirected) {
                     // Success — server redirects to /game/{id} (level completed)
-                    window.location.href = r.url;
+                    // MED-11: только same-origin редирект (защита в глубину).
+                    if (isSameOrigin(r.url)) window.location.href = r.url;
+                    else window.location.reload();
                     return null;
                 }
                 // Check if redirect to finished page

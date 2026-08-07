@@ -3,6 +3,7 @@ package social_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"gengine-0/internal/domain/game"
@@ -192,7 +193,9 @@ func TestFollowService_UnfollowWhenNotFollowing(t *testing.T) {
 	author := createUser(t, db, "a@test.com", "pass")
 
 	err := fs.Unfollow(ctx, follower.ID, author.ID)
-	assert.NoError(t, err)
+	// MED-15: отписка от несуществующей подписки возвращает ErrNotFollowing.
+	assert.Error(t, err)
+	assert.True(t, errors.Is(err, social.ErrNotFollowing))
 	following, err := fs.IsFollowing(ctx, follower.ID, author.ID)
 	require.NoError(t, err)
 	assert.False(t, following)

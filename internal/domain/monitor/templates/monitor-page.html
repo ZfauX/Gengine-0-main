@@ -199,7 +199,7 @@
 
                     ${!team.finished && !team.suspicious ? `
                         <div class="mt-3">
-                            <button data-action="disqualify" data-team-id="${team.team_id}" class="btn btn-danger text-xs w-full">
+                            <button data-action="disqualify" data-team-id="${escapeHtml(String(team.team_id))}" class="btn btn-danger text-xs w-full">
                                 {{ T $.Lang "monitor.disqualify" }}
                             </button>
                         </div>
@@ -259,6 +259,13 @@
             const ok = await window.showModalConfirm('{{ T $.Lang "monitor.disqualify_confirm" }}');
             if (!ok) return;
 
+            // MED-7: блокируем кнопку на время запроса (защита от двойного POST).
+            const btn = teamsContainer.querySelector('[data-action="disqualify"][data-team-id="' + teamId + '"]');
+            if (btn) {
+                btn.disabled = true;
+                btn.classList.add('opacity-50', 'cursor-not-allowed');
+            }
+
             fetch(`/games/${gameID}/disqualify`, {
                 method: 'POST',
                 headers: {
@@ -271,10 +278,15 @@
                 return r.text();
             })
             .then(() => {
+                window.showToast('{{ T $.Lang "monitor.disqualify_success" }}', 'success');
             })
             .catch(err => {
                 console.error('Дисквалификация:', err);
                 window.showToast('{{ T $.Lang "monitor.disqualify_error" }}' + err.message, 'error');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                }
             });
         };
 

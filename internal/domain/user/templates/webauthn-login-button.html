@@ -51,12 +51,15 @@ function loginWithPasskey() {
     .then(r => r.json())
     .then(data => {
         // S-H1: если включена 2FA — passkey только первый фактор, идём на TOTP.
-        if (data.status === '2fa_required' && data.redirect) {
+        // MED-11: редирект принимаем только same-origin (защита в глубину).
+        if (data.status === '2fa_required' && data.redirect && isSameOrigin(data.redirect)) {
             window.location.href = data.redirect;
             return;
         }
-        if (data.status === 'ok' && data.redirect) {
+        if (data.status === 'ok' && data.redirect && isSameOrigin(data.redirect)) {
             window.location.href = data.redirect;
+        } else if (data.status === 'ok') {
+            window.location.reload();
         } else {
             window.showToast('{{ T $.Lang "passkey.error_prefix" }}' + (data.error || '{{ T $.Lang "generic.unknown_error" }}'), 'error');
             btn.disabled = false;
@@ -69,6 +72,15 @@ function loginWithPasskey() {
         btn.disabled = false;
         btn.textContent = '{{ T $.Lang "passkey.login_button" }}';
     });
+}
+
+// MED-11: same-origin проверка для редиректов.
+function isSameOrigin(url) {
+    try {
+        return new URL(url, window.location.href).origin === window.location.origin;
+    } catch (e) {
+        return false;
+    }
 }
 
     document.getElementById('passkey-login-btn').addEventListener('click', loginWithPasskey);

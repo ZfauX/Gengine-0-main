@@ -1205,6 +1205,7 @@ var enMessages = map[string]string{
 	"monitor.disqualify_confirm": "Disqualify team? The captain will receive an email notification.",
 	"monitor.game_started":       "started the game!",
 	"monitor.disqualify_error":   "Error during disqualification: ",
+	"monitor.disqualify_success": "Team disqualified",
 
 	// ── Logs ──
 	"logs.title":        "Game logs",

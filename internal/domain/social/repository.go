@@ -13,7 +13,9 @@ import (
 
 type FollowRepository interface {
 	Follow(ctx context.Context, followerID, authorID uint) error
-	Unfollow(ctx context.Context, followerID, authorID uint) error
+	// Unfollow удаляет подписку и возвращает true, если запись существовала
+	// (MED-15: сервис превращает false в ErrNotFollowing).
+	Unfollow(ctx context.Context, followerID, authorID uint) (bool, error)
 	IsFollowing(ctx context.Context, followerID, authorID uint) (bool, error)
 	GetSubscriptions(ctx context.Context, userID uint) ([]user.User, error)
 	GetFollowers(ctx context.Context, authorID uint) ([]user.User, error)
@@ -38,24 +40,24 @@ func (r *gormFollowRepo) Follow(ctx context.Context, followerID, authorID uint) 
 	}).Create(&follow).Error
 }
 
-func (r *gormFollowRepo) Unfollow(ctx context.Context, followerID, authorID uint) error {
+func (r *gormFollowRepo) Unfollow(ctx context.Context, followerID, authorID uint) (bool, error) {
 	result := r.db.WithContext(ctx).Unscoped().Where("follower_id = ? AND author_id = ?", followerID, authorID).Delete(&Follow{})
 	if result.Error != nil {
-		return result.Error
+		return false, result.Error
 	}
 	if result.RowsAffected == 0 {
 		log.Warn().
 			Uint("follower_id", followerID).
 			Uint("author_id", authorID).
 			Msg("Unfollow: no record found to delete")
-	} else {
-		log.Info().
-			Uint("follower_id", followerID).
-			Uint("author_id", authorID).
-			Int64("rows_affected", result.RowsAffected).
-			Msg("Unfollow: all records deleted successfully")
+		return false, nil
 	}
-	return nil
+	log.Info().
+		Uint("follower_id", followerID).
+		Uint("author_id", authorID).
+		Int64("rows_affected", result.RowsAffected).
+		Msg("Unfollow: all records deleted successfully")
+	return true, nil
 }
 
 func (r *gormFollowRepo) IsFollowing(ctx context.Context, followerID, authorID uint) (bool, error) {
