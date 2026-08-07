@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"gengine-0/internal/pkg/render"
 
@@ -265,7 +266,7 @@ func TestTwoFactorRequired_AlreadyVerifiedInSession(t *testing.T) {
 		c.Set("userID", uint(1))
 		// Ставим флаг в сессию до middleware (ключ привязан к userID)
 		sess := sessions.Default(c)
-		sess.Set(session2FAKey(1), true)
+		set2FAVerified(sess, 1)
 		sess.Save()
 		c.Next()
 	})
@@ -283,6 +284,43 @@ func TestTwoFactorRequired_AlreadyVerifiedInSession(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "OK", w.Body.String())
+}
+
+func TestTwoFactorRequired_ExpiredVerifiedFlag(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := NewTwoFactorService()
+	userRepo := &mockUserRepo{
+		users: map[uint]*User{
+			1: {Model: gorm.Model{ID: 1}, TwoFactorEnabled: true},
+		},
+	}
+
+	store := cookie.NewStore([]byte("test-session-secret-32chars-long!!!"))
+	tmpl := template.Must(template.New("").Parse(`{{define "layout.html"}}<html><body>{{.ContentHTML}}</body></html>{{end}}`))
+	render.SetTemplate(tmpl)
+
+	router := gin.New()
+	router.SetHTMLTemplate(tmpl)
+	router.Use(sessions.Sessions("gengine_test_session", store))
+	router.Use(func(c *gin.Context) {
+		c.Set("userID", uint(1))
+		sess := sessions.Default(c)
+		// S14: протухший timestamp (> TTL) — middleware должен потребовать повторный ввод.
+		sess.Set(session2FAKey(1), time.Now().Unix()-int64(twoFAStepUpTTL.Seconds())-60)
+		sess.Save()
+		c.Next()
+	})
+	router.Use(TwoFactorRequired(svc, userRepo))
+	router.Any("/test", func(c *gin.Context) {
+		c.String(http.StatusOK, "OK")
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusFound, w.Code)
+	assert.Contains(t, w.Header().Get("Location"), "/auth/2fa/verify")
 }
 
 func TestTwoFactorRequired_InvalidUserIDType(t *testing.T) {
@@ -402,7 +440,7 @@ func TestTwoFactorBackupCodeRequired_AlreadyVerifiedInSession(t *testing.T) {
 	router.Use(func(c *gin.Context) {
 		c.Set("userID", uint(1))
 		sess := sessions.Default(c)
-		sess.Set(session2FAKey(1), true)
+		set2FAVerified(sess, 1)
 		sess.Save()
 		c.Next()
 	})

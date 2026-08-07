@@ -20,7 +20,7 @@ BEGIN
 
     SELECT conname INTO constraint_name FROM pg_constraint
     WHERE conrelid = 'levels'::regclass AND contype = 'u'
-      AND conkey = ARRAY[game_id_attnum, position_attnum]
+      AND conkey::int[] = ARRAY[game_id_attnum, position_attnum]
     ORDER BY conname LIMIT 1;
 
     IF constraint_name IS NOT NULL THEN

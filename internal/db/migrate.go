@@ -70,17 +70,23 @@ func MigrateFromDir(gdb *gorm.DB, migrationsDir string) error {
 		return fmt.Errorf("не удалось создать драйвер миграции: %w", err)
 	}
 
+	// maxSquashedVersion — последняя версия в squashed-наборе. Squashed —
+	// «слепок» базовой схемы + tail (000006), покрывающий 000024-000036.
+	// БД с версией <= maxSquashedVersion создана через squashed и продолжает
+	// применяться squashed-набором (новые tail-версии догоняют схему).
+	// БД с большей версией создана через индивидуальные миграции (migrations/).
+	const maxSquashedVersion = 6
+
 	if migrationsDir == "" {
 		if hasAppliedMigrations(gdb) {
-			// Проверяем, не была ли БД создана через squashed (версия 5+)
-			// Squashed набор теперь полный (000001-000020), индивидуальные не нужны
 			currentVersion := getCurrentVersion(gdb)
-			if currentVersion >= 5 {
-				log.Info().Uint("version", currentVersion).Msg("БД создана через squashed миграции — индивидуальные не требуются")
-				return nil
+			if currentVersion <= maxSquashedVersion {
+				migrationsDir = "migrations_squashed"
+				log.Info().Uint("version", currentVersion).Msg("БД из squashed-набора — применяем сгруппированные миграции")
+			} else {
+				migrationsDir = "migrations"
+				log.Info().Msg("БД содержит миграции — применяем поштучные файлы")
 			}
-			migrationsDir = "migrations"
-			log.Info().Msg("БД содержит миграции — применяем поштучные файлы")
 		} else {
 			migrationsDir = "migrations_squashed"
 			log.Info().Msg("Свежая БД — применяем сгруппированные миграции")

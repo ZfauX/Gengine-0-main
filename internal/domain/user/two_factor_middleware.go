@@ -6,16 +6,44 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 )
 
+// twoFAStepUpTTL — срок действия подтверждённого 2FA step-up (15 минут).
+// S14: без TTL флаг жил в cookie-сессии до logout — украденная кука давала
+// бессрочный доступ к /admin/*. Step-up теперь ограничен по времени.
+const twoFAStepUpTTL = 15 * time.Minute
+
 // session2FAKey возвращает ключ флага 2FA, привязанный к userID, чтобы флаг
 // не "перетекал" между аккаунтами на одном браузере.
 func session2FAKey(userID uint) string {
 	return "2fa_verified_" + strconv.FormatUint(uint64(userID), 10)
+}
+
+// is2FAVerified проверяет, что step-up 2FA подтверждён и не истёк.
+// Принимает legacy bool (устаревшие сессии требуют повторного подтверждения)
+// и int64 timestamp, записанный через set2FAVerified.
+func is2FAVerified(session sessions.Session, userID uint) bool {
+	v := session.Get(session2FAKey(userID))
+	switch val := v.(type) {
+	case bool:
+		// legacy true — нет времени верификации, считаем недействительным,
+		// чтобы старые куки не давали бессрочного доступа.
+		return false
+	case int64:
+		return time.Now().Unix()-val < int64(twoFAStepUpTTL.Seconds())
+	default:
+		return false
+	}
+}
+
+// set2FAVerified записывает метку времени подтверждённого 2FA.
+func set2FAVerified(session sessions.Session, userID uint) {
+	session.Set(session2FAKey(userID), time.Now().Unix())
 }
 
 // clear2FASessionFlag удаляет флаг верификации 2FA из сессии (при logout/disable/reset).
@@ -51,7 +79,7 @@ func TwoFactorRequired(twoFactorSvc *TwoFactorService, userRepo UserRepository) 
 
 		// Проверяем, что пользователь прошёл проверку 2FA в этой сессии (флаг привязан к userID)
 		session := sessions.Default(c)
-		if session.Get(session2FAKey(userIDVal)) == true {
+		if is2FAVerified(session, userIDVal) {
 			c.Next()
 			return
 		}
@@ -98,7 +126,7 @@ func TwoFactorBackupCodeRequired(twoFactorSvc *TwoFactorService, userRepo UserRe
 
 		// Проверяем сессию — если уже верифицирован (флаг привязан к userID), пропускаем
 		session := sessions.Default(c)
-		if session.Get(session2FAKey(userIDVal)) == true {
+		if is2FAVerified(session, userIDVal) {
 			c.Next()
 			return
 		}

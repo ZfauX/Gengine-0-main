@@ -18,7 +18,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// TwoFactorHandler обрабатывает HTTP-запросы для 2FA.
+// TwoFactorHandler РѕР±СЂР°Р±Р°С‚С‹РІР°РµС‚ HTTP-Р·Р°РїСЂРѕСЃС‹ РґР»СЏ 2FA.
 type TwoFactorHandler struct {
 	twoFactorSvc    *TwoFactorService
 	authService     *AuthService
@@ -26,7 +26,7 @@ type TwoFactorHandler struct {
 	jwtAccessExpiry time.Duration
 }
 
-// NewTwoFactorHandler создаёт новый handler 2FA.
+// NewTwoFactorHandler СЃРѕР·РґР°С‘С‚ РЅРѕРІС‹Р№ handler 2FA.
 func NewTwoFactorHandler(twoFactorSvc *TwoFactorService, authService *AuthService, userRepo UserRepository, jwtAccessExpiry time.Duration) *TwoFactorHandler {
 	if jwtAccessExpiry <= 0 {
 		jwtAccessExpiry = 15 * time.Minute
@@ -39,16 +39,16 @@ func NewTwoFactorHandler(twoFactorSvc *TwoFactorService, authService *AuthServic
 	}
 }
 
-// VerifyForm отображает форму ввода TOTP-кода.
-// @Summary Форма 2FA верификации
+// VerifyForm РѕС‚РѕР±СЂР°Р¶Р°РµС‚ С„РѕСЂРјСѓ РІРІРѕРґР° TOTP-РєРѕРґР°.
+// @Summary Р¤РѕСЂРјР° 2FA РІРµСЂРёС„РёРєР°С†РёРё
 // @Tags 2fa
 // @Produce html
-// @Success 200 {string} html "Форма 2FA"
+// @Success 200 {string} html "Р¤РѕСЂРјР° 2FA"
 // @Router /auth/2fa/verify [get]
 func (h *TwoFactorHandler) VerifyForm(c *gin.Context) {
 	userID := c.GetUint("userID")
 	render.Page(c, http.StatusOK, "admin-2fa-verify.html", gin.H{
-		"Title":         "Двухфакторная аутентификация",
+		"Title":         "Р”РІСѓС…С„Р°РєС‚РѕСЂРЅР°СЏ Р°СѓС‚РµРЅС‚РёС„РёРєР°С†РёСЏ",
 		"Message":       render.Tr(c, "handler.enter_totp_code"),
 		"ReturnURL":     safeReturnURL(c.Query("return_url"), "/"),
 		"CurrentUserID": userID,
@@ -57,13 +57,13 @@ func (h *TwoFactorHandler) VerifyForm(c *gin.Context) {
 	})
 }
 
-// Verify обрабатывает ввод TOTP-кода и устанавливает флаг в сессии.
-// @Summary Проверка TOTP-кода
+// Verify РѕР±СЂР°Р±Р°С‚С‹РІР°РµС‚ РІРІРѕРґ TOTP-РєРѕРґР° Рё СѓСЃС‚Р°РЅР°РІР»РёРІР°РµС‚ С„Р»Р°Рі РІ СЃРµСЃСЃРёРё.
+// @Summary РџСЂРѕРІРµСЂРєР° TOTP-РєРѕРґР°
 // @Tags 2fa
 // @Accept x-www-form-urlencoded
 // @Produce html
-// @Param code formData string true "TOTP-код"
-// @Success 302 {string} string "Перенаправление"
+// @Param code formData string true "TOTP-РєРѕРґ"
+// @Success 302 {string} string "РџРµСЂРµРЅР°РїСЂР°РІР»РµРЅРёРµ"
 // @Router /auth/2fa/verify [post]
 func (h *TwoFactorHandler) Verify(c *gin.Context) {
 	userID := c.GetUint("userID")
@@ -77,7 +77,7 @@ func (h *TwoFactorHandler) Verify(c *gin.Context) {
 
 	baseData := func() gin.H {
 		return gin.H{
-			"Title":         "Двухфакторная аутентификация",
+			"Title":         "Р”РІСѓС…С„Р°РєС‚РѕСЂРЅР°СЏ Р°СѓС‚РµРЅС‚РёС„РёРєР°С†РёСЏ",
 			"Message":       render.Tr(c, "handler.enter_totp_code"),
 			"ReturnURL":     returnURL,
 			"CurrentUserID": userID,
@@ -107,16 +107,16 @@ func (h *TwoFactorHandler) Verify(c *gin.Context) {
 		return
 	}
 
-	// Сохраняем флаг верификации в сессии (привязан к userID)
+	// РЎРѕС…СЂР°РЅСЏРµРј С„Р»Р°Рі РІРµСЂРёС„РёРєР°С†РёРё РІ СЃРµСЃСЃРёРё (РїСЂРёРІСЏР·Р°РЅ Рє userID)
 	session := sessions.Default(c)
-	session.Set(session2FAKey(userID), true)
+	set2FAVerified(session, userID)
 	if err := session.Save(); err != nil {
 		log.Error().Err(err).Msg("Verify: failed to save session")
 	}
 
-	// Session fixation protection: перевыпускаем JWT с новым jti.
-	// Cookie store не поддерживает session.Regenerate(), поэтому выдаём новый access-токен
-	// — старые (перехваченные до 2FA) становятся невалидны через jti blacklist.
+	// Session fixation protection: РїРµСЂРµРІС‹РїСѓСЃРєР°РµРј JWT СЃ РЅРѕРІС‹Рј jti.
+	// Cookie store РЅРµ РїРѕРґРґРµСЂР¶РёРІР°РµС‚ session.Regenerate(), РїРѕСЌС‚РѕРјСѓ РІС‹РґР°С‘Рј РЅРѕРІС‹Р№ access-С‚РѕРєРµРЅ
+	// вЂ” СЃС‚Р°СЂС‹Рµ (РїРµСЂРµС…РІР°С‡РµРЅРЅС‹Рµ РґРѕ 2FA) СЃС‚Р°РЅРѕРІСЏС‚СЃСЏ РЅРµРІР°Р»РёРґРЅС‹ С‡РµСЂРµР· jti blacklist.
 	if userObj, err := h.userRepo.GetByID(c.Request.Context(), userID); err == nil {
 		if newToken, jwtErr := h.authService.GenerateJWT(*userObj); jwtErr == nil {
 			setSecureCookie(c, "jwt", newToken, int(h.jwtAccessExpiry.Seconds()), "/")
@@ -128,29 +128,29 @@ func (h *TwoFactorHandler) Verify(c *gin.Context) {
 	c.Redirect(http.StatusFound, returnURL)
 }
 
-// BackupForm отображает форму ввода резервного кода.
-// @Summary Форма резервного кода 2FA
+// BackupForm РѕС‚РѕР±СЂР°Р¶Р°РµС‚ С„РѕСЂРјСѓ РІРІРѕРґР° СЂРµР·РµСЂРІРЅРѕРіРѕ РєРѕРґР°.
+// @Summary Р¤РѕСЂРјР° СЂРµР·РµСЂРІРЅРѕРіРѕ РєРѕРґР° 2FA
 // @Tags 2fa
 // @Produce html
-// @Success 200 {string} html "Форма резервного кода"
+// @Success 200 {string} html "Р¤РѕСЂРјР° СЂРµР·РµСЂРІРЅРѕРіРѕ РєРѕРґР°"
 // @Router /auth/2fa/backup [get]
 func (h *TwoFactorHandler) BackupForm(c *gin.Context) {
 	userID := c.GetUint("userID")
 	render.Page(c, http.StatusOK, "admin-2fa-backup.html", gin.H{
-		"Title":         "Резервный код 2FA",
+		"Title":         "Р РµР·РµСЂРІРЅС‹Р№ РєРѕРґ 2FA",
 		"CurrentUserID": userID,
 		"IsAdmin":       middleware.IsAdmin(c),
 		"csrf":          csrf.GetToken(c),
 	})
 }
 
-// BackupVerify обрабатывает ввод резервного кода.
-// @Summary Проверка резервного кода
+// BackupVerify РѕР±СЂР°Р±Р°С‚С‹РІР°РµС‚ РІРІРѕРґ СЂРµР·РµСЂРІРЅРѕРіРѕ РєРѕРґР°.
+// @Summary РџСЂРѕРІРµСЂРєР° СЂРµР·РµСЂРІРЅРѕРіРѕ РєРѕРґР°
 // @Tags 2fa
 // @Accept x-www-form-urlencoded
 // @Produce html
-// @Param backup_code formData string true "Резервный код"
-// @Success 302 {string} string "Перенаправление"
+// @Param backup_code formData string true "Р РµР·РµСЂРІРЅС‹Р№ РєРѕРґ"
+// @Success 302 {string} string "РџРµСЂРµРЅР°РїСЂР°РІР»РµРЅРёРµ"
 // @Router /auth/2fa/backup [post]
 func (h *TwoFactorHandler) BackupVerify(c *gin.Context) {
 	userID := c.GetUint("userID")
@@ -161,7 +161,7 @@ func (h *TwoFactorHandler) BackupVerify(c *gin.Context) {
 
 	baseData := func() gin.H {
 		return gin.H{
-			"Title":         "Резервный код 2FA",
+			"Title":         "Р РµР·РµСЂРІРЅС‹Р№ РєРѕРґ 2FA",
 			"CurrentUserID": userID,
 			"IsAdmin":       middleware.IsAdmin(c),
 			"csrf":          csrf.GetToken(c),
@@ -186,7 +186,7 @@ func (h *TwoFactorHandler) BackupVerify(c *gin.Context) {
 	remainingCodes, verr := h.twoFactorSvc.VerifyAndRemoveBackupCode(user.TwoFactorBackupCodes, backupCode)
 	if verr != nil {
 		data := baseData()
-		data["Error"] = "Неверный резервный код"
+		data["Error"] = "РќРµРІРµСЂРЅС‹Р№ СЂРµР·РµСЂРІРЅС‹Р№ РєРѕРґ"
 		render.Page(c, http.StatusOK, "admin-2fa-backup.html", data)
 		return
 	}
@@ -198,9 +198,9 @@ func (h *TwoFactorHandler) BackupVerify(c *gin.Context) {
 		log.Error().Err(err).Uint("user_id", user.ID).Msg("BackupVerify: failed to update backup codes")
 	}
 
-	// Сохраняем флаг верификации в сессии (привязан к userID)
+	// РЎРѕС…СЂР°РЅСЏРµРј С„Р»Р°Рі РІРµСЂРёС„РёРєР°С†РёРё РІ СЃРµСЃСЃРёРё (РїСЂРёРІСЏР·Р°РЅ Рє userID)
 	session := sessions.Default(c)
-	session.Set(session2FAKey(userID), true)
+	set2FAVerified(session, userID)
 	if err := session.Save(); err != nil {
 		log.Error().Err(err).Msg("BackupVerify: failed to save session")
 	}
@@ -208,12 +208,12 @@ func (h *TwoFactorHandler) BackupVerify(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/")
 }
 
-// EnableForm отображает форму включения 2FA.
-// @Summary Форма включения 2FA
+// EnableForm РѕС‚РѕР±СЂР°Р¶Р°РµС‚ С„РѕСЂРјСѓ РІРєР»СЋС‡РµРЅРёСЏ 2FA.
+// @Summary Р¤РѕСЂРјР° РІРєР»СЋС‡РµРЅРёСЏ 2FA
 // @Tags 2fa
 // @Produce html
-// @Success 200 {string} html "Форма включения 2FA"
-// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Success 200 {string} html "Р¤РѕСЂРјР° РІРєР»СЋС‡РµРЅРёСЏ 2FA"
+// @Failure 401 {object} map[string]interface{} "РўСЂРµР±СѓРµС‚СЃСЏ Р°СѓС‚РµРЅС‚РёС„РёРєР°С†РёСЏ"
 // @Router /user/2fa/enable [get]
 // @Security JWT
 func (h *TwoFactorHandler) EnableForm(c *gin.Context) {
@@ -238,7 +238,7 @@ func (h *TwoFactorHandler) EnableForm(c *gin.Context) {
 		return
 	}
 
-	// Генерируем секрет и QR-код
+	// Р“РµРЅРµСЂРёСЂСѓРµРј СЃРµРєСЂРµС‚ Рё QR-РєРѕРґ
 	secret, err := h.twoFactorSvc.GenerateSecret()
 	if err != nil {
 		log.Error().Err(err).Msg("EnableForm: failed to generate 2FA secret")
@@ -252,7 +252,7 @@ func (h *TwoFactorHandler) EnableForm(c *gin.Context) {
 		return
 	}
 
-	// Сохраняем секрет в сессии для подтверждения на следующем шаге
+	// РЎРѕС…СЂР°РЅСЏРµРј СЃРµРєСЂРµС‚ РІ СЃРµСЃСЃРёРё РґР»СЏ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ РЅР° СЃР»РµРґСѓСЋС‰РµРј С€Р°РіРµ
 	sess := sessions.Default(c)
 	sess.Set("2fa_pending_secret", secret)
 	sess.Set("2fa_pending_secret_url", qrURL)
@@ -261,7 +261,7 @@ func (h *TwoFactorHandler) EnableForm(c *gin.Context) {
 	}
 
 	render.Page(c, http.StatusOK, "user-2fa-enable.html", gin.H{
-		"Title":         "Включить 2FA",
+		"Title":         "Р’РєР»СЋС‡РёС‚СЊ 2FA",
 		"User":          user.ToPublic(),
 		"Secret":        secret,
 		"QRURL":         qrURL,
@@ -271,15 +271,15 @@ func (h *TwoFactorHandler) EnableForm(c *gin.Context) {
 	})
 }
 
-// Enable подтверждает включение 2FA.
-// @Summary Подтверждение включения 2FA
+// Enable РїРѕРґС‚РІРµСЂР¶РґР°РµС‚ РІРєР»СЋС‡РµРЅРёРµ 2FA.
+// @Summary РџРѕРґС‚РІРµСЂР¶РґРµРЅРёРµ РІРєР»СЋС‡РµРЅРёСЏ 2FA
 // @Tags 2fa
 // @Accept x-www-form-urlencoded
 // @Produce html
-// @Param code formData string true "Код подтверждения"
-// @Success 302 {string} string "Перенаправление в профиль"
+// @Param code formData string true "РљРѕРґ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ"
+// @Success 302 {string} string "РџРµСЂРµРЅР°РїСЂР°РІР»РµРЅРёРµ РІ РїСЂРѕС„РёР»СЊ"
 // @Failure 400 {object} map[string]interface{} render.Tr(c, "handler.invalid_code")
-// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 401 {object} map[string]interface{} "РўСЂРµР±СѓРµС‚СЃСЏ Р°СѓС‚РµРЅС‚РёС„РёРєР°С†РёСЏ"
 // @Router /user/2fa/enable [post]
 // @Security JWT
 func (h *TwoFactorHandler) Enable(c *gin.Context) {
@@ -304,8 +304,8 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 		return
 	}
 
-	// S2: включение 2FA требует подтверждения пароля. Иначе атакующий с
-	// украденной сессией привязал бы свой TOTP-секрет к чужому аккаунту.
+	// S2: РІРєР»СЋС‡РµРЅРёРµ 2FA С‚СЂРµР±СѓРµС‚ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ РїР°СЂРѕР»СЏ. РРЅР°С‡Рµ Р°С‚Р°РєСѓСЋС‰РёР№ СЃ
+	// СѓРєСЂР°РґРµРЅРЅРѕР№ СЃРµСЃСЃРёРµР№ РїСЂРёРІСЏР·Р°Р» Р±С‹ СЃРІРѕР№ TOTP-СЃРµРєСЂРµС‚ Рє С‡СѓР¶РѕРјСѓ Р°РєРєР°СѓРЅС‚Сѓ.
 	renderEnableError := func(msg string) {
 		render.Page(c, http.StatusOK, "user-2fa-enable.html", gin.H{
 			"Title": render.Tr(c, "twofa.page_title"),
@@ -319,27 +319,27 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 		return
 	}
 
-	// Получаем секрет из сессии (сгенерирован на шаге EnableForm)
+	// РџРѕР»СѓС‡Р°РµРј СЃРµРєСЂРµС‚ РёР· СЃРµСЃСЃРёРё (СЃРіРµРЅРµСЂРёСЂРѕРІР°РЅ РЅР° С€Р°РіРµ EnableForm)
 	sess := sessions.Default(c)
 	pendingSecret, ok := sess.Get("2fa_pending_secret").(string)
 	if !ok || pendingSecret == "" {
 		render.Page(c, http.StatusBadRequest, "user-2fa-enable.html", gin.H{
 			"Title": render.Tr(c, "twofa.page_title"),
-			"Error": "Сессия истекла. Начните настройку 2FA заново.",
+			"Error": "РЎРµСЃСЃРёСЏ РёСЃС‚РµРєР»Р°. РќР°С‡РЅРёС‚Рµ РЅР°СЃС‚СЂРѕР№РєСѓ 2FA Р·Р°РЅРѕРІРѕ.",
 			"User":  user.ToPublic(),
 			"csrf":  csrf.GetToken(c),
 		})
 		return
 	}
 
-	// Проверяем код против сохранённого секрета
+	// РџСЂРѕРІРµСЂСЏРµРј РєРѕРґ РїСЂРѕС‚РёРІ СЃРѕС…СЂР°РЅС‘РЅРЅРѕРіРѕ СЃРµРєСЂРµС‚Р°
 	valid, err := h.twoFactorSvc.VerifyCode(pendingSecret, input.Code)
 	if err != nil || !valid {
 		renderEnableError(render.Tr(c, "handler.wrong_code_try_again"))
 		return
 	}
 
-	// Генерируем резервные коды
+	// Р“РµРЅРµСЂРёСЂСѓРµРј СЂРµР·РµСЂРІРЅС‹Рµ РєРѕРґС‹
 	backupCodes, err := h.twoFactorSvc.GenerateBackupCodes()
 	if err != nil {
 		renderEnableError(render.LocalizeError(c, err.Error()))
@@ -352,12 +352,12 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 		return
 	}
 
-	// Включаем 2FA с подтверждённым секретом
+	// Р’РєР»СЋС‡Р°РµРј 2FA СЃ РїРѕРґС‚РІРµСЂР¶РґС‘РЅРЅС‹Рј СЃРµРєСЂРµС‚РѕРј
 	user.TwoFactorEnabled = true
 	user.TwoFactorSecret = pendingSecret
 	user.TwoFactorBackupCodes = hashedCodes
 
-	// Сохраняем пользователя
+	// РЎРѕС…СЂР°РЅСЏРµРј РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ
 	if err := h.userRepo.Update(c.Request.Context(), user.ID, map[string]any{
 		"two_factor_enabled":      true,
 		"two_factor_secret":       pendingSecret,
@@ -372,7 +372,7 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 		return
 	}
 
-	// Очищаем сессию
+	// РћС‡РёС‰Р°РµРј СЃРµСЃСЃРёСЋ
 	sess.Delete("2fa_pending_secret")
 	sess.Delete("2fa_pending_secret_url")
 	sess.Delete(session2FAKey(userID))
@@ -380,21 +380,21 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 		log.Error().Err(err).Msg("Enable: failed to clear session")
 	}
 
-	// Показываем страницу успеха с резервными кодами
+	// РџРѕРєР°Р·С‹РІР°РµРј СЃС‚СЂР°РЅРёС†Сѓ СѓСЃРїРµС…Р° СЃ СЂРµР·РµСЂРІРЅС‹РјРё РєРѕРґР°РјРё
 	render.Page(c, http.StatusOK, "user-2fa-enabled.html", gin.H{
-		"Title":       "2FA включена",
+		"Title":       "2FA РІРєР»СЋС‡РµРЅР°",
 		"User":        user.ToPublic(),
 		"BackupCodes": backupCodes,
 		"csrf":        csrf.GetToken(c),
 	})
 }
 
-// DisableForm отображает форму отключения 2FA.
-// @Summary Форма отключения 2FA
+// DisableForm РѕС‚РѕР±СЂР°Р¶Р°РµС‚ С„РѕСЂРјСѓ РѕС‚РєР»СЋС‡РµРЅРёСЏ 2FA.
+// @Summary Р¤РѕСЂРјР° РѕС‚РєР»СЋС‡РµРЅРёСЏ 2FA
 // @Tags 2fa
 // @Produce html
-// @Success 200 {string} html "Форма отключения 2FA"
-// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Success 200 {string} html "Р¤РѕСЂРјР° РѕС‚РєР»СЋС‡РµРЅРёСЏ 2FA"
+// @Failure 401 {object} map[string]interface{} "РўСЂРµР±СѓРµС‚СЃСЏ Р°СѓС‚РµРЅС‚РёС„РёРєР°С†РёСЏ"
 // @Router /user/2fa/disable [get]
 // @Security JWT
 func (h *TwoFactorHandler) DisableForm(c *gin.Context) {
@@ -416,7 +416,7 @@ func (h *TwoFactorHandler) DisableForm(c *gin.Context) {
 	}
 
 	render.Page(c, http.StatusOK, "user-2fa-disable.html", gin.H{
-		"Title":         "Отключить 2FA",
+		"Title":         "РћС‚РєР»СЋС‡РёС‚СЊ 2FA",
 		"User":          user.ToPublic(),
 		"CurrentUserID": userID,
 		"IsAdmin":       middleware.IsAdmin(c),
@@ -424,15 +424,15 @@ func (h *TwoFactorHandler) DisableForm(c *gin.Context) {
 	})
 }
 
-// Disable отключает 2FA.
-// @Summary Отключение 2FA
+// Disable РѕС‚РєР»СЋС‡Р°РµС‚ 2FA.
+// @Summary РћС‚РєР»СЋС‡РµРЅРёРµ 2FA
 // @Tags 2fa
 // @Accept x-www-form-urlencoded
 // @Produce html
-// @Param code formData string true "Код подтверждения"
-// @Success 302 {string} string "Перенаправление в профиль"
+// @Param code formData string true "РљРѕРґ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ"
+// @Success 302 {string} string "РџРµСЂРµРЅР°РїСЂР°РІР»РµРЅРёРµ РІ РїСЂРѕС„РёР»СЊ"
 // @Failure 400 {object} map[string]interface{} render.Tr(c, "handler.invalid_code")
-// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
+// @Failure 401 {object} map[string]interface{} "РўСЂРµР±СѓРµС‚СЃСЏ Р°СѓС‚РµРЅС‚РёС„РёРєР°С†РёСЏ"
 // @Router /user/2fa/disable [post]
 // @Security JWT
 func (h *TwoFactorHandler) Disable(c *gin.Context) {
@@ -458,10 +458,10 @@ func (h *TwoFactorHandler) Disable(c *gin.Context) {
 		return
 	}
 
-	// Проверяем пароль напрямую (Крит#2): полный authService.Login инкрементит
-	// счётчик неудач и блокирует аккаунт на 30 мин при неверном пароле.
+	// РџСЂРѕРІРµСЂСЏРµРј РїР°СЂРѕР»СЊ РЅР°РїСЂСЏРјСѓСЋ (РљСЂРёС‚#2): РїРѕР»РЅС‹Р№ authService.Login РёРЅРєСЂРµРјРµРЅС‚РёС‚
+	// СЃС‡С‘С‚С‡РёРє РЅРµСѓРґР°С‡ Рё Р±Р»РѕРєРёСЂСѓРµС‚ Р°РєРєР°СѓРЅС‚ РЅР° 30 РјРёРЅ РїСЂРё РЅРµРІРµСЂРЅРѕРј РїР°СЂРѕР»Рµ.
 	baseData := gin.H{
-		"Title":         "Отключить 2FA",
+		"Title":         "РћС‚РєР»СЋС‡РёС‚СЊ 2FA",
 		"User":          user.ToPublic(),
 		"CurrentUserID": userID,
 		"IsAdmin":       middleware.IsAdmin(c),
@@ -475,8 +475,8 @@ func (h *TwoFactorHandler) Disable(c *gin.Context) {
 		return
 	}
 
-	// Требуем текущий TOTP-код (S-L1): отключение 2FA по одному паролю
-	// позволяло бы атакующему с украденной сессией+паролем снять защиту.
+	// РўСЂРµР±СѓРµРј С‚РµРєСѓС‰РёР№ TOTP-РєРѕРґ (S-L1): РѕС‚РєР»СЋС‡РµРЅРёРµ 2FA РїРѕ РѕРґРЅРѕРјСѓ РїР°СЂРѕР»СЋ
+	// РїРѕР·РІРѕР»СЏР»Рѕ Р±С‹ Р°С‚Р°РєСѓСЋС‰РµРјСѓ СЃ СѓРєСЂР°РґРµРЅРЅРѕР№ СЃРµСЃСЃРёРµР№+РїР°СЂРѕР»РµРј СЃРЅСЏС‚СЊ Р·Р°С‰РёС‚Сѓ.
 	if user.TwoFactorEnabled {
 		valid, codeErr := h.twoFactorSvc.VerifyCode(user.TwoFactorSecret, strings.TrimSpace(input.Code))
 		if codeErr != nil || !valid {
@@ -487,10 +487,10 @@ func (h *TwoFactorHandler) Disable(c *gin.Context) {
 		}
 	}
 
-	// Отключаем 2FA
+	// РћС‚РєР»СЋС‡Р°РµРј 2FA
 	h.twoFactorSvc.Disable2FA(user)
 
-	// Сохраняем
+	// РЎРѕС…СЂР°РЅСЏРµРј
 	if err := h.userRepo.Update(c.Request.Context(), user.ID, map[string]any{
 		"two_factor_enabled":      false,
 		"two_factor_secret":       "",
