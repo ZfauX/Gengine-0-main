@@ -24,6 +24,7 @@ var allModels = []any{
 	&level.Level{},
 	&level.Question{},
 	&level.Answer{},
+	&level.MiniGame{},
 }
 
 // ---------- LevelService ----------
@@ -76,6 +77,28 @@ func TestLevelService_Update(t *testing.T) {
 	assert.Equal(t, 2, result.Position)
 }
 
+// G6: частичный POST (пустой Type) не должен сбрасывать тип уровня.
+func TestLevelService_Update_PreservesTypeOnPartialPOST(t *testing.T) {
+	db := testutil.SetupPostgresDB(t, allModels...)
+	svc := newLevelService(db)
+
+	author := createUser(t, db, "updtype@test.com", "pass")
+	g := createGame(t, db, author.ID, "Update Type Game")
+
+	lvl := &level.Level{Name: "Branch", Position: 1, GameID: g.ID, Type: level.TypeParallelGroup}
+	require.NoError(t, db.Create(lvl).Error)
+
+	// Частичный POST — только имя, Type не передан (пустая строка).
+	updated := &level.Level{Name: "Renamed"}
+	err := svc.Update(context.Background(), lvl.ID, updated, author.ID)
+	require.NoError(t, err)
+
+	var result level.Level
+	require.NoError(t, db.First(&result, lvl.ID).Error)
+	assert.Equal(t, "Renamed", result.Name)
+	assert.Equal(t, level.TypeParallelGroup, result.Type, "тип уровня не должен сбрасываться при частичном POST")
+}
+
 func TestLevelService_Duplicate(t *testing.T) {
 	db := testutil.SetupPostgresDB(t, allModels...)
 	svc := newLevelService(db)
@@ -103,6 +126,18 @@ func TestLevelService_Duplicate(t *testing.T) {
 	db.Where("question_id = ?", questions[0].ID).Find(&answers)
 	assert.Len(t, answers, 1)
 	assert.Equal(t, "code", answers[0].Code)
+
+	// G10: мини-игра уровня дублируется вместе с уровнем.
+	mini := &level.MiniGame{LevelID: original.ID, Type: "cipher", Answer: "secret", Config: "{}"}
+	require.NoError(t, db.Create(mini).Error)
+
+	newLvl2, err := svc.Duplicate(context.Background(), original.ID, author.ID)
+	require.NoError(t, err)
+	var dupMini level.MiniGame
+	err = db.Where("level_id = ?", newLvl2.ID).First(&dupMini).Error
+	require.NoError(t, err, "мини-игра должна быть продублирована")
+	assert.Equal(t, "cipher", dupMini.Type)
+	assert.Equal(t, "secret", dupMini.Answer)
 }
 
 func TestLevelService_Move(t *testing.T) {

@@ -5,6 +5,8 @@ import (
 	"context"
 	"strconv"
 
+	"gengine-0/internal/pkg/sqlutil"
+
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
@@ -85,7 +87,7 @@ func (s *Service) List(ctx context.Context, userIDStr, action, query string, pag
 		countQ = countQ.Where("action = ?", action)
 	}
 	if query != "" {
-		like := "%" + query + "%"
+		like := sqlutil.BuildLikePattern(query)
 		base = base.Where("(users.name ILIKE ? OR users.email ILIKE ?)", like, like)
 		countQ = countQ.Where("audit_logs.user_id IN (SELECT id FROM users WHERE name ILIKE ? OR email ILIKE ?)", like, like)
 	}

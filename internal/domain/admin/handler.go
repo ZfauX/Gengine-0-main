@@ -14,6 +14,7 @@ import (
 	"gengine-0/internal/pkg/cache"
 	"gengine-0/internal/pkg/i18n"
 	"gengine-0/internal/pkg/render"
+	"gengine-0/internal/pkg/sqlutil"
 
 	csrf "gengine-0/internal/pkg/csrf"
 
@@ -384,8 +385,9 @@ func (h *AdminHandler) ListGames(c *gin.Context) {
 	ctx := c.Request.Context()
 	query := h.gameRepo.Model(ctx).Preload("Author")
 	if req.Query != "" {
+		like := sqlutil.BuildLikePattern(req.Query)
 		query = query.Joins("LEFT JOIN users ON users.id = games.author_id").
-			Where("games.name ILIKE ? OR users.name ILIKE ?", "%"+req.Query+"%", "%"+req.Query+"%")
+			Where("games.name ILIKE ? OR users.name ILIKE ?", like, like)
 	}
 	switch req.Status {
 	case "draft":

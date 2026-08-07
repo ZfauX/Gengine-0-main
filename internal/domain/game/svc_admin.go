@@ -224,6 +224,26 @@ func (s *GameAdminService) DeleteLevelFromActiveGame(ctx context.Context, gameID
 			return fmt.Errorf("ошибка удаления прогресса уровней: %w", err)
 		}
 
+		// G7: удаляем ответы и вопросы уровня (в этом порядке — FK answers→questions),
+		// иначе после hard-delete уровня остаются сироты-вопросы и падает FK.
+		// Сначала ответы всех вопросов уровня, затем сами вопросы.
+		var questionIDs []uint
+		if err := tx.Model(&level.Question{}).Where("level_id = ?", levelID).Pluck("id", &questionIDs).Error; err != nil {
+			return fmt.Errorf("ошибка загрузки вопросов уровня: %w", err)
+		}
+		if len(questionIDs) > 0 {
+			if err := tx.Unscoped().Where("question_id IN ?", questionIDs).Delete(&level.Answer{}).Error; err != nil {
+				return fmt.Errorf("ошибка удаления ответов уровня: %w", err)
+			}
+		}
+		if err := tx.Unscoped().Where("level_id = ?", levelID).Delete(&level.Question{}).Error; err != nil {
+			return fmt.Errorf("ошибка удаления вопросов уровня: %w", err)
+		}
+		// Мини-игра уровня — тоже удаляем физически (soft-delete оставил бы ссылку на уровень).
+		if err := tx.Unscoped().Where("level_id = ?", levelID).Delete(&level.MiniGame{}).Error; err != nil {
+			return fmt.Errorf("ошибка удаления мини-игры уровня: %w", err)
+		}
+
 		if err := tx.Unscoped().Delete(&lvl).Error; err != nil {
 			return fmt.Errorf("ошибка удаления уровня: %w", err)
 		}

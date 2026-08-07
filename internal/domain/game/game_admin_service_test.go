@@ -31,6 +31,7 @@ var allModels = []interface{}{
 	&level.Level{},
 	&level.Question{},
 	&level.Answer{},
+	&level.MiniGame{},
 	&team.Team{},
 	&game.Note{},
 	&game.Photo{},
@@ -256,6 +257,12 @@ func TestGameAdminService_DeleteLevelFromActiveGame(t *testing.T) {
 
 	nextLevel := createLevel(t, db, g.ID, "Next Level", 2)
 
+	// G7: вопросы удаляемого уровня не должны оставаться сиротами.
+	oldQuestion := &level.Question{LevelID: levelID, Text: "Old Q"}
+	require.NoError(t, db.Create(oldQuestion).Error)
+	oldAnswer := &level.Answer{QuestionID: oldQuestion.ID, Code: "old"}
+	require.NoError(t, db.Create(oldAnswer).Error)
+
 	err = adminSvc.DeleteLevelFromActiveGame(context.Background(), g.ID, levelID, author.ID)
 	require.NoError(t, err)
 
@@ -264,6 +271,11 @@ func TestGameAdminService_DeleteLevelFromActiveGame(t *testing.T) {
 	err = db.Unscoped().First(&deletedLevel, levelID).Error
 	assert.Error(t, err)
 	assert.Equal(t, gorm.ErrRecordNotFound, err)
+
+	// G7: вопросы/ответы удалённого уровня тоже физически удалены.
+	var qCount int64
+	db.Unscoped().Model(&level.Question{}).Where("level_id = ?", levelID).Count(&qCount)
+	assert.Zero(t, qCount, "вопросы уровня не должны оставаться сиротами")
 
 	// Проверяем, что прогресс для удалённого уровня отсутствует
 	var oldProgress game.LevelProgress

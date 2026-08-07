@@ -123,36 +123,6 @@ func CompleteLevel(db *gorm.DB, progress *LevelProgress, onGameFinished func()) 
 	return AdvanceToNextLevel(db, progress.GamePassingID, progress.LevelID, onGameFinished)
 }
 
-// CompleteLevelWithSSE — расширенная версия CompleteLevel с SSE broadcast.
-func CompleteLevelWithSSE(db *gorm.DB, progress *LevelProgress, sseMgr *SSEManager, onGameFinished func()) (err error) {
-	if sseMgr == nil {
-		_, err = CompleteLevel(db, progress, onGameFinished)
-		return err
-	}
-
-	var passing GamePassing
-	if err = db.First(&passing, progress.GamePassingID).Error; err != nil {
-		return err
-	}
-	gameID := passing.GameID
-
-	onCommit, completeErr := CompleteLevel(db, progress, onGameFinished)
-	if completeErr != nil {
-		return completeErr
-	}
-	if onCommit != nil {
-		onCommit()
-	}
-	sseMgr.Broadcast(gameID, "level_completed", map[string]any{
-		"game_id":      gameID,
-		"passing_id":   progress.GamePassingID,
-		"level_id":     progress.LevelID,
-		"team_id":      passing.TeamID,
-		"completed_at": time.Now().UTC().Format("2006-01-02T15:04:05Z"),
-	})
-	return nil
-}
-
 // AdvanceToNextLevel находит следующий уровень и создаёт для него прогресс.
 // Работает с переданным *gorm.DB (может быть транзакцией).
 // onGameFinished — необязательный callback, вызывается когда завершается последний уровень (игра окончена).
@@ -203,33 +173,6 @@ func AdvanceToNextLevel(db *gorm.DB, gamePassingID, completedLevelID uint, onGam
 	default:
 		return nil, err
 	}
-}
-
-// AdvanceToNextLevelWithSSE — расширенная версия с SSE broadcast.
-func AdvanceToNextLevelWithSSE(db *gorm.DB, gamePassingID, completedLevelID uint, onGameFinished func(), sseMgr *SSEManager) (onCommit func(), err error) {
-	if sseMgr == nil {
-		return AdvanceToNextLevel(db, gamePassingID, completedLevelID, onGameFinished)
-	}
-
-	var passing GamePassing
-	if err = db.First(&passing, gamePassingID).Error; err != nil {
-		return nil, err
-	}
-	gameID := passing.GameID
-
-	return AdvanceToNextLevel(db, gamePassingID, completedLevelID, func() {
-		if onGameFinished != nil {
-			onGameFinished()
-		}
-		// После завершения игры отправляем SSE-уведомление
-		if sseMgr != nil {
-			sseMgr.Broadcast(gameID, "game_finished", map[string]any{
-				"game_id":     gameID,
-				"passing_id":  gamePassingID,
-				"finished_at": time.Now().UTC().Format("2006-01-02T15:04:05Z"),
-			})
-		}
-	})
 }
 
 // periodicRunner запускает периодическую функцию с контекстом и ticker.

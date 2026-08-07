@@ -96,7 +96,7 @@ func (r *gormLevelRepo) GetMaxPosition(ctx context.Context, gameID uint) (int, e
 }
 func (r *gormLevelRepo) GetFullLevel(ctx context.Context, id uint) (*Level, error) {
 	var l Level
-	err := r.db.WithContext(ctx).Preload("Questions.Answers").First(&l, id).Error
+	err := r.db.WithContext(ctx).Preload("Questions.Answers").Preload("MiniGame").First(&l, id).Error
 	if err != nil {
 		return nil, err
 	}

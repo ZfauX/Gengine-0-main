@@ -155,7 +155,13 @@ self.addEventListener('push', event => {
 // Клик по уведомлению
 self.addEventListener('notificationclick', event => {
     event.notification.close();
-    const url = event.notification.data?.url || '/';
+    // F8: только same-origin относительные URL (начинаются с "/", но не с "//").
+    // Абсолютные/протокол-относительные ссылки могли бы открывать внешний сайт
+    // (фишинговый вектор), если URL уведомления станет контролируемым.
+    let url = event.notification.data?.url || '/';
+    if (typeof url !== 'string' || url.charAt(0) !== '/' || url.charAt(1) === '/') {
+        url = '/';
+    }
     event.waitUntil(
         clients.matchAll({ type: 'window' }).then(clientList => {
             for (const client of clientList) {

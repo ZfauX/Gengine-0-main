@@ -355,10 +355,15 @@ func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, u
 			return findErr
 		}
 		gameID = passing.GameID
-		var game Game
-		if findErr := tx.First(&game, passing.GameID).Error; findErr != nil {
-			return findErr
-		} else if game.AuthorID != userID {
+
+		// G8: принимать ответы может автор ИЛИ модератор игры (соавтор с ролью
+		// moderator). Раньше проверка ограничивала только автором — модератор,
+		// не состоящий в команде, не мог принять ответ «чёрного ящика».
+		ok, permErr := s.coAuthorSvc.HasPermissionTx(tx, passing.GameID, userID, RoleModerator)
+		if permErr != nil {
+			return permErr
+		}
+		if !ok {
 			return ErrOnlyAuthor
 		}
 
@@ -745,8 +750,10 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 		return nil
 	})
 	// Ошибки фоновых запросов не должны валить страницу — данные уже есть,
-	// но логируем результат ожидания.
-	_ = g.Wait()
+	// но логируем результат ожидания, чтобы не терять сбои БД молча (G11).
+	if waitErr := g.Wait(); waitErr != nil {
+		log.Error().Err(waitErr).Uint("passing_id", passingID).Msg("GetGameplayData: background queries failed")
+	}
 
 	timeLimitSec := 0
 	if settings.PerLevelTimeLimit > 0 {

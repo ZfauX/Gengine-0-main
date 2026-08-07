@@ -120,7 +120,12 @@ func (s *LevelService) Update(ctx context.Context, levelID uint, updated *Level,
 		// Позиция 0 = «не менять» — сохраняем текущую, чтобы не сбрасывать уровень на 0.
 		level.Position = updated.Position
 	}
-	level.Type = updated.Type
+	if updated.Type != "" {
+		// G6: пустой Type при частичном POST = «не менять» (как Position).
+		// Раньше уровень с ветвлением (parallel_group/blackbox/...) сбрасывался
+		// на пустую строку при обновлении только имени/описания.
+		level.Type = updated.Type
+	}
 	level.ParentID = updated.ParentID
 	level.GroupID = updated.GroupID
 	level.MinChildren = updated.MinChildren
@@ -196,6 +201,20 @@ func (s *LevelService) Duplicate(ctx context.Context, levelID, userID uint) (*Le
 			if err := tx.Create(&newA).Error; err != nil {
 				return nil, err
 			}
+		}
+	}
+
+	// G10: дублируем мини-игру уровня (cipher/puzzle/quiz) — иначе копия
+	// уровня теряла бы мини-игру и была нерабочей.
+	if original.MiniGame != nil {
+		newMini := MiniGame{
+			LevelID: newLevel.ID,
+			Type:    original.MiniGame.Type,
+			Answer:  original.MiniGame.Answer,
+			Config:  original.MiniGame.Config,
+		}
+		if err := tx.Create(&newMini).Error; err != nil {
+			return nil, err
 		}
 	}
 

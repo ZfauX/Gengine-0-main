@@ -136,9 +136,10 @@ func (r *gormTeamRepo) Count(ctx context.Context) (int64, error) {
 }
 func (r *gormTeamRepo) CountSearch(ctx context.Context, query string) (int64, error) {
 	var count int64
+	like := sqlutil.BuildLikePattern(query)
 	err := r.db.WithContext(ctx).Model(&Team{}).
 		Joins("LEFT JOIN users ON users.id = teams.captain_id").
-		Where("teams.name ILIKE ? OR users.name ILIKE ?", "%"+query+"%", "%"+query+"%").
+		Where("teams.name ILIKE ? OR users.name ILIKE ?", like, like).
 		Count(&count).Error
 	return count, err
 }
@@ -149,9 +150,10 @@ func (r *gormTeamRepo) ListAllPaginated(ctx context.Context, offset, limit int) 
 }
 func (r *gormTeamRepo) SearchPaginated(ctx context.Context, query string, offset, limit int) ([]Team, error) {
 	var teams []Team
+	like := sqlutil.BuildLikePattern(query)
 	err := r.db.WithContext(ctx).Preload("Captain").
 		Joins("LEFT JOIN users ON users.id = teams.captain_id").
-		Where("teams.name ILIKE ? OR users.name ILIKE ?", "%"+query+"%", "%"+query+"%").
+		Where("teams.name ILIKE ? OR users.name ILIKE ?", like, like).
 		Offset(offset).Limit(limit).Order("id DESC").
 		Find(&teams).Error
 	return teams, err
