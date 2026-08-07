@@ -13,29 +13,27 @@ import (
 )
 
 // testDSN возвращает DSN для подключения к тестовой PostgreSQL.
-// Использует переменные окружения или fallback на значения по умолчанию.
+// Приоритет переменных окружения:
+//  1. TEST_DB_* — кастомные значения именно для тестов;
+//  2. DB_* — стандартные переменные приложения (использует CI);
+//  3. значения по умолчанию для локальной разработки.
 func testDSN() string {
-	host := os.Getenv("TEST_DB_HOST")
-	if host == "" {
-		host = "localhost"
-	}
-	port := os.Getenv("TEST_DB_PORT")
-	if port == "" {
-		port = "5432"
-	}
-	user := os.Getenv("TEST_DB_USER")
-	if user == "" {
-		user = "test"
-	}
-	password := os.Getenv("TEST_DB_PASSWORD")
-	if password == "" {
-		password = "test"
-	}
-	dbname := os.Getenv("TEST_DB_NAME")
-	if dbname == "" {
-		dbname = "gengine_test"
-	}
+	host := firstNonEmpty(os.Getenv("TEST_DB_HOST"), os.Getenv("DB_HOST"), "localhost")
+	port := firstNonEmpty(os.Getenv("TEST_DB_PORT"), os.Getenv("DB_PORT"), "5432")
+	user := firstNonEmpty(os.Getenv("TEST_DB_USER"), os.Getenv("DB_USER"), "test")
+	password := firstNonEmpty(os.Getenv("TEST_DB_PASSWORD"), os.Getenv("DB_PASSWORD"), "test")
+	dbname := firstNonEmpty(os.Getenv("TEST_DB_NAME"), os.Getenv("DB_NAME"), "gengine_test")
 	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
+}
+
+// firstNonEmpty возвращает первый непустой аргумент.
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // SetupPostgresDB создаёт изолированную схему в тестовой PostgreSQL,
