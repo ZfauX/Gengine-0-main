@@ -212,9 +212,18 @@ func (s *NotificationService) Create(ctx context.Context, userID uint, ntype Not
 		s.sendWebSocketNotification(ctx, userID, notification)
 	}
 
-	// Отправляем Web Push подписанным устройствам
-	if err := s.sendWebPush(ctx, userID, notification); err != nil {
-		log.Warn().Err(err).Uint("user_id", userID).Msg("Notification: web push send failed")
+	// PF-2 (pass 29): Web Push отправляется асинхронно — синхронные HTTP-вызовы
+	// push-провайдеру (по всем подпискам) блокировали request-путь. Используем
+	// context.WithoutCancel: завершение запроса не должно отменять доставку.
+	if s.vapidCfg.PublicKey != "" && s.vapidCfg.PrivateKey != "" {
+		notif := *notification
+		uid := userID
+		go func() {
+			asyncCtx := context.WithoutCancel(ctx)
+			if err := s.sendWebPush(asyncCtx, uid, &notif); err != nil {
+				log.Warn().Err(err).Uint("user_id", uid).Msg("Notification: web push send failed")
+			}
+		}()
 	}
 
 	log.Debug().Uint("user_id", userID).Str("type", string(ntype)).Msg("Notification created")

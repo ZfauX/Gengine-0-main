@@ -131,3 +131,46 @@ func TestExportResultsToCSV_Empty(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Место,Команда,Общее время,Попыток\n", buf.String())
 }
+
+// MED-12 (pass 29): PDF/Excel-методы не были покрыты тестами.
+func TestExportGameToPDF(t *testing.T) {
+	svc, db, g := setupExportTest(t)
+	lvl := level.Level{GameID: g.ID, Name: "PDF Level", Position: 1}
+	require.NoError(t, db.Create(&lvl).Error)
+
+	var buf bytes.Buffer
+	err := svc.ExportGameToPDF(context.Background(), g.ID, &buf)
+	require.NoError(t, err)
+	// PDF-сигнатура: "%PDF-".
+	assert.True(t, bytes.HasPrefix(buf.Bytes(), []byte("%PDF-")), "должен быть валидный PDF")
+	assert.Greater(t, buf.Len(), 100)
+}
+
+func TestExportGameToExcel(t *testing.T) {
+	svc, db, g := setupExportTest(t)
+	lvl := level.Level{GameID: g.ID, Name: "Excel Level", Position: 1}
+	require.NoError(t, db.Create(&lvl).Error)
+
+	var buf bytes.Buffer
+	err := svc.ExportGameToExcel(context.Background(), g.ID, &buf)
+	require.NoError(t, err)
+	// XLSX — ZIP-архив: сигнатура PK\x03\x04.
+	assert.True(t, bytes.HasPrefix(buf.Bytes(), []byte("PK\x03\x04")), "должен быть валидный XLSX")
+	assert.Greater(t, buf.Len(), 100)
+}
+
+func TestExportGameToPDF_NoLevels(t *testing.T) {
+	svc, _, g := setupExportTest(t)
+	var buf bytes.Buffer
+	err := svc.ExportGameToPDF(context.Background(), g.ID, &buf)
+	require.NoError(t, err)
+	assert.True(t, bytes.HasPrefix(buf.Bytes(), []byte("%PDF-")))
+}
+
+func TestExportGameToExcel_NoLevels(t *testing.T) {
+	svc, _, g := setupExportTest(t)
+	var buf bytes.Buffer
+	err := svc.ExportGameToExcel(context.Background(), g.ID, &buf)
+	require.NoError(t, err)
+	assert.True(t, bytes.HasPrefix(buf.Bytes(), []byte("PK\x03\x04")))
+}

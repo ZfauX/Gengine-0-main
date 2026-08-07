@@ -202,15 +202,15 @@ func (h *CalendarHandler) CalendarICal(c *gin.Context) {
 		fmt.Fprintf(&sb, "DTSTAMP:%s\r\n", now.UTC().Format("20060102T150405Z"))
 		fmt.Fprintf(&sb, "DTSTART:%s\r\n", start.Format("20060102T150405Z"))
 		fmt.Fprintf(&sb, "DTEND:%s\r\n", end.Format("20060102T150405Z"))
-		fmt.Fprintf(&sb, "SUMMARY:%s\r\n", escapeICalText(g.Name))
+		fmt.Fprintf(&sb, "SUMMARY:%s\r\n", EscapeICalText(g.Name))
 		if g.Description != "" {
-			fmt.Fprintf(&sb, "DESCRIPTION:%s\r\n", escapeICalText(g.Description))
+			fmt.Fprintf(&sb, "DESCRIPTION:%s\r\n", EscapeICalText(g.Description))
 		}
 		baseURL := h.baseURL
 		if baseURL == "" {
 			// Fallback на Host из запроса, но только если это валидный host
 			// (host-header injection не должен попасть в iCal-ссылку).
-			baseURL = "https://" + sanitizeHost(c.Request.Host)
+			baseURL = "https://" + SanitizeHost(c.Request.Host)
 		}
 		fmt.Fprintf(&sb, "URL:%s/games/%d\r\n", baseURL, g.ID)
 		sb.WriteString("END:VEVENT\r\n")
@@ -223,17 +223,20 @@ func (h *CalendarHandler) CalendarICal(c *gin.Context) {
 	c.String(http.StatusOK, sb.String())
 }
 
-// escapeICalText экранирует спецсимволы для формата iCalendar.
-func escapeICalText(text string) string {
-	text = strings.ReplaceAll(text, `\\`, `\\\\`)
+// EscapeICalText экранирует спецсимволы для формата iCalendar.
+// Экспортирована для тестируемости (MED-13, pass 29).
+func EscapeICalText(text string) string {
+	// Сначала backslash (иначе экранированные далее символы станут двойными).
+	text = strings.ReplaceAll(text, `\`, `\\`)
 	text = strings.ReplaceAll(text, ";", `\;`)
 	text = strings.ReplaceAll(text, ",", `\,`)
 	text = strings.ReplaceAll(text, "\n", `\n`)
 	return text
 }
 
-// sanitizeHost разрешает только символы валидного hostname (латиница, цифры, точка, дефис, двоеточие для порта).
-func sanitizeHost(host string) string {
+// SanitizeHost разрешает только символы валидного hostname (латиница, цифры, точка, дефис, двоеточие для порта).
+// Экспортирована для тестируемости (MED-13, pass 29).
+func SanitizeHost(host string) string {
 	var sb strings.Builder
 	for _, r := range host {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '-' || r == ':' || r == '_' {

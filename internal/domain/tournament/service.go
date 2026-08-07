@@ -15,6 +15,17 @@ import (
 	"gorm.io/gorm"
 )
 
+// Sentinel-ошибки турнира (MED-4, pass 29): handler'ы различают
+// «нет прав»/«уже существует» через errors.Is, а не строки.
+var (
+	ErrTournamentEditForbidden   = stderrors.New("только автор может редактировать турнир")
+	ErrTournamentManageForbidden = stderrors.New("только автор турнира может добавлять игры")
+	ErrTournamentRemoveForbidden = stderrors.New("только автор турнира может удалять игры")
+	ErrGameAlreadyInTournament   = stderrors.New("игра уже в турнире")
+	ErrCaptainOnly               = stderrors.New("только капитан может подать заявку")
+	ErrTeamAlreadyInTournament   = stderrors.New("команда уже участвует в турнире")
+)
+
 type TournamentService struct {
 	db                   *gorm.DB
 	tournamentRepo       TournamentRepository
@@ -63,7 +74,7 @@ func (s *TournamentService) Update(ctx context.Context, id uint, updated *Tourna
 		return err
 	}
 	if t.AuthorID != userID {
-		return stderrors.New("только автор может редактировать турнир")
+		return ErrTournamentEditForbidden
 	}
 	t.Name = updated.Name
 	t.Description = updated.Description
@@ -82,7 +93,7 @@ func (s *TournamentService) AddGame(ctx context.Context, tournamentID, gameID, u
 		return err
 	}
 	if t.AuthorID != userID {
-		return stderrors.New("только автор турнира может добавлять игры")
+		return ErrTournamentManageForbidden
 	}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -91,7 +102,7 @@ func (s *TournamentService) AddGame(ctx context.Context, tournamentID, gameID, u
 			return err
 		}
 		if count > 0 {
-			return stderrors.New("игра уже в турнире")
+			return ErrGameAlreadyInTournament
 		}
 		var order int64
 		if err := tx.Model(&TournamentGame{}).Where("tournament_id = ?", tournamentID).Count(&order).Error; err != nil {
@@ -133,7 +144,7 @@ func (s *TournamentService) RemoveGame(ctx context.Context, tournamentID, gameID
 		return err
 	}
 	if t.AuthorID != userID {
-		return stderrors.New("только автор турнира может удалять игры")
+		return ErrTournamentRemoveForbidden
 	}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -217,12 +228,12 @@ func (s *TournamentService) GetAvailableGames(ctx context.Context, tournamentID,
 
 func (s *TournamentService) Apply(ctx context.Context, tournamentID, teamID, userID uint) error {
 	if !s.teamService.CanManageTeam(ctx, teamID, userID) {
-		return stderrors.New("только капитан может подать заявку")
+		return ErrCaptainOnly
 	}
 
 	_, getErr := s.tournamentTeamRepo.GetByTournamentAndTeam(ctx, tournamentID, teamID)
 	if getErr == nil {
-		return stderrors.New("команда уже участвует в турнире")
+		return ErrTeamAlreadyInTournament
 	}
 	if !stderrors.Is(getErr, gorm.ErrRecordNotFound) {
 		return getErr
@@ -258,7 +269,7 @@ func (s *TournamentService) Apply(ctx context.Context, tournamentID, teamID, use
 		}
 		if !added {
 			// Конкурентная заявка уже добавила команду (C-H3).
-			return stderrors.New("команда уже участвует в турнире")
+			return ErrTeamAlreadyInTournament
 		}
 		for _, g := range games {
 			if existingMap[g.ID] {

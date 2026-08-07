@@ -409,3 +409,31 @@ func TestCalendarHandler_Integration_CalendarData_OtherMonth(t *testing.T) {
 	assert.Contains(t, events, "2025-01-10")
 	assert.Len(t, events["2025-01-10"].([]interface{}), 1)
 }
+
+// MED-13 (pass 29): экранирование iCal и sanitize host были без тестов.
+func TestEscapeICalText(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{`plain`, `plain`},
+		{`a;b`, `a\;b`},
+		{`a,b`, `a\,b`},
+		{"line\nbreak", `line\nbreak`},
+		{`back\slash`, `back\\slash`}, // один backslash → экранируется как два,
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.want, calendar.EscapeICalText(tt.in), "EscapeICalText(%q)", tt.in)
+	}
+}
+
+func TestSanitizeHost(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"example.com", "example.com"},
+		{"example.com:8080", "example.com:8080"},
+		{"my-site_1.example", "my-site_1.example"},
+		{"exa mple.com", "exaxmple.com"}, // пробел → x
+		{"<script>", "xscriptx"},         // инъекция → нейтрализована
+		{"", "localhost"},
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.want, calendar.SanitizeHost(tt.in), "SanitizeHost(%q)", tt.in)
+	}
+}

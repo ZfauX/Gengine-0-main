@@ -221,53 +221,6 @@
                 if (form) form.submit();
             });
         }
-
-        // 2. Сохранение настроек уведомлений (без alert)
-        const saveBtn = document.getElementById('save-notifications-btn');
-        const msgContainer = document.getElementById('notification-settings-message');
-
-        function showMessage(text, colorClass = 'text-green-700') {
-            if (!msgContainer) return;
-            msgContainer.textContent = text;
-            msgContainer.className = 'mt-2 text-sm ' + colorClass;
-            msgContainer.classList.remove('hidden');
-            setTimeout(() => {
-                msgContainer.classList.add('hidden');
-            }, 3000);
-        }
-
-        if (saveBtn) {
-            saveBtn.addEventListener('click', function() {
-                const toggles = document.querySelectorAll('.notif-toggle');
-                const settings = {};
-                toggles.forEach(toggle => {
-                    const event = toggle.dataset.event;
-                    const channel = toggle.dataset.channel;
-                    if (!settings[event]) settings[event] = {};
-                    settings[event][channel] = toggle.checked;
-                });
-                fetch('/api/notifications/settings', {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
-                    },
-                    body: JSON.stringify(settings)
-                })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.status === 'ok') {
-                        showMessage('{{ T $.Lang "profile.settings_saved" }}', 'text-green-700');
-                    } else {
-                        showMessage('{{ T $.Lang "profile.settings_save_error" }}', 'text-red-600');
-                    }
-                })
-                .catch(err => {
-                    console.error('{{ T $.Lang "profile.settings_save_error" }}', err);
-                    showMessage('{{ T $.Lang "profile.settings_save_error" }}', 'text-red-600');
-                });
-            });
-        }
     })();
 </script>
 {{end}}
