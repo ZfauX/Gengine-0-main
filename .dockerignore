@@ -31,7 +31,10 @@ tailwind.config.js
 testutil/
 
 # Documentation (not needed in production)
-docs/
+# NB: docs/docs.go обязателен для сборки — cmd/server импортирует пакет docs
+# для SwaggerInfo. Исключаем только вспомогательные файлы документации.
+docs/*
+!docs/docs.go
 README.md
 CONTRIBUTING.md
 AGENTS.md
