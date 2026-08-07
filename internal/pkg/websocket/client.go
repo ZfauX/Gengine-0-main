@@ -113,7 +113,7 @@ func (c *Client) writePump(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Debug().Str("client_id", c.ID).Msg("writePump: context cancelled, stopping")
+			log.Debug().Str("client_id", c.ID).Msg("writePump: context canceled, stopping")
 			return
 		case <-c.done:
 			// Client closed — send close frame (we're the single writer)
@@ -173,7 +173,7 @@ func HandleWebSocketWithContext(ctx context.Context, client *Client) {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Debug().Str("client_id", client.ID).Msg("HandleWebSocketWithContext: context cancelled, stopping read loop")
+			log.Debug().Str("client_id", client.ID).Msg("HandleWebSocketWithContext: context canceled, stopping read loop")
 			return
 		case <-client.done:
 			log.Debug().Str("client_id", client.ID).Msg("HandleWebSocketWithContext: client closed")

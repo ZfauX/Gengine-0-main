@@ -49,7 +49,7 @@ func (s *GameAdminService) WithGameFinishedCallback(cb GameCompletionCallback) *
 	return s
 }
 
-// GameAdminService принудительно завершает игру с транзакцией и блокировками.
+// ForceFinishGame принудительно завершает игру с транзакцией и блокировками.
 // Требует прав модератора.
 func (s *GameAdminService) ForceFinishGame(ctx context.Context, gameID, userID uint) error {
 	var passings []GamePassing

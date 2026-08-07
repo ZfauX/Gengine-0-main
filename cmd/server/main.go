@@ -374,7 +374,7 @@ func run() error {
 		for {
 			select {
 			case <-ctx.Done():
-				log.Info().Msg("refresh token cleanup: context cancelled, stopping")
+				log.Info().Msg("refresh token cleanup: context canceled, stopping")
 				return
 			case <-ticker.C:
 				if err := deps.Services.Auth.CleanExpiredRefreshTokens(ctx); err != nil {

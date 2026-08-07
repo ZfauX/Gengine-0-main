@@ -71,7 +71,7 @@ func watchTemplates(baseDir, pattern string, funcMap template.FuncMap) {
 		log.Warn().Err(err).Msg("Render: fsnotify disabled")
 		return
 	}
-	defer watcher.Close()
+	defer func() { _ = watcher.Close() }()
 
 	// Watch all template directories
 	for _, dir := range []string{

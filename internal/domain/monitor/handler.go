@@ -482,7 +482,7 @@ func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 	}
 
 	// WebSocket lives beyond the HTTP handler — use a background context that is
-	// cancelled only when the connection goroutine finishes, NOT when the handler returns.
+	// canceled only when the connection goroutine finishes, NOT when the handler returns.
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
@@ -677,7 +677,7 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 	for {
 		select {
 		case <-wsCtx.Done():
-			log.Debug().Str("room_id", roomID).Msg("ChatWS: context cancelled, stopping read loop")
+			log.Debug().Str("room_id", roomID).Msg("ChatWS: context canceled, stopping read loop")
 			return
 		default:
 			if err := conn.SetReadDeadline(time.Now().Add(60 * time.Second)); err != nil {

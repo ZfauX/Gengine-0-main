@@ -246,7 +246,7 @@ func runPeriodic(db *gorm.DB, ctx context.Context, runner periodicRunner) {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Info().Msgf("periodicRunner: context cancelled, stopping")
+			log.Info().Msgf("periodicRunner: context canceled, stopping")
 			return
 		case <-ticker.C:
 			runner.fn(db, ctx)

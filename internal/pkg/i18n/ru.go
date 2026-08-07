@@ -786,7 +786,7 @@ var ruMessages = map[string]string{
 	"game.show_preview_hint_label":   "Подсказка: %s",
 	"game.show_deleting":             "Удаление...",
 	"game.show_delete_error":         "Ошибка при удалении",
-	"game.show_delete_cancelled":     "Удаление отменено",
+	"game.show_delete_canceled":      "Удаление отменено",
 	"game.show_cancel":               "Отмена",
 	"game.show_cover_alt":            "Обложка игры %s",
 	"game.show_preview_load_error":   "Ошибка загрузки",

@@ -724,7 +724,7 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 		} else {
 			userResp, userErr := client.Do(userReq)
 			if userErr == nil {
-				defer userResp.Body.Close()
+				defer func() { _ = userResp.Body.Close() }()
 				var vkInfo vkUserInfo
 				if decodeErr := json.NewDecoder(userResp.Body).Decode(&vkInfo); decodeErr == nil && len(vkInfo.Response) > 0 {
 					name = vkInfo.Response[0].FirstName + " " + vkInfo.Response[0].LastName

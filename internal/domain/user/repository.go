@@ -19,7 +19,7 @@ type UserSearchResult struct {
 	Email string
 }
 
-// Dashboard query rows (C1 — без *gorm.DB в сервисе).
+// DashboardGameRow — строка списка игр на дашборде (C1 — без *gorm.DB в сервисе).
 type DashboardGameRow struct {
 	ID      uint
 	Name    string

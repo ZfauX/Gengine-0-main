@@ -765,7 +765,7 @@ var enMessages = map[string]string{
 	"game.show_preview_hint_label":   "Hint: %s",
 	"game.show_deleting":             "Deleting...",
 	"game.show_delete_error":         "Error deleting",
-	"game.show_delete_cancelled":     "Deletion cancelled",
+	"game.show_delete_canceled":      "Deletion canceled",
 	"game.show_cancel":               "Cancel",
 	"game.show_cover_alt":            "Cover of %s",
 	"game.show_preview_load_error":   "Load error",

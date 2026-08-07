@@ -36,7 +36,7 @@ func CheckPasswordBreach(password string) (safe bool, count int, err error) {
 	if err != nil {
 		return false, 0, fmt.Errorf("failed to check password breach: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		return false, 0, fmt.Errorf("rate limited by HaveIBeenPwned API")

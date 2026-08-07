@@ -95,7 +95,7 @@ func (s *EmailService) StartWorker(ctx context.Context, interval time.Duration, 
 	for {
 		select {
 		case <-ctx.Done():
-			log.Info().Msg("Email worker: context cancelled, stopping")
+			log.Info().Msg("Email worker: context canceled, stopping")
 			return
 		case <-s.stop:
 			log.Info().Msg("Email worker: stopped")
@@ -211,7 +211,7 @@ func (s *EmailService) processPendingEmails(ctx context.Context, batchSize int) 
 			select {
 			case sem <- struct{}{}:
 			case <-ctx.Done():
-				log.Warn().Uint("email_id", e.ID).Msg("processPendingEmails goroutine: context cancelled before semaphore")
+				log.Warn().Uint("email_id", e.ID).Msg("processPendingEmails goroutine: context canceled before semaphore")
 				return
 			}
 			defer func() { <-sem }() // release semaphore
@@ -239,7 +239,7 @@ func (s *EmailService) SendSync(to, subject, body string) error {
 func (s *EmailService) sendEmailWithRetry(ctx context.Context, email *QueuedEmail) {
 	select {
 	case <-ctx.Done():
-		log.Warn().Uint("email_id", email.ID).Msg("sendEmailWithRetry: context cancelled, skipping")
+		log.Warn().Uint("email_id", email.ID).Msg("sendEmailWithRetry: context canceled, skipping")
 		return
 	default:
 	}
@@ -319,7 +319,7 @@ func (s *EmailService) scheduleRetry(ctx context.Context, emailID uint, currentA
 func (s *EmailService) processRetryJob(ctx context.Context, job retryJob) {
 	select {
 	case <-ctx.Done():
-		log.Warn().Uint("email_id", job.emailID).Msg("processRetryJob: context cancelled, skipping")
+		log.Warn().Uint("email_id", job.emailID).Msg("processRetryJob: context canceled, skipping")
 		return
 	default:
 	}
@@ -550,7 +550,7 @@ func SendBatch(cfg *config.Config, messages []EmailMessage) error {
 		if dialErr != nil {
 			return fmt.Errorf("failed to connect TLS: %w", dialErr)
 		}
-		defer tlsConn.Close()
+		defer func() { _ = tlsConn.Close() }()
 
 		c, clientErr := smtp.NewClient(tlsConn, cfg.SMTP.Host)
 		if clientErr != nil {
@@ -563,7 +563,7 @@ func SendBatch(cfg *config.Config, messages []EmailMessage) error {
 		if dialErr != nil {
 			return fmt.Errorf("failed to dial: %w", dialErr)
 		}
-		defer plainConn.Close()
+		defer func() { _ = plainConn.Close() }()
 
 		client = plainConn
 
@@ -623,7 +623,7 @@ func SendBatch(cfg *config.Config, messages []EmailMessage) error {
 			return fmt.Errorf("DATA command failed for %s: %w", msg.To, dataErr)
 		}
 		if _, writeErr := w.Write([]byte(message)); writeErr != nil {
-			w.Close()
+			_ = w.Close()
 			return fmt.Errorf("write failed for %s: %w", msg.To, writeErr)
 		}
 		if closeErr := w.Close(); closeErr != nil {

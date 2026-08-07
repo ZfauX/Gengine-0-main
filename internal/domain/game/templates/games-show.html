@@ -462,7 +462,7 @@
         undoDeleteBtn.addEventListener('click', function() {
             clearTimeout(deleteTimer);
             clearTimeout(undoTimer);
-            window.showToast('{{ T $.Lang "game.show_delete_cancelled" }}', 'success');
+            window.showToast('{{ T $.Lang "game.show_delete_canceled" }}', 'success');
             closeModal();
         });
     })();
