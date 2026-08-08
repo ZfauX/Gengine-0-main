@@ -112,12 +112,25 @@ func (m *mockGameRepo) GetLogsByGameID(ctx context.Context, gameID uint) ([]game
 	return args.Get(0).([]game.Log), args.Error(1)
 }
 
+func (m *mockGameRepo) GetLogsByGameIDPaginated(ctx context.Context, gameID uint, page, pageSize int) ([]game.Log, int64, error) {
+	args := m.Called(ctx, gameID, page, pageSize)
+	if args.Get(0) == nil {
+		return nil, args.Get(1).(int64), args.Error(2)
+	}
+	return args.Get(0).([]game.Log), args.Get(1).(int64), args.Error(2)
+}
+
 func (m *mockGameRepo) GetGameSettingByGameID(ctx context.Context, gameID uint) (*game.GameSetting, error) {
 	args := m.Called(ctx, gameID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*game.GameSetting), args.Error(1)
+}
+
+func (m *mockGameRepo) UpsertGameSetting(ctx context.Context, settings *game.GameSetting) error {
+	args := m.Called(ctx, settings)
+	return args.Error(0)
 }
 
 func (m *mockGameRepo) IsTeamCaptain(ctx context.Context, teamID, userID uint) (bool, error) {

@@ -282,8 +282,14 @@ func (r *gormUserRepo) GetByRole(ctx context.Context, role string) ([]User, erro
 
 func (r *gormUserRepo) GetUserRole(ctx context.Context, id uint) (string, error) {
 	var role string
-	err := r.db.WithContext(ctx).Table("users").Select("role").Where("id = ?", id).Scan(&role).Error
-	return role, err
+	// First (вместо Scan) — чтобы при отсутствующем пользователе вернуть
+	// gorm.ErrRecordNotFound (H5, pass 30). Scan молча заполняет нулём и
+	// role-provider не отличал удалённого пользователя → токен не отзывался.
+	err := r.db.WithContext(ctx).Table("users").Select("role").Where("id = ?", id).First(&role).Error
+	if err != nil {
+		return "", err
+	}
+	return role, nil
 }
 
 func (r *gormUserRepo) GetGamesView(ctx context.Context, userID uint) (string, error) {

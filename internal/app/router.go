@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"math"
 	"net/http"
 	"net/http/pprof"
 	"path/filepath"
@@ -211,22 +212,23 @@ func (app *App) setupEngine(r *gin.Engine) error {
 			c.Status(http.StatusBadRequest)
 			return
 		}
+		if len(payload.Page) > 128 {
+			payload.Page = payload.Page[:128]
+		}
 		metrics.IncRumPageLoad()
-		if payload.Vitals.LCP > 0 {
-			metrics.ObserveRumVital("lcp", payload.Vitals.LCP)
+		// Клампим значения (M1, pass 30): клиент может прислать мусор
+		// (1e300, NaN-подобные) и отравить гистограммы, по которым стоят алерты.
+		// Времена в секундах: LCP/INP/FCP/TTFB — до 60с, CLS — 0..1.
+		observeVital := func(name string, v, max float64) {
+			if v > 0 && v <= max && !math.IsNaN(v) && !math.IsInf(v, 0) {
+				metrics.ObserveRumVital(name, v)
+			}
 		}
-		if payload.Vitals.INP > 0 {
-			metrics.ObserveRumVital("inp", payload.Vitals.INP)
-		}
-		if payload.Vitals.CLS > 0 {
-			metrics.ObserveRumVital("cls", payload.Vitals.CLS)
-		}
-		if payload.Vitals.FCP > 0 {
-			metrics.ObserveRumVital("fcp", payload.Vitals.FCP)
-		}
-		if payload.Vitals.TTFB > 0 {
-			metrics.ObserveRumVital("ttfb", payload.Vitals.TTFB)
-		}
+		observeVital("lcp", payload.Vitals.LCP, 60)
+		observeVital("inp", payload.Vitals.INP, 60)
+		observeVital("cls", payload.Vitals.CLS, 1)
+		observeVital("fcp", payload.Vitals.FCP, 60)
+		observeVital("ttfb", payload.Vitals.TTFB, 60)
 		c.Status(http.StatusNoContent)
 	})
 
@@ -359,7 +361,7 @@ func (app *App) registerAdminRoutes(r *gin.RouterGroup) {
 }
 
 func (app *App) registerUserRoutes(r *gin.RouterGroup) {
-	user.RegisterRoutes(r, app.Config, app.Deps.Services.Auth, app.Deps.Services.User, app.Deps.Services.PasswordReset, app.Deps.Services.EmailVerif, app.Deps.Services.OAuth, app.Deps.AuditSvc, app.DB, app.LocalStorage, app.Deps.Services.Email, app.Deps.WebAuthn, app.Deps.Repos.User, app.Deps.Services.PushHandler)
+	user.RegisterRoutes(r, app.Config, app.Deps.Services.Auth, app.Deps.Services.User, app.Deps.Services.PasswordReset, app.Deps.Services.EmailVerif, app.Deps.Services.OAuth, app.Deps.AuditSvc, app.DB, app.LocalStorage, app.Deps.Services.Email, app.Deps.WebAuthn, app.Deps.Repos.User, app.Deps.Services.PushHandler, app.Deps.Services.TwoFactor, app.Deps.Services.Profile, app.Deps.Repos.Achiev, app.Deps.Services.UserDashboard)
 }
 
 func (app *App) registerGameRoutes(r *gin.RouterGroup) {
@@ -372,6 +374,7 @@ func (app *App) registerGameRoutes(r *gin.RouterGroup) {
 		GamePlaySvc: app.Deps.Services.GamePlay, GameAdminSvc: app.Deps.Services.GameAdmin,
 		ReviewService: app.Deps.Services.Review, GameplayHandler: app.Deps.Services.GameplayHandler,
 		PhotoService: app.Deps.Services.PhotoService, LevelService: app.Deps.Services.Level,
+		SimulateSvc: app.Deps.Services.Simulate,
 	})
 }
 

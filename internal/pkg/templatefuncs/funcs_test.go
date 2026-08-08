@@ -3,6 +3,7 @@ package templatefuncs
 import (
 	"html/template"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -129,4 +130,33 @@ func TestTruncate_Unicode(t *testing.T) {
 
 func TestTruncate_Zero(t *testing.T) {
 	assert.Equal(t, "...", truncate("hello", 0))
+}
+
+// H1 (pass 30): formatDate/formatDateTime должны принимать *time.Time.
+func TestFormatDate_TimeValue(t *testing.T) {
+	ts := time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)
+	assert.Equal(t, "08.08.2026", formatDate("ru", ts))
+	assert.Equal(t, "08 Aug 2026", formatDate("en", ts))
+}
+
+func TestFormatDate_Pointer(t *testing.T) {
+	ts := time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)
+	assert.Equal(t, "08.08.2026", formatDate("ru", &ts))
+	assert.Equal(t, "08 Aug 2026", formatDate("en", &ts))
+}
+
+func TestFormatDate_NilPointer(t *testing.T) {
+	assert.Equal(t, "", formatDate("ru", (*time.Time)(nil)))
+}
+
+func TestFormatDate_Invalid(t *testing.T) {
+	assert.Equal(t, "", formatDate("ru", "not a time"))
+	assert.Equal(t, "", formatDate("ru", nil))
+}
+
+func TestFormatDateTime_Pointer(t *testing.T) {
+	ts := time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)
+	assert.Equal(t, "08.08.2026 12:00", formatDateTime("ru", &ts))
+	assert.Equal(t, "08 Aug 2026 12:00", formatDateTime("en", &ts))
+	assert.Equal(t, "", formatDateTime("ru", (*time.Time)(nil)))
 }

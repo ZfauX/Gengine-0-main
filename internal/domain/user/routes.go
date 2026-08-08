@@ -32,16 +32,18 @@ func RegisterRoutes(
 	webauthnHandler *WebAuthnHandler,
 	userRepo UserRepository,
 	pushHandler *PushHandler,
+	twoFactorSvc *TwoFactorService,
+	profileSvc *ProfileService,
+	achievRepo AchievementRepository,
+	dashboardSvc *UserDashboardService,
 ) {
 	// Inject server config for Secure cookie detection (handles reverse proxy)
 	SetSecureCookieConfig = &cfg.Server
 
-	twoFactorSvc := NewTwoFactorService()
 	authHandler := NewAuthHandler(cfg, authSvc, userSvc, passwordResetSvc, emailVerifSvc, oauthSvc, auditSvc, emailSvc, twoFactorSvc)
-	profileSvc := NewProfileService(db)
 	profileHandler := NewProfileHandler(localStorage, authSvc, profileSvc, userSvc, cfg)
-	achievementHandler := NewAchievementHandler(NewGormAchievementRepo(db))
-	dashboardHandler := NewDashboardHandler(NewUserDashboardService(NewGormUserRepo(db)))
+	achievementHandler := NewAchievementHandler(achievRepo)
+	dashboardHandler := NewDashboardHandler(dashboardSvc)
 
 	twoFactorHandler := NewTwoFactorHandler(twoFactorSvc, authSvc, userRepo, cfg.JWT.AccessExpiry)
 

@@ -103,6 +103,8 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 		wrapCalendarHandler,
 		wrapPushHandler,
 		wrapProfileService,
+		wrapUserDashboardService,
+		wrapSimulateService,
 		wire.Bind(new(game.GameServiceInterface), new(*game.GameService)),
 		wire.Bind(new(game.GamePlayServiceInterface), new(*game.GamePlayService)),
 	)

@@ -11,7 +11,6 @@ import (
 	"gengine-0/internal/pkg/cache"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 func (s *GameService) GetUserGamesView(ctx context.Context, userID uint) string {
@@ -147,31 +146,7 @@ func (s *GameService) GetLogsByGameID(ctx context.Context, gameID uint) ([]Log, 
 
 // GetLogsByGameIDPaginated возвращает страницу логов игры.
 func (s *GameService) GetLogsByGameIDPaginated(ctx context.Context, gameID uint, page, pageSize int) ([]Log, int64, error) {
-	var total int64
-	db := s.db.WithContext(ctx).Session(&gorm.Session{NewDB: true})
-	if err := db.Model(&Log{}).
-		Joins("JOIN game_passings ON game_passings.id = logs.game_passing_id").
-		Where("game_passings.game_id = ?", gameID).
-		Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-	if page < 1 {
-		page = 1
-	}
-	if pageSize < 1 {
-		pageSize = 10
-	} else if pageSize > 100 {
-		pageSize = 100
-	}
-	offset := (page - 1) * pageSize
-	var logs []Log
-	err := db.
-		Joins("JOIN game_passings ON game_passings.id = logs.game_passing_id").
-		Where("game_passings.game_id = ?", gameID).
-		Order("logs.created_at ASC").
-		Limit(pageSize).Offset(offset).
-		Find(&logs).Error
-	return logs, total, err
+	return s.gameRepo.GetLogsByGameIDPaginated(ctx, gameID, page, pageSize)
 }
 
 // GetSettingsWithDefaults загружает настройки игры или возвращает значения по умолчанию.
@@ -198,19 +173,8 @@ func (s *GameService) SaveSettings(ctx context.Context, gameID uint, input GameS
 		AutoStart:                input.AutoStart,
 	}
 
-	// Единый upsert (B4): update-then-insert имел гонку — два параллельных
-	// первых сохранения оба видели 0 затронутых строк и оба делали Create.
-	if err := s.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "game_id"}},
-		DoUpdates: clause.Assignments(map[string]any{
-			"allow_hints":                 settings.AllowHints,
-			"hint_penalty_seconds":        settings.HintPenaltySeconds,
-			"max_hints":                   settings.MaxHints,
-			"per_level_time_limit":        settings.PerLevelTimeLimit,
-			"hide_answers_until_finished": settings.HideAnswersUntilFinished,
-			"auto_start":                  settings.AutoStart,
-		}),
-	}).Create(&settings).Error; err != nil {
+	// Единый upsert в репозитории (H6, pass 30 — сырой SQL не в сервисе).
+	if err := s.gameRepo.UpsertGameSetting(ctx, &settings); err != nil {
 		return nil, err
 	}
 

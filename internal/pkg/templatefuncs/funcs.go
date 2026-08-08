@@ -150,9 +150,10 @@ func initials(s interface{}) string {
 
 // formatDate форматирует дату локализованно (C9): ru → "02.01.2006",
 // en → "02 Jan 2006". Вместо жёсткого "02.01.2006" в шаблонах.
-// Принимает interface{} — nil и не-time значения возвращают пустую строку.
+// Принимает time.Time или *time.Time (H1, pass 30 — поля модели часто
+// указатели); nil и не-time значения возвращают пустую строку.
 func formatDate(lang interface{}, t interface{}) string {
-	ts, ok := t.(time.Time)
+	ts, ok := asTime(t)
 	if !ok {
 		return ""
 	}
@@ -169,7 +170,7 @@ func formatDate(lang interface{}, t interface{}) string {
 // formatDateTime форматирует дату и время локализованно (C9).
 // ru → "02.01.2006 15:04", en → "02 Jan 2006 15:04".
 func formatDateTime(lang interface{}, t interface{}) string {
-	ts, ok := t.(time.Time)
+	ts, ok := asTime(t)
 	if !ok {
 		return ""
 	}
@@ -181,4 +182,20 @@ func formatDateTime(lang interface{}, t interface{}) string {
 		return ts.Format("02 Jan 2006 15:04")
 	}
 	return ts.Format("02.01.2006 15:04")
+}
+
+// asTime принимает time.Time или *time.Time и возвращает разыменованное
+// значение. nil-указатель и не-time типы дают ok=false.
+func asTime(v interface{}) (time.Time, bool) {
+	switch t := v.(type) {
+	case time.Time:
+		return t, true
+	case *time.Time:
+		if t == nil {
+			return time.Time{}, false
+		}
+		return *t, true
+	default:
+		return time.Time{}, false
+	}
 }

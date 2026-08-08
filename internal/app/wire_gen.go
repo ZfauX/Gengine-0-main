@@ -119,6 +119,7 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	teamService := wrapTeamService(teamRepository)
 	gamePassingService := wrapGamePassingService(db, teamService, coAuthorService, levelProgressService, hub, monitorService, sseManager)
 	gameplayHandler := wrapGameplayHandler(gameService, gamePlayService, attemptService, levelProgressService, monitorService, hub, localStorage)
+	simulateService := wrapSimulateService(db, coAuthorService)
 	levelRepository := repos.Level
 	questionRepository := repos.Question
 	answerRepository := repos.Answer
@@ -151,6 +152,7 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	pushSubscriptionRepository := repos.PushSub
 	pushHandler := wrapPushHandler(pushSubscriptionRepository, cfg)
 	profileService := wrapProfileService(db)
+	userDashboardService := wrapUserDashboardService(userRepository)
 	appServices := &services{
 		Auth:            authService,
 		RefreshToken:    refreshTokenService,
@@ -173,6 +175,7 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 		Progress:        levelProgressService,
 		Monitor:         monitorService,
 		Rating:          ratingService,
+		Simulate:        simulateService,
 		SSEMgr:          sseManager,
 		Level:           levelService,
 		Question:        questionService,
@@ -189,6 +192,7 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 		CalendarHandler: calendarHandler,
 		PushHandler:     pushHandler,
 		Profile:         profileService,
+		UserDashboard:   userDashboardService,
 	}
 	return appServices, nil
 }

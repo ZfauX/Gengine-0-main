@@ -162,3 +162,15 @@ func wrapPushHandler(pushRepo user.PushSubscriptionRepository, cfg *config.Confi
 func wrapProfileService(db *gorm.DB) *user.ProfileService {
 	return user.NewProfileService(db)
 }
+
+// wrapUserDashboardService — дашборд пользователя (M16, pass 30: раньше
+// создавался локально в routes с ручным NewGormUserRepo, что обходило DI).
+func wrapUserDashboardService(userRepo user.UserRepository) *user.UserDashboardService {
+	return user.NewUserDashboardService(userRepo)
+}
+
+// wrapSimulateService — симуляция прохождения (M17, pass 30: раньше
+// создавался локально в game/routes.go, не входил в DI-граф).
+func wrapSimulateService(db *gorm.DB, coAuthorSvc *game.CoAuthorService) *game.SimulateService {
+	return game.NewSimulateService(db, coAuthorSvc)
+}

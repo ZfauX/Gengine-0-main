@@ -93,7 +93,7 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 			COUNT(*) OVER() AS total_count
 		FROM games
 		LEFT JOIN users ON users.id = games.author_id
-		WHERE (games.visibility = 'public' OR games.author_id = ?) AND (games.is_draft = false OR games.author_id = ?)`)
+		WHERE games.deleted_at IS NULL AND (games.visibility = 'public' OR games.author_id = ?) AND (games.is_draft = false OR games.author_id = ?)`)
 
 	// Рейтинг и участники прекомпьютится в колонках games.rating_value /
 	// games.participant_count (миграция 000027 + триггеры) — без агрегаций на каждый запрос (P3).

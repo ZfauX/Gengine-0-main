@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // GameRepository определяет контракт для работы с играми.
@@ -25,7 +26,9 @@ type GameRepository interface {
 	GetPassingByUser(ctx context.Context, gameID, userID uint) (*GamePassing, error)
 	GetFinishedPassingByGameAndTeam(ctx context.Context, gameID, teamID uint) (*GamePassing, error)
 	GetLogsByGameID(ctx context.Context, gameID uint) ([]Log, error)
+	GetLogsByGameIDPaginated(ctx context.Context, gameID uint, page, pageSize int) ([]Log, int64, error)
 	GetGameSettingByGameID(ctx context.Context, gameID uint) (*GameSetting, error)
+	UpsertGameSetting(ctx context.Context, settings *GameSetting) error
 	IsTeamCaptain(ctx context.Context, teamID, userID uint) (bool, error)
 }
 
@@ -139,6 +142,36 @@ func (r *gormGameRepo) GetLogsByGameID(ctx context.Context, gameID uint) ([]Log,
 	return logs, err
 }
 
+// GetLogsByGameIDPaginated возвращает страницу логов игры (H6, pass 30 —
+// перенесено из svc_facade: сырой SQL должен жить в репозитории).
+func (r *gormGameRepo) GetLogsByGameIDPaginated(ctx context.Context, gameID uint, page, pageSize int) ([]Log, int64, error) {
+	var total int64
+	db := r.db.WithContext(ctx).Session(&gorm.Session{NewDB: true})
+	if err := db.Model(&Log{}).
+		Joins("JOIN game_passings ON game_passings.id = logs.game_passing_id").
+		Where("game_passings.game_id = ?", gameID).
+		Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 10
+	} else if pageSize > 100 {
+		pageSize = 100
+	}
+	offset := (page - 1) * pageSize
+	var logs []Log
+	err := db.
+		Joins("JOIN game_passings ON game_passings.id = logs.game_passing_id").
+		Where("game_passings.game_id = ?", gameID).
+		Order("logs.created_at ASC").
+		Limit(pageSize).Offset(offset).
+		Find(&logs).Error
+	return logs, total, err
+}
+
 func (r *gormGameRepo) GetGameSettingByGameID(ctx context.Context, gameID uint) (*GameSetting, error) {
 	var settings GameSetting
 	err := r.db.WithContext(ctx).Where("game_id = ?", gameID).First(&settings).Error
@@ -146,6 +179,22 @@ func (r *gormGameRepo) GetGameSettingByGameID(ctx context.Context, gameID uint) 
 		return nil, err
 	}
 	return &settings, nil
+}
+
+// UpsertGameSetting сохраняет или обновляет настройки одним upsert-запросом
+// (H6, pass 30). Единый OnConflict (B4): update-then-insert имел гонку.
+func (r *gormGameRepo) UpsertGameSetting(ctx context.Context, settings *GameSetting) error {
+	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "game_id"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			"allow_hints":                 settings.AllowHints,
+			"hint_penalty_seconds":        settings.HintPenaltySeconds,
+			"max_hints":                   settings.MaxHints,
+			"per_level_time_limit":        settings.PerLevelTimeLimit,
+			"hide_answers_until_finished": settings.HideAnswersUntilFinished,
+			"auto_start":                  settings.AutoStart,
+		}),
+	}).Create(settings).Error
 }
 
 func (r *gormGameRepo) IsTeamCaptain(ctx context.Context, teamID, userID uint) (bool, error) {

@@ -26,6 +26,7 @@ type GameDeps struct {
 	AttemptSvc      *AttemptService
 	ProgressSvc     *LevelProgressService
 	MonitorSvc      *MonitorService
+	SimulateSvc     *SimulateService
 	LocalStorage    storage.FileStorage
 	Hub             *ws.RoomHub
 	Cfg             *config.Config
@@ -41,7 +42,6 @@ type GameDeps struct {
 
 // RegisterRoutes регистрирует маршруты для игр, используя готовые обработчики.
 func RegisterRoutes(r *gin.RouterGroup, deps *GameDeps) {
-	db := deps.DB
 	gameService := deps.GameService
 	passingService := deps.PassingService
 	coAuthorSvc := deps.CoAuthorSvc
@@ -53,7 +53,7 @@ func RegisterRoutes(r *gin.RouterGroup, deps *GameDeps) {
 	gameplayHandler := deps.GameplayHandler
 	photoService := deps.PhotoService
 	levelService := deps.LevelService
-	simulateService := NewSimulateService(db, coAuthorSvc)
+	simulateService := deps.SimulateSvc
 
 	gameHandler := NewGameHandler(
 		gameService,

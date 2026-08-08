@@ -9,6 +9,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"gengine-0/internal/config"
@@ -25,6 +26,22 @@ import (
 func httpClientWithTimeout(timeout time.Duration) *http.Client {
 	return &http.Client{
 		Timeout: timeout,
+	}
+}
+
+// extraString безопасно приводит oauth2.Extra-значение к строке (H4, pass 30).
+// VK отдаёт user_id числом (float64), а Yandex — строкой; тихая потеря
+// приводила к пустому externalID и невозможности связать аккаунт.
+func extraString(v interface{}) string {
+	switch val := v.(type) {
+	case string:
+		return val
+	case float64:
+		return strconv.FormatFloat(val, 'f', -1, 64)
+	case json.Number:
+		return val.String()
+	default:
+		return ""
 	}
 }
 
@@ -164,7 +181,7 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 		if emailStr == "" {
 			return nil, stderrors.New("не удалось получить email от VK")
 		}
-		externalID, _ = token.Extra("user_id").(string)
+		externalID = extraString(token.Extra("user_id"))
 
 		userReq, reqErr := http.NewRequestWithContext(ctxWithClient, "GET",
 			"https://api.vk.com/method/users.get?v=5.131&user_ids="+externalID, nil)

@@ -78,6 +78,7 @@ type services struct {
 	Progress        *game.LevelProgressService
 	Monitor         *game.MonitorService
 	Rating          *game.RatingService
+	Simulate        *game.SimulateService
 	SSEMgr          *game.SSEManager
 	Level           *level.LevelService
 	Question        *level.QuestionService
@@ -94,6 +95,7 @@ type services struct {
 	CalendarHandler *calendar.CalendarHandler
 	PushHandler     *user.PushHandler
 	Profile         *user.ProfileService
+	UserDashboard   *user.UserDashboardService
 }
 
 func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.RoomHub, localStorage storage.FileStorage, appCache cache.CacheStore) (*services, error) {
