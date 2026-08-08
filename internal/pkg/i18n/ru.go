@@ -968,6 +968,7 @@ var ruMessages = map[string]string{
 	"gameplay.back_to_game":              "← Назад к игре",
 	"gameplay.sending":                   "Отправка...",
 	"gameplay.hint_loading":              "Загрузка...",
+	"gameplay.sse_connection_lost":       "Соединение потеряно. Переподключение...",
 	"gameplay.level_completed":           "🎉 Уровень пройден!",
 	"gameplay.level_completed_with_name": "🎉 Уровень «%s» пройден!",
 	"gameplay.time_warning":              "⏰ Осталось %d минут!",
@@ -1138,6 +1139,7 @@ var ruMessages = map[string]string{
 	"team.remove_member_confirm": "Удалить участника?",
 	"team.chat_title_name":       "Чат команды «%s»",
 	"team.yourself":              "Вы",
+	"team.unread_messages":       "Новые сообщения: %d ↓",
 
 	// ── Invitations ──
 	"invitation.my_title":            "Мои приглашения",
@@ -1188,6 +1190,7 @@ var ruMessages = map[string]string{
 	"gamechat.room_error":        "Комната не найдена",
 	"gamechat.load_error":        "Ошибка загрузки комнат чата",
 	"gamechat.unknown_user":      "Неизвестный",
+	"gamechat.unread_messages":   "Новые сообщения: %d ↓",
 
 	// ── Monitor ──
 	"monitor.page_title":         "Мониторинг игры (обновляется в реальном времени)",

@@ -14,7 +14,7 @@
             <label for="name" class="form-label">{{ T $.Lang "common.name" }}</label>
             <input type="text" name="name" id="name" required
                    class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.name}}border-red-500{{end}}">
-            {{if .Errors.name}}{{if .Errors.name}}<p class="field-error">{{.Errors.name}}</p>{{end}}{{end}}
+            {{if .Errors.name}}<p class="field-error">{{.Errors.name}}</p>{{end}}
         </div>
 
         <!-- Описание -->
@@ -22,7 +22,7 @@
             <label for="description" class="form-label">{{ T $.Lang "common.description" }}</label>
             <textarea name="description" id="description" rows="4"
                       class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.description}}border-red-500{{end}}"></textarea>
-            {{if .Errors.description}}{{if .Errors.description}}<p class="field-error">{{.Errors.description}}</p>{{end}}{{end}}
+            {{if .Errors.description}}<p class="field-error">{{.Errors.description}}</p>{{end}}
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">

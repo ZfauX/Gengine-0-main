@@ -35,7 +35,7 @@
                 <label for="code" class="form-label">{{ T $.Lang "answer.code_label" }}</label>
                 <input type="text" name="code" id="code" placeholder='{{ T $.Lang "answer.code_placeholder" }}' required
                        class="w-full rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.code}}border-red-500{{else}}border-gray-300 dark:border-gray-600{{end}}">
-                {{if .Errors.code}}{{if .Errors.code}}<p class="field-error">{{.Errors.code}}</p>{{end}}{{end}}
+                {{if .Errors.code}}<p class="field-error">{{.Errors.code}}</p>{{end}}
             </div>
             <button type="submit" class="btn btn-primary text-sm whitespace-nowrap">{{ T $.Lang "answer.add_button" }}</button>
         </form>

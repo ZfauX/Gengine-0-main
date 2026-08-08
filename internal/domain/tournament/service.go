@@ -221,7 +221,7 @@ func (s *TournamentService) RemoveGame(ctx context.Context, tournamentID, gameID
 	}
 	// F-5 (pass 31): инвалидируем кэш лидерборда турнира.
 	if s.cache != nil {
-		s.cache.DeleteWithCtx(context.Background(), fmt.Sprintf("tournament:leaderboard:%d", tournamentID))
+		s.cache.DeleteWithCtx(ctx, fmt.Sprintf("tournament:leaderboard:%d", tournamentID))
 	}
 	return nil
 }
@@ -459,7 +459,7 @@ func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint
 	}
 	// F-5 (pass 31): инвалидируем кэш лидерборда турнира.
 	if s.cache != nil {
-		s.cache.DeleteWithCtx(context.Background(), fmt.Sprintf("tournament:leaderboard:%d", tg.TournamentID))
+		s.cache.DeleteWithCtx(ctx, fmt.Sprintf("tournament:leaderboard:%d", tg.TournamentID))
 	}
 }
 

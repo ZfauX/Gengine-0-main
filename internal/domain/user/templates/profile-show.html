@@ -41,13 +41,13 @@
                         <label for="name" class="form-label">{{ T $.Lang "profile.name_label" }}</label>
 <input type="text" name="name" id="name" value="{{.User.Name}}" required
                        class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-500 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Name}}border-red-500{{end}}">
-                        {{if .Errors.Name}}{{if .Errors.Name}}<p class="field-error">{{.Errors.Name}}</p>{{end}}{{end}}
+                        {{if .Errors.Name}}<p class="field-error">{{.Errors.Name}}</p>{{end}}
                     </div>
                     <div>
                         <label for="email" class="form-label">{{ T $.Lang "profile.email_label" }}</label>
                         <input type="email" name="email" id="email" value="{{.UserEmail}}" required
                                class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-500 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Email}}border-red-500{{end}}">
-                        {{if .Errors.Email}}{{if .Errors.Email}}<p class="field-error">{{.Errors.Email}}</p>{{end}}{{end}}
+                        {{if .Errors.Email}}<p class="field-error">{{.Errors.Email}}</p>{{end}}
                     </div>
                     <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "profile.save_changes" }}</button>
                 </form>

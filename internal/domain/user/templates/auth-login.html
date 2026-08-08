@@ -14,14 +14,14 @@
                 <label for="email" class="form-label">{{ T $.Lang "common.email" }}</label>
                 <input type="email" name="email" id="email" required autocomplete="email"
                        class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-500 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Email}}border-red-500{{end}}">
-                {{if .Errors.Email}}{{if .Errors.Email}}<p class="field-error">{{.Errors.Email}}</p>{{end}}{{end}}
+                {{if .Errors.Email}}<p class="field-error">{{.Errors.Email}}</p>{{end}}
             </div>
 
             <div>
                 <label for="password" class="form-label">{{ T $.Lang "auth.password_label" }}</label>
                 <input type="password" name="password" id="password" required autocomplete="current-password"
                        class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-500 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Password}}border-red-500{{end}}">
-                {{if .Errors.Password}}{{if .Errors.Password}}<p class="field-error">{{.Errors.Password}}</p>{{end}}{{end}}
+                {{if .Errors.Password}}<p class="field-error">{{.Errors.Password}}</p>{{end}}
             </div>
 
             <button type="submit" id="loginBtn" data-no-loading class="w-full btn btn-primary text-sm">{{ T $.Lang "auth.login_button" }}</button>

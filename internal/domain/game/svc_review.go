@@ -27,8 +27,8 @@ func (s *ReviewService) WithCache(c cache.CacheStore) *ReviewService {
 	return s
 }
 
-func (s *ReviewService) CanReview(gameID, userID uint) (bool, error) {
-	return s.repo.CanReview(context.Background(), gameID, userID)
+func (s *ReviewService) CanReview(ctx context.Context, gameID, userID uint) (bool, error) {
+	return s.repo.CanReview(ctx, gameID, userID)
 }
 
 // Create создаёт отзыв. ctx — контекст запроса (A-10, pass 31).
@@ -37,7 +37,7 @@ func (s *ReviewService) Create(ctx context.Context, gameID, userID uint, rating 
 	if rating < 1 || rating > 5 {
 		return errors.New("рейтинг должен быть от 1 до 5")
 	}
-	can, err := s.CanReview(gameID, userID)
+	can, err := s.CanReview(ctx, gameID, userID)
 	if err != nil {
 		return err
 	}

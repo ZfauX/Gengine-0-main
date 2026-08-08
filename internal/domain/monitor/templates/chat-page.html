@@ -12,15 +12,23 @@
         </div>
 
         <!-- Область сообщений -->
-        <div id="chat-messages" role="log" aria-live="polite" aria-relevant="additions" class="h-96 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-800 mb-3">
-            <!-- C1: skeleton-заглушка до загрузки истории -->
-            <div id="chat-skeleton" class="space-y-3" aria-hidden="true">
-                <div class="skeleton h-4 w-1/2"></div>
-                <div class="skeleton h-4 w-2/3"></div>
-                <div class="skeleton h-4 w-1/3"></div>
-                <div class="skeleton h-4 w-3/4"></div>
-                <div class="skeleton h-4 w-1/2"></div>
+        <div class="relative">
+            <div id="chat-messages" role="log" aria-live="polite" aria-relevant="additions" class="h-96 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-800 mb-3">
+                <!-- C1: skeleton-заглушка до загрузки истории -->
+                <div id="chat-skeleton" class="space-y-3" aria-hidden="true">
+                    <div class="skeleton h-4 w-1/2"></div>
+                    <div class="skeleton h-4 w-2/3"></div>
+                    <div class="skeleton h-4 w-1/3"></div>
+                    <div class="skeleton h-4 w-3/4"></div>
+                    <div class="skeleton h-4 w-1/2"></div>
+                </div>
             </div>
+            <!-- UX-6 (pass 35): бейдж «новые сообщения» — появляется, когда
+                 пришло сообщение, а пользователь читает выше. -->
+            <button id="chat-unread-badge" type="button"
+                    class="hidden absolute bottom-6 left-1/2 -translate-x-1/2 z-10 btn btn-primary text-xs shadow-lg"
+                    aria-label="{{ T $.Lang "gamechat.unread_messages" }}"
+                    onclick="document.getElementById('chat-messages').scrollTo({top: document.getElementById('chat-messages').scrollHeight, behavior: 'smooth'}); this.classList.add('hidden');"></button>
         </div>
 
         <!-- Поле ввода и отправка -->
@@ -165,7 +173,32 @@
             // U-6: авто-скролл только если пользователь уже у низа — иначе
             // новые сообщения не дёргают читающего выше.
             const nearBottom = chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight < 80;
-            if (nearBottom) chatMessages.scrollTop = chatMessages.scrollHeight;
+            if (nearBottom) {
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+                hideUnreadBadge();
+            } else {
+                // UX-6 (pass 35): пришло сообщение, читающий выше — показываем
+                // счётчик непрочитанных вместо принудительного скролла.
+                bumpUnreadBadge();
+            }
+        }
+
+        // UX-6 (pass 35): счётчик непрочитанных сообщений в чате.
+        let unreadCount = 0;
+        const chatUnreadBadge = document.getElementById('chat-unread-badge');
+        const badgeLabel = '{{ T $.Lang "gamechat.unread_messages" }}';
+
+        function bumpUnreadBadge() {
+            if (!chatUnreadBadge) return;
+            unreadCount++;
+            chatUnreadBadge.textContent = badgeLabel.replace('%d', String(unreadCount));
+            chatUnreadBadge.classList.remove('hidden');
+        }
+
+        function hideUnreadBadge() {
+            if (!chatUnreadBadge) return;
+            unreadCount = 0;
+            chatUnreadBadge.classList.add('hidden');
         }
 
         function escapeHtml(text) {

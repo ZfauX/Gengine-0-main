@@ -15,7 +15,7 @@
                 <label for="password" class="form-label">{{ T $.Lang "auth.new_password_label" }}</label>
                 <input type="password" name="password" id="password" required minlength="8" autocomplete="new-password"
                        class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Password}}border-red-500{{end}}">
-                {{if .Errors.Password}}{{if .Errors.Password}}<p class="field-error">{{.Errors.Password}}</p>{{end}}{{end}}
+                {{if .Errors.Password}}<p class="field-error">{{.Errors.Password}}</p>{{end}}
             </div>
 
             <button type="submit" id="resetBtn" class="w-full btn btn-primary text-sm">{{ T $.Lang "auth.reset_button" }}</button>

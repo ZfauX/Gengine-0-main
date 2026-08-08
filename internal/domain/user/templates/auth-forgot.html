@@ -18,7 +18,7 @@
                 <input type="email" name="email" id="email" required
                        class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.Email}}border-red-500{{end}}"
                        >
-                {{if .Errors.Email}}{{if .Errors.Email}}<p class="field-error">{{.Errors.Email}}</p>{{end}}{{end}}
+                {{if .Errors.Email}}<p class="field-error">{{.Errors.Email}}</p>{{end}}
             </div>
 
             <button type="submit" class="w-full btn btn-primary text-sm">{{ T $.Lang "auth.forgot_submit" }}</button>

@@ -160,7 +160,10 @@ func subscribeMonitor(gameID uint, snapFn func(context.Context) ([]byte, error))
 		poller.wg.Add(1)
 		go func() {
 			defer poller.wg.Done()
-			ticker := time.NewTicker(1 * time.Second)
+			// F-3 (pass 35): 5с вместо 1с — GetOrFetchSnapshot кэширует снапшот
+			// на 30с, значит реальный запрос к БД всё равно не чаще раза в 30с,
+			// а пустые вызовы snapFn сокращаются в 5 раз (60 → 12 вызовов/мин).
+			ticker := time.NewTicker(5 * time.Second)
 			defer ticker.Stop()
 
 			for {

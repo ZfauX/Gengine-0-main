@@ -966,6 +966,7 @@ var enMessages = map[string]string{
 	"gameplay.back_to_game":              "← Back to game",
 	"gameplay.sending":                   "Sending...",
 	"gameplay.hint_loading":              "Loading...",
+	"gameplay.sse_connection_lost":       "Connection lost. Reconnecting...",
 	"gameplay.level_completed":           "🎉 Level completed!",
 	"gameplay.level_completed_with_name": "🎉 Level \"%s\" completed!",
 	"gameplay.time_warning":              "⏰ %d minutes remaining!",
@@ -1136,6 +1137,7 @@ var enMessages = map[string]string{
 	"team.remove_member_confirm": "Remove member?",
 	"team.chat_title_name":       "Team «%s» chat",
 	"team.yourself":              "You",
+	"team.unread_messages":       "New messages: %d ↓",
 
 	// ── Invitations ──
 	"invitation.my_title":            "My invitations",
@@ -1186,6 +1188,7 @@ var enMessages = map[string]string{
 	"gamechat.room_error":        "Room not found",
 	"gamechat.load_error":        "Failed to load chat rooms",
 	"gamechat.unknown_user":      "Unknown",
+	"gamechat.unread_messages":   "New messages: %d ↓",
 
 	// ── Monitor ──
 	"monitor.page_title":         "Game monitor (real-time updates)",

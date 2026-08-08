@@ -42,7 +42,7 @@ func (h *ReviewHandler) ShowForm(c *gin.Context) {
 	gameID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
 
-	can, err := h.reviewService.CanReview(uint(gameID), userID)
+	can, err := h.reviewService.CanReview(c.Request.Context(), uint(gameID), userID)
 	if err != nil || !can {
 		render.RenderError(c, http.StatusForbidden, "Вы не можете оставить отзыв")
 		return

@@ -529,9 +529,18 @@
                 }
             });
 
+            eventSource.onopen = function() {
+                // UX-8 (pass 35): соединение восстановлено — сбрасываем флаг.
+                window.__sseLostShown = false;
+            };
+
             eventSource.onerror = function() {
-                // SSE connection lost — try reconnecting
-                // EventSource auto-reconnects, but we can show a toast
+                // SSE connection lost — EventSource auto-reconnects.
+                // UX-8 (pass 35): показываем toast о потере соединения (без спама).
+                if (window.__sseLostShown) return;
+                window.__sseLostShown = true;
+                showToast('{{ T $.Lang "gameplay.sse_connection_lost" }}', 'warning', 6000);
+                setTimeout(function() { window.__sseLostShown = false; }, 8000);
             };
 
             // Close on page unload
