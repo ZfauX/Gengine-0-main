@@ -164,10 +164,11 @@ func createBlackboxLevel(t *testing.T, db *gorm.DB, gameID uint, name string, po
 func setupGameAdminTest(t *testing.T) (*gorm.DB, *game.GameAdminService, *game.LevelProgressService) {
 	t.Helper()
 	db := testutil.SetupPostgresDB(t, allModels...)
-	coAuthorSvc := game.NewCoAuthorService(db)
+	coAuthorSvc := game.NewCoAuthorService(db).WithRepository(game.NewGormCoAuthorRepo(db))
 	cfg := &config.Config{}
-	adminSvc := game.NewGameAdminService(db, coAuthorSvc, cfg)
-	progressSvc := game.NewLevelProgressService(db)
+	adminSvc := game.NewGameAdminService(db, coAuthorSvc, cfg).
+		WithRepositories(team.NewGormTeamRepo(db), user.NewGormUserRepo(db))
+	progressSvc := game.NewLevelProgressService(db).WithRepository(game.NewGormLevelProgressRepo(db))
 	return db, adminSvc, progressSvc
 }
 

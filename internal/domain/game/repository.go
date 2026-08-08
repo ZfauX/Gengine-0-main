@@ -67,6 +67,9 @@ type GamePassingRepository interface {
 	ListByGamePaginated(ctx context.Context, gameID uint, page, pageSize int) ([]GamePassing, int64, error)
 	ListTestPassings(ctx context.Context, gameID uint) ([]GamePassing, error)
 	Save(ctx context.Context, passing *GamePassing) error
+	// GetByIDWithGame загружает Passing с присоединённой Game (A-H1, pass 34:
+	// перенесено из GamePlayService.GetPassingWithGame — убирает s.db read).
+	GetByIDWithGame(ctx context.Context, id uint) (*GamePassing, error)
 }
 
 // ---------- GORM implementations ----------
@@ -396,6 +399,16 @@ func (r *gormGamePassingRepo) GetByID(ctx context.Context, id uint) (*GamePassin
 	var p GamePassing
 	err := r.db.WithContext(ctx).First(&p, id).Error
 	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+// GetByIDWithGame загружает прохождение с присоединённой Game одним SQL-запросом
+// (A-H1, pass 34: JOIN-оптимизация перенесена из GamePlayService.GetPassingWithGame).
+func (r *gormGamePassingRepo) GetByIDWithGame(ctx context.Context, id uint) (*GamePassing, error) {
+	var p GamePassing
+	if err := r.db.WithContext(ctx).Joins("Game").First(&p, id).Error; err != nil {
 		return nil, err
 	}
 	return &p, nil

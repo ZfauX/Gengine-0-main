@@ -25,12 +25,14 @@ func setupGamePlayTest(t *testing.T) (*gorm.DB, *game.GamePlayService, *game.Lev
 	t.Cleanup(hub.Stop)
 
 	attemptSvc := game.NewAttemptService(db)
-	progressSvc := game.NewLevelProgressService(db)
-	monitorSvc := game.NewMonitorService(db)
-	coAuthorSvc := game.NewCoAuthorService(db)
+	progressSvc := game.NewLevelProgressService(db).WithRepository(game.NewGormLevelProgressRepo(db))
+	monitorSvc := game.NewMonitorService(db).WithRepository(game.NewGormMonitorRepo(db))
+	coAuthorSvc := game.NewCoAuthorService(db).WithRepository(game.NewGormCoAuthorRepo(db))
 	cfg := &config.Config{}
 
-	playSvc := game.NewGamePlayService(db, attemptSvc, progressSvc, monitorSvc, hub, coAuthorSvc, cfg)
+	playSvc := game.NewGamePlayService(db, attemptSvc, progressSvc, monitorSvc, hub, coAuthorSvc, cfg).
+		WithRepository(game.NewGormGameRepo(db)).
+		WithPassingRepository(game.NewGormGamePassingRepo(db))
 	return db, playSvc, progressSvc
 }
 

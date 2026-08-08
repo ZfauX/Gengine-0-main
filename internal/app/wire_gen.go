@@ -133,9 +133,9 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	levelProgressRepository := repos.LevelProgress
 	sseManager := game.NewSSEManager()
 	levelProgressService := wrapLevelProgressService(db, levelProgressRepository, sseManager, gameService)
-	gamePlayService := wrapGamePlayService(db, gameRepository, attemptService, levelProgressService, monitorService, hub, coAuthorService, cfg, sseManager)
-	gameAdminService := wrapGameAdminService(db, coAuthorService, cfg, sseManager)
+	gamePlayService := wrapGamePlayService(db, gameRepository, gamePassingRepository, attemptService, levelProgressService, monitorService, hub, coAuthorService, cfg, sseManager)
 	teamRepository := repos.Team
+	gameAdminService := wrapGameAdminService(db, teamRepository, userRepository, coAuthorService, cfg, sseManager)
 	teamService := wrapTeamService(teamRepository)
 	gamePassingService := wrapGamePassingService(db, gamePassingRepository, teamService, coAuthorService, levelProgressService, hub, monitorService, sseManager)
 	gameplayHandler := wrapGameplayHandler(gameService, gamePlayService, attemptService, levelProgressService, monitorService, hub, localStorage)

@@ -26,7 +26,7 @@ type MonitorServiceInterface interface {
 
 // MonitorService собирает сводную информацию о прохождении игры.
 type MonitorService struct {
-	DB        *gorm.DB
+	db        *gorm.DB
 	repo      MonitorRepository
 	cache     map[uint]*cachedSnapshot
 	cacheList *list.List
@@ -45,7 +45,7 @@ const maxMonitorCacheSize = 1000
 
 func NewMonitorService(db *gorm.DB) *MonitorService {
 	s := &MonitorService{
-		DB:       db,
+		db:       db,
 		cache:    make(map[uint]*cachedSnapshot),
 		cacheTTL: 30 * time.Second,
 	}
@@ -58,14 +58,6 @@ func NewMonitorService(db *gorm.DB) *MonitorService {
 func (s *MonitorService) WithRepository(repo MonitorRepository) *MonitorService {
 	s.repo = repo
 	return s
-}
-
-// repoOrDefault возвращает репозиторий или создаёт дефолтный на DB.
-func (s *MonitorService) repoOrDefault() MonitorRepository {
-	if s.repo == nil {
-		return NewGormMonitorRepo(s.DB)
-	}
-	return s.repo
 }
 
 // TeamProgress содержит агрегированные данные о прогрессе одной команды.
@@ -177,7 +169,7 @@ type AttemptRecord struct {
 // GameSnapshot формирует полную сводку по всем прохождениям игры.
 // Оптимизированная версия: объединяет 3 SQL-запроса в один.
 func (s *MonitorService) GameSnapshot(ctx context.Context, gameID uint) ([]TeamProgress, error) {
-	aggregated, err := s.repoOrDefault().AggregateGameSnapshot(ctx, gameID)
+	aggregated, err := s.repo.AggregateGameSnapshot(ctx, gameID)
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +226,7 @@ func (s *MonitorService) GameSnapshot(ctx context.Context, gameID uint) ([]TeamP
 // Сериализовано через pg_advisory_xact_lock(gameID): два параллельных финиша
 // не должны перезаписывать места из частично-закоммиченного набора (B2).
 func (s *MonitorService) CalculateResults(ctx context.Context, gameID uint) error {
-	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Advisory xact lock сериализует пересчёт по конкретной игре.
 		if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", int64(gameID)).Error; err != nil {
 			return fmt.Errorf("pg_advisory_xact_lock: %w", err)
@@ -393,7 +385,7 @@ func (s *MonitorService) analyzeTeamsBehavior(ctx context.Context, teamData []te
 	}
 
 	fiveMinAgo := time.Now().Add(-5 * time.Minute)
-	attempts, err := s.repoOrDefault().ListRecentAttempts(ctx, allPassingIDs, fiveMinAgo)
+	attempts, err := s.repo.ListRecentAttempts(ctx, allPassingIDs, fiveMinAgo)
 	if err != nil {
 		log.Debug().Err(err).Msg("MonitorService: failed to load recent attempts")
 		return nil

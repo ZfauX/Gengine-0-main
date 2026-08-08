@@ -47,21 +47,20 @@
 
 ---
 
-## Статус (обновлено 8 авг 2026) — PASS 34 ЗАКРЫТ
+## Статус (обновлено 8 авг 2026) — PASS 34 ЗАКРЫТ + ДЕФЕР РАЗОБРАН
 
-**Все находки pass 34 исправлены** (3 раунда фиксов):
+**Все находки pass 34 исправлены** (3 раунда фиксов + раунд дефера):
 
 - **Раунд 1** (`014cb75`): UX-H1 (hint toast из r.url), S-2 (email не уходит анонимам в /api/users/search), F-1 (calendar cache evict), F-2 (индекс 000044), F-4 (AdminListGames count fallback), A-M1 (passing sentinel), A-M3 (мёртвый fallback), UX-H2/H3/M1/M2/M3 (data-confirm-danger + disqualify label), UX-M4/M5 (chat scroll + failure feedback).
 - **Раунд 2** (текущий): F-5 (GetTeamsByUserID UNION), UX-L4 (Email i18n), UX-L1 (чат 24h), UX-L2 (team-chat timestamp), A-M4 (sentinel team + level), A-H1 (SimulateService через GameRepository.GetByIDForSimulation).
 - **Раунд 3** (предыдущий commit): F-P5a (GetByIDPreloaded LEFT JOIN — регрессия 404), S-1 (TOTP step-up lockout).
+- **Раунд 4 (дефер)**: H3 (все `DB *gorm.DB` → приватные, `repoOrDefault()` удалён — DI инжектит везде, тесты обновлены на WithRepository), A-H1 остаток (GetPassingWithGame → GamePassingRepository.GetByIDWithGame, IsTeamMember → GameRepository.IsTeamMember), A-M2 (svc_admin notify через team/user ListByIDs), A-M5 (канонический runner — RunMigrations с автодетектом; cmd/migrate без -dir использует его).
 
-**Отложено (задокументировано):**
-- **H3 (arch)** — неэкспортируемые `DB` поля сервисов + удаление `repoOrDefault()`: стилевой рефакторинг без функционального бага; DI-граф гарантирует инъекцию.
-- **A-H1 остаток** — svc_play read-хелперы (GetGameplayData, GetPassingWithGame, IsTeamMember) и svc_admin notify-чтения: транзакционные паттерны остаются raw (стандартный GORM), read-пути — следующий кандидат на GameplayReadRepository.
-- **A-M5** — два миграционных runner'а (RunMigrations vs MigrateFromDir): нужна документация канонического пути.
-- **F-3** — кэш авторизованного листинга: риск фрагментации > пользы.
+**Оставлено осознанно (задокументировано):**
+- **F-3** — кэш авторизованного листинга: риск фрагментации ключей и инвалидации (черновики/публикации автора) > пользы. Оставлено без изменений.
+- **GetGameplayData** — большой read-assembly (6+ запросов с errgroup, defaults, тайм-лимит); перевод на отдельный GameplayReadRepository вынесен в отдельный рефакторинг (не критичный read-path для модификаций).
 
-**Проверка:** `go build ./...` ✓, `go test -short ./...` ✓, `go vet ./...` ✓, `gofmt -l .` → пусто ✓, `go generate` (wire) ✓.
+**Проверка:** `go build ./...` ✓, `go vet ./...` ✓, `gofmt -l .` → пусто ✓, `go generate` (wire + user mock) ✓, `go test -short` ключевых пакетов ✓.
 
 ---
 

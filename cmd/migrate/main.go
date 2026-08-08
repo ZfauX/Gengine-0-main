@@ -16,8 +16,11 @@ import (
 )
 
 func main() {
-	// Определяем флаги
-	migrationsDir := flag.String("dir", "migrations", "Папка с файлами миграций")
+	// Определяем флаги.
+	// -dir: явная папка миграций. Пустая (по умолчанию) — канонический путь:
+	// RunMigrations → автодетект (migrations_squashed для свежей/сгруппированной
+	// БД, migrations для поштучной; см. internal/db/migrate.go).
+	migrationsDir := flag.String("dir", "", "Папка с файлами миграций (пусто — автоопределение)")
 	create := flag.String("create", "", "Создать новый файл миграции с указанным именем")
 	flag.Parse()
 
@@ -58,7 +61,12 @@ func main() {
 
 	// Если указан флаг -create, создаём файл миграции
 	if *create != "" {
-		upPath, downPath, createErr := db.CreateMigrationFile(*migrationsDir, *create)
+		dir := *migrationsDir
+		if dir == "" {
+			// По умолчанию новые файлы создаём в migrations/.
+			dir = "migrations"
+		}
+		upPath, downPath, createErr := db.CreateMigrationFile(dir, *create)
 		if createErr != nil {
 			log.Fatal().Err(createErr).Msg("Не удалось создать файл миграции")
 		}
@@ -73,9 +81,16 @@ func main() {
 	}
 	log.Info().Msg("Подключение к БД установлено")
 
-	// Применение миграций
-	if err := db.MigrateFromDir(database, *migrationsDir); err != nil {
-		log.Fatal().Err(err).Msg("Ошибка применения миграций")
+	// Применение миграций: канонический путь — RunMigrations (автодетект),
+	// если -dir не задан явно. A-M5 (pass 34): один runner вместо двух.
+	if *migrationsDir != "" {
+		if err := db.MigrateFromDir(database, *migrationsDir); err != nil {
+			log.Fatal().Err(err).Msg("Ошибка применения миграций")
+		}
+	} else {
+		if err := db.RunMigrations(database); err != nil {
+			log.Fatal().Err(err).Msg("Ошибка применения миграций")
+		}
 	}
 
 	log.Info().Msg("Миграции успешно применены")

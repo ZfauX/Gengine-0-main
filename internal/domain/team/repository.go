@@ -51,6 +51,9 @@ type TeamRepository interface {
 	RemoveMember(ctx context.Context, teamID, userID uint) error
 	ChangeCaptain(ctx context.Context, teamID, newCaptainID uint) error
 	IsMember(ctx context.Context, teamID, userID uint) (bool, error)
+	// ListByIDs возвращает команды по списку ID (A-M2, pass 34: для
+	// notify-чтений GameAdminService вместо raw s.db).
+	ListByIDs(ctx context.Context, ids []uint) ([]Team, error)
 	GetPassingByTeam(ctx context.Context, teamID uint) (*teamGamePassing, error)
 	GetUserByID(ctx context.Context, userID uint) (*userUser, error)
 	GetGameByID(ctx context.Context, gameID uint) (*teamGameModel, error)
@@ -120,6 +123,16 @@ func (r *gormTeamRepo) GetTeamsByUserID(ctx context.Context, userID uint) ([]Tea
 }
 func (r *gormTeamRepo) Update(ctx context.Context, team *Team) error {
 	return r.db.WithContext(ctx).Save(team).Error
+}
+
+// ListByIDs возвращает команды по списку ID (A-M2, pass 34).
+func (r *gormTeamRepo) ListByIDs(ctx context.Context, ids []uint) ([]Team, error) {
+	var teams []Team
+	if len(ids) == 0 {
+		return teams, nil
+	}
+	err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&teams).Error
+	return teams, err
 }
 func (r *gormTeamRepo) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&Team{}, id).Error

@@ -15,7 +15,7 @@ import (
 )
 
 type RatingService struct {
-	DB    *gorm.DB
+	db    *gorm.DB
 	repo  RatingRepository
 	cache cache.CacheStore
 }
@@ -24,7 +24,7 @@ func NewRatingService(db *gorm.DB, c cache.CacheStore) *RatingService {
 	if c == nil {
 		c = &cache.NoopCache{}
 	}
-	return &RatingService{DB: db, cache: c}
+	return &RatingService{db: db, cache: c}
 }
 
 // WithRepository устанавливает репозиторий чтения рейтинга (A-2, pass 31).
@@ -33,18 +33,10 @@ func (s *RatingService) WithRepository(repo RatingRepository) *RatingService {
 	return s
 }
 
-// repoOrDefault возвращает репозиторий или создаёт дефолтный на DB.
-func (s *RatingService) repoOrDefault() RatingRepository {
-	if s.repo == nil {
-		return NewGormRatingRepo(s.DB)
-	}
-	return s.repo
-}
-
 func (s *RatingService) UpdateRatingsForGame(ctx context.Context, gameID uint) error {
 	now := time.Now()
 
-	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Advisory xact lock: сериализуем начисление по конкретной игре.
 		if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", int64(gameID)).Error; err != nil {
 			return fmt.Errorf("pg_advisory_xact_lock: %w", err)
@@ -205,7 +197,7 @@ func (s *RatingService) GetLeaderboard(ctx context.Context, limit int) ([]Leader
 	}
 
 	var entries []LeaderboardEntry
-	entries, err := s.repoOrDefault().GetLeaderboard(ctx, limit)
+	entries, err := s.repo.GetLeaderboard(ctx, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +224,7 @@ func (s *RatingService) GetAverageRating(ctx context.Context, gameID uint) (floa
 
 	var result avgRatingResult
 	var err error
-	result.AvgRating, result.Count, err = s.repoOrDefault().GetAverageRating(ctx, gameID)
+	result.AvgRating, result.Count, err = s.repo.GetAverageRating(ctx, gameID)
 	if err != nil {
 		return 0, 0, err
 	}

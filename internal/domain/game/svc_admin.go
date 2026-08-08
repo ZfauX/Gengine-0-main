@@ -21,6 +21,8 @@ import (
 
 type GameAdminService struct {
 	db          *gorm.DB
+	teamRepo    team.TeamRepository
+	userRepo    user.UserRepository
 	coAuthorSvc *CoAuthorService
 	cfg         *config.Config
 	sseMgr      *SSEManager
@@ -35,6 +37,14 @@ func NewGameAdminService(db *gorm.DB, coAuthorSvc *CoAuthorService, cfg *config.
 		coAuthorSvc: coAuthorSvc,
 		cfg:         cfg,
 	}
+}
+
+// WithRepositories внедряет репозитории команд и пользователей (A-M2, pass 34:
+// notify-чтения идут через репозитории, а не raw s.db).
+func (s *GameAdminService) WithRepositories(teamRepo team.TeamRepository, userRepo user.UserRepository) *GameAdminService {
+	s.teamRepo = teamRepo
+	s.userRepo = userRepo
+	return s
 }
 
 // WithSSEManager устанавливает SSE-менеджер для broadcast-уведомлений.
@@ -279,7 +289,13 @@ func (s *GameAdminService) notifyCaptainsAboutFinish(ctx context.Context, teamID
 	defer cancel()
 
 	var teams []team.Team
-	if err := s.db.WithContext(notifyCtx).Where("id IN ?", teamIDs).Find(&teams).Error; err != nil {
+	if s.teamRepo == nil {
+		log.Warn().Msg("notifyCaptainsAboutFinish: teamRepo is nil, skipping teams fetch")
+		return
+	}
+	// A-M2 (pass 34): через teamRepo вместо raw s.db.
+	teams, err := s.teamRepo.ListByIDs(notifyCtx, teamIDs)
+	if err != nil {
 		log.Error().Err(err).Msg("notifyCaptainsAboutFinish: failed to get teams")
 		return
 	}
@@ -288,7 +304,12 @@ func (s *GameAdminService) notifyCaptainsAboutFinish(ctx context.Context, teamID
 		captainIDs = append(captainIDs, teams[i].CaptainID)
 	}
 	var captains []user.User
-	if err := s.db.WithContext(notifyCtx).Where("id IN ?", captainIDs).Find(&captains).Error; err != nil {
+	if s.userRepo == nil {
+		log.Warn().Msg("notifyCaptainsAboutFinish: userRepo is nil, skipping captains fetch")
+		return
+	}
+	captains, err = s.userRepo.ListByIDs(notifyCtx, captainIDs)
+	if err != nil {
 		log.Error().Err(err).Msg("notifyCaptainsAboutFinish: failed to get captains")
 		return
 	}
@@ -318,13 +339,23 @@ func (s *GameAdminService) notifyCaptainAboutDisqualification(ctx context.Contex
 	}
 	notifyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	var t team.Team
-	if err := s.db.WithContext(notifyCtx).First(&t, teamID).Error; err != nil {
+	if s.teamRepo == nil {
+		log.Warn().Uint("team", teamID).Msg("notifyCaptainAboutDisqualification: teamRepo is nil, skipping")
+		return
+	}
+	// A-M2 (pass 34): через teamRepo вместо raw s.db.
+	t, err := s.teamRepo.GetByID(notifyCtx, teamID)
+	if err != nil {
 		log.Error().Err(err).Uint("team", teamID).Msg("notifyCaptainAboutDisqualification: failed to get team")
 		return
 	}
-	var captain user.User
-	if err := s.db.WithContext(notifyCtx).First(&captain, t.CaptainID).Error; err != nil {
+	var captain *user.User
+	if s.userRepo == nil {
+		log.Warn().Msg("notifyCaptainAboutDisqualification: userRepo is nil, skipping captain fetch")
+		return
+	}
+	captain, err = s.userRepo.GetByID(notifyCtx, t.CaptainID)
+	if err != nil {
 		log.Error().Err(err).Uint("captain", t.CaptainID).Msg("notifyCaptainAboutDisqualification: failed to get captain")
 		return
 	}

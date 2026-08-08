@@ -35,7 +35,7 @@ func TestMonitorService_GameSnapshot(t *testing.T) {
 		&team.Team{},
 		&user.User{},
 	)
-	ms := game.NewMonitorService(db)
+	ms := game.NewMonitorService(db).WithRepository(game.NewGormMonitorRepo(db))
 
 	author := createUser(t, db, "auth@test.com", "pass")
 	g := createGame(t, db, author.ID, "Snapshot Game")
@@ -64,7 +64,7 @@ func TestMonitorService_CalculateResults(t *testing.T) {
 		&team.Team{},
 		&user.User{},
 	)
-	ms := game.NewMonitorService(db)
+	ms := game.NewMonitorService(db).WithRepository(game.NewGormMonitorRepo(db))
 
 	author := createUser(t, db, "auth@test.com", "pass")
 	g := createGame(t, db, author.ID, "Results Game")
@@ -122,7 +122,7 @@ func TestMonitorService_CalculateResults_Ties(t *testing.T) {
 		&team.Team{},
 		&user.User{},
 	)
-	ms := game.NewMonitorService(db)
+	ms := game.NewMonitorService(db).WithRepository(game.NewGormMonitorRepo(db))
 
 	author := createUser(t, db, "tie@test.com", "pass")
 	g := createGame(t, db, author.ID, "Ties Game")
@@ -178,7 +178,7 @@ func TestMonitorService_CalculateResults_Penalty(t *testing.T) {
 		&team.Team{},
 		&user.User{},
 	)
-	ms := game.NewMonitorService(db)
+	ms := game.NewMonitorService(db).WithRepository(game.NewGormMonitorRepo(db))
 
 	author := createUser(t, db, "pen@test.com", "pass")
 	g := createGame(t, db, author.ID, "Penalty Game")
@@ -223,7 +223,7 @@ func TestMonitorService_Cache(t *testing.T) {
 		&team.Team{},
 		&user.User{},
 	)
-	ms := game.NewMonitorService(db)
+	ms := game.NewMonitorService(db).WithRepository(game.NewGormMonitorRepo(db))
 
 	author := createUser(t, db, "auth@test.com", "pass")
 	g := createGame(t, db, author.ID, "Cache Game")

@@ -485,6 +485,21 @@ func (mr *MockGamePassingRepositoryMockRecorder) GetByID(ctx, id any) *gomock.Ca
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByID", reflect.TypeOf((*MockGamePassingRepository)(nil).GetByID), ctx, id)
 }
 
+// GetByIDWithGame mocks base method.
+func (m *MockGamePassingRepository) GetByIDWithGame(ctx context.Context, id uint) (*GamePassing, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetByIDWithGame", ctx, id)
+	ret0, _ := ret[0].(*GamePassing)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetByIDWithGame indicates an expected call of GetByIDWithGame.
+func (mr *MockGamePassingRepositoryMockRecorder) GetByIDWithGame(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByIDWithGame", reflect.TypeOf((*MockGamePassingRepository)(nil).GetByIDWithGame), ctx, id)
+}
+
 // ListByGamePaginated mocks base method.
 func (m *MockGamePassingRepository) ListByGamePaginated(ctx context.Context, gameID uint, page, pageSize int) ([]GamePassing, int64, error) {
 	m.ctrl.T.Helper()

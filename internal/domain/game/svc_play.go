@@ -43,6 +43,7 @@ var ErrNotInGame = errors.New("вы не участвуете в этом про
 type GamePlayService struct {
 	db          *gorm.DB
 	gameRepo    GameRepository
+	passingRepo GamePassingRepository
 	attemptSvc  *AttemptService
 	progressSvc *LevelProgressService
 	monitorSvc  MonitorServiceInterface
@@ -62,6 +63,13 @@ type GamePlayService struct {
 // счётчиков вместо raw SQL через db.
 func (s *GamePlayService) WithRepository(repo GameRepository) *GamePlayService {
 	s.gameRepo = repo
+	return s
+}
+
+// WithPassingRepository внедряет репозиторий прохождений (A-H1, pass 34) —
+// для read-путей GetPassingWithGame вместо s.db.
+func (s *GamePlayService) WithPassingRepository(repo GamePassingRepository) *GamePlayService {
+	s.passingRepo = repo
 	return s
 }
 
@@ -806,29 +814,15 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 }
 
 // GetPassingWithGame загружает Passing с GameID для проверки прав.
+// A-H1 (pass 34): через GamePassingRepository — убран raw s.db read.
 func (s *GamePlayService) GetPassingWithGame(ctx context.Context, passingID uint) (*GamePassing, error) {
-	var passing GamePassing
-	// JOIN-оптимизация: passing + game в 1 SQL-запросе
-	if err := s.db.WithContext(ctx).Joins("Game").First(&passing, passingID).Error; err != nil {
-		return nil, err
-	}
-	return &passing, nil
+	return s.passingRepo.GetByIDWithGame(ctx, passingID)
 }
 
 // IsTeamMember проверяет, является ли пользователь участником команды.
+// A-H1 (pass 34): через GameRepository.IsTeamMember — убран raw s.db read.
 func (s *GamePlayService) IsTeamMember(ctx context.Context, teamID, userID uint) (bool, error) {
-	var t team.Team
-	if err := s.db.WithContext(ctx).First(&t, teamID).Error; err != nil {
-		return false, err
-	}
-	if t.CaptainID == userID {
-		return true, nil
-	}
-	var count int64
-	if err := s.db.WithContext(ctx).Table("team_members").Where("team_id = ? AND user_id = ?", teamID, userID).Count(&count).Error; err != nil {
-		return false, err
-	}
-	return count > 0, nil
+	return s.gameRepo.IsTeamMember(ctx, teamID, userID)
 }
 
 // broadcastLevelComplete отправляет SSE-уведомление о завершении уровня.

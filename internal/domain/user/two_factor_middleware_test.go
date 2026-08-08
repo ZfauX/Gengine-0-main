@@ -117,6 +117,16 @@ func (m *mockUserRepo) GetGamesView(ctx context.Context, userID uint) (string, e
 	return "table", nil
 }
 
+func (m *mockUserRepo) ListByIDs(ctx context.Context, ids []uint) ([]User, error) {
+	users := make([]User, 0, len(ids))
+	for _, id := range ids {
+		if u, ok := m.users[id]; ok {
+			users = append(users, *u)
+		}
+	}
+	return users, nil
+}
+
 // newTwoFactorTestRouter создаёт gin.Engine с сессиями и опциональной 2FA middleware.
 func newTwoFactorTestRouter(t *testing.T, middleware gin.HandlerFunc, userID uint) *gin.Engine {
 	t.Helper()

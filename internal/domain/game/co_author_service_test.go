@@ -19,7 +19,7 @@ func setupCoAuthorTest(t *testing.T) (*gorm.DB, *game.CoAuthorService) {
 		t.Skip("skipping DB test in short mode")
 	}
 	db := testutil.SetupPostgresDB(t, allModels...)
-	svc := game.NewCoAuthorService(db)
+	svc := game.NewCoAuthorService(db).WithRepository(game.NewGormCoAuthorRepo(db))
 	return db, svc
 }
 

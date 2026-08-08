@@ -31,7 +31,7 @@ var (
 )
 
 type GamePassingService struct {
-	DB          *gorm.DB
+	db          *gorm.DB
 	repo        GamePassingRepository
 	teamService *team.TeamService
 	coAuthor    *CoAuthorService
@@ -42,21 +42,13 @@ type GamePassingService struct {
 }
 
 func NewGamePassingService(db *gorm.DB, ts *team.TeamService, ca *CoAuthorService, progressSvc *LevelProgressService) *GamePassingService {
-	return &GamePassingService{DB: db, teamService: ts, coAuthor: ca, progressSvc: progressSvc}
+	return &GamePassingService{db: db, teamService: ts, coAuthor: ca, progressSvc: progressSvc}
 }
 
 // WithRepository внедряет репозиторий прохождений (A-H3, pass 33).
 func (s *GamePassingService) WithRepository(repo GamePassingRepository) *GamePassingService {
 	s.repo = repo
 	return s
-}
-
-// repoOrDefault возвращает репозиторий или создаёт дефолтный на DB.
-func (s *GamePassingService) repoOrDefault() GamePassingRepository {
-	if s.repo == nil {
-		return NewGormGamePassingRepo(s.DB)
-	}
-	return s.repo
 }
 
 // WithHub устанавливает WebSocket-хаб для broadcast-уведомлений.
@@ -80,7 +72,7 @@ func (s *GamePassingService) WithSSEManager(sseMgr *SSEManager) *GamePassingServ
 // Apply подаёт заявку на игру.
 // Обёрнуто в транзакцию для предотвращения race condition при одновременных заявках.
 func (s *GamePassingService) Apply(ctx context.Context, gameID, teamID, userID uint) error {
-	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var t team.Team
 		if err := tx.First(&t, teamID).Error; err != nil {
 			return err
@@ -129,12 +121,12 @@ func (s *GamePassingService) Apply(ctx context.Context, gameID, teamID, userID u
 // ListByGamePaginated возвращает прохождения для игры с пагинацией.
 // A-H3 (pass 33): через репозиторий, а не экспортированный DB.
 func (s *GamePassingService) ListByGamePaginated(ctx context.Context, gameID uint, page, perPage int) ([]GamePassing, int64, error) {
-	return s.repoOrDefault().ListByGamePaginated(ctx, gameID, page, perPage)
+	return s.repo.ListByGamePaginated(ctx, gameID, page, perPage)
 }
 
 // ListTestPassings возвращает тестовые прохождения для игры.
 func (s *GamePassingService) ListTestPassings(ctx context.Context, gameID uint, result *[]GamePassing) error {
-	passings, err := s.repoOrDefault().ListTestPassings(ctx, gameID)
+	passings, err := s.repo.ListTestPassings(ctx, gameID)
 	if err != nil {
 		return err
 	}
@@ -156,7 +148,7 @@ func (s *GamePassingService) UpdateStatus(ctx context.Context, passingID uint, s
 	}
 
 	var currentStatus GamePassingStatus
-	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// JOIN-оптимизация: passing + game в 1 SQL-запросе внутри транзакции
 		var passing GamePassing
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Joins("Game").First(&passing, passingID).Error; err != nil {
@@ -205,7 +197,7 @@ func (s *GamePassingService) StartGame(ctx context.Context, passingID, userID ui
 	var gameID uint
 	var teamName string
 
-	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var passing GamePassing
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&passing, passingID).Error; err != nil {
 			return err

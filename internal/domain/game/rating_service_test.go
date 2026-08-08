@@ -31,7 +31,7 @@ func newRatingTestService(t *testing.T) (*gorm.DB, *game.RatingService) {
 	c, err := cache.NewCache(5*60*1000, 60*1000)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = c.Close() })
-	return db, game.NewRatingService(db, c)
+	return db, game.NewRatingService(db, c).WithRepository(game.NewGormRatingRepo(db))
 }
 
 // D1b: UpdateRatingsForGame начисляет очки автору, участникам команд и капитанам.

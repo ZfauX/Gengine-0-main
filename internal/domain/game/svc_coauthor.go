@@ -20,12 +20,12 @@ const (
 var ErrNotOwner = errors.New("только владелец может управлять соавторами")
 
 type CoAuthorService struct {
-	DB   *gorm.DB
+	db   *gorm.DB
 	repo CoAuthorRepository
 }
 
 func NewCoAuthorService(db *gorm.DB) *CoAuthorService {
-	return &CoAuthorService{DB: db}
+	return &CoAuthorService{db: db}
 }
 
 // WithRepository внедряет репозиторий соавторов (A-1, pass 32): устраняет
@@ -35,23 +35,15 @@ func (s *CoAuthorService) WithRepository(repo CoAuthorRepository) *CoAuthorServi
 	return s
 }
 
-// repoOrDefault возвращает репозиторий или создаёт дефолтный на DB.
-func (s *CoAuthorService) repoOrDefault() CoAuthorRepository {
-	if s.repo == nil {
-		return NewGormCoAuthorRepo(s.DB)
-	}
-	return s.repo
-}
-
 // IsUserManager проверяет, является ли пользователь автором или соавтором игры.
 // Оптимизация: использует один запрос с UNION вместо двух отдельных запросов.
 func (s *CoAuthorService) IsUserManager(ctx context.Context, gameID, userID uint) (bool, error) {
-	return s.repoOrDefault().IsUserManager(ctx, gameID, userID)
+	return s.repo.IsUserManager(ctx, gameID, userID)
 }
 
 // HasPermission проверяет наличие у пользователя конкретной роли в игре.
 func (s *CoAuthorService) HasPermission(ctx context.Context, gameID, userID uint, requiredRole string) (bool, error) {
-	return s.HasPermissionTx(s.DB.WithContext(ctx), gameID, userID, requiredRole)
+	return s.HasPermissionTx(s.db.WithContext(ctx), gameID, userID, requiredRole)
 }
 
 // HasPermissionTx — версия HasPermission с передачей транзакции.
@@ -103,7 +95,7 @@ func (s *CoAuthorService) CanEditContent(ctx context.Context, gameID, userID uin
 
 // Add добавляет нового соавтора или восстанавливает удалённого.
 func (s *CoAuthorService) Add(ctx context.Context, gameID, newCoAuthorID, ownerID uint) error {
-	authorID, err := s.repoOrDefault().GetGameAuthorID(ctx, gameID)
+	authorID, err := s.repo.GetGameAuthorID(ctx, gameID)
 	if err != nil {
 		return err
 	}
@@ -115,12 +107,12 @@ func (s *CoAuthorService) Add(ctx context.Context, gameID, newCoAuthorID, ownerI
 	}
 
 	// Проверяем, есть ли запись (включая мягко удалённые)
-	co, findErr := s.repoOrDefault().FindUnscopedByGameAndUser(ctx, gameID, newCoAuthorID)
+	co, findErr := s.repo.FindUnscopedByGameAndUser(ctx, gameID, newCoAuthorID)
 	if findErr == nil {
 		if co.DeletedAt.Valid {
 			// Восстанавливаем мягко удалённую запись
 			co.DeletedAt = gorm.DeletedAt{}
-			if saveErr := s.repoOrDefault().Save(ctx, co); saveErr != nil {
+			if saveErr := s.repo.Save(ctx, co); saveErr != nil {
 				return saveErr
 			}
 			return nil
@@ -132,12 +124,12 @@ func (s *CoAuthorService) Add(ctx context.Context, gameID, newCoAuthorID, ownerI
 
 	// Нет записи — создаём новую
 	co = &CoAuthor{GameID: gameID, UserID: newCoAuthorID, Role: RoleContentEditor}
-	return s.repoOrDefault().Create(ctx, co)
+	return s.repo.Create(ctx, co)
 }
 
 // Remove мягко удаляет соавтора (устанавливает deleted_at).
 func (s *CoAuthorService) Remove(ctx context.Context, gameID, coAuthorUserID, ownerID uint) error {
-	authorID, err := s.repoOrDefault().GetGameAuthorID(ctx, gameID)
+	authorID, err := s.repo.GetGameAuthorID(ctx, gameID)
 	if err != nil {
 		return err
 	}
@@ -145,10 +137,10 @@ func (s *CoAuthorService) Remove(ctx context.Context, gameID, coAuthorUserID, ow
 		return ErrNotOwner
 	}
 	// Используем Delete, который в GORM v2 автоматически устанавливает deleted_at
-	return s.repoOrDefault().DeleteByGameAndUser(ctx, gameID, coAuthorUserID)
+	return s.repo.DeleteByGameAndUser(ctx, gameID, coAuthorUserID)
 }
 
 // List возвращает список соавторов игры.
 func (s *CoAuthorService) List(ctx context.Context, gameID uint) ([]CoAuthor, error) {
-	return s.repoOrDefault().ListByGame(ctx, gameID)
+	return s.repo.ListByGame(ctx, gameID)
 }

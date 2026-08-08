@@ -24,28 +24,20 @@ var (
 )
 
 type LevelProgressService struct {
-	DB          *gorm.DB
+	db          *gorm.DB
 	repo        LevelProgressRepository
 	sseMgr      *SSEManager
 	gameService *GameService
 }
 
 func NewLevelProgressService(db *gorm.DB) *LevelProgressService {
-	return &LevelProgressService{DB: db}
+	return &LevelProgressService{db: db}
 }
 
 // WithRepository устанавливает репозиторий прогрессов (A-2, pass 31).
 func (s *LevelProgressService) WithRepository(repo LevelProgressRepository) *LevelProgressService {
 	s.repo = repo
 	return s
-}
-
-// repoOrDefault возвращает репозиторий или создаёт дефолтный на DB.
-func (s *LevelProgressService) repoOrDefault() LevelProgressRepository {
-	if s.repo == nil {
-		return NewGormLevelProgressRepo(s.DB)
-	}
-	return s.repo
 }
 
 // WithSSEManager устанавливает SSE-менеджер для broadcast-уведомлений.
@@ -62,7 +54,7 @@ func (s *LevelProgressService) WithGameService(gameService *GameService) *LevelP
 
 // InitFirstLevel инициализирует прогресс первого уровня при старте игры.
 func (s *LevelProgressService) InitFirstLevel(ctx context.Context, gamePassingID uint) error {
-	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return s.dbTransaction(ctx, tx, gamePassingID)
 	})
 }
@@ -98,7 +90,7 @@ func (s *LevelProgressService) dbTransaction(ctx context.Context, db *gorm.DB, g
 // GetCurrentProgress возвращает текущий незавершённый прогресс уровня.
 // БЕЗ БЛОКИРОВКИ — для чтения. Через репозиторий (A-2, pass 31).
 func (s *LevelProgressService) GetCurrentProgress(ctx context.Context, gamePassingID uint) (*LevelProgress, error) {
-	return s.repoOrDefault().GetCurrent(ctx, gamePassingID)
+	return s.repo.GetCurrent(ctx, gamePassingID)
 }
 
 // GetCurrentProgressForUpdate возвращает текущий незавершённый прогресс с блокировкой FOR UPDATE.

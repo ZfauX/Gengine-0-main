@@ -40,8 +40,11 @@ func getCurrentVersion(gdb *gorm.DB) uint {
 	return uint(version)
 }
 
-// RunMigrations запускает миграции. Для свежей БД использует squashed-файлы
-// (migrations_squashed/), для существующей — обычные поштучные (migrations/).
+// RunMigrations — канонический runner миграций (A-M5, pass 34). Для свежей БД
+// использует squashed-файлы (migrations_squashed/), для существующей — обычные
+// поштучные (migrations/). cmd/server/main.go и cmd/migrate/main.go (без -dir)
+// вызывают именно его; MigrateFromDir с явной директорией — только для ручного
+// применения конкретной папки (cmd/migrate -dir).
 func RunMigrations(gdb *gorm.DB) error {
 	return MigrateFromDir(gdb, "")
 }

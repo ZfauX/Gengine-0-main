@@ -79,6 +79,10 @@ type UserRepository interface {
 	// lock_count в одном UPDATE (без race между параллельными попытками) и
 	// возвращает новое значение lock_count + установленный locked_until.
 	AtomicLockAccount(ctx context.Context, userID uint, lockedUntil time.Time) (int, error)
+
+	// ListByIDs возвращает пользователей по списку ID (A-M2, pass 34: для
+	// notify-чтений GameAdminService вместо raw s.db).
+	ListByIDs(ctx context.Context, ids []uint) ([]User, error)
 }
 
 // AchievementRepository определяет контракт для работы с достижениями.
@@ -456,6 +460,16 @@ func (r *gormUserRepo) AtomicLockAccount(ctx context.Context, userID uint, locke
 		return 0, err
 	}
 	return newCount, nil
+}
+
+// ListByIDs возвращает пользователей по списку ID (A-M2, pass 34).
+func (r *gormUserRepo) ListByIDs(ctx context.Context, ids []uint) ([]User, error) {
+	var users []User
+	if len(ids) == 0 {
+		return users, nil
+	}
+	err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&users).Error
+	return users, err
 }
 
 type gormAchievementRepo struct{ db *gorm.DB }

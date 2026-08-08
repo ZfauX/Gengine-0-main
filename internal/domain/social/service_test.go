@@ -33,7 +33,7 @@ func setupSocialDB(t *testing.T) *gorm.DB {
 func TestRatingService_UpdateRatingsForGame(t *testing.T) {
 	db := setupSocialDB(t)
 	// Передаём nil вместо кэша (в тестах кэш не нужен)
-	rs := game.NewRatingService(db, nil)
+	rs := game.NewRatingService(db, nil).WithRepository(game.NewGormRatingRepo(db))
 
 	author := createUser(t, db, "author@test.com", "pass")
 	player := createUser(t, db, "player@test.com", "pass")
@@ -65,7 +65,7 @@ func TestRatingService_UpdateRatingsForGame(t *testing.T) {
 // удваивает очки (B3 — guard games.rating_scored).
 func TestRatingService_UpdateRatingsForGame_Idempotent(t *testing.T) {
 	db := setupSocialDB(t)
-	rs := game.NewRatingService(db, nil)
+	rs := game.NewRatingService(db, nil).WithRepository(game.NewGormRatingRepo(db))
 
 	author := createUser(t, db, "author@test.com", "pass")
 	player := createUser(t, db, "player@test.com", "pass")
@@ -95,7 +95,7 @@ func TestRatingService_UpdateRatingsForGame_Idempotent(t *testing.T) {
 
 func TestRatingService_GetLeaderboard(t *testing.T) {
 	db := setupSocialDB(t)
-	rs := game.NewRatingService(db, nil)
+	rs := game.NewRatingService(db, nil).WithRepository(game.NewGormRatingRepo(db))
 
 	u1 := createUser(t, db, "u1@test.com", "pass")
 	u2 := createUser(t, db, "u2@test.com", "pass")
@@ -111,7 +111,7 @@ func TestRatingService_GetLeaderboard(t *testing.T) {
 
 func TestRatingService_GetLeaderboardEmpty(t *testing.T) {
 	db := setupSocialDB(t)
-	rs := game.NewRatingService(db, nil)
+	rs := game.NewRatingService(db, nil).WithRepository(game.NewGormRatingRepo(db))
 
 	board, err := rs.GetLeaderboard(context.Background(), 10)
 	require.NoError(t, err)
@@ -120,7 +120,7 @@ func TestRatingService_GetLeaderboardEmpty(t *testing.T) {
 
 func TestRatingService_UpdateRatingsForGame_NoPassings(t *testing.T) {
 	db := setupSocialDB(t)
-	rs := game.NewRatingService(db, nil)
+	rs := game.NewRatingService(db, nil).WithRepository(game.NewGormRatingRepo(db))
 
 	author := createUser(t, db, "author@test.com", "pass")
 	g := createGame(t, db, author.ID, "No Passings")
