@@ -76,7 +76,7 @@ func (s *UserDashboardService) GetDashboard(ctx context.Context, userID uint) (*
 	rows, err := s.userRepo.DashboardTeams(ctx, userID)
 	if err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to get teams data")
-		return &dash, err
+		return &dash, fmt.Errorf("failed to get teams data: %w", err)
 	}
 
 	seenTeams := make(map[uint]bool)
@@ -105,20 +105,23 @@ func (s *UserDashboardService) GetDashboard(ctx context.Context, userID uint) (*
 		}
 	}
 
-	// 3. Приглашения
-	s.loadInvitations(ctx, &dash, userID)
+	// 3. Приглашения (некритично: ошибка логируется, дашборд рендерится без них)
+	if err := s.loadInvitations(ctx, &dash, userID); err != nil {
+		log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to load invitations")
+	}
 
 	return &dash, nil
 }
 
 // loadInvitations загружает ожидающие приглашения в структуру дашборда.
-func (s *UserDashboardService) loadInvitations(ctx context.Context, dash *UserDashboard, userID uint) {
+// M18 (pass 30): возвращает ошибку — ранее глотала её молча.
+func (s *UserDashboardService) loadInvitations(ctx context.Context, dash *UserDashboard, userID uint) error {
 	invitations, err := s.userRepo.DashboardInvitations(ctx, userID)
 	if err != nil {
-		log.Error().Err(err).Uint("user_id", userID).Msg("loadInvitations: failed to load invitations")
-		return
+		return fmt.Errorf("failed to load invitations: %w", err)
 	}
 	for _, inv := range invitations {
 		dash.PendingInvitations = append(dash.PendingInvitations, DashboardInvitation(inv))
 	}
+	return nil
 }

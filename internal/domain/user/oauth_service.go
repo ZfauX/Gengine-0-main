@@ -236,14 +236,18 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 		if provider == "vk" && !emailVerified {
 			return nil, stderrors.New("вход через VK невозможен: email не подтверждён. Войдите по паролю")
 		}
+		// Один UPDATE вместо двух (M10, pass 30): name и email_verified
+		// синхронизируем вместе — меньше запросов на каждый вход.
+		fields := map[string]any{}
 		if user.Name != name {
-			if updateErr := s.userRepo.Update(ctx, user.ID, map[string]any{"name": name}); updateErr != nil {
-				log.Warn().Err(updateErr).Uint("user_id", user.ID).Msg("не удалось обновить имя пользователя")
-			}
+			fields["name"] = name
 		}
 		if !user.EmailVerified && emailVerified {
-			if updateErr := s.userRepo.Update(ctx, user.ID, map[string]any{"email_verified": true}); updateErr != nil {
-				log.Warn().Err(updateErr).Uint("user_id", user.ID).Msg("не удалось установить email_verified")
+			fields["email_verified"] = true
+		}
+		if len(fields) > 0 {
+			if updateErr := s.userRepo.Update(ctx, user.ID, fields); updateErr != nil {
+				log.Warn().Err(updateErr).Uint("user_id", user.ID).Msg("не удалось синхронизировать профиль пользователя")
 			}
 		}
 	}

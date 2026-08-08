@@ -453,6 +453,13 @@ func run() error {
 	monitor.StopAllMonitorPollers()
 	log.Info().Msg("SSE-сборщики монитора остановлены")
 
+	// 3.1 Останавливаем пул push-воркеров уведомлений (H7, pass 30) — ждём
+	//     доставки уже поставленных задач, новые запросы не принимаются.
+	if deps.Services.Notification != nil {
+		deps.Services.Notification.Shutdown()
+		log.Info().Msg("Пул push-воркеров уведомлений остановлен")
+	}
+
 	// 4. Останавливаем HTTP-сервер (ожидаем завершения текущих запросов)
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), config.ShutdownTimeout)
 	defer shutdownCancel()

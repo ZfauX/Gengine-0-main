@@ -49,12 +49,14 @@ func (s *CoAuthorService) HasPermission(ctx context.Context, gameID, userID uint
 }
 
 // HasPermissionTx — версия HasPermission с передачей транзакции.
+// M14 (pass 30): загружаем только author_id (Select+Scan) вместо полной
+// строки Game — description и другие тяжёлые поля не читаются.
 func (s *CoAuthorService) HasPermissionTx(tx *gorm.DB, gameID, userID uint, requiredRole string) (bool, error) {
-	var game Game
-	if err := tx.First(&game, gameID).Error; err != nil {
+	var authorID uint
+	if err := tx.Table("games").Select("author_id").Where("id = ?", gameID).First(&authorID).Error; err != nil {
 		return false, err
 	}
-	if game.AuthorID == userID {
+	if authorID == userID {
 		return true, nil
 	}
 	var co CoAuthor

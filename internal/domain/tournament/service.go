@@ -124,13 +124,16 @@ func (s *TournamentService) AddGame(ctx context.Context, tournamentID, gameID, u
 		if err := tx.Where("tournament_id = ?", tournamentID).Find(&teams).Error; err != nil {
 			return err
 		}
+		passings := make([]game.GamePassing, 0, len(teams))
 		for _, tt := range teams {
-			passing := game.GamePassing{
+			passings = append(passings, game.GamePassing{
 				GameID: gameID,
 				TeamID: tt.TeamID,
 				Status: game.StatusPending,
-			}
-			if err := tx.Create(&passing).Error; err != nil {
+			})
+		}
+		if len(passings) > 0 {
+			if err := tx.CreateInBatches(&passings, 100).Error; err != nil {
 				return err
 			}
 		}
@@ -271,17 +274,20 @@ func (s *TournamentService) Apply(ctx context.Context, tournamentID, teamID, use
 			// Конкурентная заявка уже добавила команду (C-H3).
 			return ErrTeamAlreadyInTournament
 		}
+		passings := make([]game.GamePassing, 0, len(games))
 		for _, g := range games {
 			if existingMap[g.ID] {
 				continue
 			}
-			passing := game.GamePassing{
+			passings = append(passings, game.GamePassing{
 				GameID: g.ID,
 				TeamID: teamID,
 				Status: game.StatusPending,
-			}
-			if err := tx.Create(&passing).Error; err != nil {
-				log.Error().Err(err).Uint("game_id", g.ID).Uint("team_id", teamID).Msg("Apply: failed to create passing")
+			})
+		}
+		if len(passings) > 0 {
+			if err := tx.CreateInBatches(&passings, 100).Error; err != nil {
+				log.Error().Err(err).Uint("team_id", teamID).Msg("Apply: failed to create passings")
 				return err
 			}
 		}
@@ -387,17 +393,10 @@ func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint
 			inTournament[tt.TeamID] = true
 		}
 
-		// Read existing results inside the transaction to prevent concurrent read races
-		var existingResults []TournamentResult
-		if findErr := tx.Where("tournament_id = ? AND team_id IN ?", tournament.ID, teamIDs).Find(&existingResults).Error; findErr != nil {
-			return findErr
-		}
-		resultMap := make(map[uint]*TournamentResult)
-		for i := range existingResults {
-			resultMap[existingResults[i].TeamID] = &existingResults[i]
-		}
-
 		scoredIDs := make([]uint, 0, len(passings))
+		// Собираем дельты (не аккумулированные значения) — UpsertMany
+		// инкрементирует существующую строку через EXCLUDED (M9, pass 30).
+		deltaResults := make([]TournamentResult, 0, len(passings))
 		for _, p := range passings {
 			if !inTournament[p.TeamID] {
 				continue
@@ -415,26 +414,24 @@ func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint
 				}
 			}
 
-			result, exists := resultMap[p.TeamID]
-			if !exists {
-				result = &TournamentResult{
-					TournamentID: tournament.ID,
-					TeamID:       p.TeamID,
-					Score:        points,
-					GamesPlayed:  1,
-				}
-			} else {
-				result.Score += points
-				result.GamesPlayed++
-			}
-			if upsErr := s.tournamentResultRepo.Upsert(tx, result); upsErr != nil {
-				return upsErr
-			}
+			deltaResults = append(deltaResults, TournamentResult{
+				TournamentID: tournament.ID,
+				TeamID:       p.TeamID,
+				Score:        points,
+				GamesPlayed:  1,
+			})
 			// Сохраняем точное значение начисленных очков для точного списания (C-M2).
 			if pointsErr := tx.Model(&game.GamePassing{}).Where("id = ?", p.ID).Update("tournament_points", points).Error; pointsErr != nil {
 				return pointsErr
 			}
 			scoredIDs = append(scoredIDs, p.ID)
+		}
+
+		// Единый батч-upsert вместо построчного Save (M9, pass 30).
+		if len(deltaResults) > 0 {
+			if upsErr := s.tournamentResultRepo.UpsertMany(tx, deltaResults); upsErr != nil {
+				return upsErr
+			}
 		}
 
 		// Помечаем прохождения начисленными в той же транзакции (идемпотентность).

@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mockFlusher РІР‚вЂќ mock Р Т‘Р В»РЎРЏ http.Flusher, Р С”Р С•РЎвЂљР С•РЎР‚РЎвЂ№Р в„– Р С—РЎР‚Р С•РЎРѓРЎвЂљР С• Р Р†РЎвЂ№Р В·РЎвЂ№Р Р†Р В°Р ВµРЎвЂљ recorder
+// mockFlusher — mock для http.Flusher, который вызывает Flush на recorder.
 type mockFlusher struct {
 	recorder *httptest.ResponseRecorder
 }
@@ -22,8 +22,8 @@ func (m *mockFlusher) Flush() {
 	m.recorder.Flush()
 }
 
-// safeRecorder РІР‚вЂќ thread-safe Р С•Р В±РЎвЂРЎР‚РЎвЂљР С”Р В° Р Р…Р В°Р Т‘ ResponseRecorder: writeLoop Р С—Р С‘РЎв‚¬Р ВµРЎвЂљ Р С‘Р В·
-// РЎРѓР Р†Р С•Р ВµР в„– Р С–Р С•РЎР‚РЎС“РЎвЂљР С‘Р Р…РЎвЂ№, Р В° РЎвЂљР ВµРЎРѓРЎвЂљ РЎвЂЎР С‘РЎвЂљР В°Р ВµРЎвЂљ body РІР‚вЂќ Р В±Р ВµР В· Р СРЎРЉРЎР‹РЎвЂљР ВµР С”РЎРѓР В° РЎРЊРЎвЂљР С• data race (-race).
+// safeRecorder — thread-safe обёртка над ResponseRecorder: writeLoop пишет
+// в горутине, а тест читает body — без мьютекса data race (-race).
 type safeRecorder struct {
 	mu  sync.Mutex
 	rec *httptest.ResponseRecorder
@@ -163,7 +163,7 @@ func TestSSEHandler_Stop_ClosesSessions(t *testing.T) {
 
 	select {
 	case <-session.done:
-		// session closed РІР‚вЂќ OK
+		// session closed — OK
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("session.done was not closed after Stop()")
 	}
@@ -192,7 +192,7 @@ func TestSSEHandler_Stop_NoBroadcastAfterStop(t *testing.T) {
 
 	select {
 	case <-done:
-		// Broadcast returned without hanging РІР‚вЂќ OK
+		// Broadcast returned without hanging — OK
 	case <-time.After(1 * time.Second):
 		t.Fatal("Broadcast after Stop() hung (WaitGroup misuse?)")
 	}
@@ -205,7 +205,7 @@ func TestSSEHandler_CanAccept_Limits(t *testing.T) {
 	assert.True(t, mgr.CanAccept("1.2.3.4"))
 	_ = mgr.RegisterSession(1, "1.2.3.4", httptest.NewRecorder(), &mockFlusher{})
 	_ = mgr.RegisterSession(1, "1.2.3.4", httptest.NewRecorder(), &mockFlusher{})
-	// maxConnsPerIP = 100 in test mgr РІР‚вЂќ so still accepted
+	// maxConnsPerIP = 100 in test mgr — so still accepted
 	assert.True(t, mgr.CanAccept("1.2.3.4"))
 
 	// Set low per-IP limit

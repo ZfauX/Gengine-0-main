@@ -212,6 +212,18 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 	}
 
 	data["ContentHTML"] = template.HTML(buf.String())
+
+	// M4 (pass 30): если контент-шаблон определяет блок "ExtraHead"
+	// (например, OG-теги на games-show), рендерим его в layout.
+	if tmpl.Lookup("ExtraHead") != nil {
+		var headBuf bytes.Buffer
+		if err := tmpl.ExecuteTemplate(&headBuf, "ExtraHead", data); err != nil {
+			log.Error().Err(err).Msg("Render: ExtraHead template execution error")
+		} else {
+			data["ExtraHead"] = template.HTML(headBuf.String())
+		}
+	}
+
 	c.HTML(status, "layout.html", data)
 }
 

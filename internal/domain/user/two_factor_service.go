@@ -4,7 +4,7 @@ package user
 import (
 	"crypto/rand"
 	"encoding/base32"
-	"encoding/hex"
+	"encoding/binary"
 	"fmt"
 	"strconv"
 	"strings"
@@ -19,7 +19,7 @@ import (
 const (
 	totpSecretBytes       = 20
 	backupCodeCount       = 10
-	backupCodeRandomBytes = 4
+	backupCodeRandomBytes = 8
 	totpCodeLength        = 6
 )
 
@@ -106,14 +106,14 @@ func (s *TwoFactorService) GenerateTOTPCode(secret string) (string, error) {
 func (s *TwoFactorService) GenerateBackupCodes() ([]string, error) {
 	codes := make([]string, backupCodeCount)
 	for i := 0; i < backupCodeCount; i++ {
+		// 8 байт → uint64 → mod 10^6: равномерное распределение без
+		// hex-обрезания и заметного modulo bias (M2, pass 30).
 		bytes := make([]byte, backupCodeRandomBytes)
 		if _, err := rand.Read(bytes); err != nil {
 			return nil, fmt.Errorf("ошибка генерации резервного кода: %w", err)
 		}
-		hexStr := hex.EncodeToString(bytes)[:6]
-		num, _ := strconv.ParseInt(hexStr, 16, 64)
-		code := fmt.Sprintf("%06d", num%1000000)
-		codes[i] = code
+		num := binary.BigEndian.Uint64(bytes)
+		codes[i] = fmt.Sprintf("%06d", num%1000000)
 	}
 	return codes, nil
 }

@@ -75,7 +75,27 @@ type NotificationService struct {
 	// не делать COUNT на каждое созданное уведомление.
 	unreadMu    sync.Mutex
 	unreadCache map[uint]unreadEntry
+
+	// push pool (H7, pass 30): отправка Web Push идёт через фиксированный пул
+	// воркеров вместо неограниченных goroutine — всплеск уведомлений больше
+	// не порождает тысячи параллельных HTTP-запросов к push-провайдеру.
+	pushMu   sync.Mutex
+	pushJobs chan pushJob
+	pushWg   sync.WaitGroup
 }
+
+type pushJob struct {
+	userID uint
+	notif  Notification
+}
+
+// Размер пула и очереди — эмпирически: 4 воркера × лимит подписок на юзера,
+// очередь 256 буферизует всплеск (например, старт турнира с 200 участниками).
+const (
+	pushWorkerCount = 4
+	pushQueueSize   = 256
+	pushJobTimeout  = 60 * time.Second
+)
 
 type unreadEntry struct {
 	count   int
@@ -213,21 +233,70 @@ func (s *NotificationService) Create(ctx context.Context, userID uint, ntype Not
 	}
 
 	// PF-2 (pass 29): Web Push отправляется асинхронно — синхронные HTTP-вызовы
-	// push-провайдеру (по всем подпискам) блокировали request-путь. Используем
-	// context.WithoutCancel: завершение запроса не должно отменять доставку.
+	// push-провайдеру (по всем подпискам) блокировали request-путь. Очередь
+	// воркеров (H7, pass 30): фиксированный пул вместо неограниченных
+	// goroutine; контекст фоновый, не зависит от завершения запроса.
 	if s.vapidCfg.PublicKey != "" && s.vapidCfg.PrivateKey != "" {
 		notif := *notification
 		uid := userID
-		go func() {
-			asyncCtx := context.WithoutCancel(ctx)
-			if err := s.sendWebPush(asyncCtx, uid, &notif); err != nil {
-				log.Warn().Err(err).Uint("user_id", uid).Msg("Notification: web push send failed")
-			}
-		}()
+		s.enqueueWebPush(uid, &notif)
 	}
 
 	log.Debug().Uint("user_id", userID).Str("type", string(ntype)).Msg("Notification created")
 	return nil
+}
+
+// enqueueWebPush ставит задачу Web Push в очередь воркеров. Пул инициализируется
+// лениво при первой отправке; при переполнении очереди задача отбрасывается
+// (не блокируем request-путь — потеря push менее критична, чем зависание).
+func (s *NotificationService) enqueueWebPush(userID uint, n *Notification) {
+	job := pushJob{
+		userID: userID,
+		notif:  *n,
+	}
+	s.pushMu.Lock()
+	if s.pushJobs == nil {
+		s.pushJobs = make(chan pushJob, pushQueueSize)
+		for i := 0; i < pushWorkerCount; i++ {
+			s.pushWg.Add(1)
+			go s.pushWorker()
+		}
+	}
+	ch := s.pushJobs
+	s.pushMu.Unlock()
+
+	select {
+	case ch <- job:
+	default:
+		log.Warn().Uint("user_id", userID).Msg("Notification: push queue full, dropping job")
+	}
+}
+
+// pushWorker обрабатывает задачи из очереди до её закрытия.
+func (s *NotificationService) pushWorker() {
+	defer s.pushWg.Done()
+	for job := range s.pushJobs {
+		ctx, cancel := context.WithTimeout(context.Background(), pushJobTimeout)
+		err := s.sendWebPush(ctx, job.userID, &job.notif)
+		cancel()
+		if err != nil {
+			log.Warn().Err(err).Uint("user_id", job.userID).Msg("Notification: web push send failed")
+		}
+	}
+}
+
+// Shutdown останавливает пул push-воркеров, дожидаясь доставки задач из очереди.
+// Безопасен при отсутствии инициализации пула (pushJobs == nil).
+func (s *NotificationService) Shutdown() {
+	s.pushMu.Lock()
+	if s.pushJobs == nil {
+		s.pushMu.Unlock()
+		return
+	}
+	close(s.pushJobs)
+	s.pushJobs = nil
+	s.pushMu.Unlock()
+	s.pushWg.Wait()
 }
 
 // sendWebPush отправляет Web Push всем подпискам пользователя.

@@ -45,6 +45,7 @@ type TournamentTeamRepository interface {
 
 type TournamentResultRepository interface {
 	Upsert(tx *gorm.DB, result *TournamentResult) error
+	UpsertMany(tx *gorm.DB, results []TournamentResult) error
 	GetLeaderboard(ctx context.Context, tournamentID uint) ([]TournamentResult, error)
 	GetByTournamentAndTeam(ctx context.Context, tournamentID, teamID uint) (*TournamentResult, error)
 	GetByTournamentAndTeamIDs(ctx context.Context, tournamentID uint, teamIDs []uint) ([]TournamentResult, error)
@@ -217,6 +218,24 @@ func NewGormTournamentResultRepo(db *gorm.DB) TournamentResultRepository {
 
 func (r *gormTournamentResultRepo) Upsert(tx *gorm.DB, result *TournamentResult) error {
 	return tx.Save(result).Error
+}
+
+// UpsertMany батч-upsert результатов (M9, pass 30): один запрос вместо
+// построчного Save на каждую команду в UpdateScoresForGame.
+func (r *gormTournamentResultRepo) UpsertMany(tx *gorm.DB, results []TournamentResult) error {
+	if len(results) == 0 {
+		return nil
+	}
+	return tx.Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "tournament_id"},
+			{Name: "team_id"},
+		},
+		DoUpdates: clause.Assignments(map[string]any{
+			"score":        gorm.Expr("tournament_results.score + EXCLUDED.score"),
+			"games_played": gorm.Expr("tournament_results.games_played + EXCLUDED.games_played"),
+		}),
+	}).Create(&results).Error
 }
 func (r *gormTournamentResultRepo) GetLeaderboard(ctx context.Context, tournamentID uint) ([]TournamentResult, error) {
 	var results []TournamentResult
