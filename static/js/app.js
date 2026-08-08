@@ -177,11 +177,11 @@ function showModalConfirm(message, element) {
     var okText = (element && element.dataset && element.dataset.confirmOk)
         ? element.dataset.confirmOk
         : (body.getAttribute('data-i18n-confirm-ok') || 'Удалить');
-    // UX-M4 (pass 32): кнопка OK красная только для деструктивных действий.
-    // Элемент может пометить себя data-confirm-danger; по умолчанию считаем
-    // действие деструктивным, если текст OK совпадает с глобальным «Удалить».
-    var isDanger = (element && element.dataset && element.dataset.confirmDanger === 'true') ||
-        !(element && element.dataset && element.dataset.confirmOk);
+    // S-5 (pass 33): кнопка OK красная ТОЛЬКО при явном data-confirm-danger.
+    // Раньше эвристика («нет data-confirm-ok → красная») могла молча сделать
+    // не-деструктивный confirm красным «Удалить». Деструктивные элементы
+    // должны явно помечать себя data-confirm-danger="true".
+    var isDanger = !!(element && element.dataset && element.dataset.confirmDanger === 'true');
     var okBtnClass = isDanger
         ? 'px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition'
         : 'px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition';

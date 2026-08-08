@@ -3,9 +3,11 @@ package game
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"gengine-0/internal/domain/level"
+	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/sqlutil"
 
 	"gorm.io/gorm"
@@ -83,7 +85,9 @@ func (r *gormGameRepo) GetByID(ctx context.Context, id uint) (*Game, error) {
 }
 func (r *gormGameRepo) GetByIDPreloaded(ctx context.Context, id uint) (*Game, error) {
 	var g Game
-	err := r.db.WithContext(ctx).Preload("Author").Preload("GameSetting").First(&g, id).Error
+	// P-5 (pass 33): Author через JOIN (belongs-to — безопасно), GameSetting
+	// через Preload (has-one может отсутствовать — JOIN потерял бы строку).
+	err := r.db.WithContext(ctx).Joins("Author").Preload("GameSetting").First(&g, id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -293,28 +297,49 @@ func (r *gormGameRepo) CountPublished(ctx context.Context) (int64, error) {
 	return count, err
 }
 
-// AdminListGames — админ-листинг с фильтрами (A-5, pass 32).
+// AdminListGames — админ-листинг с фильтрами (A-5, pass 32; P-3, pass 33:
+// COUNT(*) OVER() + JOIN users — один запрос вместо Count+Find+Preload).
 func (r *gormGameRepo) AdminListGames(ctx context.Context, query, status string, offset, limit int) ([]Game, int64, error) {
-	db := r.db.WithContext(ctx).Model(&Game{}).Preload("Author")
+	var b strings.Builder
+	b.WriteString(`
+		SELECT games.*, users.name AS author__name, COUNT(*) OVER() AS total_count
+		FROM games
+		LEFT JOIN users ON users.id = games.author_id
+		WHERE 1=1`)
+	args := []any{}
 	if query != "" {
 		like := sqlutil.BuildLikePattern(query)
-		db = db.Joins("LEFT JOIN users ON users.id = games.author_id").
-			Where("games.name ILIKE ? OR users.name ILIKE ?", like, like)
+		b.WriteString(` AND (games.name ILIKE ? OR users.name ILIKE ?)`)
+		args = append(args, like, like)
 	}
 	switch status {
 	case "draft":
-		db = db.Where("is_draft = true")
+		b.WriteString(` AND games.is_draft = true`)
 	case "published":
-		db = db.Where("is_draft = false")
+		b.WriteString(` AND games.is_draft = false`)
 	}
+	b.WriteString(` ORDER BY games.id DESC LIMIT ? OFFSET ?`)
+	args = append(args, limit, offset)
 
-	var total int64
-	if err := db.Count(&total).Error; err != nil {
+	type gameRow struct {
+		Game
+		AuthorName string `gorm:"column:author__name"`
+		TotalCount int64
+	}
+	var rows []gameRow
+	if err := r.db.WithContext(ctx).Raw(b.String(), args...).Scan(&rows).Error; err != nil {
 		return nil, 0, err
 	}
-	var games []Game
-	if err := db.Order("id DESC").Offset(offset).Limit(limit).Find(&games).Error; err != nil {
-		return nil, 0, err
+	total := int64(0)
+	games := make([]Game, 0, len(rows))
+	for i := range rows {
+		if i == 0 {
+			total = rows[i].TotalCount
+		}
+		if rows[i].AuthorName != "" {
+			rows[i].Game.Author = user.User{Name: rows[i].AuthorName}
+		}
+		games = append(games, rows[i].Game)
 	}
 	return games, total, nil
 }

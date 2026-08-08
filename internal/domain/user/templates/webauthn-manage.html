@@ -21,7 +21,7 @@
                         {{ T $.Lang "passkey.added_at" }} {{ formatDateTime $.Lang $.TZOffset .CreatedAt }}
                     </div>
                 </div>
-                <form action="/profile/webauthn-keys/delete/{{.ID}}" method="POST" data-confirm-form="{{ T $.Lang "passkey.delete_confirm" }}">
+                <form action="/profile/webauthn-keys/delete/{{.ID}}" method="POST" data-confirm-danger="true" data-confirm-form="{{ T $.Lang "passkey.delete_confirm" }}">
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
                     <button type="submit" class="btn btn-danger text-xs">{{ T $.Lang "passkey.delete_button" }}</button>
                 </form>

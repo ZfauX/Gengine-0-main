@@ -700,7 +700,6 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 	var passing GamePassing
 	if err := s.db.WithContext(ctx).
 		Preload("Team").
-		Preload("Game.GameSetting").
 		First(&passing, passingID).Error; err != nil {
 		return nil, err
 	}
@@ -710,32 +709,41 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 		return nil, ErrGameNotActive
 	}
 
+	// P-7 (pass 33): settings и progress независимы — грузим параллельно
+	// (раньше settings шли последовательно после passing-preload GameSetting).
 	var settings GameSetting
-	if passing.Game.GameSetting.ID != 0 {
-		settings = passing.Game.GameSetting
-	} else {
+	var progress LevelProgress
+	var g errgroup.Group
+
+	g.Go(func() error {
 		if err := s.db.WithContext(ctx).Where("game_id = ?", passing.GameID).First(&settings).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				// settings не обязательны — используем единые значения по умолчанию (B5).
 				settings = *defaultGameSetting(passing.GameID)
-			} else {
-				// На не-NotFound ошибке тоже используем дефолты (C-M9), а не
-				// zero-value с AllowHints=false.
-				log.Error().Err(err).Uint("game_id", passing.GameID).Msg("GetGameplayData: failed to load settings, using defaults")
-				settings = *defaultGameSetting(passing.GameID)
+				return nil
 			}
+			// На не-NotFound ошибке тоже используем дефолты (C-M9), а не
+			// zero-value с AllowHints=false.
+			log.Error().Err(err).Uint("game_id", passing.GameID).Msg("GetGameplayData: failed to load settings, using defaults")
+			settings = *defaultGameSetting(passing.GameID)
 		}
-	}
+		return nil
+	})
 
-	var progress LevelProgress
-	err := s.db.WithContext(ctx).
-		Preload("Level", func(db *gorm.DB) *gorm.DB {
-			return db.Select("id, game_id, name, description, type, hint, position")
-		}).
-		Where("game_passing_id = ? AND finished_at IS NULL", passingID).
-		First(&progress).Error
-	if err != nil {
-		return nil, err
+	g.Go(func() error {
+		if err := s.db.WithContext(ctx).
+			Preload("Level", func(db *gorm.DB) *gorm.DB {
+				return db.Select("id, game_id, name, description, type, hint, position")
+			}).
+			Where("game_passing_id = ? AND finished_at IS NULL", passingID).
+			First(&progress).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+
+	if waitErr := g.Wait(); waitErr != nil {
+		return nil, waitErr
 	}
 
 	// Оптимизация (P-H4): attempts и voting session независимы — грузим
@@ -744,8 +752,8 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 	var votingSession GameBlackboxVotingSession
 	votingActive := false
 
-	var g errgroup.Group
-	g.Go(func() error {
+	g2 := errgroup.Group{}
+	g2.Go(func() error {
 		if err := s.db.WithContext(ctx).
 			Where("level_progress_id = ?", progress.ID).
 			Order("created_at DESC").
@@ -756,7 +764,7 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 		}
 		return nil
 	})
-	g.Go(func() error {
+	g2.Go(func() error {
 		if err := s.db.WithContext(ctx).
 			Where("game_passing_id = ? AND level_id = ? AND is_open = true", passingID, progress.LevelID).
 			First(&votingSession).Error; err != nil {
@@ -771,7 +779,7 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 	})
 	// Ошибки фоновых запросов не должны валить страницу — данные уже есть,
 	// но логируем результат ожидания, чтобы не терять сбои БД молча (G11).
-	if waitErr := g.Wait(); waitErr != nil {
+	if waitErr := g2.Wait(); waitErr != nil {
 		log.Error().Err(waitErr).Uint("passing_id", passingID).Msg("GetGameplayData: background queries failed")
 	}
 

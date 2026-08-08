@@ -20,7 +20,7 @@
             {{range .Question.Answers}}
             <li class="py-3 flex justify-between items-center">
                 <span class="font-mono text-gray-800 dark:text-gray-100">{{.Code}}</span>
-                <form action="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{$.Question.ID}}/answers/{{.ID}}" method="POST" class="inline" data-confirm-form='{{ T $.Lang "answer.delete_confirm" }}'>
+                <form action="/games/{{$.GameID}}/levels/{{$.LevelID}}/questions/{{$.Question.ID}}/answers/{{.ID}}" method="POST" class="inline" data-confirm-danger='true' data-confirm-form='{{ T $.Lang "answer.delete_confirm" }}'>
                     <input type="hidden" name="_method" value="DELETE">
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
                     <button type="submit" class="btn btn-danger text-xs">{{ T $.Lang "common.delete" }}</button>

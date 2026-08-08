@@ -2,6 +2,7 @@
 package game
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -189,7 +190,14 @@ func (h *CoAuthorHandler) RemoveCoAuthor(c *gin.Context) {
 	ownerID := c.GetUint("userID")
 
 	if err := h.coAuthorSvc.Remove(c.Request.Context(), uint(gameID), uint(userID), ownerID); err != nil {
-		render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, err.Error()))
+		// S-2 (pass 33): «только владелец» → 403; реальная DB-ошибка → 500,
+		// а не сырая строка в 403.
+		if errors.Is(err, ErrNotOwner) {
+			render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, err.Error()))
+		} else {
+			log.Error().Err(err).Int("game_id", gameID).Int("user_id", userID).Msg("RemoveCoAuthor: failed to remove co-author")
+			render.RenderErrorPage(c, http.StatusInternalServerError)
+		}
 		return
 	}
 	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/co-authors")

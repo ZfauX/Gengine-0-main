@@ -16,6 +16,9 @@ const (
 	RoleObserver      = "observer"
 )
 
+// ErrNotOwner — действие доступно только владельцу игры (S-2, pass 33).
+var ErrNotOwner = errors.New("только владелец может управлять соавторами")
+
 type CoAuthorService struct {
 	DB   *gorm.DB
 	repo CoAuthorRepository
@@ -105,7 +108,7 @@ func (s *CoAuthorService) Add(ctx context.Context, gameID, newCoAuthorID, ownerI
 		return err
 	}
 	if authorID != ownerID {
-		return errors.New("только владелец может управлять соавторами")
+		return ErrNotOwner
 	}
 	if authorID == newCoAuthorID {
 		return errors.New("владелец уже имеет полный доступ")
@@ -139,7 +142,7 @@ func (s *CoAuthorService) Remove(ctx context.Context, gameID, coAuthorUserID, ow
 		return err
 	}
 	if authorID != ownerID {
-		return errors.New("только владелец может управлять соавторами")
+		return ErrNotOwner
 	}
 	// Используем Delete, который в GORM v2 автоматически устанавливает deleted_at
 	return s.repoOrDefault().DeleteByGameAndUser(ctx, gameID, coAuthorUserID)

@@ -19,7 +19,7 @@
             <li class="py-3 flex flex-wrap items-center justify-between gap-2">
                 <span class="text-gray-800 dark:text-gray-100">{{.Name}} ({{.Email}})</span>
                 {{if and $.CanManage}}
-                <form action="/teams/{{$.Team.ID}}/members/{{.ID}}/remove" method="POST" class="inline" data-confirm-form='{{ T $.Lang "team.remove_member_confirm" }}'>
+                <form action="/teams/{{$.Team.ID}}/members/{{.ID}}/remove" method="POST" class="inline" data-confirm-danger='true' data-confirm-form='{{ T $.Lang "team.remove_member_confirm" }}'>
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
                     <button type="submit" class="btn btn-danger text-xs">{{ T $.Lang "common.delete" }}</button>
                 </form>

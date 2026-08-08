@@ -13,7 +13,7 @@
                     <span class="font-medium text-gray-800 dark:text-gray-100">{{.User.Name}}</span>
                     <span class="text-sm text-gray-500 dark:text-gray-400 ml-2">(ID: {{.UserID}})</span>
                 </div>
-                <form action="/games/{{$.GameID}}/co-authors/{{.UserID}}/remove" method="POST" class="inline" data-confirm-form='{{ TF $.Lang "coauthor.delete_confirm" .User.Name }}'>
+                <form action="/games/{{$.GameID}}/co-authors/{{.UserID}}/remove" method="POST" class="inline" data-confirm-danger='true' data-confirm-form='{{ TF $.Lang "coauthor.delete_confirm" .User.Name }}'>
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
                     <button type="submit" class="btn btn-danger text-xs">{{ T $.Lang "coauthor.delete_button" }}</button>
                 </form>

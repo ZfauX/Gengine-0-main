@@ -47,9 +47,19 @@
 
 ---
 
-## Статус (обновлено 8 авг 2026) — PASS 33 ОТКРЫТ
+## Статус (обновлено 8 авг 2026) — PASS 33 ЗАКРЫТ
 
-Находки pass 33 перечислены ниже; решение о закрытии — отдельными раундами фиксов, как в pass 30-32.
+**Все находки pass 33 исправлены** (3 раунда фиксов):
+
+- **Раунд 1** (`8fc47ca`): A-H1 (админ-дашборд backups deleted_at), TZ-1 (calendar TZ), A-H4 (Model(ctx) убран из GameRepository: RawScan/Autocomplete/SearchVectorExists), A-H3 (GamePassingRepository в сервисе), A-H2 (CountPassingsInStatuses в svc_play), A-M2 (stale TODO), P-1/P-2 (индекс 000043 + retention уведомлений), S-3 (nosniff), A-2 (500-страница без raw err).
+- **Раунд 2** (`4b0ee4b`): S-1 (backup-code lockout), P-4 (GetLogs COUNT OVER), A-M1 (sentinel-ошибки passing), UX-1/2/3 (confirm focus, бейдж 9+, hotkey n), DM sweep (admin/invitations/dashboard/tournaments/games-show).
+- **Раунд 3** (текущий): P-3 (AdminListGames COUNT OVER + JOIN users), P-5 (GetByIDPreloaded Joins Author), P-7 (GetGameplayData параллельные settings/progress), S-2 (coauthor remove: ErrNotOwner → 403 vs 500), S-5 (явный data-confirm-danger вместо эвристики), A-M3 (go-sqlmock для CountPassingsInStatuses/AdminListGames).
+
+**Отложено (задокументировано):**
+- **P-6** (GetAverageRating из rating_value) — count отзывов не прекомпьютится в `games.rating_value` (только AVG); reviews-скан с индексом + 5-мин кэш приемлем.
+- Полная миграция транзакционных сервисов (svc_play/svc_admin/svc_simulate tx) на репозитории — стандартный GORM-паттерн, оставлено.
+
+**Проверка:** `go build ./...` ✓, `go test -short ./...` ✓ (вкл. новые go-sqlmock-тесты), `go test -tags=integration` (game/admin/user/notification/calendar) ✓, `go vet ./...` ✓, `gofmt -l .` → пусто ✓, `go generate` (wire) ✓, `go test -race -short ./...` (WSL) ✓.
 
 ---
 

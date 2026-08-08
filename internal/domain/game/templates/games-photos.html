@@ -34,7 +34,7 @@
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ TF $.Lang "photos.level_label" .Level.Name }}</p>
                 {{end}}
                 {{if or (eq .UserID $.CurrentUserID) $.IsManager}}
-                <button class="delete-photo-btn btn btn-danger text-xs mt-2 px-3 py-1" data-photo-id="{{.ID}}">{{ T $.Lang "photos.delete" }}</button>
+                <button class="delete-photo-btn btn btn-danger text-xs mt-2 px-3 py-1" data-photo-id="{{.ID}}" data-confirm-danger="true">{{ T $.Lang "photos.delete" }}</button>
                 {{end}}
             </div>
         </div>

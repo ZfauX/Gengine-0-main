@@ -69,7 +69,7 @@
                                 {{if eq .Role "admin"}}{{ T $.Lang "admin.demote" }}{{else}}{{ T $.Lang "admin.make_admin" }}{{end}}
                             </button>
                         </form>
-                        <form action="/admin/users/{{.ID}}/delete" method="POST" class="inline" data-confirm-form="{{ T $.Lang "admin.user_delete_confirm" }}">
+                        <form action="/admin/users/{{.ID}}/delete" method="POST" class="inline" data-confirm-danger="true" data-confirm-form="{{ T $.Lang "admin.user_delete_confirm" }}">
                             <input type="hidden" name="_csrf" value="{{$.csrf}}">
                             <button type="submit" class="btn btn-danger text-xs">{{ T $.Lang "admin.delete" }}</button>
                         </form>
