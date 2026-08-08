@@ -35,6 +35,124 @@
 
 ---
 
+# PASS 33 (повторное ревью) — 8 августа 2026
+
+> Четвёртое повторное ревью после полного закрытия pass 30-32 (репозитории, race, golangci-lint CI). Выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture) с **личной верификацией** ключевых находок.
+
+## Резюме pass 33
+
+**Итог:** 0 критичных, 5 высоких (4 подтверждены лично), ~15 средних, ~15 низких + 2 новых индекса.
+
+> Кодовая база стабильно зрелая. Найдены: **последний TZ-баг** (calendar API в UTC), **баг админ-дашборда** (backups без deleted_at — счётчики молча 0), дублирование SQL/репозиториев в svc_play, незавершённая миграция GamePassing/GameListing на репозитории, stale TODO, и пакет dark-mode/UX-мелочей.
+
+---
+
+## Статус (обновлено 8 авг 2026) — PASS 33 ОТКРЫТ
+
+Находки pass 33 перечислены ниже; решение о закрытии — отдельными раундами фиксов, как в pass 30-32.
+
+---
+
+## A. Найденные ошибки pass 33 (верифицировано лично)
+
+### 🔴 Критично
+Не обнаружено.
+
+### 🟠 Высокие
+
+| ID | Файл | Проблема |
+|---|---|---|
+| **TZ-1** | `calendar/handler.go:132-137` | **Последний TZ-баг**: CalendarData форматирует `StartsAt.Format("2006-01-02")`/`"15:04"` в UTC без `tz_offset` cookie. UTC+3 пользователь видит время на 3ч раньше; игры около полуночи попадают в **неправильную ячейку дня**. Кэш `year-month` тоже не учитывает TZ. **Верифицировано лично.** |
+| **A-H1** | `admin/handler.go:122` | **Админ-дашборд молча показывает 0 счётчиков.** `backups` таблица НЕ имеет `deleted_at` колонки (есть у audit_logs), но SQL фильтрует `WHERE deleted_at IS NULL` → ошибка, глотается log.Error, все 5 счётчиков = 0. **Верифицировано лично.** |
+| **A-H2** | `svc_play.go:636-638,795-808` | **Дублирование SQL**: ProcessSnapshot переписывает `CountActivePassings` (добавлен pass 32, но с другой семантикой: started+accepted vs started+testing), `IsTeamMember` дублирует `GameRepository.IsTeamMember`. Семантическая дивергенция — потенциальный баг снапшотов. **Верифицировано лично.** |
+| **A-H3** | `svc_passing.go:21` + `repository.go:45-52` | **GamePassingService игнорирует существующий GamePassingRepository** — read-пути (ListByGamePaginated, ListTestPassings) идут через экспортированный `DB *gorm.DB`. Репозиторий создан в DI, но не используется. |
+| **A-H4** | `svc_listing.go:192,204,241,269` + `repository.go:23` | **`GameRepository.Model(ctx)` — последняя утечка `*gorm.DB`** через интерфейс (raw SQL в GameListingService: ListFiltered, Autocomplete, SearchVector). |
+
+### 🟡 Средние
+
+| ID | Файл | Проблема |
+|---|---|---|
+| S-1 | `two_factor_handler.go:155-209` | BackupVerify: нет счётчика неудачных попыток/локдауна при украденной сессии (в отличие от TOTP-пути). |
+| S-2 | `hnd_coauthor.go:178-196` | RemoveCoAuthor рендерит сырой err в 403 для любой ошибки (в т.ч. DB) — раскрытие + неверный статус. |
+| S-3 | `uploads.go` Serve | Нет `X-Content-Type-Options: nosniff` на ответах uploads (answers/*). |
+| S-4 | `service.go:488-498` | SetLockedUntil: TOCTOU в вычислении длительности backoff при параллельных попытках. |
+| S-5 | `static/js/app.js:183-187` | isDanger-эвристика хрупкая: не-деструктивный confirm без data-confirm-ok станет красным «Удалить»; force-finish/reject сейчас синие, а кнопки btn-danger. |
+| P-1 | `notification/repository.go:79-105` | ListByUser: `ORDER BY created_at DESC` без подходящего индекса — top-N sort всех уведомлений пользователя. |
+| P-2 | notification | Таблица уведомлений растёт **безгранично** (нет retention-задачи). |
+| P-3 | `game/repository.go:240-263` | AdminListGames — 2-3 round-trip (Count+Find+Preload Author); можно COUNT OVER + JOIN. |
+| P-4 | `svc_passing.go:112-133`, `repository.go:140-166` | ListByGamePaginated/GetLogsByGameIDPaginated — Count+Find (2 запроса). |
+| P-5 | `repository.go:71-78` | GetByIDPreloaded — 3 запроса (Preload Author+GameSetting); можно Joins. |
+| P-6 | `svc_rating.go:227-245` | GetAverageRating на cache-miss сканирует reviews вместо precomputed `games.rating_value` (000027). |
+| P-7 | `svc_play.go:679-782` | GetGameplayData — ~8-9 последовательных запросов (потребляет preloads). |
+| A-M1 | game domain | ~15 inline русских ошибок при 6 sentinel — localization/errors.Is неполны. |
+| A-M2 | `auth_handler.go:308-309` | **Stale TODO про JTI blacklist** (реализовано). **Верифицировано лично.** |
+| A-M3 | `AdminListGames`, `AtomicLockAccount`, 4 новые repo-метода | Нет прямых юнит-тестов (только интеграционные). |
+| UX-1 | `app.js:246-248` | Confirm-модалка фокусит Cancel — Enter (мышечная память «подтвердить») отменяет действие. |
+| A-2 | `errors-500.html:7` | Сырой Go-err рендерится на 500-странице — утечка путей/внутренностей. |
+| UX-2 | `layout.html:190` | Серверный бейдж уведомлений «15» выходит за 16px-круг; JS корректно капает «9+». |
+| UX-3 | `games-list.html:298-301` | Горячая клавиша «n» работает для гостей (ведёт на логин-стену). |
+| i18n-1 | `auth-login.html:14` | Хардкод «Email» вместо T. |
+| XSS-dp | `invitations-new.html:81` | `u.id` в innerHTML без escapeHtml (число, но defense-in-depth). |
+
+### 🔲 Осознанно оставлено / опровергнуто
+- **SQLi/LIKE-экранирование** в AdminListGames — корректно (BuildLikePattern + bind).
+- **XSS** в шаблонах/JS — все innerHTML-сайты экранируют; CSP nonce корректен.
+- **Гонок не найдено** — race-тесты pass 31 чистые.
+- **wire.go ↔ wire_gen.go** — синхронизированы (проверено).
+- Rate-limit покрытие — хорошее (login/register/2FA/code/RUM/search).
+- go.mod: ядро актуально; skip2/go-qrcode устаревший (low risk).
+
+---
+
+## B. Оптимизации (производительность / БД)
+
+### Рекомендованные CREATE INDEX (migration 000043)
+```sql
+CREATE INDEX IF NOT EXISTS idx_notifications_user_created
+    ON notifications(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_games_author_draft_created
+    ON games(author_id, is_draft, created_at DESC);
+```
+
+### Прочие оптимизации
+- **P-1/P-4/P-5**: COUNT(*) OVER() + JOIN для AdminListGames, ListByGamePaginated, GetLogsByGameIDPaginated, GetByIDPreloaded (паттерн уже есть в notification).
+- **P-6**: GetAverageRating читать `games.rating_value`/`participant_count` вместо скана reviews.
+- **P-2**: retention-задача для уведомлений (удалять read за 90 дней), как RefreshToken.DeleteExpired.
+- **P-7**: параллелить независимые чтения в GetGameplayData (settings + progress + attempts/voting).
+
+---
+
+## C. Улучшения пользовательского опыта (приоритеты)
+
+1. **TZ-1** — calendar API: применять TZOffset к дате/времени + к ключу кэша.
+2. **A-2** — не рендерить сырой Go-err на 500-странице.
+3. **UX-1** — фокус на кнопке OK (или Cancel для не-деструктивных) в confirm-модалке.
+4. **DM-1..DM-6** — dark-mode sweep бейджей/боксов (admin, invitations, dashboard, tournaments, games-show, calendar).
+5. **UX-2** — серверный кэп бейджа уведомлений «9+».
+6. **UX-3** — guard горячей клавиши «n» для гостей.
+7. **S-5** — явный `data-confirm-danger` вместо эвристики.
+
+---
+
+## D. Архитектурные улучшения (кодовая база)
+
+1. **A-H4**: убрать `GameRepository.Model(ctx)` — типизированные `ListFiltered`/`SearchVectorExists`/`Autocomplete` в репозитории.
+2. **A-H3**: подключить `GamePassingRepository` в `GamePassingService` (ListByGamePaginated/ListTestPassings).
+3. **A-H2**: использовать `CountActivePassings`/`IsTeamMember` в svc_play; устранить семантическую дивергенцию (started+accepted vs started+testing).
+4. **A-M1**: sentinel-ошибки для ~15 инлайн-строк game-домена.
+5. **A-M3**: go-sqlmock для AdminListGames/CountActivePassings/AtomicLockAccount.
+6. **A-M2**: удалить stale TODO про JTI.
+7. **S-4**: атомарное вычисление длительности backoff внутри SQL.
+
+## Приоритет фиксов (pass 33)
+1. **A-H1** (админ-дашборд 0 счётчиков) — молчаливый баг.
+2. **TZ-1** (calendar UTC) — видимый пользователям.
+3. **A-H4/A-H3** (репозитории: Model leak, GamePassing) — архитектура.
+4. **P-1/P-2** (индекс уведомлений + retention).
+5. **S-1/S-3** (backup-коды brute-force, nosniff).
+
+---
+
 # PASS 32 (повторное ревью) — 8 августа 2026
 
 > Третье повторное ревью после полного закрытия pass 30-31 (миграция на репозитории, race-верификация). Выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture) с **личной верификацией** ключевых находок.
@@ -45,7 +163,8 @@
 
 - **Раунд 1** (`b552fd4`): F-C1 (глобальный escapeHtml — тосты/confirm ожили), F-P1 (инвалидация лидерборда в in-memory), S-1 (OAuth 2FA TTL), S-2 (PhotosPage visibility), S-3 (нормализация backup-кодов), S-4/S-5 (атомарный lock_count + 2FA backoff), A-1 (CoAuthor→репозиторий), индексы 000042, dark-mode (монитор/admin/passings).
 - **Раунд 2** (`784c010`): A-5 (GameRepository без *gorm.DB leak: типизированные Count/AdminListGames), A-2 (батч DeleteLevelFromActiveGame), S-6 (фото-delete authz), UX-H1 (Escape на dropdown), UX-M3 (lightbox local TZ), UX-M5/M7 (удалён мёртвый WS логов, .catch).
-- **Раунд 3** (текущий): UX-M11 (role=menuitem), UX-M8 (stale-response guards в автокомплитах), UX-M4 (confirm-кнопка по типу действия).
+- **Раунд 3** (`9d17109`): UX-M11 (role=menuitem), UX-M8 (stale-response guards в автокомплитах), UX-M4 (confirm-кнопка по типу действия).
+- **CI-фиксы** (`d8eb388`, `d7e123b`): govet shadow в tournament RemoveGame (4 `err :=` → `err =`) — golangci-lint v2 на CI прошёл.
 
 **Опровергнуто/отложено (задокументировано):**
 - **P-1** (GameSnapshot) — уже кэшируется 30с LRU + singleflight (GetOrFetchSnapshot); тяжёлый CTE выполняется раз в 30с на активную игру, не каждую секунду.
