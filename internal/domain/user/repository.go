@@ -85,6 +85,19 @@ type UserRepository interface {
 	ListByIDs(ctx context.Context, ids []uint) ([]User, error)
 }
 
+// ProfileRepository — репозиторий данных публичного профиля (A-2, pass 35:
+// ProfileService больше не держит raw *gorm.DB, все SQL в репозитории).
+type ProfileRepository interface {
+	GetPublicProfileStats(ctx context.Context, userID uint) (*UserStats, error)
+	IsFollowing(ctx context.Context, followerID, authorID uint) (bool, error)
+	GetRecentGames(ctx context.Context, authorID uint) ([]RecentGame, error)
+	UpdateProfile(ctx context.Context, userID uint, name, email string) error
+	GetThemeSettings(ctx context.Context, userID uint) (ThemeSettings, error)
+	SaveThemeSettings(ctx context.Context, userID uint, ts ThemeSettings) error
+	GetGamesView(ctx context.Context, userID uint) (string, error)
+	SaveGamesView(ctx context.Context, userID uint, view string) error
+}
+
 // AchievementRepository определяет контракт для работы с достижениями.
 type AchievementRepository interface {
 	Award(ctx context.Context, userID uint, achievement *Achievement) error

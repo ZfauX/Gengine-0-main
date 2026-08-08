@@ -66,6 +66,13 @@
 
 **Осталось на следующие раунды:** A-2 (ProfileService через репозиторий), A-3 (ExportRepository без DB()), F-1 (кардинальность ключей листинга), F-3 (monitor polling), F-4 (tournament List LIMIT), UX-6..11, A-4..A-6.
 
+**Раунд 2 (текущий):**
+- **A-2**: ProfileService через `ProfileRepository` (новый `internal/domain/user/profile_repository.go`, SQL перенесён из сервиса; wire через `NewGormProfileRepo`).
+- **A-3**: ExportRepository убран `DB(ctx) *gorm.DB` — добавлены типизированные read-методы (GetPassingByGameAndTeam, GetProgressesByPassing, GetLevelsByGame, GetAttemptsByProgressIDs); ExportTeamResultsToCSV переписан на них.
+- **F-4**: tournament `List` — LIMIT 50 + Select без тяжёлого Description.
+
+**Осталось на раунд 3+:** F-1 (кардинальность ключей листинга — сузить ключ/кэш первых страниц), F-3 (monitor polling интервал), UX-6 (бейдж новых сообщений), UX-7 (mobile-карточки таблиц), UX-8 (SSE status), UX-9 (calendar loading), UX-10 (двойные if), A-4 (God-фасады), A-5 (context.Background), A-6 (emoji aria-hidden), UX-11 (пустые переводы).
+
 ---
 
 ## A. Найденные ошибки pass 35 (верифицировано лично)

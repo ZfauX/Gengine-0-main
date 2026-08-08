@@ -40,7 +40,7 @@ func TestThemeSettings_ServiceSaveLoad(t *testing.T) {
 	u := &User{Email: "theme@test.com", Password: "pass", Name: "Theme", Role: "user"}
 	require.NoError(t, db.Create(u).Error)
 
-	svc := NewProfileService(db)
+	svc := NewProfileService(NewGormProfileRepo(db))
 
 	// По умолчанию — дефолты
 	ts, err := svc.GetThemeSettings(ctx, u.ID)
@@ -65,7 +65,7 @@ func TestThemeSettings_ServiceCustomDisabled(t *testing.T) {
 	u := &User{Email: "theme2@test.com", Password: "pass", Name: "Theme2", Role: "user"}
 	require.NoError(t, db.Create(u).Error)
 
-	svc := NewProfileService(db)
+	svc := NewProfileService(NewGormProfileRepo(db))
 	require.NoError(t, svc.SaveThemeSettings(ctx, u.ID, ThemeSettings{AutoTheme: false}))
 
 	got, err := svc.GetThemeSettings(ctx, u.ID)

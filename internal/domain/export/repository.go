@@ -16,8 +16,12 @@ type ExportRepository interface {
 	GetGameWithLevels(ctx context.Context, gameID uint) (*game.Game, []level.Level, error)
 	// GetFinishedPassingsWithDetails загружает завершённые прохождения с командами, прогрессом, попытками и уровнями.
 	GetFinishedPassingsWithDetails(ctx context.Context, gameID uint) ([]game.GamePassing, error)
-	// DB возвращает *gorm.DB с контекстом.
-	DB(ctx context.Context) *gorm.DB
+	// A-3 (pass 35): типизированные read-методы результатов команды — вместо
+	// DB(ctx), который отдавал *gorm.DB наружу и позволял сервису писать SQL.
+	GetPassingByGameAndTeam(ctx context.Context, gameID, teamID uint) (*game.GamePassing, error)
+	GetProgressesByPassing(ctx context.Context, passingID uint) ([]game.LevelProgress, error)
+	GetLevelsByGame(ctx context.Context, gameID uint) ([]level.Level, error)
+	GetAttemptsByProgressIDs(ctx context.Context, progressIDs []uint) ([]game.Attempt, error)
 }
 
 type gormExportRepo struct {
@@ -58,7 +62,46 @@ func (r *gormExportRepo) GetFinishedPassingsWithDetails(ctx context.Context, gam
 	return passings, err
 }
 
-// DB возвращает *gorm.DB с контекстом.
-func (r *gormExportRepo) DB(ctx context.Context) *gorm.DB {
-	return r.db.WithContext(ctx)
+// GetPassingByGameAndTeam возвращает прохождение команды в игре (A-3, pass 35).
+func (r *gormExportRepo) GetPassingByGameAndTeam(ctx context.Context, gameID, teamID uint) (*game.GamePassing, error) {
+	var passing game.GamePassing
+	err := r.db.WithContext(ctx).
+		Where("game_id = ? AND team_id = ?", gameID, teamID).
+		First(&passing).Error
+	if err != nil {
+		return nil, err
+	}
+	return &passing, nil
+}
+
+// GetProgressesByPassing возвращает прогрессы прохождения в хронологическом порядке.
+func (r *gormExportRepo) GetProgressesByPassing(ctx context.Context, passingID uint) ([]game.LevelProgress, error) {
+	var progress []game.LevelProgress
+	err := r.db.WithContext(ctx).
+		Where("game_passing_id = ?", passingID).
+		Order("created_at ASC").
+		Find(&progress).Error
+	return progress, err
+}
+
+// GetLevelsByGame возвращает уровни игры в порядке позиций.
+func (r *gormExportRepo) GetLevelsByGame(ctx context.Context, gameID uint) ([]level.Level, error) {
+	var levels []level.Level
+	err := r.db.WithContext(ctx).
+		Where("game_id = ?", gameID).
+		Order("position ASC").
+		Find(&levels).Error
+	return levels, err
+}
+
+// GetAttemptsByProgressIDs возвращает все попытки по списку прогрессов.
+func (r *gormExportRepo) GetAttemptsByProgressIDs(ctx context.Context, progressIDs []uint) ([]game.Attempt, error) {
+	var attempts []game.Attempt
+	if len(progressIDs) == 0 {
+		return attempts, nil
+	}
+	err := r.db.WithContext(ctx).
+		Where("level_progress_id IN ?", progressIDs).
+		Find(&attempts).Error
+	return attempts, err
 }

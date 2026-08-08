@@ -71,7 +71,15 @@ func (r *gormTournamentRepo) Update(ctx context.Context, t *Tournament) error {
 }
 func (r *gormTournamentRepo) List(ctx context.Context) ([]Tournament, error) {
 	var tournaments []Tournament
-	err := r.db.WithContext(ctx).Preload("Author").Order("created_at DESC").Find(&tournaments).Error
+	// F-4 (pass 35): LIMIT + без тяжёлого Description — листинг не должен
+	// тащить всё в память при росте числа турниров.
+	err := r.db.WithContext(ctx).
+		Select("id, created_at, updated_at, deleted_at, name, author_id, " +
+			"points_for_first, points_for_second, points_for_third, points_for_participation").
+		Preload("Author").
+		Order("created_at DESC").
+		Limit(50).
+		Find(&tournaments).Error
 	return tournaments, err
 }
 func (r *gormTournamentRepo) Delete(ctx context.Context, id uint) error {

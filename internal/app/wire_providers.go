@@ -186,8 +186,10 @@ func wrapPushHandler(pushRepo user.PushSubscriptionRepository, cfg *config.Confi
 	return user.NewPushHandler(pushRepo, cfg.VAPID)
 }
 
+// wrapProfileService — профиль через ProfileRepository (A-2, pass 35:
+// раньше был чистый *gorm.DB без репозитория).
 func wrapProfileService(db *gorm.DB) *user.ProfileService {
-	return user.NewProfileService(db)
+	return user.NewProfileService(user.NewGormProfileRepo(db))
 }
 
 // wrapUserDashboardService — дашборд пользователя (M16, pass 30: раньше

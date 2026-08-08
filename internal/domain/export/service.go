@@ -83,25 +83,19 @@ func (s *ExportService) ExportGameToCSV(ctx context.Context, gameID uint, w io.W
 
 // ExportTeamResultsToCSV экспортирует результаты конкретной команды в CSV.
 func (s *ExportService) ExportTeamResultsToCSV(ctx context.Context, gameID, teamID uint, w io.Writer) error {
-	db := s.exportRepo.DB(ctx)
-
-	// Получаем passing для команды
-	var passing game.GamePassing
-	if err := db.Where("game_id = ? AND team_id = ?", gameID, teamID).First(&passing).Error; err != nil {
+	// A-3 (pass 35): типизированные read-методы вместо s.exportRepo.DB(ctx).
+	passing, err := s.exportRepo.GetPassingByGameAndTeam(ctx, gameID, teamID)
+	if err != nil {
 		return fmt.Errorf("прохождение не найдено: %w", err)
 	}
 
-	// Запрашиваем прогресс
-	var progress []game.LevelProgress
-	if err := db.Where("game_passing_id = ?", passing.ID).
-		Order("created_at ASC").
-		Find(&progress).Error; err != nil {
+	progress, err := s.exportRepo.GetProgressesByPassing(ctx, passing.ID)
+	if err != nil {
 		return err
 	}
 
-	// Запрашиваем уровни
-	var levels []level.Level
-	if err := db.Where("game_id = ?", gameID).Order("position ASC").Find(&levels).Error; err != nil {
+	levels, err := s.exportRepo.GetLevelsByGame(ctx, gameID)
+	if err != nil {
 		return err
 	}
 
@@ -125,8 +119,8 @@ func (s *ExportService) ExportTeamResultsToCSV(ctx context.Context, gameID, team
 	for i, p := range progress {
 		progressIDs[i] = p.ID
 	}
-	var allAttempts []game.Attempt
-	if err := db.Where("level_progress_id IN ?", progressIDs).Find(&allAttempts).Error; err != nil {
+	allAttempts, err := s.exportRepo.GetAttemptsByProgressIDs(ctx, progressIDs)
+	if err != nil {
 		return err
 	}
 	attemptsMap := make(map[uint]int)
