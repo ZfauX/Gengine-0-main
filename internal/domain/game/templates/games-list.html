@@ -169,9 +169,9 @@
             {{end}}
         </div>
         <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-            <p class="text-sm text-gray-700">
+            <p class="text-sm text-gray-700 dark:text-gray-200">
                 <span aria-current="page">{{ TF $.Lang "games.pagination_page" .Page .TotalPages }}</span>
-                <span class="text-gray-500">{{ TF $.Lang "games.pagination_total" .Total }}</span>
+                <span class="text-gray-500 dark:text-gray-400">{{ TF $.Lang "games.pagination_total" .Total }}</span>
             </p>
             <nav class="inline-flex gap-1" aria-label='{{ T $.Lang "common.pagination" }}'>
                 {{if gt .Page 1}}

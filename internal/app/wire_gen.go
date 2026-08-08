@@ -93,7 +93,8 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	achievementRepository := repos.Achiev
 	emailVerificationRepository := repos.EmailVerif
 	refreshTokenRepository := repos.RefreshToken
-	authService := wrapAuthService(userRepository, achievementRepository, emailVerificationRepository, refreshTokenRepository, cfg, appCache)
+	emailVerificationService := wrapEmailVerificationService(userRepository, emailVerificationRepository, cfg)
+	authService := wrapAuthService(userRepository, achievementRepository, emailVerificationRepository, refreshTokenRepository, cfg, appCache, emailVerificationService)
 	refreshTokenService := wrapRefreshTokenService(refreshTokenRepository, userRepository, cfg, authService)
 	userService := wrapUserService(userRepository)
 	achievementService := wrapAchievementService(achievementRepository)
@@ -101,7 +102,6 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	oAuthService := wrapOAuthService(userRepository, externalLoginRepository, cfg)
 	passwordResetRepository := repos.PassReset
 	passwordResetService := wrapPasswordResetService(userRepository, passwordResetRepository, cfg)
-	emailVerificationService := wrapEmailVerificationService(userRepository, emailVerificationRepository, cfg)
 	emailService := wrapEmailService(cfg, db)
 	twoFactorService := wrapTwoFactorService()
 	gameRepository := repos.Game

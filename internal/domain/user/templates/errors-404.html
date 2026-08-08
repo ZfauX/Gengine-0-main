@@ -13,9 +13,9 @@
 
         <!-- C10: поиск игры прямо со страницы 404 -->
         <div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
-            <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">{{ T $.Lang "error.search_label" }}</p>
+            <label for="error-search" class="block text-sm text-gray-500 dark:text-gray-400 mb-3">{{ T $.Lang "error.search_label" }}</label>
             <form action="/games" method="GET" class="flex gap-2 justify-center">
-                <input type="text" name="search" placeholder="{{ T $.Lang "common.search" }}" autocomplete="off"
+                <input type="text" id="error-search" name="search" placeholder="{{ T $.Lang "common.search" }}" autocomplete="off"
                        class="w-full max-w-xs rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-500 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2">
                 <button type="submit" class="btn btn-primary text-sm whitespace-nowrap">{{ T $.Lang "common.search" }}</button>
             </form>

@@ -9,13 +9,11 @@ import (
 	ws "gengine-0/internal/pkg/websocket"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 // RegisterRoutes регистрирует маршруты команд и приглашений.
 func RegisterRoutes(
 	r *gin.RouterGroup,
-	db *gorm.DB,
 	teamService *TeamService,
 	invitationService *InvitationService,
 	cfg *config.Config,

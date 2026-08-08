@@ -359,7 +359,7 @@ func (app *App) setupEngine(r *gin.Engine) error {
 
 func (app *App) registerAdminRoutes(r *gin.RouterGroup) {
 	adminGroup := r.Group("/admin")
-	admin.RegisterRoutes(adminGroup, app.Config, app.Deps.Services.Auth, app.Deps.Repos.User, app.Deps.Repos.Game, app.Deps.Services.Game, app.Deps.Repos.Team, app.Deps.Repos.RefreshToken, app.Deps.Services.Backup, app.Deps.AuditSvc, app.Deps.Cache, app.Hub)
+	admin.RegisterRoutes(adminGroup, app.Config, app.Deps.Services.Auth, app.Deps.Repos.User, app.Deps.Repos.Game, app.Deps.Services.Game, app.Deps.Repos.Team, app.Deps.Repos.RefreshToken, app.Deps.Services.Backup, app.Deps.AuditSvc, app.Deps.Cache, app.Hub, app.Deps.Services.TwoFactor)
 }
 
 func (app *App) registerUserRoutes(r *gin.RouterGroup) {
@@ -381,11 +381,11 @@ func (app *App) registerGameRoutes(r *gin.RouterGroup) {
 }
 
 func (app *App) registerLevelRoutes(r *gin.RouterGroup) {
-	level.RegisterRoutes(r, app.Deps.Services.Level, app.Deps.Services.Question, app.Deps.Services.Answer, app.LocalStorage, app.Hub, app.Config, app.Deps.Services.CoAuthor, app.Deps.Services.Auth, app.DB)
+	level.RegisterRoutes(r, app.Deps.Services.Level, app.Deps.Services.Question, app.Deps.Services.Answer, app.LocalStorage, app.Hub, app.Config, app.Deps.Services.CoAuthor, app.Deps.Services.Auth)
 }
 
 func (app *App) registerTeamRoutes(r *gin.RouterGroup) {
-	team.RegisterRoutes(r, app.DB, app.Deps.Services.Team, app.Deps.Services.Invitation, app.Config, app.LocalStorage, app.Deps.Services.CoAuthor, app.Deps.Services.Auth, app.Hub)
+	team.RegisterRoutes(r, app.Deps.Services.Team, app.Deps.Services.Invitation, app.Config, app.LocalStorage, app.Deps.Services.CoAuthor, app.Deps.Services.Auth, app.Hub)
 }
 
 func (app *App) registerTournamentRoutes(r *gin.RouterGroup) {

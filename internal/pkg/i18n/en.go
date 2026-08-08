@@ -1046,6 +1046,7 @@ var enMessages = map[string]string{
 	"apply.title":         "Apply for game",
 	"apply.select_team":   "Select team",
 	"apply.no_team":       "-- select team --",
+	"apply.no_teams_yet":  "You have no teams yet. Create one to apply.",
 	"apply.submit_button": "Apply",
 	"apply.create_team":   "+ Create new team",
 
@@ -1057,6 +1058,7 @@ var enMessages = map[string]string{
 	"notes.delete_title":     "Delete note?",
 	"notes.level_label":      "Level: %s",
 	"notes.back_to_game":     "← Back to game",
+	"notes.empty":            "No notes yet. Add the first one above.",
 
 	// ── Photos ──
 	"photos.title":           "Game photo gallery",

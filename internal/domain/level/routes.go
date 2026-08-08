@@ -9,7 +9,6 @@ import (
 	ws "gengine-0/internal/pkg/websocket"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 // RegisterRoutes регистрирует маршруты для уровней, вопросов и ответов.
@@ -23,7 +22,6 @@ func RegisterRoutes(
 	cfg *config.Config,
 	authorizer middleware.GameAuthorizer,
 	authService *user.AuthService,
-	db *gorm.DB,
 ) {
 	handler := NewLevelHandler(
 		levelService,

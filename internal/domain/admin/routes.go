@@ -31,12 +31,15 @@ func RegisterRoutes(
 	auditService *audit.Service,
 	cacheStore cache.CacheStore,
 	hub *websocket.RoomHub,
+	twoFactorSvc *user.TwoFactorService,
 ) {
 	adminHandler := NewAdminHandler(userRepo, gameRepo, gameService, teamRepo, backupService, auditService, refreshTokenRepo, cacheStore)
 
 	authRequired := middleware.AuthRequired(authService)
 	adminOnly := adminOnlyMiddleware()
-	twoFactorMW := user.TwoFactorRequired(user.NewTwoFactorService(), userRepo)
+	// A-5 (pass 31): 2FA-сервис приходит из DI — раньше создавался 4-й
+	// инстанс NewTwoFactorService() локально в routes.
+	twoFactorMW := user.TwoFactorRequired(twoFactorSvc, userRepo)
 
 	protected := router.Group("/")
 	protected.Use(authRequired, twoFactorMW, adminOnly)

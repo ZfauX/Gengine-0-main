@@ -6,6 +6,7 @@
     <div class="flash flash-error">{{.Error}}</div>
     {{end}}
 
+    {{if .Teams}}
     <div class="card mb-6">
         <form action="/games/{{.GameID}}/apply" method="POST" class="flex flex-wrap items-end gap-3">
             <input type="hidden" name="_csrf" value="{{.csrf}}">
@@ -25,6 +26,13 @@
             <button type="submit" class="btn btn-primary text-sm whitespace-nowrap">{{ T $.Lang "apply.submit_button" }}</button>
         </form>
     </div>
+    {{else}}
+    <!-- UX-14 (pass 31): empty state — CTA вместо пустого select -->
+    <div class="card mb-6 text-center py-8 text-gray-500 dark:text-gray-400">
+        <p class="mb-4">{{ T $.Lang "apply.no_teams_yet" }}</p>
+        <a href="/teams/new" class="btn btn-primary text-sm">{{ T $.Lang "apply.create_team" }}</a>
+    </div>
+    {{end}}
 
     <div>
         <a href="/teams/new" class="btn btn-outline text-sm">{{ T $.Lang "apply.create_team" }}</a>

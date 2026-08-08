@@ -1048,6 +1048,7 @@ var ruMessages = map[string]string{
 	"apply.title":         "Подать заявку на игру",
 	"apply.select_team":   "Выберите команду",
 	"apply.no_team":       "-- выберите команду --",
+	"apply.no_teams_yet":  "У вас пока нет команд. Создайте первую, чтобы подать заявку.",
 	"apply.submit_button": "Подать заявку",
 	"apply.create_team":   "+ Создать новую команду",
 
@@ -1059,6 +1060,7 @@ var ruMessages = map[string]string{
 	"notes.delete_title":     "Удалить заметку?",
 	"notes.level_label":      "Уровень: %s",
 	"notes.back_to_game":     "← Назад к игре",
+	"notes.empty":            "Заметок пока нет. Добавьте первую выше.",
 
 	// ── Photos ──
 	"photos.title":           "Фотогалерея игры",

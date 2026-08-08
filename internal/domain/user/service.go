@@ -27,6 +27,22 @@ import (
 	"gorm.io/gorm"
 )
 
+// A-9 (pass 31): sentinel-ошибки auth. Строки совпадают с теми, что раньше
+// создавались stderrors.New — локализация через render.LocalizeError (по
+// строке) продолжает работать, но теперь доступен errors.Is.
+var (
+	ErrInvalidCredentials    = stderrors.New("неверный email или пароль")
+	ErrInvalidToken          = stderrors.New("невалидный токен")
+	ErrTokenRevoked          = stderrors.New("токен был отозван")
+	ErrTokenNotYetValid      = stderrors.New("токен ещё не действителен")
+	ErrInvalidIssuedAt       = stderrors.New("неверная дата выдачи токена")
+	ErrWrongIssuer           = stderrors.New("неверный issuer токена")
+	ErrWrongAudience         = stderrors.New("неверный audience токена")
+	ErrRefreshAsAccess       = stderrors.New("использование refresh-токена как access запрещено")
+	ErrRefreshServiceNotInit = stderrors.New("refresh-сервис не инициализирован")
+	ErrInternalServer        = stderrors.New("внутренняя ошибка сервера")
+)
+
 // dummyPasswordHash — bcrypt-хэш случайного пароля, генерируется при старте с тем же
 // cost (12), что и реальные пароли. Используется для выравнивания времени ответа
 // при попытке входа по несуществующему email (анти-энумерация).
@@ -68,6 +84,10 @@ type AuthService struct {
 	cfg              *config.Config
 	cache            cache.CacheStore
 
+	// emailVerifSvc — внедряется из DI (A-3, pass 31): раньше создавался
+	// локально в Register, что было скрытой зависимостью вне wire.
+	emailVerifSvc *EmailVerificationService
+
 	// jtiBlacklist — in-memory fallback для отзыва JWT при отсутствии
 	// Valkey/кэша (S-6, pass 31): process-local, но лучше, чем ничего.
 	// При настроенном кэше используется он (shared между инстансами).
@@ -105,6 +125,12 @@ func (s *AuthService) WithCache(c cache.CacheStore) *AuthService {
 	return s
 }
 
+// WithEmailVerificationService внедряет сервис подтверждения email (A-3, pass 31).
+func (s *AuthService) WithEmailVerificationService(svc *EmailVerificationService) *AuthService {
+	s.emailVerifSvc = svc
+	return s
+}
+
 func (s *AuthService) Register(ctx context.Context, emailStr, password, name string) (*User, error) {
 	hashed, err := bcrypt.GenerateFromPassword([]byte(password), crypto.BcryptCost)
 	if err != nil {
@@ -120,9 +146,12 @@ func (s *AuthService) Register(ctx context.Context, emailStr, password, name str
 	}
 	metrics.IncUsersTotal()
 
-	verificationService := NewEmailVerificationService(s.userRepo, s.emailVerifRepo, s.cfg)
-	if err := verificationService.SendVerificationEmail(ctx, user); err != nil {
-		log.Warn().Err(err).Str("email", user.Email).Msg("Register: failed to send verification email")
+	// A-3 (pass 31): сервис подтверждения email внедрён из DI, не создаётся
+	// локально (была скрытая зависимость вне wire).
+	if s.emailVerifSvc != nil {
+		if err := s.emailVerifSvc.SendVerificationEmail(ctx, user); err != nil {
+			log.Warn().Err(err).Str("email", user.Email).Msg("Register: failed to send verification email")
+		}
 	}
 
 	return &user, nil
@@ -137,7 +166,7 @@ func (s *AuthService) Login(ctx context.Context, emailStr, password string) (str
 			// иначе тайминг-атака различает «нет пользователя» и «неверный пароль» (S3).
 			bcrypt.CompareHashAndPassword(dummyPasswordHash, []byte(password)) //nolint:errcheck
 		}
-		return "", stderrors.New("неверный email или пароль")
+		return "", ErrInvalidCredentials
 	}
 
 	// Проверка блокировки аккаунта.
@@ -146,7 +175,7 @@ func (s *AuthService) Login(ctx context.Context, emailStr, password string) (str
 	// существовании аккаунта (oracle) (B2). Реальная причина логируется для ops.
 	if user.LockedUntil != nil && time.Now().Before(*user.LockedUntil) {
 		log.Debug().Uint("user_id", user.ID).Time("locked_until", *user.LockedUntil).Msg("Login: account is locked")
-		return "", stderrors.New("неверный email или пароль")
+		return "", ErrInvalidCredentials
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
@@ -154,7 +183,7 @@ func (s *AuthService) Login(ctx context.Context, emailStr, password string) (str
 		newAttempts, err := s.userRepo.AtomicIncrementFailedAttempts(ctx, user.ID)
 		if err != nil {
 			log.Error().Err(err).Uint("user_id", user.ID).Msg("Login: atomic increment failed")
-			return "", stderrors.New("внутренняя ошибка сервера")
+			return "", ErrInternalServer
 		}
 
 		if newAttempts >= 5 {
@@ -171,13 +200,13 @@ func (s *AuthService) Login(ctx context.Context, emailStr, password string) (str
 				"lock_count":            user.LockCount + 1,
 			}); err != nil {
 				log.Error().Err(err).Uint("user_id", user.ID).Msg("Login: failed to lock account")
-				return "", stderrors.New("внутренняя ошибка сервера")
+				return "", ErrInternalServer
 			}
 			log.Debug().Uint("user_id", user.ID).Int("lock_count", user.LockCount).Dur("duration", duration).Msg("Login: account locked with backoff")
 			// Generic-ответ: не раскрываем существование аккаунта (B2).
-			return "", stderrors.New("неверный email или пароль")
+			return "", ErrInvalidCredentials
 		}
-		return "", stderrors.New("неверный email или пароль")
+		return "", ErrInvalidCredentials
 	}
 
 	// Успешный вход — безусловный сброс счётчика и backoff-счётчика блокировок
@@ -218,35 +247,35 @@ func backoffDuration(lockCount int) time.Duration {
 // GenerateRefreshToken создаёт refresh-токен для новой сессии.
 func (s *AuthService) GenerateRefreshToken(ctx context.Context, user User, deviceID, clientFingerprint string) (string, error) {
 	if s.refreshSvc == nil {
-		return "", stderrors.New("refresh-сервис не инициализирован")
+		return "", ErrRefreshServiceNotInit
 	}
 	return s.refreshSvc.GenerateRefreshToken(ctx, user, deviceID, clientFingerprint)
 }
 
 func (s *AuthService) RevokeAllUserTokens(ctx context.Context, userID uint) error {
 	if s.refreshSvc == nil {
-		return stderrors.New("refresh-сервис не инициализирован")
+		return ErrRefreshServiceNotInit
 	}
 	return s.refreshSvc.RevokeAllUserTokens(ctx, userID)
 }
 
 func (s *AuthService) RevokeRefreshToken(ctx context.Context, refreshTokenStr string) error {
 	if s.refreshSvc == nil {
-		return stderrors.New("refresh-сервис не инициализирован")
+		return ErrRefreshServiceNotInit
 	}
 	return s.refreshSvc.RevokeRefreshToken(ctx, refreshTokenStr)
 }
 
 func (s *AuthService) CleanExpiredRefreshTokens(ctx context.Context) error {
 	if s.refreshSvc == nil {
-		return stderrors.New("refresh-сервис не инициализирован")
+		return ErrRefreshServiceNotInit
 	}
 	return s.refreshSvc.CleanExpiredRefreshTokens(ctx)
 }
 
 func (s *AuthService) RefreshAccessToken(ctx context.Context, refreshTokenStr, deviceID, clientFingerprint string) (string, string, error) {
 	if s.refreshSvc == nil {
-		return "", "", stderrors.New("refresh-сервис не инициализирован")
+		return "", "", ErrRefreshServiceNotInit
 	}
 	return s.refreshSvc.RefreshAccessToken(ctx, refreshTokenStr, deviceID, clientFingerprint)
 }
@@ -260,25 +289,25 @@ func (s *AuthService) ParseToken(tokenStr string) (uint, string, error) {
 		return []byte(s.cfg.JWT.Secret), nil
 	})
 	if err != nil || token == nil || !token.Valid {
-		return 0, "", stderrors.New("невалидный токен")
+		return 0, "", ErrInvalidToken
 	}
 
 	// Проверяем, что токен не refresh-токен
 	if isRefresh, ok := claims["refresh"].(bool); ok && isRefresh {
-		return 0, "", stderrors.New("использование refresh-токена как access запрещено")
+		return 0, "", ErrRefreshAsAccess
 	}
 
 	// Проверяем nbf (not before)
 	if nbf, ok := claims["nbf"].(float64); ok {
 		if time.Now().Unix() < int64(nbf) {
-			return 0, "", stderrors.New("токен ещё не действителен")
+			return 0, "", ErrTokenNotYetValid
 		}
 	}
 
 	// Проверяем iat (issued at)
 	if iat, ok := claims["iat"].(float64); ok {
 		if time.Now().Unix() < int64(iat) {
-			return 0, "", stderrors.New("неверная дата выдачи токена")
+			return 0, "", ErrInvalidIssuedAt
 		}
 	}
 
@@ -289,17 +318,17 @@ func (s *AuthService) ParseToken(tokenStr string) (uint, string, error) {
 		expectedIssuer = "gengine"
 	}
 	if iss, ok := claims["iss"].(string); !ok || iss != expectedIssuer {
-		return 0, "", stderrors.New("неверный issuer токена")
+		return 0, "", ErrWrongIssuer
 	}
 	if aud, ok := claims["aud"].(string); !ok || aud != expectedIssuer {
-		return 0, "", stderrors.New("неверный audience токена")
+		return 0, "", ErrWrongAudience
 	}
 
 	// JTI blacklist check: если токен был отозван (logout, password change), отклоняем его
 	if jti, ok := claims["jti"].(string); ok && jti != "" {
 		if s.cache != nil {
 			if _, found := s.cache.Get("jti_blacklist:" + jti); found {
-				return 0, "", stderrors.New("токен был отозван")
+				return 0, "", ErrTokenRevoked
 			}
 		} else {
 			// S-6 (pass 31): in-memory fallback при отсутствии кэша.
@@ -307,7 +336,7 @@ func (s *AuthService) ParseToken(tokenStr string) (uint, string, error) {
 			exp, found := s.jtiBlacklist[jti]
 			if found && time.Now().Before(exp) {
 				s.jtiMu.Unlock()
-				return 0, "", stderrors.New("токен был отозван")
+				return 0, "", ErrTokenRevoked
 			}
 			if found && !time.Now().Before(exp) {
 				delete(s.jtiBlacklist, jti)
