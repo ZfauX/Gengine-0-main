@@ -79,10 +79,10 @@ type NotificationService struct {
 	// push pool (H7, pass 30): отправка Web Push идёт через фиксированный пул
 	// воркеров вместо неограниченных goroutine — всплеск уведомлений больше
 	// не порождает тысячи параллельных HTTP-запросов к push-провайдеру.
-	pushMu        sync.Mutex
-	pushJobs      chan pushJob
-	pushWg        sync.WaitGroup
-	pushShutting  bool
+	pushMu       sync.Mutex
+	pushJobs     chan pushJob
+	pushWg       sync.WaitGroup
+	pushShutting bool
 }
 
 type pushJob struct {

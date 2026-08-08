@@ -110,8 +110,6 @@ func TestPage_NoExtraHead(t *testing.T) {
 	assert.Contains(t, r.Body.String(), "Body")
 }
 
-
-
 func TestDefaultErrorMessage(t *testing.T) {
 	assert.Equal(t, "Неверный запрос", defaultErrorMessage(http.StatusBadRequest))
 	assert.Equal(t, "Доступ запрещён", defaultErrorMessage(http.StatusForbidden))
