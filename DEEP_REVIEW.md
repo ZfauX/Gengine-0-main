@@ -35,6 +35,116 @@
 
 ---
 
+# PASS 32 (повторное ревью) — 8 августа 2026
+
+> Третье повторное ревью после полного закрытия pass 30-31 (миграция на репозитории, race-верификация). Выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture) с **личной верификацией** ключевых находок.
+
+## Резюме pass 32
+
+**Итог:** 2 критичных (1 подтверждена лично), 5 высоких, ~20 средних, ~15 низких + 3 новых индекса.
+
+> Кодовая база существенно укреплена (репозитории, sentinel-ошибки, race-чисто). Найдены: **регрессия JS-хелперов** (escapeHtml не глобальный — тосты/confirm сломаны), **баг инвалидации лидерборда** (in-memory кэш), 2 утечки auth (OAuth 2FA TTL, приватные игры в фото-галерее), плюс незавершённая миграция репозиториев (CoAuthorService дублирует CoAuthorRepository).
+
+---
+
+## A. Найденные ошибки pass 32 (верифицировано лично)
+
+### 🔴 Критично
+
+| ID | Файл | Проблема |
+|---|---|---|
+| **F-C1** | `static/js/app.js:78,181` + `layout.html` | **`escapeHtml` не определён глобально.** app.js вызывает `escapeHtml(message)` в `showToast`/`showModalConfirm`, но функция объявлена только внутри IIFE-блока уведомлений в layout.html. На любой странице, кроме calendar-page, вызов тоста/confirm-модалки кидает `ReferenceError` — молча ломаются все тосты, подтверждения удаления, монитор, gameplay-флеши. **Верифицировано лично.** |
+| **F-P1** | `cache.go:162-212` + `svc_rating.go:82,173` | **Инвалидация лидерборда не работает в in-memory кэше.** `trackPrefix("leaderboard:limit:10")` регистрирует префиксы `leaderboard`/`leaderboard:limit`/`leaderboard:limit:10` (без trailing colon), а `DeleteByPrefix("leaderboard:")` ищет `prefixKeys["leaderboard:"]` → early return. Лидерборд устаревает до 5-мин TTL после каждой игры. Работает только Valkey (SCAN). **Верифицировано лично.** |
+
+### 🟠 Высокие
+
+| ID | Файл | Проблема |
+|---|---|---|
+| S-1 | `auth_handler.go:840-846` | **OAuth-2FA pending-сессия без TTL.** `Login` ставит `pending_expires` (10 мин), а OAuth-ветка — нет; TwoFALoginVerify пропускает проверку при отсутствии ключа. Окно brute-force открыто на жизнь session-cookie. **Верифицировано лично.** |
+| S-2 | `hnd_photo.go:57-92` | **Утечка метаданных приватных/черновиков игр** через `PhotosPage` (только AuthRequired, без visibility-проверки) — фото-записи, описания, автор перечисляемы любым залогиненным. |
+| A-1 | `svc_coauthor.go` + `coauthor_repository.go` | **CoAuthorRepository — мёртвый код для своего сервиса.** CoAuthorService дублирует все запросы репозитория через `s.DB` (IsUserManager, Find, Save, Create, Delete, List); репозиторий используется только PhotoService. Комментарий в заголовке ложный. **Верифицировано лично.** |
+| A-2 | `svc_admin.go:202-221` | **N+1 в DeleteLevelFromActiveGame** — GetCurrentProgressForUpdate+Save+AdvanceToNextLevel на каждое прохождение в цикле. |
+| P-1 | `monitor_repository.go:41-84` | **AggregateGameSnapshot — тяжёлый CTE/LATERAL каждую секунду** на активных играх (CROSS JOIN + попытки за час). |
+
+### 🟡 Средние
+
+| ID | Файл | Проблема |
+|---|---|---|
+| S-3 | `two_factor_handler.go:155-209` | BackupVerify: нет rate-limit, нет локдауна, нет нормализации ввода (нижний регистр не проходит — коды верхнего). |
+| S-4 | `service.go:194-204` | Race в lock_count (два параллельных неверных пароля оба пишут `lock_count=1`). |
+| S-5 | `auth_handler.go:262` | SetLockedUntil в 2FA-пути не инкрементирует lock_count — backoff не применяется. |
+| S-6 | `svc_photo.go:47-59` | Сервисный authz для удаления фото слабее handler'а (`!=observer` вместо `ContentEditor||Moderator`). |
+| P-2 | `svc_play.go:454` | StartTesting ищет команду по `name` без btree-индекса (только trgm). |
+| P-3 | `note_repository.go:30`, `photo_repository.go:36` | ListByGame сортирует created_at DESC — нет составного индекса. |
+| P-4 | `svc_listing.go:104` | Аутентифицированный листинг не кэшируется (только анонимный), OR-предикаты бьют индексы. |
+| P-5 | `svc_play.go:679-782` | GetGameplayData — ~5 последовательных round-trip. |
+| A-3 | `repoOrDefault()` паттерн (rating/progress/monitor) | Двойная конструкция репозитория; fallback мёртв при wire. |
+| A-4 | `svc_play.go:795-808` | IsTeamMember дублирует GameRepository.IsTeamMember + лишняя загрузка teams. |
+| A-5 | `GameRepository.Model(ctx)`/`Count(query)`/`ListFiltered(query)`/`DB()` | Escape-hatch `*gorm.DB` в интерфейсе репозитория — сервисы строят raw-запросы. |
+| A-6 | 7 новых репозиториев | Нет юнит-тестов (все интеграционные, скипаются в -short). |
+| UX-H1 | `layout.html:584` | Escape-закрытие dropdown висит на bell, а фокус в списке — клавиатура «застревает». |
+| UX-H2/H3/H4 | monitor-page, admin-games, game_passings mobile | Dark-mode пробелы в JS-генерируемых бейджах/карточках. |
+| UX-M3 | `games-photos.html:28` | Lightbox caption в UTC — расходится с карточкой (local). Единственный оставшийся raw `.Format`. |
+| UX-M4 | `app.js:183-184` | Кнопка OK в confirm всегда красная даже для не-деструктивных действий. |
+| UX-M5/M6/M7 | `logs-list.html` | Нет `.catch` в loadPage; WS-таймстампы в UTC; **WS-комната "logs_"+gameID не существует в Go** — live-логи мертвы. |
+| UX-M8 | invitations/co_authors autocomplete | Нет stale-response guard. |
+| UX-M11 | layout notification dropdown | `role="menu"` без `role="menuitem"` — ARIA-нарушение. |
+
+### 🔲 Осознанно оставлено / опровергнуто
+- **SQLi/XSS/путь-траверс/MIME** в новых репозиториях — чисто (параметризация сохранена).
+- **go.mod**: ядро актуально (gin 1.12, gorm 1.26, jwt v5.3.1, x/crypto 0.54); один устаревший skip2/go-qrcode (low risk).
+- **Гонки не найдены** — race-тесты pass 31 подтвердили.
+- Rate-limit fail-open при Valkey-ауттаге — задокументированный компромисс.
+
+---
+
+## B. Оптимизации (производительность / БД)
+
+### Рекомендованные CREATE INDEX (migration 000042)
+```sql
+CREATE INDEX IF NOT EXISTS idx_notes_game_created ON notes(game_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_photos_game_created ON photos(game_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_teams_name ON teams(name); -- StartTesting exact-match
+```
+
+### Прочие оптимизации
+- **P-1 (F-P1)**: чинить DeleteByPrefix — регистрировать префиксы как используют (без trailing colon) или звать `DeleteByPrefix("leaderboard")`.
+- **P-2 (A-2)**: батчить DeleteLevelFromActiveGame (один запрос current progress для всех passings).
+- **P-3 (A-4)**: убрать дубль IsTeamMember, параллелить GetGameplayData (errgroup).
+- **P-4 (P-1)**: оценить кэш GameSnapshot (уже 30с TTL) + пред-агрегация попыток.
+
+---
+
+## C. Улучшения пользовательского опыта (приоритеты)
+
+1. **C1 (escapeHtml)** — вернуть глобальный `escapeHtml`/`tI18n` в app.js: тосты и confirm-модалки оживают на всех страницах.
+2. **UX-M3** — единые локальные таймстампы в lightbox фото.
+3. **Dark-mode sweep** (H2-H4, M1-M3) — бейджи, монитор-карточки, админ-фильтры, календарь.
+4. **UX-M7** — починить live-логи (broadcast в "logs_"+gameID) или убрать мёртвый WS.
+5. **UX-M8** — stale-response guards в автокомплитах.
+6. **UX-M11** — role="menuitem" для пунктов dropdown или заменить на region.
+
+---
+
+## D. Архитектурные улучшения (кодовая база)
+
+1. **A-1 (CoAuthor)**: внедрить CoAuthorRepository в CoAuthorService (или удалить дубль) — устранить ложный комментарий.
+2. **A-5 (GameRepository leak)**: добавить `CountActivePassings`/`CountLevelsByGame`/`CountPublished`, убрать `Model(ctx)`/`Count(query)`/`ListFiltered(query)`/`DB()` из интерфейса.
+3. **A-3**: сделать репозиторий обязательным параметром конструктора; убрать `repoOrDefault()`.
+4. **A-6**: юнит-тесты новых репозиториев (go-sqlmock/SQLite), особенно AggregateGameSnapshot.
+5. **S-4/S-5**: атомарный UPDATE lock_count + backoff в 2FA-пути.
+6. **Удалить мёртвый шаблон** games-new-wizard.html (L7) и stale TODO (L1).
+7. **CI**: govulncheck + go test -race уже в пайплайне; добавить `go generate` diff-check.
+
+## Приоритет фиксов (pass 32)
+1. **F-C1** (escapeHtml) — сломаны тосты/confirm на всех страницах.
+2. **F-P1** (leaderboard invalidation) — одна строка + тест.
+3. **S-1/S-2** (OAuth 2FA TTL, private-game photo metadata) — security.
+4. **A-1/A-5** (CoAuthor repo, GameRepository leak) — архитектура.
+5. Индексы 000042; A-2 N+1; dark-mode sweep.
+
+---
+
 # PASS 31 (повторное ревью) — 8 августа 2026
 
 > Результаты повторного глубокого ревью после полного закрытия pass 30 (7 раундов фиксов). Выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture) с **личной верификацией** ключевых находок по коду.
