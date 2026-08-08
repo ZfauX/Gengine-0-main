@@ -37,8 +37,33 @@
     <!-- Скрытый CSRF-токен для возможных AJAX-запросов -->
     <input type="hidden" id="csrf_token" value="{{.csrf}}">
 
-    <!-- Таблица игр -->
-    <div class="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+    <!-- UX-7 (pass 35): мобильные карточки — на < sm таблица скрыта. -->
+    <div class="space-y-3 sm:hidden">
+        {{range .Games}}
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+            <div class="flex items-center justify-between gap-2">
+                <div class="font-medium text-gray-900 dark:text-gray-100">{{.Name}}</div>
+                {{if .IsDraft}}
+                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200">{{ T $.Lang "games.draft" }}</span>
+                {{else}}
+                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200">{{ T $.Lang "games.published" }}</span>
+                {{end}}
+            </div>
+            <div class="mt-1 text-sm text-gray-600 dark:text-gray-400">{{ T $.Lang "admin.table_author" }} {{.Author.Name}}</div>
+            <div class="mt-3 text-sm flex flex-wrap gap-2">
+                <a href="/games/{{.ID}}" class="btn btn-outline text-xs">{{ T $.Lang "admin.view" }}</a>
+                <a href="/games/{{.ID}}/edit" class="btn btn-outline text-xs">{{ T $.Lang "common.edit" }}</a>
+                <form action="/admin/games/{{.ID}}/delete" method="POST" class="inline" data-confirm-danger="true" data-confirm-form="{{ T $.Lang "admin.game_delete_confirm" }}">
+                    <input type="hidden" name="_csrf" value="{{$.csrf}}">
+                    <button type="submit" class="btn btn-danger text-xs">{{ T $.Lang "common.delete" }}</button>
+                </form>
+            </div>
+        </div>
+        {{end}}
+    </div>
+
+    <!-- Таблица игр (sm и выше) -->
+    <div class="hidden sm:block overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
         <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50 dark:bg-gray-800">
                 <tr>

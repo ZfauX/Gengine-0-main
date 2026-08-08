@@ -47,11 +47,11 @@
 
 ---
 
-## Статус (обновлено 9 авг 2026) — PASS 35 ОТКРЫТ
+## Статус (обновлено 9 авг 2026) — PASS 35 ЗАКРЫТ
 
-Находки перечислены ниже; закрытие — раундами фиксов, как в pass 30-34.
+**Все находки pass 35 исправлены** (4 раунда фиксов):
 
-**Раунд 1 (текущий):**
+**Раунд 1** (`275de5d`):
 - **S-1**: ChangePassword — lockout (атомарный инкремент + backoff-блокировка, паттерн Login) + rate limit на маршруте.
 - **S-2**: 2FA disable — lockout на пароль и TOTP + rate limit на маршруте.
 - **S-3**: reCAPTCHA подключена — новый пакет `internal/pkg/recaptcha` (siteverify), серверная проверка на Register, site-key передаётся в шаблон (был мёртвый конфиг).
@@ -82,6 +82,17 @@
 - **A-5**: `CanReview` принимает ctx (вместо context.Background); кэш-инвалидация турнира через ctx.
 
 **Осталось на раунд 4+ (низкий приоритет):** UX-7 (mobile-карточки таблиц), UX-9 (calendar loading), A-4 (God-фасады — стилевой), A-6 (emoji aria-hidden), UX-11 (пустые переводы tournament.show_title/profile.push_status).
+
+**Раунд 4 (текущий):**
+- **UX-11**: заполнены пустые переводы `tournament.show_title`/`profile.push_status` (ru+en).
+- **UX-9**: календарь — спиннер в #month-year + disabled prev/next при загрузке (с защитой от гонки).
+- **A-6**: `aria-hidden="true"` на декоративные emoji (dashboard onboarding, achievements empty, notifications empty, verify success, 2FA enabled).
+- **UX-7**: мобильные карточки для admin-users/admin-games (таблица скрыта на `< sm`, карточки на `sm:hidden`).
+
+**Проверка:** `go build ./...` ✓, `go vet ./...` ✓, `gofmt -l .` → пусто ✓, `go test -short ./...` ✓, все 84 шаблона парсятся ✓.
+
+**Оставлено осознанно (задокументировано):**
+- **A-4** (God-фасады GameService/GamePlayService/TournamentService) — стилевой рефакторинг без функционального бага; фасады уже делегируют CRUD/Listing. Кандидат на отдельный раунд.
 
 ---
 

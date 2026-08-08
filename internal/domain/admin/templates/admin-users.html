@@ -37,8 +37,39 @@
     <!-- Скрытый CSRF-токен для единообразия -->
     <input type="hidden" id="csrf_token" value="{{.csrf}}">
 
-    <!-- Таблица пользователей -->
-    <div class="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+    <!-- UX-7 (pass 35): мобильные карточки — на < sm таблица скрыта. -->
+    <div class="space-y-3 sm:hidden">
+        {{range .Users}}
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+            <div class="flex items-center justify-between">
+                <div class="font-medium text-gray-900 dark:text-gray-100">{{.Name}}</div>
+                {{if eq .Role "admin"}}
+                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200">{{ T $.Lang "admin.role_admin" }}</span>
+                {{else}}
+                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100">{{ T $.Lang "admin.role_user" }}</span>
+                {{end}}
+            </div>
+            <div class="mt-1 text-sm text-gray-600 dark:text-gray-400 break-all">{{.Email}}</div>
+            <div class="mt-3 text-sm flex flex-wrap gap-2">
+                <form action="/admin/users/{{.ID}}/toggle-admin" method="POST" class="inline">
+                    <input type="hidden" name="_csrf" value="{{$.csrf}}">
+                    <button type="submit" class="btn {{if eq .Role "admin"}}btn-outline{{else}}btn-primary{{end}} text-xs">
+                        {{if eq .Role "admin"}}{{ T $.Lang "admin.demote" }}{{else}}{{ T $.Lang "admin.make_admin" }}{{end}}
+                    </button>
+                </form>
+                <form action="/admin/users/{{.ID}}/delete" method="POST" class="inline" data-confirm-danger="true" data-confirm-form="{{ T $.Lang "admin.user_delete_confirm" }}">
+                    <input type="hidden" name="_csrf" value="{{$.csrf}}">
+                    <button type="submit" class="btn btn-danger text-xs">{{ T $.Lang "admin.delete" }}</button>
+                </form>
+            </div>
+        </div>
+        {{else}}
+        <p class="text-center text-sm text-gray-500 dark:text-gray-400 py-8">{{ T $.Lang "admin.no_users" }}</p>
+        {{end}}
+    </div>
+
+    <!-- Таблица пользователей (sm и выше) -->
+    <div class="hidden sm:block overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
         <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50 dark:bg-gray-800">
                 <tr>

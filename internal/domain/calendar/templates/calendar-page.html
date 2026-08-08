@@ -63,7 +63,13 @@
         currentMonth = month;
         const token = ++calendarReqToken;
 
-        document.getElementById('month-year').textContent = `${monthNames[month]} ${year}`;
+        // UX-9 (pass 35): индикатор загрузки при переключении месяца.
+        const prevBtn = document.getElementById('prev-month');
+        const nextBtn = document.getElementById('next-month');
+        const monthYearEl = document.getElementById('month-year');
+        if (prevBtn) prevBtn.disabled = true;
+        if (nextBtn) nextBtn.disabled = true;
+        if (monthYearEl) monthYearEl.textContent = `${monthNames[month]} ${year}…`;
 
         fetch(`/api/v1/calendar?year=${year}&month=${month + 1}`, {
             headers: { 'X-CSRF-TOKEN': getCsrfToken() }
@@ -71,13 +77,22 @@
             .then(r => r.json())
             .then(data => {
                 if (token !== calendarReqToken) return; // устаревший ответ
+                if (monthYearEl) monthYearEl.textContent = `${monthNames[month]} ${year}`;
                 renderCalendar(data.year, data.month, data.events);
             })
             .catch(err => {
                 if (token !== calendarReqToken) return;
+                if (monthYearEl) monthYearEl.textContent = `${monthNames[month]} ${year}`;
                 console.error('Calendar load error:', err);
                 document.getElementById('calendar-body').innerHTML =
                     `<tr><td colspan="7" class="p-4 text-center text-red-500">{{ T $.Lang "calendar.load_error" }}</td></tr>`;
+            })
+            .finally(function() {
+                // Только для последнего запроса (не блокируем кнопки при гонке).
+                if (token === calendarReqToken) {
+                    if (prevBtn) prevBtn.disabled = false;
+                    if (nextBtn) nextBtn.disabled = false;
+                }
             });
     }
 

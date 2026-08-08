@@ -13,7 +13,7 @@
     {{if and (not .Dashboard.AuthoredGames) (not .Dashboard.CaptainTeams) (not .Dashboard.MemberTeams)}}
     <div id="onboarding-banner" class="card mb-6 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800">
         <div class="flex items-start gap-4">
-            <div class="text-4xl flex-shrink-0">🚀</div>
+            <div class="text-4xl flex-shrink-0" aria-hidden="true">🚀</div>
             <div class="flex-1">
                 <div class="flex justify-between items-start">
                     <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">{{ T $.Lang "dashboard.onboarding_title" }}</h2>
@@ -22,15 +22,15 @@
                 <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">{{ T $.Lang "dashboard.onboarding_desc" }}</p>
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <a href="/games/new" class="flex items-center gap-2 p-3 bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow-md transition">
-                        <span class="text-2xl">🎮</span>
+                        <span class="text-2xl" aria-hidden="true">🎮</span>
                         <div><div class="text-sm font-medium text-gray-800 dark:text-gray-100">{{ T $.Lang "dashboard.onboarding_step1" }}</div><div class="text-xs text-gray-500">{{ T $.Lang "dashboard.onboarding_step1_desc" }}</div></div>
                     </a>
                     <a href="/teams" class="flex items-center gap-2 p-3 bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow-md transition">
-                        <span class="text-2xl">👥</span>
+                        <span class="text-2xl" aria-hidden="true">👥</span>
                         <div><div class="text-sm font-medium text-gray-800 dark:text-gray-100">{{ T $.Lang "dashboard.onboarding_step2" }}</div><div class="text-xs text-gray-500">{{ T $.Lang "dashboard.onboarding_step2_desc" }}</div></div>
                     </a>
                     <a href="/games" class="flex items-center gap-2 p-3 bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow-md transition">
-                        <span class="text-2xl">🏆</span>
+                        <span class="text-2xl" aria-hidden="true">🏆</span>
                         <div><div class="text-sm font-medium text-gray-800 dark:text-gray-100">{{ T $.Lang "dashboard.onboarding_step3" }}</div><div class="text-xs text-gray-500">{{ T $.Lang "dashboard.onboarding_step3_desc" }}</div></div>
                     </a>
                 </div>
