@@ -2,6 +2,7 @@
 package user
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -110,6 +111,43 @@ func TestTwoFactorService_HashAndVerifyBackupCodes(t *testing.T) {
 	// Проверяем, что неверный код не проходит
 	valid, err = svc.VerifyBackupCode(hashed, "999999")
 	require.NoError(t, err)
+	assert.False(t, valid)
+}
+
+// S-3 (pass 32): ввод backup-кода нормализуется (верхний регистр, без тире/пробелов).
+func TestTwoFactorService_VerifyBackupCode_NormalizesInput(t *testing.T) {
+	t.Parallel()
+	svc := NewTwoFactorService()
+
+	codes, err := svc.GenerateBackupCodes()
+	require.NoError(t, err)
+	hashed, err := svc.HashBackupCodes(codes)
+	require.NoError(t, err)
+
+	code := codes[0]
+	// Нижний регистр.
+	valid, err := svc.VerifyBackupCode(hashed, strings.ToLower(code))
+	require.NoError(t, err)
+	assert.True(t, valid, "нижний регистр должен проходить нормализацию")
+
+	// С дефисами через каждые 4 символа.
+	formatted := ""
+	for i, r := range code {
+		if i > 0 && i%4 == 0 {
+			formatted += "-"
+		}
+		formatted += string(r)
+	}
+	valid, err = svc.VerifyBackupCode(hashed, formatted)
+	require.NoError(t, err)
+	assert.True(t, valid, "код с дефисами должен проходить нормализацию")
+
+	// VerifyAndRemoveBackupCode тоже нормализует.
+	remaining, err := svc.VerifyAndRemoveBackupCode(hashed, strings.ToLower(code))
+	require.NoError(t, err)
+	assert.NotEqual(t, hashed, remaining, "использованный код должен быть удалён")
+	// Тот же код повторно не проходит (уже израсходован).
+	valid, _ = svc.VerifyBackupCode(remaining, code)
 	assert.False(t, valid)
 }
 

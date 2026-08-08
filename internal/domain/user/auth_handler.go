@@ -838,10 +838,13 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 
 	// 2FA: если у пользователя включена двухфакторная аутентификация — не выдаём
 	// токены сразу, а перенаправляем на ввод TOTP (защита от обхода 2FA через OAuth).
+	// S-1 (pass 32): pending-шаг тоже ограничен TTL (10 мин) — как в Login,
+	// иначе окно brute-force жило бы до конца session-cookie.
 	if user.TwoFactorEnabled {
 		sess := sessions.Default(c)
 		sess.Set("pending_user_id", user.ID)
 		sess.Set("pending_email", user.Email)
+		sess.Set("pending_expires", time.Now().Add(pending2FATTL).Unix())
 		if saveErr := sess.Save(); saveErr != nil {
 			log.Error().Err(saveErr).Msg("OAuthCallback: failed to save 2FA pending session")
 		}

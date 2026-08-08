@@ -79,7 +79,7 @@ func (s *RatingService) UpdateRatingsForGame(ctx context.Context, gameID uint) e
 			return err
 		}
 		if len(passings) == 0 {
-			s.cache.DeleteByPrefixWithCtx(ctx, "leaderboard:")
+			s.cache.DeleteByPrefixWithCtx(ctx, "leaderboard")
 			return nil
 		}
 
@@ -170,7 +170,7 @@ func (s *RatingService) UpdateRatingsForGame(ctx context.Context, gameID uint) e
 			}
 		}
 
-		s.cache.DeleteByPrefixWithCtx(ctx, "leaderboard:")
+		s.cache.DeleteByPrefixWithCtx(ctx, "leaderboard")
 		return nil
 	})
 }

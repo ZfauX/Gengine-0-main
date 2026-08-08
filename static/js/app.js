@@ -12,6 +12,16 @@ function tI18n(key, fallback) {
 }
 
 // =============================================================================
+// HTML-escape helper (F-C1, pass 32): showToast/showModalConfirm вызывают его
+// глобально, но он был объявлен только внутри inline-IIFE в layout.html —
+// на страницах без этого блока кидался ReferenceError и ломались тосты/модалки.
+// =============================================================================
+window.escapeHtml = function(text) {
+    var map = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'};
+    return String(text).replace(/[&<>"']/g, function(m) { return map[m]; });
+};
+
+// =============================================================================
 // UX1: Global online/offline detector with toast notification
 // =============================================================================
 function initOfflineDetector() {

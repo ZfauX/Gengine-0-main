@@ -73,7 +73,7 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 			"Tournament", "TournGame", "TournTeam", "TournResult",
 			"PushSub", "Follow", "Export", "Chat", "Blackbox", "Notification", "Backup",
 		),
-		game.NewCoAuthorService,
+		wrapCoAuthorService,
 		wrapReviewService,
 		wrapNoteService,
 		wrapPhotoService,

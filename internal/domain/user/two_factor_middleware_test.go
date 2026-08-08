@@ -109,6 +109,10 @@ func (m *mockUserRepo) AtomicIncrementFailedAttempts(ctx context.Context, userID
 	return 0, nil
 }
 
+func (m *mockUserRepo) AtomicLockAccount(ctx context.Context, userID uint, lockedUntil time.Time) (int, error) {
+	return 0, nil
+}
+
 func (m *mockUserRepo) GetGamesView(ctx context.Context, userID uint) (string, error) {
 	return "table", nil
 }

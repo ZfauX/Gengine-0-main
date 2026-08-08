@@ -56,6 +56,21 @@ func (mr *MockUserRepositoryMockRecorder) AtomicIncrementFailedAttempts(ctx, use
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AtomicIncrementFailedAttempts", reflect.TypeOf((*MockUserRepository)(nil).AtomicIncrementFailedAttempts), ctx, userID)
 }
 
+// AtomicLockAccount mocks base method.
+func (m *MockUserRepository) AtomicLockAccount(ctx context.Context, userID uint, lockedUntil time.Time) (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AtomicLockAccount", ctx, userID, lockedUntil)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AtomicLockAccount indicates an expected call of AtomicLockAccount.
+func (mr *MockUserRepositoryMockRecorder) AtomicLockAccount(ctx, userID, lockedUntil any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AtomicLockAccount", reflect.TypeOf((*MockUserRepository)(nil).AtomicLockAccount), ctx, userID, lockedUntil)
+}
+
 // Count mocks base method.
 func (m *MockUserRepository) Count(ctx context.Context) (int64, error) {
 	m.ctrl.T.Helper()

@@ -187,22 +187,19 @@ func (s *AuthService) Login(ctx context.Context, emailStr, password string) (str
 		}
 
 		if newAttempts >= 5 {
-			// S-4 (pass 31): экспоненциальный backoff — длительность блокировки
+			// S-4 (pass 31/32): экспоненциальный backoff — длительность блокировки
 			// растёт с каждой последовательной блокировкой (5, 10, 20, ... мин,
-			// до 24ч), а не фиксированные 30 мин. Счётчик сбрасывается при
-			// успешном входе; lock_count инкрементируется при каждой блокировке.
+			// до 24ч). Атомарный инкремент lock_count (S-4 pass 32) — без гонки
+			// между параллельными неверными попытками.
 			now := time.Now()
 			duration := backoffDuration(user.LockCount)
 			lockedUntil := now.Add(duration)
-			if err := s.userRepo.Update(ctx, user.ID, map[string]any{
-				"locked_until":          lockedUntil,
-				"failed_login_attempts": 0,
-				"lock_count":            user.LockCount + 1,
-			}); err != nil {
+			newCount, err := s.userRepo.AtomicLockAccount(ctx, user.ID, lockedUntil)
+			if err != nil {
 				log.Error().Err(err).Uint("user_id", user.ID).Msg("Login: failed to lock account")
 				return "", ErrInternalServer
 			}
-			log.Debug().Uint("user_id", user.ID).Int("lock_count", user.LockCount).Dur("duration", duration).Msg("Login: account locked with backoff")
+			log.Debug().Uint("user_id", user.ID).Int("lock_count", newCount).Dur("duration", duration).Msg("Login: account locked with backoff")
 			// Generic-ответ: не раскрываем существование аккаунта (B2).
 			return "", ErrInvalidCredentials
 		}
@@ -489,17 +486,15 @@ func (s *UserService) AtomicIncrementFailedAttempts(ctx context.Context, userID 
 // SetLockedUntil блокирует аккаунт с экспоненциальным backoff (S-4, pass 31):
 // длительность зависит от текущего lock_count, счётчик инкрементируется.
 func (s *UserService) SetLockedUntil(ctx context.Context, userID uint) error {
+	// S-5 (pass 32): атомарный backoff-лок (как в Login) — инкремент lock_count
+	// в одном UPDATE, без гонки и с единой логикой длительности.
 	u, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return err
 	}
 	duration := backoffDuration(u.LockCount)
-	lockedUntil := time.Now().Add(duration)
-	return s.userRepo.Update(ctx, userID, map[string]any{
-		"locked_until":          lockedUntil,
-		"failed_login_attempts": 0,
-		"lock_count":            u.LockCount + 1,
-	})
+	_, err = s.userRepo.AtomicLockAccount(ctx, userID, time.Now().Add(duration))
+	return err
 }
 
 // ResetFailedAttempts сбрасывает счётчик неудачных попыток и блокировку.

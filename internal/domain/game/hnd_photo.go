@@ -61,6 +61,24 @@ func (h *PhotoHandler) PhotosPage(c *gin.Context) {
 		return
 	}
 	userID := c.GetUint("userID")
+	isAdmin := middleware.IsAdmin(c)
+
+	// S-2 (pass 32): метаданные приватных/черновиков не должны быть видны
+	// любому залогиненному. Проверяем видимость игры как в Show.
+	game, err := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID, isAdmin)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, ErrGameNotFound) {
+			render.RenderErrorPage(c, http.StatusNotFound)
+		} else {
+			log.Error().Err(err).Int("game_id", gameID).Msg("PhotoHandler.PhotosPage: failed to get game")
+			render.RenderErrorPage(c, http.StatusInternalServerError)
+		}
+		return
+	}
+	if game.IsDraft && !isAdmin {
+		render.RenderErrorPage(c, http.StatusNotFound)
+		return
+	}
 
 	var photos []Photo
 	if h.photoService != nil {
@@ -73,6 +91,9 @@ func (h *PhotoHandler) PhotosPage(c *gin.Context) {
 	if err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Msg("PhotoHandler.PhotosPage: failed to check manager")
 		isManager = false
+	}
+	if isAdmin {
+		isManager = true
 	}
 
 	render.Page(c, http.StatusOK, "games-photos.html", gin.H{

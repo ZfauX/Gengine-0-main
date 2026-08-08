@@ -27,6 +27,14 @@ const (
 // backupCodeAlphabet — символы без неоднозначных (0/O, 1/I, l).
 const backupCodeAlphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 
+// normalizeBackupCode приводит введённый код к каноническому виду (S-3, pass 32):
+// верхний регистр + удаление дефисов/пробелов — пользователь может ввести
+// код с тире (ABCD-EFGH) или в нижнем регистре.
+func normalizeBackupCode(code string) string {
+	code = strings.ToUpper(code)
+	return strings.NewReplacer("-", "", " ", "", "_", "").Replace(code)
+}
+
 // TwoFactorService отвечает за управление двухфакторной аутентификацией.
 type TwoFactorService struct{}
 
@@ -140,15 +148,18 @@ func (s *TwoFactorService) HashBackupCodes(codes []string) (string, error) {
 	return strings.Join(hashed, ","), nil
 }
 
-// VerifyBackupCode проверяет резервный код.
+// VerifyBackupCode проверяет резервный код. Ввод нормализуется (S-3, pass 32):
+// коды генерируются в верхнем регистре, а пользователь может ввести нижний,
+// с дефисами/пробелами.
 func (s *TwoFactorService) VerifyBackupCode(stored, code string) (bool, error) {
+	normalized := normalizeBackupCode(code)
 	codes := strings.Split(stored, ",")
 	for _, hashed := range codes {
 		hashed = strings.TrimSpace(hashed)
 		if hashed == "" {
 			continue
 		}
-		err := bcrypt.CompareHashAndPassword([]byte(hashed), []byte(code))
+		err := bcrypt.CompareHashAndPassword([]byte(hashed), []byte(normalized))
 		if err == nil {
 			return true, nil
 		}
@@ -158,13 +169,14 @@ func (s *TwoFactorService) VerifyBackupCode(stored, code string) (bool, error) {
 
 // VerifyAndRemoveBackupCode проверяет резервный код и удаляет его из списка.
 func (s *TwoFactorService) VerifyAndRemoveBackupCode(stored, code string) (string, error) {
+	normalized := normalizeBackupCode(code)
 	codes := strings.Split(stored, ",")
 	for i, hashed := range codes {
 		hashed = strings.TrimSpace(hashed)
 		if hashed == "" {
 			continue
 		}
-		err := bcrypt.CompareHashAndPassword([]byte(hashed), []byte(code))
+		err := bcrypt.CompareHashAndPassword([]byte(hashed), []byte(normalized))
 		if err == nil {
 			// Remove this code
 			remaining := append(codes[:i], codes[i+1:]...)

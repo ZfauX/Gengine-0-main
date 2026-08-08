@@ -74,6 +74,11 @@ type UserRepository interface {
 	// AtomicIncrementFailedAttempts атомарно инкрементирует failed_login_attempts
 	// и возвращает новое значение.
 	AtomicIncrementFailedAttempts(ctx context.Context, userID uint) (int, error)
+
+	// AtomicLockAccount атомарно блокирует аккаунт (S-4, pass 32): инкрементирует
+	// lock_count в одном UPDATE (без race между параллельными попытками) и
+	// возвращает новое значение lock_count + установленный locked_until.
+	AtomicLockAccount(ctx context.Context, userID uint, lockedUntil time.Time) (int, error)
 }
 
 // AchievementRepository определяет контракт для работы с достижениями.
@@ -432,6 +437,25 @@ func (r *gormUserRepo) AtomicIncrementFailedAttempts(ctx context.Context, userID
 		Raw("UPDATE users SET failed_login_attempts = failed_login_attempts + 1 WHERE id = ? RETURNING failed_login_attempts", userID).
 		Scan(&attempts).Error
 	return attempts, err
+}
+
+// AtomicLockAccount атомарно блокирует аккаунт (S-4, pass 32): один UPDATE
+// инкрементирует lock_count и ставит locked_until — без гонки между
+// параллельными неверными попытками (ранее читали LockCount снапшотом).
+func (r *gormUserRepo) AtomicLockAccount(ctx context.Context, userID uint, lockedUntil time.Time) (int, error) {
+	var newCount int
+	err := r.db.WithContext(ctx).
+		Raw(`UPDATE users
+			SET lock_count = lock_count + 1,
+			    locked_until = ?,
+			    failed_login_attempts = 0
+			WHERE id = ?
+			RETURNING lock_count`, lockedUntil, userID).
+		Scan(&newCount).Error
+	if err != nil {
+		return 0, err
+	}
+	return newCount, nil
 }
 
 type gormAchievementRepo struct{ db *gorm.DB }

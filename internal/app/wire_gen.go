@@ -118,13 +118,13 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	twoFactorService := wrapTwoFactorService()
 	gameRepository := repos.Game
 	gamePassingRepository := repos.GamePassing
-	coAuthorService := game.NewCoAuthorService(db)
+	coAuthorRepository := repos.CoAuthor
+	coAuthorService := wrapCoAuthorService(db, coAuthorRepository)
 	reviewRepository := repos.Review
 	reviewService := wrapReviewService(reviewRepository, appCache)
 	monitorRepository := repos.Monitor
 	monitorService := wrapMonitorService(db, monitorRepository)
 	photoRepository := repos.Photo
-	coAuthorRepository := repos.CoAuthor
 	photoService := wrapPhotoService(photoRepository, coAuthorRepository)
 	ratingRepository := repos.Rating
 	ratingService := wrapRatingService(db, ratingRepository, appCache)

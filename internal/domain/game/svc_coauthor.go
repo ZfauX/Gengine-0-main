@@ -17,30 +17,33 @@ const (
 )
 
 type CoAuthorService struct {
-	DB *gorm.DB
+	DB   *gorm.DB
+	repo CoAuthorRepository
 }
 
 func NewCoAuthorService(db *gorm.DB) *CoAuthorService {
 	return &CoAuthorService{DB: db}
 }
 
+// WithRepository внедряет репозиторий соавторов (A-1, pass 32): устраняет
+// дублирование запросов между сервисом и репозиторием.
+func (s *CoAuthorService) WithRepository(repo CoAuthorRepository) *CoAuthorService {
+	s.repo = repo
+	return s
+}
+
+// repoOrDefault возвращает репозиторий или создаёт дефолтный на DB.
+func (s *CoAuthorService) repoOrDefault() CoAuthorRepository {
+	if s.repo == nil {
+		return NewGormCoAuthorRepo(s.DB)
+	}
+	return s.repo
+}
+
 // IsUserManager проверяет, является ли пользователь автором или соавтором игры.
 // Оптимизация: использует один запрос с UNION вместо двух отдельных запросов.
 func (s *CoAuthorService) IsUserManager(ctx context.Context, gameID, userID uint) (bool, error) {
-	var count int64
-	err := s.DB.WithContext(ctx).
-		Raw(`
-			SELECT COUNT(*) FROM (
-				SELECT 1 FROM games WHERE id = ? AND author_id = ? AND deleted_at IS NULL
-				UNION
-				SELECT 1 FROM co_authors WHERE game_id = ? AND user_id = ? AND deleted_at IS NULL
-			) sub
-		`, gameID, userID, gameID, userID).
-		Scan(&count).Error
-	if err != nil {
-		return false, err
-	}
-	return count > 0, nil
+	return s.repoOrDefault().IsUserManager(ctx, gameID, userID)
 }
 
 // HasPermission проверяет наличие у пользователя конкретной роли в игре.
@@ -97,25 +100,24 @@ func (s *CoAuthorService) CanEditContent(ctx context.Context, gameID, userID uin
 
 // Add добавляет нового соавтора или восстанавливает удалённого.
 func (s *CoAuthorService) Add(ctx context.Context, gameID, newCoAuthorID, ownerID uint) error {
-	var game Game
-	if err := s.DB.WithContext(ctx).First(&game, gameID).Error; err != nil {
+	authorID, err := s.repoOrDefault().GetGameAuthorID(ctx, gameID)
+	if err != nil {
 		return err
 	}
-	if game.AuthorID != ownerID {
+	if authorID != ownerID {
 		return errors.New("только владелец может управлять соавторами")
 	}
-	if game.AuthorID == newCoAuthorID {
+	if authorID == newCoAuthorID {
 		return errors.New("владелец уже имеет полный доступ")
 	}
 
 	// Проверяем, есть ли запись (включая мягко удалённые)
-	var co CoAuthor
-	findErr := s.DB.WithContext(ctx).Unscoped().Where("game_id = ? AND user_id = ?", gameID, newCoAuthorID).First(&co).Error
+	co, findErr := s.repoOrDefault().FindUnscopedByGameAndUser(ctx, gameID, newCoAuthorID)
 	if findErr == nil {
 		if co.DeletedAt.Valid {
 			// Восстанавливаем мягко удалённую запись
 			co.DeletedAt = gorm.DeletedAt{}
-			if saveErr := s.DB.WithContext(ctx).Save(&co).Error; saveErr != nil {
+			if saveErr := s.repoOrDefault().Save(ctx, co); saveErr != nil {
 				return saveErr
 			}
 			return nil
@@ -126,28 +128,24 @@ func (s *CoAuthorService) Add(ctx context.Context, gameID, newCoAuthorID, ownerI
 	}
 
 	// Нет записи — создаём новую
-	co = CoAuthor{GameID: gameID, UserID: newCoAuthorID, Role: RoleContentEditor}
-	return s.DB.WithContext(ctx).Create(&co).Error
+	co = &CoAuthor{GameID: gameID, UserID: newCoAuthorID, Role: RoleContentEditor}
+	return s.repoOrDefault().Create(ctx, co)
 }
 
 // Remove мягко удаляет соавтора (устанавливает deleted_at).
 func (s *CoAuthorService) Remove(ctx context.Context, gameID, coAuthorUserID, ownerID uint) error {
-	var game Game
-	if err := s.DB.WithContext(ctx).First(&game, gameID).Error; err != nil {
+	authorID, err := s.repoOrDefault().GetGameAuthorID(ctx, gameID)
+	if err != nil {
 		return err
 	}
-	if game.AuthorID != ownerID {
+	if authorID != ownerID {
 		return errors.New("только владелец может управлять соавторами")
 	}
 	// Используем Delete, который в GORM v2 автоматически устанавливает deleted_at
-	return s.DB.WithContext(ctx).Where("game_id = ? AND user_id = ?", gameID, coAuthorUserID).Delete(&CoAuthor{}).Error
+	return s.repoOrDefault().DeleteByGameAndUser(ctx, gameID, coAuthorUserID)
 }
 
 // List возвращает список соавторов игры.
 func (s *CoAuthorService) List(ctx context.Context, gameID uint) ([]CoAuthor, error) {
-	var coAuthors []CoAuthor
-	err := s.DB.WithContext(ctx).Preload("User", func(db *gorm.DB) *gorm.DB {
-		return db.Select("id, name, avatar_path")
-	}).Where("game_id = ?", gameID).Find(&coAuthors).Error
-	return coAuthors, err
+	return s.repoOrDefault().ListByGame(ctx, gameID)
 }
