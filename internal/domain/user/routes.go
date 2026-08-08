@@ -13,7 +13,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-	"gorm.io/gorm"
 )
 
 // RegisterRoutes регистрирует все маршруты пользовательского домена.
@@ -26,7 +25,6 @@ func RegisterRoutes(
 	emailVerifSvc *EmailVerificationService,
 	oauthSvc *OAuthService,
 	auditSvc *audit.Service,
-	db *gorm.DB,
 	localStorage storage.FileStorage,
 	emailSvc *email.EmailService,
 	webauthnHandler *WebAuthnHandler,
@@ -143,7 +141,8 @@ func RegisterRoutes(
 	apiR := r.Group("/api")
 	{
 		// #9: публичный поиск пользователей — dedicated per-IP лимитер.
-		apiR.GET("/users/search", middleware.LoginRateLimit(time.Minute, 20), SearchUsersAPI(NewGormUserRepo(db)))
+		// M16 (pass 30): используем DI-репозиторий вместо NewGormUserRepo(db).
+		apiR.GET("/users/search", middleware.LoginRateLimit(time.Minute, 20), SearchUsersAPI(userRepo))
 	}
 
 	// Предпочтения пользователя (серверная персонализация)

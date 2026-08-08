@@ -160,6 +160,10 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 	lang := i18n.FromCtx(c)
 	data["Lang"] = string(lang)
 
+	// M5 (pass 30): смещение пользователя в минутах от UTC из cookie tz_offset
+	// (устанавливается JS). Используется formatDate/formatDateTime.
+	data["TZOffset"] = tzOffsetFromCookie(c)
+
 	// Версия статики для ?v= (UX5). Если не задана — пустая строка (нет суффикса).
 	data["StaticVersion"] = staticVersion
 
@@ -316,6 +320,22 @@ func ParseIDQuery(c *gin.Context, paramName string) (uint, bool) {
 		return 0, false
 	}
 	return uint(id), true
+}
+
+// tzOffsetFromCookie читает смещение пользователя в минутах от UTC из cookie
+// tz_offset (устанавливается JS через getTimezoneOffset()). Возвращает 0,
+// если cookie отсутствует/нечисловой — UTC по умолчанию (M5, pass 30).
+func tzOffsetFromCookie(c *gin.Context) int {
+	raw, err := c.Cookie("tz_offset")
+	if err != nil || raw == "" {
+		return 0
+	}
+	// Диапазон реальных смещений — [-840, 840] минут; грубые значения игнорируем.
+	offset, err := strconv.Atoi(raw)
+	if err != nil || offset < -840 || offset > 840 {
+		return 0
+	}
+	return offset
 }
 
 // SetBreadcrumb добавляет breadcrumb в данные шаблона.

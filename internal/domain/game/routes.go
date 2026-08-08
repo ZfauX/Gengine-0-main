@@ -19,7 +19,6 @@ import (
 // GameDeps содержит все зависимости для регистрации маршрутов игрового домена.
 // Позволяет избежать передачи 16+ параметров в RegisterRoutes.
 type GameDeps struct {
-	DB              *gorm.DB
 	GameService     *GameService
 	PassingService  *GamePassingService
 	CoAuthorSvc     *CoAuthorService

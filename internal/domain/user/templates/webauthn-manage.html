@@ -18,7 +18,7 @@
                         {{if .Name}}{{.Name}}{{else}}Passkey #{{.ID}}{{end}}
                     </div>
                     <div class="text-xs text-gray-500 dark:text-gray-400">
-                        {{ T $.Lang "passkey.added_at" }} {{ formatDateTime $.Lang .CreatedAt }}
+                        {{ T $.Lang "passkey.added_at" }} {{ formatDateTime $.Lang $.TZOffset .CreatedAt }}
                     </div>
                 </div>
                 <form action="/profile/webauthn-keys/delete/{{.ID}}" method="POST" data-confirm-form="{{ T $.Lang "passkey.delete_confirm" }}">

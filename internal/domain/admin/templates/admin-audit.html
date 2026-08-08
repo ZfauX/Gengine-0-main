@@ -52,7 +52,7 @@
             <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200">
                 {{range .Logs}}
                 <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 transition">
-                    <td class="table-cell">{{.CreatedAt}}</td>
+                    <td class="table-cell">{{ formatDateTime $.Lang $.TZOffset .CreatedAt }}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">{{.UserName}} ({{.UserID}})</td>
                     <td class="table-cell">{{.Action}}</td>
                     <td class="table-cell">{{.ObjectType}}</td>

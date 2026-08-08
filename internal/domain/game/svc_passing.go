@@ -119,8 +119,13 @@ func (s *GamePassingService) ListByGamePaginated(ctx context.Context, gameID uin
 	}
 
 	offset := (page - 1) * perPage
-	if err := s.DB.WithContext(ctx).Preload("Team.Captain").Where("game_id = ?", gameID).
-		Order("created_at DESC").Offset(offset).Limit(perPage).Find(&passings).Error; err != nil {
+	// M11 (pass 30): JOIN вместо вложенного Preload — team+capitan
+	// подтягиваются одним запросом, а не тремя (passings→teams→users).
+	if err := s.DB.WithContext(ctx).
+		Joins("Team").Joins("Team.Captain").
+		Where("game_id = ?", gameID).
+		Order("game_passings.created_at DESC").Offset(offset).Limit(perPage).
+		Find(&passings).Error; err != nil {
 		return nil, 0, err
 	}
 

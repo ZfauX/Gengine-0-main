@@ -361,12 +361,12 @@ func (app *App) registerAdminRoutes(r *gin.RouterGroup) {
 }
 
 func (app *App) registerUserRoutes(r *gin.RouterGroup) {
-	user.RegisterRoutes(r, app.Config, app.Deps.Services.Auth, app.Deps.Services.User, app.Deps.Services.PasswordReset, app.Deps.Services.EmailVerif, app.Deps.Services.OAuth, app.Deps.AuditSvc, app.DB, app.LocalStorage, app.Deps.Services.Email, app.Deps.WebAuthn, app.Deps.Repos.User, app.Deps.Services.PushHandler, app.Deps.Services.TwoFactor, app.Deps.Services.Profile, app.Deps.Repos.Achiev, app.Deps.Services.UserDashboard)
+	user.RegisterRoutes(r, app.Config, app.Deps.Services.Auth, app.Deps.Services.User, app.Deps.Services.PasswordReset, app.Deps.Services.EmailVerif, app.Deps.Services.OAuth, app.Deps.AuditSvc, app.LocalStorage, app.Deps.Services.Email, app.Deps.WebAuthn, app.Deps.Repos.User, app.Deps.Services.PushHandler, app.Deps.Services.TwoFactor, app.Deps.Services.Profile, app.Deps.Repos.Achiev, app.Deps.Services.UserDashboard)
 }
 
 func (app *App) registerGameRoutes(r *gin.RouterGroup) {
 	game.RegisterRoutes(r, &game.GameDeps{
-		DB: app.DB, GameService: app.Deps.Services.Game, PassingService: app.Deps.Services.GamePassing,
+		GameService: app.Deps.Services.Game, PassingService: app.Deps.Services.GamePassing,
 		CoAuthorSvc: app.Deps.Services.CoAuthor, AttemptSvc: app.Deps.Services.Attempt,
 		ProgressSvc: app.Deps.Services.Progress, MonitorSvc: app.Deps.Services.Monitor,
 		LocalStorage: app.LocalStorage, Hub: app.Hub, Cfg: app.Config,

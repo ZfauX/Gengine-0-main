@@ -13,6 +13,7 @@ import (
 	"gengine-0/internal/pkg/audit"
 	"gengine-0/internal/pkg/cache"
 	"gengine-0/internal/pkg/i18n"
+	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/sqlutil"
 
@@ -284,6 +285,9 @@ func (h *AdminHandler) ToggleAdmin(c *gin.Context) {
 
 	// Revoke all refresh tokens so the role change takes effect on next re-login
 	// (existing short-lived access JWTs expire within AccessExpiry).
+	// M6 (pass 30): сбрасываем TTL-кэш роли — понижение применяется без ожидания
+	// кэша, даже если access JWT ещё жив.
+	middleware.InvalidateRoleCache(u.ID)
 	if h.refreshTokenRepo != nil {
 		if err := h.refreshTokenRepo.RevokeAllForUser(ctx, u.ID); err != nil {
 			log.Error().Err(err).Uint("user", u.ID).Msg("ToggleAdmin: failed to revoke refresh tokens")

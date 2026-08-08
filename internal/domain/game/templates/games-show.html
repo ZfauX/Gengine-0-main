@@ -22,10 +22,10 @@
             <p class="text-gray-700 dark:text-gray-300">{{.Game.Description}}</p>
             <p><span class="font-medium text-gray-600 dark:text-gray-400">{{ T $.Lang "game.show_author" }}</span> {{.Game.Author.Name}}</p>
             {{if .Game.StartsAt}}
-            <p><span class="font-medium text-gray-600 dark:text-gray-400">{{ T $.Lang "game.show_start_date" }}</span> {{ formatDateTime $.Lang .Game.StartsAt }}</p>
+            <p><span class="font-medium text-gray-600 dark:text-gray-400">{{ T $.Lang "game.show_start_date" }}</span> {{ formatDateTime $.Lang $.TZOffset .Game.StartsAt }}</p>
             {{end}}
             {{if .Game.RegistrationDeadline}}
-            <p><span class="font-medium text-gray-600 dark:text-gray-400">{{ T $.Lang "game.show_reg_deadline" }}</span> {{ formatDateTime $.Lang .Game.RegistrationDeadline }}</p>
+            <p><span class="font-medium text-gray-600 dark:text-gray-400">{{ T $.Lang "game.show_reg_deadline" }}</span> {{ formatDateTime $.Lang $.TZOffset .Game.RegistrationDeadline }}</p>
             {{end}}
             <p><span class="font-medium text-gray-600 dark:text-gray-400">{{ T $.Lang "game.show_max_teams" }}</span> {{.Game.MaxTeamNumber}}</p>
             <p><span class="font-medium text-gray-600 dark:text-gray-400">{{ T $.Lang "game.show_visibility" }}</span>
@@ -70,7 +70,7 @@
                             <span class="font-medium text-gray-800 dark:text-gray-100">{{.User.Name}}</span>
                             <span class="text-sm text-gray-500 dark:text-gray-400 ml-2">{{ TF $.Lang "game.show_rating_score" .Rating }}</span>
                         </div>
-                        <span class="text-xs text-gray-500">{{ formatDateTime $.Lang .CreatedAt }}</span>
+                        <span class="text-xs text-gray-500">{{ formatDateTime $.Lang $.TZOffset .CreatedAt }}</span>
                     </div>
                     {{if .Comment}}
                     <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">{{.Comment}}</p>

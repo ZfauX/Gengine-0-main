@@ -19,7 +19,7 @@
             <div class="flex justify-between items-start">
                 <div>
                     <span class="font-semibold text-gray-800 dark:text-gray-100">{{.User.Name}}</span>
-                    <span class="text-sm text-gray-500 dark:text-gray-400 ml-2">{{ formatDateTime $.Lang .CreatedAt }}</span>
+                    <span class="text-sm text-gray-500 dark:text-gray-400 ml-2">{{ formatDateTime $.Lang $.TZOffset .CreatedAt }}</span>
                     {{if .Level}}
                     <span class="inline-block ml-2 px-2 py-0.5 text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-md">{{ TF $.Lang "notes.level_label" .Level.Name }}</span>
                     {{end}}

@@ -135,28 +135,41 @@ func TestTruncate_Zero(t *testing.T) {
 // H1 (pass 30): formatDate/formatDateTime должны принимать *time.Time.
 func TestFormatDate_TimeValue(t *testing.T) {
 	ts := time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)
-	assert.Equal(t, "08.08.2026", formatDate("ru", ts))
-	assert.Equal(t, "08 Aug 2026", formatDate("en", ts))
+	assert.Equal(t, "08.08.2026", formatDate("ru", 0, ts))
+	assert.Equal(t, "08 Aug 2026", formatDate("en", 0, ts))
 }
 
 func TestFormatDate_Pointer(t *testing.T) {
 	ts := time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)
-	assert.Equal(t, "08.08.2026", formatDate("ru", &ts))
-	assert.Equal(t, "08 Aug 2026", formatDate("en", &ts))
+	assert.Equal(t, "08.08.2026", formatDate("ru", 0, &ts))
+	assert.Equal(t, "08 Aug 2026", formatDate("en", 0, &ts))
 }
 
 func TestFormatDate_NilPointer(t *testing.T) {
-	assert.Equal(t, "", formatDate("ru", (*time.Time)(nil)))
+	assert.Equal(t, "", formatDate("ru", 0, (*time.Time)(nil)))
 }
 
 func TestFormatDate_Invalid(t *testing.T) {
-	assert.Equal(t, "", formatDate("ru", "not a time"))
-	assert.Equal(t, "", formatDate("ru", nil))
+	assert.Equal(t, "", formatDate("ru", 0, "not a time"))
+	assert.Equal(t, "", formatDate("ru", 0, nil))
 }
 
 func TestFormatDateTime_Pointer(t *testing.T) {
 	ts := time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)
-	assert.Equal(t, "08.08.2026 12:00", formatDateTime("ru", &ts))
-	assert.Equal(t, "08 Aug 2026 12:00", formatDateTime("en", &ts))
-	assert.Equal(t, "", formatDateTime("ru", (*time.Time)(nil)))
+	assert.Equal(t, "08.08.2026 12:00", formatDateTime("ru", 0, &ts))
+	assert.Equal(t, "08 Aug 2026 12:00", formatDateTime("en", 0, &ts))
+	assert.Equal(t, "", formatDateTime("ru", 0, (*time.Time)(nil)))
+}
+
+// M5 (pass 30): tzOffset сдвигает время на минуты от UTC.
+func TestFormatDateTime_TZOffset(t *testing.T) {
+	ts := time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)
+	// UTC+3 → 15:00
+	assert.Equal(t, "08.08.2026 15:00", formatDateTime("ru", 180, &ts))
+	// UTC-5 → 07:00
+	assert.Equal(t, "08.08.2026 07:00", formatDateTime("ru", -300, &ts))
+	// Нулевой offset → UTC
+	assert.Equal(t, "08.08.2026 12:00", formatDateTime("ru", 0, &ts))
+	// float64 (из gin.H) тоже поддерживается
+	assert.Equal(t, "08.08.2026 15:00", formatDateTime("ru", float64(180), &ts))
 }

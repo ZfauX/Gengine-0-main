@@ -304,11 +304,24 @@ func checkTimeoutsImpl(db *gorm.DB, ctx context.Context, onGameFinished GameComp
 		// C-5: при сбое advance возвращаем ошибку из транзакции — иначе
 		// прохождение остаётся finished_at без next-progress и retry невозможен.
 		// Откат всей партии безопасен: в следующем цикле таймаут повторится.
+		// M15 (pass 30): грузим все прохождения одним запросом (вместо N+1).
+		passingIDs := make([]uint, 0, len(timedOutProgresses))
 		for _, p := range timedOutProgresses {
-			var passing GamePassing
-			if err := tx.First(&passing, p.GamePassingID).Error; err != nil {
-				log.Error().Err(err).Uint("passing_id", p.GamePassingID).Msg("CheckTimeouts: failed to fetch passing")
-				return fmt.Errorf("не удалось загрузить прохождение %d: %w", p.GamePassingID, err)
+			passingIDs = append(passingIDs, p.GamePassingID)
+		}
+		var passings []GamePassing
+		if err := tx.Where("id IN ?", passingIDs).Find(&passings).Error; err != nil {
+			return fmt.Errorf("не удалось загрузить прохождения: %w", err)
+		}
+		passingByID := make(map[uint]GamePassing, len(passings))
+		for i := range passings {
+			passingByID[passings[i].ID] = passings[i]
+		}
+		for _, p := range timedOutProgresses {
+			passing, ok := passingByID[p.GamePassingID]
+			if !ok {
+				log.Error().Uint("passing_id", p.GamePassingID).Msg("CheckTimeouts: passing not found")
+				return fmt.Errorf("не удалось загрузить прохождение %d", p.GamePassingID)
 			}
 			onCommit, err := AdvanceToNextLevel(tx, p.GamePassingID, p.LevelID, func() {
 				if onGameFinished != nil {

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -25,11 +27,73 @@ var ErrTokenUserNotFound = errors.New("пользователь не найде�
 
 var roleProvider RoleProvider
 
+// roleCacheTTL — короткий TTL кэша ролей (M6, pass 30): роль из БД не
+// перечитывается на КАЖДЫЙ авторизованный запрос, а кэшируется на ~5 секунд.
+// Компромисс: понижение/удаление роли применяется с задержкой ≤ TTL вместо
+// мгновенно, но БД не бомбардируется SELECT role на каждый хит.
+const roleCacheTTL = 5 * time.Second
+
+// roleCacheMaxEntries — верхняя граница размера кэша (lazy sweep, как unreadCache).
+const roleCacheMaxEntries = 512
+
+var (
+	roleCacheMu sync.Mutex
+	roleCache   = map[uint]cachedRole{}
+)
+
+type cachedRole struct {
+	role    string
+	expires time.Time
+}
+
 // SetRoleProvider регистрирует функцию загрузки актуальной роли из БД (S2).
 // Роль в JWT-claims устаревает до истечения токена (15 мин) — пониженный или
 // удалённый пользователь не должен сохранять привилегии.
 func SetRoleProvider(fn RoleProvider) {
 	roleProvider = fn
+}
+
+// getCachedRole возвращает роль из БД с коротким TTL-кэшем (M6, pass 30).
+// Ошибки (в т.ч. ErrTokenUserNotFound) НЕ кэшируются — удалённый пользователь
+// отзывается немедленно при следующем промахе кэша.
+func getCachedRole(ctx context.Context, userID uint) (string, error) {
+	if roleProvider == nil {
+		return "", nil
+	}
+	now := time.Now()
+
+	roleCacheMu.Lock()
+	if e, ok := roleCache[userID]; ok && now.Before(e.expires) {
+		roleCacheMu.Unlock()
+		return e.role, nil
+	}
+	roleCacheMu.Unlock()
+
+	role, err := roleProvider(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+
+	roleCacheMu.Lock()
+	// Lazy sweep: не даём map расти неограниченно (P-2 паттерн).
+	if len(roleCache) > roleCacheMaxEntries {
+		for id, e := range roleCache {
+			if !now.Before(e.expires) {
+				delete(roleCache, id)
+			}
+		}
+	}
+	roleCache[userID] = cachedRole{role: role, expires: now.Add(roleCacheTTL)}
+	roleCacheMu.Unlock()
+	return role, nil
+}
+
+// InvalidateRoleCache сбрасывает TTL-кэш роли пользователя. Вызывается после
+// смены роли в админке — понижение применяется без ожидания TTL.
+func InvalidateRoleCache(userID uint) {
+	roleCacheMu.Lock()
+	delete(roleCache, userID)
+	roleCacheMu.Unlock()
 }
 
 // AuthRequired возвращает middleware, который проверяет JWT‑токен и сохраняет userID и role в контексте.
@@ -60,9 +124,10 @@ func AuthRequired(parser TokenParser) gin.HandlerFunc {
 
 		c.Set("userID", userID)
 		// Перечитываем актуальную роль из БД (S2), чтобы пониженный/удалённый
-		// пользователь терял привилегии немедленно, а не по истечении токена.
+		// пользователь терял привилегии, а не ждал истечения токена.
+		// M6 (pass 30): роль кэшируется на ~5с — БД не грузится на каждый запрос.
 		if roleProvider != nil {
-			currentRole, rErr := roleProvider(c.Request.Context(), userID)
+			currentRole, rErr := getCachedRole(c.Request.Context(), userID)
 			switch {
 			case errors.Is(rErr, ErrTokenUserNotFound):
 				if strings.HasPrefix(c.Request.URL.Path, "/api/") {
@@ -103,7 +168,7 @@ func OptionalAuth(parser TokenParser) gin.HandlerFunc {
 				// админ не должен сохранять admin-привилегии на optional-auth
 				// маршрутах.
 				if roleProvider != nil {
-					currentRole, rErr := roleProvider(c.Request.Context(), userID)
+					currentRole, rErr := getCachedRole(c.Request.Context(), userID)
 					if rErr != nil {
 						log.Error().Err(rErr).Uint("user_id", userID).Msg("OptionalAuth: failed to load role from DB, treating as unauthenticated")
 						SetIsAdmin(c)

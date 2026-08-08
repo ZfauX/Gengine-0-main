@@ -24,7 +24,7 @@
                         <a href="/tournaments/{{.ID}}" class="text-blue-600 dark:text-blue-400 hover:underline">{{.Name}}</a>
                     </td>
                     <td class="table-cell">{{.Author.Name}}</td>
-                    <td class="table-cell">{{ formatDate $.Lang .CreatedAt }}</td>
+                    <td class="table-cell">{{ formatDate $.Lang $.TZOffset .CreatedAt }}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">
                         <a href="/tournaments/{{.ID}}" class="btn btn-outline text-xs">{{ T $.Lang "tournament.view" }}</a>
                     </td>

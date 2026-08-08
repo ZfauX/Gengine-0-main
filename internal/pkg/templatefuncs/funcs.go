@@ -152,11 +152,15 @@ func initials(s interface{}) string {
 // en → "02 Jan 2006". Вместо жёсткого "02.01.2006" в шаблонах.
 // Принимает time.Time или *time.Time (H1, pass 30 — поля модели часто
 // указатели); nil и не-time значения возвращают пустую строку.
-func formatDate(lang interface{}, t interface{}) string {
+// M5 (pass 30): второй аргумент — смещение пользователя в минутах от UTC
+// (число из cookie tz_offset); 0/отсутствие — UTC. Форматирование
+// выполняется в локальном времени пользователя.
+func formatDate(lang interface{}, tzOffset interface{}, t interface{}) string {
 	ts, ok := asTime(t)
 	if !ok {
 		return ""
 	}
+	ts = applyTZOffset(ts, tzOffset)
 	loc := "ru"
 	if v, ok := lang.(string); ok && v == "en" {
 		loc = "en"
@@ -169,11 +173,12 @@ func formatDate(lang interface{}, t interface{}) string {
 
 // formatDateTime форматирует дату и время локализованно (C9).
 // ru → "02.01.2006 15:04", en → "02 Jan 2006 15:04".
-func formatDateTime(lang interface{}, t interface{}) string {
+func formatDateTime(lang interface{}, tzOffset interface{}, t interface{}) string {
 	ts, ok := asTime(t)
 	if !ok {
 		return ""
 	}
+	ts = applyTZOffset(ts, tzOffset)
 	loc := "ru"
 	if v, ok := lang.(string); ok && v == "en" {
 		loc = "en"
@@ -182,6 +187,26 @@ func formatDateTime(lang interface{}, t interface{}) string {
 		return ts.Format("02 Jan 2006 15:04")
 	}
 	return ts.Format("02.01.2006 15:04")
+}
+
+// applyTZOffset сдвигает время на смещение пользователя в минутах от UTC (M5).
+// Принимает int/float64/string; нечисловое значение игнорируется (UTC).
+func applyTZOffset(t time.Time, tzOffset interface{}) time.Time {
+	var minutes int
+	switch v := tzOffset.(type) {
+	case int:
+		minutes = v
+	case int64:
+		minutes = int(v)
+	case float64:
+		minutes = int(v)
+	default:
+		return t
+	}
+	if minutes == 0 {
+		return t
+	}
+	return t.Add(time.Duration(minutes) * time.Minute)
 }
 
 // asTime принимает time.Time или *time.Time и возвращает разыменованное
