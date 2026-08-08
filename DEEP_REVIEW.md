@@ -35,6 +35,117 @@
 
 ---
 
+# PASS 34 (повторное ревью) — 8 августа 2026
+
+> Пятое повторное ревью после полного закрытия pass 30-33. Выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture) с **личной верификацией** ключевых находок.
+
+## Резюме pass 34
+
+**Итог:** 0 критичных, 5 высоких (3 подтверждены лично, 1 опровергнут), ~12 средних, ~12 низких + 2 новых индекса.
+
+> Кодовая база продолжает укрепляться. Найдены: **регрессия P-5** (GetByIDPreloaded INNER JOIN — 404 для игр с удалённым автором), **missing lockout на TOTP step-up**, **hint toast теряет текст**, calendar-кэш без eviction, незавершённая миграция svc_play/svc_simulate/svc_admin на репозитории.
+
+---
+
+## Статус (обновлено 8 авг 2026) — PASS 34 ОТКРЫТ
+
+Находки перечислены ниже; закрытие — раундами фиксов, как в pass 30-33.
+
+---
+
+## A. Найденные ошибки pass 34 (верифицировано лично)
+
+### 🔴 Критично
+Не обнаружено.
+
+### 🟠 Высокие
+
+| ID | Файл | Проблема |
+|---|---|---|
+| **F-P5a** | `game/repository.go:86-95` | **Регрессия P-5: `Joins("Author")` = INNER JOIN.** GORM `Joins("Author")` генерирует INNER JOIN с `users.deleted_at IS NULL` — игра с удалённым/отсутствующим автором исчезает из `First()` → 404 на странице показа. **Верифицировано лично; исправлено на LEFT JOIN.** |
+| **S-1** | `user/two_factor_handler.go:80-141` | **Нет lockout на TOTP step-up `/auth/2fa/verify`** (в отличие от BackupVerify/TwoFALoginVerify): нет LockedUntil, AtomicIncrementFailedAttempts, AtomicLockAccount. Украденный pre-stepup JWT → перебор TOTP с IP-ротацией. **Верифицировано лично; исправлено.** |
+| **S-2** | `user/routes.go:145` + `repository.go:221-234` | **Публичный email-enumeration**: `/api/users/search` без AuthRequired, `SearchUsersLight` возвращает `email` анониму. |
+| **UX-H1** | `gameplay-show.html:342` | **Hint toast теряет текст**: читает `window.location.search` вместо `r.url` редиректа → hint-содержимое дропается. **Верифицировано лично.** |
+| **A-H1** | `svc_play.go` (reads), `svc_simulate.go:35`, `svc_admin.go:282-327` | **Последние read-path утечки в репозитории**: GetGameplayData (6+ reads), GetPassingWithGame, IsTeamMember, SimulateService Preload, admin notify-чтения — всё через `s.db`/`s.DB`. |
+
+### 🟡 Средние
+
+| ID | Файл | Проблема |
+|---|---|---|
+| F-1 | `calendar/handler.go:109,158-160` | Calendar-кэш растёт безгранично: expired-записи не evictятся, каждый (year,month,tz) — постоянная запись. |
+| F-2 | `notification/repository.go:124-127` | DeleteOldRead — полный seq-скан `read_at` ежедневно (нет partial-индекса). |
+| F-3 | `svc_listing.go:73-85` | Авторизованный листинг не кэшируется (только ViewerID==0). |
+| F-4 | `game/repository.go:300-345` | AdminListGames без count-fallback при пустой странице (offset за пределами). |
+| F-5 | `team/repository.go:106-125` | GetTeamsByUserID — 3 последовательных запроса (можно UNION). |
+| A-M1 | `svc_passing.go:22-31,173-189` | Мёртвые sentinel-ошибки (ErrGameFull и др.) + UpdateStatus возвращает inline вместо ErrStatusNotAllowed/ErrNotCaptainOrManager. |
+| A-M2 | `svc_admin.go:282,291,322,327` | notify-чтения команд/капитанов через raw s.db (кросс-домен). |
+| A-M3 | `svc_play.go:648-657` | ПроцессSnapshot: else-fallback raw-DB мёртв (gameRepo всегда injected) — удалить. |
+| A-M4 | `team/service.go`, `level/service.go` | Инлайн-ошибки без sentinel (по контрасту с user/passing/tournament). |
+| A-M5 | `cmd/migrate/main.go` vs `main.go` | Два миграционных runner'а (RunMigrations vs MigrateFromDir) — неясно какой канонический. |
+| UX-H2/H3 | game_passings reject, levels-list delete | Деструктивные confirm без data-confirm-danger → синяя OK-кнопка (пропуск в pass 33). |
+| UX-M1/M2 | admin-backups, games-show force-finish | То же: деструктивные формы без data-confirm-danger. |
+| UX-M3 | monitor-page disqualify | OK-лейбл глобальный «Удалить» вместо «Дисквалифицировать». |
+| UX-M4/M5 | chat-page, team-chat | Нет scroll-to-bottom после истории; нет failure-feedback при ошибке отправки. |
+
+### 🔲 Осознанно оставлено / опровергнуто
+- **S-3 (ChangePassword revoke)** — **опровергнуто**: profile_handler.go:388-394 уже вызывает RevokeAllUserTokens + RevokeJWT.
+- **GetGameplayData errgroup** — нет гонок (Wait даёт happens-before). ✓
+- **AdminListGames SQL** — параметризован, LIKE-экранирование корректно. ✓
+- **Co-author 403/500** — корректно (ErrNotOwner → 403, DB → 500). ✓
+- **AtomicLockAccount, ResetPassword** — атомарно, без bypass. ✓
+- **nosniff, uploads traversal, XSS, CSP, i18n** — чисто. ✓
+- **wire.go ↔ wire_gen.go** — синхронизированы. ✓
+
+---
+
+## B. Оптимизации (производительность / БД)
+
+### Рекомендованные CREATE INDEX (migration 000044)
+```sql
+CREATE INDEX CONCURRENTLY idx_notifications_read_at_read
+    ON notifications(read_at) WHERE read = true;  -- F-2: retention DELETE
+CREATE INDEX CONCURRENTLY idx_games_visibility_draft_author
+    ON games(visibility, is_draft, author_id);    -- F-3: authed listing OR-branch
+```
+
+### Прочие оптимизации
+- **F-1**: calendar-кэш — evict expired (как unreadCache) или кап размера.
+- **F-3**: кэшировать авторизованный листинг (ключ с ViewerID) или UNION-рерайт OR-предиката.
+- **F-5**: GetTeamsByUserID — один UNION-запрос.
+- **F-4**: count-fallback в AdminListGames при пустой странице.
+
+---
+
+## C. Улучшения пользовательского опыта (приоритеты)
+
+1. **UX-H1** — hint toast: читать из `r.url`, не `window.location`.
+2. **UX-H2/H3, M1/M2** — доделать data-confirm-danger для reject/delete/clean/force-finish.
+3. **UX-M3** — data-confirm-ok для disqualify.
+4. **UX-M4/M5** — scroll-to-bottom + failure-feedback в чатах.
+5. **A11y** — aria-hidden для декоративных emoji, aria-describedby для field-error.
+6. **L1-L5** — 24h-формат времени в чате, таймстамп в team-chat, dark-placeholder, Email-лейбл, follow-unfollow confirm.
+
+---
+
+## D. Архитектурные улучшения (кодовая база)
+
+1. **A-H1**: мигрировать read-пути svc_play/svc_simulate/svc_admin на репозитории (GameplayReadRepository, GetByIDForSimulation, Team/User repos).
+2. **A-M3**: удалить мёртвый else-fallback в ProcessSnapshot.
+3. **A-M1/A-M4**: использовать/удалить sentinel-ошибки passing; добавить sentinel team/level.
+4. **A-M2**: notify-чтения через Team/User репозитории.
+5. **A-M5**: унифицировать миграционные runner'ы.
+6. **H3 (arch)**: сделать все `DB *gorm.DB` поля неэкспортируемыми; удалить repoOrDefault()-fallback (DI гарантирует инъекцию).
+7. **M6**: sqlmock для AtomicLockAccount, DeleteOldRead, Autocomplete, SearchVectorExists.
+
+## Приоритет фиксов (pass 34)
+1. **F-P5a** (LEFT JOIN — регрессия 404) — исправлено.
+2. **S-1** (TOTP step-up lockout) — исправлено.
+3. **UX-H1** (hint toast) + **UX-H2/H3** (data-confirm-danger).
+4. **F-1/F-2** (calendar cache evict + notification index 000044).
+5. **A-H1** (svc_play/simulate/admin репозитории).
+
+---
+
 # PASS 33 (повторное ревью) — 8 августа 2026
 
 > Четвёртое повторное ревью после полного закрытия pass 30-32 (репозитории, race, golangci-lint CI). Выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture) с **личной верификацией** ключевых находок.
@@ -53,7 +164,8 @@
 
 - **Раунд 1** (`8fc47ca`): A-H1 (админ-дашборд backups deleted_at), TZ-1 (calendar TZ), A-H4 (Model(ctx) убран из GameRepository: RawScan/Autocomplete/SearchVectorExists), A-H3 (GamePassingRepository в сервисе), A-H2 (CountPassingsInStatuses в svc_play), A-M2 (stale TODO), P-1/P-2 (индекс 000043 + retention уведомлений), S-3 (nosniff), A-2 (500-страница без raw err).
 - **Раунд 2** (`4b0ee4b`): S-1 (backup-code lockout), P-4 (GetLogs COUNT OVER), A-M1 (sentinel-ошибки passing), UX-1/2/3 (confirm focus, бейдж 9+, hotkey n), DM sweep (admin/invitations/dashboard/tournaments/games-show).
-- **Раунд 3** (текущий): P-3 (AdminListGames COUNT OVER + JOIN users), P-5 (GetByIDPreloaded Joins Author), P-7 (GetGameplayData параллельные settings/progress), S-2 (coauthor remove: ErrNotOwner → 403 vs 500), S-5 (явный data-confirm-danger вместо эвристики), A-M3 (go-sqlmock для CountPassingsInStatuses/AdminListGames).
+- **Раунд 3** (`ca5707c`): P-3 (AdminListGames COUNT OVER + JOIN users), P-5 (GetByIDPreloaded Joins Author), P-7 (GetGameplayData параллельные settings/progress), S-2 (coauthor remove: ErrNotOwner → 403 vs 500), S-5 (явный data-confirm-danger вместо эвристики), A-M3 (go-sqlmock для CountPassingsInStatuses/AdminListGames).
+- **CI-фикс** (`6904ccc`): staticcheck QF1008 — убран лишний embedded selector (`rows[i].Game.Author` → `rows[i].Author`).
 
 **Отложено (задокументировано):**
 - **P-6** (GetAverageRating из rating_value) — count отзывов не прекомпьютится в `games.rating_value` (только AVG); reviews-скан с индексом + 5-мин кэш приемлем.

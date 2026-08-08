@@ -111,12 +111,40 @@ func (h *TwoFactorHandler) Verify(c *gin.Context) {
 		return
 	}
 
-	valid, err := h.twoFactorSvc.VerifyCode(user.TwoFactorSecret, code)
-	if err != nil || !valid {
+	// S-1 (pass 34): per-account lockout на TOTP step-up (/auth/2fa/verify) —
+	// как в BackupVerify и TwoFALoginVerify. Иначе украденный pre-stepup JWT
+	// позволял перебирать 6-значный TOTP с IP-ротацией без счётчика.
+	if user.LockedUntil != nil && time.Now().Before(*user.LockedUntil) {
 		data := baseData()
 		data["Error"] = render.Tr(c, "handler.wrong_code_try_again")
 		render.Page(c, http.StatusOK, "admin-2fa-verify.html", data)
 		return
+	}
+
+	valid, err := h.twoFactorSvc.VerifyCode(user.TwoFactorSecret, code)
+	if err != nil || !valid {
+		// S-1 (pass 34): инкремент счётчика + backoff-блокировка (как в TOTP-логине).
+		newAttempts, incErr := h.userRepo.AtomicIncrementFailedAttempts(c.Request.Context(), userID)
+		if incErr != nil {
+			log.Error().Err(incErr).Uint("user_id", userID).Msg("Verify: atomic increment failed")
+		} else if newAttempts >= 5 {
+			if lockErr := h.lockUser(c.Request.Context(), userID); lockErr != nil {
+				log.Error().Err(lockErr).Uint("user_id", userID).Msg("Verify: failed to lock account")
+			}
+		}
+		data := baseData()
+		data["Error"] = render.Tr(c, "handler.wrong_code_try_again")
+		render.Page(c, http.StatusOK, "admin-2fa-verify.html", data)
+		return
+	}
+
+	// Успешная проверка — сбрасываем счётчик попыток (S-1, pass 34).
+	if resetErr := h.userRepo.Update(c.Request.Context(), userID, map[string]any{
+		"failed_login_attempts": 0,
+		"locked_until":          nil,
+		"lock_count":            0,
+	}); resetErr != nil {
+		log.Error().Err(resetErr).Uint("user_id", userID).Msg("Verify: failed to reset attempts")
 	}
 
 	// Сохраняем флаг верификации в сессии (привязан к userID)
