@@ -543,8 +543,9 @@ func (h *TwoFactorHandler) Disable(c *gin.Context) {
 		return
 	}
 
-	// Проверяем пароль напрямую (Крит#2): полный authService.Login инкрементит
-	// счётчик неудач и блокирует аккаунт на 30 мин при неверном пароле.
+	// S-2 (pass 35): per-account lockout на отключение 2FA. Раньше пароль
+	// проверялся напрямую через bcrypt без счётчика неудач — украденная сессия
+	// давала бесконечный перебор пароля/TOTP с IP-ротацией.
 	baseData := gin.H{
 		"Title":         "Отключить 2FA",
 		"User":          user.ToPublic(),
@@ -553,7 +554,29 @@ func (h *TwoFactorHandler) Disable(c *gin.Context) {
 		"csrf":          csrf.GetToken(c),
 	}
 
+	if user.LockedUntil != nil && time.Now().Before(*user.LockedUntil) {
+		data := gin.H{
+			"Title":         "Отключить 2FA",
+			"User":          user.ToPublic(),
+			"CurrentUserID": userID,
+			"IsAdmin":       middleware.IsAdmin(c),
+			"Error":         render.Tr(c, "handler.wrong_password"),
+			"csrf":          csrf.GetToken(c),
+		}
+		render.Page(c, http.StatusOK, "user-2fa-disable.html", data)
+		return
+	}
+
 	if bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)) != nil {
+		// Атомарный инкремент счётчика + backoff-блокировка (как в Verify).
+		newAttempts, incErr := h.userRepo.AtomicIncrementFailedAttempts(c.Request.Context(), userID)
+		if incErr != nil {
+			log.Error().Err(incErr).Uint("user_id", userID).Msg("2fa-disable: atomic increment failed")
+		} else if newAttempts >= 5 {
+			if lockErr := h.lockUser(c.Request.Context(), userID); lockErr != nil {
+				log.Error().Err(lockErr).Uint("user_id", userID).Msg("2fa-disable: failed to lock account")
+			}
+		}
 		data := baseData
 		data["Error"] = render.Tr(c, "handler.wrong_password")
 		render.Page(c, http.StatusOK, "user-2fa-disable.html", data)
@@ -565,11 +588,29 @@ func (h *TwoFactorHandler) Disable(c *gin.Context) {
 	if user.TwoFactorEnabled {
 		valid, codeErr := h.twoFactorSvc.VerifyCode(user.TwoFactorSecret, strings.TrimSpace(input.Code))
 		if codeErr != nil || !valid {
+			// Неверный TOTP — тоже инкрементируем счётчик (S-2, pass 35).
+			newAttempts, incErr := h.userRepo.AtomicIncrementFailedAttempts(c.Request.Context(), userID)
+			if incErr != nil {
+				log.Error().Err(incErr).Uint("user_id", userID).Msg("2fa-disable: atomic increment failed")
+			} else if newAttempts >= 5 {
+				if lockErr := h.lockUser(c.Request.Context(), userID); lockErr != nil {
+					log.Error().Err(lockErr).Uint("user_id", userID).Msg("2fa-disable: failed to lock account")
+				}
+			}
 			data := baseData
 			data["Error"] = render.Tr(c, "handler.invalid_code")
 			render.Page(c, http.StatusOK, "user-2fa-disable.html", data)
 			return
 		}
+	}
+
+	// Успешная проверка — сбрасываем счётчик неудач.
+	if resetErr := h.userRepo.Update(c.Request.Context(), userID, map[string]any{
+		"failed_login_attempts": 0,
+		"locked_until":          nil,
+		"lock_count":            0,
+	}); resetErr != nil {
+		log.Error().Err(resetErr).Uint("user_id", userID).Msg("2fa-disable: failed to reset attempts")
 	}
 
 	// Отключаем 2FA

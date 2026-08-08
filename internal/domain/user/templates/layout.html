@@ -130,14 +130,6 @@
     </script>
     {{end}}
 
-    <!-- UX-4 (pass 31): screen readers объявляют ошибки формы — role=alert
-         проставляется всем .flash-error (inline-блоки в контентных шаблонах). -->
-    <script nonce="{{.csp_nonce}}">
-        document.querySelectorAll('.flash-error').forEach(function(el) {
-            if (!el.hasAttribute('role')) el.setAttribute('role', 'alert');
-        });
-    </script>
-
     <!-- Leaflet JS (локально) — только на страницах с картами -->
     {{if .IncludeLeaflet}}
     <script defer src="/static/js/leaflet.js"></script>
@@ -284,6 +276,15 @@
             <p class="text-gray-500 dark:text-gray-400">{{ T $.Lang "layout.no_content" }}</p>
         {{end}}
     </main>
+
+    <!-- UX-4 (pass 35): role=alert проставляется ПОСЛЕ рендера контента —
+         раньше скрипт был в <head> и не видел .flash-error из контентных
+         шаблонов (ошибки логина/регистрации не объявлялись скринридером). -->
+    <script nonce="{{.csp_nonce}}">
+        document.querySelectorAll('.flash-error').forEach(function(el) {
+            if (!el.hasAttribute('role')) el.setAttribute('role', 'alert');
+        });
+    </script>
 
     <!-- Toast уведомления -->
     <div id="toast-container" class="fixed top-4 right-4 z-[10050] space-y-2" aria-live="polite" role="status"></div>

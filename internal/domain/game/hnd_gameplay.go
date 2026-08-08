@@ -230,6 +230,10 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 			c.Redirect(http.StatusFound, "/game/"+c.Param("passing_id")+"/finished")
 			return
 		}
+		// UX-1 (pass 35): машинно-читаемый код ошибки вместо языковой эвристики
+		// на клиенте (/код|code|answer|ответ/i). Хендлер ставит X-Error-Code,
+		// клиент не парсит локализованный текст.
+		c.Header("X-Error-Code", submitErrorCode(submitErr))
 		h.renderGameplayError(c, uint(passingID), render.LocalizeError(c, submitErr.Error()))
 		return
 	}
@@ -608,4 +612,24 @@ func (h *GameplayHandler) isUserInPassing(ctx context.Context, passingID uint, u
 		return false, nil
 	}
 	return h.gamePlaySvc.IsTeamMember(ctx, passing.TeamID, userID)
+}
+
+// submitErrorCode возвращает машинно-читаемый код ошибки отправки кода
+// (UX-1, pass 35). Клиент использует его вместо языковой эвристики
+// /код|code|answer|ответ/i.
+func submitErrorCode(err error) string {
+	switch {
+	case errors.Is(err, ErrNotInGame):
+		return "not_in_game"
+	case errors.Is(err, ErrGameNotActive):
+		return "game_not_active"
+	case errors.Is(err, ErrOnlyAuthor):
+		return "only_author"
+	case errors.Is(err, ErrBlackboxOnly):
+		return "blackbox_only"
+	case errors.Is(err, ErrHintLimitReached):
+		return "hint_limit"
+	default:
+		return "error"
+	}
 }

@@ -170,8 +170,8 @@ func wrapChatService(chatRepo monitor.ChatRepository) *monitor.ChatService {
 	return monitor.NewChatService(chatRepo)
 }
 
-func wrapBlackboxVoteService(blackboxRepo monitor.BlackboxRepository, gameRepo game.GameRepository, db *gorm.DB, cfg *config.Config) *monitor.BlackboxVoteService {
-	return monitor.NewBlackboxVoteService(blackboxRepo, gameRepo, db, cfg)
+func wrapBlackboxVoteService(blackboxRepo monitor.BlackboxRepository, coAuthorSvc *game.CoAuthorService, db *gorm.DB, cfg *config.Config) *monitor.BlackboxVoteService {
+	return monitor.NewBlackboxVoteService(blackboxRepo, coAuthorSvc, db, cfg)
 }
 
 func wrapBackupService(backupRepo admin.BackupRepository, cfg *config.Config) *admin.BackupService {

@@ -108,7 +108,9 @@ func RegisterRoutes(
 
 		profileGroup.POST("/theme-settings", profileHandler.UpdateThemeSettings)
 
-		profileGroup.POST("/change-password", profileHandler.ChangePassword)
+		// S-1 (pass 35): rate limit на смену пароля — дополнительная защита от
+		// перебора старого пароля (lockout в сервисе + IP-лимит).
+		profileGroup.POST("/change-password", middleware.LoginRateLimit(5*time.Minute, 5), profileHandler.ChangePassword)
 
 		profileGroup.GET("/webauthn-keys", webauthnHandler.ListKeys)
 		profileGroup.POST("/webauthn-keys/delete/:id", webauthnHandler.DeleteKey)
@@ -197,7 +199,9 @@ func RegisterRoutes(
 		userGroup.GET("/2fa/enable", twoFactorHandler.EnableForm)
 		userGroup.POST("/2fa/enable", twoFactorHandler.Enable)
 		userGroup.GET("/2fa/disable", twoFactorHandler.DisableForm)
-		userGroup.POST("/2fa/disable", twoFactorHandler.Disable)
+		// S-2 (pass 35): rate limit на отключение 2FA (пароль + TOTP перебираются
+		// с lockout в хендлере; IP-лимит — вторая линия защиты).
+		userGroup.POST("/2fa/disable", middleware.LoginRateLimit(5*time.Minute, 5), twoFactorHandler.Disable)
 		// CRIT-1: QR-код генерируется локально, секрет не уходит наружу.
 		userGroup.GET("/2fa/qr", twoFactorHandler.QRCode)
 	}

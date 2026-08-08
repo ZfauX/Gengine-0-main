@@ -211,6 +211,16 @@ input, textarea, select {
     cursor: pointer;
     transition: all 0.15s;
   }
+  /* UX-3 (pass 35): видимый фокус для клавиатурной навигации — outline на
+     Tab-фокус, без смены вида при клике мышью (:focus-visible). */
+  .btn:focus-visible,
+  .nav-link:focus-visible,
+  .btn-outline:focus-visible,
+  .btn-danger:focus-visible,
+  a:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
+  }
   .btn-primary {
     background: #2563eb;
     color: white;

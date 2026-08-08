@@ -519,6 +519,7 @@ var ruMessages = map[string]string{
 	"auth.register_title":         "Регистрация",
 	"auth.register_button":        "Зарегистрироваться",
 	"auth.register_loading":       "Регистрация...",
+	"auth.recaptcha_failed":       "Не удалось подтвердить, что вы не робот. Попробуйте ещё раз.",
 	"auth.have_account":           "Уже есть аккаунт? Войти",
 	"auth.name_label":             "Имя",
 	"auth.password_hint":          "Минимум 8 символов: буквы, цифры и спецсимволы",

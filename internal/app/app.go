@@ -85,7 +85,10 @@ func (app *App) SetupRouter() (*gin.Engine, error) {
 
 	// HTML-маршруты — с CSRF-защитой
 	// API-маршруты (/api/*) CSRF не требуют — используют JWT-аутентификацию
-	secure := app.Config.TLS.CertFile != "" && app.Config.TLS.KeyFile != ""
+	// S-4 (pass 35): Secure-флаг CSRF-куки выровнен с session-store — учитывает
+	// TLS, reverse-proxy (TrustedProxies) и FORCE_SECURE_COOKIE. Раньше CSRF-кука
+	// была Secure только при собственном TLS и уходила по HTTP за TLS-терминатором.
+	secure := app.Config.TLS.CertFile != "" || app.Config.Server.TrustedProxies != "" || app.Config.Server.ForceSecureCookie
 	csrfMW := csrf.Middleware(app.Config.Session.Secret, secure, []string{app.Config.Server.BaseURL})
 	htmlGroup := r.Group("")
 	htmlGroup.Use(func(c *gin.Context) {

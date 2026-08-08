@@ -33,10 +33,14 @@ type Cache struct {
 	prefixLock  sync.RWMutex
 	prefixKeys  map[string]map[string]bool
 	keyPrefixes map[string]map[string]bool
-	maxSize     int
-	stop        chan struct{}
-	sg          singleflight.Group
-	closeOnce   sync.Once
+	// ttlKeys — ключи с ненулевым TTL (F-2, pass 35). removeExpired
+	// итерирует только их, а не весь LRU (lru.Keys() мог быть O(n)
+	// при maxSize=0 и тысячах ключей каждые 60с под mu.Lock).
+	ttlKeys   map[string]bool
+	maxSize   int
+	stop      chan struct{}
+	sg        singleflight.Group
+	closeOnce sync.Once
 }
 
 func NewCache(defaultTTL, cleanupInterval time.Duration) (*Cache, error) {
@@ -56,10 +60,14 @@ func NewCacheWithLRU(defaultTTL, cleanupInterval time.Duration, maxSize int) *Ca
 	c := &Cache{
 		prefixKeys:  make(map[string]map[string]bool),
 		keyPrefixes: make(map[string]map[string]bool),
+		ttlKeys:     make(map[string]bool),
 		maxSize:     maxSize,
 		stop:        make(chan struct{}),
 	}
 	evictCallback := func(key string, _ cacheItem) {
+		// F-2 (pass 35): при вытеснении LRU чистим ttlKeys. evictCallback
+		// вызывается под c.mu.Lock (из Add/Remove), поэтому delete без lock.
+		delete(c.ttlKeys, key)
 		c.prefixLock.Lock()
 		if prefixes, ok := c.keyPrefixes[key]; ok {
 			for p := range prefixes {
@@ -107,11 +115,23 @@ func (c *Cache) removeExpired() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	// F-2 (pass 35): итерируем только ключи с TTL (ttlKeys), а не весь LRU.
+	// Было: lru.Keys() — O(n) по всем ключам каждые 60с под mu.Lock, при
+	// maxSize=0 (unlimited) и тысячах ключей это CPU-spike + блокировка Get/Set.
+	if len(c.ttlKeys) == 0 {
+		return
+	}
 	now := time.Now()
-	for _, key := range c.lru.Keys() {
+	for key := range c.ttlKeys {
 		item, ok := c.lru.Get(key)
-		if ok && !item.expires.IsZero() && now.After(item.expires) {
+		if !ok {
+			// Ключ уже вытеснен LRU — чистим из ttlKeys.
+			delete(c.ttlKeys, key)
+			continue
+		}
+		if !item.expires.IsZero() && now.After(item.expires) {
 			c.lru.Remove(key)
+			delete(c.ttlKeys, key)
 		}
 	}
 }
@@ -126,6 +146,7 @@ func (c *Cache) Get(key string) (any, bool) {
 	if item.expired() {
 		c.mu.Lock()
 		c.lru.Remove(key)
+		delete(c.ttlKeys, key)
 		c.mu.Unlock()
 		return nil, false
 	}
@@ -136,6 +157,9 @@ func (c *Cache) Set(key string, value any, ttl time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.lru.Add(key, cacheItem{value: value, expires: time.Now().Add(ttl)})
+	if ttl > 0 {
+		c.ttlKeys[key] = true
+	}
 	c.trackPrefix(key)
 }
 
@@ -149,6 +173,7 @@ func (c *Cache) Delete(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.lru.Remove(key)
+	delete(c.ttlKeys, key)
 	c.prefixLock.Lock()
 	if prefixes, ok := c.keyPrefixes[key]; ok {
 		for p := range prefixes {
@@ -196,6 +221,7 @@ func (c *Cache) DeleteByPrefix(prefix string) {
 	defer c.mu.Unlock()
 	for _, key := range keysCopy {
 		c.lru.Remove(key)
+		delete(c.ttlKeys, key)
 	}
 
 	c.prefixLock.Lock()
@@ -215,6 +241,7 @@ func (c *Cache) Flush() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.lru.Purge()
+	c.ttlKeys = make(map[string]bool)
 	c.prefixLock.Lock()
 	c.prefixKeys = make(map[string]map[string]bool)
 	c.keyPrefixes = make(map[string]map[string]bool)

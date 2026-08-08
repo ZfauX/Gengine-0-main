@@ -51,6 +51,21 @@
 
 Находки перечислены ниже; закрытие — раундами фиксов, как в pass 30-34.
 
+**Раунд 1 (текущий):**
+- **S-1**: ChangePassword — lockout (атомарный инкремент + backoff-блокировка, паттерн Login) + rate limit на маршруте.
+- **S-2**: 2FA disable — lockout на пароль и TOTP + rate limit на маршруте.
+- **S-3**: reCAPTCHA подключена — новый пакет `internal/pkg/recaptcha` (siteverify), серверная проверка на Register, site-key передаётся в шаблон (был мёртвый конфиг).
+- **S-4**: CSRF Secure-флаг выровнен с session-store (TLS || TrustedProxies || ForceSecureCookie).
+- **A-1**: удалён мёртвый `gameRepo` из BlackboxVoteService; raw-SQL `isGameManagerForGame` заменён на `game.CoAuthorService.IsUserManager`.
+- **UX-1**: `X-Error-Code` на submit кода (submitErrorCode), клиент читает заголовок вместо языковой эвристики `/код|code/`.
+- **UX-2**: убраны лишние `</div>` в admin-users/admin-games.
+- **UX-3**: `:focus-visible` для `.btn`/`.nav-link`/ссылок.
+- **UX-4**: role=alert скрипт перенесён после `{{.ContentHTML}}`.
+- **UX-5**: `dark:text-gray-400` в notifications-list (контраст AA).
+- **F-2**: LRU sweep — итерация только по `ttlKeys` вместо полного `lru.Keys()` под локом.
+
+**Осталось на следующие раунды:** A-2 (ProfileService через репозиторий), A-3 (ExportRepository без DB()), F-1 (кардинальность ключей листинга), F-3 (monitor polling), F-4 (tournament List LIMIT), UX-6..11, A-4..A-6.
+
 ---
 
 ## A. Найденные ошибки pass 35 (верифицировано лично)

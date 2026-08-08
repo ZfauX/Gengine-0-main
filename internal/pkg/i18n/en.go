@@ -497,6 +497,7 @@ var enMessages = map[string]string{
 	"auth.register_title":         "Register",
 	"auth.register_button":        "Register",
 	"auth.register_loading":       "Registering...",
+	"auth.recaptcha_failed":       "Could not verify you are not a robot. Please try again.",
 	"auth.have_account":           "Already have an account? Login",
 	"auth.name_label":             "Name",
 	"auth.password_hint":          "Minimum 8 characters: letters, numbers and special characters",

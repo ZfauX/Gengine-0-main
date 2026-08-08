@@ -12,6 +12,7 @@ import (
 	"gengine-0/internal/pkg/audit"
 	"gengine-0/internal/pkg/email"
 	apperrors "gengine-0/internal/pkg/errors"
+	"gengine-0/internal/pkg/recaptcha"
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/validation"
@@ -37,6 +38,9 @@ type AuthHandler struct {
 	auditSvc             *audit.Service
 	emailSvc             *email.EmailService
 	twoFactorSvc         *TwoFactorService
+	// recaptcha — серверная проверка токена reCAPTCHA (S-3, pass 35).
+	// Если защита отключена — Verify пропускает.
+	recaptcha *recaptcha.Client
 }
 
 func NewAuthHandler(
@@ -60,7 +64,16 @@ func NewAuthHandler(
 		auditSvc:             auditSvc,
 		emailSvc:             emailSvc,
 		twoFactorSvc:         twoFactorSvc,
+		recaptcha:            recaptcha.NewClient(cfg.ReCAPTCHA.Enabled, cfg.ReCAPTCHA.SecretKey),
 	}
+}
+
+// recaptchaSiteKey возвращает site-key для рендера виджета (или "" если выключен).
+func (h *AuthHandler) recaptchaSiteKey() string {
+	if !h.recaptcha.Enabled() {
+		return ""
+	}
+	return h.cfg.ReCAPTCHA.SiteKey
 }
 
 // ShowLoginForm отображает форму входа.
@@ -422,6 +435,7 @@ func (h *AuthHandler) ShowRegisterForm(c *gin.Context) {
 			{"name": "nav.home", "url": "/"},
 			{"name": "nav.register"},
 		},
+		"RecaptchaSiteKey": h.recaptchaSiteKey(),
 	})
 }
 
@@ -450,10 +464,11 @@ func (h *AuthHandler) Register(c *gin.Context) {
 			errs.Add("form", fmt.Errorf("некорректные данные: %v", err))
 		}
 		render.Page(c, http.StatusBadRequest, "auth-register.html", gin.H{
-			"Title":  "Регистрация",
-			"Errors": errs,
-			"Error":  errs.Error(),
-			"csrf":   csrf.GetToken(c),
+			"Title":            "Регистрация",
+			"Errors":           errs,
+			"Error":            errs.Error(),
+			"csrf":             csrf.GetToken(c),
+			"RecaptchaSiteKey": h.recaptchaSiteKey(),
 		})
 		return
 	}
@@ -461,12 +476,27 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	cleanName := sanitize.StripHTML(input.Name)
 	cleanEmail := sanitize.StripHTML(input.Email)
 
+	// S-3 (pass 35): серверная проверка reCAPTCHA на регистрацию. Раньше виджет
+	// рендерился с пустым site-key, а токен не проверялся — «мёртвая» защита.
+	if h.recaptcha.Enabled() {
+		if err := h.recaptcha.Verify(c.Request.Context(), input.RecaptchaToken); err != nil {
+			render.Page(c, http.StatusBadRequest, "auth-register.html", gin.H{
+				"Title":            "Регистрация",
+				"Error":            render.Tr(c, "auth.recaptcha_failed"),
+				"csrf":             csrf.GetToken(c),
+				"RecaptchaSiteKey": h.recaptchaSiteKey(),
+			})
+			return
+		}
+	}
+
 	if err := validation.ValidatePasswordStrength(input.Password); err != nil {
 		render.Page(c, http.StatusBadRequest, "auth-register.html", gin.H{
-			"Title":  "Регистрация",
-			"Errors": validation.FieldErrors{"password": err.Error()},
-			"Error":  render.LocalizeError(c, err.Error()),
-			"csrf":   csrf.GetToken(c),
+			"Title":            "Регистрация",
+			"Errors":           validation.FieldErrors{"password": err.Error()},
+			"Error":            render.LocalizeError(c, err.Error()),
+			"csrf":             csrf.GetToken(c),
+			"RecaptchaSiteKey": h.recaptchaSiteKey(),
 		})
 		return
 	}
@@ -474,9 +504,10 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	user, err := h.authSvc.Register(c.Request.Context(), cleanEmail, input.Password, cleanName)
 	if err != nil {
 		render.Page(c, http.StatusOK, "auth-register.html", gin.H{
-			"Title":   "Регистрация",
-			"Success": "Если регистрация прошла успешно, проверьте вашу почту",
-			"csrf":    csrf.GetToken(c),
+			"Title":            "Регистрация",
+			"Success":          "Если регистрация прошла успешно, проверьте вашу почту",
+			"csrf":             csrf.GetToken(c),
+			"RecaptchaSiteKey": h.recaptchaSiteKey(),
 		})
 		return
 	}

@@ -31,20 +31,23 @@ var (
 
 type BlackboxVoteService struct {
 	blackboxRepo BlackboxRepository
-	gameRepo     game.GameRepository
+	coAuthorSvc  *game.CoAuthorService
 	db           *gorm.DB
 	cfg          *config.Config
 }
 
+// NewBlackboxVoteService создаёт сервис голосования «чёрного ящика».
+// A-1 (pass 35): вместо мёртвого gameRepo используется CoAuthorService —
+// проверка прав автора/соавтора консистентна с game-доменом.
 func NewBlackboxVoteService(
 	blackboxRepo BlackboxRepository,
-	gameRepo game.GameRepository,
+	coAuthorSvc *game.CoAuthorService,
 	db *gorm.DB,
 	cfg *config.Config,
 ) *BlackboxVoteService {
 	return &BlackboxVoteService{
 		blackboxRepo: blackboxRepo,
-		gameRepo:     gameRepo,
+		coAuthorSvc:  coAuthorSvc,
 		db:           db,
 		cfg:          cfg,
 	}
@@ -59,7 +62,7 @@ func (s *BlackboxVoteService) StartVoting(ctx context.Context, gamePassingID, le
 	}
 	g := passing.Game
 	// C4: автор или соавтор (консистентно с доступом к странице мониторинга).
-	ok, err := s.isGameManagerForGame(ctx, g.ID, userID)
+	ok, err := s.coAuthorSvc.IsUserManager(ctx, g.ID, userID)
 	if err != nil {
 		return err
 	}
@@ -204,23 +207,7 @@ func (s *BlackboxVoteService) isGameManager(ctx context.Context, session *Blackb
 	if err := s.db.WithContext(ctx).First(&passing, session.GamePassingID).Error; err != nil {
 		return false, err
 	}
-	return s.isGameManagerForGame(ctx, passing.GameID, userID)
-}
-
-// isGameManagerForGame — автор или соавтор игры (author+co_authors UNION).
-func (s *BlackboxVoteService) isGameManagerForGame(ctx context.Context, gameID, userID uint) (bool, error) {
-	var count int64
-	err := s.db.WithContext(ctx).Raw(`
-		SELECT COUNT(*) FROM (
-			SELECT 1 FROM games WHERE id = ? AND author_id = ? AND deleted_at IS NULL
-			UNION
-			SELECT 1 FROM co_authors WHERE game_id = ? AND user_id = ? AND deleted_at IS NULL
-		) sub
-	`, gameID, userID, gameID, userID).Scan(&count).Error
-	if err != nil {
-		return false, err
-	}
-	return count > 0, nil
+	return s.coAuthorSvc.IsUserManager(ctx, passing.GameID, userID)
 }
 
 // GetVotingResults возвращает пары «вариант — количество голосов».
@@ -276,7 +263,7 @@ func (s *BlackboxVoteService) CloseVoting(ctx context.Context, sessionID, userID
 	}
 	g := passing.Game
 	// C4: автор или соавтор (консистентно с доступом к странице мониторинга).
-	ok, err := s.isGameManagerForGame(ctx, g.ID, userID)
+	ok, err := s.coAuthorSvc.IsUserManager(ctx, g.ID, userID)
 	if err != nil {
 		return "", err
 	}

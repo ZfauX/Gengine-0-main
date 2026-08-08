@@ -154,9 +154,10 @@ type VerifyEmailRequest struct {
 }
 
 type RegisterInput struct {
-	Email    string `form:"email" json:"email" binding:"required,email"`
-	Password string `form:"password" json:"password" binding:"required,min=8,max=72"`
-	Name     string `form:"name" json:"name" binding:"required,min=2,max=50"`
+	Email          string `form:"email" json:"email" binding:"required,email"`
+	Password       string `form:"password" json:"password" binding:"required,min=8,max=72"`
+	Name           string `form:"name" json:"name" binding:"required,min=2,max=50"`
+	RecaptchaToken string `form:"g-recaptcha-response" json:"g_recaptcha_response"`
 }
 
 type LoginInput struct {

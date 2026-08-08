@@ -296,7 +296,13 @@
                     window.location.reload();
                     return null;
                 }
-                return r.text().then(t => { throw new Error(t || '{{ T $.Lang "gameplay.submit_error" }}'); });
+                return r.text().then(t => {
+                    const e = new Error(t || '{{ T $.Lang "gameplay.submit_error" }}');
+                    // UX-1 (pass 35): прокидываем заголовки в ошибку —
+                    // машинно-читаемый X-Error-Code вместо языковой эвристики.
+                    e.headers = r.headers;
+                    throw e;
+                });
             })
             .then(data => {
                 if (!data) return; // redirect happened
@@ -306,8 +312,11 @@
                 // Fall back to a generic message only if empty.
                 const errorMsg = String(err.message || '').trim();
                 const shownMsg = errorMsg || '{{ T $.Lang "gameplay.wrong_code" }}';
-                // Distinguish severity: wrong code vs other issues
-                const isWrongCode = !errorMsg || /код|code|answer|ответ/i.test(errorMsg);
+                // UX-1 (pass 35): severity по X-Error-Code, а не по тексту.
+                // Сервер всегда ставит код при ошибке submit → показываем как error.
+                // Fallback для ответов без заголовка — предыдущая эвристика.
+                const errCode = err.headers ? err.headers.get('x-error-code') : '';
+                const isWrongCode = errCode !== '' ? true : (!errorMsg || /код|code|answer|ответ/i.test(errorMsg));
                 showMessage(shownMsg, isWrongCode ? 'error' : 'warning');
                 addAttempt(code, false);
                 codeInput.value = '';

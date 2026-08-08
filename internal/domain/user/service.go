@@ -41,6 +41,9 @@ var (
 	ErrRefreshAsAccess       = stderrors.New("использование refresh-токена как access запрещено")
 	ErrRefreshServiceNotInit = stderrors.New("refresh-сервис не инициализирован")
 	ErrInternalServer        = stderrors.New("внутренняя ошибка сервера")
+	// ErrChangePasswordWrong — неверный текущий пароль при смене (S-1, pass 35:
+	// generic-ответ, не раскрывает блокировку аккаунта атакующему).
+	ErrChangePasswordWrong = stderrors.New("неверный текущий пароль")
 )
 
 // dummyPasswordHash — bcrypt-хэш случайного пароля, генерируется при старте с тем же
@@ -540,9 +543,42 @@ func (s *UserService) ChangePassword(ctx context.Context, id uint, oldPassword, 
 	if getErr != nil {
 		return getErr
 	}
-	if bcryptErr := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(oldPassword)); bcryptErr != nil {
-		return stderrors.New("неверный текущий пароль")
+
+	// S-1 (pass 35): lockout на смену пароля — тот же паттерн, что и в Login.
+	// Иначе украденная JWT-кука даёт бесконечный перебор старого пароля.
+	if user.LockedUntil != nil && time.Now().Before(*user.LockedUntil) {
+		log.Debug().Uint("user_id", user.ID).Time("locked_until", *user.LockedUntil).Msg("ChangePassword: account is locked")
+		return ErrChangePasswordWrong
 	}
+
+	if bcryptErr := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(oldPassword)); bcryptErr != nil {
+		// Атомарный инкремент счётчика неудачных попыток (как в Login).
+		newAttempts, incErr := s.userRepo.AtomicIncrementFailedAttempts(ctx, user.ID)
+		if incErr != nil {
+			log.Error().Err(incErr).Uint("user_id", user.ID).Msg("ChangePassword: atomic increment failed")
+			return incErr
+		}
+		if newAttempts >= 5 {
+			duration := backoffDuration(user.LockCount)
+			lockedUntil := time.Now().Add(duration)
+			if _, lockErr := s.userRepo.AtomicLockAccount(ctx, user.ID, lockedUntil); lockErr != nil {
+				log.Error().Err(lockErr).Uint("user_id", user.ID).Msg("ChangePassword: failed to lock account")
+				return lockErr
+			}
+			log.Debug().Uint("user_id", user.ID).Int("lock_count", user.LockCount).Dur("duration", duration).Msg("ChangePassword: account locked with backoff")
+		}
+		return ErrChangePasswordWrong
+	}
+
+	// Успешная смена пароля — сброс счётчика неудач и блокировки.
+	if err := s.userRepo.Update(ctx, id, map[string]any{
+		"failed_login_attempts": 0,
+		"locked_until":          nil,
+		"lock_count":            0,
+	}); err != nil {
+		log.Error().Err(err).Uint("user_id", user.ID).Msg("ChangePassword: failed to reset failed attempts")
+	}
+
 	hashed, hashErr := bcrypt.GenerateFromPassword([]byte(newPassword), crypto.BcryptCost)
 	if hashErr != nil {
 		return hashErr
