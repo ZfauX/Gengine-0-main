@@ -1,130 +1,111 @@
-# Deep Review Gengine-0 — 7 августа 2026 (pass 29 — повторное ревью после закрытия pass 28)
+# Deep Review Gengine-0 — 8 августа 2026 (pass 30 — повторное ревью после закрытия pass 28-29)
 
 ## Резюме
 
-Повторное глубокое ревью выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture) с последующей **личной верификацией всех ключевых находок** (включая опровержение).
+Повторное глубокое ревью выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture/DI) с последующей **личной верификацией ключевых находок** по коду.
 
-**Итог:** 1 критичный баг, 5 высоких, ~15 средних, ~20 низких + оптимизации (4+ индексов, 4 кэш/запросные стратегии) + UX/архитектурные предложения.
+**Итог:** 0 критичных, 7 высоких, ~20 средних, ~15 низких + 5+ рекомендованных индексов.
 
-> **Статус на 8 авг 2026: все практические находки закрыты** 9 коммитами
-> (`69265fc`, `3408b67`, `0c90077`, `25faeae`, `89177c6`, `e02532c` и др.)
-> + полный DI-граф, split god-файлов, pprof, RUM.
-> Легенда: ✅ исправлено · 🔲 осознанно оставлено.
+> **Контекст:** pass 28-29 закрыты полностью (все ошибки, перф-оптимизации, DI-граф, split god-файлов, pprof/RUM). Этот проход выявляет **новые** проблемы, включая регрессии от недавних рефакторингов (split service.go, formatDate, RUM).
 
 ---
 
 ## A. Найденные ошибки (верифицировано лично)
 
 ### 🔴 Критично
-
-| ID | Статус | Коммит | Файл | Проблема |
-|---|---|---|---|---|
-| **CRIT-1** | ✅ | `69265fc` | `user-2fa-enable.html` + `two_factor_service.go` | **Утечка TOTP-секрета третьей стороне.** QR теперь генерируется локально (`GenerateQRCodePNG` + маршрут `/user/2fa/qr`); `api.qrserver.com` больше не получает `otpauth://...?secret=`. |
+Не обнаружено.
 
 ### 🟠 Высокие
 
-| ID | Статус | Коммит | Файл | Проблема |
-|---|---|---|---|---|
-| **HIGH-1** | ✅ | `69265fc` | `webauthn_handler.go:128` | 2FA step-up использует `is2FAVerified` (int64 timestamp + TTL) вместо сравнения с bool — регистрация passkey при 2FA снова работает. |
-| **HIGH-2** | ✅ | `69265fc` | `profile-show.html`, `profile-public.html` | Инициала аватара через template-func `initials` (rune-safe) — кириллица больше не битая. |
-| **HIGH-3** | ✅ | `69265fc` | `output.css` | `.field-error{color:#ef4444}` → `#dc2626` (AA-контраст). |
-| **HIGH-4** | ✅ | `69265fc` | `monitor/handler.go` | `/voting/vote` возвращает **403** (`ErrNotTeamMember` sentinel) вместо 400 — убран оракул. |
-| **HIGH-5** | ✅ | `3408b67` | `service_test.go` | `OAuthService.Authenticate` покрыт тестами через `httptest` + кастомный RoundTripper (5 подтестов). |
+| ID | Файл | Проблема |
+|---|---|---|
+| **H1** | `pkg/templatefuncs/funcs.go:154-183` + `game/model.go:36-37` | **`formatDate`/`formatDateTime` возвращают пустую строку для `*time.Time`.** `Game.StartsAt`/`RegistrationDeadline` — указатели; хелперы делают `t.(time.Time)` (значение) → `ok=false` → `""`. Затронуты: games-list (карточка+таблица), games-show, tournaments-show — **даты не видны**. Проверено исполнением шаблона. |
+| **H2** | `tournament/templates/tournaments-games.html:1` vs `tournament/handler.go:426` | **Страница «Добавить игру в турнир» пустая.** `{{define "tournaments-add_game.html"}}`, а handler рендерит `tournaments-games.html` → пустой вывод без ошибки → layout «нет содержимого». Единственный шаблон с расхождением имени. |
+| **H3** | `game/svc_listing.go:90-96` | **Мягко удалённые игры попадают в публичный листинг.** Raw SQL `SELECT games.*` без `games.deleted_at IS NULL`; GORM `.Raw()` не добавляет soft-delete фильтр. Delete → `r.db.Delete(&Game{})` = soft-delete. |
+| **H4** | `user/oauth_service.go:167` | **VK externalID может стать пустым.** `token.Extra("user_id").(string)` — VK отдаёт число; assertion тихо падает → пустой ExternalID → повторный вход не сопоставляется / дубликаты. |
+| **H5** | `user/repository.go:283-287` + `app/router.go:80-84` | **Мёртвая ветка ErrTokenUserNotFound.** `GetUserRole` через `Scan` не возвращает `gorm.ErrRecordNotFound` → удалённый пользователь с валидным JWT получает пустую роль вместо отзыва сессии. |
+| **H6** | `game/svc_facade.go:149-175,190-221` | **Фасад нарушает слоистость:** `GetLogsByGameIDPaginated`/`SaveSettings` используют `s.db`+`clause.OnConflict` напрямую вместо `GameRepository` — остальные методы фасада делегируют подсервисам. |
+| **H7** | `notification/service.go:221-227` | **Неограниченные goroutine в sendWebPush** (без пула/семафора) при всплеске уведомлений; `context.WithoutCancel` не даёт остановить при shutdown. |
 
 ### 🟡 Средние
 
-| ID | Статус | Коммит | Файл | Проблема |
-|---|---|---|---|---|
-| MED-1 | ✅ | `69265fc` | `sqlutil.go` | `EscapeLike` экранирует backslash `\` (+тест). |
-| MED-2 | ✅ | `69265fc` | `admin-*.html` | `\| urlquery` в пагинации/фильтрах админки. |
-| MED-3 | ✅ | `69265fc` | `notification/service_test.go` | `GetByUser` покрыт через mockRepo (двойной skip убран). |
-| MED-4 | ✅ | `0c90077` | `tournament/service.go`, `monitor/service.go` | Sentinel-ошибки (Err*Forbidden, ErrCaptainOnly, ErrVotingClosed и др.) вместо строк. |
-| MED-5 | ✅ | `3408b67` | `layout.html` | Удалены ~28 мёртвых `data-i18n-*` атрибутов. |
-| MED-6 | ✅ | `3408b67` | `games-photos.html` | Lightbox: `role="dialog" aria-modal` + focus restore на thumb. |
-| MED-7 | ✅ | `3408b67` | `monitor-page.html` | Дисквалификация: блокировка кнопки + toast успеха. |
-| MED-8 | ✅ | `0c90077` | `profile-show.html` | Удалён мёртвый JS-блок настроек уведомлений. |
-| MED-9 | ✅ | `3408b67` | `games-list.html` | Fetch предпочтений вида только для авторизованных. |
-| MED-10 | ✅ | `3408b67` | `monitor-page.html` | `escapeHtml(String(team_id))` в data-атрибуте. |
-| MED-11 | ✅ | `3408b67` | `gameplay-show.html`, `webauthn-login-button.html` | Same-origin guard для `location.href` редиректов. |
-| MED-12 | ✅ | `0c90077` | `export/service_test.go` | PDF/Excel тесты (валидные сигнатуры). |
-| MED-13 | ✅ | `0c90077` | `calendar/handler_test.go` | iCal/sanitize тесты + фикс экранирования backslash. |
-| MED-14 | ✅ | `69265fc` | `calendar/handler_test.go` | `require.NotEmpty` вместо тихого skip. |
-| MED-15 | ✅ | `3408b67` | `social/service.go` | `Unfollow` возвращает `ErrNotFollowing` при отсутствии подписки. |
+| ID | Файл | Проблема |
+|---|---|---|
+| M1 | `app/router.go:199-231` | RUM принимает любые float (1e300/NaN-подобные) + `page` не валидируется → отравление метрик мониторинга. |
+| M2 | `two_factor_service.go:106-119` | Энтропия backup-кодов ~20 бит (4 байта → %1000000). |
+| M3 | `admin/templates/admin-games.html:96,100`, `admin-audit.html:88,92` | Mojibake: стрелки пагинации `в†ђ`/`в†’` вместо `←`/`→` (битые комментарии там же). |
+| M4 | `games-show.html:1-6` + `layout.html:104` | Мёртвый `{{define "ExtraHead"}}` — OG-теги не попадают в HTML (layout использует `.ExtraHead` ключ, не `{{template}}`). |
+| M5 | `funcs.go:164,181` + `games-edit.html:34` | Даты в UTC без привязки к таймзоне пользователя: автор UTC+3 видит «17:00» вместо «20:00». |
+| M6 | `auth.go:64-82,105-116` | Роль из БД перечитывается на **каждый** авторизованный запрос без TTL (тема кэшируется, роль нет). |
+| M7 | `admin-audit.html:55`, `profile-public.html:83` | Сырые таймстампы Go вместо `formatDateTime`. |
+| M8 | `dashboard-index.html:171`, `game_passings-list.html:35,82` | Нелокализованные enum-статусы («started»/«accepted»). |
+| M9 | `tournament/service.go:127-136,430-436` | Построчные INSERT/Upsert в циклах (AddGame, UpdateScoresForGame) — `CreateInBatches`/batch UPDATE. |
+| M10 | `oauth_service.go:222-231` | OAuth: 2 отдельных UPDATE (name, email_verified) на каждый вход → один `map[string]any`. |
+| M11 | `svc_passing.go:102-128` | `ListByGamePaginated` — Preload Team+Captain → 4 запроса (JOIN в один SQL). |
+| M12 | `svc_monitor.go:214-218` | LATERAL-подзапрос GameSnapshot с ORDER BY created_at — потенциальный filesort. |
+| M13 | `svc_review.go:86` | Каждый отзыв бьёт версию листинга → кэш 30с бесполезен при активном ревью-потоке. |
+| M14 | `svc_coauthor.go:52-78` | `HasPermissionTx` грузит полную строку Game (в т.ч. description) вместо `Select("author_id")`; два запроса → один UNION. |
+| M15 | `svc_progress.go:307-326` | N+1 в `CheckTimeouts` (First passing + AdvanceToNextLevel на каждый прогресс). |
+| M16 | `user/routes.go:39-44,144` | Дублирование сервисов/репозиториев: `NewProfileService` (DI-инстанс мёртв), `NewTwoFactorService` (3-й инстанс), `NewGormAchievementRepo`, `NewGormUserRepo` ×2, `UserDashboardService` не в DI. |
+| M17 | `game/routes.go:56` | `NewSimulateService` не в DI — единственный сервис, создаваемый в routes. |
+| M18 | `dashboard_service.go:79` | Непоследовательная обработка ошибок (`return &dash, err` без обёртки; loadInvitations глотает ошибку). |
 
-### 🔲 Осознанно оставлено (низкий риск / не воспроизводится)
-- **PF9 (push async)** — закрыто в `0c90077` (async goroutine).
-- **F4** (регекс-классификация ошибок кода) — косметика, не блокирует.
-- **T2/T4** (time.Sleep в тестах, русские строки) — стабильно на CI.
+### 🔲 Осознанно оставлено (низкий риск / стайл)
+- PII в логах 2FA (user_id вместо email), /healthz раскрытие, мягкое перечисление 2FA-аккаунтов, LATERAL-index, notifications-индекс (вероятно покрыт 000032), flash-дубли, themeMinutes-дубли, keypress-устаревание.
 
 ---
 
 ## B. Оптимизации
 
-| ID | Статус | Коммит | Файл | Оптимизация |
-|---|---|---|---|---|
-| Индексы | ✅ | `69265fc` | `migrations/000038` | `external_logins(provider,external_id)`, `external_logins(user_id)`, `player_ratings(score)`, `teams.name trgm`. |
-| PF-1 | ✅ | `25faeae` | `svc_monitor.go` | GameSnapshot attempts: трёхуровневый IN → прямой JOIN. |
-| PF-2 | ✅ | `0c90077` | `notification/service.go` | Web Push асинхронно (`context.WithoutCancel` goroutine). |
-| PF-3 | ✅ | `25faeae` | `profile_service.go` | `GetPublicProfileStats`: 4 round-trip → 1 SQL. |
-| PF-4 | ✅ | `25faeae` | `game/service.go` | `GetByID` пропускает permission-проверку для public non-draft. |
-| PF-5 | ✅ | `89177c6` | `svc_progress.go` | `checkAutoStartGamesImpl`: N+1 COUNT → батч `GROUP BY game_id`. |
-| PF-6 | ✅ | `25faeae` | `admin/handler.go` | Dashboard: 5 COUNT → 1 SQL со скалярными подзапросами. |
-| PF-8a | ✅ | `25faeae` | `level/service.go` | Duplicate: батч-вставка вопросов/ответов. |
+### Рекомендованные CREATE INDEX (проверено по migrations)
+```sql
+CREATE INDEX IF NOT EXISTS idx_team_members_team_id
+    ON team_members(team_id);                 -- H7/G-1: SearchUsersForInvitation, RemoveMember, JOIN dashboard/rating
+CREATE INDEX IF NOT EXISTS idx_game_passings_team_status
+    ON game_passings(team_id, status);        -- DashboardTeams JOIN + турнирные выборки
+CREATE INDEX IF NOT EXISTS idx_level_progresses_passing_unfinished_created
+    ON level_progresses(game_passing_id, created_at DESC) WHERE finished_at IS NULL; -- GameSnapshot LATERAL
+```
+Проверить в миграциях: `000031` (voting_sessions unique) и `000032` (notifications user_created) — вероятно уже покрывают M12/M13 индексы.
+
+### Прочие оптимизации
+- RUM: клампить виталы (0<v<60с; CLS 0..1), валидировать page, отправлять INP при `pagehide`.
+- Роль: короткий TTL-кэш (5-10с) по аналогии с themeCache.
+- Push: worker-pool с буферизованной очередью + graceful drain.
+- `HasPermissionTx`: `Select("author_id")` + один UNION.
+- OAuth: один UPDATE + `INSERT ON CONFLICT` с RETURNING.
 
 ---
 
 ## C. Улучшения пользовательского опыта
 
-| # | Статус | Коммит | Примечание |
-|---|---|---|---|
-| 1 | ✅ | `3408b67` | Skeleton loaders, optimistic chat, keyboard shortcuts. |
-| 2 | ✅ | `3408b67` | Photo lightbox dialog + focus. |
-| 3 | ✅ | `0c90077` | Print styles, 404 search, localized dates (ранее в pass 28). |
-| 4 | ✅ | `3408b67` | `monitor.disqualify_success` toast. |
+1. **H1**: formatDate/formatDateTime должны принимать `*time.Time` (type-switch) — вернуть даты на 4 страницах.
+2. **H2**: переименовать define в `tournaments-games.html` — страница добавления игры снова рендерится.
+3. **M3**: исправить mojibake в admin-шаблонах.
+4. **M4**: прокинуть OG-теги через `{{template "ExtraHead"}}`.
+5. **M5**: таймзона пользователя (cookie offset) при отображении/редактировании дат.
+6. **M7**: единый `formatDateTime` для admin-audit/profile-public.
+7. **M8**: локализация enum-статусов через T-ключи.
+8. Мобильные lang-кнопки без `aria-pressed`; `lang` cookie без `Secure`; `color-scheme` для `<select>`; дубли авто-скрытия flash; гонка ответов поиска в co_authors/invitations (нужен request-token как в calendar).
+9. **INP в RUM**: отложенная отправка при `pagehide`.
 
 ---
 
-## D. Архитектурные улучшения
+## D. Архитектурные улучшения (кодовая база)
 
-| # | Статус | Коммит | Примечание |
-|---|---|---|---|
-| D1 (repository-интерфейсы) | ✅ | `2aba00d`, `0c90077` | NotificationRepository полный; monitor/tournament sentinel-ошибки; тесты высокорисковых путей. |
-| D2 (split god-классов) | ✅ | `2aba00d`, `89177c6`, `e02532c` | `RefreshTokenService`; `user/service.go` разбит на 4 файла; `game/service.go` → `service.go` + `svc_facade.go`. |
-| D3 (error-контракт) | ✅ | `0478223`, `0c90077` | Sentinel-ошибки + `errKeyMap`. |
-| D4 (DI manifest) | ✅ | `abaf4fa`, `89177c6` | Полный DI-граф через wire (все репозитории и сервисы). |
-| D5 (i18n автотест) | ✅ | `abaf4fa` | `TestAllUsedKeysExistInBothDictionaries`. |
-| D6 (тесты) | ✅ | `abaf4fa`, `0c90077` | `t.Cleanup`, разблокированные тесты, PDF/Excel/iCal/OAuth. |
+1. **DI-полнота (M16/M17)**: добавить `UserDashboardService` и `SimulateService` в wire; использовать `repos.Achiev`/`repos.User`/`services.Profile` из DI; убрать 3-й инстанс TwoFactorService.
+2. **Слоистость (H6)**: перенести raw SQL из `svc_facade.go` (GetLogsByGameIDPaginated, SaveSettings) в `GameRepository`.
+3. **Тесты**: добавить `svc_facade_test.go` (ShowGame, SaveSettings, GetLogs...), `dashboard_service_test.go` (GetDashboard), `email_verification_service_test.go`; реализовать `TestTwoFALoginVerify_ValidCode` (сейчас t.Skip); VK error-ветки OAuth.
+4. **Мёртвый код**: `cacheGetRating` в svc_facade (проверить вызовы), `ErrTokenUserNotFound`-ветка (H5), пустой тест-заглушка.
 
 ---
 
-## E. Идеи (реализованы в e02532c)
+## Приоритет фиксов
+1. **H1** — пропали даты (регрессия от pass 29).
+2. **H2** — пустая страница турнира.
+3. **H3** — удалённые игры в листинге; **H4** — VK externalID; **H5** — роль для удалённых пользователей.
+4. **H6/H7**, M16/M17 (DI), M1 (RUM-валидация).
+5. Индекс `team_members(team_id)`.
 
-| Идея | Статус | Описание |
-|---|---|---|
-| **Профилирование на реальных данных** | ✅ | `/debug/pprof/*` под админ+2FA защитой — CPU/heap/goroutine/trace профили с продакшена. |
-| **RUM (Real User Monitoring)** | ✅ | `POST /api/rum` + `PerformanceObserver`-коллектор Web Vitals (LCP/INP/CLS/FCP/TTFB) в layout.html; метрики `gengine_rum_*` в Prometheus. |
-| **Split GameService** | ✅ | `service.go` (CRUD-ядро, 398 строк) + `svc_facade.go` (делегирующие методы, 199 строк). |
-
----
-
-## Приоритет фиксов (исторически)
-
-1. **CRIT-1** — утечка TOTP-секрета → ✅ `69265fc`.
-2. **HIGH-1..5** → ✅ `69265fc`, `3408b67`.
-3. **MED-1..15** → ✅ `69265fc`, `3408b67`, `0c90077`.
-4. Индексы + перф-оптимизации → ✅ `25faeae`, `89177c6`.
-5. Архитектура + идеи → ✅ `89177c6`, `e02532c`.
-
----
-
-## Статус (актуально)
-
-**Все практические находки pass 29 закрыты.** Этапы:
-1. `69265fc` — CRIT-1, HIGH-1..4, MED-1/2/3/14, индексы
-2. `3408b67` — HIGH-5, MED-5..11/15
-3. `0c90077` — MED-4/8/12/13, PF-2
-4. `25faeae` — PF-1/3/4/6/8a
-5. `89177c6` — полный DI-граф (H2), split user god-file (M9), PF-5
-6. `e02532c` — pprof, RUM, split GameService facade
-
-Полный CI-контур зелёный: `go build`, `go vet`, `gofmt`, `go generate`, `go test -race -short ./internal/...`, golangci-lint — все чистые.
+## Статус
+Документ описывает **находки pass 30**. Код не менялся (read-only). Ключевые находки верифицированы лично (H1, H2, H3, H4, H5, M1, M3, G-12, G-14). Решение: закрывать раундами фиксов, как в pass 28-29.
