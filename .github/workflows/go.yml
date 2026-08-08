@@ -34,11 +34,11 @@ jobs:
       - name: Check formatting (gofmt)
         run: |
           if [ "$(gofmt -l . | wc -l)" -gt 0 ]; then
-            echo "РІСњРЉ Files not formatted:"
+            echo "Files not formatted:"
             gofmt -l .
             exit 1
           fi
-          echo "РІСљвЂ¦ All files formatted"
+          echo "All files formatted"
 
       - name: Run go vet
         run: go vet ./...
@@ -149,8 +149,8 @@ jobs:
     name: Docker Image
     runs-on: ubuntu-latest
     needs: build
-    # GITHUB_TOKEN Р С—Р С• РЎС“Р СР С•Р В»РЎвЂЎР В°Р Р…Р С‘РЎР‹ Р С‘Р СР ВµР ВµРЎвЂљ read-only Р Т‘Р С•РЎРѓРЎвЂљРЎС“Р С— Р С” packages РІР‚вЂќ Р В±Р ВµР В· write
-    # push Р Р† GHCR Р С—Р В°Р Т‘Р В°Р ВµРЎвЂљ РЎРѓ 'denied: installation not allowed to Create
+    # GITHUB_TOKEN по умолчанию имеет read-only доступ к packages — без write
+    # push в GHCR падает с 'denied: installation not allowed to Create
     # organization package'.
     permissions:
       contents: read
@@ -171,9 +171,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set lowercase repository owner
-        # GHCR РЎвЂљРЎР‚Р ВµР В±РЎС“Р ВµРЎвЂљ Р С‘Р СР ВµР Р…Р В° РЎР‚Р ВµР С—Р С•Р В·Р С‘РЎвЂљР С•РЎР‚Р С‘Р ВµР Р† Р Р† Р Р…Р С‘Р В¶Р Р…Р ВµР С РЎР‚Р ВµР С–Р С‘РЎРѓРЎвЂљРЎР‚Р Вµ (ghcr.io/owner/image).
-        # github.repository_owner Р СР С•Р В¶Р ВµРЎвЂљ РЎРѓР С•Р Т‘Р ВµРЎР‚Р В¶Р В°РЎвЂљРЎРЉ Р В·Р В°Р С–Р В»Р В°Р Р†Р Р…РЎвЂ№Р Вµ Р В±РЎС“Р С”Р Р†РЎвЂ№ (ZfauX),
-        # Р С—Р С•РЎРЊРЎвЂљР С•Р СРЎС“ Р С—РЎР‚Р С‘Р Р†Р С•Р Т‘Р С‘Р С Р ВµР С–Р С• Р С” Р Р…Р С‘Р В¶Р Р…Р ВµР СРЎС“ РЎР‚Р ВµР С–Р С‘РЎРѓРЎвЂљРЎР‚РЎС“ РЎвЂЎР ВµРЎР‚Р ВµР В· bash-Р С—Р С•Р Т‘РЎРѓРЎвЂљР В°Р Р…Р С•Р Р†Р С”РЎС“.
+        # GHCR требует имя репозитория в нижнем регистре (ghcr.io/owner/image).
+        # github.repository_owner может содержать заглавные буквы (ZfauX),
+        # поэтому приводим его к нижнему регистру через bash-подстановку.
         run: echo "GHCR_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
 
       - name: Build and push
