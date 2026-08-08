@@ -175,6 +175,21 @@ func (mr *MockGameRepositoryMockRecorder) GetByID(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByID", reflect.TypeOf((*MockGameRepository)(nil).GetByID), ctx, id)
 }
 
+// GetByIDForSimulation mocks base method.
+func (m *MockGameRepository) GetByIDForSimulation(ctx context.Context, id uint) (*Game, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetByIDForSimulation", ctx, id)
+	ret0, _ := ret[0].(*Game)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetByIDForSimulation indicates an expected call of GetByIDForSimulation.
+func (mr *MockGameRepositoryMockRecorder) GetByIDForSimulation(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByIDForSimulation", reflect.TypeOf((*MockGameRepository)(nil).GetByIDForSimulation), ctx, id)
+}
+
 // GetByIDPreloaded mocks base method.
 func (m *MockGameRepository) GetByIDPreloaded(ctx context.Context, id uint) (*Game, error) {
 	m.ctrl.T.Helper()

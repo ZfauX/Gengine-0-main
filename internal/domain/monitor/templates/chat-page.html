@@ -157,7 +157,7 @@
         function renderMessage(msg) {
             const div = document.createElement('div');
             div.className = 'chat-message py-1';
-            const time = msg.created_at || msg.CreatedAt ? new Date(msg.created_at || msg.CreatedAt).toLocaleTimeString() : '';
+            const time = msg.created_at || msg.CreatedAt ? new Date(msg.created_at || msg.CreatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
             const author = (msg.User && msg.User.Name) || msg.user_name || (msg.user && msg.user.name) || '{{ T $.Lang "gamechat.unknown_user" }}';
             div.innerHTML = `<span class="font-semibold text-gray-800 dark:text-gray-100">${escapeHtml(author)}:</span> ${escapeHtml(msg.Content || msg.content || msg.text)} <span class="text-xs text-gray-500">(${time})</span>`;
             div.dataset.msgId = msg.id || msg.ID || '';

@@ -184,6 +184,14 @@ func (m *mockGameRepo) SearchVectorExists(ctx context.Context) (bool, error) {
 	return a.Bool(0), a.Error(1)
 }
 
+func (m *mockGameRepo) GetByIDForSimulation(ctx context.Context, id uint) (*game.Game, error) {
+	a := m.Called(ctx, id)
+	if a.Get(0) == nil {
+		return nil, a.Error(1)
+	}
+	return a.Get(0).(*game.Game), a.Error(1)
+}
+
 func (m *mockGameRepo) IsTeamCaptain(ctx context.Context, teamID, userID uint) (bool, error) {
 	args := m.Called(ctx, teamID, userID)
 	return args.Bool(0), args.Error(1)

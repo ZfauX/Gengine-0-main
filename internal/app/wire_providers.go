@@ -198,6 +198,6 @@ func wrapUserDashboardService(userRepo user.UserRepository) *user.UserDashboardS
 
 // wrapSimulateService — симуляция прохождения (M17, pass 30: раньше
 // создавался локально в game/routes.go, не входил в DI-граф).
-func wrapSimulateService(db *gorm.DB, coAuthorSvc *game.CoAuthorService) *game.SimulateService {
-	return game.NewSimulateService(db, coAuthorSvc)
+func wrapSimulateService(gameRepo game.GameRepository, coAuthorSvc *game.CoAuthorService) *game.SimulateService {
+	return game.NewSimulateService(gameRepo, coAuthorSvc)
 }

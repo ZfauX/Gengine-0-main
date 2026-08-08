@@ -76,10 +76,16 @@
         var userName = msg.UserName || (msg.User && msg.User.Name) || msg.user_name || '';
         var content = msg.Content || msg.content || '';
         var isMine = userId === userID;
+        // UX-L2 (pass 34): время сообщения (24-часовой формат, как monitor-чат).
+        var time = '';
+        var ts = msg.CreatedAt || msg.created_at;
+        if (ts) {
+            try { time = new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch (e) { time = ''; }
+        }
         var div = document.createElement('div');
         div.className = 'mb-3 ' + (isMine ? 'text-right' : 'text-left');
         div.innerHTML = '<div class="inline-block max-w-[80%] text-left">' +
-            '<span class="text-xs font-medium text-gray-500 dark:text-gray-400">' + escapeHtml(userName) + '</span>' +
+            '<span class="text-xs font-medium text-gray-500 dark:text-gray-400">' + escapeHtml(userName) + (time ? ' <span class="text-gray-400">(' + escapeHtml(time) + ')</span>' : '') + '</span>' +
             '<div class="rounded-lg px-3 py-2 mt-1 ' + (isMine ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100') + '">' +
             escapeHtml(content) +
             '</div></div>';

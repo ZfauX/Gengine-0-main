@@ -105,23 +105,18 @@ func (r *gormTeamRepo) GetByCaptainID(ctx context.Context, captainID uint) ([]Te
 }
 func (r *gormTeamRepo) GetTeamsByUserID(ctx context.Context, userID uint) ([]Team, error) {
 	var teams []Team
-	var captainTeams []Team
-	if err := r.db.WithContext(ctx).Where("captain_id = ?", userID).Find(&captainTeams).Error; err != nil {
-		return nil, err
-	}
-	teams = append(teams, captainTeams...)
-	var memberTeamIDs []uint
-	if err := r.db.WithContext(ctx).Table("team_members").Where("user_id = ?", userID).Pluck("team_id", &memberTeamIDs).Error; err != nil {
-		return teams, err
-	}
-	if len(memberTeamIDs) > 0 {
-		var memberTeams []Team
-		if err := r.db.WithContext(ctx).Where("id IN ? AND captain_id != ?", memberTeamIDs, userID).Find(&memberTeams).Error; err != nil {
-			return teams, err
-		}
-		teams = append(teams, memberTeams...)
-	}
-	return teams, nil
+	// F-5 (pass 34): один UNION вместо 3 последовательных запросов
+	// (капитанские команды + команды-членства).
+	err := r.db.WithContext(ctx).
+		Raw(`
+			SELECT t.* FROM teams t WHERE t.captain_id = ? AND t.deleted_at IS NULL
+			UNION
+			SELECT t.* FROM teams t
+			JOIN team_members tm ON tm.team_id = t.id
+			WHERE tm.user_id = ? AND t.captain_id != ? AND t.deleted_at IS NULL
+		`, userID, userID, userID).
+		Scan(&teams).Error
+	return teams, err
 }
 func (r *gormTeamRepo) Update(ctx context.Context, team *Team) error {
 	return r.db.WithContext(ctx).Save(team).Error

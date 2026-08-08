@@ -19,6 +19,18 @@ type TeamService struct {
 	teamRepo TeamRepository
 }
 
+// Sentinel-ошибки команды (A-M4, pass 34): handlers могут делать errors.Is.
+var (
+	ErrOnlyCaptainCanAdd     = errors.New("только капитан может добавлять участников")
+	ErrUserAlreadyInTeam     = errors.New("пользователь уже в команде")
+	ErrNoPermissionRemove    = errors.New("нет прав на удаление участников")
+	ErrCannotRemoveCaptain   = errors.New("невозможно удалить капитана")
+	ErrNoPermissionChangeCap = errors.New("нет прав на смену капитана")
+	ErrNewCaptainNotMember   = errors.New("новый капитан должен состоять в команде")
+	ErrUserNotFound          = errors.New("пользователь не найден")
+	ErrInvitationNotPending  = errors.New("приглашение не в статусе ожидания")
+)
+
 func NewTeamService(teamRepo TeamRepository) *TeamService {
 	return &TeamService{
 		teamRepo: teamRepo,
@@ -92,14 +104,14 @@ func (s *TeamService) GetAvailableUsers(ctx context.Context, teamID uint) ([]use
 
 func (s *TeamService) AddMember(ctx context.Context, teamID, newMemberID, actorID uint) error {
 	if !s.CanManageTeam(ctx, teamID, actorID) {
-		return errors.New("только капитан может добавлять участников")
+		return ErrOnlyCaptainCanAdd
 	}
 	isMember, err := s.teamRepo.IsMember(ctx, teamID, newMemberID)
 	if err != nil {
 		return err
 	}
 	if isMember {
-		return errors.New("пользователь уже в команде")
+		return ErrUserAlreadyInTeam
 	}
 	if err := s.teamRepo.AddMember(ctx, teamID, newMemberID); err != nil {
 		return err
@@ -110,14 +122,14 @@ func (s *TeamService) AddMember(ctx context.Context, teamID, newMemberID, actorI
 
 func (s *TeamService) RemoveMember(ctx context.Context, teamID, memberID, actorID uint) error {
 	if !s.CanManageTeam(ctx, teamID, actorID) {
-		return errors.New("нет прав на удаление участников")
+		return ErrNoPermissionRemove
 	}
 	team, err := s.teamRepo.GetByID(ctx, teamID)
 	if err != nil {
 		return err
 	}
 	if team.CaptainID == memberID {
-		return errors.New("невозможно удалить капитана")
+		return ErrCannotRemoveCaptain
 	}
 	if err := s.teamRepo.RemoveMember(ctx, teamID, memberID); err != nil {
 		return err
@@ -128,7 +140,7 @@ func (s *TeamService) RemoveMember(ctx context.Context, teamID, memberID, actorI
 
 func (s *TeamService) ChangeCaptain(ctx context.Context, teamID, newCaptainID, actorID uint, isAdmin bool) error {
 	if !isAdmin && !s.CanManageTeam(ctx, teamID, actorID) {
-		return errors.New("нет прав на смену капитана")
+		return ErrNoPermissionChangeCap
 	}
 	// Captain is always considered a member, even if not in team_members table
 	if newCaptainID != actorID {
@@ -137,7 +149,7 @@ func (s *TeamService) ChangeCaptain(ctx context.Context, teamID, newCaptainID, a
 			return err
 		}
 		if !isMember {
-			return errors.New("новый капитан должен состоять в команде")
+			return ErrNewCaptainNotMember
 		}
 	}
 	return s.teamRepo.ChangeCaptain(ctx, teamID, newCaptainID)
@@ -185,7 +197,7 @@ func (s *InvitationService) CreateInvitation(ctx context.Context, teamID, invite
 	// Проверяем, что приглашаемый пользователь существует
 	invitedUser, getUserErr := s.teamRepo.GetUserByID(ctx, invitedUserID)
 	if getUserErr != nil {
-		return nil, errors.New("пользователь не найден")
+		return nil, ErrUserNotFound
 	}
 
 	isMember, memberErr := s.teamRepo.IsMember(ctx, teamID, invitedUserID)
@@ -193,7 +205,7 @@ func (s *InvitationService) CreateInvitation(ctx context.Context, teamID, invite
 		return nil, memberErr
 	}
 	if isMember || team.CaptainID == invitedUserID {
-		return nil, errors.New("пользователь уже в команде")
+		return nil, ErrUserAlreadyInTeam
 	}
 
 	existing, getExistErr := s.invRepo.GetByTeamAndUser(ctx, teamID, invitedUserID)

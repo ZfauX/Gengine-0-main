@@ -50,6 +50,9 @@ type GameRepository interface {
 	Autocomplete(ctx context.Context, query string, limit int) ([]Game, error)
 	// SearchVectorExists проверяет наличие search_vector (A-H4).
 	SearchVectorExists(ctx context.Context) (bool, error)
+	// GetByIDForSimulation загружает игру с полным графом уровней/вопросов/
+	// ответов для симуляции (A-H1, pass 34).
+	GetByIDForSimulation(ctx context.Context, id uint) (*Game, error)
 }
 
 // GamePassingRepository — контракт для прохождений.
@@ -100,6 +103,17 @@ func (r *gormGameRepo) GetByIDPreloaded(ctx context.Context, id uint) (*Game, er
 }
 func (r *gormGameRepo) Update(ctx context.Context, game *Game) error {
 	return r.db.WithContext(ctx).Save(game).Error
+}
+
+// GetByIDForSimulation загружает игру с полным графом для симуляции
+// (A-H1, pass 34: перенесено из SimulateService).
+func (r *gormGameRepo) GetByIDForSimulation(ctx context.Context, id uint) (*Game, error) {
+	var g Game
+	err := r.db.WithContext(ctx).Preload("Levels.Questions.Answers").First(&g, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &g, nil
 }
 func (r *gormGameRepo) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&Game{}, id).Error

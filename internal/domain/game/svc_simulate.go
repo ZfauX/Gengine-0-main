@@ -4,17 +4,15 @@ import (
 	"context"
 	"errors"
 	"time"
-
-	"gorm.io/gorm"
 )
 
 type SimulateService struct {
-	DB          *gorm.DB
+	gameRepo    GameRepository
 	coAuthorSvc *CoAuthorService
 }
 
-func NewSimulateService(db *gorm.DB, ca *CoAuthorService) *SimulateService {
-	return &SimulateService{DB: db, coAuthorSvc: ca}
+func NewSimulateService(gameRepo GameRepository, ca *CoAuthorService) *SimulateService {
+	return &SimulateService{gameRepo: gameRepo, coAuthorSvc: ca}
 }
 
 type SimulateResult struct {
@@ -31,8 +29,8 @@ type SimulateStep struct {
 }
 
 func (s *SimulateService) Simulate(ctx context.Context, gameID, userID uint) (*SimulateResult, error) {
-	var game Game
-	if err := s.DB.WithContext(ctx).Preload("Levels.Questions.Answers").First(&game, gameID).Error; err != nil {
+	game, err := s.gameRepo.GetByIDForSimulation(ctx, gameID)
+	if err != nil {
 		return nil, err
 	}
 	isManager, err := s.coAuthorSvc.IsUserManager(ctx, gameID, userID)

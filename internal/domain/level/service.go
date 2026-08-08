@@ -17,6 +17,14 @@ import (
 // ErrPositionTaken возвращается, когда позиция уровня уже занята.
 var ErrPositionTaken = errors.New("уровень с такой позицией уже существует")
 
+// Sentinel-ошибки уровня (A-M4, pass 34).
+var (
+	ErrLevelNotFound        = errors.New("уровень не найден")
+	ErrNoPermission         = errors.New("недостаточно прав")
+	ErrInvalidMoveDirection = errors.New("неверное направление перемещения")
+	ErrCannotDeleteActive   = errors.New("нельзя удалить уровень с активными прохождениями")
+)
+
 // ActiveGameManager определяет контракт для операций, влияющих на активную игру.
 type ActiveGameManager interface {
 	DeleteLevelFromActiveGame(ctx context.Context, gameID, levelID, userID uint) error
@@ -69,7 +77,7 @@ func (s *LevelService) Create(ctx context.Context, gameID uint, level *Level, us
 		return err
 	}
 	if !ok {
-		return errors.New("только автор или контент-менеджер может создавать уровни")
+		return ErrNoPermission
 	}
 
 	if level.Position == 0 {
@@ -276,7 +284,7 @@ func (s *LevelService) Move(ctx context.Context, levelID uint, direction string,
 		err = tx.Where("game_id = ? AND position > ?", lockedLevel.GameID, lockedLevel.Position).
 			Order("position ASC").First(&sibling).Error
 	default:
-		return errors.New("неверное направление")
+		return ErrInvalidMoveDirection
 	}
 	if err != nil {
 		// «Нет соседа» (нет куда двигать) — пользовательская ошибка; реальные
