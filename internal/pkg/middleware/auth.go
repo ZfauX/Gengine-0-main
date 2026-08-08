@@ -210,3 +210,32 @@ func AdminRequired() gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// ---------- Тестовые хелперы (M6, pass 30) ----------
+// Экспортируются только для тестов пакета middleware_test — тестируют
+// TTL-кэш ролей, не обращаясь к внутренним полям напрямую.
+
+// ResetRoleCacheForTest сбрасывает кэш ролей (для тестов).
+func ResetRoleCacheForTest() {
+	roleCacheMu.Lock()
+	roleCache = map[uint]cachedRole{}
+	roleCacheMu.Unlock()
+}
+
+// GetRoleForTest возвращает роль через публичный путь getCachedRole
+// (для тестов).
+func GetRoleForTest(ctx context.Context, userID uint) (string, error) {
+	return getCachedRole(ctx, userID)
+}
+
+// ExpireRoleCacheForTest делает все кэшированные роли просроченными
+// (для тестов TTL-истечения).
+func ExpireRoleCacheForTest() {
+	roleCacheMu.Lock()
+	now := time.Now()
+	for id, e := range roleCache {
+		e.expires = now.Add(-time.Second)
+		roleCache[id] = e
+	}
+	roleCacheMu.Unlock()
+}

@@ -13,6 +13,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Sentinel-ошибки турнира (MED-4, pass 29): handler'ы различают
@@ -132,8 +133,11 @@ func (s *TournamentService) AddGame(ctx context.Context, tournamentID, gameID, u
 				Status: game.StatusPending,
 			})
 		}
+		// S3 (pass 30): ON CONFLICT DO NOTHING — RemoveGame не удаляет
+		// game_passings (только сбрасывает флаги); при пере-добавлении игры
+		// строки уже существуют → без конфликта нельзя.
 		if len(passings) > 0 {
-			if err := tx.CreateInBatches(&passings, 100).Error; err != nil {
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(&passings, 100).Error; err != nil {
 				return err
 			}
 		}
@@ -285,8 +289,10 @@ func (s *TournamentService) Apply(ctx context.Context, tournamentID, teamID, use
 				Status: game.StatusPending,
 			})
 		}
+		// S3 (pass 30): ON CONFLICT DO NOTHING — защита от гонки и от
+		// пере-добавления уже существующих прохождений.
 		if len(passings) > 0 {
-			if err := tx.CreateInBatches(&passings, 100).Error; err != nil {
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(&passings, 100).Error; err != nil {
 				log.Error().Err(err).Uint("team_id", teamID).Msg("Apply: failed to create passings")
 				return err
 			}

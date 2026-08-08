@@ -79,9 +79,10 @@ type NotificationService struct {
 	// push pool (H7, pass 30): отправка Web Push идёт через фиксированный пул
 	// воркеров вместо неограниченных goroutine — всплеск уведомлений больше
 	// не порождает тысячи параллельных HTTP-запросов к push-провайдеру.
-	pushMu   sync.Mutex
-	pushJobs chan pushJob
-	pushWg   sync.WaitGroup
+	pushMu        sync.Mutex
+	pushJobs      chan pushJob
+	pushWg        sync.WaitGroup
+	pushShutting  bool
 }
 
 type pushJob struct {
@@ -255,6 +256,13 @@ func (s *NotificationService) enqueueWebPush(userID uint, n *Notification) {
 		notif:  *n,
 	}
 	s.pushMu.Lock()
+	// S1 (pass 30): после Shutdown новые задачи отбрасываем — иначе пул
+	// пересоздастся и WaitGroup-счётчик инкрементится во время Wait (panic).
+	if s.pushShutting {
+		s.pushMu.Unlock()
+		log.Warn().Uint("user_id", userID).Msg("Notification: push pool shutting down, dropping job")
+		return
+	}
 	if s.pushJobs == nil {
 		s.pushJobs = make(chan pushJob, pushQueueSize)
 		for i := 0; i < pushWorkerCount; i++ {
@@ -286,15 +294,18 @@ func (s *NotificationService) pushWorker() {
 }
 
 // Shutdown останавливает пул push-воркеров, дожидаясь доставки задач из очереди.
-// Безопасен при отсутствии инициализации пула (pushJobs == nil).
+// Идемпотентен: повторный вызов безопасен (pushShutting уже true).
 func (s *NotificationService) Shutdown() {
 	s.pushMu.Lock()
-	if s.pushJobs == nil {
+	if s.pushShutting {
 		s.pushMu.Unlock()
 		return
 	}
-	close(s.pushJobs)
-	s.pushJobs = nil
+	s.pushShutting = true
+	if s.pushJobs != nil {
+		close(s.pushJobs)
+		s.pushJobs = nil
+	}
 	s.pushMu.Unlock()
 	s.pushWg.Wait()
 }

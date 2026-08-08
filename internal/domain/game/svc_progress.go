@@ -300,13 +300,38 @@ func checkTimeoutsImpl(db *gorm.DB, ctx context.Context, onGameFinished GameComp
 			return nil
 		}
 
+		// S2 (pass 30): advance только для прогрессов, обновлённых ЭТОЙ
+		// транзакцией. Batch UPDATE в multi-instance может вернуть частичный
+		// RowsAffected (часть ID уже обработана конкурентным инстансом, для них
+		// finished_at != наш now) — иначе AdvanceToNextLevel создаст дубли.
+		var updatedIDs []uint
+		if err := tx.Model(&LevelProgress{}).
+			Where("id IN ? AND finished_at = ?", timedOutIDs, now).
+			Pluck("id", &updatedIDs).Error; err != nil {
+			return fmt.Errorf("не удалось получить обновлённые прогрессы: %w", err)
+		}
+		updated := make(map[uint]bool, len(updatedIDs))
+		for _, id := range updatedIDs {
+			updated[id] = true
+		}
+		// Отбираем только те просроченные, что обновила наша транзакция.
+		progressesToAdvance := timedOutProgresses[:0]
+		for _, p := range timedOutProgresses {
+			if updated[p.ID] {
+				progressesToAdvance = append(progressesToAdvance, p)
+			}
+		}
+		if len(progressesToAdvance) == 0 {
+			return nil
+		}
+
 		// Для каждого просроченного прогресса advance to next level.
 		// C-5: при сбое advance возвращаем ошибку из транзакции — иначе
 		// прохождение остаётся finished_at без next-progress и retry невозможен.
 		// Откат всей партии безопасен: в следующем цикле таймаут повторится.
 		// M15 (pass 30): грузим все прохождения одним запросом (вместо N+1).
-		passingIDs := make([]uint, 0, len(timedOutProgresses))
-		for _, p := range timedOutProgresses {
+		passingIDs := make([]uint, 0, len(progressesToAdvance))
+		for _, p := range progressesToAdvance {
 			passingIDs = append(passingIDs, p.GamePassingID)
 		}
 		var passings []GamePassing
@@ -317,7 +342,7 @@ func checkTimeoutsImpl(db *gorm.DB, ctx context.Context, onGameFinished GameComp
 		for i := range passings {
 			passingByID[passings[i].ID] = passings[i]
 		}
-		for _, p := range timedOutProgresses {
+		for _, p := range progressesToAdvance {
 			passing, ok := passingByID[p.GamePassingID]
 			if !ok {
 				log.Error().Uint("passing_id", p.GamePassingID).Msg("CheckTimeouts: passing not found")

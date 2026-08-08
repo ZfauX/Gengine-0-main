@@ -76,14 +76,16 @@ func (s *ReviewService) Create(gameID, userID uint, rating int, comment string) 
 	if res.RowsAffected == 0 {
 		return errors.New("вы уже оставили отзыв")
 	}
-	// Инвалидируем кэш рейтинга, отзывов, карточки игры и анонимного листинга —
+	// Инвалидируем кэш рейтинга, отзывов и карточки игры —
 	// иначе Game.RatingValue остаётся устаревшим до 5 мин (pass 26).
-	// Листинг: версионный ключ (PF3) — один Set вместо DeleteByPrefix.
+	// M13 (pass 30): НЕ сбрасываем глобальную версию листинга (games:list:version) —
+	// при активном потоке отзывов каждый отзыв делал 30с-кэш анонимного листинга
+	// бесполезным. Рейтинг в листинге обновится по своему TTL (30с) — приемлемая
+	// задержка вместо полного отказа от кэша.
 	if s.Cache != nil {
 		s.Cache.DeleteWithCtx(context.Background(), fmt.Sprintf("rating:game:%d", gameID))
 		s.Cache.DeleteWithCtx(context.Background(), fmt.Sprintf("reviews:game:%d", gameID))
 		s.Cache.DeleteWithCtx(context.Background(), fmt.Sprintf("game:%d", gameID))
-		s.Cache.SetWithCtx(context.Background(), "games:list:version", time.Now().UnixNano(), 24*time.Hour)
 	}
 	return nil
 }

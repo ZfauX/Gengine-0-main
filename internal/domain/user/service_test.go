@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -616,4 +617,25 @@ func rewriteURL(r *http.Request, base string) *http.Request {
 	r2 := r.Clone(r.Context())
 	r2.URL = &u
 	return r2
+}
+
+// H4 (pass 30): extraString безопасно приводит oauth2.Extra-значения к строке.
+func TestExtraString(t *testing.T) {
+	tests := []struct {
+		name string
+		in   interface{}
+		want string
+	}{
+		{"string", "vk42", "vk42"},
+		{"float64", float64(123456), "123456"},
+		{"json.Number", json.Number("123456"), "123456"},
+		{"nil", nil, ""},
+		{"bool", true, ""},
+		{"float64 fractional", 12.5, "12.5"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, extraString(tt.in))
+		})
+	}
 }

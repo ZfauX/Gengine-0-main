@@ -10,6 +10,28 @@
 
 ---
 
+## Статус (обновлено 8 авг 2026)
+
+**PASS 30 ЗАКРЫТ ПОЛНОСТЬЮ** (4 раунда фиксов + верификация @tester/@reviewer):
+
+- **Раунд 1** (`3b06811`): H1-H5 (даты, турнирная страница, deleted_at, VK user_id, GetUserRole), H6 (слоистость), M1 (RUM), M16/M17 (DI), индексы 000039.
+- **Раунд 2** (`6b77b71`): H7 (worker-pool push), M2 (backup-коды), M3 (mojibake), M4 (ExtraHead), M9 (batch), M10 (OAuth single update), M14 (HasPermissionTx), M18 (dashboard errors).
+- **Раунд 3** (`bdd9cb0`): M5 (таймзона), M6 (кэш роли), M7 (таймстампы), M8 (локализация), M11 (JOIN), M15 (CheckTimeouts), M16-остаток (чистка DI).
+- **Раунд 4** (готовится к коммиту): M13 (кэш листинга отзывов), + фиксы найденные @tester/@reviewer:
+  - **Регрессия M14** (поймана @tester): `Table().First(&uint)` → "model value required" → заменено на `Model(&Game{}).Scan` + `RowsAffected`.
+  - **C1 (tz_sign)** — подтверждено: JS инвертирует `-getTimezoneOffset()`, сервер `t.Add(+offset)`. Согласовано (UTC+3 → +180 → +3ч).
+  - **C2 (ExtraHead)** — guard `{{if .Game}}` — блок больше не рендерит мусор на чужих страницах.
+  - **S1 (push pool race)** — флаг `pushShutting` — повторный Shutdown идемпотентен, enqueue после shutdown дропает.
+  - **S2 (CheckTimeouts partial advance)** — advance только по `finished_at = наш now` (multi-instance без дублей).
+  - **S3 (CreateInBatches unique)** — `OnConflict DoNothing` на оба батча (RemoveGame+re-add безопасен).
+  - **Новые тесты**: role cache (middleware), TZOffset+ExtraHead (render), extraString (user), интеграционные game проходят.
+
+**Проверка:** `go build ./...` ✓, `go test -short ./...` ✓, `go test -tags=integration` (game/user/tournament/admin) ✓, `go vet ./...` ✓. `-race` недоступен на Windows (нет CGO).
+
+> Примечание: `golangci-lint` на этой машине — v1 с конфигом v2 (инфраструктурная проблема, не кодовая).
+
+---
+
 ## A. Найденные ошибки (верифицировано лично)
 
 ### 🔴 Критично
@@ -108,4 +130,4 @@ CREATE INDEX IF NOT EXISTS idx_level_progresses_passing_unfinished_created
 5. Индекс `team_members(team_id)`.
 
 ## Статус
-Документ описывает **находки pass 30**. Код не менялся (read-only). Ключевые находки верифицированы лично (H1, H2, H3, H4, H5, M1, M3, G-12, G-14). Решение: закрывать раундами фиксов, как в pass 28-29.
+**ЗАКРЫТ** — все находки pass 30 исправлены (H1-H7, M1-M18, индексы 000039). Закрытие прошло в 4 раунда с верификацией @tester (нашёл и помог исправить регрессию HasPermissionTx) и @reviewer (подтвердил знак tz_offset, нашёл S1/S2/S3, все исправлены). Остаточные риски задокументированы в «Статусе (обновлено 8 авг 2026)» выше.
