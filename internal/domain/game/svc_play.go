@@ -643,17 +643,13 @@ func (s *GamePlayService) ProcessSnapshot(ctx context.Context, gameID uint) {
 		// A-H2 (pass 33): типизированный счётчик через репозиторий (семантика
 		// started+accepted сохранена — это «не завершена», в отличие от
 		// CountActivePassings = started+testing для редактирования игры).
+		// A-M3 (pass 34): gameRepo всегда инъектирован через wire — raw-DB
+		// fallback удалён (мёртвый код).
 		var active int64
 		var err error
 		if s.gameRepo != nil {
 			active, err = s.gameRepo.CountPassingsInStatuses(timeoutCtx, gameID,
 				[]GamePassingStatus{StatusStarted, StatusAccepted})
-		} else {
-			var count int64
-			err = s.db.WithContext(timeoutCtx).Model(&GamePassing{}).
-				Where("game_id = ? AND status IN ?", gameID, []GamePassingStatus{StatusStarted, StatusAccepted}).
-				Count(&count).Error
-			active = count
 		}
 		if err != nil {
 			log.Warn().Err(err).Uint("game_id", gameID).Msg("ProcessSnapshot: failed to count active passings")

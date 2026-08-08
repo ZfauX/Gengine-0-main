@@ -96,10 +96,16 @@ func SearchUsersAPI(userRepo UserRepository) gin.HandlerFunc {
 			return
 		}
 		results := make([]gin.H, 0, len(users))
+		isAuthed := c.GetUint("userID") != 0
 		for _, u := range users {
-			email := u.Email
-			if !isAdmin {
-				email = maskEmail(email)
+			// S-2 (pass 34): публичный поиск не раскрывает email даже в маске
+			// (домен + первая буква — слабая enumeration). Авторизованные видят
+			// маску, админы — полный email.
+			email := ""
+			if isAdmin {
+				email = u.Email
+			} else if isAuthed {
+				email = maskEmail(u.Email)
 			}
 			results = append(results, gin.H{"id": u.ID, "name": u.Name, "email": email})
 		}

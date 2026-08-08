@@ -59,8 +59,10 @@ function moveLevel(gameId, levelId, direction) {
 }
 
 async function deleteLevel(gameId, levelId) {
-    // Единая кастомная модалка (UX1) вместо нативного confirm
-    const ok = await window.showModalConfirm('{{ T $.Lang "level.delete_confirm" }}');
+    // Единая кастомная модалка (UX1) вместо нативного confirm.
+    // UX-H3 (pass 34): элемент с data-confirm-danger — кнопка OK красная.
+    const dangerEl = { dataset: { confirmDanger: 'true' }, focus: function() {} };
+    const ok = await window.showModalConfirm('{{ T $.Lang "level.delete_confirm" }}', dangerEl);
     if (!ok) return;
     fetch('/games/' + gameId + '/levels/' + levelId + '/delete', {
         method: 'POST',

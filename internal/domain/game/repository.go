@@ -346,6 +346,28 @@ func (r *gormGameRepo) AdminListGames(ctx context.Context, query, status string,
 		}
 		games = append(games, rows[i].Game)
 	}
+	// F-4 (pass 34): пустая страница (offset за пределами) → COUNT OVER() не
+	// вернул строк, total=0 ломает пагинацию. Считаем total отдельным запросом
+	// из WHERE-части (без ORDER BY/LIMIT/OFFSET).
+	if len(rows) == 0 {
+		var countBuilder strings.Builder
+		countBuilder.WriteString(`SELECT COUNT(*) FROM games LEFT JOIN users ON users.id = games.author_id WHERE 1=1`)
+		countArgs := []any{}
+		if query != "" {
+			like := sqlutil.BuildLikePattern(query)
+			countBuilder.WriteString(` AND (games.name ILIKE ? OR users.name ILIKE ?)`)
+			countArgs = append(countArgs, like, like)
+		}
+		switch status {
+		case "draft":
+			countBuilder.WriteString(` AND games.is_draft = true`)
+		case "published":
+			countBuilder.WriteString(` AND games.is_draft = false`)
+		}
+		if err := r.db.WithContext(ctx).Raw(countBuilder.String(), countArgs...).Scan(&total).Error; err != nil {
+			return nil, 0, err
+		}
+	}
 	return games, total, nil
 }
 

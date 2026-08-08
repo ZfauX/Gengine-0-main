@@ -126,7 +126,9 @@
             content: text
         }));
         inputEl.value = '';
-        setTimeout(function() { removeSendingStatus(); }, 5000);
+        // UX-M5 (pass 34): НЕ убираем «sending…» вслепую через timeout —
+        // пузырь исчезает только при серверном echo (onMessage). Иначе
+        // пользователь не узнает об отказе доставки.
     }
 
     sendBtn.addEventListener('click', sendMessage);

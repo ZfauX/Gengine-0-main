@@ -45,7 +45,7 @@
                         <form action="/games/{{$.GameID}}/passings/{{.ID}}/status" method="POST" class="inline">
                             <input type="hidden" name="_csrf" value="{{$.csrf}}">
                             <input type="hidden" name="status" value="rejected">
-                            <button type="submit" class="btn btn-danger text-xs" data-confirm='{{ TF $.Lang "passing.reject_confirm" .Team.Name }}' data-confirm-ok='{{ T $.Lang "passing.reject" }}'>{{ T $.Lang "passing.reject" }}</button>
+                            <button type="submit" class="btn btn-danger text-xs" data-confirm-danger='true' data-confirm='{{ TF $.Lang "passing.reject_confirm" .Team.Name }}' data-confirm-ok='{{ T $.Lang "passing.reject" }}'>{{ T $.Lang "passing.reject" }}</button>
                         </form>
                         {{else if eq .Status "accepted"}}
                         <form action="/games/{{$.GameID}}/passings/{{.ID}}/start" method="POST" class="inline">
@@ -93,7 +93,7 @@
                 <form action="/games/{{$.GameID}}/passings/{{.ID}}/status" method="POST" class="inline flex-1">
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
                     <input type="hidden" name="status" value="rejected">
-                    <button type="submit" class="btn btn-danger text-xs flex-1" data-confirm='{{ TF $.Lang "passing.reject_confirm" .Team.Name }}' data-confirm-ok='{{ T $.Lang "passing.reject" }}'>{{ T $.Lang "passing.reject" }}</button>
+                    <button type="submit" class="btn btn-danger text-xs flex-1" data-confirm-danger='true' data-confirm='{{ TF $.Lang "passing.reject_confirm" .Team.Name }}' data-confirm-ok='{{ T $.Lang "passing.reject" }}'>{{ T $.Lang "passing.reject" }}</button>
                 </form>
                 {{else if eq .Status "accepted"}}
                 <form action="/games/{{$.GameID}}/passings/{{.ID}}/start" method="POST" class="inline flex-1">

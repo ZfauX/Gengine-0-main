@@ -23,7 +23,7 @@
                 <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "admin.create_backup" }}</button>
             </form>
             {{if gt .Count 0}}
-            <form action="/admin/backups/rotate" method="POST" class="inline" data-confirm-form="{{ T $.Lang "admin.backup_clean_confirm" }}">
+            <form action="/admin/backups/rotate" method="POST" class="inline" data-confirm-danger="true" data-confirm-form="{{ T $.Lang "admin.backup_clean_confirm" }}">
                 <input type="hidden" name="_csrf" value="{{.csrf}}">
                 <button type="submit" class="btn btn-danger text-sm">{{ T $.Lang "admin.clean_backups" }}</button>
             </form>

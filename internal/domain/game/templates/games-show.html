@@ -105,7 +105,7 @@
             <a href="/games/{{.Game.ID}}/export" class="btn btn-outline text-sm">{{ T $.Lang "game.show_export_csv" }}</a>
             <a href="/games/{{.Game.ID}}/export-pdf" class="btn btn-outline text-sm">{{ T $.Lang "game.show_export_pdf" }}</a>
             <a href="/games/{{.Game.ID}}/test" class="btn btn-outline text-sm">{{ T $.Lang "game.show_test" }}</a>
-            <form action="/games/{{.Game.ID}}/force-finish" method="POST" class="inline" data-confirm-form='{{ T $.Lang "game.show_force_finish_confirm" }}' data-confirm-ok="{{ T $.Lang "game.show_force_finish" }}">
+            <form action="/games/{{.Game.ID}}/force-finish" method="POST" class="inline" data-confirm-danger="true" data-confirm-form='{{ T $.Lang "game.show_force_finish_confirm" }}' data-confirm-ok="{{ T $.Lang "game.show_force_finish" }}">
                 <input type="hidden" name="_csrf" value="{{.csrf}}">
                 <button type="submit" class="btn btn-danger text-sm">{{ T $.Lang "game.show_force_finish" }}</button>
             </form>

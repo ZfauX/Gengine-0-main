@@ -113,6 +113,8 @@
                                         renderMessage(msg);
                                     });
                                 }
+                                // UX-M4 (pass 34): после загрузки истории прокручиваем вниз.
+                                chatMessages.scrollTop = chatMessages.scrollHeight;
                             } else if (data.type === 'message') {
                                 const msg = data.message;
                                 const msgId = msg.id || msg.ID || '';

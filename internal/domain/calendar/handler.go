@@ -157,6 +157,17 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 	}
 	h.cacheMu.Lock()
 	h.cache[cacheKey] = calendarCacheEntry{data: body, expires: time.Now().Add(calendarCacheTTL)}
+	// F-1 (pass 34): evict просроченные записи — иначе map растёт с каждым
+	// (year, month, tzOffset) навсегда (медленная утечка памяти).
+	const calendarCacheMax = 512
+	if len(h.cache) > calendarCacheMax {
+		now := time.Now()
+		for k, e := range h.cache {
+			if now.After(e.expires) {
+				delete(h.cache, k)
+			}
+		}
+	}
 	h.cacheMu.Unlock()
 
 	c.Data(http.StatusOK, "application/json; charset=utf-8", body)

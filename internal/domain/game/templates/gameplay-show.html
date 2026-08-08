@@ -338,8 +338,9 @@
                 })
                 .then(r => {
                     if (r.ok || r.redirected) {
-                        // Получаем hint из query param
-                        const hint = new URLSearchParams(window.location.search).get('hint');
+                        // UX-H1 (pass 34): hint читаем из redirect-ответа (r.url),
+                        // а не window.location — сервер редиректит на /game/{id}?hint=...
+                        const hint = new URLSearchParams(new URL(r.url, window.location.origin).search).get('hint');
                         if (hint) {
                             showToast('💡 {{ T $.Lang "gameplay.hint_label" }}'.replace('%s', decodeURIComponent(hint)), 'info');
                         } else {

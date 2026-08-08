@@ -97,7 +97,7 @@ func (s *GamePassingService) Apply(ctx context.Context, gameID, teamID, userID u
 		}
 		// S6: Проверка дедлайна регистрации
 		if game.RegistrationDeadline != nil && game.RegistrationDeadline.Before(time.Now()) {
-			return errors.New("регистрация завершена")
+			return ErrApplicationClosed
 		}
 		if game.StartsAt != nil && game.StartsAt.Before(time.Now()) {
 			return errors.New("игра уже началась")
@@ -170,13 +170,13 @@ func (s *GamePassingService) UpdateStatus(ctx context.Context, passingID uint, s
 			return err
 		}
 		if !ok {
-			return errors.New("только автор или модератор может менять статус заявки")
+			return ErrNotCaptainOrManager
 		}
 
 		// Проверка допустимости перехода
 		allowedTargets := validTransitions[currentStatus]
 		if len(allowedTargets) == 0 {
-			return fmt.Errorf("невозможно перейти из %s в %s", currentStatus, status)
+			return fmt.Errorf("невозможно перейти из %s в %s: %w", currentStatus, status, ErrStatusNotAllowed)
 		}
 		allowed := false
 		for _, st := range allowedTargets {
@@ -186,7 +186,7 @@ func (s *GamePassingService) UpdateStatus(ctx context.Context, passingID uint, s
 			}
 		}
 		if !allowed {
-			return fmt.Errorf("невозможно перейти из %s в %s", currentStatus, status)
+			return fmt.Errorf("невозможно перейти из %s в %s: %w", currentStatus, status, ErrStatusNotAllowed)
 		}
 
 		passing.Status = status

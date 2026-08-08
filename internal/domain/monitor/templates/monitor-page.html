@@ -199,7 +199,7 @@
 
                     ${!team.finished && !team.suspicious ? `
                         <div class="mt-3">
-                            <button data-action="disqualify" data-team-id="${escapeHtml(String(team.team_id))}" data-confirm-danger="true" class="btn btn-danger text-xs w-full">
+                            <button data-action="disqualify" data-team-id="${escapeHtml(String(team.team_id))}" data-confirm-danger="true" data-confirm-ok='{{ T $.Lang "monitor.disqualify" }}' class="btn btn-danger text-xs w-full">
                                 {{ T $.Lang "monitor.disqualify" }}
                             </button>
                         </div>
