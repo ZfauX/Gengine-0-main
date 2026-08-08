@@ -242,9 +242,16 @@ function showModalConfirm(message, element) {
         }
     });
 
-    // Move focus to first focusable element in modal
-    if (firstFocusable) {
-        firstFocusable.focus();
+    // Move focus to the primary button (UX-1, pass 33): для деструктивных
+    // действий — OK (Enter подтверждает), для не-деструктивных — Cancel
+    // (Enter безопасно отменяет). Раньше всегда фокусили первый элемент
+    // (Cancel), поэтому Enter «подтверждал» отмену.
+    var confirmOkBtn = document.getElementById('confirm-ok');
+    var confirmCancelBtn = document.getElementById('confirm-cancel');
+    if (isDanger && confirmOkBtn) {
+        confirmOkBtn.focus();
+    } else if (confirmCancelBtn) {
+        confirmCancelBtn.focus();
     }
 
     document.getElementById('confirm-cancel').addEventListener('click', function() {

@@ -178,15 +178,8 @@ func (r *gormGameRepo) GetLogsByGameID(ctx context.Context, gameID uint) ([]Log,
 
 // GetLogsByGameIDPaginated возвращает страницу логов игры (H6, pass 30 —
 // перенесено из svc_facade: сырой SQL должен жить в репозитории).
+// P-4 (pass 33): COUNT(*) OVER() вместо отдельного Count — один запрос.
 func (r *gormGameRepo) GetLogsByGameIDPaginated(ctx context.Context, gameID uint, page, pageSize int) ([]Log, int64, error) {
-	var total int64
-	db := r.db.WithContext(ctx).Session(&gorm.Session{NewDB: true})
-	if err := db.Model(&Log{}).
-		Joins("JOIN game_passings ON game_passings.id = logs.game_passing_id").
-		Where("game_passings.game_id = ?", gameID).
-		Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
 	if page < 1 {
 		page = 1
 	}
@@ -196,14 +189,31 @@ func (r *gormGameRepo) GetLogsByGameIDPaginated(ctx context.Context, gameID uint
 		pageSize = 100
 	}
 	offset := (page - 1) * pageSize
-	var logs []Log
-	err := db.
+
+	type logRow struct {
+		Log
+		TotalCount int64
+	}
+	var rows []logRow
+	err := r.db.WithContext(ctx).
+		Select("logs.*, COUNT(*) OVER() AS total_count").
 		Joins("JOIN game_passings ON game_passings.id = logs.game_passing_id").
 		Where("game_passings.game_id = ?", gameID).
 		Order("logs.created_at ASC").
 		Limit(pageSize).Offset(offset).
-		Find(&logs).Error
-	return logs, total, err
+		Scan(&rows).Error
+	if err != nil {
+		return nil, 0, err
+	}
+	total := int64(0)
+	logs := make([]Log, 0, len(rows))
+	for i := range rows {
+		if i == 0 {
+			total = rows[i].TotalCount
+		}
+		logs = append(logs, rows[i].Log)
+	}
+	return logs, total, nil
 }
 
 func (r *gormGameRepo) GetGameSettingByGameID(ctx context.Context, gameID uint) (*GameSetting, error) {

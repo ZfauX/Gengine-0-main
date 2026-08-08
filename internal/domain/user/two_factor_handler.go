@@ -2,6 +2,7 @@
 package user
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -37,6 +38,17 @@ func NewTwoFactorHandler(twoFactorSvc *TwoFactorService, authService *AuthServic
 		userRepo:        userRepo,
 		jwtAccessExpiry: jwtAccessExpiry,
 	}
+}
+
+// lockUser блокирует аккаунт с экспоненциальным backoff (S-1/S-4, pass 33).
+func (h *TwoFactorHandler) lockUser(ctx context.Context, userID uint) error {
+	u, err := h.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	duration := backoffDuration(u.LockCount)
+	_, err = h.userRepo.AtomicLockAccount(ctx, userID, time.Now().Add(duration))
+	return err
 }
 
 // VerifyForm отображает форму ввода TOTP-кода.
@@ -182,13 +194,40 @@ func (h *TwoFactorHandler) BackupVerify(c *gin.Context) {
 		return
 	}
 
+	// S-1 (pass 33): per-account lockout на backup-кодах (как на TOTP-пути).
+	// Украденная сессия 2FA-степа не даёт безлимитно перебирать коды.
+	if user.LockedUntil != nil && time.Now().Before(*user.LockedUntil) {
+		data := baseData()
+		data["Error"] = render.Tr(c, "handler.wrong_code_try_again")
+		render.Page(c, http.StatusOK, "admin-2fa-backup.html", data)
+		return
+	}
+
 	// Verify and remove the used backup code
 	remainingCodes, verr := h.twoFactorSvc.VerifyAndRemoveBackupCode(user.TwoFactorBackupCodes, backupCode)
 	if verr != nil {
+		// S-1 (pass 33): инкремент счётчика + backoff-блокировка (как в TOTP).
+		newAttempts, incErr := h.userRepo.AtomicIncrementFailedAttempts(c.Request.Context(), userID)
+		if incErr != nil {
+			log.Error().Err(incErr).Uint("user_id", userID).Msg("BackupVerify: atomic increment failed")
+		} else if newAttempts >= 5 {
+			if lockErr := h.lockUser(c.Request.Context(), userID); lockErr != nil {
+				log.Error().Err(lockErr).Uint("user_id", userID).Msg("BackupVerify: failed to lock account")
+			}
+		}
 		data := baseData()
 		data["Error"] = "Неверный резервный код"
 		render.Page(c, http.StatusOK, "admin-2fa-backup.html", data)
 		return
+	}
+
+	// Успешная проверка — сбрасываем счётчик попыток.
+	if resetErr := h.userRepo.Update(c.Request.Context(), userID, map[string]any{
+		"failed_login_attempts": 0,
+		"locked_until":          nil,
+		"lock_count":            0,
+	}); resetErr != nil {
+		log.Error().Err(resetErr).Uint("user_id", userID).Msg("BackupVerify: failed to reset attempts")
 	}
 
 	// Persist remaining backup codes

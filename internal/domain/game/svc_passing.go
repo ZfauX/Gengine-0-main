@@ -17,6 +17,19 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// Sentinel-ошибки прохождений (A-M1, pass 33): позволяют хендлерам делать
+// errors.Is вместо сравнения строк.
+var (
+	ErrMaxTeamsReached     = errors.New("достигнут лимит команд на игру")
+	ErrGameFull            = errors.New("все места в игре заняты")
+	ErrApplicationClosed   = errors.New("приём заявок закрыт")
+	ErrNotInPassing        = errors.New("вы не в прохождении")
+	ErrPassingNotFound     = errors.New("прохождение не найдено")
+	ErrAlreadyApplied      = errors.New("заявка уже подана")
+	ErrStatusNotAllowed    = errors.New("невозможно перевести прохождение в этот статус")
+	ErrNotCaptainOrManager = errors.New("только капитан или модератор может менять статус заявки")
+)
+
 type GamePassingService struct {
 	DB          *gorm.DB
 	repo        GamePassingRepository
@@ -94,7 +107,7 @@ func (s *GamePassingService) Apply(ctx context.Context, gameID, teamID, userID u
 			return err
 		}
 		if int(acceptedCount) >= game.MaxTeamNumber {
-			return errors.New("достигнут лимит команд на игру")
+			return ErrMaxTeamsReached
 		}
 		passing := GamePassing{GameID: gameID, TeamID: teamID, Status: StatusPending}
 		res := tx.Clauses(clause.OnConflict{
@@ -107,7 +120,7 @@ func (s *GamePassingService) Apply(ctx context.Context, gameID, teamID, userID u
 		// C-3: RowsAffected==0 — дубликат (ON CONFLICT DO NOTHING); реальная
 		// ошибка БД уже возвращена выше.
 		if res.RowsAffected == 0 {
-			return errors.New("заявка уже подана")
+			return ErrAlreadyApplied
 		}
 		return nil
 	})

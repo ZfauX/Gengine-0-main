@@ -57,9 +57,9 @@
                     <td class="table-cell">{{.Author.Name}}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">
                         {{if .IsDraft}}
-                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">{{ T $.Lang "games.draft" }}</span>
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200">{{ T $.Lang "games.draft" }}</span>
                         {{else}}
-                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">{{ T $.Lang "games.published" }}</span>
+                            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200">{{ T $.Lang "games.published" }}</span>
                         {{end}}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm space-x-2">

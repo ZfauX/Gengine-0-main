@@ -187,7 +187,8 @@
                         <button id="notificationBell" class="nav-link text-gray-600 hover:text-blue-600 dark:text-gray-300 dark:hover:text-blue-400 relative" title="{{ T $.Lang "nav.notifications" }}" aria-label="{{ T $.Lang "nav.notifications" }}" aria-expanded="false" aria-haspopup="true" aria-controls="notificationDropdown">
                             🔔
                             {{if .UnreadNotificationCount}}
-                            <span class="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">{{.UnreadNotificationCount}}</span>
+                            <!-- UX-2 (pass 33): кэп "9+" — иначе число выходит из 16px-круга -->
+                            <span class="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">{{if gt .UnreadNotificationCount 9}}9+{{else}}{{.UnreadNotificationCount}}{{end}}</span>
                             {{end}}
                         </button>
                         <!-- Dropdown уведомлений (UX-11, pass 31: role=menu + focus) -->
