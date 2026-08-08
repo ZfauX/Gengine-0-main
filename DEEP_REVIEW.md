@@ -1,16 +1,16 @@
-# Deep Review Gengine-0 — 8 августа 2026 (pass 30 — повторное ревью после закрытия pass 28-29)
+# Deep Review Gengine-0 — 9 августа 2026 (pass 35 — повторное ревью после закрытия pass 30-34 + дефера)
 
 ## Резюме
 
 Повторное глубокое ревью выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture/DI) с последующей **личной верификацией ключевых находок** по коду.
 
-**Итог:** 0 критичных, 7 высоких, ~20 средних, ~15 низких + 5+ рекомендованных индексов.
+**Итог pass 35:** 0 критичных, 4 высоких (все подтверждены лично), ~10 средних, ~12 низких.
 
-> **Контекст:** pass 28-29 закрыты полностью (все ошибки, перф-оптимизации, DI-граф, split god-файлов, pprof/RUM). Этот проход выявляет **новые** проблемы, включая регрессии от недавних рефакторингов (split service.go, formatDate, RUM).
+> **Контекст:** pass 30-34 закрыты полностью; отложенный дефер (H3 unexport DB, A-H1 read-пути, A-M2 notify-репозитории, A-M5 миграционные runner'ы) разобран. Новые проблемы: **missing lockout на change-password/2fa-disable**, **мёртвый reCAPTCHA**, **несоответствие Secure-флага CSRF**, **мёртвый gameRepo в BlackboxVoteService**, кардинальность кэш-ключей листинга, a11y-пробелы (focus-visible, role=alert), языковая эвристика ошибки кода.
 
 ---
 
-## Статус (обновлено 8 авг 2026)
+## Статус (обновлено 9 авг 2026)
 
 **PASS 30 ЗАКРЫТ ПОЛНОСТЬЮ** (4 раунда фиксов + верификация @tester/@reviewer):
 
@@ -32,6 +32,120 @@
 **Проверка:** `go build ./...` ✓, `go test -short ./...` ✓, `go test -tags=integration` (game/user/tournament/admin) ✓, `go vet ./...` ✓, `gofmt -l .` → пусто ✓. `-race` недоступен на Windows (нет CGO).
 
 > Примечание: `golangci-lint` на этой машине — v1 с конфигом v2 (инфраструктурная проблема, не кодовая).
+
+---
+
+# PASS 35 (повторное ревью) — 9 августа 2026
+
+> Шестое повторное ревью после полного закрытия pass 30-34 и разбора дефера (H3, A-H1, A-M2, A-M5). Выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture) с **личной верификацией** ключевых находок по коду.
+
+## Резюме pass 35
+
+**Итог:** 0 критичных, 4 высоких (все подтверждены лично), ~10 средних, ~12 низких.
+
+> Кодовая база достигла зрелого состояния. Главные новые проблемы — **отсутствие lockout на change-password/2fa-disable** (перебор пароля с украденной сессией), **мёртвый конфиг reCAPTCHA**, **несоответствие Secure-флага CSRF-куки** (за reverse-proxy), и **мёртвое поле gameRepo в BlackboxVoteService** с дублированием raw-SQL проверки прав.
+
+---
+
+## Статус (обновлено 9 авг 2026) — PASS 35 ОТКРЫТ
+
+Находки перечислены ниже; закрытие — раундами фиксов, как в pass 30-34.
+
+---
+
+## A. Найденные ошибки pass 35 (верифицировано лично)
+
+### 🔴 Критично
+
+Нет.
+
+### 🟠 Высокие
+
+| ID | Файл | Проблема |
+|---|---|---|
+| **S-1** | `user/profile_handler.go:378` + `user/service.go:538-551` + `routes.go:111` | **ChangePassword без lockout и без rate limit.** `bcrypt.CompareHashAndPassword` напрямую, без инкремента `failed_login_attempts`, без блокировки аккаунта. Украденная JWT-кука → бесконечный перебор `old_password`. Контраст с `Login` (lockout после 5 попыток). **Верифицировано лично.** |
+| **S-2** | `user/two_factor_handler.go:556-561` + `routes.go:200` | **2FA disable — проверка пароля напрямую через bcrypt без lockout.** Комментарий (546-547) ложно утверждает «полный authService.Login инкрементит счётчик», но код вызывает `bcrypt.CompareHashAndPassword` сам. Перебор пароля + TOTP на `/user/2fa/disable` не ограничен. **Верифицировано лично.** |
+| **S-3** | `config/config.go:486-506` + хендлеры | **Мёртвый конфиг reCAPTCHA.** `RECAPTCHA_ENABLED/SECRET_KEY` загружаются, но ни один хендлер не проверяет токен reCAPTCHA (rg по всем хендлерам — 0 использований вне config). Rate limits (5/мин login, 3/10мин register) обходятся распределёнными атаками. **Верифицировано лично.** |
+| **S-4** | `app/app.go:88` vs `app/router.go:61-66` | **Несоответствие Secure-флага CSRF-куки и session-куки.** CSRF: `secure := TLS.CertFile != "" && TLS.KeyFile != ""` (только собственный TLS). Session store: `Secure = TLS || TrustedProxies || ForceSecureCookie`. За TLS-терминирующим reverse-proxy (nginx, TRUSTED_PROXIES задан) — `_csrf_token` уходит по HTTP без Secure. **Верифицировано лично.** |
+
+### 🟡 Средние
+
+| ID | Файл | Проблема |
+|---|---|---|
+| **A-1** | `monitor/service.go:34,41,47` | **Мёртвое поле `gameRepo` в BlackboxVoteService** — записывается в конструктор, нигде не читается (`s.gameRepo.` — 0 вызовов). При этом проверка прав автора/соавтора дублируется raw-SQL `isGameManagerForGame` (строки 210-224) вместо существующего `game.CoAuthorService.IsUserManager`. **Верифицировано лично.** |
+| **A-2** | `user/profile_service.go:33-40` | **ProfileService — чистый `*gorm.DB` без репозитория** (все методы — raw `.Table/.Model`). Не юнит-тестируем без БД; нарушение dependency rule. **Верифицировано лично.** |
+| **A-3** | `export/repository.go:62` + `service.go:86` | **Репозиторий экспортирует `DB(ctx) *gorm.DB` наружу** — сервис пишет SQL через БД репозитория (`s.exportRepo.DB(ctx)`), интерфейс не ограничивает доступ. **Верифицировано лично.** |
+| **F-1** | `game/svc_listing.go:56-57` | **Кардинальность ключей листинга**: `games:list:v%d:%d:%d:%s:...` включает page/perPage/sort. Каждая комбинация — отдельный ключ; старые ключи живут 24ч и копятся в LRU/Valkey. Инвалидация O(1) через version — но ключи-сироты остаются. **Верифицировано лично (код чтён).** |
+| **F-2** | `pkg/cache/cache.go:106-117` | **Full-LRU sweep каждую минуту под `mu.Lock()`** — `lru.Keys()` весь кэш (при maxSize=0 — тысячи ключей) каждые 60с, блокируя Get/Set. **Верифицировано лично.** |
+| **F-3** | `monitor/handler.go:163` | **Polling 1с на активную игру** вызывает `GetOrFetchSnapshot` (кэш 30с) — ~30 миссов/мин/игру. singleflight спасает от стампеда, но нагрузка на БД. **Верифицировано лично.** |
+| **F-4** | `tournament/repository.go:72-74` | **`List()` без LIMIT + `Preload("Author")`** — рост турниров → рост результата на каждый заход `/tournaments`. **Верифицировано лично.** |
+| **UX-1** | `game/templates/gameplay-show.html:310` | **Языковая эвристика определения «неверного кода»**: `/код|code|answer|ответ/i` по тексту ошибки. Ломает EN-локали и не-кодовые ошибки («Число уже использовано» → warning вместо error). В проекте уже есть паттерн `X-Error-Code` — не применён. **Верифицировано лично.** |
+| **UX-2** | `admin/templates/admin-users.html:113-114`, `admin-games.html:107-108` | **Лишние закрывающие `</div>`** — невалидная разметка, ломается DOM-вложенность. **Верифицировано лично.** |
+
+### 🔲 Низкие / мелочи
+
+| ID | Файл | Проблема |
+|---|---|---|
+| **UX-3** | `static/css/app.css` | **Нет `:focus-visible`** у `.btn`/`.nav-link` (rg — 0 совпадений) — клавиатурная навигация вслепую. |
+| **UX-4** | `user/templates/layout.html:135-139` | Скрипт `role=alert` для `.flash-error` выполняется **до** рендера `{{.ContentHTML}}` — ошибки в контент-шаблонах не получают role. |
+| **UX-5** | `notification/templates/notifications-list.html:12` | `dark:text-gray-500` — провал контраста AA в тёмной теме (остальные — `dark:text-gray-400`). |
+| **UX-6** | `monitor/templates/chat-page.html:165-168`, `team/templates/team-chat.html:93-95` | Нет бейджа «Новые сообщения ↓» при чтении выше — пропуск сообщений организатора. |
+| **UX-7** | `admin/*.html`, `games-list.html:112-152` | Мобильные таблицы без card-представления (только `overflow-x-auto`), кнопки < 44px. |
+| **UX-8** | `gameplay-show.html:485-526` | SSE `onerror` пустой — нет индикатора «соединение потеряно». |
+| **UX-9** | `calendar-page.html` | Нет индикатора загрузки при переключении месяца. |
+| **UX-10** | `auth-login.html:17,24`, `auth-register.html:18,26` | Двойные вложенные `{{if .Errors.Email}}{{if .Errors.Email}}`. |
+| **A-4** | `game/service.go:73-87` | **God-фасады**: GameService (13 полей), GamePlayService (11), TournamentService (8) — высокое сцепление; часть полей (userRepo/coAuthorSvc/db) может дублироваться поверх подсервисов. |
+| **A-5** | `tournament/service.go:224,462`, `game/svc_review.go:31`, `game/svc_play.go:639` | `context.Background()` вместо ctx в service-путях (инвалидация кэша, CanReview). |
+| **A-6** | `user/templates/notifications-list.html` и др. | Декоративные emoji без `aria-hidden` в контент-шаблонах. |
+| **UX-11** | `en.go:1239`/`ru.go:1241` (`tournament.show_title`), `en.go:627`/`ru.go:648` (`profile.push_status`) | Пустые строки переводов. |
+
+### 🔲 Опровергнуто агентами (лично проверено — НЕ является проблемой)
+
+- **`.env` в git** — **опровергнуто**: `git ls-files` показывает только `.env.example`, `.env` игнорируется (check-ignore подтверждает). Секреты в git не ушли.
+- **`DeleteOldRead` не вызывается** — **опровергнуто**: retention-джоба запущена в `cmd/server/main.go:392-412` (раз в 24ч).
+- **`common.you` отсутствует в ru** — **опровергнуто**: ключ есть (`ru.go:1617`, `en.go:1615`).
+- **XSS через `| safe`** — **не найден** (все innerHTML экранируются `escapeHtml`/`safeUrl`).
+- **CSRF на формах** — покрыт (67 форм + fetch-перехватчик).
+- **Focus-трапы модалок, dark mode, prefers-reduced-motion, skip-link** — реализованы хорошо.
+
+---
+
+## B. Оптимизации (производительность)
+
+1. **F-1 (листинг)**: кэшировать только первую страницу без sort/page в ключе, либо хранить не больше N последних ключей; инвалидация — по version (уже есть).
+2. **F-2 (LRU sweep)**: хранить отдельный список TTL-ключей (мини-куча/список с `expires`), sweep только по нему; либо отключать sweep при `maxSize==0`.
+3. **F-3 (monitor polling)**: увеличить интервал до 2-5с, либо эвристика — активные игры чаще (1с), неактивные реже; либо SSE-подписка вместо polling.
+4. **F-4 (tournament List)**: `LIMIT` + пагинация; `Select` только нужных колонок (без body/description).
+5. **CalculateResults (svc_monitor.go:235-258)**: batch-пагинация по passings (LIMIT 500) с повторным вызовом при остатке — игра с сотнями команд не выльется в один гигантский запрос.
+6. **checkAutoStartGamesImpl (svc_progress.go:394-455)**: 50 игр = до 50 последовательных транзакций; можно группировать по батчам или параллелить с errgroup (но осторожно — FOR UPDATE).
+
+## C. Улучшения кодовой базы (архитектура)
+
+1. **A-1**: удалить мёртвое `gameRepo` из BlackboxVoteService + заменить raw-SQL `isGameManagerForGame` на `game.CoAuthorService.IsUserManager` (устраняет дублирование логики прав).
+2. **A-2**: ввести `ProfileRepository` (или расширить `UserRepository`) и провести `ProfileService` через него.
+3. **A-3**: убрать `DB(ctx) *gorm.DB` из ExportRepository — вынести запросы в типизированные методы.
+4. **A-4**: продолжать паттерн тонких фасадов — GameService уже делегирует CRUD/Cover/Listing; убрать из фасадов дублирующие repo/db.
+5. **A-5**: прокидывать `ctx` из вызывающего кода вместо `context.Background()`.
+6. **Transaction репозитории**: ввести `WithTx`-интерфейсы или UnitOfWork для svc_play/svc_progress (8+ транзакций напрямую через `s.db`) — позволит юнит-тестировать без БД.
+
+## D. Улучшения UX
+
+1. **UX-1 (ошибка кода)**: сервер должен слать `X-Error-Code` (`wrong_code`), клиент — матчить код, не текст.
+2. **UX-3 (focus-visible)**: 5 строк CSS `:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }` для `.btn`/`.nav-link` — мгновенный выигрыш a11y.
+3. **UX-4 (role=alert)**: перенести скрипт после `{{.ContentHTML}}`; `aria-describedby` на инпуты с ошибками.
+4. **UX-6 (чат)**: floating-бейдж «N новых ↓» при `!nearBottom`.
+5. **UX-5 (dark contrast)**: `dark:text-gray-400` в notifications-list.
+6. **UX-2 (валидность)**: убрать лишние `</div>`.
+7. **UX-7 (mobile)**: card-вид таблиц на `< sm`.
+8. **UX-8/9**: индикаторы статуса SSE/загрузки календаря.
+9. **A-6 (emoji)**: `aria-hidden="true"` на декоративные emoji.
+
+## Приоритет фиксов (pass 35)
+1. **S-1/S-2** — lockout на change-password и 2fa-disable (security).
+2. **S-3** — удалить мёртвый reCAPTCHA или подключить проверку на login/register.
+3. **S-4** — выровнять Secure-флаг CSRF (использовать предикат как у session-store).
+4. **A-1** — удалить мёртвый gameRepo + дублирование прав.
+5. **UX-1/UX-3/UX-4** — быстрые UX-фиксы.
 
 ---
 
