@@ -13,6 +13,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"gengine-0/internal/config"
@@ -66,6 +67,12 @@ type AuthService struct {
 	refreshSvc       *RefreshTokenService
 	cfg              *config.Config
 	cache            cache.CacheStore
+
+	// jtiBlacklist — in-memory fallback для отзыва JWT при отсутствии
+	// Valkey/кэша (S-6, pass 31): process-local, но лучше, чем ничего.
+	// При настроенном кэше используется он (shared между инстансами).
+	jtiMu        sync.Mutex
+	jtiBlacklist map[string]time.Time
 }
 
 // WithRefreshService связывает AuthService с RefreshTokenService (D2).
@@ -88,6 +95,7 @@ func NewAuthService(
 		emailVerifRepo:   emailVerifRepo,
 		refreshTokenRepo: refreshTokenRepo,
 		cfg:              cfg,
+		jtiBlacklist:     make(map[string]time.Time),
 	}
 }
 
@@ -150,23 +158,30 @@ func (s *AuthService) Login(ctx context.Context, emailStr, password string) (str
 		}
 
 		if newAttempts >= 5 {
+			// S-4 (pass 31): экспоненциальный backoff — длительность блокировки
+			// растёт с каждой последовательной блокировкой (5, 10, 20, ... мин,
+			// до 24ч), а не фиксированные 30 мин. Счётчик сбрасывается при
+			// успешном входе; lock_count инкрементируется при каждой блокировке.
 			now := time.Now()
-			lockedUntil := now.Add(30 * time.Minute)
+			duration := backoffDuration(user.LockCount)
+			lockedUntil := now.Add(duration)
 			if err := s.userRepo.Update(ctx, user.ID, map[string]any{
 				"locked_until":          lockedUntil,
 				"failed_login_attempts": 0,
+				"lock_count":            user.LockCount + 1,
 			}); err != nil {
 				log.Error().Err(err).Uint("user_id", user.ID).Msg("Login: failed to lock account")
 				return "", stderrors.New("внутренняя ошибка сервера")
 			}
+			log.Debug().Uint("user_id", user.ID).Int("lock_count", user.LockCount).Dur("duration", duration).Msg("Login: account locked with backoff")
 			// Generic-ответ: не раскрываем существование аккаунта (B2).
 			return "", stderrors.New("неверный email или пароль")
 		}
 		return "", stderrors.New("неверный email или пароль")
 	}
 
-	// Успешный вход — безусловный сброс счётчика
-	if err := s.userRepo.Update(ctx, user.ID, map[string]any{"failed_login_attempts": 0, "locked_until": nil}); err != nil {
+	// Успешный вход — безусловный сброс счётчика и backoff-счётчика блокировок
+	if err := s.userRepo.Update(ctx, user.ID, map[string]any{"failed_login_attempts": 0, "locked_until": nil, "lock_count": 0}); err != nil {
 		log.Error().Err(err).Uint("user_id", user.ID).Msg("Login: failed to reset failed_login_attempts")
 	}
 
@@ -175,6 +190,27 @@ func (s *AuthService) Login(ctx context.Context, emailStr, password string) (str
 
 func (s *AuthService) GenerateJWT(user User) (string, error) {
 	return s.generateJWT(user)
+}
+
+// backoffDuration возвращает длительность блокировки аккаунта (S-4, pass 31):
+// 5 мин при первой блокировке, удваивается с каждой последующей, максимум 24ч.
+func backoffDuration(lockCount int) time.Duration {
+	const (
+		baseLockDuration = 5 * time.Minute
+		maxLockDuration  = 24 * time.Hour
+	)
+	if lockCount <= 0 {
+		return baseLockDuration
+	}
+	// lockCount-ая блокировка: base * 2^(lockCount). Переполнение страхуем.
+	if lockCount >= 10 { // 5 мин * 2^10 = ~3.5 дней → уже за cap
+		return maxLockDuration
+	}
+	d := baseLockDuration << uint(lockCount) // 5 * 2^lockCount
+	if d > maxLockDuration {
+		return maxLockDuration
+	}
+	return d
 }
 
 // ---------- Refresh-токены: делегируются RefreshTokenService (D2) ----------
@@ -260,11 +296,23 @@ func (s *AuthService) ParseToken(tokenStr string) (uint, string, error) {
 	}
 
 	// JTI blacklist check: если токен был отозван (logout, password change), отклоняем его
-	if s.cache != nil {
-		if jti, ok := claims["jti"].(string); ok && jti != "" {
+	if jti, ok := claims["jti"].(string); ok && jti != "" {
+		if s.cache != nil {
 			if _, found := s.cache.Get("jti_blacklist:" + jti); found {
 				return 0, "", stderrors.New("токен был отозван")
 			}
+		} else {
+			// S-6 (pass 31): in-memory fallback при отсутствии кэша.
+			s.jtiMu.Lock()
+			exp, found := s.jtiBlacklist[jti]
+			if found && time.Now().Before(exp) {
+				s.jtiMu.Unlock()
+				return 0, "", stderrors.New("токен был отозван")
+			}
+			if found && !time.Now().Before(exp) {
+				delete(s.jtiBlacklist, jti)
+			}
+			s.jtiMu.Unlock()
 		}
 	}
 
@@ -331,10 +379,22 @@ func (s *AuthService) RevokeJWT(ctx context.Context, tokenStr string) {
 
 	if s.cache != nil {
 		s.cache.SetWithCtx(ctx, "jti_blacklist:"+jti, true, ttl)
-	} else {
-		// Revocation is best-effort without a cache — log loudly so ops notices
-		log.Warn().Str("jti", jti).Msg("RevokeJWT: no cache configured — JWT revocation is NOT enforced")
+		return
 	}
+	// S-6 (pass 31): без кэша используем in-memory blacklist — отзыв работает
+	// в рамках процесса (fallback лучше, чем «не работает вовсе»).
+	s.jtiMu.Lock()
+	s.jtiBlacklist[jti] = time.Now().Add(ttl)
+	// Lazy sweep: не даём map расти (P-2 паттерн).
+	if len(s.jtiBlacklist) > 1024 {
+		now := time.Now()
+		for k, exp := range s.jtiBlacklist {
+			if now.After(exp) {
+				delete(s.jtiBlacklist, k)
+			}
+		}
+	}
+	s.jtiMu.Unlock()
 }
 
 func (s *AuthService) generateJWT(user User) (string, error) {
@@ -397,11 +457,19 @@ func (s *UserService) AtomicIncrementFailedAttempts(ctx context.Context, userID 
 	return s.userRepo.AtomicIncrementFailedAttempts(ctx, userID)
 }
 
-// SetLockedUntil блокирует аккаунт до указанного времени.
-func (s *UserService) SetLockedUntil(ctx context.Context, userID uint, lockedUntil *time.Time) error {
+// SetLockedUntil блокирует аккаунт с экспоненциальным backoff (S-4, pass 31):
+// длительность зависит от текущего lock_count, счётчик инкрементируется.
+func (s *UserService) SetLockedUntil(ctx context.Context, userID uint) error {
+	u, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	duration := backoffDuration(u.LockCount)
+	lockedUntil := time.Now().Add(duration)
 	return s.userRepo.Update(ctx, userID, map[string]any{
 		"locked_until":          lockedUntil,
 		"failed_login_attempts": 0,
+		"lock_count":            u.LockCount + 1,
 	})
 }
 
@@ -410,6 +478,7 @@ func (s *UserService) ResetFailedAttempts(ctx context.Context, userID uint) erro
 	return s.userRepo.Update(ctx, userID, map[string]any{
 		"failed_login_attempts": 0,
 		"locked_until":          nil,
+		"lock_count":            0,
 	})
 }
 

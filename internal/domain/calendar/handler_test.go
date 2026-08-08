@@ -133,6 +133,11 @@ func (m *mockGameRepo) UpsertGameSetting(ctx context.Context, settings *game.Gam
 	return args.Error(0)
 }
 
+func (m *mockGameRepo) IsTeamMember(ctx context.Context, teamID, userID uint) (bool, error) {
+	args := m.Called(ctx, teamID, userID)
+	return args.Bool(0), args.Error(1)
+}
+
 func (m *mockGameRepo) IsTeamCaptain(ctx context.Context, teamID, userID uint) (bool, error) {
 	args := m.Called(ctx, teamID, userID)
 	return args.Bool(0), args.Error(1)

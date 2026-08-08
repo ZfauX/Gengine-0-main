@@ -42,8 +42,8 @@ func wrapReviewService(db *gorm.DB, cacheStore cache.CacheStore) *game.ReviewSer
 	return game.NewReviewService(db).WithCache(cacheStore)
 }
 
-func wrapLevelProgressService(db *gorm.DB, sseMgr *game.SSEManager, gameService *game.GameService) *game.LevelProgressService {
-	return game.NewLevelProgressService(db).WithSSEManager(sseMgr).WithGameService(gameService)
+func wrapLevelProgressService(db *gorm.DB, progressRepo game.LevelProgressRepository, sseMgr *game.SSEManager, gameService *game.GameService) *game.LevelProgressService {
+	return game.NewLevelProgressService(db).WithRepository(progressRepo).WithSSEManager(sseMgr).WithGameService(gameService)
 }
 
 // wrapGamePassingService собирает GamePassingService с method-chaining

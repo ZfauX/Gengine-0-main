@@ -16,7 +16,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
-	"gorm.io/gorm"
 )
 
 // SSESession хранит данные сессии SSE
@@ -362,7 +361,8 @@ func sseConnect(mgr *SSEManager, c *gin.Context, gameID uint) {
 }
 
 // SSEHandler возвращает handler для SSE по passing_id (геймплей).
-func SSEHandler(mgr *SSEManager, db *gorm.DB, coAuthorSvc *CoAuthorService) gin.HandlerFunc {
+// A-1 (pass 31): вместо *gorm.DB хендлер принимает репозитории — слоистость.
+func SSEHandler(mgr *SSEManager, gameRepo GameRepository, passingRepo GamePassingRepository, coAuthorSvc *CoAuthorService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		passingID, err := strconv.Atoi(c.Param("passing_id"))
 		if err != nil || passingID <= 0 {
@@ -370,13 +370,13 @@ func SSEHandler(mgr *SSEManager, db *gorm.DB, coAuthorSvc *CoAuthorService) gin.
 			return
 		}
 		userID := c.GetUint("userID")
-		var passing GamePassing
-		if err := db.WithContext(c.Request.Context()).First(&passing, passingID).Error; err != nil {
+		passing, err := passingRepo.GetByID(c.Request.Context(), uint(passingID))
+		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": render.Tr(c, "handler.passing_not_found")})
 			return
 		}
 		// Authorization: user must be a team member OR a game manager
-		if !isSSEParticipant(db, c.Request.Context(), passing.TeamID, passing.GameID, userID, coAuthorSvc) {
+		if !isSSEParticipant(gameRepo, c.Request.Context(), passing.TeamID, passing.GameID, userID, coAuthorSvc) {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
 			return
 		}
@@ -385,7 +385,7 @@ func SSEHandler(mgr *SSEManager, db *gorm.DB, coAuthorSvc *CoAuthorService) gin.
 }
 
 // SSEGameHandler возвращает handler для SSE по game_id (страница игры).
-func SSEGameHandler(mgr *SSEManager, db *gorm.DB, coAuthorSvc *CoAuthorService) gin.HandlerFunc {
+func SSEGameHandler(mgr *SSEManager, gameRepo GameRepository, passingRepo GamePassingRepository, coAuthorSvc *CoAuthorService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		gameID, err := strconv.Atoi(c.Param("game_id"))
 		if err != nil || gameID <= 0 {
@@ -404,18 +404,16 @@ func SSEGameHandler(mgr *SSEManager, db *gorm.DB, coAuthorSvc *CoAuthorService) 
 
 // isSSEParticipant проверяет, что пользователь участвует в прохождении (команда)
 // или является менеджером игры.
-func isSSEParticipant(db *gorm.DB, ctx context.Context, teamID, gameID, userID uint, coAuthorSvc *CoAuthorService) bool {
+func isSSEParticipant(gameRepo GameRepository, ctx context.Context, teamID, gameID, userID uint, coAuthorSvc *CoAuthorService) bool {
 	// Game manager always allowed
 	if ok, err := coAuthorSvc.IsUserManager(ctx, gameID, userID); err == nil && ok {
 		return true
 	}
 	// Team member check
-	var count int64
-	if err := db.WithContext(ctx).Table("team_members").
-		Where("team_id = ? AND user_id = ?", teamID, userID).
-		Count(&count).Error; err != nil {
+	member, err := gameRepo.IsTeamMember(ctx, teamID, userID)
+	if err != nil {
 		log.Debug().Err(err).Uint("team_id", teamID).Uint("user_id", userID).Msg("isSSEParticipant: member check error")
 		return false
 	}
-	return count > 0
+	return member
 }

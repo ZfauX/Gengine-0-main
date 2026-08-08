@@ -25,31 +25,32 @@ import (
 //go:generate go run -mod=mod github.com/google/wire/cmd/wire
 
 type repositories struct {
-	User         user.UserRepository
-	Achiev       user.AchievementRepository
-	PassReset    user.PasswordResetRepository
-	EmailVerif   user.EmailVerificationRepository
-	ExtLogin     user.ExternalLoginRepository
-	RefreshToken user.RefreshTokenRepository
-	WebAuthn     user.WebAuthnRepository
-	PushSub      user.PushSubscriptionRepository
-	Game         game.GameRepository
-	GamePassing  game.GamePassingRepository
-	Level        level.LevelRepository
-	Question     level.QuestionRepository
-	Answer       level.AnswerRepository
-	Team         team.TeamRepository
-	Invitation   team.InvitationRepository
-	Tournament   tournament.TournamentRepository
-	TournGame    tournament.TournamentGameRepository
-	TournTeam    tournament.TournamentTeamRepository
-	TournResult  tournament.TournamentResultRepository
-	Follow       social.FollowRepository
-	Export       export.ExportRepository
-	Chat         monitor.ChatRepository
-	Blackbox     monitor.BlackboxRepository
-	Notification notification.NotificationRepository
-	Backup       admin.BackupRepository
+	User          user.UserRepository
+	Achiev        user.AchievementRepository
+	PassReset     user.PasswordResetRepository
+	EmailVerif    user.EmailVerificationRepository
+	ExtLogin      user.ExternalLoginRepository
+	RefreshToken  user.RefreshTokenRepository
+	WebAuthn      user.WebAuthnRepository
+	PushSub       user.PushSubscriptionRepository
+	Game          game.GameRepository
+	GamePassing   game.GamePassingRepository
+	LevelProgress game.LevelProgressRepository
+	Level         level.LevelRepository
+	Question      level.QuestionRepository
+	Answer        level.AnswerRepository
+	Team          team.TeamRepository
+	Invitation    team.InvitationRepository
+	Tournament    tournament.TournamentRepository
+	TournGame     tournament.TournamentGameRepository
+	TournTeam     tournament.TournamentTeamRepository
+	TournResult   tournament.TournamentResultRepository
+	Follow        social.FollowRepository
+	Export        export.ExportRepository
+	Chat          monitor.ChatRepository
+	Blackbox      monitor.BlackboxRepository
+	Notification  notification.NotificationRepository
+	Backup        admin.BackupRepository
 }
 
 func initRepositories(db *gorm.DB) *repositories {

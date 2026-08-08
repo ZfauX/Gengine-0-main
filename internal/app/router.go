@@ -411,5 +411,5 @@ func (app *App) registerExportRoutes(r *gin.RouterGroup) error {
 func (app *App) registerGameplayRoutes(r *gin.RouterGroup) {
 	protected := r.Group("/")
 	protected.Use(middleware.AuthRequired(app.Deps.Services.Auth))
-	game.RegisterGameplayRoutes(protected, app.Deps.Services.GameplayHandler, app.Deps.Services.CoAuthor, app.Deps.Services.SSEMgr, app.DB)
+	game.RegisterGameplayRoutes(protected, app.Deps.Services.GameplayHandler, app.Deps.Services.CoAuthor, app.Deps.Services.SSEMgr, app.Deps.Repos.Game, app.Deps.Repos.GamePassing)
 }

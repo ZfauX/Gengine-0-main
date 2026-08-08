@@ -30,6 +30,7 @@ type GameRepository interface {
 	GetGameSettingByGameID(ctx context.Context, gameID uint) (*GameSetting, error)
 	UpsertGameSetting(ctx context.Context, settings *GameSetting) error
 	IsTeamCaptain(ctx context.Context, teamID, userID uint) (bool, error)
+	IsTeamMember(ctx context.Context, teamID, userID uint) (bool, error)
 }
 
 // GamePassingRepository — контракт для прохождений.
@@ -204,6 +205,19 @@ func (r *gormGameRepo) IsTeamCaptain(ctx context.Context, teamID, userID uint) (
 		return false, err
 	}
 	return capt.CaptainID == userID, nil
+}
+
+// IsTeamMember проверяет членство пользователя в команде (A-1, pass 31:
+// использовалось напрямую в SSE-хендлере через raw-запрос).
+func (r *gormGameRepo) IsTeamMember(ctx context.Context, teamID, userID uint) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Table("team_members").
+		Where("team_id = ? AND user_id = ?", teamID, userID).
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 type gormGamePassingRepo struct{ db *gorm.DB }

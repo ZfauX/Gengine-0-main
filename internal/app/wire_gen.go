@@ -41,6 +41,7 @@ func initializeRepositories(db *gorm.DB) *repositories {
 	pushSubscriptionRepository := user.NewGormPushSubscriptionRepo(db)
 	gameRepository := game.NewGormGameRepo(db)
 	gamePassingRepository := game.NewGormGamePassingRepo(db)
+	levelProgressRepository := game.NewGormLevelProgressRepo(db)
 	levelRepository := level.NewGormLevelRepo(db)
 	questionRepository := level.NewGormQuestionRepo(db)
 	answerRepository := level.NewGormAnswerRepo(db)
@@ -57,31 +58,32 @@ func initializeRepositories(db *gorm.DB) *repositories {
 	notificationRepository := notification.NewNotificationRepository(db)
 	backupRepository := admin.NewGormBackupRepo(db)
 	appRepositories := &repositories{
-		User:         userRepository,
-		Achiev:       achievementRepository,
-		PassReset:    passwordResetRepository,
-		EmailVerif:   emailVerificationRepository,
-		ExtLogin:     externalLoginRepository,
-		RefreshToken: refreshTokenRepository,
-		WebAuthn:     webAuthnRepository,
-		PushSub:      pushSubscriptionRepository,
-		Game:         gameRepository,
-		GamePassing:  gamePassingRepository,
-		Level:        levelRepository,
-		Question:     questionRepository,
-		Answer:       answerRepository,
-		Team:         teamRepository,
-		Invitation:   invitationRepository,
-		Tournament:   tournamentRepository,
-		TournGame:    tournamentGameRepository,
-		TournTeam:    tournamentTeamRepository,
-		TournResult:  tournamentResultRepository,
-		Follow:       followRepository,
-		Export:       exportRepository,
-		Chat:         chatRepository,
-		Blackbox:     blackboxRepository,
-		Notification: notificationRepository,
-		Backup:       backupRepository,
+		User:          userRepository,
+		Achiev:        achievementRepository,
+		PassReset:     passwordResetRepository,
+		EmailVerif:    emailVerificationRepository,
+		ExtLogin:      externalLoginRepository,
+		RefreshToken:  refreshTokenRepository,
+		WebAuthn:      webAuthnRepository,
+		PushSub:       pushSubscriptionRepository,
+		Game:          gameRepository,
+		GamePassing:   gamePassingRepository,
+		LevelProgress: levelProgressRepository,
+		Level:         levelRepository,
+		Question:      questionRepository,
+		Answer:        answerRepository,
+		Team:          teamRepository,
+		Invitation:    invitationRepository,
+		Tournament:    tournamentRepository,
+		TournGame:     tournamentGameRepository,
+		TournTeam:     tournamentTeamRepository,
+		TournResult:   tournamentResultRepository,
+		Follow:        followRepository,
+		Export:        exportRepository,
+		Chat:          chatRepository,
+		Blackbox:      blackboxRepository,
+		Notification:  notificationRepository,
+		Backup:        backupRepository,
 	}
 	return appRepositories
 }
@@ -111,8 +113,9 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	ratingService := game.NewRatingService(db, appCache)
 	gameService := wrapGameService(db, gameRepository, gamePassingRepository, coAuthorService, reviewService, monitorService, photoService, hub, cfg, localStorage, appCache, userRepository, ratingService)
 	attemptService := game.NewAttemptService(db)
+	levelProgressRepository := repos.LevelProgress
 	sseManager := game.NewSSEManager()
-	levelProgressService := wrapLevelProgressService(db, sseManager, gameService)
+	levelProgressService := wrapLevelProgressService(db, levelProgressRepository, sseManager, gameService)
 	gamePlayService := wrapGamePlayService(db, attemptService, levelProgressService, monitorService, hub, coAuthorService, cfg, sseManager)
 	gameAdminService := wrapGameAdminService(db, coAuthorService, cfg, sseManager)
 	teamRepository := repos.Team

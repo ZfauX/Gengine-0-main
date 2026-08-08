@@ -234,6 +234,9 @@
 
         // Серверное предпочтение (персонализация). MED-9: для гостей не
         // делаем запрос (всегда 401+fallback) — рендер уже серверный.
+        // UX-5 (pass 31): гостям НЕ переопределяем server-rendered вид на
+        // table — иначе карточный вид (по умолчанию для публичного) сменяется
+        // с FOUC. Начальное состояние — как отрендерил сервер.
         {{if .CurrentUserID}}
         fetch('/api/users/preferences/games-view')
             .then(r => r.ok ? r.json() : Promise.resolve({ view: 'table' }))
@@ -243,8 +246,6 @@
                 else setTableView();
             })
             .catch(function() { if (!userToggled) setTableView(); });
-        {{else}}
-        setTableView();
         {{end}}
 
         toggle.addEventListener('click', function() {

@@ -30,6 +30,7 @@ type User struct {
 	TwoFactorBackupCodes string             `gorm:"default:''" json:"-"`         // резервные коды (через запятую, хешированные)
 	FailedLoginAttempts  int                `gorm:"default:0"`                   // количество неудачных попыток входа
 	LockedUntil          *time.Time         `gorm:"index"`                       // блокировка до указанного времени
+	LockCount            int                `gorm:"default:0"`                   // число блокировок (для экспоненциального backoff, S-4)
 	Achievements         []Achievement      `gorm:"many2many:user_achievements;"`
 	ExternalLogins       []ExternalLogin    `gorm:"foreignKey:UserID"`
 	Subscriptions        []PushSubscription `gorm:"foreignKey:UserID"`

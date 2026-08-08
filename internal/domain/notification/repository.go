@@ -77,14 +77,29 @@ func (r *gormNotificationRepo) CountUnread(ctx context.Context, userID uint) (in
 }
 
 func (r *gormNotificationRepo) ListByUser(ctx context.Context, userID uint, offset, limit int) ([]Notification, int64, error) {
-	var total int64
-	var notifications []Notification
-	query := r.db.WithContext(ctx).Model(&Notification{}).Where("user_id = ?", userID).Order("created_at DESC")
-	if err := query.Count(&total).Error; err != nil {
+	// F-7 (pass 31): COUNT(*) OVER() — total в том же запросе, без отдельного COUNT.
+	type notificationRow struct {
+		Notification
+		TotalCount int64
+	}
+	var rows []notificationRow
+	err := r.db.WithContext(ctx).
+		Select("notifications.*, COUNT(*) OVER() AS total_count").
+		Model(&Notification{}).
+		Where("user_id = ?", userID).
+		Order("created_at DESC").
+		Offset(offset).Limit(limit).
+		Scan(&rows).Error
+	if err != nil {
 		return nil, 0, err
 	}
-	if err := query.Offset(offset).Limit(limit).Find(&notifications).Error; err != nil {
-		return nil, 0, err
+	total := int64(0)
+	notifications := make([]Notification, 0, len(rows))
+	for i := range rows {
+		if i == 0 {
+			total = rows[i].TotalCount
+		}
+		notifications = append(notifications, rows[i].Notification)
 	}
 	return notifications, total, nil
 }

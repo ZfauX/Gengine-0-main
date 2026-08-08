@@ -279,6 +279,11 @@
             })
             .then(() => {
                 window.showToast('{{ T $.Lang "monitor.disqualify_success" }}', 'success');
+                // UX-7 (pass 31): убираем карточку команды сразу — не ждём
+                // следующего WS-снапшота.
+                teamsContainer.querySelectorAll('.monitor-team-card').forEach(function(card) {
+                    if (card.dataset.teamId === String(teamId)) card.remove();
+                });
             })
             .catch(err => {
                 console.error('Дисквалификация:', err);

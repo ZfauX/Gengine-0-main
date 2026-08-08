@@ -258,9 +258,8 @@ func (h *AuthHandler) TwoFALoginVerify(c *gin.Context) {
 		if incErr != nil {
 			log.Error().Err(incErr).Uint("user_id", user.ID).Msg("TwoFALoginVerify: atomic increment failed")
 		} else if newAttempts >= 5 {
-			now := time.Now()
-			lockedUntil := now.Add(30 * time.Minute)
-			if lockErr := h.userService.SetLockedUntil(c.Request.Context(), user.ID, &lockedUntil); lockErr != nil {
+			// S-4 (pass 31): backoff-блокировка (5/10/20... мин).
+			if lockErr := h.userService.SetLockedUntil(c.Request.Context(), user.ID); lockErr != nil {
 				log.Error().Err(lockErr).Uint("user_id", user.ID).Msg("TwoFALoginVerify: failed to lock account")
 			}
 		}

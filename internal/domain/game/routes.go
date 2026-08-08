@@ -13,7 +13,6 @@ import (
 	ws "gengine-0/internal/pkg/websocket"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 // GameDeps содержит все зависимости для регистрации маршрутов игрового домена.
@@ -177,7 +176,8 @@ func RegisterGameplayRoutes(
 	handler *GameplayHandler,
 	coAuthorSvc *CoAuthorService,
 	sseMgr *SSEManager,
-	db *gorm.DB,
+	gameRepo GameRepository,
+	passingRepo GamePassingRepository,
 ) {
 	r.GET("/game/:passing_id", handler.ShowGame)
 
@@ -201,6 +201,6 @@ func RegisterGameplayRoutes(
 
 	r.POST("/testing/:passing_id/skip", handler.SkipTestLevel)
 
-	r.GET("/game/:passing_id/sse", middleware.SSERateLimit(1*time.Minute, 10), SSEHandler(sseMgr, db, coAuthorSvc))
-	r.GET("/game/sse/:game_id", middleware.SSERateLimit(1*time.Minute, 10), SSEGameHandler(sseMgr, db, coAuthorSvc))
+	r.GET("/game/:passing_id/sse", middleware.SSERateLimit(1*time.Minute, 10), SSEHandler(sseMgr, gameRepo, passingRepo, coAuthorSvc))
+	r.GET("/game/sse/:game_id", middleware.SSERateLimit(1*time.Minute, 10), SSEGameHandler(sseMgr, gameRepo, passingRepo, coAuthorSvc))
 }
