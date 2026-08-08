@@ -20,10 +20,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -34,11 +34,11 @@ jobs:
       - name: Check formatting (gofmt)
         run: |
           if [ "$(gofmt -l . | wc -l)" -gt 0 ]; then
-            echo "❌ Files not formatted:"
+            echo "вќЊ Files not formatted:"
             gofmt -l .
             exit 1
           fi
-          echo "✅ All files formatted"
+          echo "вњ… All files formatted"
 
       - name: Run go vet
         run: go vet ./...
@@ -56,10 +56,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -71,7 +71,7 @@ jobs:
         run: go test -v -race -count=1 -short -coverprofile=coverage-unit.out ./internal/...
 
       - name: Upload unit coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: coverage-unit
           path: coverage-unit.out
@@ -97,10 +97,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -123,7 +123,7 @@ jobs:
         run: go test -v -race -count=1 -tags=integration -coverprofile=coverage-integration.out ./cmd/server/...
 
       - name: Upload integration coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: coverage-integration
           path: coverage-integration.out
@@ -134,10 +134,10 @@ jobs:
     needs: test-integration
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -149,8 +149,8 @@ jobs:
     name: Docker Image
     runs-on: ubuntu-latest
     needs: build
-    # GITHUB_TOKEN по умолчанию имеет read-only доступ к packages — без write
-    # push в GHCR падает с 'denied: installation not allowed to Create
+    # GITHUB_TOKEN РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ РёРјРµРµС‚ read-only РґРѕСЃС‚СѓРї Рє packages вЂ” Р±РµР· write
+    # push РІ GHCR РїР°РґР°РµС‚ СЃ 'denied: installation not allowed to Create
     # organization package'.
     permissions:
       contents: read
@@ -158,26 +158,26 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set lowercase repository owner
-        # GHCR требует имена репозиториев в нижнем регистре (ghcr.io/owner/image).
-        # github.repository_owner может содержать заглавные буквы (ZfauX),
-        # поэтому приводим его к нижнему регистру через bash-подстановку.
+        # GHCR С‚СЂРµР±СѓРµС‚ РёРјРµРЅР° СЂРµРїРѕР·РёС‚РѕСЂРёРµРІ РІ РЅРёР¶РЅРµРј СЂРµРіРёСЃС‚СЂРµ (ghcr.io/owner/image).
+        # github.repository_owner РјРѕР¶РµС‚ СЃРѕРґРµСЂР¶Р°С‚СЊ Р·Р°РіР»Р°РІРЅС‹Рµ Р±СѓРєРІС‹ (ZfauX),
+        # РїРѕСЌС‚РѕРјСѓ РїСЂРёРІРѕРґРёРј РµРіРѕ Рє РЅРёР¶РЅРµРјСѓ СЂРµРіРёСЃС‚СЂСѓ С‡РµСЂРµР· bash-РїРѕРґСЃС‚Р°РЅРѕРІРєСѓ.
         run: echo "GHCR_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
