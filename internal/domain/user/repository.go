@@ -282,12 +282,16 @@ func (r *gormUserRepo) GetByRole(ctx context.Context, role string) ([]User, erro
 
 func (r *gormUserRepo) GetUserRole(ctx context.Context, id uint) (string, error) {
 	var role string
-	// First (вместо Scan) — чтобы при отсутствующем пользователе вернуть
-	// gorm.ErrRecordNotFound (H5, pass 30). Scan молча заполняет нулём и
-	// role-provider не отличал удалённого пользователя → токен не отзывался.
-	err := r.db.WithContext(ctx).Table("users").Select("role").Where("id = ?", id).First(&role).Error
-	if err != nil {
-		return "", err
+	// Scan + проверка RowsAffected (H5, pass 30): First(&scalar) через Table()
+	// падает в GORM («model value required»), а чистый Scan молча заполнял
+	// нулём — role-provider не отличал удалённого пользователя, токен не
+	// отзывался. RowsAffected==0 → gorm.ErrRecordNotFound.
+	res := r.db.WithContext(ctx).Table("users").Select("role").Where("id = ?", id).Scan(&role)
+	if res.Error != nil {
+		return "", res.Error
+	}
+	if res.RowsAffected == 0 {
+		return "", gorm.ErrRecordNotFound
 	}
 	return role, nil
 }
