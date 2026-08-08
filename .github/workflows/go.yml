@@ -34,17 +34,17 @@ jobs:
       - name: Check formatting (gofmt)
         run: |
           if [ "$(gofmt -l . | wc -l)" -gt 0 ]; then
-            echo "вќЊ Files not formatted:"
+            echo "РІСњРЉ Files not formatted:"
             gofmt -l .
             exit 1
           fi
-          echo "вњ… All files formatted"
+          echo "РІСљвЂ¦ All files formatted"
 
       - name: Run go vet
         run: go vet ./...
 
       - name: Install golangci-lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
 
@@ -71,7 +71,7 @@ jobs:
         run: go test -v -race -count=1 -short -coverprofile=coverage-unit.out ./internal/...
 
       - name: Upload unit coverage
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-unit
           path: coverage-unit.out
@@ -123,7 +123,7 @@ jobs:
         run: go test -v -race -count=1 -tags=integration -coverprofile=coverage-integration.out ./cmd/server/...
 
       - name: Upload integration coverage
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-integration
           path: coverage-integration.out
@@ -149,8 +149,8 @@ jobs:
     name: Docker Image
     runs-on: ubuntu-latest
     needs: build
-    # GITHUB_TOKEN РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ РёРјРµРµС‚ read-only РґРѕСЃС‚СѓРї Рє packages вЂ” Р±РµР· write
-    # push РІ GHCR РїР°РґР°РµС‚ СЃ 'denied: installation not allowed to Create
+    # GITHUB_TOKEN Р С—Р С• РЎС“Р СР С•Р В»РЎвЂЎР В°Р Р…Р С‘РЎР‹ Р С‘Р СР ВµР ВµРЎвЂљ read-only Р Т‘Р С•РЎРѓРЎвЂљРЎС“Р С— Р С” packages РІР‚вЂќ Р В±Р ВµР В· write
+    # push Р Р† GHCR Р С—Р В°Р Т‘Р В°Р ВµРЎвЂљ РЎРѓ 'denied: installation not allowed to Create
     # organization package'.
     permissions:
       contents: read
@@ -171,9 +171,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set lowercase repository owner
-        # GHCR С‚СЂРµР±СѓРµС‚ РёРјРµРЅР° СЂРµРїРѕР·РёС‚РѕСЂРёРµРІ РІ РЅРёР¶РЅРµРј СЂРµРіРёСЃС‚СЂРµ (ghcr.io/owner/image).
-        # github.repository_owner РјРѕР¶РµС‚ СЃРѕРґРµСЂР¶Р°С‚СЊ Р·Р°РіР»Р°РІРЅС‹Рµ Р±СѓРєРІС‹ (ZfauX),
-        # РїРѕСЌС‚РѕРјСѓ РїСЂРёРІРѕРґРёРј РµРіРѕ Рє РЅРёР¶РЅРµРјСѓ СЂРµРіРёСЃС‚СЂСѓ С‡РµСЂРµР· bash-РїРѕРґСЃС‚Р°РЅРѕРІРєСѓ.
+        # GHCR РЎвЂљРЎР‚Р ВµР В±РЎС“Р ВµРЎвЂљ Р С‘Р СР ВµР Р…Р В° РЎР‚Р ВµР С—Р С•Р В·Р С‘РЎвЂљР С•РЎР‚Р С‘Р ВµР Р† Р Р† Р Р…Р С‘Р В¶Р Р…Р ВµР С РЎР‚Р ВµР С–Р С‘РЎРѓРЎвЂљРЎР‚Р Вµ (ghcr.io/owner/image).
+        # github.repository_owner Р СР С•Р В¶Р ВµРЎвЂљ РЎРѓР С•Р Т‘Р ВµРЎР‚Р В¶Р В°РЎвЂљРЎРЉ Р В·Р В°Р С–Р В»Р В°Р Р†Р Р…РЎвЂ№Р Вµ Р В±РЎС“Р С”Р Р†РЎвЂ№ (ZfauX),
+        # Р С—Р С•РЎРЊРЎвЂљР С•Р СРЎС“ Р С—РЎР‚Р С‘Р Р†Р С•Р Т‘Р С‘Р С Р ВµР С–Р С• Р С” Р Р…Р С‘Р В¶Р Р…Р ВµР СРЎС“ РЎР‚Р ВµР С–Р С‘РЎРѓРЎвЂљРЎР‚РЎС“ РЎвЂЎР ВµРЎР‚Р ВµР В· bash-Р С—Р С•Р Т‘РЎРѓРЎвЂљР В°Р Р…Р С•Р Р†Р С”РЎС“.
         run: echo "GHCR_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
 
       - name: Build and push
