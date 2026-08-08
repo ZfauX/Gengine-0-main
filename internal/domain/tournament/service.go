@@ -168,7 +168,7 @@ func (s *TournamentService) RemoveGame(ctx context.Context, tournamentID, gameID
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Get all finished passings for this game — read inside the transaction
 		var passings []game.GamePassing
-		if err := tx.Where("game_id = ? AND status = ?", gameID, game.StatusFinished).Find(&passings).Error; err != nil {
+		if err = tx.Where("game_id = ? AND status = ?", gameID, game.StatusFinished).Find(&passings).Error; err != nil {
 			return err
 		}
 
@@ -184,7 +184,7 @@ func (s *TournamentService) RemoveGame(ctx context.Context, tournamentID, gameID
 
 			// F-3 (pass 31): batch списание вместо построчного Save/Delete —
 			// один UPDATE через unnest + один DELETE обнулённых результатов.
-			if err := tx.Exec(`
+			if err = tx.Exec(`
 				UPDATE tournament_results tr
 				SET score = GREATEST(0, tr.score - t.points),
 				    games_played = tr.games_played - 1
@@ -193,7 +193,7 @@ func (s *TournamentService) RemoveGame(ctx context.Context, tournamentID, gameID
 			`, pq.Array(teamIDs), pq.Array(points), tournamentID).Error; err != nil {
 				return err
 			}
-			if err := tx.Exec(`
+			if err = tx.Exec(`
 				DELETE FROM tournament_results
 				WHERE tournament_id = ? AND team_id = ANY(?)
 				  AND games_played <= 0
