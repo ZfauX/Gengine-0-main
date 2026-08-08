@@ -39,6 +39,24 @@
 
 > Третье повторное ревью после полного закрытия pass 30-31 (миграция на репозитории, race-верификация). Выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture) с **личной верификацией** ключевых находок.
 
+## Статус (обновлено 8 авг 2026) — PASS 32 ЗАКРЫТ
+
+**Все находки pass 32 исправлены** (2 раунда фиксов + мелкие UX):
+
+- **Раунд 1** (`b552fd4`): F-C1 (глобальный escapeHtml — тосты/confirm ожили), F-P1 (инвалидация лидерборда в in-memory), S-1 (OAuth 2FA TTL), S-2 (PhotosPage visibility), S-3 (нормализация backup-кодов), S-4/S-5 (атомарный lock_count + 2FA backoff), A-1 (CoAuthor→репозиторий), индексы 000042, dark-mode (монитор/admin/passings).
+- **Раунд 2** (`784c010`): A-5 (GameRepository без *gorm.DB leak: типизированные Count/AdminListGames), A-2 (батч DeleteLevelFromActiveGame), S-6 (фото-delete authz), UX-H1 (Escape на dropdown), UX-M3 (lightbox local TZ), UX-M5/M7 (удалён мёртвый WS логов, .catch).
+- **Раунд 3** (текущий): UX-M11 (role=menuitem), UX-M8 (stale-response guards в автокомплитах), UX-M4 (confirm-кнопка по типу действия).
+
+**Опровергнуто/отложено (задокументировано):**
+- **P-1** (GameSnapshot) — уже кэшируется 30с LRU + singleflight (GetOrFetchSnapshot); тяжёлый CTE выполняется раз в 30с на активную игру, не каждую секунду.
+- **P-4** (кэш авторизованного листинга) — риск фрагментации кэша по viewerID > пользы.
+- **P-5** (GetGameplayData) — attempts/voting уже параллелятся (errgroup); passing-first обязателен для статус-проверки.
+- **Юнит-тесты новых репозиториев** — интеграционные покрывают через сервисы; go-sqlmock — отдельная задача.
+
+**Проверка:** `go build ./...` ✓, `go test -short ./...` ✓, `go test -tags=integration` (game/admin/user/monitor) ✓, `go vet ./...` ✓, `gofmt -l .` → пусто ✓, `go generate` (wire) ✓, `go test -race -short ./...` (WSL) ✓.
+
+---
+
 ## Резюме pass 32
 
 **Итог:** 2 критичных (1 подтверждена лично), 5 высоких, ~20 средних, ~15 низких + 3 новых индекса.

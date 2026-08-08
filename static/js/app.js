@@ -177,6 +177,14 @@ function showModalConfirm(message, element) {
     var okText = (element && element.dataset && element.dataset.confirmOk)
         ? element.dataset.confirmOk
         : (body.getAttribute('data-i18n-confirm-ok') || 'Удалить');
+    // UX-M4 (pass 32): кнопка OK красная только для деструктивных действий.
+    // Элемент может пометить себя data-confirm-danger; по умолчанию считаем
+    // действие деструктивным, если текст OK совпадает с глобальным «Удалить».
+    var isDanger = (element && element.dataset && element.dataset.confirmDanger === 'true') ||
+        !(element && element.dataset && element.dataset.confirmOk);
+    var okBtnClass = isDanger
+        ? 'px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition'
+        : 'px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition';
 
     var overlay = document.createElement('div');
     overlay.id = 'confirm-modal';
@@ -191,7 +199,7 @@ function showModalConfirm(message, element) {
         '<p class="text-gray-600 dark:text-gray-300 mb-6">' + escapeHtml(message) + '</p>' +
         '<div class="flex justify-end gap-3">' +
         '<button id="confirm-cancel" class="px-4 py-2 text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition">' + cancelText + '</button>' +
-        '<button id="confirm-ok" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition">' + okText + '</button>' +
+        '<button id="confirm-ok" class="' + okBtnClass + '">' + okText + '</button>' +
         '</div>' +
         '</div>';
 

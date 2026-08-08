@@ -52,6 +52,8 @@
     var selectedInput = document.getElementById('selected_user_id');
     var addBtn = document.getElementById('add-coauthor-btn');
     var searchTimeout = null;
+    // UX-M8 (pass 32): токен запроса — игнорируем устаревшие ответы.
+    var searchToken = 0;
 
     if (!searchInput || !resultsEl) return;
 
@@ -67,9 +69,13 @@
 
         clearTimeout(searchTimeout);
         searchTimeout = setTimeout(function() {
+            // UX-M8 (pass 32): stale-response guard — поздний ответ старого
+            // запроса не должен перезаписывать свежие результаты.
+            var reqToken = ++searchToken;
             fetch('/api/users/search?q=' + encodeURIComponent(val))
             .then(function(r) { return r.json(); })
             .then(function(data) {
+                if (reqToken !== searchToken) return;
                 resultsEl.innerHTML = '';
                 if (!data.users || data.users.length === 0) {
                     resultsEl.innerHTML = '<div class="p-3 text-sm text-gray-500 dark:text-gray-400">{{ T $.Lang "coauthor.no_results" }}</div>';
