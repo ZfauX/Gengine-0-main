@@ -500,3 +500,23 @@ func APIRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// IPRateLimit — per-IP лимитер для публичных эндпоинтов без аутентификации
+// (S-1, pass 31). APIRateLimit пропускает анонимов (userID==0), поэтому для
+// RUM и аналогичных публичных API нужен ключ по ClientIP.
+func IPRateLimit(window time.Duration, limit int) gin.HandlerFunc {
+	rl := apiRateLimiter
+	if rl == nil {
+		rl = NewRateLimiter(window, limit)
+	}
+	return func(c *gin.Context) {
+		key := "ip:" + c.ClientIP()
+		result := rl.Allow(key)
+		setRateLimitHeaders(c, result)
+		if !result.Allowed {
+			respondRateLimitError(c, ErrRateLimitAPI, result)
+			return
+		}
+		c.Next()
+	}
+}

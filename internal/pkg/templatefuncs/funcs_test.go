@@ -173,3 +173,17 @@ func TestFormatDateTime_TZOffset(t *testing.T) {
 	// float64 (из gin.H) тоже поддерживается
 	assert.Equal(t, "08.08.2026 15:00", formatDateTime("ru", float64(180), &ts))
 }
+
+// UX-1 (pass 31): formatDateTimeInput форматирует datetime-local value
+// с учётом TZOffset пользователя.
+func TestFormatDateTimeInput(t *testing.T) {
+	ts := time.Date(2027, 6, 1, 12, 0, 0, 0, time.UTC)
+	// UTC+3 → локальное 15:00
+	assert.Equal(t, "2027-06-01T15:00", formatDateTimeInput(180, &ts))
+	// UTC-5 → локальное 07:00
+	assert.Equal(t, "2027-06-01T07:00", formatDateTimeInput(-300, &ts))
+	// UTC → без смещения
+	assert.Equal(t, "2027-06-01T12:00", formatDateTimeInput(0, &ts))
+	// nil → пусто
+	assert.Equal(t, "", formatDateTimeInput(0, (*time.Time)(nil)))
+}

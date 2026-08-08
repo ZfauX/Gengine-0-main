@@ -63,7 +63,10 @@ func LimitRequestBody(c *gin.Context, maxBytes int64) error {
 	return nil
 }
 
-func parseDateTime(s string) (*time.Time, error) {
+// parseDateTime парсит datetime-local строку из формы в UTC (UX-1, pass 31).
+// Пользователь вводит локальное время; вычитаем его TZOffset (минуты от UTC
+// из cookie tz_offset), чтобы в БД сохранялось корректное абсолютное время.
+func parseDateTime(c *gin.Context, s string) (*time.Time, error) {
 	if s == "" {
 		return nil, nil
 	}
@@ -71,15 +74,18 @@ func parseDateTime(s string) (*time.Time, error) {
 	if err != nil {
 		return nil, err
 	}
+	// t интерпретируется как локальное время пользователя → UTC = t - offset.
+	offset := render.TZOffsetFromCookie(c)
+	t = t.Add(-time.Duration(offset) * time.Minute)
 	return &t, nil
 }
 
-func parseGameDatesFromForm(startsAtStr, registrationDeadlineStr string) (*time.Time, *time.Time, error) {
-	startsAt, err := parseDateTime(startsAtStr)
+func parseGameDatesFromForm(c *gin.Context, startsAtStr, registrationDeadlineStr string) (*time.Time, *time.Time, error) {
+	startsAt, err := parseDateTime(c, startsAtStr)
 	if err != nil {
 		return nil, nil, err
 	}
-	registrationDeadline, err := parseDateTime(registrationDeadlineStr)
+	registrationDeadline, err := parseDateTime(c, registrationDeadlineStr)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -293,7 +299,7 @@ func (h *GameHandler) Create(c *gin.Context) {
 		return
 	}
 
-	startsAt, parseErr := parseDateTime(input.StartsAt)
+	startsAt, parseErr := parseDateTime(c, input.StartsAt)
 	if parseErr != nil {
 		errs := validation.FieldErrors{}
 		errs.Add("starts_at", errors.New("неверный формат даты начала"))
@@ -305,7 +311,7 @@ func (h *GameHandler) Create(c *gin.Context) {
 		})
 		return
 	}
-	registrationDeadline, deadlineErr := parseDateTime(input.RegistrationDeadline)
+	registrationDeadline, deadlineErr := parseDateTime(c, input.RegistrationDeadline)
 	if deadlineErr != nil {
 		errs := validation.FieldErrors{}
 		errs.Add("registration_deadline", errors.New("неверный формат крайнего срока регистрации"))
@@ -480,7 +486,7 @@ func (h *GameHandler) Update(c *gin.Context) {
 		return
 	}
 
-	startsAt, parseErr := parseDateTime(input.StartsAt)
+	startsAt, parseErr := parseDateTime(c, input.StartsAt)
 	if parseErr != nil {
 		errs := validation.FieldErrors{}
 		errs.Add("starts_at", errors.New("неверный формат даты начала"))
@@ -498,7 +504,7 @@ func (h *GameHandler) Update(c *gin.Context) {
 		})
 		return
 	}
-	registrationDeadline, deadlineErr := parseDateTime(input.RegistrationDeadline)
+	registrationDeadline, deadlineErr := parseDateTime(c, input.RegistrationDeadline)
 	if deadlineErr != nil {
 		errs := validation.FieldErrors{}
 		errs.Add("registration_deadline", errors.New("неверный формат крайнего срока регистрации"))

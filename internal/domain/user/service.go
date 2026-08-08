@@ -390,6 +390,28 @@ func (s *UserService) GetPublicProfile(ctx context.Context, id uint) (*User, err
 	return s.userRepo.GetPublicProfile(ctx, id)
 }
 
+// AtomicIncrementFailedAttempts инкрементирует счётчик неудачных попыток
+// (S-3, pass 31: используется и в Login, и в 2FA-верификации).
+func (s *UserService) AtomicIncrementFailedAttempts(ctx context.Context, userID uint) (int, error) {
+	return s.userRepo.AtomicIncrementFailedAttempts(ctx, userID)
+}
+
+// SetLockedUntil блокирует аккаунт до указанного времени.
+func (s *UserService) SetLockedUntil(ctx context.Context, userID uint, lockedUntil *time.Time) error {
+	return s.userRepo.Update(ctx, userID, map[string]any{
+		"locked_until":          lockedUntil,
+		"failed_login_attempts": 0,
+	})
+}
+
+// ResetFailedAttempts сбрасывает счётчик неудачных попыток и блокировку.
+func (s *UserService) ResetFailedAttempts(ctx context.Context, userID uint) error {
+	return s.userRepo.Update(ctx, userID, map[string]any{
+		"failed_login_attempts": 0,
+		"locked_until":          nil,
+	})
+}
+
 // GetByIDWithAchievementsAndSubscriptions возвращает пользователя с прелоадами
 // (для страницы профиля — C1, без *gorm.DB в хендлере).
 func (s *UserService) GetByIDWithAchievementsAndSubscriptions(ctx context.Context, id uint) (*User, error) {

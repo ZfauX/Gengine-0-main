@@ -2,11 +2,16 @@
 package game
 
 import (
-	"gengine-0/internal/pkg/validation"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
+	"gengine-0/internal/pkg/validation"
+
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestAllowedSortFields тестирует белый список полей сортировки
@@ -81,7 +86,13 @@ func TestParseGameDatesFromForm(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			startsAt, registrationDeadline, err := parseGameDatesFromForm(tt.startsAt, tt.registrationDeadline)
+			// gin-контекст с cookie tz_offset=0 (UTC по умолчанию).
+			gin.SetMode(gin.TestMode)
+			r := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(r)
+			c.Request, _ = http.NewRequest(http.MethodGet, "/", nil)
+
+			startsAt, registrationDeadline, err := parseGameDatesFromForm(c, tt.startsAt, tt.registrationDeadline)
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {
@@ -96,6 +107,23 @@ func TestParseGameDatesFromForm(t *testing.T) {
 			}
 		})
 	}
+}
+
+// UX-1 (pass 31): parseGameDatesFromForm конвертирует локальное время из
+// формы в UTC с учётом tz_offset cookie.
+func TestParseGameDatesFromForm_AppliesTZOffset(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(r)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/", nil)
+	// UTC+3 (180 минут от UTC).
+	c.Request.AddCookie(&http.Cookie{Name: "tz_offset", Value: "180"})
+
+	startsAt, _, err := parseGameDatesFromForm(c, "2027-06-01T12:00", "2027-06-15T18:00")
+	require.NoError(t, err)
+	require.NotNil(t, startsAt)
+	// Локальное 12:00 (UTC+3) → UTC 09:00.
+	assert.Equal(t, "2027-06-01 09:00:00 +0000 UTC", startsAt.UTC().Format("2006-01-02 15:04:05 -0700 MST"))
 }
 
 // TestValidateGameDates тестирует валидацию дат

@@ -50,18 +50,19 @@ func FuncMap() template.FuncMap {
 				return i18n.Default.T(i18n.LangRU, key)
 			}
 		},
-		"add1":           add1,
-		"sub":            sub,
-		"add":            add,
-		"loop":           loop,
-		"mod":            mod,
-		"formatBytes":    formatBytes,
-		"formatDate":     formatDate,
-		"formatDateTime": formatDateTime,
-		"initials":       initials,
-		"csrfToken":      csrfToken,
-		"default":        defaultValue,
-		"truncate":       truncate,
+		"add1":                add1,
+		"sub":                 sub,
+		"add":                 add,
+		"loop":                loop,
+		"mod":                 mod,
+		"formatBytes":         formatBytes,
+		"formatDate":          formatDate,
+		"formatDateTime":      formatDateTime,
+		"formatDateTimeInput": formatDateTimeInput,
+		"initials":            initials,
+		"csrfToken":           csrfToken,
+		"default":             defaultValue,
+		"truncate":            truncate,
 	}
 }
 
@@ -187,6 +188,19 @@ func formatDateTime(lang interface{}, tzOffset interface{}, t interface{}) strin
 		return ts.Format("02 Jan 2006 15:04")
 	}
 	return ts.Format("02.01.2006 15:04")
+}
+
+// formatDateTimeInput форматирует время в формате datetime-local
+// (2006-01-02T15:04) с учётом TZOffset пользователя (UX-1, pass 31).
+// Используется в value="..." полей datetime-local, чтобы редактирование
+// показывало локальное время, а не UTC.
+func formatDateTimeInput(tzOffset interface{}, t interface{}) string {
+	ts, ok := asTime(t)
+	if !ok {
+		return ""
+	}
+	ts = applyTZOffset(ts, tzOffset)
+	return ts.Format("2006-01-02T15:04")
 }
 
 // applyTZOffset сдвигает время на смещение пользователя в минутах от UTC (M5).

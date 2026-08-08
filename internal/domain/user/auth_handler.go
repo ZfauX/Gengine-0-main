@@ -24,6 +24,9 @@ import (
 	"gorm.io/gorm"
 )
 
+// pending2FATTL — срок жизни pending-шага 2FA-логина (S-3, pass 31).
+const pending2FATTL = 10 * time.Minute
+
 type AuthHandler struct {
 	cfg                  *config.Config
 	authSvc              *AuthService
@@ -138,9 +141,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 	if user != nil && user.TwoFactorEnabled {
 		// Store pending login info in session (no JWT stored — only issued after TOTP)
+		// S-3 (pass 31): pending-шаг 2FA ограничен по времени (10 мин) — иначе
+		// pending-сессия жила бы до конца session-cookie, расширяя окно brute-force.
 		sess := sessions.Default(c)
 		sess.Set("pending_user_id", user.ID)
 		sess.Set("pending_email", user.Email)
+		sess.Set("pending_expires", time.Now().Add(pending2FATTL).Unix())
 		if err := sess.Save(); err != nil {
 			log.Error().Err(err).Msg("Login: failed to save 2FA pending session")
 		}
@@ -198,6 +204,20 @@ func (h *AuthHandler) TwoFALoginVerify(c *gin.Context) {
 		return
 	}
 
+	// S-3 (pass 31): pending-шаг 2FA истекает через 10 минут.
+	if expiresUnix, ok := sess.Get("pending_expires").(int64); ok {
+		if time.Now().Unix() > expiresUnix {
+			sess.Delete("pending_user_id")
+			sess.Delete("pending_email")
+			sess.Delete("pending_expires")
+			if err := sess.Save(); err != nil {
+				log.Error().Err(err).Msg("TwoFALoginVerify: failed to clear expired pending session")
+			}
+			c.Redirect(http.StatusFound, "/auth/login")
+			return
+		}
+	}
+
 	code := c.PostForm("code")
 	returnURL := safeReturnURL(c.DefaultPostForm("return_url", ""), "/dashboard")
 
@@ -218,8 +238,10 @@ func (h *AuthHandler) TwoFALoginVerify(c *gin.Context) {
 		return
 	}
 
-	valid, err := h.twoFactorSvc.VerifyCode(user.TwoFactorSecret, code)
-	if err != nil || !valid {
+	// S-3 (pass 31): per-account lockout на шаге 2FA — как в Login.
+	// Generic-ответ, чтобы не раскрывать состояние аккаунта (B2).
+	if user.LockedUntil != nil && time.Now().Before(*user.LockedUntil) {
+		log.Debug().Uint("user_id", user.ID).Time("locked_until", *user.LockedUntil).Msg("TwoFALoginVerify: account is locked")
 		render.Page(c, http.StatusOK, "auth-login-2fa.html", gin.H{
 			"Title":     "Двухфакторная аутентификация",
 			"Error":     render.Tr(c, "handler.wrong_code_try_again"),
@@ -227,6 +249,33 @@ func (h *AuthHandler) TwoFALoginVerify(c *gin.Context) {
 			"csrf":      csrf.GetToken(c),
 		})
 		return
+	}
+
+	valid, err := h.twoFactorSvc.VerifyCode(user.TwoFactorSecret, code)
+	if err != nil || !valid {
+		// Атомарный инкремент счётчика неудачных попыток 2FA (S-3).
+		newAttempts, incErr := h.userService.AtomicIncrementFailedAttempts(c.Request.Context(), user.ID)
+		if incErr != nil {
+			log.Error().Err(incErr).Uint("user_id", user.ID).Msg("TwoFALoginVerify: atomic increment failed")
+		} else if newAttempts >= 5 {
+			now := time.Now()
+			lockedUntil := now.Add(30 * time.Minute)
+			if lockErr := h.userService.SetLockedUntil(c.Request.Context(), user.ID, &lockedUntil); lockErr != nil {
+				log.Error().Err(lockErr).Uint("user_id", user.ID).Msg("TwoFALoginVerify: failed to lock account")
+			}
+		}
+		render.Page(c, http.StatusOK, "auth-login-2fa.html", gin.H{
+			"Title":     "Двухфакторная аутентификация",
+			"Error":     render.Tr(c, "handler.wrong_code_try_again"),
+			"ReturnURL": returnURL,
+			"csrf":      csrf.GetToken(c),
+		})
+		return
+	}
+
+	// TOTP verified — сбрасываем счётчик попыток и генерируем JWT.
+	if resetErr := h.userService.ResetFailedAttempts(c.Request.Context(), user.ID); resetErr != nil {
+		log.Error().Err(resetErr).Uint("user_id", user.ID).Msg("TwoFALoginVerify: failed to reset attempts")
 	}
 
 	// TOTP verified — generate JWT and issue tokens
@@ -248,6 +297,7 @@ func (h *AuthHandler) TwoFALoginVerify(c *gin.Context) {
 	// Clear pending login from session
 	sess.Delete("pending_user_id")
 	sess.Delete("pending_email")
+	sess.Delete("pending_expires")
 	if err := sess.Save(); err != nil {
 		log.Error().Err(err).Msg("TwoFALoginVerify: failed to clear pending session")
 	}

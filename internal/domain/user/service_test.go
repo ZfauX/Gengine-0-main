@@ -440,9 +440,9 @@ func TestPasswordResetService_GenerateToken(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, resetCode)
 
-	// Проверяем, что токен сохранён в БД (ищем по reset_code)
+	// Проверяем, что токен сохранён в БД (ищем по reset_code = SHA-256 кода, S-7)
 	var stored PasswordResetToken
-	err = db.Where("reset_code = ?", resetCode).First(&stored).Error
+	err = db.Where("reset_code = ?", hashResetCode(resetCode)).First(&stored).Error
 	require.NoError(t, err)
 	assert.Equal(t, user.ID, stored.UserID)
 	assert.True(t, stored.ExpiresAt.After(time.Now()))
@@ -468,8 +468,8 @@ func TestPasswordResetService_ResetPassword(t *testing.T) {
 		err = bcrypt.CompareHashAndPassword([]byte(updated.Password), []byte("newpass"))
 		assert.NoError(t, err)
 
-		// ResetCode должен быть удалён
-		_, err = passResetRepo.GetTokenByResetCode(context.Background(), resetCode)
+		// ResetCode должен быть удалён (репозиторий ищет по хешу, S-7)
+		_, err = passResetRepo.GetTokenByResetCode(context.Background(), hashResetCode(resetCode))
 		assert.Error(t, err)
 	})
 
@@ -477,7 +477,7 @@ func TestPasswordResetService_ResetPassword(t *testing.T) {
 		// Создаём просроченный токен вручную
 		expiredToken := &PasswordResetToken{
 			UserID:    user.ID,
-			ResetCode: "expired-code-123",
+			ResetCode: hashResetCode("expired-code-123"),
 			TokenHash: hashToken("expiredtoken"),
 			ExpiresAt: time.Now().Add(-time.Hour),
 		}

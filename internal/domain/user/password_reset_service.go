@@ -53,9 +53,13 @@ func (s *PasswordResetService) GenerateToken(ctx context.Context, user User) (st
 	}
 	resetCode := hex.EncodeToString(codeBytes)
 
+	// S-7 (pass 31): в БД хранится SHA-256 кода, а не plaintext — при утечке
+	// БД злоумышленник не получит рабочие URL сброса.
+	resetCodeHash := sha256.Sum256([]byte(resetCode))
+
 	token := PasswordResetToken{
 		UserID:    user.ID,
-		ResetCode: resetCode,
+		ResetCode: hex.EncodeToString(resetCodeHash[:]),
 		TokenHash: hex.EncodeToString(hash[:]),
 		ExpiresAt: time.Now().Add(passwordResetExpiry),
 	}
@@ -76,7 +80,7 @@ func (s *PasswordResetService) GenerateToken(ctx context.Context, user User) (st
 
 // GetUserIDByResetCode возвращает ID пользователя по коду сброса (без валидации — только для логирования).
 func (s *PasswordResetService) GetUserIDByResetCode(ctx context.Context, resetCode string) uint {
-	token, err := s.passResetRepo.GetTokenByResetCode(ctx, resetCode)
+	token, err := s.passResetRepo.GetTokenByResetCode(ctx, hashResetCode(resetCode))
 	if err != nil {
 		return 0
 	}
@@ -84,7 +88,7 @@ func (s *PasswordResetService) GetUserIDByResetCode(ctx context.Context, resetCo
 }
 
 func (s *PasswordResetService) ResetPassword(ctx context.Context, resetCode, newPassword string) error {
-	token, err := s.passResetRepo.GetTokenByResetCode(ctx, resetCode)
+	token, err := s.passResetRepo.GetTokenByResetCode(ctx, hashResetCode(resetCode))
 	if err != nil {
 		return stderrors.New("токен недействителен или истёк")
 	}
@@ -112,4 +116,10 @@ func (s *PasswordResetService) ResetPassword(ctx context.Context, resetCode, new
 		return err
 	}
 	return s.passResetRepo.DeleteToken(ctx, token)
+}
+
+// hashResetCode возвращает SHA-256 хеш кода сброса в hex (S-7, pass 31).
+func hashResetCode(resetCode string) string {
+	sum := sha256.Sum256([]byte(resetCode))
+	return hex.EncodeToString(sum[:])
 }

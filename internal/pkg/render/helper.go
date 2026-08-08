@@ -338,6 +338,12 @@ func tzOffsetFromCookie(c *gin.Context) int {
 	return offset
 }
 
+// TZOffsetFromCookie — экспортируемая версия tzOffsetFromCookie для
+// хендлеров, которым нужно применять смещение при парсинге форм (UX-1, pass 31).
+func TZOffsetFromCookie(c *gin.Context) int {
+	return tzOffsetFromCookie(c)
+}
+
 // SetBreadcrumb добавляет breadcrumb в данные шаблона.
 // data — карта gin.H, items — список элементов навигации.
 // Если Name содержит точку (i18n-ключ вида "nav.home") — выводится через name_key (T),

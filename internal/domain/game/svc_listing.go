@@ -93,11 +93,23 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 			COUNT(*) OVER() AS total_count
 		FROM games
 		LEFT JOIN users ON users.id = games.author_id
-		WHERE games.deleted_at IS NULL AND (games.visibility = 'public' OR games.author_id = ?) AND (games.is_draft = false OR games.author_id = ?)`)
+		WHERE games.deleted_at IS NULL AND `)
+
+	// F1 (pass 31): анонимный листинг (ViewerID==0) — чистые предикаты без OR,
+	// чтобы Postgres использовал составные индексы (idx_games_draft_visibility_*).
+	// Для авторизованного — только авторские/публичные игры с OR.
+	if filter.ViewerID == 0 {
+		b.WriteString(`(games.visibility = 'public' AND games.is_draft = false)`)
+	} else {
+		b.WriteString(`(games.visibility = 'public' OR games.author_id = ?) AND (games.is_draft = false OR games.author_id = ?)`)
+	}
 
 	// Рейтинг и участники прекомпьютится в колонках games.rating_value /
 	// games.participant_count (миграция 000027 + триггеры) — без агрегаций на каждый запрос (P3).
-	args := []any{filter.ViewerID, filter.ViewerID}
+	args := []any{}
+	if filter.ViewerID != 0 {
+		args = append(args, filter.ViewerID, filter.ViewerID)
+	}
 
 	switch filter.Status {
 	case filterDraft:

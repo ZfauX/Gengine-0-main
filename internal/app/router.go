@@ -197,7 +197,9 @@ func (app *App) setupEngine(r *gin.Engine) error {
 
 	// RUM (Real User Monitoring, pass 29, идея 2): клиентские Web Vitals.
 	// Публичный POST /api/rum с per-IP лимитом — клиент шлёт LCP/INP/CLS/FCP/TTFB.
-	r.POST("/api/rum", middleware.APIRateLimit(time.Minute, 60), func(c *gin.Context) {
+	// S-1 (pass 31): IPRateLimit вместо APIRateLimit — APIRateLimit пропускает
+	// анонимов (userID==0), поэтому прежний лимит 60/min был no-op.
+	r.POST("/api/rum", middleware.IPRateLimit(time.Minute, 60), func(c *gin.Context) {
 		var payload struct {
 			Page   string `json:"page"`
 			Vitals struct {

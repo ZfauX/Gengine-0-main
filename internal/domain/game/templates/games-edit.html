@@ -31,7 +31,7 @@
             <div>
                 <label for="starts_at" class="form-label">{{ T $.Lang "game.edit_start_date_label" }}</label>
                 <input type="datetime-local" name="starts_at" id="starts_at"
-                       value="{{if .Game.StartsAt}}{{.Game.StartsAt.Format "2006-01-02T15:04"}}{{end}}"
+                       value="{{if .Game.StartsAt}}{{ formatDateTimeInput $.TZOffset .Game.StartsAt }}{{end}}"
                        class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.starts_at}}border-red-500{{end}}">
                 {{if .Errors.starts_at}}<p class="field-error">{{.Errors.starts_at}}</p>{{end}}
             </div>
@@ -40,7 +40,7 @@
             <div>
                 <label for="registration_deadline" class="form-label">{{ T $.Lang "game.edit_reg_deadline_label" }}</label>
                 <input type="datetime-local" name="registration_deadline" id="registration_deadline"
-                       value="{{if .Game.RegistrationDeadline}}{{.Game.RegistrationDeadline.Format "2006-01-02T15:04"}}{{end}}"
+                       value="{{if .Game.RegistrationDeadline}}{{ formatDateTimeInput $.TZOffset .Game.RegistrationDeadline }}{{end}}"
                        class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm {{if .Errors.registration_deadline}}border-red-500{{end}}">
                 {{if .Errors.registration_deadline}}<p class="field-error">{{.Errors.registration_deadline}}</p>{{end}}
             </div>
