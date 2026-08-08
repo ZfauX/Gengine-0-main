@@ -50,7 +50,8 @@ func (s *ReviewService) CanReview(gameID, userID uint) (bool, error) {
 	return reviewCount == 0, nil
 }
 
-func (s *ReviewService) Create(gameID, userID uint, rating int, comment string) error {
+// Create создаёт отзыв. ctx — контекст запроса (A-10, pass 31).
+func (s *ReviewService) Create(ctx context.Context, gameID, userID uint, rating int, comment string) error {
 	// C-2: максимальный рейтинг 5 — согласовано с хендлером и UI.
 	if rating < 1 || rating > 5 {
 		return errors.New("рейтинг должен быть от 1 до 5")
@@ -66,7 +67,7 @@ func (s *ReviewService) Create(gameID, userID uint, rating int, comment string) 
 	cleanComment := sanitize.StripHTML(comment)
 	review := Review{GameID: gameID, UserID: userID, Rating: rating, Comment: cleanComment}
 	// ON CONFLICT (idx_reviews_game_user) — защита от гонки параллельных POST (C-3).
-	res := s.DB.Clauses(clause.OnConflict{
+	res := s.DB.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "game_id"}, {Name: "user_id"}},
 		DoNothing: true,
 	}).Create(&review)
@@ -83,9 +84,9 @@ func (s *ReviewService) Create(gameID, userID uint, rating int, comment string) 
 	// бесполезным. Рейтинг в листинге обновится по своему TTL (30с) — приемлемая
 	// задержка вместо полного отказа от кэша.
 	if s.Cache != nil {
-		s.Cache.DeleteWithCtx(context.Background(), fmt.Sprintf("rating:game:%d", gameID))
-		s.Cache.DeleteWithCtx(context.Background(), fmt.Sprintf("reviews:game:%d", gameID))
-		s.Cache.DeleteWithCtx(context.Background(), fmt.Sprintf("game:%d", gameID))
+		s.Cache.DeleteWithCtx(ctx, fmt.Sprintf("rating:game:%d", gameID))
+		s.Cache.DeleteWithCtx(ctx, fmt.Sprintf("reviews:game:%d", gameID))
+		s.Cache.DeleteWithCtx(ctx, fmt.Sprintf("game:%d", gameID))
 	}
 	return nil
 }

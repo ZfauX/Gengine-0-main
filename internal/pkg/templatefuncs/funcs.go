@@ -59,6 +59,7 @@ func FuncMap() template.FuncMap {
 		"formatDate":          formatDate,
 		"formatDateTime":      formatDateTime,
 		"formatDateTimeInput": formatDateTimeInput,
+		"formatTime":          formatTime,
 		"initials":            initials,
 		"csrfToken":           csrfToken,
 		"default":             defaultValue,
@@ -201,6 +202,17 @@ func formatDateTimeInput(tzOffset interface{}, t interface{}) string {
 	}
 	ts = applyTZOffset(ts, tzOffset)
 	return ts.Format("2006-01-02T15:04")
+}
+
+// formatTime форматирует время "15:04:05" с учётом TZOffset пользователя
+// (UX-3, pass 31) — для логов и попыток, где дата не нужна.
+func formatTime(tzOffset interface{}, t interface{}) string {
+	ts, ok := asTime(t)
+	if !ok {
+		return ""
+	}
+	ts = applyTZOffset(ts, tzOffset)
+	return ts.Format("15:04:05")
 }
 
 // applyTZOffset сдвигает время на смещение пользователя в минутах от UTC (M5).

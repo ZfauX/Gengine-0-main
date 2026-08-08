@@ -93,7 +93,7 @@ func (h *ReviewHandler) Create(c *gin.Context) {
 		return
 	}
 
-	if err := h.reviewService.Create(uint(gameID), userID, rating, comment); err != nil {
+	if err := h.reviewService.Create(c.Request.Context(), uint(gameID), userID, rating, comment); err != nil {
 		render.Page(c, http.StatusOK, "reviews-new.html", gin.H{
 			"Title":  "Отзывы",
 			"GameID": gameID,

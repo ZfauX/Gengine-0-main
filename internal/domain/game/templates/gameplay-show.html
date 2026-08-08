@@ -81,7 +81,7 @@
                     {{else}}
                     <span class="inline-flex items-center gap-1 text-red-600 font-medium">{{ T $.Lang "gameplay.attempt_wrong" }}</span>
                     {{end}}
-                    <span class="text-gray-500 text-xs">{{.CreatedAt.Format "15:04:05"}}</span>
+                    <span class="text-gray-500 text-xs">{{ formatTime $.TZOffset .CreatedAt }}</span>
                 </span>
             </li>
             {{end}}
@@ -471,10 +471,21 @@
             const gameId = '{{.GameID}}';
             if (!passingId || !gameId) return;
 
+            // UX-9 (pass 31): malformed SSE frame не должен убивать обработчик.
+            function parseSSE(e) {
+                try {
+                    return JSON.parse(e.data);
+                } catch (err) {
+                    console.warn('SSE: bad frame', e.data);
+                    return null;
+                }
+            }
+
             const eventSource = new EventSource('/game/' + passingId + '/sse');
 
             eventSource.addEventListener('level_completed', function(e) {
-                const data = JSON.parse(e.data);
+                const data = parseSSE(e);
+                if (!data || !data.data) return;
                 showToast('{{ T $.Lang "gameplay.level_completed_with_name" }}'.replace('%s', data.data.level_name), 'success', 6000);
                 // Update timer display
                 const timerDisplay = document.getElementById('timer-display');
@@ -485,19 +496,21 @@
             });
 
             eventSource.addEventListener('time_warning', function(e) {
-                const data = JSON.parse(e.data);
+                const data = parseSSE(e);
+                if (!data || !data.data) return;
                 const remaining = Math.round(data.data.remaining / 60);
                 showToast('{{ T $.Lang "gameplay.time_warning" }}'.replace('%d', remaining), 'warning', 5000);
             });
 
             eventSource.addEventListener('hint_used', function(e) {
-                const data = JSON.parse(e.data);
+                if (!parseSSE(e)) return;
                 showToast('{{ T $.Lang "gameplay.hint_used" }}', 'info');
             });
 
             // Desktop push notification
             eventSource.addEventListener('notification', function(e) {
-                const data = JSON.parse(e.data);
+                const data = parseSSE(e);
+                if (!data) return;
                 if ('Notification' in window && Notification.permission === 'granted') {
                     new Notification(data.title || 'Gengine', {
                         body: data.body || '',

@@ -338,7 +338,8 @@ func (s *AuthService) RevokeJWT(ctx context.Context, tokenStr string) {
 }
 
 func (s *AuthService) generateJWT(user User) (string, error) {
-	// TODO: Implement JTI blacklist via Valkey for token revocation
+	// JTI: уникальный ID токена для отзыва (jti blacklist через RevokeJWT +
+	// кэш, реализовано; при отсутствии кэша — warn в RevokeJWT, S-6).
 	// Generate unique token ID for potential revocation (jti blacklist via Valkey)
 	jti := make([]byte, 16)
 	if _, err := rand.Read(jti); err != nil {

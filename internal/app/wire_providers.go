@@ -60,8 +60,8 @@ func wrapTwoFactorService() *user.TwoFactorService {
 	return user.NewTwoFactorService()
 }
 
-func wrapTournamentService(db *gorm.DB, tournamentRepo tournament.TournamentRepository, tournamentGameRepo tournament.TournamentGameRepository, tournamentTeamRepo tournament.TournamentTeamRepository, tournamentResultRepo tournament.TournamentResultRepository, teamService *team.TeamService, cfg *config.Config) *tournament.TournamentService {
-	return tournament.NewTournamentService(db, tournamentRepo, tournamentGameRepo, tournamentTeamRepo, tournamentResultRepo, teamService, cfg)
+func wrapTournamentService(db *gorm.DB, tournamentRepo tournament.TournamentRepository, tournamentGameRepo tournament.TournamentGameRepository, tournamentTeamRepo tournament.TournamentTeamRepository, tournamentResultRepo tournament.TournamentResultRepository, teamService *team.TeamService, cfg *config.Config, cacheStore cache.CacheStore) *tournament.TournamentService {
+	return tournament.NewTournamentService(db, tournamentRepo, tournamentGameRepo, tournamentTeamRepo, tournamentResultRepo, teamService, cfg).WithCache(cacheStore)
 }
 
 func wrapTeamService(teamRepo team.TeamRepository) *team.TeamService {

@@ -103,7 +103,9 @@
             .then(data => {
                 if (data.status === 'ok') location.reload();
                 else window.showToast('{{ T $.Lang "generic.error" }}', 'error');
-            });
+            })
+            // UX-8 (pass 31): unhandled rejection при сетевой ошибке.
+            .catch(() => window.showToast('{{ T $.Lang "generic.network_error" }}', 'error'));
         });
     })();
 </script>

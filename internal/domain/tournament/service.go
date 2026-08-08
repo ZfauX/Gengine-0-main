@@ -5,12 +5,15 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"time"
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/team"
+	"gengine-0/internal/pkg/cache"
 	"gengine-0/internal/pkg/email"
 
+	"github.com/lib/pq"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -35,6 +38,8 @@ type TournamentService struct {
 	tournamentResultRepo TournamentResultRepository
 	teamService          *team.TeamService
 	cfg                  *config.Config
+	// cache опционален (F-5, pass 31): турнирный лидерборд кэшируется на 30с.
+	cache cache.CacheStore
 }
 
 func NewTournamentService(
@@ -55,6 +60,12 @@ func NewTournamentService(
 		teamService:          teamService,
 		cfg:                  cfg,
 	}
+}
+
+// WithCache устанавливает кэш для лидерборда (F-5, pass 31).
+func (s *TournamentService) WithCache(c cache.CacheStore) *TournamentService {
+	s.cache = c
+	return s
 }
 
 func (s *TournamentService) Create(ctx context.Context, t *Tournament) error {
@@ -154,7 +165,7 @@ func (s *TournamentService) RemoveGame(ctx context.Context, tournamentID, gameID
 		return ErrTournamentRemoveForbidden
 	}
 
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Get all finished passings for this game — read inside the transaction
 		var passings []game.GamePassing
 		if err := tx.Where("game_id = ? AND status = ?", gameID, game.StatusFinished).Find(&passings).Error; err != nil {
@@ -165,45 +176,29 @@ func (s *TournamentService) RemoveGame(ctx context.Context, tournamentID, gameID
 		// Bulk-fetch all results first to avoid N+1 queries
 		if len(passings) > 0 {
 			teamIDs := make([]uint, 0, len(passings))
+			points := make([]int, 0, len(passings))
 			for _, p := range passings {
 				teamIDs = append(teamIDs, p.TeamID)
+				points = append(points, p.TournamentPoints)
 			}
-			var results []TournamentResult
-			if err := tx.Where("tournament_id = ? AND team_id IN ?", tournamentID, teamIDs).Find(&results).Error; err != nil {
+
+			// F-3 (pass 31): batch списание вместо построчного Save/Delete —
+			// один UPDATE через unnest + один DELETE обнулённых результатов.
+			if err := tx.Exec(`
+				UPDATE tournament_results tr
+				SET score = GREATEST(0, tr.score - t.points),
+				    games_played = tr.games_played - 1
+				FROM unnest(?::bigint[], ?::int[]) AS t(team_id, points)
+				WHERE tr.tournament_id = ? AND tr.team_id = t.team_id
+			`, pq.Array(teamIDs), pq.Array(points), tournamentID).Error; err != nil {
 				return err
 			}
-			// Build lookup map
-			resultByTeam := make(map[uint]*TournamentResult, len(results))
-			for i := range results {
-				resultByTeam[results[i].TeamID] = &results[i]
-			}
-
-			for _, p := range passings {
-				result, found := resultByTeam[p.TeamID]
-				if !found {
-					continue
-				}
-
-				// Точное списание начисленного (C-M2): не пересчитываем по
-				// текущему месту/настройкам PointsFor* (они могли измениться).
-				points := p.TournamentPoints
-
-				result.Score -= points
-				result.GamesPlayed--
-
-				if result.GamesPlayed <= 0 {
-					result.Score = 0
-					if err := tx.Delete(&result).Error; err != nil {
-						return err
-					}
-				} else {
-					if result.Score < 0 {
-						result.Score = 0
-					}
-					if err := s.tournamentResultRepo.Upsert(tx, result); err != nil {
-						return err
-					}
-				}
+			if err := tx.Exec(`
+				DELETE FROM tournament_results
+				WHERE tournament_id = ? AND team_id = ANY(?)
+				  AND games_played <= 0
+			`, tournamentID, pq.Array(teamIDs)).Error; err != nil {
+				return err
 			}
 		}
 
@@ -221,6 +216,14 @@ func (s *TournamentService) RemoveGame(ctx context.Context, tournamentID, gameID
 		// Remove the game from the tournament
 		return tx.Where("tournament_id = ? AND game_id = ?", tournamentID, gameID).Delete(&TournamentGame{}).Error
 	})
+	if err != nil {
+		return err
+	}
+	// F-5 (pass 31): инвалидируем кэш лидерборда турнира.
+	if s.cache != nil {
+		s.cache.DeleteWithCtx(context.Background(), fmt.Sprintf("tournament:leaderboard:%d", tournamentID))
+	}
+	return nil
 }
 
 func (s *TournamentService) ListGames(ctx context.Context, tournamentID uint) ([]game.Game, error) {
@@ -452,9 +455,26 @@ func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint
 	})
 	if err != nil {
 		log.Error().Err(err).Uint("game_id", gameID).Msg("UpdateScoresForGame: transaction failed")
+		return
+	}
+	// F-5 (pass 31): инвалидируем кэш лидерборда турнира.
+	if s.cache != nil {
+		s.cache.DeleteWithCtx(context.Background(), fmt.Sprintf("tournament:leaderboard:%d", tg.TournamentID))
 	}
 }
 
 func (s *TournamentService) GetLeaderboard(ctx context.Context, tournamentID uint) ([]TournamentResult, error) {
+	// F-5 (pass 31): лидерборд кэшируется на 30с — на каждой загрузке
+	// страницы турнира пере-запрос был избыточен (player-лидерборд уже кэширован).
+	if s.cache != nil {
+		key := fmt.Sprintf("tournament:leaderboard:%d", tournamentID)
+		if v, err := s.cache.GetOrSetWithCtx(ctx, key, 30*time.Second, func() (any, error) {
+			return s.tournamentResultRepo.GetLeaderboard(ctx, tournamentID)
+		}); err == nil {
+			if results, ok := v.([]TournamentResult); ok {
+				return results, nil
+			}
+		}
+	}
 	return s.tournamentResultRepo.GetLeaderboard(ctx, tournamentID)
 }

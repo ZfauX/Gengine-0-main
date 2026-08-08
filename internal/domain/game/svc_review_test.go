@@ -55,7 +55,7 @@ func TestReviewService_Create_InvalidatesCachesWithoutListingVersion(t *testing.
 	// Пользователь (не автор) оставляет отзыв; он — капитан команды с finished passing.
 	user2 := createUser(t, db, "review-user@test.com", "pass")
 	require.NoError(t, db.Model(tm).Update("captain_id", user2.ID).Error)
-	err := svc.Create(g.ID, user2.ID, 5, "Отличная игра")
+	err := svc.Create(context.Background(), g.ID, user2.ID, 5, "Отличная игра")
 	require.NoError(t, err)
 
 	// Точечные кэши удалены.
@@ -85,9 +85,9 @@ func TestReviewService_Create_DuplicateRejected(t *testing.T) {
 	require.NoError(t, db.Model(tm).Update("captain_id", user2.ID).Error)
 	createPassing(t, db, g.ID, tm.ID, game.StatusFinished)
 
-	err := svc.Create(g.ID, user2.ID, 4, "Хорошо")
+	err := svc.Create(context.Background(), g.ID, user2.ID, 4, "Хорошо")
 	require.NoError(t, err)
-	err = svc.Create(g.ID, user2.ID, 5, "Повторный отзыв")
+	err = svc.Create(context.Background(), g.ID, user2.ID, 5, "Повторный отзыв")
 	require.Error(t, err, "повторный отзыв должен отклоняться")
 	// Дубликат ловится в CanReview («вы не можете оставить отзыв»);
 	// ветка ON CONFLICT «уже оставили отзыв» — защита от гонки.
@@ -99,9 +99,9 @@ func TestReviewService_Create_InvalidRating(t *testing.T) {
 	db := testutil.SetupPostgresDB(t, allModels...)
 	svc := game.NewReviewService(db)
 
-	err := svc.Create(1, 1, 0, "x")
+	err := svc.Create(context.Background(), 1, 1, 0, "x")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "от 1 до 5")
-	err = svc.Create(1, 1, 6, "x")
+	err = svc.Create(context.Background(), 1, 1, 6, "x")
 	require.Error(t, err)
 }

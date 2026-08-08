@@ -71,11 +71,18 @@ func TestTwoFactorService_GenerateBackupCodes(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, codes, 10)
 
-	// Все коды должны быть 6-значными
+	// S-2 (pass 31): коды — 10 символов из алфавита без неоднозначных.
 	for _, code := range codes {
-		assert.Len(t, code, 6)
-		// Проверяем, что код содержит только цифры
-		assert.Regexp(t, `^\d{6}$`, code)
+		assert.Len(t, code, backupCodeLength)
+		for _, ch := range code {
+			assert.Contains(t, backupCodeAlphabet, string(ch), "символ %q вне алфавита", ch)
+		}
+	}
+	// Коды не должны повторяться.
+	seen := map[string]bool{}
+	for _, code := range codes {
+		assert.False(t, seen[code], "дублирующийся код %s", code)
+		seen[code] = true
 	}
 }
 

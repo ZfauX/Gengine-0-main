@@ -132,7 +132,7 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	tournamentGameRepository := repos.TournGame
 	tournamentTeamRepository := repos.TournTeam
 	tournamentResultRepository := repos.TournResult
-	tournamentService := wrapTournamentService(db, tournamentRepository, tournamentGameRepository, tournamentTeamRepository, tournamentResultRepository, teamService, cfg)
+	tournamentService := wrapTournamentService(db, tournamentRepository, tournamentGameRepository, tournamentTeamRepository, tournamentResultRepository, teamService, cfg, appCache)
 	notificationRepository := repos.Notification
 	notificationService := wrapNotificationService(notificationRepository, hub, sseManager, cfg)
 	exportRepository := repos.Export

@@ -17,11 +17,15 @@ import (
 )
 
 const (
-	totpSecretBytes       = 20
-	backupCodeCount       = 10
-	backupCodeRandomBytes = 8
-	totpCodeLength        = 6
+	totpSecretBytes = 20
+	backupCodeCount = 10
+	totpCodeLength  = 6
+	// backupCodeLength — длина резервного кода (S-2, pass 31).
+	backupCodeLength = 10
 )
+
+// backupCodeAlphabet — символы без неоднозначных (0/O, 1/I, l).
+const backupCodeAlphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 
 // TwoFactorService отвечает за управление двухфакторной аутентификацией.
 type TwoFactorService struct{}
@@ -103,17 +107,22 @@ func (s *TwoFactorService) GenerateTOTPCode(secret string) (string, error) {
 }
 
 // GenerateBackupCodes генерирует 10 резервных кодов для восстановления доступа.
+// S-2 (pass 31): формат — 10 символов из алфавита без неоднозначных символов
+// (0/O/1/I/L) → ~50 бит энтропии на код вместо ~20 бит у 6-значных цифр.
+// 8 байт → uint64 → mod len(alphabet): равномерно и без hex-обрезания (M2).
 func (s *TwoFactorService) GenerateBackupCodes() ([]string, error) {
 	codes := make([]string, backupCodeCount)
 	for i := 0; i < backupCodeCount; i++ {
-		// 8 байт → uint64 → mod 10^6: равномерное распределение без
-		// hex-обрезания и заметного modulo bias (M2, pass 30).
-		bytes := make([]byte, backupCodeRandomBytes)
-		if _, err := rand.Read(bytes); err != nil {
-			return nil, fmt.Errorf("ошибка генерации резервного кода: %w", err)
+		code := make([]byte, backupCodeLength)
+		for j := 0; j < backupCodeLength; j++ {
+			bytes := make([]byte, 8)
+			if _, err := rand.Read(bytes); err != nil {
+				return nil, fmt.Errorf("ошибка генерации резервного кода: %w", err)
+			}
+			num := binary.BigEndian.Uint64(bytes)
+			code[j] = backupCodeAlphabet[num%uint64(len(backupCodeAlphabet))]
 		}
-		num := binary.BigEndian.Uint64(bytes)
-		codes[i] = fmt.Sprintf("%06d", num%1000000)
+		codes[i] = string(code)
 	}
 	return codes, nil
 }

@@ -304,10 +304,10 @@ func TestTwoFALoginVerify_InvalidCode(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "2FA Login")
 }
 
-func TestTwoFALoginVerify_ValidCode(t *testing.T) {
-	t.Skip("requires PostgreSQL: userService.GetByID + authSvc.GenerateJWT (integration test)")
-}
-
+// A-8 (pass 31): TestTwoFALoginVerify_ValidCode удалён — это была пустая
+// заглушка t.Skip. Покрытие 2FA-логина обеспечивается интеграционными
+// тестами двухфакторной аутентификации (two_factor_service_test.go) и
+// новым TestTwoFALoginVerify_Lockout (unit с моками).
 func TestLoginInput_Validation(t *testing.T) {
 	tests := []struct {
 		name      string
