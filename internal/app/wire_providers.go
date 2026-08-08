@@ -38,8 +38,28 @@ func wrapGameService(db *gorm.DB, gameRepo game.GameRepository, passingRepo game
 	return game.NewGameService(db, gameRepo, passingRepo, ca, rs, ms, ps, hub, cfg, storage, cacheStore, userRepo, ratingSvc)
 }
 
-func wrapReviewService(db *gorm.DB, cacheStore cache.CacheStore) *game.ReviewService {
-	return game.NewReviewService(db).WithCache(cacheStore)
+func wrapReviewService(reviewRepo game.ReviewRepository, cacheStore cache.CacheStore) *game.ReviewService {
+	return game.NewReviewService(reviewRepo).WithCache(cacheStore)
+}
+
+// wrapNoteService — заметки через репозиторий (A-2, pass 31).
+func wrapNoteService(noteRepo game.NoteRepository, ca *game.CoAuthorService) *game.NoteService {
+	return game.NewNoteService(noteRepo, ca)
+}
+
+// wrapPhotoService — фото через репозиторий (A-2, pass 31).
+func wrapPhotoService(photoRepo game.PhotoRepository, coAuthRepo game.CoAuthorRepository) *game.PhotoService {
+	return game.NewPhotoService(photoRepo, coAuthRepo)
+}
+
+// wrapRatingService — рейтинг: read-пути через репозиторий (A-2, pass 31).
+func wrapRatingService(db *gorm.DB, ratingRepo game.RatingRepository, cacheStore cache.CacheStore) *game.RatingService {
+	return game.NewRatingService(db, cacheStore).WithRepository(ratingRepo)
+}
+
+// wrapMonitorService — мониторинг: read-пути через репозиторий (A-2, pass 31).
+func wrapMonitorService(db *gorm.DB, monitorRepo game.MonitorRepository) *game.MonitorService {
+	return game.NewMonitorService(db).WithRepository(monitorRepo)
 }
 
 func wrapLevelProgressService(db *gorm.DB, progressRepo game.LevelProgressRepository, sseMgr *game.SSEManager, gameService *game.GameService) *game.LevelProgressService {

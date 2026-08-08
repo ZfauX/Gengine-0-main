@@ -39,6 +39,32 @@
 
 > Результаты повторного глубокого ревью после полного закрытия pass 30 (7 раундов фиксов). Выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture) с **личной верификацией** ключевых находок по коду.
 
+## Статус (обновлено 8 авг 2026) — PASS 31 ЗАКРЫТ
+
+**Все находки pass 31 исправлены** (5 раундов фиксов):
+
+- **Раунд 1** (`020e382`): UX-1/2 (таймзона в формах, кнопки push), S-1 (RUM-лимит), F1 (listing OR-split), S-3 (2FA lockout+TTL), S-7 (hash reset code), индексы 000040.
+- **Раунд 2** (`1cb78bb`): UX-3/4/8/9 (TZ-таймстампы, role=alert, fetch .catch, SSE guard), A-8/10 (пустой тест, ctx в Review), F-3/5 (RemoveGame batch, leaderboard cache), S-2 (backup-коды 10 символов).
+- **Раунд 3** (`32badb7`): A-1 (SSE→репозиторий), A-2 part1 (LevelProgressRepository+DI), S-4 (exponential backoff, миграция 000041), S-6 (in-memory JTI blacklist), F-7 (COUNT OVER), UX-5/7 (guest view FOUC, monitor refresh).
+- **Раунд 4** (`232646d`): UX-10..15 (a11y, labels, empty states, dark), A-3/5/7/9 (DI: EmailVerification, TwoFactor; dead db params; sentinel-ошибки).
+- **Раунд 5** (текущий): **миграция на репозитории** (A-2) + **race-верификация**.
+
+**A-2 — миграция на репозитории (6 сервисов):**
+- Новые репозитории: `Note`, `Photo`, `Review`, `Rating`, `CoAuthor`, `Monitor` (+ LevelProgress из раунда 3) — все подключены в wire.
+- Мигрированы read-пути: svc_note, svc_photo, svc_review, svc_rating, svc_monitor.
+- Транзакционные паттерны (svc_play/svc_admin/svc_passing/svc_simulate — `s.DB.Transaction(func(tx...)`) оставлены: это стандартный GORM-паттерн, не нарушение слоистости. CoAuthorService — тонкий data-access сервис с логикой ролей, оставлен.
+- Следующие кандидаты (документировано): svc_play read-хелперы, svc_admin notify-чтения, svc_passing ListTestPassings.
+
+**Race-верификация (через WSL Fedora, gcc):**
+- `go test -race -short ./internal/...` — **все пакеты OK, 0 data races, 0 паник**.
+- Покрыты: middleware (role cache), websocket (hub), notification (worker pool), user, game, tournament, monitor, admin, render, templatefuncs и все pkg.
+
+**Проверка:** `go build ./...` ✓, `go test -short ./...` ✓, `go test -tags=integration` (game/user/tournament/monitor/social/admin/notification) ✓, `go vet ./...` ✓, `gofmt -l .` → пусто ✓, `go generate` (wire) ✓, `go test -race -short ./...` ✓.
+
+> Примечание: локально `-race` недоступен на Windows (нет CGO); CI-пайплайн уже запускает `go test -race` на Ubuntu. Локальная WSL-верификация подтвердила чистоту.
+
+---
+
 ## Резюме pass 31
 
 **Итог:** 0 критичных, 5 высоких (3 подтверждены лично), ~20 средних, ~15 низких + 4 новых индекса.

@@ -8,58 +8,43 @@ import (
 )
 
 type PhotoService struct {
-	DB *gorm.DB
+	repo       PhotoRepository
+	coAuthRepo CoAuthorRepository
 }
 
-func NewPhotoService(db *gorm.DB) *PhotoService {
-	return &PhotoService{DB: db}
+func NewPhotoService(repo PhotoRepository, coAuthRepo CoAuthorRepository) *PhotoService {
+	return &PhotoService{repo: repo, coAuthRepo: coAuthRepo}
 }
 
 func (s *PhotoService) List(ctx context.Context, gameID uint) ([]Photo, error) {
-	var photos []Photo
-	err := s.DB.WithContext(ctx).
-		// C-11: не тянем полного пользователя (email и т.п.) в галерею.
-		Preload("User", func(db *gorm.DB) *gorm.DB {
-			return db.Select("id, name, avatar_path")
-		}).
-		Preload("Level").
-		Where("game_id = ?", gameID).
-		Order("created_at DESC").
-		Find(&photos).Error
-	return photos, err
+	return s.repo.List(ctx, gameID)
 }
 
-func (s *PhotoService) Create(photo *Photo) error {
-	return s.DB.Create(photo).Error
+func (s *PhotoService) Create(ctx context.Context, photo *Photo) error {
+	return s.repo.Create(ctx, photo)
 }
 
-func (s *PhotoService) GetByID(photoID uint) (*Photo, error) {
-	var photo Photo
-	err := s.DB.First(&photo, photoID).Error
-	return &photo, err
+func (s *PhotoService) GetByID(ctx context.Context, photoID uint) (*Photo, error) {
+	return s.repo.GetByID(ctx, photoID)
 }
 
-func (s *PhotoService) Delete(photoID, userID uint) error {
-	var photo Photo
-	if err := s.DB.First(&photo, photoID).Error; err != nil {
+func (s *PhotoService) Delete(ctx context.Context, photoID, userID uint) error {
+	photo, err := s.repo.GetByID(ctx, photoID)
+	if err != nil {
 		return err
 	}
 	if photo.UserID != userID {
 		// #2: автор игры может удалять чужие фото (в хендлере автор проходит
 		// IsUserManager, но в co_authors строки у него нет).
-		var game Game
-		if err := s.DB.Select("author_id").First(&game, photo.GameID).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return err
-			}
+		authorID, err := s.repo.GetGameAuthorID(ctx, photo.GameID)
+		if err != nil {
 			return err
 		}
-		if game.AuthorID == userID {
-			return s.DB.Delete(&photo).Error
+		if authorID == userID {
+			return s.repo.Delete(ctx, photo)
 		}
 
-		var coAuthor CoAuthor
-		err := s.DB.Where("game_id = ? AND user_id = ?", photo.GameID, userID).First(&coAuthor).Error
+		coAuthor, err := s.coAuthRepo.FindByGameAndUser(ctx, photo.GameID, userID)
 		if err != nil {
 			// C-4: «нет соавтора» — 403; реальная ошибка БД — 500, а не «нет прав».
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -73,5 +58,5 @@ func (s *PhotoService) Delete(photoID, userID uint) error {
 			return errors.New("нет прав на удаление фото")
 		}
 	}
-	return s.DB.Delete(&photo).Error
+	return s.repo.Delete(ctx, photo)
 }

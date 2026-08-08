@@ -15,7 +15,7 @@ import (
 func setupPhotoTest(t *testing.T) (*gorm.DB, *game.PhotoService) {
 	t.Helper()
 	db := testutil.SetupPostgresDB(t, allModels...)
-	photoSvc := game.NewPhotoService(db)
+	photoSvc := game.NewPhotoService(game.NewGormPhotoRepo(db), game.NewGormCoAuthorRepo(db))
 	return db, photoSvc
 }
 
@@ -29,7 +29,7 @@ func TestPhotoService_Create(t *testing.T) {
 		UserID: author.ID,
 		Path:   "uploads/test.jpg",
 	}
-	err := photoSvc.Create(photo)
+	err := photoSvc.Create(context.Background(), photo)
 	require.NoError(t, err)
 	assert.NotZero(t, photo.ID)
 
@@ -45,8 +45,8 @@ func TestPhotoService_ListByGame(t *testing.T) {
 
 	photo1 := &game.Photo{GameID: g.ID, UserID: author.ID, Path: "uploads/1.jpg"}
 	photo2 := &game.Photo{GameID: g.ID, UserID: author.ID, Path: "uploads/2.jpg"}
-	require.NoError(t, photoSvc.Create(photo1))
-	require.NoError(t, photoSvc.Create(photo2))
+	require.NoError(t, photoSvc.Create(context.Background(), photo1))
+	require.NoError(t, photoSvc.Create(context.Background(), photo2))
 
 	photos, err := photoSvc.List(context.Background(), g.ID)
 	require.NoError(t, err)

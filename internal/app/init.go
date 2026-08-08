@@ -36,6 +36,12 @@ type repositories struct {
 	Game          game.GameRepository
 	GamePassing   game.GamePassingRepository
 	LevelProgress game.LevelProgressRepository
+	Note          game.NoteRepository
+	Photo         game.PhotoRepository
+	Review        game.ReviewRepository
+	Rating        game.RatingRepository
+	CoAuthor      game.CoAuthorRepository
+	Monitor       game.MonitorRepository
 	Level         level.LevelRepository
 	Question      level.QuestionRepository
 	Answer        level.AnswerRepository
@@ -74,6 +80,7 @@ type services struct {
 	GameplayHandler *game.GameplayHandler
 	CoAuthor        *game.CoAuthorService
 	Review          *game.ReviewService
+	Note            *game.NoteService
 	PhotoService    *game.PhotoService
 	Attempt         *game.AttemptService
 	Progress        *game.LevelProgressService

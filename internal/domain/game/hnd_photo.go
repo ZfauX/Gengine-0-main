@@ -186,7 +186,7 @@ func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 		UserID: userID,
 		Path:   webPath,
 	}
-	if createErr := h.photoService.Create(photo); createErr != nil {
+	if createErr := h.photoService.Create(c.Request.Context(), photo); createErr != nil {
 		log.Error().Err(createErr).Int("game_id", gameID).Msg("UploadPhoto: failed to create photo record")
 		if delErr := h.storage.Delete(webPath); delErr != nil {
 			log.Error().Err(delErr).Str("path", webPath).Msg("UploadPhoto: failed to delete uploaded file")
@@ -226,7 +226,7 @@ func (h *PhotoHandler) DeletePhoto(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 
-	photo, err := h.photoService.GetByID(uint(photoID))
+	photo, err := h.photoService.GetByID(c.Request.Context(), uint(photoID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.AbortWithStatusJSON(http.StatusNotFound, gin.H{
@@ -266,7 +266,7 @@ func (h *PhotoHandler) DeletePhoto(c *gin.Context) {
 		return
 	}
 
-	if err := h.photoService.Delete(photo.ID, userID); err != nil {
+	if err := h.photoService.Delete(c.Request.Context(), photo.ID, userID); err != nil {
 		log.Error().Err(err).Uint("photo_id", photo.ID).Msg("DeletePhoto: failed to delete record")
 		appErr := apperr.Wrap(err, "PhotoHandler")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{

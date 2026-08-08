@@ -16,6 +16,7 @@ import (
 
 type RatingService struct {
 	DB    *gorm.DB
+	repo  RatingRepository
 	cache cache.CacheStore
 }
 
@@ -24,6 +25,20 @@ func NewRatingService(db *gorm.DB, c cache.CacheStore) *RatingService {
 		c = &cache.NoopCache{}
 	}
 	return &RatingService{DB: db, cache: c}
+}
+
+// WithRepository устанавливает репозиторий чтения рейтинга (A-2, pass 31).
+func (s *RatingService) WithRepository(repo RatingRepository) *RatingService {
+	s.repo = repo
+	return s
+}
+
+// repoOrDefault возвращает репозиторий или создаёт дефолтный на DB.
+func (s *RatingService) repoOrDefault() RatingRepository {
+	if s.repo == nil {
+		return NewGormRatingRepo(s.DB)
+	}
+	return s.repo
 }
 
 func (s *RatingService) UpdateRatingsForGame(ctx context.Context, gameID uint) error {
@@ -190,13 +205,7 @@ func (s *RatingService) GetLeaderboard(ctx context.Context, limit int) ([]Leader
 	}
 
 	var entries []LeaderboardEntry
-	err := s.DB.WithContext(ctx).
-		Table("player_ratings").
-		Select("player_ratings.user_id, player_ratings.score, users.name, users.avatar_path").
-		Joins("JOIN users ON users.id = player_ratings.user_id").
-		Order("score DESC").
-		Limit(limit).
-		Scan(&entries).Error
+	entries, err := s.repoOrDefault().GetLeaderboard(ctx, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -222,10 +231,8 @@ func (s *RatingService) GetAverageRating(ctx context.Context, gameID uint) (floa
 	}
 
 	var result avgRatingResult
-	err := s.DB.WithContext(ctx).Table("reviews").
-		Select("COALESCE(AVG(rating), 0) as avg_rating, COUNT(*) as count").
-		Where("game_id = ?", gameID).
-		Scan(&result).Error
+	var err error
+	result.AvgRating, result.Count, err = s.repoOrDefault().GetAverageRating(ctx, gameID)
 	if err != nil {
 		return 0, 0, err
 	}

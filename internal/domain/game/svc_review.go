@@ -9,19 +9,16 @@ import (
 
 	"gengine-0/internal/pkg/cache"
 	"gengine-0/internal/pkg/sanitize"
-
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 type ReviewService struct {
-	DB *gorm.DB
+	repo ReviewRepository
 	// Cache опционален — используется для инвалидации кэша рейтинга при новых отзывах.
 	Cache cache.CacheStore
 }
 
-func NewReviewService(db *gorm.DB) *ReviewService {
-	return &ReviewService{DB: db}
+func NewReviewService(repo ReviewRepository) *ReviewService {
+	return &ReviewService{repo: repo}
 }
 
 // WithCache устанавливает кэш для инвалидации рейтинга при создании отзыва.
@@ -31,23 +28,7 @@ func (s *ReviewService) WithCache(c cache.CacheStore) *ReviewService {
 }
 
 func (s *ReviewService) CanReview(gameID, userID uint) (bool, error) {
-	var count int64
-	err := s.DB.Model(&GamePassing{}).
-		Joins("JOIN teams ON teams.id = game_passings.team_id").
-		Where("game_passings.game_id = ? AND game_passings.status = ?", gameID, StatusFinished).
-		Where("(teams.captain_id = ? OR EXISTS (SELECT 1 FROM team_members WHERE team_members.team_id = game_passings.team_id AND team_members.user_id = ?))", userID, userID).
-		Count(&count).Error
-	if err != nil {
-		return false, err
-	}
-	if count == 0 {
-		return false, nil
-	}
-	var reviewCount int64
-	if err := s.DB.Model(&Review{}).Where("game_id = ? AND user_id = ?", gameID, userID).Count(&reviewCount).Error; err != nil {
-		return false, err
-	}
-	return reviewCount == 0, nil
+	return s.repo.CanReview(context.Background(), gameID, userID)
 }
 
 // Create создаёт отзыв. ctx — контекст запроса (A-10, pass 31).
@@ -67,14 +48,11 @@ func (s *ReviewService) Create(ctx context.Context, gameID, userID uint, rating 
 	cleanComment := sanitize.StripHTML(comment)
 	review := Review{GameID: gameID, UserID: userID, Rating: rating, Comment: cleanComment}
 	// ON CONFLICT (idx_reviews_game_user) — защита от гонки параллельных POST (C-3).
-	res := s.DB.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "game_id"}, {Name: "user_id"}},
-		DoNothing: true,
-	}).Create(&review)
-	if res.Error != nil {
-		return res.Error
+	created, err := s.repo.CreateIfNotExists(ctx, &review)
+	if err != nil {
+		return err
 	}
-	if res.RowsAffected == 0 {
+	if !created {
 		return errors.New("вы уже оставили отзыв")
 	}
 	// Инвалидируем кэш рейтинга, отзывов и карточки игры —
@@ -101,10 +79,7 @@ func (s *ReviewService) ListByGame(ctx context.Context, gameID uint) ([]Review, 
 		}
 	}
 
-	var reviews []Review
-	err := s.DB.WithContext(ctx).Preload("User", func(db *gorm.DB) *gorm.DB {
-		return db.Select("id, name, avatar_path")
-	}).Where("game_id = ?", gameID).Order("created_at DESC").Find(&reviews).Error
+	reviews, err := s.repo.ListByGame(ctx, gameID)
 	if err != nil {
 		return nil, err
 	}
@@ -116,13 +91,5 @@ func (s *ReviewService) ListByGame(ctx context.Context, gameID uint) ([]Review, 
 }
 
 func (s *ReviewService) GetAverageRating(ctx context.Context, gameID uint) (float64, int64, error) {
-	var result struct {
-		Avg   float64
-		Count int64
-	}
-	err := s.DB.WithContext(ctx).Model(&Review{}).
-		Where("game_id = ?", gameID).
-		Select("COALESCE(AVG(rating), 0) as avg, COUNT(*) as count").
-		Scan(&result).Error
-	return result.Avg, result.Count, err
+	return s.repo.GetAverageRating(ctx, gameID)
 }

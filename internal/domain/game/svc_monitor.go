@@ -12,6 +12,7 @@ import (
 
 	"gengine-0/internal/pkg/util"
 
+	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 )
@@ -26,6 +27,7 @@ type MonitorServiceInterface interface {
 // MonitorService собирает сводную информацию о прохождении игры.
 type MonitorService struct {
 	DB        *gorm.DB
+	repo      MonitorRepository
 	cache     map[uint]*cachedSnapshot
 	cacheList *list.List
 	cacheKeys map[uint]*list.Element
@@ -50,6 +52,20 @@ func NewMonitorService(db *gorm.DB) *MonitorService {
 	s.cacheList = list.New()
 	s.cacheKeys = make(map[uint]*list.Element)
 	return s
+}
+
+// WithRepository устанавливает репозиторий мониторинга (A-2, pass 31).
+func (s *MonitorService) WithRepository(repo MonitorRepository) *MonitorService {
+	s.repo = repo
+	return s
+}
+
+// repoOrDefault возвращает репозиторий или создаёт дефолтный на DB.
+func (s *MonitorService) repoOrDefault() MonitorRepository {
+	if s.repo == nil {
+		return NewGormMonitorRepo(s.DB)
+	}
+	return s.repo
 }
 
 // TeamProgress содержит агрегированные данные о прогрессе одной команды.
@@ -161,65 +177,8 @@ type AttemptRecord struct {
 // GameSnapshot формирует полную сводку по всем прохождениям игры.
 // Оптимизированная версия: объединяет 3 SQL-запроса в один.
 func (s *MonitorService) GameSnapshot(ctx context.Context, gameID uint) ([]TeamProgress, error) {
-	type AggregatedPassing struct {
-		GamePassingID  uint
-		TeamID         uint
-		TeamName       string
-		Status         string
-		Place          *int
-		TotalLevels    int
-		CompletedCount int
-		TotalAttempts  int
-		TotalPenalty   int
-		FirstStarted   *time.Time
-		LastFinished   *time.Time
-		CurrentLevelID *uint
-	}
-
-	var aggregated []AggregatedPassing
-	query := `
-		WITH total_levels_cte AS (
-			SELECT COUNT(*) AS cnt FROM levels WHERE game_id = ?
-		)
-		SELECT
-			gp.id AS game_passing_id,
-			gp.team_id,
-			t.name AS team_name,
-			gp.status,
-			gp.place,
-			tl.cnt AS total_levels,
-			COUNT(lp.id) FILTER (WHERE lp.finished_at IS NOT NULL) AS completed_count,
-			COALESCE(ac.total_attempts, 0) AS total_attempts,
-			COALESCE(SUM(lp.penalty_seconds), 0) AS total_penalty,
-			MIN(lp.started_at) AS first_started,
-			MAX(lp.finished_at) AS last_finished,
-			cl.level_id AS current_level_id
-		FROM game_passings gp
-		JOIN teams t ON t.id = gp.team_id
-		CROSS JOIN total_levels_cte tl
-		LEFT JOIN level_progresses lp ON lp.game_passing_id = gp.id
-		LEFT JOIN (
-			-- PF1: считаем только свежие попытки (окно 1 час). GameSnapshot
-			-- выполняется каждую секунду на активных играх — агрегация ВСЕХ
-			-- попыток за всё время нагружала БД при долгих играх.
-			-- PF-1 (pass 29): трёхуровневый IN заменён на прямой JOIN —
-			-- планировщику не нужно материализовать вложенные подзапросы.
-			SELECT a.level_progress_id, COUNT(*) AS total_attempts
-			FROM attempts a
-			JOIN level_progresses lp2 ON lp2.id = a.level_progress_id
-			WHERE lp2.game_passing_id IN (SELECT id FROM game_passings WHERE game_id = ?)
-			AND a.created_at >= NOW() - INTERVAL '1 hour'
-			GROUP BY a.level_progress_id
-		) ac ON ac.level_progress_id = lp.id
-		LEFT JOIN LATERAL (
-			SELECT level_id FROM level_progresses
-			WHERE game_passing_id = gp.id AND finished_at IS NULL
-			ORDER BY created_at DESC LIMIT 1
-		) cl ON true
-		WHERE gp.game_id = ?
-		GROUP BY gp.id, gp.team_id, t.name, gp.status, gp.place, tl.cnt, ac.total_attempts, cl.level_id
-		ORDER BY gp.place ASC`
-	if err := s.DB.WithContext(ctx).Raw(query, gameID, gameID, gameID).Scan(&aggregated).Error; err != nil {
+	aggregated, err := s.repoOrDefault().AggregateGameSnapshot(ctx, gameID)
+	if err != nil {
 		return nil, err
 	}
 
@@ -233,7 +192,7 @@ func (s *MonitorService) GameSnapshot(ctx context.Context, gameID uint) ([]TeamP
 	}
 
 	// Формируем результат
-	suspiciousMap := s.analyzeTeamsBehavior(teamData)
+	suspiciousMap := s.analyzeTeamsBehavior(ctx, teamData)
 
 	result := make([]TeamProgress, 0, len(aggregated))
 	for _, a := range aggregated {
@@ -408,7 +367,7 @@ func toAnySlice[T any](s []T) []any {
 
 // analyzeTeamsBehavior — batch-версия: проверяет все команды одним запросом.
 // Возвращает map[teamID]suspiciousReason.
-func (s *MonitorService) analyzeTeamsBehavior(teamData []teamAggregatedData) map[uint]string {
+func (s *MonitorService) analyzeTeamsBehavior(ctx context.Context, teamData []teamAggregatedData) map[uint]string {
 	// Собираем уникальные teamID и их passingIDs
 	type teamPassings struct {
 		TeamID     uint
@@ -434,14 +393,9 @@ func (s *MonitorService) analyzeTeamsBehavior(teamData []teamAggregatedData) map
 	}
 
 	fiveMinAgo := time.Now().Add(-5 * time.Minute)
-	var attempts []AttemptRecord
-	err := s.DB.Table("attempts").
-		Select("level_progresses.game_passing_id AS passing_id, attempts.code, attempts.success, attempts.created_at").
-		Joins("JOIN level_progresses ON level_progresses.id = attempts.level_progress_id").
-		Where("level_progresses.game_passing_id IN ? AND attempts.created_at >= ?", allPassingIDs, fiveMinAgo).
-		Order("attempts.created_at ASC").
-		Find(&attempts).Error
+	attempts, err := s.repoOrDefault().ListRecentAttempts(ctx, allPassingIDs, fiveMinAgo)
 	if err != nil {
+		log.Debug().Err(err).Msg("MonitorService: failed to load recent attempts")
 		return nil
 	}
 	if len(attempts) == 0 {

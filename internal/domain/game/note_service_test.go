@@ -16,7 +16,7 @@ func setupNoteTest(t *testing.T) (*gorm.DB, *game.NoteService) {
 	t.Helper()
 	db := testutil.SetupPostgresDB(t, allModels...)
 	coAuthorSvc := game.NewCoAuthorService(db)
-	noteSvc := game.NewNoteService(db, coAuthorSvc)
+	noteSvc := game.NewNoteService(game.NewGormNoteRepo(db), coAuthorSvc)
 	return db, noteSvc
 }
 

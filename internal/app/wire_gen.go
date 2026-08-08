@@ -42,6 +42,12 @@ func initializeRepositories(db *gorm.DB) *repositories {
 	gameRepository := game.NewGormGameRepo(db)
 	gamePassingRepository := game.NewGormGamePassingRepo(db)
 	levelProgressRepository := game.NewGormLevelProgressRepo(db)
+	noteRepository := game.NewGormNoteRepo(db)
+	photoRepository := game.NewGormPhotoRepo(db)
+	reviewRepository := game.NewGormReviewRepo(db)
+	ratingRepository := game.NewGormRatingRepo(db)
+	coAuthorRepository := game.NewGormCoAuthorRepo(db)
+	monitorRepository := game.NewGormMonitorRepo(db)
 	levelRepository := level.NewGormLevelRepo(db)
 	questionRepository := level.NewGormQuestionRepo(db)
 	answerRepository := level.NewGormAnswerRepo(db)
@@ -69,6 +75,12 @@ func initializeRepositories(db *gorm.DB) *repositories {
 		Game:          gameRepository,
 		GamePassing:   gamePassingRepository,
 		LevelProgress: levelProgressRepository,
+		Note:          noteRepository,
+		Photo:         photoRepository,
+		Review:        reviewRepository,
+		Rating:        ratingRepository,
+		CoAuthor:      coAuthorRepository,
+		Monitor:       monitorRepository,
 		Level:         levelRepository,
 		Question:      questionRepository,
 		Answer:        answerRepository,
@@ -107,10 +119,15 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	gameRepository := repos.Game
 	gamePassingRepository := repos.GamePassing
 	coAuthorService := game.NewCoAuthorService(db)
-	reviewService := wrapReviewService(db, appCache)
-	monitorService := game.NewMonitorService(db)
-	photoService := game.NewPhotoService(db)
-	ratingService := game.NewRatingService(db, appCache)
+	reviewRepository := repos.Review
+	reviewService := wrapReviewService(reviewRepository, appCache)
+	monitorRepository := repos.Monitor
+	monitorService := wrapMonitorService(db, monitorRepository)
+	photoRepository := repos.Photo
+	coAuthorRepository := repos.CoAuthor
+	photoService := wrapPhotoService(photoRepository, coAuthorRepository)
+	ratingRepository := repos.Rating
+	ratingService := wrapRatingService(db, ratingRepository, appCache)
 	gameService := wrapGameService(db, gameRepository, gamePassingRepository, coAuthorService, reviewService, monitorService, photoService, hub, cfg, localStorage, appCache, userRepository, ratingService)
 	attemptService := game.NewAttemptService(db)
 	levelProgressRepository := repos.LevelProgress
@@ -122,6 +139,8 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	teamService := wrapTeamService(teamRepository)
 	gamePassingService := wrapGamePassingService(db, teamService, coAuthorService, levelProgressService, hub, monitorService, sseManager)
 	gameplayHandler := wrapGameplayHandler(gameService, gamePlayService, attemptService, levelProgressService, monitorService, hub, localStorage)
+	noteRepository := repos.Note
+	noteService := wrapNoteService(noteRepository, coAuthorService)
 	simulateService := wrapSimulateService(db, coAuthorService)
 	levelRepository := repos.Level
 	questionRepository := repos.Question
@@ -173,6 +192,7 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 		GameplayHandler: gameplayHandler,
 		CoAuthor:        coAuthorService,
 		Review:          reviewService,
+		Note:            noteService,
 		PhotoService:    photoService,
 		Attempt:         attemptService,
 		Progress:        levelProgressService,

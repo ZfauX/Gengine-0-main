@@ -32,7 +32,7 @@ func TestReviewService_Create_InvalidatesCachesWithoutListingVersion(t *testing.
 	ensureReviewsUniqueIndex(t, db)
 	c := cache.NewCacheWithLRU(time.Minute, time.Minute, 1000)
 
-	svc := game.NewReviewService(db).WithCache(c)
+	svc := game.NewReviewService(game.NewGormReviewRepo(db)).WithCache(c)
 	ctx := context.Background()
 
 	// Игра + автор + команда + капитан + завершённое прохождение (для CanReview).
@@ -75,7 +75,7 @@ func TestReviewService_Create_InvalidatesCachesWithoutListingVersion(t *testing.
 func TestReviewService_Create_DuplicateRejected(t *testing.T) {
 	db := testutil.SetupPostgresDB(t, allModels...)
 	ensureReviewsUniqueIndex(t, db)
-	svc := game.NewReviewService(db)
+	svc := game.NewReviewService(game.NewGormReviewRepo(db))
 
 	author := createUser(t, db, "review-dupe-author@test.com", "pass")
 	g := createPublishedGameWithSettings(t, db, author.ID, "Review Dupe Game")
@@ -97,7 +97,7 @@ func TestReviewService_Create_DuplicateRejected(t *testing.T) {
 // Валидация диапазона рейтинга.
 func TestReviewService_Create_InvalidRating(t *testing.T) {
 	db := testutil.SetupPostgresDB(t, allModels...)
-	svc := game.NewReviewService(db)
+	svc := game.NewReviewService(game.NewGormReviewRepo(db))
 
 	err := svc.Create(context.Background(), 1, 1, 0, "x")
 	require.Error(t, err)
