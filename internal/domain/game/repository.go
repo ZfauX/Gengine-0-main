@@ -337,7 +337,7 @@ func (r *gormGameRepo) AdminListGames(ctx context.Context, query, status string,
 			total = rows[i].TotalCount
 		}
 		if rows[i].AuthorName != "" {
-			rows[i].Game.Author = user.User{Name: rows[i].AuthorName}
+			rows[i].Author = user.User{Name: rows[i].AuthorName}
 		}
 		games = append(games, rows[i].Game)
 	}
