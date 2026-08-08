@@ -17,7 +17,7 @@
 - **Раунд 1** (`3b06811`): H1-H5 (даты, турнирная страница, deleted_at, VK user_id, GetUserRole), H6 (слоистость), M1 (RUM), M16/M17 (DI), индексы 000039.
 - **Раунд 2** (`6b77b71`): H7 (worker-pool push), M2 (backup-коды), M3 (mojibake), M4 (ExtraHead), M9 (batch), M10 (OAuth single update), M14 (HasPermissionTx), M18 (dashboard errors).
 - **Раунд 3** (`bdd9cb0`): M5 (таймзона), M6 (кэш роли), M7 (таймстампы), M8 (локализация), M11 (JOIN), M15 (CheckTimeouts), M16-остаток (чистка DI).
-- **Раунд 4** (готовится к коммиту): M13 (кэш листинга отзывов), + фиксы найденные @tester/@reviewer:
+- **Раунд 4** (`5d39da1`): M13 (кэш листинга отзывов), + фиксы найденные @tester/@reviewer:
   - **Регрессия M14** (поймана @tester): `Table().First(&uint)` → "model value required" → заменено на `Model(&Game{}).Scan` + `RowsAffected`.
   - **C1 (tz_sign)** — подтверждено: JS инвертирует `-getTimezoneOffset()`, сервер `t.Add(+offset)`. Согласовано (UTC+3 → +180 → +3ч).
   - **C2 (ExtraHead)** — guard `{{if .Game}}` — блок больше не рендерит мусор на чужих страницах.
@@ -25,12 +25,146 @@
   - **S2 (CheckTimeouts partial advance)** — advance только по `finished_at = наш now` (multi-instance без дублей).
   - **S3 (CreateInBatches unique)** — `OnConflict DoNothing` на оба батча (RemoveGame+re-add безопасен).
   - **Новые тесты**: role cache (middleware), TZOffset+ExtraHead (render), extraString (user), интеграционные game проходят.
+- **Раунд 5** (`dfb88ce`): CI workflow `go.yml` — mojibake-контроль-символы (#x0098) ломали YAML → переписан в чистый UTF-8.
+- **Раунд 6** (`364cb17`): тесты GetUserRole (нашёл GORM-баг First(&scalar) → Scan+RowsAffected), dashboard error paths, svc_review M13. Перегенерён mock_service.go (GetGamesView).
+- **Раунд 7** (`e6193bc`): gofmt-фикс (service.go, helper_test.go) — CI-гейт gofmt пройден.
 
-**Проверка:** `go build ./...` ✓, `go test -short ./...` ✓, `go test -tags=integration` (game/user/tournament/admin) ✓, `go vet ./...` ✓. `-race` недоступен на Windows (нет CGO).
+**Проверка:** `go build ./...` ✓, `go test -short ./...` ✓, `go test -tags=integration` (game/user/tournament/admin) ✓, `go vet ./...` ✓, `gofmt -l .` → пусто ✓. `-race` недоступен на Windows (нет CGO).
 
 > Примечание: `golangci-lint` на этой машине — v1 с конфигом v2 (инфраструктурная проблема, не кодовая).
 
 ---
+
+# PASS 31 (повторное ревью) — 8 августа 2026
+
+> Результаты повторного глубокого ревью после полного закрытия pass 30 (7 раундов фиксов). Выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture) с **личной верификацией** ключевых находок по коду.
+
+## Резюме pass 31
+
+**Итог:** 0 критичных, 5 высоких (3 подтверждены лично), ~20 средних, ~15 низких + 4 новых индекса.
+
+> Общий вывод: кодовая база зрелая, defense-in-depth работает. Найденные проблемы — преимущественно hardening и UX-недоделки, плюс несколько реальных багов (timezone round-trip в формах, кнопки без type, RUM лимит для анонимов).
+
+---
+
+## A. Найденные ошибки pass 31 (верифицировано лично)
+
+### 🔴 Критично
+Не обнаружено.
+
+### 🟠 Высокие
+
+| ID | Файл | Проблема |
+|---|---|---|
+| **S-1** | `app/router.go:200` + `middleware/rate_limiter.go:488-491` | **RUM-лимит не работает для анонимов.** `APIRateLimit` при `userID==0` сразу `c.Next()`; RUM-эндпоинт публичный → per-IP лимит 60/min — no-op. Остаётся только глобальный 100/min. |
+| **UX-1** | `game/hnd_game.go:66-75` (parseDateTime) + `games-edit.html:34,43`, `games-new.html`, `games-new-wizard.html` | **Таймзона-баг в формах datetime-local.** `time.Parse` хранит wall-clock как UTC, а отображение сдвигает на TZOffset: пользователь UTC+3 вводит «12:00», видит на странице «15:00», а в форме снова «12:00». Fix pass 30 покрыл только отображение, не ввод. |
+| **UX-2** | `notification/templates/notification-settings.html:58,62` | **Кнопки push без `type="button"`** → по умолчанию `submit`, при клике запускают push-flow И AJAX-сохранение формы (потенциально устаревшие настройки). |
+| **A-1** | `game/hnd_sse.go:365-421` + `game/repository.go:20-22,104-108` | **SSE-хендлеры принимают `*gorm.DB` и делают raw-запросы** (`First(&passing)`, `Table("team_members")`). Слоистость нарушена; репозиторий утекает `*gorm.DB` через `Count(query)`, `ListFiltered(query)`, `Model()`. |
+| **A-2** | `game/svc_*.go` (12 сервисов) | **Сервисы напрямую используют `s.DB.Model/Raw/Preload`** вместо репозиториев — противоречит заявленному C1, делает unit-тестирование без Postgres невозможным. |
+
+### 🟡 Средние
+
+| ID | Файл | Проблема |
+|---|---|---|
+| S-2 | `user/two_factor_service.go:106-119` | Backup-коды — 6 цифр (~20 бит). Модуль-фикс pass 30 не изменил длину. |
+| S-3 | `user/auth_handler.go:193-257` | 2FA-шаг без per-account локдауна и без TTL `pending_user_id` — распределённый brute-force TOTP; pending-сессия живёт до конца session-cookie. |
+| S-4 | `user/service.go:152-165` | Бинарный локдаун аккаунта (5 ошибок → 30 мин) — DoS-вектор. |
+| S-6 | `user/service.go:332-337` | JWT-отзыв работает только при настроенном кэше (без Valkey — просто warn). |
+| S-7 | `user/password_reset_service.go:56-61` | Код сброса пароля хранится в plaintext (только неиспользуемый rawToken хешируется). |
+| S-9 | `user/auth_handler.go:272-285` | Refresh-токен принимается и в JSON-теле, не только в cookie. |
+| F-1 | `game/svc_listing.go:90-96` | **OR-предикаты в листинге мешают индексам**: `(visibility='public' OR author_id=?) AND (is_draft=false OR author_id=?)` → для анонимов BitmapOr + filesort на каждой сортировке. |
+| F-2 | `admin/handler.go:601-648` + audit | Аудит: фильтр `user_id+action` + `ORDER BY created_at` — только одноколоночные индексы. |
+| F-3 | `tournament/service.go:181-207` | RemoveGame: построчный Upsert+Delete результатов в цикле (N+1 write). |
+| F-4 | `game/svc_progress.go:345-364` | CheckTimeouts: `AdvanceToNextLevel` внутри цикла делает +2 запроса на прогресс. |
+| F-5 | `tournament/repository.go:240-247` | Турнирный лидерборд не кэшируется (а player-лидерборд кэшируется). |
+| F-6 | `cache/cache.go:51-85` | In-memory кэш без maxSize по умолчанию (LRU только при maxSize>0). |
+| F-7 | `notification/repository.go:79-90`, admin List* | Отдельные COUNT + Find (2 round-trip) вместо COUNT(*) OVER(). |
+| A-3 | `user/service.go:115` | `AuthService.Register` создаёт `NewEmailVerificationService` локально (вне wire). |
+| A-4 | `user/handler.go:22`, `routes.go:39` | Глобальное состояние `SetSecureCookieConfig`, `SetThemeSettingsLoader`, `SetRoleProvider`. |
+| A-5 | `admin/routes.go:39` | 4-й инстанс `NewTwoFactorService()` inline (wire + user + admin). |
+| A-7 | `level/routes.go:26`, `team/routes.go:18` | Неиспользуемые параметры `db` в RegisterRoutes. |
+| A-8 | `user/auth_handler_test.go:307-309` | Пустая заглушка `TestTwoFALoginVerify_ValidCode` (t.Skip без тела); устаревший TODO «JTI blacklist» (уже реализовано). |
+| A-9 | `user/service.go` auth | Inline-русские строки ошибок вместо sentinel-ошибок (`ErrInvalidCredentials`, ...). |
+| A-10 | `game/hnd_review.go:96` | `reviewService.Create(...)` без ctx — контекст не передаётся. |
+| UX-3 | `gameplay-show.html:84`, `logs-list.html:8` | Таймстампы `.Format "15:04:05"` (UTC) — не учитывают TZOffset. |
+| UX-4 | auth-login/register, games-new, levels-new | Flash-error без `role="alert"` — SR не объявляет ошибки. |
+| UX-5 | `games-list.html:247` guest branch | Гостевое переопределение view → FOUC; `aria-pressed` статичен. |
+| UX-7 | `monitor-page.html:257-291` | После дисквалификации карточка не обновляется до следующего WS-снапшота. |
+| UX-8 | `notes-manage.html:95-107` | fetch delete без `.catch` — unhandled rejection. |
+| UX-9 | `gameplay-show.html:476-507` | SSE `JSON.parse(e.data)` без try/catch. |
+| UX-13 | admin-users/games/teams, errors-404 | Поиск только с placeholder, нет `<label>`/`aria-label`. |
+| UX-14 | `notes-manage.html`, `game_passings-apply.html` | Нет empty-states. |
+
+### 🔲 Осознанно оставлено / опровергнуто (проверено лично)
+- **CSRF зарегистрирован корректно** (app.go:88-104) — не мёртвый код (security-агент пометил «unverified», подтверждено).
+- **Session cookie Secure** — config-dependent, оправдано (TLS-прокси).
+- **Rate limiters fail-open при Valkey-ауттаге** — задокументированный компромисс (P3).
+- **clientFingerprint** — мягкий сигнал, задокументировано.
+
+---
+
+## B. Оптимизации (производительность / БД)
+
+### Рекомендованные CREATE INDEX (pass 31)
+```sql
+-- F2: Аудит: фильтр + пагинация (append-only таблица)
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_created
+    ON audit_logs(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_action_created
+    ON audit_logs(action, created_at DESC);
+
+-- F12: Пендинг-приглашения дашборда с сортировкой
+CREATE INDEX IF NOT EXISTS idx_invitations_user_status_created
+    ON invitations(user_id, status, created_at DESC);
+```
+
+### Прочие оптимизации
+- **F1**: split листинга для анонимов — `WHERE visibility='public' AND is_draft=false` (без OR) → индексы 000035/000037/000008 станут используемыми. Самый высокий импакт.
+- **F3**: RemoveGame — batch UPDATE/DELETE результатов (паттерн unnest как в svc_rating.go).
+- **F5**: кэш турнирного лидерборда `tournament:leaderboard:%d` (TTL 30-60с), инвалидация на UpdateScoresForGame/RemoveGame.
+- **F6**: задать maxSize для in-memory кэша (10k-50k) при конструировании в DI.
+- **F7**: COUNT(*) OVER() вместо отдельного COUNT (notification, admin List*).
+- **F9**: финальный callback (WithoutCancel goroutine) — обернуть в bounded worker.
+- **S-1**: RUM — использовать IP-keyed лимитер или только глобальный.
+
+---
+
+## C. Улучшения пользовательского опыта (приоритеты)
+
+1. **UX-1**: чинить parseDateTime — конвертировать локальный wall-clock в UTC по `tz_offset` cookie; форма рендерится через TZ-helper. Самый заметный баг.
+2. **UX-2**: `type="button"` для enable/disable-push — чинить немедленно (активный баг).
+3. **UX-3**: единые TZ-таймстампы в gameplay/logs.
+4. **Dark mode**: бейджи статусов (admin-games, invitations, passings, monitor) — добавить `dark:` варианты (паттерн уже есть в games-list).
+5. **Touch targets**: `.btn` ≥ 44px для coarse pointers (WCAG 2.5.8).
+6. **A11y**: `role="alert"` на flash-error, label/aria-label для поиска и иконочных кнопок, aria для мобильных lang-кнопок.
+7. **Resilience**: `.catch` в notes delete, try/catch SSE JSON.parse.
+8. **Empty states**: «нет заметок», «сначала создайте команду» в apply.
+
+---
+
+## D. Архитектурные улучшения (кодовая база)
+
+1. **A-1/A-2 (слоистость)**: перенести raw-запросы из SSE-хендлеров и 12 сервисов в репозитории; сузить `GameRepository` (убрать `Count(query)`, `ListFiltered(query)`, `Model()`, `DB()`). Самый большой структурный выигрыш — unit-тесты без Postgres.
+2. **DI-закрытие**: `TwoFactorService` в admin/routes, `EmailVerificationService` в AuthService, убрать неиспользуемые `db` в level/team routes.
+3. **Sentinel-ошибки** для user-домена (`ErrInvalidCredentials`, `ErrTokenRevoked`...) — handlers смогут делать errors.Is.
+4. **A-10**: прокинуть ctx в `ReviewService.Create`.
+5. **A-8**: реализовать `TestTwoFALoginVerify_ValidCode` или удалить; почистить устаревший TODO.
+6. **CI**: добавить проверку `git diff --exit-code wire_gen.go` + `go test -short` + golangci-lint (после фикса версии бинарника).
+7. **A-3/A-4**: убрать глобальное состояние (SetSecureCookieConfig и т.д.) в пользу DI-конструкторов.
+
+## Приоритет фиксов (pass 31)
+1. **UX-1** (timezone в формах) и **UX-2** (кнопки push) — видимые пользователю баги.
+2. **S-1** (RUM-лимит) — тривиальный security-фикс.
+3. **F1** (listing OR-split) — наибольший перф-выигрыш.
+4. **S-3/S-7** (2FA lockout, password-reset hash) — hardening.
+5. Индексы 000040 (audit_logs, invitations).
+6. A-1/A-2 (слоистость) — крупный рефакторинг, по отдельному раунду.
+
+---
+
+## История: PASS 30 (закрыт)
+
+<details><summary>Содержимое pass 30 — для истории (все пункты исправлены)</summary>
 
 ## A. Найденные ошибки (верифицировано лично)
 
@@ -131,3 +265,5 @@ CREATE INDEX IF NOT EXISTS idx_level_progresses_passing_unfinished_created
 
 ## Статус
 **ЗАКРЫТ** — все находки pass 30 исправлены (H1-H7, M1-M18, индексы 000039). Закрытие прошло в 4 раунда с верификацией @tester (нашёл и помог исправить регрессию HasPermissionTx) и @reviewer (подтвердил знак tz_offset, нашёл S1/S2/S3, все исправлены). Остаточные риски задокументированы в «Статусе (обновлено 8 авг 2026)» выше.
+
+</details>
