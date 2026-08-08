@@ -138,6 +138,29 @@ func (m *mockGameRepo) IsTeamMember(ctx context.Context, teamID, userID uint) (b
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *mockGameRepo) CountActivePassings(ctx context.Context, gameID uint) (int64, error) {
+	args := m.Called(ctx, gameID)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+func (m *mockGameRepo) CountLevelsByGame(ctx context.Context, gameID uint) (int64, error) {
+	args := m.Called(ctx, gameID)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+func (m *mockGameRepo) CountPublished(ctx context.Context) (int64, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(int64), args.Error(1)
+}
+
+func (m *mockGameRepo) AdminListGames(ctx context.Context, query, status string, offset, limit int) ([]game.Game, int64, error) {
+	args := m.Called(ctx, query, status, offset, limit)
+	if args.Get(0) == nil {
+		return nil, args.Get(1).(int64), args.Error(2)
+	}
+	return args.Get(0).([]game.Game), args.Get(1).(int64), args.Error(2)
+}
+
 func (m *mockGameRepo) IsTeamCaptain(ctx context.Context, teamID, userID uint) (bool, error) {
 	args := m.Called(ctx, teamID, userID)
 	return args.Bool(0), args.Error(1)

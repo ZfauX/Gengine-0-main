@@ -52,9 +52,9 @@ func (s *PhotoService) Delete(ctx context.Context, photoID, userID uint) error {
 			}
 			return err
 		}
-		// G5: observer не имеет права удалять чужие фото (defense-in-depth —
-		// handler тоже проверяет роль, но сервис защищён и при прямом вызове).
-		if coAuthor.Role == RoleObserver {
+		// S-6 (pass 32): разрешаем только content_editor/moderator (как handler).
+		// Раньше условие «не observer» молча авторизовало бы любую будущую слабую роль.
+		if coAuthor.Role != RoleContentEditor && coAuthor.Role != RoleModerator {
 			return errors.New("нет прав на удаление фото")
 		}
 	}

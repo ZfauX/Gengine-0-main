@@ -15,7 +15,6 @@ import (
 	"gengine-0/internal/pkg/i18n"
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
-	"gengine-0/internal/pkg/sqlutil"
 
 	csrf "gengine-0/internal/pkg/csrf"
 
@@ -379,28 +378,8 @@ func (h *AdminHandler) ListGames(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	query := h.gameRepo.Model(ctx).Preload("Author")
-	if req.Query != "" {
-		like := sqlutil.BuildLikePattern(req.Query)
-		query = query.Joins("LEFT JOIN users ON users.id = games.author_id").
-			Where("games.name ILIKE ? OR users.name ILIKE ?", like, like)
-	}
-	switch req.Status {
-	case "draft":
-		query = query.Where("is_draft = true")
-	case "published":
-		query = query.Where("is_draft = false")
-	}
-
-	total, err := h.gameRepo.Count(ctx, query)
-	if err != nil {
-		log.Error().Err(err).Str("status", req.Status).Msg("ListGames: failed to count games")
-		render.RenderErrorPage(c, http.StatusInternalServerError)
-		return
-	}
-
 	offset := (req.Page - 1) * req.PerPage
-	games, err := h.gameRepo.ListFiltered(ctx, query, offset, req.PerPage)
+	games, total, err := h.gameRepo.AdminListGames(ctx, req.Query, req.Status, offset, req.PerPage)
 	if err != nil {
 		log.Error().Err(err).Str("status", req.Status).Msg("ListGames: failed to list games")
 		render.RenderErrorPage(c, http.StatusInternalServerError)

@@ -42,19 +42,65 @@ func (m *MockGameRepository) EXPECT() *MockGameRepositoryMockRecorder {
 	return m.recorder
 }
 
-// Count mocks base method.
-func (m *MockGameRepository) Count(ctx context.Context, query *gorm.DB) (int64, error) {
+// AdminListGames mocks base method.
+func (m *MockGameRepository) AdminListGames(ctx context.Context, query, status string, offset, limit int) ([]Game, int64, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Count", ctx, query)
+	ret := m.ctrl.Call(m, "AdminListGames", ctx, query, status, offset, limit)
+	ret0, _ := ret[0].([]Game)
+	ret1, _ := ret[1].(int64)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// AdminListGames indicates an expected call of AdminListGames.
+func (mr *MockGameRepositoryMockRecorder) AdminListGames(ctx, query, status, offset, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AdminListGames", reflect.TypeOf((*MockGameRepository)(nil).AdminListGames), ctx, query, status, offset, limit)
+}
+
+// CountActivePassings mocks base method.
+func (m *MockGameRepository) CountActivePassings(ctx context.Context, gameID uint) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CountActivePassings", ctx, gameID)
 	ret0, _ := ret[0].(int64)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// Count indicates an expected call of Count.
-func (mr *MockGameRepositoryMockRecorder) Count(ctx, query any) *gomock.Call {
+// CountActivePassings indicates an expected call of CountActivePassings.
+func (mr *MockGameRepositoryMockRecorder) CountActivePassings(ctx, gameID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Count", reflect.TypeOf((*MockGameRepository)(nil).Count), ctx, query)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountActivePassings", reflect.TypeOf((*MockGameRepository)(nil).CountActivePassings), ctx, gameID)
+}
+
+// CountLevelsByGame mocks base method.
+func (m *MockGameRepository) CountLevelsByGame(ctx context.Context, gameID uint) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CountLevelsByGame", ctx, gameID)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CountLevelsByGame indicates an expected call of CountLevelsByGame.
+func (mr *MockGameRepositoryMockRecorder) CountLevelsByGame(ctx, gameID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountLevelsByGame", reflect.TypeOf((*MockGameRepository)(nil).CountLevelsByGame), ctx, gameID)
+}
+
+// CountPublished mocks base method.
+func (m *MockGameRepository) CountPublished(ctx context.Context) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CountPublished", ctx)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CountPublished indicates an expected call of CountPublished.
+func (mr *MockGameRepositoryMockRecorder) CountPublished(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountPublished", reflect.TypeOf((*MockGameRepository)(nil).CountPublished), ctx)
 }
 
 // Create mocks base method.
@@ -234,21 +280,6 @@ func (m *MockGameRepository) ListByDateRange(ctx context.Context, from, to time.
 func (mr *MockGameRepositoryMockRecorder) ListByDateRange(ctx, from, to any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListByDateRange", reflect.TypeOf((*MockGameRepository)(nil).ListByDateRange), ctx, from, to)
-}
-
-// ListFiltered mocks base method.
-func (m *MockGameRepository) ListFiltered(ctx context.Context, query *gorm.DB, offset, limit int) ([]Game, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListFiltered", ctx, query, offset, limit)
-	ret0, _ := ret[0].([]Game)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// ListFiltered indicates an expected call of ListFiltered.
-func (mr *MockGameRepositoryMockRecorder) ListFiltered(ctx, query, offset, limit any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListFiltered", reflect.TypeOf((*MockGameRepository)(nil).ListFiltered), ctx, query, offset, limit)
 }
 
 // Model mocks base method.

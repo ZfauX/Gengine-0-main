@@ -199,13 +199,31 @@ func (s *GameAdminService) DeleteLevelFromActiveGame(ctx context.Context, gameID
 		}
 
 		now := time.Now()
+		// A-2 (pass 32): загружаем текущие прогрессы ВСЕХ активных прохождений
+		// одним запросом с FOR UPDATE (вместо GetCurrentProgressForUpdate в цикле —
+		// был N+1). Фильтруем совпадающие по levelID в Go.
+		passingIDs := make([]uint, 0, len(passings))
 		for _, p := range passings {
-			progress, err := GetCurrentProgressForUpdate(tx, p.ID)
-			if err != nil {
-				log.Error().Uint("passing", p.ID).Err(err).Msg("DeleteLevelFromActiveGame: GetCurrentProgress error")
+			passingIDs = append(passingIDs, p.ID)
+		}
+		var progressList []LevelProgress
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("game_passing_id IN ? AND finished_at IS NULL", passingIDs).
+			Find(&progressList).Error; err != nil {
+			log.Error().Err(err).Msg("DeleteLevelFromActiveGame: batch load progress error")
+			return fmt.Errorf("не удалось получить прогрессы прохождений: %w", err)
+		}
+		progressByPassing := make(map[uint]*LevelProgress, len(progressList))
+		for i := range progressList {
+			progressByPassing[progressList[i].GamePassingID] = &progressList[i]
+		}
+		for _, p := range passings {
+			progress, ok := progressByPassing[p.ID]
+			if !ok {
+				log.Error().Uint("passing", p.ID).Err(gorm.ErrRecordNotFound).Msg("DeleteLevelFromActiveGame: no active progress")
 				// Не удаляем уровень, если не можем перевести активные команды —
 				// иначе прохождение останется без прогресса (C-H5).
-				return fmt.Errorf("не удалось получить прогресс прохождения %d: %w", p.ID, err)
+				return fmt.Errorf("не удалось получить прогресс прохождения %d", p.ID)
 			}
 			if progress.LevelID == levelID {
 				progress.FinishedAt = &now

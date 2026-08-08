@@ -36,6 +36,9 @@
 
         function loadPage(page) {
             if (page < 1 || page > totalPages) return;
+            // UX-M5 (pass 32): блокируем кнопки во время загрузки + .catch.
+            if (prevBtn) prevBtn.disabled = true;
+            if (nextBtn) nextBtn.disabled = true;
             fetch('/games/' + gameID + '/logs?page=' + page + '&per_page=50', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
                 .then(function(r) { return r.text(); })
                 .then(function(html) {
@@ -48,58 +51,18 @@
                         const pageSpan = document.getElementById('current-page');
                         if (pageSpan) pageSpan.textContent = pageSpan.textContent.replace(/\d+/, String(page));
                         currentPage = page;
-                        prevBtn.disabled = page <= 1;
-                        nextBtn.disabled = page >= totalPages;
                     }
+                    if (prevBtn) prevBtn.disabled = currentPage <= 1;
+                    if (nextBtn) nextBtn.disabled = currentPage >= totalPages;
+                })
+                .catch(function() {
+                    if (prevBtn) prevBtn.disabled = currentPage <= 1;
+                    if (nextBtn) nextBtn.disabled = currentPage >= totalPages;
                 });
         }
 
         if (prevBtn) prevBtn.addEventListener('click', function() { loadPage(currentPage - 1); });
         if (nextBtn) nextBtn.addEventListener('click', function() { loadPage(currentPage + 1); });
-        const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${wsProtocol}//${location.host}/games/${gameID}/logs/ws`;
-
-        const statusEl = document.getElementById('connection-status');
-        const logList = document.getElementById('log-list');
-
-        function updateConnectionStatus(text, color = '#888') {
-            if (statusEl) {
-                statusEl.textContent = text;
-                statusEl.style.color = color;
-            }
-        }
-
-        // Единый reconnecting-клиент (UX3) вместо самодельного backoff.
-        // Крит#1: createReconnectingWebSocket доступен после app.js (defer).
-        let logSocket = null;
-        document.addEventListener('DOMContentLoaded', function() {
-            logSocket = window.createReconnectingWebSocket(wsUrl, {
-            onMessage: function(e) {
-                // M4: битый фрейм не должен ронять обработчик логов.
-                let data;
-                try { data = JSON.parse(e.data); } catch (err) { console.error('logs: invalid frame', err); return; }
-                const li = document.createElement('li');
-                li.className = 'py-2 text-sm text-gray-700 dark:text-gray-300 border-b border-gray-100';
-                li.textContent = data.timestamp + " - " + data.message;
-                // Удаляем сообщение "Логов пока нет", если оно есть
-                const emptyMsg = logList.querySelector('li:only-child.text-gray-500');
-                if (emptyMsg) emptyMsg.remove();
-                logList.appendChild(li);
-                logList.scrollTop = logList.scrollHeight;
-            },
-            onStatus: function(name) {
-                if (name === 'connected') {
-                    updateConnectionStatus('{{ T $.Lang "logs.connected" }}', '#2ecc71');
-                } else if (name === 'reconnecting' || name === 'error' || name === 'failed') {
-                    updateConnectionStatus('{{ T $.Lang "logs.reconnecting" }}', '#e67e22');
-                }
-            }
-        });
-        });
-
-        window.addEventListener('beforeunload', function() {
-            if (logSocket) logSocket.close();
-        });
     })();
 </script>
 {{end}}

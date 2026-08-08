@@ -5,6 +5,9 @@ import (
 	"context"
 	"time"
 
+	"gengine-0/internal/domain/level"
+	"gengine-0/internal/pkg/sqlutil"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -17,8 +20,6 @@ type GameRepository interface {
 	Update(ctx context.Context, game *Game) error
 	Delete(ctx context.Context, id uint) error
 	Save(ctx context.Context, game *Game) error
-	Count(ctx context.Context, query *gorm.DB) (int64, error)
-	ListFiltered(ctx context.Context, query *gorm.DB, offset, limit int) ([]Game, error)
 	Model(ctx context.Context) *gorm.DB
 	// Новый метод для календаря
 	ListByDateRange(ctx context.Context, from, to time.Time) ([]Game, error)
@@ -31,6 +32,13 @@ type GameRepository interface {
 	UpsertGameSetting(ctx context.Context, settings *GameSetting) error
 	IsTeamCaptain(ctx context.Context, teamID, userID uint) (bool, error)
 	IsTeamMember(ctx context.Context, teamID, userID uint) (bool, error)
+	// Типизированные счётчики (A-5, pass 32) — заменяют escape-hatch Model(ctx).
+	CountActivePassings(ctx context.Context, gameID uint) (int64, error)
+	CountLevelsByGame(ctx context.Context, gameID uint) (int64, error)
+	CountPublished(ctx context.Context) (int64, error)
+	// AdminListGames — админ-листинг с фильтрами (A-5, pass 32): инкапсулирует
+	// динамическую GORM-цепочку, которую раньше строил handler через Model(ctx).
+	AdminListGames(ctx context.Context, query, status string, offset, limit int) ([]Game, int64, error)
 }
 
 // GamePassingRepository — контракт для прохождений.
@@ -77,16 +85,6 @@ func (r *gormGameRepo) Delete(ctx context.Context, id uint) error {
 func (r *gormGameRepo) Save(ctx context.Context, game *Game) error {
 	return r.db.WithContext(ctx).Save(game).Error
 }
-func (r *gormGameRepo) Count(ctx context.Context, query *gorm.DB) (int64, error) {
-	var total int64
-	err := query.WithContext(ctx).Count(&total).Error
-	return total, err
-}
-func (r *gormGameRepo) ListFiltered(ctx context.Context, query *gorm.DB, offset, limit int) ([]Game, error) {
-	var games []Game
-	err := query.WithContext(ctx).Offset(offset).Limit(limit).Find(&games).Error
-	return games, err
-}
 func (r *gormGameRepo) Model(ctx context.Context) *gorm.DB {
 	return r.db.WithContext(ctx).Model(&Game{})
 }
@@ -100,12 +98,6 @@ func (r *gormGameRepo) ListByDateRange(ctx context.Context, from, to time.Time) 
 		Order("starts_at ASC").
 		Find(&games).Error
 	return games, err
-}
-
-// DB возвращает *gorm.DB с контекстом.
-// DEPRECATED: не используем в новом коде (C1) — добавляйте точечные методы.
-func (r *gormGameRepo) DB(ctx context.Context) *gorm.DB {
-	return r.db.WithContext(ctx)
 }
 
 func (r *gormGameRepo) GetPassingByUser(ctx context.Context, gameID, userID uint) (*GamePassing, error) {
@@ -218,6 +210,56 @@ func (r *gormGameRepo) IsTeamMember(ctx context.Context, teamID, userID uint) (b
 		return false, err
 	}
 	return count > 0, nil
+}
+
+// CountActivePassings — количество активных прохождений игры
+// (A-5, pass 32: типизированная замена Model(ctx).Model(&GamePassing{})).
+func (r *gormGameRepo) CountActivePassings(ctx context.Context, gameID uint) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&GamePassing{}).
+		Where("game_id = ? AND status IN ?", gameID, []GamePassingStatus{StatusStarted, StatusTesting}).
+		Count(&count).Error
+	return count, err
+}
+
+// CountLevelsByGame — количество уровней игры (A-5, pass 32).
+func (r *gormGameRepo) CountLevelsByGame(ctx context.Context, gameID uint) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&level.Level{}).Where("game_id = ?", gameID).Count(&count).Error
+	return count, err
+}
+
+// CountPublished — количество опубликованных игр (метрики, A-5 pass 32).
+func (r *gormGameRepo) CountPublished(ctx context.Context) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&Game{}).Where("is_draft = false").Count(&count).Error
+	return count, err
+}
+
+// AdminListGames — админ-листинг с фильтрами (A-5, pass 32).
+func (r *gormGameRepo) AdminListGames(ctx context.Context, query, status string, offset, limit int) ([]Game, int64, error) {
+	db := r.db.WithContext(ctx).Model(&Game{}).Preload("Author")
+	if query != "" {
+		like := sqlutil.BuildLikePattern(query)
+		db = db.Joins("LEFT JOIN users ON users.id = games.author_id").
+			Where("games.name ILIKE ? OR users.name ILIKE ?", like, like)
+	}
+	switch status {
+	case "draft":
+		db = db.Where("is_draft = true")
+	case "published":
+		db = db.Where("is_draft = false")
+	}
+
+	var total int64
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var games []Game
+	if err := db.Order("id DESC").Offset(offset).Limit(limit).Find(&games).Error; err != nil {
+		return nil, 0, err
+	}
+	return games, total, nil
 }
 
 type gormGamePassingRepo struct{ db *gorm.DB }

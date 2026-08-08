@@ -25,7 +25,7 @@
             <img src="{{.Path}}" alt="{{ T $.Lang "photos.preview_alt" }}: {{.User.Name}}" loading="lazy" tabindex="0" role="button" aria-label="{{ T $.Lang "photos.open" }} {{.User.Name}}" class="w-full h-48 object-cover cursor-pointer photo-thumb transition-opacity duration-300 opacity-0"
                  data-path="{{.Path}}"
                  data-user="{{.User.Name}}"
-                 data-date="{{.CreatedAt.Format "2006-01-02 15:04:05"}}"
+                 data-date="{{ formatDateTime $.Lang $.TZOffset .CreatedAt }}"
                  >
             <div class="p-3">
                 <p class="font-semibold text-gray-800 dark:text-gray-100 text-sm">{{.User.Name}}</p>

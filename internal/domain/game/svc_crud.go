@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 
-	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/metrics"
 
@@ -74,11 +73,8 @@ func (s *GameCRUDService) Update(ctx context.Context, id uint, updated *Game, us
 
 	// Если игра опубликована, проверяем наличие активных прохождений
 	if !game.IsDraft {
-		var activePassings int64
-		if err := s.gameRepo.Model(ctx).
-			Model(&GamePassing{}).
-			Where("game_id = ? AND status IN ?", id, []GamePassingStatus{StatusStarted, StatusTesting}).
-			Count(&activePassings).Error; err != nil {
+		activePassings, err := s.gameRepo.CountActivePassings(ctx, id)
+		if err != nil {
 			return fmt.Errorf("ошибка проверки активных прохождений: %w", err)
 		}
 		if activePassings > 0 {
@@ -130,8 +126,8 @@ func (s *GameCRUDService) Publish(ctx context.Context, id uint, userID uint) err
 	if !game.IsDraft {
 		return errors.New("игра уже опубликована")
 	}
-	var levelCount int64
-	if err := s.gameRepo.Model(ctx).Model(&level.Level{}).Where("game_id = ?", id).Count(&levelCount).Error; err != nil {
+	levelCount, err := s.gameRepo.CountLevelsByGame(ctx, id)
+	if err != nil {
 		return err
 	}
 	if levelCount == 0 {
@@ -148,8 +144,8 @@ func (s *GameCRUDService) Publish(ctx context.Context, id uint, userID uint) err
 
 // getActiveGames возвращает количество опубликованных игр для обновления метрики.
 func (s *GameCRUDService) getActiveGames(ctx context.Context) int64 {
-	var count int64
-	if err := s.gameRepo.Model(ctx).Where("is_draft = false").Count(&count).Error; err != nil {
+	count, err := s.gameRepo.CountPublished(ctx)
+	if err != nil {
 		log.Error().Err(err).Msg("getActiveGames: failed to count active games")
 		return 0
 	}

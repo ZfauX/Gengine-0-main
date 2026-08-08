@@ -580,8 +580,10 @@
                 }
             });
 
-            // UX-11 (pass 31): Escape закрывает dropdown.
-            bell.addEventListener('keydown', function(e) {
+            // UX-11 (pass 31) + UX-H1 (pass 32): Escape закрывает dropdown.
+            // Обработчик висит на самом dropdown (фокус после открытия — в списке),
+            // а не на кнопке — иначе клавиатура «застревает» в открытом меню.
+            dropdown.addEventListener('keydown', function(e) {
                 if (e.key === 'Escape' && !dropdown.classList.contains('hidden')) {
                     dropdown.classList.add('hidden');
                     bell.setAttribute('aria-expanded', 'false');
