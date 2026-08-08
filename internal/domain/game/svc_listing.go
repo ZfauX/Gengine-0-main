@@ -189,7 +189,7 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 		TotalCount int64
 	}
 	var rows []gameRow
-	if err := s.gameRepo.Model(ctx).Raw(query, args...).Scan(&rows).Error; err != nil {
+	if err := s.gameRepo.RawScan(ctx, &rows, query, args...); err != nil {
 		return nil, 0, err
 	}
 
@@ -201,7 +201,7 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 		// Безопасно: используем тот же query без ORDER BY/LIMIT/OFFSET
 		countSQL := "SELECT COUNT(*) FROM (" + queryBeforeOrder + ") AS subq"
 		// C-1: не игнорируем ошибку count-запроса — иначе total=0 «нет игр» при сбое БД.
-		if err := s.gameRepo.Model(ctx).Raw(countSQL, args...).Scan(&total).Error; err != nil {
+		if err := s.gameRepo.RawScan(ctx, &total, countSQL, args...); err != nil {
 			log.Error().Err(err).Msg("ListFilteredPaginated: count fallback failed")
 			return nil, 0, err
 		}
@@ -237,14 +237,17 @@ func (s *GameListingService) AutocompleteSearch(ctx context.Context, query strin
 	if limit <= 0 || limit > 20 {
 		limit = 10
 	}
-	items := []AutocompleteItem{}
-	err := s.gameRepo.Model(ctx).
-		Select("id, name").
-		Where("is_draft = false AND visibility = 'public' AND (search_vector @@ plainto_tsquery('russian', ?) OR name ILIKE ?)",
-			query, "%"+sqlutil.EscapeLike(query)+"%").
-		Limit(limit).
-		Find(&items).Error
-	return items, err
+	// A-H4 (pass 33): поиск перенесён в репозиторий (Autocomplete) — без
+	// Model(ctx) в сервисе.
+	games, err := s.gameRepo.Autocomplete(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]AutocompleteItem, 0, len(games))
+	for _, g := range games {
+		items = append(items, AutocompleteItem{ID: g.ID, Name: g.Name})
+	}
+	return items, nil
 }
 
 // useSearchVector проверяет, существует ли столбец search_vector в таблице games.
@@ -265,12 +268,9 @@ func (s *GameListingService) useSearchVector(ctx context.Context) bool {
 		return s.searchVectorExists
 	}
 
-	var exists bool
-	err := s.gameRepo.Model(ctx).
-		Raw("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='games' AND column_name='search_vector')").
-		Scan(&exists).Error
+	exists, err := s.gameRepo.SearchVectorExists(ctx)
 	if err != nil || !exists {
-		log.Warn().Err(err).Bool("exists", exists).Msg("GameListingService: search_vector column not found, falling back to ILIKE")
+		log.Warn().Err(err).Bool("exists", exists).Msg("GameListingService: search_vector not available, falling back to ILIKE")
 		s.searchVectorExists = false
 	} else {
 		s.searchVectorExists = true

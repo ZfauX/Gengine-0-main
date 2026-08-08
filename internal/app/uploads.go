@@ -86,6 +86,9 @@ func (h *uploadsHandler) Serve(c *gin.Context) {
 	}
 
 	fullPath := filepath.Join(h.uploadsDir, filepath.FromSlash(webPath))
+	// S-3 (pass 33): nosniff — браузер не должен «угадывать» Content-Type
+	// (защита от polyglot-файлов, загруженных как текст/картинка).
+	c.Header("X-Content-Type-Options", "nosniff")
 	c.File(fullPath)
 }
 

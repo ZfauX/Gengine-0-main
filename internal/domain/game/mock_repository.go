@@ -15,7 +15,6 @@ import (
 	time "time"
 
 	gomock "go.uber.org/mock/gomock"
-	gorm "gorm.io/gorm"
 )
 
 // MockGameRepository is a mock of GameRepository interface.
@@ -58,6 +57,21 @@ func (mr *MockGameRepositoryMockRecorder) AdminListGames(ctx, query, status, off
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AdminListGames", reflect.TypeOf((*MockGameRepository)(nil).AdminListGames), ctx, query, status, offset, limit)
 }
 
+// Autocomplete mocks base method.
+func (m *MockGameRepository) Autocomplete(ctx context.Context, query string, limit int) ([]Game, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Autocomplete", ctx, query, limit)
+	ret0, _ := ret[0].([]Game)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Autocomplete indicates an expected call of Autocomplete.
+func (mr *MockGameRepositoryMockRecorder) Autocomplete(ctx, query, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Autocomplete", reflect.TypeOf((*MockGameRepository)(nil).Autocomplete), ctx, query, limit)
+}
+
 // CountActivePassings mocks base method.
 func (m *MockGameRepository) CountActivePassings(ctx context.Context, gameID uint) (int64, error) {
 	m.ctrl.T.Helper()
@@ -86,6 +100,21 @@ func (m *MockGameRepository) CountLevelsByGame(ctx context.Context, gameID uint)
 func (mr *MockGameRepositoryMockRecorder) CountLevelsByGame(ctx, gameID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountLevelsByGame", reflect.TypeOf((*MockGameRepository)(nil).CountLevelsByGame), ctx, gameID)
+}
+
+// CountPassingsInStatuses mocks base method.
+func (m *MockGameRepository) CountPassingsInStatuses(ctx context.Context, gameID uint, statuses []GamePassingStatus) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CountPassingsInStatuses", ctx, gameID, statuses)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CountPassingsInStatuses indicates an expected call of CountPassingsInStatuses.
+func (mr *MockGameRepositoryMockRecorder) CountPassingsInStatuses(ctx, gameID, statuses any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountPassingsInStatuses", reflect.TypeOf((*MockGameRepository)(nil).CountPassingsInStatuses), ctx, gameID, statuses)
 }
 
 // CountPublished mocks base method.
@@ -282,18 +311,23 @@ func (mr *MockGameRepositoryMockRecorder) ListByDateRange(ctx, from, to any) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListByDateRange", reflect.TypeOf((*MockGameRepository)(nil).ListByDateRange), ctx, from, to)
 }
 
-// Model mocks base method.
-func (m *MockGameRepository) Model(ctx context.Context) *gorm.DB {
+// RawScan mocks base method.
+func (m *MockGameRepository) RawScan(ctx context.Context, dest any, query string, args ...any) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Model", ctx)
-	ret0, _ := ret[0].(*gorm.DB)
+	varargs := []any{ctx, dest, query}
+	for _, a := range args {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "RawScan", varargs...)
+	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// Model indicates an expected call of Model.
-func (mr *MockGameRepositoryMockRecorder) Model(ctx any) *gomock.Call {
+// RawScan indicates an expected call of RawScan.
+func (mr *MockGameRepositoryMockRecorder) RawScan(ctx, dest, query any, args ...any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Model", reflect.TypeOf((*MockGameRepository)(nil).Model), ctx)
+	varargs := append([]any{ctx, dest, query}, args...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RawScan", reflect.TypeOf((*MockGameRepository)(nil).RawScan), varargs...)
 }
 
 // Save mocks base method.
@@ -308,6 +342,21 @@ func (m *MockGameRepository) Save(ctx context.Context, game *Game) error {
 func (mr *MockGameRepositoryMockRecorder) Save(ctx, game any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Save", reflect.TypeOf((*MockGameRepository)(nil).Save), ctx, game)
+}
+
+// SearchVectorExists mocks base method.
+func (m *MockGameRepository) SearchVectorExists(ctx context.Context) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SearchVectorExists", ctx)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SearchVectorExists indicates an expected call of SearchVectorExists.
+func (mr *MockGameRepositoryMockRecorder) SearchVectorExists(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SearchVectorExists", reflect.TypeOf((*MockGameRepository)(nil).SearchVectorExists), ctx)
 }
 
 // Update mocks base method.
@@ -419,6 +468,37 @@ func (m *MockGamePassingRepository) GetByID(ctx context.Context, id uint) (*Game
 func (mr *MockGamePassingRepositoryMockRecorder) GetByID(ctx, id any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByID", reflect.TypeOf((*MockGamePassingRepository)(nil).GetByID), ctx, id)
+}
+
+// ListByGamePaginated mocks base method.
+func (m *MockGamePassingRepository) ListByGamePaginated(ctx context.Context, gameID uint, page, pageSize int) ([]GamePassing, int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListByGamePaginated", ctx, gameID, page, pageSize)
+	ret0, _ := ret[0].([]GamePassing)
+	ret1, _ := ret[1].(int64)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// ListByGamePaginated indicates an expected call of ListByGamePaginated.
+func (mr *MockGamePassingRepositoryMockRecorder) ListByGamePaginated(ctx, gameID, page, pageSize any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListByGamePaginated", reflect.TypeOf((*MockGamePassingRepository)(nil).ListByGamePaginated), ctx, gameID, page, pageSize)
+}
+
+// ListTestPassings mocks base method.
+func (m *MockGamePassingRepository) ListTestPassings(ctx context.Context, gameID uint) ([]GamePassing, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListTestPassings", ctx, gameID)
+	ret0, _ := ret[0].([]GamePassing)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListTestPassings indicates an expected call of ListTestPassings.
+func (mr *MockGamePassingRepositoryMockRecorder) ListTestPassings(ctx, gameID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListTestPassings", reflect.TypeOf((*MockGamePassingRepository)(nil).ListTestPassings), ctx, gameID)
 }
 
 // Save mocks base method.

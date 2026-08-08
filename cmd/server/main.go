@@ -386,6 +386,31 @@ func run() error {
 		}
 	})
 
+	// Фоновая retention прочитанных уведомлений (P-2, pass 33): раз в сутки
+	// удаляем прочитанные старше 90 дней — таблица не растёт безгранично.
+	const notificationRetentionDays = 90
+	bgWg.Add(1)
+	goSafe(func() {
+		defer bgWg.Done()
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				log.Info().Msg("notification retention: context canceled, stopping")
+				return
+			case <-ticker.C:
+				cutoff := time.Now().AddDate(0, 0, -notificationRetentionDays)
+				deleted, err := deps.Repos.Notification.DeleteOldRead(ctx, cutoff)
+				if err != nil {
+					log.Error().Err(err).Msg("Очистка уведомлений: ошибка")
+				} else if deleted > 0 {
+					log.Debug().Int64("deleted", deleted).Msg("Очистка уведомлений: удалено прочитанных старше 90 дней")
+				}
+			}
+		}
+	})
+
 	srv := &http.Server{
 		Addr:        ":" + cfg.Server.Port,
 		Handler:     r,

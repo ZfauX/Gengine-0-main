@@ -305,9 +305,6 @@ func (h *AuthHandler) TwoFALoginVerify(c *gin.Context) {
 	c.Redirect(http.StatusFound, returnURL)
 }
 
-// TODO: JWT blacklist via jti would need Valkey support — check jti against a denylist
-// before accepting a token in middleware.
-
 // RefreshToken обновляет access-токен.
 // @Summary Обновление access-токена
 // @Description Получает новый access-токен по refresh-токену

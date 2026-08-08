@@ -19,6 +19,7 @@ import (
 
 type GamePassingService struct {
 	DB          *gorm.DB
+	repo        GamePassingRepository
 	teamService *team.TeamService
 	coAuthor    *CoAuthorService
 	progressSvc *LevelProgressService
@@ -29,6 +30,20 @@ type GamePassingService struct {
 
 func NewGamePassingService(db *gorm.DB, ts *team.TeamService, ca *CoAuthorService, progressSvc *LevelProgressService) *GamePassingService {
 	return &GamePassingService{DB: db, teamService: ts, coAuthor: ca, progressSvc: progressSvc}
+}
+
+// WithRepository внедряет репозиторий прохождений (A-H3, pass 33).
+func (s *GamePassingService) WithRepository(repo GamePassingRepository) *GamePassingService {
+	s.repo = repo
+	return s
+}
+
+// repoOrDefault возвращает репозиторий или создаёт дефолтный на DB.
+func (s *GamePassingService) repoOrDefault() GamePassingRepository {
+	if s.repo == nil {
+		return NewGormGamePassingRepo(s.DB)
+	}
+	return s.repo
 }
 
 // WithHub устанавливает WebSocket-хаб для broadcast-уведомлений.
@@ -99,42 +114,19 @@ func (s *GamePassingService) Apply(ctx context.Context, gameID, teamID, userID u
 }
 
 // ListByGamePaginated возвращает прохождения для игры с пагинацией.
+// A-H3 (pass 33): через репозиторий, а не экспортированный DB.
 func (s *GamePassingService) ListByGamePaginated(ctx context.Context, gameID uint, page, perPage int) ([]GamePassing, int64, error) {
-	if page < 1 {
-		page = 1
-	}
-	if perPage < 1 {
-		perPage = 20
-	} else if perPage > 100 {
-		perPage = 100
-	}
-
-	var total int64
-	var passings []GamePassing
-
-	// C-7: отдельные цепочки для Count и Find — переиспользование GORM-цепочки
-	// может перенести состояние COUNT в запрос данных.
-	if err := s.DB.WithContext(ctx).Model(&GamePassing{}).Where("game_id = ?", gameID).Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-
-	offset := (page - 1) * perPage
-	// M11 (pass 30): JOIN вместо вложенного Preload — team+capitan
-	// подтягиваются одним запросом, а не тремя (passings→teams→users).
-	if err := s.DB.WithContext(ctx).
-		Joins("Team").Joins("Team.Captain").
-		Where("game_id = ?", gameID).
-		Order("game_passings.created_at DESC").Offset(offset).Limit(perPage).
-		Find(&passings).Error; err != nil {
-		return nil, 0, err
-	}
-
-	return passings, total, nil
+	return s.repoOrDefault().ListByGamePaginated(ctx, gameID, page, perPage)
 }
 
 // ListTestPassings возвращает тестовые прохождения для игры.
 func (s *GamePassingService) ListTestPassings(ctx context.Context, gameID uint, result *[]GamePassing) error {
-	return s.DB.WithContext(ctx).Where("game_id = ? AND status = ?", gameID, StatusTesting).Find(result).Error
+	passings, err := s.repoOrDefault().ListTestPassings(ctx, gameID)
+	if err != nil {
+		return err
+	}
+	*result = passings
+	return nil
 }
 
 // UpdateStatus обновляет статус прохождения с транзакцией, блокировкой и валидацией переходов.

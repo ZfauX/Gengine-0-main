@@ -82,6 +82,10 @@ func (m *mockRepo) MarkAllAsRead(ctx context.Context, userID uint) error {
 	return nil
 }
 
+func (m *mockRepo) DeleteOldRead(ctx context.Context, cutoff time.Time) (int64, error) {
+	return 0, nil
+}
+
 func (m *mockRepo) ListPushSubscriptions(ctx context.Context, userID uint) ([]user.PushSubscription, error) {
 	if m.subsFn != nil {
 		return m.subsFn(ctx, userID)

@@ -143,6 +143,11 @@ func (m *mockGameRepo) CountActivePassings(ctx context.Context, gameID uint) (in
 	return args.Get(0).(int64), args.Error(1)
 }
 
+func (m *mockGameRepo) CountPassingsInStatuses(ctx context.Context, gameID uint, statuses []game.GamePassingStatus) (int64, error) {
+	args := m.Called(ctx, gameID, statuses)
+	return args.Get(0).(int64), args.Error(1)
+}
+
 func (m *mockGameRepo) CountLevelsByGame(ctx context.Context, gameID uint) (int64, error) {
 	args := m.Called(ctx, gameID)
 	return args.Get(0).(int64), args.Error(1)
@@ -159,6 +164,24 @@ func (m *mockGameRepo) AdminListGames(ctx context.Context, query, status string,
 		return nil, args.Get(1).(int64), args.Error(2)
 	}
 	return args.Get(0).([]game.Game), args.Get(1).(int64), args.Error(2)
+}
+
+func (m *mockGameRepo) RawScan(ctx context.Context, dest any, query string, args ...any) error {
+	a := m.Called(ctx, dest, query, args)
+	return a.Error(0)
+}
+
+func (m *mockGameRepo) Autocomplete(ctx context.Context, query string, limit int) ([]game.Game, error) {
+	a := m.Called(ctx, query, limit)
+	if a.Get(0) == nil {
+		return nil, a.Error(1)
+	}
+	return a.Get(0).([]game.Game), a.Error(1)
+}
+
+func (m *mockGameRepo) SearchVectorExists(ctx context.Context) (bool, error) {
+	a := m.Called(ctx)
+	return a.Bool(0), a.Error(1)
 }
 
 func (m *mockGameRepo) IsTeamCaptain(ctx context.Context, teamID, userID uint) (bool, error) {

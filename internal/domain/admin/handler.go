@@ -114,15 +114,14 @@ func (h *AdminHandler) Dashboard(c *gin.Context) {
 		AuditCount  int64
 		BackupCount int64
 	}
-	err := h.gameRepo.Model(ctx).
-		Select(`
+	err := h.gameRepo.RawScan(ctx, &counts, `
+			SELECT
 			(SELECT COUNT(*) FROM users WHERE deleted_at IS NULL) AS user_count,
 			(SELECT COUNT(*) FROM games WHERE deleted_at IS NULL) AS game_count,
 			(SELECT COUNT(*) FROM teams WHERE deleted_at IS NULL) AS team_count,
 			(SELECT COUNT(*) FROM audit_logs WHERE deleted_at IS NULL) AS audit_count,
-			(SELECT COUNT(*) FROM backups WHERE deleted_at IS NULL) AS backup_count
-		`).
-		Scan(&counts).Error
+			(SELECT COUNT(*) FROM backups) AS backup_count
+		`)
 	if err != nil {
 		log.Error().Err(err).Msg("Dashboard: failed to count dashboard stats")
 	}

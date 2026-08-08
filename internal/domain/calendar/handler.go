@@ -100,7 +100,13 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 	startOfMonth := time.Date(req.Year, time.Month(req.Month), 1, 0, 0, 0, 0, time.UTC)
 	endOfMonth := time.Date(req.Year, time.Month(req.Month)+1, 1, 0, 0, 0, 0, time.UTC).Add(-time.Second)
 
-	cacheKey := fmt.Sprintf("%d-%d", req.Year, req.Month)
+	// TZ-1 (pass 33): календарь показывает даты/время в локальной таймзоне
+	// пользователя (tz_offset cookie) — иначе UTC+3 видит время на 3ч раньше,
+	// а игры около полуночи попадают в неправильную ячейку дня. Offset также
+	// входит в ключ кэша (разные пользователи видят разные события).
+	tzOffset := render.TZOffsetFromCookie(c)
+
+	cacheKey := fmt.Sprintf("%d-%d-%d", req.Year, req.Month, tzOffset)
 	h.cacheMu.Lock()
 	if e, ok := h.cache[cacheKey]; ok && time.Now().Before(e.expires) {
 		h.cacheMu.Unlock()
@@ -129,11 +135,13 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 		if g.StartsAt == nil {
 			continue
 		}
-		dateStr := g.StartsAt.Format("2006-01-02")
+		// TZ-1 (pass 33): локальное время пользователя для даты-ячейки и времени.
+		localStart := g.StartsAt.Add(time.Duration(tzOffset) * time.Minute)
+		dateStr := localStart.Format("2006-01-02")
 		events[dateStr] = append(events[dateStr], gin.H{
 			"id":   g.ID,
 			"name": g.Name,
-			"time": g.StartsAt.Format("15:04"),
+			"time": localStart.Format("15:04"),
 		})
 	}
 

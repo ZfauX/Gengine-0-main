@@ -22,8 +22,8 @@ import (
 	"gorm.io/gorm"
 )
 
-func wrapGamePlayService(db *gorm.DB, attemptSvc *game.AttemptService, progressSvc *game.LevelProgressService, monitorSvc *game.MonitorService, hub *ws.RoomHub, coAuthorSvc *game.CoAuthorService, cfg *config.Config, sseMgr *game.SSEManager) *game.GamePlayService {
-	return game.NewGamePlayService(db, attemptSvc, progressSvc, monitorSvc, hub, coAuthorSvc, cfg).WithSSEManager(sseMgr)
+func wrapGamePlayService(db *gorm.DB, gameRepo game.GameRepository, attemptSvc *game.AttemptService, progressSvc *game.LevelProgressService, monitorSvc *game.MonitorService, hub *ws.RoomHub, coAuthorSvc *game.CoAuthorService, cfg *config.Config, sseMgr *game.SSEManager) *game.GamePlayService {
+	return game.NewGamePlayService(db, attemptSvc, progressSvc, monitorSvc, hub, coAuthorSvc, cfg).WithRepository(gameRepo).WithSSEManager(sseMgr)
 }
 
 func wrapGameAdminService(db *gorm.DB, coAuthorSvc *game.CoAuthorService, cfg *config.Config, sseMgr *game.SSEManager) *game.GameAdminService {
@@ -74,8 +74,9 @@ func wrapLevelProgressService(db *gorm.DB, progressRepo game.LevelProgressReposi
 
 // wrapGamePassingService собирает GamePassingService с method-chaining
 // (D4): раньше создавался вручную в router.go и не был в DI-манифесте.
-func wrapGamePassingService(db *gorm.DB, ts *team.TeamService, ca *game.CoAuthorService, progressSvc *game.LevelProgressService, hub *ws.RoomHub, monitorSvc *game.MonitorService, sseMgr *game.SSEManager) *game.GamePassingService {
+func wrapGamePassingService(db *gorm.DB, passingRepo game.GamePassingRepository, ts *team.TeamService, ca *game.CoAuthorService, progressSvc *game.LevelProgressService, hub *ws.RoomHub, monitorSvc *game.MonitorService, sseMgr *game.SSEManager) *game.GamePassingService {
 	return game.NewGamePassingService(db, ts, ca, progressSvc).
+		WithRepository(passingRepo).
 		WithHub(hub).
 		WithMonitorService(monitorSvc).
 		WithSSEManager(sseMgr)

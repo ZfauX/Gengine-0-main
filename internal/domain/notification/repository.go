@@ -26,6 +26,9 @@ type NotificationRepository interface {
 	ListByUser(ctx context.Context, userID uint, offset, limit int) ([]Notification, int64, error)
 	MarkAsRead(ctx context.Context, userID, notificationID uint) (bool, error)
 	MarkAllAsRead(ctx context.Context, userID uint) error
+	// DeleteOldRead удаляет прочитанные уведомления старше cutoff (P-2, pass 33:
+	// retention — таблица иначе растёт безгранично).
+	DeleteOldRead(ctx context.Context, cutoff time.Time) (int64, error)
 
 	// Push subscriptions
 	ListPushSubscriptions(ctx context.Context, userID uint) ([]user.PushSubscription, error)
@@ -115,6 +118,12 @@ func (r *gormNotificationRepo) MarkAllAsRead(ctx context.Context, userID uint) e
 	return r.db.WithContext(ctx).Model(&Notification{}).
 		Where("user_id = ? AND read = ?", userID, false).
 		Update("read", true).Error
+}
+
+// DeleteOldRead удаляет прочитанные уведомления старше cutoff (P-2, pass 33).
+func (r *gormNotificationRepo) DeleteOldRead(ctx context.Context, cutoff time.Time) (int64, error) {
+	res := r.db.WithContext(ctx).Where("read = ? AND read_at < ?", true, cutoff).Delete(&Notification{})
+	return res.RowsAffected, res.Error
 }
 
 func (r *gormNotificationRepo) ListPushSubscriptions(ctx context.Context, userID uint) ([]user.PushSubscription, error) {

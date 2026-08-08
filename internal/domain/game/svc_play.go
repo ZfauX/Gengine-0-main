@@ -42,6 +42,7 @@ var ErrNotInGame = errors.New("вы не участвуете в этом про
 // работу с чёрным ящиком и тестовый режим.
 type GamePlayService struct {
 	db          *gorm.DB
+	gameRepo    GameRepository
 	attemptSvc  *AttemptService
 	progressSvc *LevelProgressService
 	monitorSvc  MonitorServiceInterface
@@ -55,6 +56,13 @@ type GamePlayService struct {
 	// gameFinishedCallback вызывается при завершении последнего уровня игры
 	// (начисление турнирных очков, пересчёт результатов). Настраивается из app-слоя.
 	gameFinishedCallback GameCompletionCallback
+}
+
+// WithRepository внедряет репозиторий игр (A-H2, pass 33) — для типизированных
+// счётчиков вместо raw SQL через db.
+func (s *GamePlayService) WithRepository(repo GameRepository) *GamePlayService {
+	s.gameRepo = repo
+	return s
 }
 
 // NewGamePlayService создаёт новый экземпляр GamePlayService.
@@ -632,10 +640,22 @@ func (s *GamePlayService) ProcessSnapshot(ctx context.Context, gameID uint) {
 	if s.monitorSvc != nil {
 		// P-M1: если активных прохождений не осталось (игра завершена), колбэк
 		// финиша (onGameFinished) уже выполнил CalculateResults — не дублируем.
+		// A-H2 (pass 33): типизированный счётчик через репозиторий (семантика
+		// started+accepted сохранена — это «не завершена», в отличие от
+		// CountActivePassings = started+testing для редактирования игры).
 		var active int64
-		if err := s.db.WithContext(timeoutCtx).Model(&GamePassing{}).
-			Where("game_id = ? AND status IN ?", gameID, []string{string(StatusStarted), string(StatusAccepted)}).
-			Count(&active).Error; err != nil {
+		var err error
+		if s.gameRepo != nil {
+			active, err = s.gameRepo.CountPassingsInStatuses(timeoutCtx, gameID,
+				[]GamePassingStatus{StatusStarted, StatusAccepted})
+		} else {
+			var count int64
+			err = s.db.WithContext(timeoutCtx).Model(&GamePassing{}).
+				Where("game_id = ? AND status IN ?", gameID, []GamePassingStatus{StatusStarted, StatusAccepted}).
+				Count(&count).Error
+			active = count
+		}
+		if err != nil {
 			log.Warn().Err(err).Uint("game_id", gameID).Msg("ProcessSnapshot: failed to count active passings")
 		}
 		if active > 0 {

@@ -20,7 +20,6 @@ type GameRepository interface {
 	Update(ctx context.Context, game *Game) error
 	Delete(ctx context.Context, id uint) error
 	Save(ctx context.Context, game *Game) error
-	Model(ctx context.Context) *gorm.DB
 	// Новый метод для календаря
 	ListByDateRange(ctx context.Context, from, to time.Time) ([]Game, error)
 	// Read-хелперы для сервисного слоя (C1 — без прямого *gorm.DB в сервисах).
@@ -36,9 +35,19 @@ type GameRepository interface {
 	CountActivePassings(ctx context.Context, gameID uint) (int64, error)
 	CountLevelsByGame(ctx context.Context, gameID uint) (int64, error)
 	CountPublished(ctx context.Context) (int64, error)
+	// CountPassingsInStatuses — количество прохождений игры в указанных статусах
+	// (A-H2, pass 33: заменил raw Count в svc_play.ProcessSnapshot).
+	CountPassingsInStatuses(ctx context.Context, gameID uint, statuses []GamePassingStatus) (int64, error)
 	// AdminListGames — админ-листинг с фильтрами (A-5, pass 32): инкапсулирует
 	// динамическую GORM-цепочку, которую раньше строил handler через Model(ctx).
 	AdminListGames(ctx context.Context, query, status string, offset, limit int) ([]Game, int64, error)
+	// RawScan выполняет raw SQL и сканирует в dest (A-H4, pass 33 — убирает
+	// Model(ctx) из интерфейса). Используется листингом для оконных запросов.
+	RawScan(ctx context.Context, dest any, query string, args ...any) error
+	// Autocomplete выполняет поиск опубликованных публичных игр (A-H4).
+	Autocomplete(ctx context.Context, query string, limit int) ([]Game, error)
+	// SearchVectorExists проверяет наличие search_vector (A-H4).
+	SearchVectorExists(ctx context.Context) (bool, error)
 }
 
 // GamePassingRepository — контракт для прохождений.
@@ -48,6 +57,10 @@ type GamePassingRepository interface {
 	FindByGameAndTeam(ctx context.Context, gameID, teamID uint) (*GamePassing, error)
 	FindActiveByGame(ctx context.Context, gameID uint) ([]GamePassing, error)
 	UpdateStatus(ctx context.Context, id uint, status GamePassingStatus) error
+	// A-H3 (pass 33): read-пути GamePassingService — ранее шли через
+	// экспортированный DB *gorm.DB в сервисе.
+	ListByGamePaginated(ctx context.Context, gameID uint, page, pageSize int) ([]GamePassing, int64, error)
+	ListTestPassings(ctx context.Context, gameID uint) ([]GamePassing, error)
 	Save(ctx context.Context, passing *GamePassing) error
 }
 
@@ -85,8 +98,36 @@ func (r *gormGameRepo) Delete(ctx context.Context, id uint) error {
 func (r *gormGameRepo) Save(ctx context.Context, game *Game) error {
 	return r.db.WithContext(ctx).Save(game).Error
 }
-func (r *gormGameRepo) Model(ctx context.Context) *gorm.DB {
-	return r.db.WithContext(ctx).Model(&Game{})
+
+// RawScan выполняет raw SQL и сканирует результат (A-H4, pass 33).
+func (r *gormGameRepo) RawScan(ctx context.Context, dest any, query string, args ...any) error {
+	return r.db.WithContext(ctx).Raw(query, args...).Scan(dest).Error
+}
+
+// Autocomplete ищет опубликованные публичные игры по поисковому вектору/ILIKE
+// (A-H4, pass 33 — ранее raw-запрос через Model(ctx) в листинге).
+func (r *gormGameRepo) Autocomplete(ctx context.Context, query string, limit int) ([]Game, error) {
+	var items []Game
+	err := r.db.WithContext(ctx).
+		Select("id, name").
+		Where("is_draft = false AND visibility = 'public' AND (search_vector @@ plainto_tsquery('russian', ?) OR name ILIKE ?)",
+			query, "%"+sqlutil.EscapeLike(query)+"%").
+		Limit(limit).
+		Find(&items).Error
+	return items, err
+}
+
+// SearchVectorExists проверяет наличие search_vector в таблице games
+// (A-H4, pass 33).
+func (r *gormGameRepo) SearchVectorExists(ctx context.Context) (bool, error) {
+	var exists bool
+	err := r.db.WithContext(ctx).
+		Raw("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='games' AND column_name='search_vector')").
+		Scan(&exists).Error
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
 }
 
 // ListByDateRange возвращает опубликованные публичные игры за указанный период.
@@ -215,9 +256,15 @@ func (r *gormGameRepo) IsTeamMember(ctx context.Context, teamID, userID uint) (b
 // CountActivePassings — количество активных прохождений игры
 // (A-5, pass 32: типизированная замена Model(ctx).Model(&GamePassing{})).
 func (r *gormGameRepo) CountActivePassings(ctx context.Context, gameID uint) (int64, error) {
+	return r.CountPassingsInStatuses(ctx, gameID, []GamePassingStatus{StatusStarted, StatusTesting})
+}
+
+// CountPassingsInStatuses — количество прохождений игры в заданных статусах
+// (A-H2, pass 33).
+func (r *gormGameRepo) CountPassingsInStatuses(ctx context.Context, gameID uint, statuses []GamePassingStatus) (int64, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Model(&GamePassing{}).
-		Where("game_id = ? AND status IN ?", gameID, []GamePassingStatus{StatusStarted, StatusTesting}).
+		Where("game_id = ? AND status IN ?", gameID, statuses).
 		Count(&count).Error
 	return count, err
 }
@@ -293,6 +340,41 @@ func (r *gormGamePassingRepo) FindActiveByGame(ctx context.Context, gameID uint)
 func (r *gormGamePassingRepo) UpdateStatus(ctx context.Context, id uint, status GamePassingStatus) error {
 	return r.db.WithContext(ctx).Model(&GamePassing{}).Where("id = ?", id).Update("status", status).Error
 }
+
+// ListByGamePaginated возвращает страницу прохождений игры с JOIN команды и
+// капитана (A-H3, pass 33 — перенесено из GamePassingService).
+func (r *gormGamePassingRepo) ListByGamePaginated(ctx context.Context, gameID uint, page, pageSize int) ([]GamePassing, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	} else if pageSize > 100 {
+		pageSize = 100
+	}
+	var total int64
+	if err := r.db.WithContext(ctx).Model(&GamePassing{}).Where("game_id = ?", gameID).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	offset := (page - 1) * pageSize
+	var passings []GamePassing
+	if err := r.db.WithContext(ctx).
+		Joins("Team").Joins("Team.Captain").
+		Where("game_id = ?", gameID).
+		Order("game_passings.created_at DESC").Offset(offset).Limit(pageSize).
+		Find(&passings).Error; err != nil {
+		return nil, 0, err
+	}
+	return passings, total, nil
+}
+
+// ListTestPassings возвращает тестовые прохождения игры (A-H3, pass 33).
+func (r *gormGamePassingRepo) ListTestPassings(ctx context.Context, gameID uint) ([]GamePassing, error) {
+	var passings []GamePassing
+	err := r.db.WithContext(ctx).Where("game_id = ? AND status = ?", gameID, StatusTesting).Find(&passings).Error
+	return passings, err
+}
+
 func (r *gormGamePassingRepo) Save(ctx context.Context, passing *GamePassing) error {
 	return r.db.WithContext(ctx).Save(passing).Error
 }
