@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/http/pprof"
 	"path/filepath"
 	"strings"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/health"
 	"gengine-0/internal/pkg/i18n"
+	"gengine-0/internal/pkg/metrics"
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/templatefuncs"
@@ -172,6 +174,60 @@ func (app *App) setupEngine(r *gin.Engine) error {
 	})
 	r.GET("/metrics", middleware.AuthRequired(app.Deps.Services.Auth), twoFactorMW, middleware.AdminRequired(), func(c *gin.Context) {
 		gin.WrapH(promhttp.Handler())(c)
+	})
+
+	// Профилирование на реальных данных (pass 29, идея 1): net/http/pprof под
+	// той же админ-+2FA защитой, что /metrics. Позволяет снимать CPU/heap/goroutine
+	// профили с продакшена: /debug/pprof/ + go tool pprof.
+	pprofGroup := r.Group("/debug/pprof", middleware.AuthRequired(app.Deps.Services.Auth), twoFactorMW, middleware.AdminRequired())
+	{
+		pprofGroup.GET("/", gin.WrapF(pprof.Index))
+		pprofGroup.GET("/cmdline", gin.WrapF(pprof.Cmdline))
+		pprofGroup.GET("/profile", gin.WrapF(pprof.Profile))
+		pprofGroup.GET("/symbol", gin.WrapF(pprof.Symbol))
+		pprofGroup.GET("/trace", gin.WrapF(pprof.Trace))
+		pprofGroup.GET("/allocs", gin.WrapH(pprof.Handler("allocs")))
+		pprofGroup.GET("/block", gin.WrapH(pprof.Handler("block")))
+		pprofGroup.GET("/goroutine", gin.WrapH(pprof.Handler("goroutine")))
+		pprofGroup.GET("/heap", gin.WrapH(pprof.Handler("heap")))
+		pprofGroup.GET("/mutex", gin.WrapH(pprof.Handler("mutex")))
+		pprofGroup.GET("/threadcreate", gin.WrapH(pprof.Handler("threadcreate")))
+	}
+
+	// RUM (Real User Monitoring, pass 29, идея 2): клиентские Web Vitals.
+	// Публичный POST /api/rum с per-IP лимитом — клиент шлёт LCP/INP/CLS/FCP/TTFB.
+	r.POST("/api/rum", middleware.APIRateLimit(time.Minute, 60), func(c *gin.Context) {
+		var payload struct {
+			Page   string `json:"page"`
+			Vitals struct {
+				LCP  float64 `json:"lcp"`
+				INP  float64 `json:"inp"`
+				CLS  float64 `json:"cls"`
+				FCP  float64 `json:"fcp"`
+				TTFB float64 `json:"ttfb"`
+			} `json:"vitals"`
+		}
+		if err := c.ShouldBindJSON(&payload); err != nil {
+			c.Status(http.StatusBadRequest)
+			return
+		}
+		metrics.IncRumPageLoad()
+		if payload.Vitals.LCP > 0 {
+			metrics.ObserveRumVital("lcp", payload.Vitals.LCP)
+		}
+		if payload.Vitals.INP > 0 {
+			metrics.ObserveRumVital("inp", payload.Vitals.INP)
+		}
+		if payload.Vitals.CLS > 0 {
+			metrics.ObserveRumVital("cls", payload.Vitals.CLS)
+		}
+		if payload.Vitals.FCP > 0 {
+			metrics.ObserveRumVital("fcp", payload.Vitals.FCP)
+		}
+		if payload.Vitals.TTFB > 0 {
+			metrics.ObserveRumVital("ttfb", payload.Vitals.TTFB)
+		}
+		c.Status(http.StatusNoContent)
 	})
 
 	healthChecker := health.NewCheckerWithValkey(app.DB, app.Hub, app.Deps.Cache).

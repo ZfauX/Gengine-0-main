@@ -649,5 +649,89 @@
             }
         })();
     </script>
+
+    <!-- RUM (Real User Monitoring, pass 29): Web Vitals на серверный /api/rum -->
+    <script nonce="{{.csp_nonce}}">
+    (function() {
+        // Отправляем только один отчёт на загрузку страницы.
+        if (window.__rumSent) return;
+        window.__rumSent = true;
+
+        var vitals = { lcp: 0, inp: 0, cls: 0, fcp: 0, ttfb: 0 };
+
+        // FCP и LCP через PerformanceObserver.
+        function observePaint(entryType, key) {
+            try {
+                var po = new PerformanceObserver(function(list) {
+                    var entries = list.getEntries();
+                    if (entries.length > 0) {
+                        vitals[key] = entries[entries.length - 1].startTime / 1000;
+                    }
+                });
+                po.observe({ type: entryType, buffered: true });
+            } catch (e) { /* не поддерживается */ }
+        }
+        observePaint('paint', 'fcp');
+        observePaint('largest-contentful-paint', 'lcp');
+
+        // CLS (layout shift).
+        try {
+            var clsPO = new PerformanceObserver(function(list) {
+                for (var i = 0; i < list.getEntries().length; i++) {
+                    var e = list.getEntries()[i];
+                    if (!e.hadRecentInput) vitals.cls += e.value;
+                }
+            });
+            clsPO.observe({ type: 'layout-shift', buffered: true });
+        } catch (e) { /* не поддерживается */ }
+
+        // INP (interaction to next paint).
+        try {
+            var inpPO = new PerformanceObserver(function(list) {
+                var entries = list.getEntries();
+                if (entries.length > 0) {
+                    vitals.inp = entries[entries.length - 1].duration / 1000;
+                }
+            });
+            inpPO.observe({ type: 'event', durationThreshold: 40, buffered: true });
+        } catch (e) { /* не поддерживается */ }
+
+        // TTFB через Navigation Timing.
+        function setTTFB() {
+            try {
+                var nav = performance.getEntriesByType('navigation')[0];
+                if (nav) vitals.ttfb = nav.responseStart / 1000;
+            } catch (e) { /* ignore */ }
+        }
+
+        function send() {
+            // Ждём LCP (до 5с) или отправляем что есть.
+            var hasLCP = vitals.lcp > 0;
+            if (!hasLCP && Date.now() - window.__rumStart < 5000) {
+                setTimeout(send, 500);
+                return;
+            }
+            try {
+                navigator.sendBeacon('/api/rum', new Blob([JSON.stringify({ page: location.pathname, vitals: vitals })], { type: 'application/json' }));
+            } catch (e) {
+                fetch('/api/rum', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ page: location.pathname, vitals: vitals }),
+                    keepalive: true
+                }).catch(function() {});
+            }
+        }
+
+        window.__rumStart = Date.now();
+        setTTFB();
+        // FCP обычно приходит быстро; LCP — ждём до 5с через send().
+        if (document.readyState === 'complete') {
+            setTimeout(send, 500);
+        } else {
+            window.addEventListener('load', function() { setTimeout(send, 500); });
+        }
+    })();
+    </script>
 </body>
 </html>

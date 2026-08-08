@@ -139,6 +139,23 @@ var (
 		Name: "gengine_cache_misses_total",
 		Help: "Total number of cache misses",
 	}, []string{"cache_name"})
+
+	// --- RUM / Web Vitals (pass 29, идея 2) ---
+
+	// RumWebVitals - гистограммы Core Web Vitals с клиента (LCP/INP/CLS/FCP/TTFB).
+	RumWebVitals = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "gengine_rum_web_vitals_seconds",
+		Help:    "Core Web Vitals reported by browsers (CLS uses seconds scale for histogram grouping)",
+		Buckets: []float64{0.05, 0.1, 0.25, 0.5, 1, 2, 4, 8},
+	}, []string{"vital"})
+
+	// RumPageLoadsTotal - общее количество RUM-отчётов о загрузке страниц.
+	RumPageLoadsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "gengine_rum_page_loads_total",
+			Help: "Total number of page loads reported via RUM",
+		},
+	)
 )
 
 // --- Хелперы для инкремента ---
@@ -221,4 +238,14 @@ func IncCacheHit(cacheName string) {
 
 func IncCacheMiss(cacheName string) {
 	CacheMissesTotal.WithLabelValues(cacheName).Inc()
+}
+
+// ObserveRumVital записывает значение Web Vital с клиента.
+func ObserveRumVital(vital string, seconds float64) {
+	RumWebVitals.WithLabelValues(vital).Observe(seconds)
+}
+
+// IncRumPageLoad увеличивает счётчик RUM-отчётов.
+func IncRumPageLoad() {
+	RumPageLoadsTotal.Inc()
 }
