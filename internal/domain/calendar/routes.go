@@ -4,16 +4,13 @@ package calendar
 import (
 	"time"
 
-	"gengine-0/internal/domain/game"
 	"gengine-0/internal/pkg/middleware"
 
 	"github.com/gin-gonic/gin"
 )
 
 // RegisterRoutes регистрирует маршруты календаря.
-func RegisterRoutes(router *gin.RouterGroup, gameRepo game.GameRepository, baseURL string) {
-	calendarHandler := NewCalendarHandler(gameRepo).WithBaseURL(baseURL)
-
+func RegisterRoutes(router *gin.RouterGroup, calendarHandler *CalendarHandler) {
 	router.GET("/calendar", calendarHandler.CalendarPage)
 
 	// #9: публичный API-эндпоинт — dedicated per-IP лимитер.

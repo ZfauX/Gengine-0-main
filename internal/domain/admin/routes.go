@@ -14,32 +14,24 @@ import (
 	"gengine-0/internal/pkg/websocket"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 // RegisterRoutes регистрирует маршруты административной панели.
 // router — уже сгруппированный группа с /admin prefix и middleware (например 2FA).
 func RegisterRoutes(
 	router *gin.RouterGroup,
-	db *gorm.DB,
 	cfg *config.Config,
 	authService *user.AuthService,
 	userRepo user.UserRepository,
 	gameRepo game.GameRepository,
 	gameService *game.GameService,
-	hub *websocket.RoomHub,
+	teamRepo team.TeamRepository,
+	refreshTokenRepo user.RefreshTokenRepository,
+	backupService *BackupService,
 	auditService *audit.Service,
 	cacheStore cache.CacheStore,
+	hub *websocket.RoomHub,
 ) {
-	if auditService == nil {
-		auditService = audit.NewService(db)
-	}
-
-	backupRepo := NewGormBackupRepo(db)
-	backupService := NewBackupService(backupRepo, "backups", cfg.Server.MaxBackups, cfg.Database)
-
-	teamRepo := team.NewGormTeamRepo(db)
-	refreshTokenRepo := user.NewGormRefreshTokenRepo(db)
 	adminHandler := NewAdminHandler(userRepo, gameRepo, gameService, teamRepo, backupService, auditService, refreshTokenRepo, cacheStore)
 
 	authRequired := middleware.AuthRequired(authService)

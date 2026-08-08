@@ -31,6 +31,7 @@ func RegisterRoutes(
 	emailSvc *email.EmailService,
 	webauthnHandler *WebAuthnHandler,
 	userRepo UserRepository,
+	pushHandler *PushHandler,
 ) {
 	// Inject server config for Secure cookie detection (handles reverse proxy)
 	SetSecureCookieConfig = &cfg.Server
@@ -178,7 +179,6 @@ func RegisterRoutes(
 	// ============================================================
 	// WEB PUSH УВЕДОМЛЕНИЯ (API)
 	// ============================================================
-	pushHandler := NewPushHandler(NewGormPushSubscriptionRepo(db), cfg.VAPID)
 	apiGroup := r.Group("/api/push")
 	apiGroup.Use(middleware.AuthRequired(authSvc))
 	{

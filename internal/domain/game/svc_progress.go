@@ -361,13 +361,32 @@ func checkAutoStartGamesImpl(db *gorm.DB, ctx context.Context) {
 		return
 	}
 
+	// PF-5 (pass 29): один батч-COUNT вместо COUNT на каждую игру (N+1).
+	gameIDs := make([]uint, 0, len(games))
 	for _, g := range games {
-		var startedCount int64
-		if err := db.WithContext(ctx).Model(&GamePassing{}).Where("game_id = ? AND status = ?", g.ID, StatusStarted).Count(&startedCount).Error; err != nil {
-			log.Error().Err(err).Uint("game_id", g.ID).Msg("CheckAutoStartGames: failed to count started passings")
-			continue
+		gameIDs = append(gameIDs, g.ID)
+	}
+	startedCounts := make(map[uint]int64, len(gameIDs))
+	if len(gameIDs) > 0 {
+		var rows []struct {
+			GameID uint
+			Cnt    int64
 		}
-		if startedCount > 0 {
+		if err := db.WithContext(ctx).Model(&GamePassing{}).
+			Select("game_id, COUNT(*) AS cnt").
+			Where("game_id IN ? AND status = ?", gameIDs, StatusStarted).
+			Group("game_id").
+			Scan(&rows).Error; err != nil {
+			log.Error().Err(err).Msg("CheckAutoStartGames: failed to count started passings (batch)")
+			return
+		}
+		for _, r := range rows {
+			startedCounts[r.GameID] = r.Cnt
+		}
+	}
+
+	for _, g := range games {
+		if startedCounts[g.ID] > 0 {
 			continue
 		}
 

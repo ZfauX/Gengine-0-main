@@ -5,8 +5,13 @@ package app
 
 import (
 	"gengine-0/internal/config"
+	"gengine-0/internal/domain/admin"
+	"gengine-0/internal/domain/export"
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/level"
+	"gengine-0/internal/domain/monitor"
+	"gengine-0/internal/domain/notification"
+	"gengine-0/internal/domain/social"
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/tournament"
 	"gengine-0/internal/domain/user"
@@ -39,11 +44,18 @@ func initializeRepositories(db *gorm.DB) *repositories {
 		tournament.NewGormTournamentGameRepo,
 		tournament.NewGormTournamentTeamRepo,
 		tournament.NewGormTournamentResultRepo,
+		user.NewGormPushSubscriptionRepo,
+		social.NewGormFollowRepo,
+		export.NewGormExportRepo,
+		monitor.NewGormChatRepo,
+		monitor.NewGormBlackboxRepo,
+		notification.NewNotificationRepository,
+		admin.NewGormBackupRepo,
 	)
 	return nil
 }
 
-func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.RoomHub, localStorage storage.FileStorage, appCache cache.CacheStore) *services {
+func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.RoomHub, localStorage storage.FileStorage, appCache cache.CacheStore) (*services, error) {
 	wire.Build(
 		wire.Struct(new(services), "*"),
 		wire.FieldsOf(new(*repositories),
@@ -52,6 +64,7 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 			"Level", "Question", "Answer",
 			"Team", "Invitation",
 			"Tournament", "TournGame", "TournTeam", "TournResult",
+			"PushSub", "Follow", "Export", "Chat", "Blackbox", "Notification", "Backup",
 		),
 		game.NewCoAuthorService,
 		wrapReviewService,
@@ -81,8 +94,17 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 		wrapEmailVerificationService,
 		wrapEmailService,
 		wrapGameplayHandler,
+		wrapNotificationService,
+		wrapExportService,
+		wrapFollowService,
+		wrapChatService,
+		wrapBlackboxVoteService,
+		wrapBackupService,
+		wrapCalendarHandler,
+		wrapPushHandler,
+		wrapProfileService,
 		wire.Bind(new(game.GameServiceInterface), new(*game.GameService)),
 		wire.Bind(new(game.GamePlayServiceInterface), new(*game.GamePlayService)),
 	)
-	return nil
+	return nil, nil
 }

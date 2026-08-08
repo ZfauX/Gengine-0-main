@@ -2,11 +2,18 @@ package app
 
 import (
 	"gengine-0/internal/config"
+	"gengine-0/internal/domain/admin"
+	"gengine-0/internal/domain/calendar"
+	"gengine-0/internal/domain/export"
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/level"
+	"gengine-0/internal/domain/monitor"
+	"gengine-0/internal/domain/notification"
+	"gengine-0/internal/domain/social"
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/tournament"
 	"gengine-0/internal/domain/user"
+	"gengine-0/internal/pkg/assets/fonts"
 	"gengine-0/internal/pkg/cache"
 	"gengine-0/internal/pkg/email"
 	"gengine-0/internal/pkg/storage"
@@ -114,4 +121,44 @@ func wrapPasswordResetService(userRepo user.UserRepository, passResetRepo user.P
 
 func wrapEmailVerificationService(userRepo user.UserRepository, emailVerifRepo user.EmailVerificationRepository, cfg *config.Config) *user.EmailVerificationService {
 	return user.NewEmailVerificationService(userRepo, emailVerifRepo, cfg)
+}
+
+// ---------- H2 (pass 29): сервисы, ранее создававшиеся вручную в routes ----------
+
+func wrapNotificationService(repo notification.NotificationRepository, hub *ws.RoomHub, sseMgr *game.SSEManager, cfg *config.Config) *notification.NotificationService {
+	return notification.NewNotificationService(repo, hub).
+		WithSSEManager(sseMgr).
+		WithVAPID(cfg.VAPID, cfg.Server.BaseURL)
+}
+
+func wrapExportService(exportRepo export.ExportRepository, db *gorm.DB) (*export.ExportService, error) {
+	return export.NewExportService(exportRepo, db, fonts.DejaVuSans, fonts.DejaVuSansBold)
+}
+
+func wrapFollowService(followRepo social.FollowRepository) *social.FollowService {
+	return social.NewFollowService(followRepo)
+}
+
+func wrapChatService(chatRepo monitor.ChatRepository) *monitor.ChatService {
+	return monitor.NewChatService(chatRepo)
+}
+
+func wrapBlackboxVoteService(blackboxRepo monitor.BlackboxRepository, gameRepo game.GameRepository, db *gorm.DB, cfg *config.Config) *monitor.BlackboxVoteService {
+	return monitor.NewBlackboxVoteService(blackboxRepo, gameRepo, db, cfg)
+}
+
+func wrapBackupService(backupRepo admin.BackupRepository, cfg *config.Config) *admin.BackupService {
+	return admin.NewBackupService(backupRepo, "backups", cfg.Server.MaxBackups, cfg.Database)
+}
+
+func wrapCalendarHandler(gameRepo game.GameRepository, cfg *config.Config) *calendar.CalendarHandler {
+	return calendar.NewCalendarHandler(gameRepo).WithBaseURL(cfg.Server.BaseURL)
+}
+
+func wrapPushHandler(pushRepo user.PushSubscriptionRepository, cfg *config.Config) *user.PushHandler {
+	return user.NewPushHandler(pushRepo, cfg.VAPID)
+}
+
+func wrapProfileService(db *gorm.DB) *user.ProfileService {
+	return user.NewProfileService(db)
 }

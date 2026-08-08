@@ -29,7 +29,10 @@ type Dependencies struct {
 
 func NewDependencies(db *gorm.DB, cfg *config.Config, hub *ws.RoomHub, localStorage storage.FileStorage, appCache cache.CacheStore) *Dependencies {
 	repos := initRepositories(db)
-	services := initServices(db, repos, cfg, hub, localStorage, appCache)
+	services, svcErr := initServices(db, repos, cfg, hub, localStorage, appCache)
+	if svcErr != nil {
+		panic(svcErr)
+	}
 	auditSvc := audit.NewService(db)
 	webauthnHandler, err := user.NewWebAuthnHandler(cfg, services.Auth, repos.User, repos.WebAuthn, auditSvc)
 	if err != nil {
@@ -121,6 +124,6 @@ func (app *App) registerAllRoutes(r *gin.Engine, htmlGroup *gin.RouterGroup) err
 		return fmt.Errorf("регистрация маршрутов экспорта: %w", err)
 	}
 	app.registerGameplayRoutes(htmlGroup)
-	notification.RegisterRoutes(htmlGroup, app.Config, app.DB, app.Deps.Services.Auth, app.Deps.Hub, app.Deps.Services.SSEMgr)
+	notification.RegisterRoutes(htmlGroup, app.Config, app.Deps.Services.Notification, app.Deps.Services.Auth, app.Deps.Hub)
 	return nil
 }

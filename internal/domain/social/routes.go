@@ -2,24 +2,19 @@
 package social
 
 import (
-	"gengine-0/internal/config"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/middleware"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 // RegisterRoutes регистрирует маршруты социальных функций: подписки.
 func RegisterRoutes(
 	router *gin.RouterGroup,
-	db *gorm.DB,
-	cfg *config.Config,
+	followService *FollowService,
 	authService *user.AuthService,
 	userService *user.UserService,
 ) {
-	followRepo := NewGormFollowRepo(db)
-	followService := NewFollowService(followRepo)
 	followHandler := NewFollowHandler(followService, userService)
 
 	authRequired := middleware.AuthRequired(authService)

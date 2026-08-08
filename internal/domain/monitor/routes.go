@@ -2,38 +2,27 @@
 package monitor
 
 import (
-	"gengine-0/internal/config"
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/middleware"
 	ws "gengine-0/internal/pkg/websocket"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 // RegisterRoutes регистрирует маршруты мониторинга.
 // @tags monitor
 func RegisterRoutes(
 	router *gin.RouterGroup,
-	db *gorm.DB,
+	chatService *ChatService,
+	blackboxVoteService *BlackboxVoteService,
 	hub *ws.RoomHub,
-	cfg *config.Config,
 	coAuthorSvc *game.CoAuthorService,
 	monitorSvc *game.MonitorService,
-	attemptSvc *game.AttemptService,
-	progressSvc *game.LevelProgressService,
 	authService *user.AuthService,
-	gameRepo game.GameRepository,
 	userService *user.UserService,
 	gameService *game.GameService,
 ) {
-	chatRepo := NewGormChatRepo(db)
-	blackboxRepo := NewGormBlackboxRepo(db)
-
-	chatService := NewChatService(chatRepo)
-	blackboxVoteService := NewBlackboxVoteService(blackboxRepo, gameRepo, db, cfg)
-
 	monitorHandler := NewMonitorHandler(monitorSvc, blackboxVoteService, chatService, hub, userService, gameService, coAuthorSvc)
 
 	authRequired := middleware.AuthRequired(authService)

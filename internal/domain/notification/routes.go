@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"gengine-0/internal/config"
-	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
@@ -22,7 +21,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
-	"gorm.io/gorm"
 )
 
 var wsUpgrader = websocket.Upgrader{
@@ -95,8 +93,7 @@ func NotificationsWS(hub *ws.RoomHub) gin.HandlerFunc {
 }
 
 // RegisterRoutes регистрирует API-маршруты для уведомлений.
-func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, db *gorm.DB, authService *user.AuthService, hub *ws.RoomHub, sseMgr *game.SSEManager) {
-	service := NewNotificationService(NewNotificationRepository(db), hub).WithHub(hub).WithSSEManager(sseMgr).WithVAPID(cfg.VAPID, cfg.Server.BaseURL)
+func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, service *NotificationService, authService *user.AuthService, hub *ws.RoomHub) {
 	settingsHandler := NewSettingsHandler(service, cfg.VAPID)
 
 	// API для настроек уведомлений (используется AJAX на странице профиля)

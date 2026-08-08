@@ -3,8 +3,14 @@ package app
 
 import (
 	"gengine-0/internal/config"
+	"gengine-0/internal/domain/admin"
+	"gengine-0/internal/domain/calendar"
+	"gengine-0/internal/domain/export"
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/level"
+	"gengine-0/internal/domain/monitor"
+	"gengine-0/internal/domain/notification"
+	"gengine-0/internal/domain/social"
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/tournament"
 	"gengine-0/internal/domain/user"
@@ -26,6 +32,7 @@ type repositories struct {
 	ExtLogin     user.ExternalLoginRepository
 	RefreshToken user.RefreshTokenRepository
 	WebAuthn     user.WebAuthnRepository
+	PushSub      user.PushSubscriptionRepository
 	Game         game.GameRepository
 	GamePassing  game.GamePassingRepository
 	Level        level.LevelRepository
@@ -37,6 +44,12 @@ type repositories struct {
 	TournGame    tournament.TournamentGameRepository
 	TournTeam    tournament.TournamentTeamRepository
 	TournResult  tournament.TournamentResultRepository
+	Follow       social.FollowRepository
+	Export       export.ExportRepository
+	Chat         monitor.ChatRepository
+	Blackbox     monitor.BlackboxRepository
+	Notification notification.NotificationRepository
+	Backup       admin.BackupRepository
 }
 
 func initRepositories(db *gorm.DB) *repositories {
@@ -72,8 +85,17 @@ type services struct {
 	Team            *team.TeamService
 	Invitation      *team.InvitationService
 	Tournament      *tournament.TournamentService
+	Notification    *notification.NotificationService
+	Export          *export.ExportService
+	Follow          *social.FollowService
+	Chat            *monitor.ChatService
+	BlackboxVote    *monitor.BlackboxVoteService
+	Backup          *admin.BackupService
+	CalendarHandler *calendar.CalendarHandler
+	PushHandler     *user.PushHandler
+	Profile         *user.ProfileService
 }
 
-func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.RoomHub, localStorage storage.FileStorage, appCache cache.CacheStore) *services {
+func initServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *ws.RoomHub, localStorage storage.FileStorage, appCache cache.CacheStore) (*services, error) {
 	return initializeServices(db, repos, cfg, hub, localStorage, appCache)
 }

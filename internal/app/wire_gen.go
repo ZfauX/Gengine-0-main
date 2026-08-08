@@ -8,8 +8,13 @@ package app
 
 import (
 	"gengine-0/internal/config"
+	"gengine-0/internal/domain/admin"
+	"gengine-0/internal/domain/export"
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/level"
+	"gengine-0/internal/domain/monitor"
+	"gengine-0/internal/domain/notification"
+	"gengine-0/internal/domain/social"
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/tournament"
 	"gengine-0/internal/domain/user"
@@ -33,6 +38,7 @@ func initializeRepositories(db *gorm.DB) *repositories {
 	externalLoginRepository := user.NewGormExternalLoginRepo(db)
 	refreshTokenRepository := user.NewGormRefreshTokenRepo(db)
 	webAuthnRepository := user.NewGormWebAuthnRepo(db)
+	pushSubscriptionRepository := user.NewGormPushSubscriptionRepo(db)
 	gameRepository := game.NewGormGameRepo(db)
 	gamePassingRepository := game.NewGormGamePassingRepo(db)
 	levelRepository := level.NewGormLevelRepo(db)
@@ -44,6 +50,12 @@ func initializeRepositories(db *gorm.DB) *repositories {
 	tournamentGameRepository := tournament.NewGormTournamentGameRepo(db)
 	tournamentTeamRepository := tournament.NewGormTournamentTeamRepo(db)
 	tournamentResultRepository := tournament.NewGormTournamentResultRepo(db)
+	followRepository := social.NewGormFollowRepo(db)
+	exportRepository := export.NewGormExportRepo(db)
+	chatRepository := monitor.NewGormChatRepo(db)
+	blackboxRepository := monitor.NewGormBlackboxRepo(db)
+	notificationRepository := notification.NewNotificationRepository(db)
+	backupRepository := admin.NewGormBackupRepo(db)
 	appRepositories := &repositories{
 		User:         userRepository,
 		Achiev:       achievementRepository,
@@ -52,6 +64,7 @@ func initializeRepositories(db *gorm.DB) *repositories {
 		ExtLogin:     externalLoginRepository,
 		RefreshToken: refreshTokenRepository,
 		WebAuthn:     webAuthnRepository,
+		PushSub:      pushSubscriptionRepository,
 		Game:         gameRepository,
 		GamePassing:  gamePassingRepository,
 		Level:        levelRepository,
@@ -63,11 +76,17 @@ func initializeRepositories(db *gorm.DB) *repositories {
 		TournGame:    tournamentGameRepository,
 		TournTeam:    tournamentTeamRepository,
 		TournResult:  tournamentResultRepository,
+		Follow:       followRepository,
+		Export:       exportRepository,
+		Chat:         chatRepository,
+		Blackbox:     blackboxRepository,
+		Notification: notificationRepository,
+		Backup:       backupRepository,
 	}
 	return appRepositories
 }
 
-func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *websocket.RoomHub, localStorage storage.FileStorage, appCache cache.CacheStore) *services {
+func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hub *websocket.RoomHub, localStorage storage.FileStorage, appCache cache.CacheStore) (*services, error) {
 	userRepository := repos.User
 	achievementRepository := repos.Achiev
 	emailVerificationRepository := repos.EmailVerif
@@ -113,6 +132,25 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	tournamentTeamRepository := repos.TournTeam
 	tournamentResultRepository := repos.TournResult
 	tournamentService := wrapTournamentService(db, tournamentRepository, tournamentGameRepository, tournamentTeamRepository, tournamentResultRepository, teamService, cfg)
+	notificationRepository := repos.Notification
+	notificationService := wrapNotificationService(notificationRepository, hub, sseManager, cfg)
+	exportRepository := repos.Export
+	exportService, err := wrapExportService(exportRepository, db)
+	if err != nil {
+		return nil, err
+	}
+	followRepository := repos.Follow
+	followService := wrapFollowService(followRepository)
+	chatRepository := repos.Chat
+	chatService := wrapChatService(chatRepository)
+	blackboxRepository := repos.Blackbox
+	blackboxVoteService := wrapBlackboxVoteService(blackboxRepository, gameRepository, db, cfg)
+	backupRepository := repos.Backup
+	backupService := wrapBackupService(backupRepository, cfg)
+	calendarHandler := wrapCalendarHandler(gameRepository, cfg)
+	pushSubscriptionRepository := repos.PushSub
+	pushHandler := wrapPushHandler(pushSubscriptionRepository, cfg)
+	profileService := wrapProfileService(db)
 	appServices := &services{
 		Auth:            authService,
 		RefreshToken:    refreshTokenService,
@@ -142,6 +180,15 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 		Team:            teamService,
 		Invitation:      invitationService,
 		Tournament:      tournamentService,
+		Notification:    notificationService,
+		Export:          exportService,
+		Follow:          followService,
+		Chat:            chatService,
+		BlackboxVote:    blackboxVoteService,
+		Backup:          backupService,
+		CalendarHandler: calendarHandler,
+		PushHandler:     pushHandler,
+		Profile:         profileService,
 	}
-	return appServices
+	return appServices, nil
 }

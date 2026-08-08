@@ -299,11 +299,11 @@ func (app *App) setupEngine(r *gin.Engine) error {
 
 func (app *App) registerAdminRoutes(r *gin.RouterGroup) {
 	adminGroup := r.Group("/admin")
-	admin.RegisterRoutes(adminGroup, app.DB, app.Config, app.Deps.Services.Auth, app.Deps.Repos.User, app.Deps.Repos.Game, app.Deps.Services.Game, app.Hub, app.Deps.AuditSvc, app.Deps.Cache)
+	admin.RegisterRoutes(adminGroup, app.Config, app.Deps.Services.Auth, app.Deps.Repos.User, app.Deps.Repos.Game, app.Deps.Services.Game, app.Deps.Repos.Team, app.Deps.Repos.RefreshToken, app.Deps.Services.Backup, app.Deps.AuditSvc, app.Deps.Cache, app.Hub)
 }
 
 func (app *App) registerUserRoutes(r *gin.RouterGroup) {
-	user.RegisterRoutes(r, app.Config, app.Deps.Services.Auth, app.Deps.Services.User, app.Deps.Services.PasswordReset, app.Deps.Services.EmailVerif, app.Deps.Services.OAuth, app.Deps.AuditSvc, app.DB, app.LocalStorage, app.Deps.Services.Email, app.Deps.WebAuthn, app.Deps.Repos.User)
+	user.RegisterRoutes(r, app.Config, app.Deps.Services.Auth, app.Deps.Services.User, app.Deps.Services.PasswordReset, app.Deps.Services.EmailVerif, app.Deps.Services.OAuth, app.Deps.AuditSvc, app.DB, app.LocalStorage, app.Deps.Services.Email, app.Deps.WebAuthn, app.Deps.Repos.User, app.Deps.Services.PushHandler)
 }
 
 func (app *App) registerGameRoutes(r *gin.RouterGroup) {
@@ -332,19 +332,19 @@ func (app *App) registerTournamentRoutes(r *gin.RouterGroup) {
 }
 
 func (app *App) registerCalendarRoutes(r *gin.RouterGroup) {
-	calendar.RegisterRoutes(r, app.Deps.Repos.Game, app.Config.Server.BaseURL)
+	calendar.RegisterRoutes(r, app.Deps.Services.CalendarHandler)
 }
 
 func (app *App) registerMonitorRoutes(r *gin.RouterGroup) {
-	monitor.RegisterRoutes(r, app.DB, app.Hub, app.Config, app.Deps.Services.CoAuthor, app.Deps.Services.Monitor, app.Deps.Services.Attempt, app.Deps.Services.Progress, app.Deps.Services.Auth, app.Deps.Repos.Game, app.Deps.Services.User, app.Deps.Services.Game)
+	monitor.RegisterRoutes(r, app.Deps.Services.Chat, app.Deps.Services.BlackboxVote, app.Hub, app.Deps.Services.CoAuthor, app.Deps.Services.Monitor, app.Deps.Services.Auth, app.Deps.Services.User, app.Deps.Services.Game)
 }
 
 func (app *App) registerSocialRoutes(r *gin.RouterGroup) {
-	social.RegisterRoutes(r, app.DB, app.Config, app.Deps.Services.Auth, app.Deps.Services.User)
+	social.RegisterRoutes(r, app.Deps.Services.Follow, app.Deps.Services.Auth, app.Deps.Services.User)
 }
 
 func (app *App) registerExportRoutes(r *gin.RouterGroup) error {
-	return export.RegisterRoutes(r, app.DB, app.LocalStorage, app.Config, app.Deps.Services.Game, app.Deps.Services.CoAuthor, app.Deps.Services.Auth)
+	return export.RegisterRoutes(r, app.Deps.Services.Export, app.LocalStorage, app.Deps.Services.Game, app.Deps.Services.CoAuthor, app.Deps.Services.Auth)
 }
 
 func (app *App) registerGameplayRoutes(r *gin.RouterGroup) {
