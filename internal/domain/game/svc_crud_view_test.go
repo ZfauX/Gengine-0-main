@@ -21,7 +21,7 @@ func setupCRUDViewTest(t *testing.T) (*gorm.DB, *game.GameCRUDService) {
 	}
 	db := testutil.SetupPostgresDB(t, allModels...)
 	repo := game.NewGormGameRepo(db)
-	crud := game.NewGameCRUDService(repo, game.NewCoAuthorService(db).WithRepository(game.NewGormCoAuthorRepo(db)), nil, nil, nil, nil)
+	crud := game.NewGameCRUDService(repo, game.NewCoAuthorService().WithRepository(game.NewGormCoAuthorRepo(db)), nil, nil, nil, nil)
 	return db, crud
 }
 

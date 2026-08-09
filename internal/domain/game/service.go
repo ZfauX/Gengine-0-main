@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"mime/multipart"
+	"reflect"
 	"time"
 
 	"gengine-0/internal/config"
@@ -211,6 +212,14 @@ func cacheGetJSON(store cache.CacheStore, ctx context.Context, key string, targe
 	cached, ok := store.GetWithCtx(ctx, key)
 	if !ok {
 		return false
+	}
+	// P-2 (pass 39): для in-memory Cache значение уже типизировано — делаем
+	// прямую копию через reflect вместо Marshal+Unmarshal (JSON round-trip на
+	// каждый хит листинга/отзывов). Shallow-копия: мапы/слайсы разделяют
+	// underlying, но кэш read-only на время жизни записи.
+	if reflect.TypeOf(cached) == reflect.TypeOf(target).Elem() {
+		reflect.ValueOf(target).Elem().Set(reflect.ValueOf(cached))
+		return true
 	}
 	data, err := json.Marshal(cached)
 	if err != nil {

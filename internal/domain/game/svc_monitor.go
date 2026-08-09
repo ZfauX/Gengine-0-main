@@ -214,6 +214,9 @@ func (s *MonitorService) InvalidateCache(gameID uint) {
 		delete(s.cacheKeys, gameID)
 	}
 	s.mu.Unlock()
+	// P-4 (pass 39): форсим singleflight — иначе пересчёт, начатый до
+	// инвалидации, перезапишет кэш данными, прочитанными до изменений.
+	s.sfGroup.Forget(fmt.Sprintf("snapshot:%d", gameID))
 }
 
 // teamAggregatedData — данные для batch-анализа подозрительного поведения.

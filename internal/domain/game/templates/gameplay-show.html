@@ -168,11 +168,14 @@
 
             timerDisplay.textContent = '{{ T $.Lang "gameplay.time_left" }}'.replace('%s', timeStr);
 
-            // A-2: объявляем остаток скринридеру при смене минуты (и при <=60s).
+            // A-2 + UX-2 (pass 39): объявляем остаток скринридеру только на
+            // смене минуты и на границах 60/30/10 — раньше условие timeLeft<=60
+            // было истинно каждую секунду, спамя aria-live.
             var liveEl = document.getElementById('timer-live');
             if (liveEl) {
                 var announceMin = Math.ceil(timeLeft / 60);
-                if (announceMin !== lastAnnouncedMin || timeLeft <= 60) {
+                var isBoundary = (timeLeft === 60 || timeLeft === 30 || timeLeft === 10);
+                if (announceMin !== lastAnnouncedMin || isBoundary) {
                     lastAnnouncedMin = announceMin;
                     liveEl.textContent = '{{ T $.Lang "gameplay.time_left" }}'.replace('%s', timeStr);
                 }

@@ -261,7 +261,7 @@ func TestBlackboxVoteService_StartVoteAndClose(t *testing.T) {
 		&user.User{},
 	)
 	cfg := &config.Config{}
-	coAuthorSvc := game.NewCoAuthorService(db).WithRepository(game.NewGormCoAuthorRepo(db))
+	coAuthorSvc := game.NewCoAuthorService().WithRepository(game.NewGormCoAuthorRepo(db))
 	blackboxRepo := monitor.NewGormBlackboxRepo(db)
 	voteSvc := monitor.NewBlackboxVoteService(blackboxRepo, coAuthorSvc, db, cfg)
 
@@ -310,7 +310,7 @@ func TestBlackboxVoteService_DuplicateVote(t *testing.T) {
 		&team.Team{},
 		&user.User{},
 	)
-	coAuthorSvc := game.NewCoAuthorService(db).WithRepository(game.NewGormCoAuthorRepo(db))
+	coAuthorSvc := game.NewCoAuthorService().WithRepository(game.NewGormCoAuthorRepo(db))
 	blackboxRepo := monitor.NewGormBlackboxRepo(db)
 	voteSvc := monitor.NewBlackboxVoteService(blackboxRepo, coAuthorSvc, db, &config.Config{})
 
@@ -341,7 +341,7 @@ func TestBlackboxVoteService_CloseVotingNotAuthor(t *testing.T) {
 		&team.Team{},
 		&user.User{},
 	)
-	coAuthorSvc := game.NewCoAuthorService(db).WithRepository(game.NewGormCoAuthorRepo(db))
+	coAuthorSvc := game.NewCoAuthorService().WithRepository(game.NewGormCoAuthorRepo(db))
 	blackboxRepo := monitor.NewGormBlackboxRepo(db)
 	voteSvc := monitor.NewBlackboxVoteService(blackboxRepo, coAuthorSvc, db, &config.Config{})
 

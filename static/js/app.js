@@ -115,6 +115,10 @@ function initFormLoading() {
             // document-обработчиком — не блокируем кнопку заранее, иначе после «Отмена»
             // она останется залипшей со спиннером.
             if (form.hasAttribute('data-confirm-form')) return;
+            // UX-1 (pass 39): data-no-loading может стоять и на форме, и на кнопке
+            // (auth-register/notes-manage ставят на форму) — раньше читался только
+            // btn.dataset, поэтому спиннер перетирал локализованный текст.
+            if (form.hasAttribute('data-no-loading')) return;
             var btn = this.querySelector('button[type="submit"]');
             if (btn && !btn.dataset.noLoading) {
                 btn.disabled = true;

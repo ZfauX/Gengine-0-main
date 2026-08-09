@@ -474,8 +474,12 @@ func checkAutoStartGamesImpl(db *gorm.DB, ctx context.Context) {
 					StartedAt:     now,
 				})
 			}
+			// S-1 (pass 39): ON CONFLICT с WHERE — частичный unique-индекс
+			// (game_passing_id, level_id) WHERE deleted_at IS NULL; без предиката
+			// Postgres не сопоставит конфликт с частичным индексом.
 			if err := tx.Clauses(clause.OnConflict{
 				Columns:   []clause.Column{{Name: "game_passing_id"}, {Name: "level_id"}},
+				Where:     clause.Where{Exprs: []clause.Expression{clause.Expr{SQL: "deleted_at IS NULL"}}},
 				DoNothing: true,
 			}).CreateInBatches(&progresses, levelProgressBatchSize).Error; err != nil {
 				log.Error().Err(err).Uint("game_id", g.ID).Msg("CheckAutoStartGames: failed to init first levels")

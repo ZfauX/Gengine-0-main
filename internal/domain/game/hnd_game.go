@@ -238,8 +238,10 @@ func (h *GameHandler) Show(c *gin.Context) {
 		"CanApply":       canApply,
 		"IncludeLeaflet": true,
 		"csrf":           csrf.GetToken(c),
-		"Title":          g.Name + " · Encounter Engine",
-		"OGImage":        ogImage,
+		// SEO-1 (pass 39): суффикс «· Encounter Engine» добавляет layout —
+		// иначе было «Name · Encounter Engine · Encounter Engine».
+		"Title":   g.Name,
+		"OGImage": ogImage,
 		"Breadcrumbs": []map[string]string{
 			{"name": "nav.home", "url": "/"},
 			{"name": "nav.games", "url": "/games"},

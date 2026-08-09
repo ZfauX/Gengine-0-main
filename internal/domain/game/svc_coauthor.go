@@ -18,13 +18,15 @@ const (
 // ErrNotOwner — действие доступно только владельцу игры (S-2, pass 33).
 var ErrNotOwner = errors.New("только владелец может управлять соавторами")
 
+// CoAuthorService — сервис соавторов. A-1 (pass 39): поле db удалено — все
+// операции идут через CoAuthorRepository (HasPermission через repo, N-2 pass 38),
+// а транзакционные варианты принимают tx параметром.
 type CoAuthorService struct {
-	db   *gorm.DB
 	repo CoAuthorRepository
 }
 
-func NewCoAuthorService(db *gorm.DB) *CoAuthorService {
-	return &CoAuthorService{db: db}
+func NewCoAuthorService() *CoAuthorService {
+	return &CoAuthorService{}
 }
 
 // WithRepository внедряет репозиторий соавторов (A-1, pass 32): устраняет

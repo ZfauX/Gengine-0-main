@@ -40,8 +40,9 @@ func wrapGameService(gameRepo game.GameRepository, passingRepo game.GamePassingR
 
 // wrapCoAuthorService — соавторы: нетранзакционные методы через репозиторий
 // (A-1, pass 32 — устранено дублирование запросов между сервисом и репозиторием).
-func wrapCoAuthorService(db *gorm.DB, coAuthRepo game.CoAuthorRepository) *game.CoAuthorService {
-	return game.NewCoAuthorService(db).WithRepository(coAuthRepo)
+// A-1 (pass 39): db не нужен — сервис stateless (все операции через repo/tx).
+func wrapCoAuthorService(coAuthRepo game.CoAuthorRepository) *game.CoAuthorService {
+	return game.NewCoAuthorService().WithRepository(coAuthRepo)
 }
 
 func wrapReviewService(reviewRepo game.ReviewRepository, cacheStore cache.CacheStore) *game.ReviewService {

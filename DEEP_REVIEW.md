@@ -51,6 +51,20 @@
 
 Находки перечислены ниже; закрытие — раундами фиксов, как в pass 30-38.
 
+**Раунд 1 (высокие):**
+- **UX-1**: initFormLoading читает `data-no-loading` и с формы, и с кнопки — регрессия UX-9 pass 38 устранена (кнопка регистрации не перетирается спиннером).
+- **SEO-1**: убран двойной суффикс «· Encounter Engine» (layout — единственное место); убран дублирующий og:title из games-show ExtraHead.
+- **SEO-2**: CanonicalURL заполняется absolute self-URL (с учётом X-Forwarded-Proto).
+
+**Раунд 2 (средние):**
+- **S-1**: миграция 000045 — UNIQUE-индекс стал частичным `WHERE deleted_at IS NULL` + ON CONFLICT с предикатом (не падает на дублях удалённых, не блокирует soft-delete+re-create).
+- **A-1**: удалено мёртвое поле `CoAuthorService.db`; конструктор `NewCoAuthorService()` без параметра; все 9 вызовов + wire обновлены.
+- **P-4**: InvalidateCache форсит singleflight (`sfGroup.Forget`) — устаревшие данные не перезаписывают кэш.
+- **UX-2**: aria-live таймера — объявление только на смене минуты и границах 60/30/10 (не каждую секунду).
+- **P-2**: cacheGetJSON для in-memory Cache — прямой reflect-копией вместо JSON round-trip (только для Valkey остаётся JSON).
+
+**Осталось на раунд 3+ (низкий приоритет):** P-1 (checkTimeouts next-level batch), P-3 (глобальный Lock монитор-кэша — sharding), P-5 (GetLogsByGameID sort-индекс), P-6 (CalendarICal кэш), P-7 (WS-хаб per-room workers), A-2 (единый путь прав), A-3 (дублированная проверка владельца), A-4 (sentinel game-домен), UX-3 (replace('%s') везде), UX-4..10 (мелочи).
+
 ---
 
 ## A. Найденные ошибки pass 39 (верифицировано лично)

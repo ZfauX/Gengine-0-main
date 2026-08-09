@@ -203,9 +203,19 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 		}
 	}
 
-	// Add canonical URL if not set
+	// Add canonical URL if not set (SEO-2, pass 39): раньше был всегда пустым —
+	// <link rel="canonical" href=""> на каждой странице. Заполняем absolute
+	// self-URL с учётом reverse-proxy (как og:image / HSTS).
 	if _, exists := data["CanonicalURL"]; !exists {
-		data["CanonicalURL"] = ""
+		canonical := ""
+		if c.Request.URL != nil && c.Request.URL.Path != "" {
+			scheme := "http"
+			if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
+				scheme = "https"
+			}
+			canonical = scheme + "://" + c.Request.Host + c.Request.URL.Path
+		}
+		data["CanonicalURL"] = canonical
 	}
 
 	var buf bytes.Buffer

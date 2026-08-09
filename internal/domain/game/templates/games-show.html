@@ -1,6 +1,7 @@
 {{define "ExtraHead"}}
 {{if .Game}}
-<meta property="og:title" content="{{.Game.Name}} — Gengine-0">
+<!-- SEO-1 (pass 39): og:title уже в layout (с суффиксом) — дубль здесь давал
+     второй meta, который краулеры игнорировали. Остаются per-page теги. -->
 <meta property="og:description" content="{{truncate .Game.Description 200}}">
 <meta property="og:type" content="article">
 {{if .OGImage}}<meta property="og:image" content="{{.OGImage}}">{{end}}
