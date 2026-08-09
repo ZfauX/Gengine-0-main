@@ -835,19 +835,19 @@ func (m *MockExternalLoginRepository) EXPECT() *MockExternalLoginRepositoryMockR
 	return m.recorder
 }
 
-// ExistsByProviderExternalID mocks base method.
-func (m *MockExternalLoginRepository) ExistsByProviderExternalID(ctx context.Context, provider, externalID string) (bool, error) {
+// ExistsByProviderExternalIDForUser mocks base method.
+func (m *MockExternalLoginRepository) ExistsByProviderExternalIDForUser(ctx context.Context, provider, externalID string, userID uint) (bool, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ExistsByProviderExternalID", ctx, provider, externalID)
+	ret := m.ctrl.Call(m, "ExistsByProviderExternalIDForUser", ctx, provider, externalID, userID)
 	ret0, _ := ret[0].(bool)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// ExistsByProviderExternalID indicates an expected call of ExistsByProviderExternalID.
-func (mr *MockExternalLoginRepositoryMockRecorder) ExistsByProviderExternalID(ctx, provider, externalID any) *gomock.Call {
+// ExistsByProviderExternalIDForUser indicates an expected call of ExistsByProviderExternalIDForUser.
+func (mr *MockExternalLoginRepositoryMockRecorder) ExistsByProviderExternalIDForUser(ctx, provider, externalID, userID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExistsByProviderExternalID", reflect.TypeOf((*MockExternalLoginRepository)(nil).ExistsByProviderExternalID), ctx, provider, externalID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExistsByProviderExternalIDForUser", reflect.TypeOf((*MockExternalLoginRepository)(nil).ExistsByProviderExternalIDForUser), ctx, provider, externalID, userID)
 }
 
 // FindOrCreate mocks base method.

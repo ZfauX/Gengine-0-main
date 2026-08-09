@@ -128,10 +128,10 @@ type EmailVerificationRepository interface {
 // ExternalLoginRepository — контракт для OAuth-привязок.
 type ExternalLoginRepository interface {
 	FindOrCreate(ctx context.Context, login *ExternalLogin) error
-	// ExistsByProviderExternalID проверяет, что связка уже привязана
-	// (S-43-4, pass 43: VK-вход для существующего email разрешён только если
-	// пользователь сам привязал VK в профиле).
-	ExistsByProviderExternalID(ctx context.Context, provider, externalID string) (bool, error)
+	// ExistsByProviderExternalIDForUser проверяет, что связка привязана ИМЕННО к
+	// указанному пользователю (A-02, pass 44): раньше проверялось наличие связки
+	// у ЛЮБОГО пользователя, что позволяло вход как жертва при чужой привязке.
+	ExistsByProviderExternalIDForUser(ctx context.Context, provider, externalID string, userID uint) (bool, error)
 }
 
 // RefreshTokenRepository — контракт для работы с refresh-токенами (добавлен).
@@ -592,10 +592,10 @@ func (r *gormExternalLoginRepo) FindOrCreate(ctx context.Context, login *Externa
 		FirstOrCreate(login).Error
 }
 
-func (r *gormExternalLoginRepo) ExistsByProviderExternalID(ctx context.Context, provider, externalID string) (bool, error) {
+func (r *gormExternalLoginRepo) ExistsByProviderExternalIDForUser(ctx context.Context, provider, externalID string, userID uint) (bool, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Model(&ExternalLogin{}).
-		Where("provider = ? AND external_id = ?", provider, externalID).
+		Where("provider = ? AND external_id = ? AND user_id = ?", provider, externalID, userID).
 		Count(&count).Error
 	return count > 0, err
 }

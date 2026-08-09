@@ -258,9 +258,15 @@ func (r *gormTournamentResultRepo) UpsertMany(tx *gorm.DB, results []TournamentR
 }
 func (r *gormTournamentResultRepo) GetLeaderboard(ctx context.Context, tournamentID uint) ([]TournamentResult, error) {
 	var results []TournamentResult
-	err := r.db.WithContext(ctx).Preload("Team").
+	// P-44-1 (pass 44): Preload только Team.Name + защитный LIMIT — раньше
+	// тащили все команды (все колонки) на каждую выборку лидерборда.
+	err := r.db.WithContext(ctx).
+		Preload("Team", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id, name")
+		}).
 		Where("tournament_id = ?", tournamentID).
 		Order("score DESC").
+		Limit(100).
 		Find(&results).Error
 	return results, err
 }

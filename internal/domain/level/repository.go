@@ -81,13 +81,18 @@ func (r *gormLevelRepo) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&Level{}, id).Error
 }
 func (r *gormLevelRepo) ExistsByPosition(ctx context.Context, gameID uint, position int, excludeID uint) (bool, error) {
-	var count int64
-	query := r.db.WithContext(ctx).Model(&Level{}).Where("game_id = ? AND position = ?", gameID, position)
+	// P-44-5 (pass 44): EXISTS вместо COUNT — count(*) сканирует все совпадения,
+	// exists короткозамыкается на первом.
+	var exists bool
+	query := `SELECT EXISTS (SELECT 1 FROM levels WHERE game_id = ? AND position = ?`
+	args := []any{gameID, position}
 	if excludeID > 0 {
-		query = query.Where("id != ?", excludeID)
+		query += ` AND id != ?`
+		args = append(args, excludeID)
 	}
-	err := query.Count(&count).Error
-	return count > 0, err
+	query += `)`
+	err := r.db.WithContext(ctx).Raw(query, args...).Scan(&exists).Error
+	return exists, err
 }
 func (r *gormLevelRepo) GetMaxPosition(ctx context.Context, gameID uint) (int, error) {
 	var maxPos int

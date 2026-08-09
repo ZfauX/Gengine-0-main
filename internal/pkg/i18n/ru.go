@@ -1432,6 +1432,8 @@ var ruMessages = map[string]string{
 	"admin.role_user":               "Пользователь",
 	"admin.make_admin":              "Сделать админом",
 	"admin.demote":                  "Разжаловать",
+	"admin.promote_confirm":         "Сделать этого пользователя администратором?",
+	"admin.demote_confirm":          "Разжаловать этого администратора?",
 	"admin.delete":                  "Удалить",
 	"admin.view":                    "Просмотр",
 	"admin.max_backups":             "Максимальное количество хранимых копий:",

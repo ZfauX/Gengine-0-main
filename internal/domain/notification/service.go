@@ -258,10 +258,11 @@ func (s *NotificationService) enqueueWebPush(userID uint, n *Notification) {
 		notif:  *n,
 	}
 	s.pushMu.Lock()
+	defer s.pushMu.Unlock()
+
 	// S1 (pass 30): после Shutdown новые задачи отбрасываем — иначе пул
 	// пересоздастся и WaitGroup-счётчик инкрементится во время Wait (panic).
 	if s.pushShutting {
-		s.pushMu.Unlock()
 		log.Warn().Uint("user_id", userID).Msg("Notification: push pool shutting down, dropping job")
 		return
 	}
@@ -272,11 +273,13 @@ func (s *NotificationService) enqueueWebPush(userID uint, n *Notification) {
 			go s.pushWorker()
 		}
 	}
-	ch := s.pushJobs
-	s.pushMu.Unlock()
-
+	// A-09 (pass 44): send под тем же мутексом — раньше `ch := s.pushJobs`
+	// копировался, lock отпускался, и Shutdown() мог закрыть канал между
+	// unlock и select-send → panic send on closed channel (select+default НЕ
+	// защищает от send на закрытый канал — паника при выборе этой ветки).
+	// Неблокирующий send под lock держится микросекунды.
 	select {
-	case ch <- job:
+	case s.pushJobs <- job:
 	default:
 		log.Warn().Uint("user_id", userID).Msg("Notification: push queue full, dropping job")
 	}

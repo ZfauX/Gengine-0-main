@@ -55,7 +55,10 @@ func (r *gormExportRepo) GetFinishedPassingsWithDetails(ctx context.Context, gam
 		Preload("Progresses.Attempts", func(db *gorm.DB) *gorm.DB {
 			return db.Select("id")
 		}).
-		Preload("Progresses.Level").
+		// P-44-9 (pass 44): экспорт использует только Level.Name — без description/hint.
+		Preload("Progresses.Level", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id, name")
+		}).
 		Where("game_id = ? AND status = ?", gameID, game.StatusFinished).
 		Order("place ASC").
 		Find(&passings).Error

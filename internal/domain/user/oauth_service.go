@@ -236,13 +236,14 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 		// S-L2: VK не подтверждает email. Привязка существующего аккаунта по
 		// неверифицированному email могла бы захватить чужую учётку — отказываем.
 		// Пользователь войдёт по паролю (или по passkey) и привяжет VK сам.
-		// S-43-4 (pass 43): НО если связка ExternalLogin по этому VK user_id уже
-		// существует — пользователь сам привязывал VK в профиле (подтвердил
-		// владение) — вход через VK разрешаем.
+		// S-43-4 (pass 43) + A-02 (pass 44): вход через VK разрешаем ТОЛЬКО если
+		// связка ExternalLogin по этому VK user_id существует И привязана именно
+		// к этому пользователю (иначе атакующий, привязавший свой VK-аккаунт с
+		// чужим email в токене, мог бы войти как жертва).
 		if provider == "vk" && !emailVerified {
-			alreadyLinked, linkErr := s.extLoginRepo.ExistsByProviderExternalID(ctx, provider, externalID)
+			alreadyLinked, linkErr := s.extLoginRepo.ExistsByProviderExternalIDForUser(ctx, provider, externalID, user.ID)
 			if linkErr != nil {
-				log.Warn().Err(linkErr).Str("provider", provider).Str("external_id", externalID).Msg("OAuth: failed to check existing external login")
+				log.Warn().Err(linkErr).Uint("user_id", user.ID).Str("provider", provider).Str("external_id", externalID).Msg("OAuth: failed to check existing external login")
 				return nil, fmt.Errorf("проверка привязки VK: %w", linkErr)
 			}
 			if !alreadyLinked {

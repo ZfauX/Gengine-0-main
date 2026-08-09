@@ -1,12 +1,123 @@
-# Deep Review Gengine-0 — 9 августа 2026 (pass 43 — повторное ревью после полного закрытия pass 30-42)
+# Deep Review Gengine-0 — 9 августа 2026 (pass 44 — повторное ревью после полного закрытия pass 30-43)
 
 ## Резюме
 
 Повторное глубокое ревью выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture/DI) с последующей **личной верификацией ключевых находок** по коду.
 
-**Итог pass 43:** 1 критичный (S-43-1 — обход авторизации в командном чате), 2 высоких (UX-H1/H2 — stale user selection), ~8 средних, ~8 низких. Все ключевые находки исправлены раундами 1-3 (раунд 3 — финальные доделки: VK OAuth для привязанных аккаунтов, logs проекция, RotateBackups ListOldest, partial-индекс 000050, CanReview EXISTS).
+**Итог pass 44:** 0 критичных, 2 высоких (A-09 — push-pool shutdown race, A-02 — VK ownership ослаблен), ~8 средних, ~8 низких. Все ключевые находки исправлены раундом 1.
 
-> **Контекст:** pass 30-42 закрыты полностью. Новые находки: **S-43-1 — участник команды A мог читать/писать в чат команды B** (проверка TeamID была мёртвым кодом), **UX-H1/H2 — stale user selection + Enter-bypass в search-формах** (приглашение/соавтор не того пользователя), **P-43-1/5/6/7** (reviews без LIMIT, teams.name без trgm, LOWER LIKE, GetAvailableGames), **P-43-10** (snapshot eviction race → 500 у SSE), **UX-M1-M6** (change_captain error flash, дубль OG-тегов, cover aria, hardcoded строки, валидация), **A-44** (stale mock).
+> **Контекст:** pass 30-43 закрыты полностью. Новые находки: **A-09 — panic send-on-closed-channel в push-pool при shutdown** (select+default не защищает), **A-02 — VK-проверка связки не сверяла владельца** (вход как жертва при чужой привязке), **P-44-1/2/5/6/7/8/9** (лидерборд без LIMIT, Preload полных Team/Level, Count вместо EXISTS, недостающие индексы), **UX-01/02** (застрявший спиннер upload/2FA-disable), **UX-03-06** (monitor no-data, dashboard search aria, toggle-admin confirm, notes label), **S-44-1** (ExternalLogin без UNIQUE).
+
+---
+
+# PASS 44 (повторное ревью) — 9 августа 2026
+
+> Пятнадцатое повторное ревью после полного закрытия pass 30-43. Выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture) с **личной верификацией** ключевых находок по коду.
+
+## Статус (обновлено 9 авг 2026) — PASS 44 ОТКРЫТ
+
+Находки перечислены ниже; закрытие — раундами фиксов.
+
+**Раунд 1** (правки текущие, не закоммичены до проверки):
+- **A-09** (высокий): push-pool — send канала под мутексом (раньше `ch := s.pushJobs` копировался, Shutdown мог закрыть канал между unlock и send → panic).
+- **A-02** (высокий): VK OAuth — `ExistsByProviderExternalIDForUser(ctx, provider, externalID, userID)` — связка проверяется именно у найденного пользователя (вход как жертва закрыт).
+- **S-44-1**: миграция 000051 — UNIQUE `external_logins(provider, external_id)` + индексы `blackbox_voting_sessions(game_passing_id, level_id)` + `co_authors(game_id, user_id)`.
+- **P-44-5**: `ExistsByPosition` — EXISTS вместо COUNT.
+- **P-44-1**: GetLeaderboard — Preload Team(id,name) + LIMIT 100.
+- **P-44-2**: GetByIDWithTeam — Preload Team(id,name,captain_id) (не teams.*).
+- **P-44-8**: ListByTeam — Preload User(id,name,email) + LIMIT 100.
+- **P-44-9**: export — Preload Level(id,name).
+- **UX-01**: games-photos upload — data-no-loading (спиннер больше не застревает после ошибки).
+- **UX-02**: user-2fa-disable — data-no-loading (как 2fa-enable).
+- **UX-03**: monitor-page — no-data div удаляется при появлении команд.
+- **UX-04**: dashboard — aria-label на 4 search-инпута.
+- **UX-05**: admin-users — confirm на toggle-admin (promote/demote).
+- **UX-06**: notes-manage — aria-label на textarea.
+- **A-01**: интеграционные тесты VK existing-user (deny без привязки / allow с привязкой).
+- **Опровергнуто лично**: P-44-4 (HasPermission — ролевая логика в SQL рискованна, idx_co_authors_game_user уже ускоряет), P-44-7 (Body нужен в списке уведомлений), S-44-3 (исходное дизайн-ограничение анти-hijack, не регрессия).
+
+**Осталось к pass 45** (документировано): S-44-2 (OAuth делит login rate-limiter — осознанно), S-44-4 (voting/start+close без rate-limit), P-43-4 (authed-листинг кэш — низкий приоритет), P-44-3 (GetGameplayData 6 round-trips), P-44-10/11/12 (LOW), UX-07-15 (LOW: timer-sync clamp, gameplay code-form data-no-loading, console strings, touch targets admin-users/notes/photos, wizard step-2-4 валидация).
+
+---
+
+## Найденные ошибки pass 44 (верифицировано лично)
+
+### 🟠 Высокие
+
+| ID | Файл | Проблема | Статус |
+|---|---|---|---|
+| **A-09** | `notification/service.go:255-285` | **Push-pool shutdown race**: `ch := s.pushJobs` копировался, lock отпускался, Shutdown() мог закрыть канал между unlock и select-send → panic send on closed channel (select+default НЕ защищает). | ✅ Исправлено (send под мутексом) |
+| **A-02** | `oauth_service.go:242-251` | **VK ownership ослаблен**: ExistsByProviderExternalID проверял связку у ЛЮБОГО пользователя — атакующий с привязанным VK-аккаунтом (email жертвы в токене) мог войти как жертва. | ✅ Исправлено (userID-специфично) |
+
+### 🟡 Средние
+
+| ID | Файл | Проблема | Статус |
+|---|---|---|---|
+| **S-44-1** | `external_logins` | Нет UNIQUE (provider, external_id) — FindOrCreate race мог создать дубликаты на разных пользователей. | ✅ Исправлено (миграция 000051) |
+| **P-44-1** | `tournament/repository.go:259-266` | GetLeaderboard без LIMIT + Preload Team full. | ✅ Исправлено |
+| **P-44-2** | `game/repository.go:445-451` | GetByIDWithTeam Preload teams.* на горячем gameplay-пути. | ✅ Исправлено |
+| **P-44-5** | `level/repository.go:83-91` | ExistsByPosition — COUNT вместо EXISTS. | ✅ Исправлено |
+| **P-44-6** | `blackbox_voting_sessions` | Нет индекса (game_passing_id, level_id) — StartVoting/GetOpenVotingSession. | ✅ Исправлено (миграция 000051) |
+| **P-44-8** | `team/repository.go:298-301` | ListByTeam Preload users.* (password_hash) без LIMIT. | ✅ Исправлено |
+| **P-44-9** | `export/repository.go:49-63` | Preload Level full (description/hint) для CSV. | ✅ Исправлено |
+| **UX-01** | `games-photos.html` | Upload без data-no-loading — спиннер initFormLoading застревал после ошибки. | ✅ Исправлено |
+| **UX-02** | `user-2fa-disable.html` | Форма без data-no-loading — inline текст перетирался (пропущен в pass 43). | ✅ Исправлено |
+| **UX-03** | `monitor-page.html:168-172` | No-data div оставался при появлении команд. | ✅ Исправлено |
+| **UX-04** | `dashboard-index.html` | 4 search-инпута без доступного имени. | ✅ Исправлено (aria-label) |
+| **UX-05** | `admin-users.html` | Toggle-admin без confirm (риск lockout при demote себя). | ✅ Исправлено |
+| **UX-06** | `notes-manage.html:9` | Textarea без доступного имени. | ✅ Исправлено (aria-label) |
+| **A-01** | `service_test.go` | VK existing-user ветка без тестов. | ✅ Исправлено (2 подтеста) |
+
+### 🔲 Низкие / мелочи
+
+| ID | Файл | Проблема | Статус |
+|---|---|---|---|
+| **S-44-2** | `routes.go:48,86-88` | OAuth делит password-login rate-limiter (IP). | 📋 Осознанно (общий защитный лимит) |
+| **S-44-4** | `monitor/routes.go:158,200` | /voting/start, /voting/:id/close без rate-limit. | 📋 Менеджер-гейт; низкий приоритет |
+| **P-44-3** | `svc_play.go:723-826` | GetGameplayData — 6 round-trips. | 📋 errgroup уже параллелит; на потом |
+| **P-44-4** | `svc_coauthor.go:48-67` | HasPermission 2 round-trips. | 📋 Ролевая логика в SQL рискованна; индекс добавлен |
+| **P-44-7** | `notification/repository.go:82-108` | notifications.* (Body нужен списку). | 📋 Body обязателен |
+| **P-44-10** | `monitor_repository.go:41-84` | AggregateGameSnapshot LATERAL — дорогой, но индексирован. | 📋 TTL 30с разумен |
+| **P-44-11** | `room_hub.go:212-239` | roomWorker idle 30с. | 📋 Ограничен idle-timeout |
+| **UX-07** | `gameplay-show.html` | Timer-sync только уменьшает (не увеличивает). | 📋 Edge-case |
+| **UX-08** | `gameplay-show.html` | #code-form без data-no-loading (inline .finally восстановит). | 📋 Некритично |
+| **UX-11** | `admin-users/notes/photos` | Touch targets < 44px (пагинация admin-users). | 📋 На потом |
+| **UX-12** | `games-new-wizard` | Валидация шагов 2-4 только серверная. | 📋 Сервер валидирует |
+
+### 🔲 Опровергнуто / безопасно (личная проверка)
+
+- **S-44-5**: все новые Raw-SQL параметризованы (Vote/CanReview/snapshot). ✓
+- **S-44-6**: ChatWS/LogsWS/MonitorWS authz полное (S-43-1 фикс корректен); send-side room_id игнорируется. ✓
+- **S-44-7**: mass-assignment/IDOR в game/notes/photos/coauthors закрыты. ✓
+- **S-44-3**: VK первый линк для email-пользователя невозможен — исходное дизайн-ограничение анти-hijack (нет endpoint привязки), не регрессия от pass 43. ✓
+- **P-43-4**: authed-листинг OR без кэша — подтверждено, низкий приоритет. ✓
+- **Pass 43 round 2-3**: RotateBackups/ListOldest, pg_dump timeout, logs проекция, ExternalLogin index (000038) — всё VERIFIED. ✓
+
+---
+
+## B. Оптимизации (производительность)
+
+1. **P-44-5**: EXISTS вместо COUNT в ExistsByPosition.
+2. **P-44-1/2/8/9**: Preload-проекции + LIMIT (лидерборд, gameplay, invitations, export).
+3. **P-44-6**: индексы blackbox_voting_sessions + co_authors.
+
+## C. Улучшения кодовой базы (архитектура)
+
+1. **A-09**: консистентный паттерн send-под-мутексом (как RoomHub — никогда не закрывать каналы).
+2. **A-02**: ownership-проверка связок (userID-специфичный запрос).
+3. **S-44-1**: UNIQUE-индекс для детерминированной привязки OAuth.
+
+## D. Улучшения UX
+
+1. **UX-01/02**: data-no-loading — спиннеры не застревают.
+2. **UX-03**: monitor no-data очищается.
+3. **UX-04/06**: aria-label на search/textarea.
+4. **UX-05**: confirm на смену роли админа.
+
+## Приоритет фиксов (pass 44)
+1. **A-09** (panic при shutdown) + **A-02** (VK hijack) — уже сделано.
+2. **S-44-1** (UNIQUE) + **P-44-5/6** (перф) — уже сделано.
+3. **UX-01-06** (UX) — уже сделано.
 
 ---
 

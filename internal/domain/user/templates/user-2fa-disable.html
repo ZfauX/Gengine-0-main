@@ -14,7 +14,9 @@
             </p>
         </div>
 
-        <form action="/user/2fa/disable" method="POST" class="space-y-4">
+        <!-- UX-02 (pass 44): data-no-loading — inline локализованный обработчик
+             не должен перетираться generic-спиннером initFormLoading (как 2fa-enable). -->
+        <form action="/user/2fa/disable" method="POST" class="space-y-4" data-no-loading>
             <input type="hidden" name="_csrf" value="{{.csrf}}">
 
             <div>

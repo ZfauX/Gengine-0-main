@@ -166,10 +166,12 @@
             const seen = new Set();
 
             if (!teamsData || teamsData.length === 0) {
-                teamsContainer.innerHTML = `<div class="col-span-full text-center text-gray-500 dark:text-gray-400 py-8">{{ T $.Lang "monitor.no_data" }}</div>`;
+                teamsContainer.innerHTML = `<div class="monitor-no-data col-span-full text-center text-gray-500 dark:text-gray-400 py-8">{{ T $.Lang "monitor.no_data" }}</div>`;
                 return;
             }
-            teamsContainer.querySelectorAll('.monitor-skeleton').forEach(s => s.remove());
+            // UX-03 (pass 44): убираем и "нет данных", и скелетоны — раньше
+            // no-data div оставался на экране при появлении команд.
+            teamsContainer.querySelectorAll('.monitor-skeleton, .monitor-no-data').forEach(s => s.remove());
 
             teamsData.forEach(team => {
                 const key = String(team.team_id);

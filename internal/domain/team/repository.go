@@ -297,7 +297,16 @@ func (r *gormInvitationRepo) GetByTeamAndUser(ctx context.Context, teamID, userI
 }
 func (r *gormInvitationRepo) ListByTeam(ctx context.Context, teamID uint) ([]Invitation, error) {
 	var invs []Invitation
-	err := r.db.WithContext(ctx).Preload("User").Where("team_id = ?", teamID).Find(&invs).Error
+	// P-44-8 (pass 44): Preload только нужных колонок (без password_hash/email —
+	// шаблон использует Name+Email) + защитный LIMIT.
+	err := r.db.WithContext(ctx).
+		Preload("User", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id, name, email")
+		}).
+		Where("team_id = ?", teamID).
+		Order("created_at DESC").
+		Limit(100).
+		Find(&invs).Error
 	return invs, err
 }
 func (r *gormInvitationRepo) ListPendingByUser(ctx context.Context, userID uint) ([]Invitation, error) {

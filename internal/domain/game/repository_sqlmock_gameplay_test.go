@@ -20,9 +20,9 @@ func TestGormGamePassingRepo_GetByIDWithTeam(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "game_passings" WHERE "game_passings"."id" = $1 AND "game_passings"."deleted_at" IS NULL ORDER BY "game_passings"."id" LIMIT $2`)).
 		WithArgs(uint(10), 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "game_id", "team_id", "status"}).AddRow(10, 1, 2, string(StatusStarted)))
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "teams" WHERE "teams"."id" = $1 AND "teams"."deleted_at" IS NULL`)).
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id, name, captain_id FROM "teams" WHERE "teams"."id" = $1 AND "teams"."deleted_at" IS NULL`)).
 		WithArgs(uint(2)).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "name"}).AddRow(2, "Команда"))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "captain_id"}).AddRow(2, "Команда", 5))
 
 	p, err := repo.GetByIDWithTeam(context.Background(), 10)
 	require.NoError(t, err)

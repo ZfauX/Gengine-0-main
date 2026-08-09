@@ -442,9 +442,15 @@ func (r *gormGamePassingRepo) GetByIDWithGame(ctx context.Context, id uint) (*Ga
 }
 
 // GetByIDWithTeam загружает прохождение с командой (A-3, pass 36).
+// P-44-2 (pass 44): Preload только нужных колонок Team (без password_hash/email —
+// раньше тащили всю teams.* на горячий gameplay-путь).
 func (r *gormGamePassingRepo) GetByIDWithTeam(ctx context.Context, id uint) (*GamePassing, error) {
 	var p GamePassing
-	if err := r.db.WithContext(ctx).Preload("Team").First(&p, id).Error; err != nil {
+	if err := r.db.WithContext(ctx).
+		Preload("Team", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id, name, captain_id")
+		}).
+		First(&p, id).Error; err != nil {
 		return nil, err
 	}
 	return &p, nil

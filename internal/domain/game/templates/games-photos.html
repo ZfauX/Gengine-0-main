@@ -3,7 +3,10 @@
     <h1 class="page-title">{{ T $.Lang "photos.title" }}</h1>
     <!-- Форма загрузки -->
     <div class="card mb-6">
-        <form id="upload-photo-form" enctype="multipart/form-data" class="flex flex-wrap items-center gap-3">
+        <!-- UX-01 (pass 44): data-no-loading — upload обрабатывается inline XHR
+             (с прогресс-баром); initFormLoading перетирал кнопку generic-спиннером,
+             а после ошибки текст не восстанавливался. -->
+        <form id="upload-photo-form" enctype="multipart/form-data" data-no-loading class="flex flex-wrap items-center gap-3">
             <!-- UX-07 (pass 42): aria-label — файловый input не имел доступного имени -->
             <input type="file" name="photo" accept="image/jpeg,image/png,image/webp" required
                    aria-label='{{ T $.Lang "photos.upload_button" }}'

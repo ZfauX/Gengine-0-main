@@ -564,6 +564,12 @@ func TestOAuthService_Authenticate(t *testing.T) {
 	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		// oauth2.Exchange ждёт access_token; для VK — ещё user_id и email.
+		// A-01 (pass 44): codeVK_deny/codeVK_allow возвращают отдельный email —
+		// подтесты существующего пользователя изолированы от "нового через VK".
+		if strings.Contains(r.FormValue("code"), "codeVK_") {
+			fmt.Fprintf(w, `{"access_token":"tok_vk_existing","token_type":"Bearer","user_id":"vk_existing42","email":"vk_existing@example.com"}`)
+			return
+		}
 		fmt.Fprintf(w, `{"access_token":"tok123","token_type":"Bearer","user_id":"vk42","email":"vk@example.com"}`)
 	}))
 	defer tokenServer.Close()
@@ -617,6 +623,34 @@ func TestOAuthService_Authenticate(t *testing.T) {
 		count, err := userRepo.Count(context.Background())
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), count) // ya + vk
+	})
+
+	// A-01 (pass 44): существующий пользователь + VK (email не подтверждён).
+	t.Run("VK: существующий email без привязки отклоняется", func(t *testing.T) {
+		// Пользователь, созданный по паролю (email_verified=false), с email,
+		// который вернёт VK-токен (codeVK_deny → vk_existing@example.com).
+		existing := &User{Email: "vk_existing@example.com", Name: "VK Existing", EmailVerified: false, Password: "x"}
+		require.NoError(t, db.Create(existing).Error)
+
+		_, err := service.Authenticate(context.Background(), "vk", "codeVK_deny", "state123")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "email не подтверждён")
+	})
+
+	t.Run("VK: существующий email с привязкой проходит", func(t *testing.T) {
+		// Тот же пользователь, но ExternalLogin(provider=vk, external_id=vk_existing42)
+		// уже привязан именно к нему — вход разрешён (A-02 ownership).
+		existing, err := userRepo.GetByEmail(context.Background(), "vk_existing@example.com")
+		require.NoError(t, err)
+		require.NoError(t, db.Create(&ExternalLogin{
+			UserID:     existing.ID,
+			Provider:   "vk",
+			ExternalID: "vk_existing42",
+		}).Error)
+
+		u, err := service.Authenticate(context.Background(), "vk", "codeVK_allow", "state123")
+		require.NoError(t, err)
+		assert.Equal(t, existing.ID, u.ID)
 	})
 
 	t.Run("пустой state отклоняется", func(t *testing.T) {

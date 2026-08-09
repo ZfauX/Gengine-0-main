@@ -1430,6 +1430,8 @@ var enMessages = map[string]string{
 	"admin.role_user":               "User",
 	"admin.make_admin":              "Make admin",
 	"admin.demote":                  "Demote",
+	"admin.promote_confirm":         "Make this user an administrator?",
+	"admin.demote_confirm":          "Demote this administrator?",
 	"admin.delete":                  "Delete",
 	"admin.view":                    "View",
 	"admin.max_backups":             "Max stored backups:",
