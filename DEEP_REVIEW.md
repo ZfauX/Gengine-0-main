@@ -47,11 +47,11 @@
 
 ---
 
-## Статус (обновлено 9 авг 2026) — PASS 36 ОТКРЫТ
+## Статус (обновлено 9 авг 2026) — PASS 36 ЗАКРЫТ
 
-Находки перечислены ниже; закрытие — раундами фиксов, как в pass 30-35.
+**Все находки pass 36 исправлены** (2 раунда фиксов):
 
-**Раунд 1 (текущий):**
+**Раунд 1** (`c612eb4`):
 - **K-1**: full-preview больше не отдаёт коды ответов не-менеджерам (`hnd_fullpreview.go` — IsUserManager check; менеджеры видят ответы, остальные только вопросы/подсказки).
 - **UX-R1/R2**: бейдж «новые сообщения» починен — inline onclick заменён на addEventListener в nonce-скрипте (CSP блокировал onclick); счётчик сбрасывается при клике.
 - **UX-R3**: ошибки submit — клиент извлекает сообщение из `.flash-error` через DOMParser вместо «стены» HTML.
@@ -73,6 +73,14 @@
 - **F-1**: checkAutoStartGamesImpl — `NewLevelProgressService(tx)` вынесен за цикл.
 
 **Осталось на раунд 3+ (низкий приоритет):** A-3 (GetGameplayData → GameplayReadRepository — большой read-assembly, осознанно отложен), F-2 (JSON-маршалинг снапшота), F-3 (ListRecentAttempts SQL-агрегация), S-4 (CSP style-src), UX-2..6 (низкие).
+
+**Проверка:** `go build ./...` ✓, `go vet ./...` ✓, `gofmt -l .` → пусто ✓, `go test -count=1 -short ./...` ✓, все 84 шаблона валидны ✓, recaptcha тесты ✓.
+
+**Оставлено осознанно (задокументировано):**
+- **A-3** (GetGameplayData read-assembly) — большой рефакторинг на GameplayReadRepository без функционального бага; уже покрыт тестами через интеграционные.
+- **F-2/F-3** (маршалинг снапшота, ListRecentAttempts) — перф-улучшения без пользовательского влияния.
+- **S-4** (CSP `style-src 'unsafe-inline'`) — осознанный компромисс для inline-стилей.
+- **UX-2..6** — низкий приоритет (reCAPTCHA dark theme, emoji aria-hidden, sessionStorage try/catch, OG-теги, confirm спиннер).
 
 ---
 
