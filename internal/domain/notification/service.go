@@ -225,8 +225,10 @@ func (s *NotificationService) Create(ctx context.Context, userID uint, ntype Not
 		return fmt.Errorf("failed to create notification: %w", err)
 	}
 
-	// Сброс кэша счётчика (P-M6).
-	s.invalidateUnreadCount(userID)
+	// L-1 (pass 40): инкрементируем закэшированный unread-счётчик вместо
+	// инвалидации — раньше invalidate + getUnreadCount в WS-payload давали
+	// +1 COUNT из БД на каждое создание уведомления (P-M6 не достигался).
+	s.incrementUnreadCount(userID)
 
 	// Отправляем WebSocket-уведомление в реальном времени
 	if s.hub != nil {
@@ -442,6 +444,23 @@ func (s *NotificationService) invalidateUnreadCount(userID uint) {
 	s.unreadMu.Lock()
 	delete(s.unreadCache, userID)
 	s.unreadMu.Unlock()
+}
+
+// incrementUnreadCount инкрементирует закэшированный unread-счётчик, если он
+// жив; иначе инвалидирует (следующий getUnreadCount пересчитает из БД, включив
+// только что созданное уведомление). L-1 (pass 40): убирает COUNT из БД на
+// каждое создание уведомления, сохраняя точность WS-payload.
+func (s *NotificationService) incrementUnreadCount(userID uint) {
+	s.unreadMu.Lock()
+	defer s.unreadMu.Unlock()
+	if e, ok := s.unreadCache[userID]; ok && time.Now().Before(e.expires) {
+		e.count++
+		// Продлеваем TTL — запись остаётся актуальной после инкремента.
+		e.expires = time.Now().Add(unreadCacheTTL)
+		s.unreadCache[userID] = e
+		return
+	}
+	delete(s.unreadCache, userID)
 }
 
 // GetByUser возвращает уведомления пользователя с пагинацией

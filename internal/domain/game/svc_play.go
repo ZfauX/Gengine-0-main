@@ -48,6 +48,9 @@ var (
 	ErrHintsDisabled = errors.New("подсказки запрещены")
 	// ErrNoHintAvailable — на уровне нет подсказки.
 	ErrNoHintAvailable = errors.New("на этом уровне нет подсказки")
+	// ErrTestingOnly — действие доступно только для тестового прохождения
+	// (L-10, pass 40: единый sentinel вместо дубликата в двух методах).
+	ErrTestingOnly = errors.New("тестовый режим доступен только для тестового прохождения")
 )
 
 // GamePlayService отвечает за игровой процесс: отправку кодов, файлов, подсказок,
@@ -559,7 +562,7 @@ func (s *GamePlayService) SubmitTestCode(ctx context.Context, passingID, userID 
 		// это допустимо только для тестовой сессии (StatusTesting), иначе автор
 		// мог бы завершить уровень реальной команды по passingID.
 		if passing.Status != StatusTesting {
-			return errors.New("тестовый режим доступен только для тестового прохождения")
+			return ErrTestingOnly
 		}
 
 		attempt = &Attempt{
@@ -616,7 +619,7 @@ func (s *GamePlayService) SkipLevelTest(ctx context.Context, passingID, userID u
 		// G1: пропуск уровня допустим только для тестовой сессии, иначе автор
 		// мог бы пропустить уровень реальной команды по passingID.
 		if passing.Status != StatusTesting {
-			return errors.New("тестовый режим доступен только для тестового прохождения")
+			return ErrTestingOnly
 		}
 
 		ok, permErr := s.coAuthorSvc.HasPermission(ctx, passing.GameID, userID, RoleModerator)

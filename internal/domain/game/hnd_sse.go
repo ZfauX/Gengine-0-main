@@ -266,11 +266,14 @@ func (m *SSEManager) Broadcast(gameID uint, eventType string, data any) {
 	// Сериализуем payload один раз для всех подписчиков (экономия при N подписчиках).
 	payloadJSON := toJSON(payload)
 	event := "event: " + eventType + "\ndata: " + payloadJSON + "\n\n"
+	// L-4 (pass 40): конвертация строки в байты один раз, а не на каждого
+	// подписчика (N аллокаций на broadcast).
+	eventBytes := []byte(event)
 
 	for _, s := range sessions {
 		// Неблокирующая отправка (P-M2): медленный клиент не держит Broadcast.
 		// Канал не закрывается при отписке — отправка в него безопасна.
-		s.enqueue([]byte(event))
+		s.enqueue(eventBytes)
 	}
 }
 

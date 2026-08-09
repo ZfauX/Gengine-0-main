@@ -162,6 +162,11 @@ func (h *AdminHandler) ListUsers(c *gin.Context) {
 	if req.Page < 1 {
 		req.Page = 1
 	}
+	// L-6 (pass 40): верхняя граница page - огромные OFFSET делают дорогие
+	// запросы (слабая DoS-сторона для админов).
+	if req.Page > 10000 {
+		req.Page = 10000
+	}
 	if req.PerPage < 1 || req.PerPage > 100 {
 		req.PerPage = 20
 	}
@@ -371,6 +376,11 @@ func (h *AdminHandler) ListGames(c *gin.Context) {
 	}
 	if req.Page < 1 {
 		req.Page = 1
+	}
+	// L-6 (pass 40): верхняя граница page - огромные OFFSET делают дорогие
+	// запросы (слабая DoS-сторона для админов).
+	if req.Page > 10000 {
+		req.Page = 10000
 	}
 	if req.PerPage < 1 || req.PerPage > 100 {
 		req.PerPage = 20
@@ -584,6 +594,11 @@ func (h *AdminHandler) AuditLog(c *gin.Context) {
 	}
 	if req.Page < 1 {
 		req.Page = 1
+	}
+	// L-6 (pass 40): верхняя граница page - огромные OFFSET делают дорогие
+	// запросы (слабая DoS-сторона для админов).
+	if req.Page > 10000 {
+		req.Page = 10000
 	}
 	if req.PerPage < 1 || req.PerPage > 100 {
 		req.PerPage = 20

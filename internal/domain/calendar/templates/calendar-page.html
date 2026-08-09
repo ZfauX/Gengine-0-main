@@ -130,10 +130,11 @@
             daySpan.className = 'font-bold text-gray-700 dark:text-gray-300 mb-1';
             daySpan.textContent = day;
 
-            // Подсветка сегодняшнего дня
+            // Подсветка сегодняшнего дня (L-9 pass 40: dark-вариант добавлен —
+            // раньше bg-blue-50 не был виден в тёмной теме).
             const today = new Date();
             if (year === today.getFullYear() && month - 1 === today.getMonth() && day === today.getDate()) {
-                cell.classList.add('bg-blue-50', 'rounded');
+                cell.classList.add('bg-blue-50', 'dark:bg-blue-900/30', 'rounded');
             }
 
             cell.appendChild(daySpan);

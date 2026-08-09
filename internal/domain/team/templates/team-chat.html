@@ -55,9 +55,12 @@
                 var data;
                 try { data = JSON.parse(event.data); } catch (err) { console.error('chat: invalid frame', err); return; }
                 if (data.type === 'history' && data.messages) {
+                    // L-8 (pass 40): отключаем aria-live на время вставки истории.
+                    messagesEl.setAttribute('aria-live', 'off');
                     messagesEl.innerHTML = '';
                     data.messages.forEach(function(msg) { appendMessage(msg, false); });
                     messagesEl.scrollTop = messagesEl.scrollHeight;
+                    messagesEl.setAttribute('aria-live', 'polite');
                 } else if (data.type === 'message') {
                     removeSendingStatus();
                     appendMessage(data.message || data, true);

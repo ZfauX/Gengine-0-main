@@ -112,6 +112,10 @@
                         try {
                             const data = JSON.parse(e.data);
                             if (data.type === 'history') {
+                                // L-8 (pass 40): отключаем aria-live на время
+                                // вставки 50+ сообщений — скринридер не должен
+                                // объявлять весь бэклог сразу.
+                                chatMessages.setAttribute('aria-live', 'off');
                                 chatMessages.innerHTML = '';
                                 renderedIds.clear();
                                 if (Array.isArray(data.messages)) {
@@ -121,6 +125,8 @@
                                         renderMessage(msg);
                                     });
                                 }
+                                // Возвращаем aria-live после загрузки истории.
+                                chatMessages.setAttribute('aria-live', 'polite');
                                 // UX-M4 (pass 34): после загрузки истории прокручиваем вниз.
                                 chatMessages.scrollTop = chatMessages.scrollHeight;
                             } else if (data.type === 'message') {

@@ -82,6 +82,12 @@ func (s *BackupService) CreateNow(ctx context.Context) error {
 		return fmt.Errorf("pg_dump failed: %w, output: %s", err, string(output))
 	}
 
+	// L-7 (pass 40): дамп содержит хеши паролей, 2FA-секреты, refresh-хеши —
+	// ограничиваем доступ только владельцем (was 0644 по умолчанию).
+	if chmodErr := os.Chmod(filepath, 0600); chmodErr != nil {
+		log.Warn().Err(chmodErr).Str("file", filepath).Msg("Backup: failed to chmod backup file to 0600")
+	}
+
 	info, err := os.Stat(filepath)
 	var size int64
 	if err == nil {

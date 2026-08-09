@@ -111,6 +111,9 @@
 
         // Polling fallback
         function startPolling() {
+            // L-11 (pass 40): идемпотентность — повторный вызов (например, при
+            // очередном failed реконнекта) не должен дублировать fetch/интервал.
+            if (pollingTimer) return;
             stopPolling();
             fetchInitialData();
             pollingTimer = setInterval(fetchInitialData, POLL_INTERVAL);

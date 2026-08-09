@@ -123,7 +123,9 @@ func (c *Cache) removeExpired() {
 	}
 	now := time.Now()
 	for key := range c.ttlKeys {
-		item, ok := c.lru.Get(key)
+		// L-5 (pass 40): Peek вместо Get — sweep не должен промоутить ключи
+		// в LRU (Get сдвигает элемент в front, мешая eviction).
+		item, ok := c.lru.Peek(key)
 		if !ok {
 			// Ключ уже вытеснен LRU — чистим из ttlKeys.
 			delete(c.ttlKeys, key)
