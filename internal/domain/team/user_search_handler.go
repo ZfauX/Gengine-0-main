@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
 
 	csrf "gengine-0/internal/pkg/csrf"
@@ -25,6 +26,8 @@ func NewUserSearchHandler(teamSvc *TeamService) *UserSearchHandler {
 }
 
 // SearchUsers ищет пользователей по имени или email (JSON).
+// S-45-1 (pass 45): поиск доступен только капитану команды или админу —
+// раньше любой авторизованный мог перебирать пользователей (enumeration).
 func (h *UserSearchHandler) SearchUsers(c *gin.Context) {
 	query := strings.TrimSpace(c.Query("q"))
 	if query == "" || len(query) < 2 {
@@ -33,6 +36,12 @@ func (h *UserSearchHandler) SearchUsers(c *gin.Context) {
 	}
 
 	teamID, _ := strconv.Atoi(c.Param("team_id"))
+	userID := c.GetUint("userID")
+
+	if !middleware.IsAdmin(c) && !h.teamSvc.CanManageTeam(c.Request.Context(), uint(teamID), userID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
+		return
+	}
 
 	// Поиск + исключение участников/капитана выполняется на стороне репозитория (C1).
 	users, err := h.teamSvc.SearchUsersForInvitation(c.Request.Context(), query, uint(teamID))

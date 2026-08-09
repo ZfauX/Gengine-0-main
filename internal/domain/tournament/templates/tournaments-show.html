@@ -104,7 +104,7 @@
             <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "tournament.apply_button" }}</button>
         </form>
         {{end}}
-        <a href="/tournaments/{{.Tournament.ID}}/edit" class="btn btn-outline text-sm">{{ T $.Lang "tournament.edit" }}</a>
+        {{if .IsOwner}}<a href="/tournaments/{{.Tournament.ID}}/edit" class="btn btn-outline text-sm">{{ T $.Lang "tournament.edit" }}</a>{{end}}
         <a href="/tournaments" class="btn btn-outline text-sm">{{ T $.Lang "tournament.back_to_list" }}</a>
     </div>
     {{else}}

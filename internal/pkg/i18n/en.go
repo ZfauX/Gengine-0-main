@@ -312,6 +312,7 @@ var enMessages = map[string]string{
 	"admin.backup_file_not_found":  "Backup file not found",
 	"admin.user_get_error":         "Failed to get user",
 	"admin.user_role_update_error": "Failed to update user role",
+	"admin.last_admin_error":       "Cannot demote the last administrator",
 	"admin.user_delete_error":      "Failed to delete user",
 	"admin.cannot_delete_self":     "You cannot delete your own account",
 	"admin.game_delete_error":      "Failed to delete game",

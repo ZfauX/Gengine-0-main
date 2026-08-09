@@ -329,8 +329,10 @@ func LoginRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 // OAuthRateLimit — отдельный бюджет для OAuth redirect/callback (S-44-2, pass 44):
 // раньше OAuth делил ключ "login:"+ip с парольным логином — спам редиректами
 // блокировал и парольный вход с того же IP. Свой ключ развязывает бюджеты.
+// A-02 (pass 45): используем СВОЙ лимитер — раньше код брал loginRateLimiter,
+// и переданный limit=10 игнорировался (применялся login-лимит 5).
 func OAuthRateLimit(window time.Duration, limit int) gin.HandlerFunc {
-	rl := loginRateLimiter
+	rl := oauthRateLimiter
 	if rl == nil {
 		rl = NewRateLimiter(window, limit)
 	}
@@ -343,6 +345,22 @@ func OAuthRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 			return
 		}
 		c.Next()
+	}
+}
+
+var oauthRateLimiter *RateLimiter
+
+func InitOAuthRateLimiter(window time.Duration, limit int) {
+	oauthRateLimiter = NewRateLimiter(window, limit)
+}
+
+func InitOAuthRateLimiterWithValkey(client *redis.Client, window time.Duration, limit int) {
+	oauthRateLimiter = NewValkeyRateLimiter(client, window, limit)
+}
+
+func StopOAuthRateLimiter() {
+	if oauthRateLimiter != nil {
+		oauthRateLimiter.Stop()
 	}
 }
 

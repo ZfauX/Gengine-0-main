@@ -151,6 +151,10 @@ func (h *TournamentHandler) Show(c *gin.Context) {
 
 	canApply := h.tournamentService.CanApply(c.Request.Context(), req.ID, userID)
 
+	// UX-03 (pass 45): edit-ссылка только для владельца — раньше рендерилась
+	// всем, анонимный пользователь уходил в login→403.
+	isOwner := userID != 0 && t.AuthorID == userID
+
 	teams, err := h.teamService.GetMyTeams(c.Request.Context(), userID)
 	if err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Msg("TournamentHandler.Show: failed to get teams")
@@ -163,6 +167,7 @@ func (h *TournamentHandler) Show(c *gin.Context) {
 		"Games":         games,
 		"Leaderboard":   leaderboard,
 		"CanApply":      canApply,
+		"IsOwner":       isOwner,
 		"UserTeams":     teams,
 		"CurrentUserID": userID,
 		"csrf":          csrf.GetToken(c),

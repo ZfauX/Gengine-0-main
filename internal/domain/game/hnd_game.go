@@ -241,6 +241,9 @@ func (h *GameHandler) Show(c *gin.Context) {
 		// SEO-1 (pass 39): суффикс «· Encounter Engine» добавляет layout —
 		// иначе было «Name · Encounter Engine · Encounter Engine».
 		"Title":   g.Name,
+		// UX-04 (pass 45): Description для layout-og:description — раньше layout
+		// эмитил generic-описание, а ExtraHead добавлял второй og:description.
+		"Description": g.Description,
 		"OGImage": ogImage,
 		"Breadcrumbs": []map[string]string{
 			{"name": "nav.home", "url": "/"},

@@ -1,12 +1,110 @@
-# Deep Review Gengine-0 — 9 августа 2026 (pass 44 — повторное ревью после полного закрытия pass 30-43)
+# Deep Review Gengine-0 — 9 августа 2026 (pass 45 — повторное ревью после полного закрытия pass 30-44)
 
 ## Резюме
 
 Повторное глубокое ревью выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture/DI) с последующей **личной верификацией ключевых находок** по коду.
 
-**Итог pass 44:** 0 критичных, 2 высоких (A-09 — push-pool shutdown race, A-02 — VK ownership ослаблен), ~8 средних, ~8 низких. Все ключевые находки исправлены раундами 1-2 (раунд 2 — доделки: rate-limit voting/OAuth, timer-sync, touch targets, wizard validation).
+**Итог pass 45:** 0 критичных, 2 высоких (UX-01 — SyntaxError для гостей ломает games-list, P-45-5 — password_hash/email через Preload Members), ~10 средних, ~8 низких. Все ключевые находки исправлены раундом 1.
 
-> **Контекст:** pass 30-43 закрыты полностью. Новые находки: **A-09 — panic send-on-closed-channel в push-pool при shutdown** (select+default не защищает), **A-02 — VK-проверка связки не сверяла владельца** (вход как жертва при чужой привязке), **P-44-1/2/5/6/7/8/9** (лидерборд без LIMIT, Preload полных Team/Level, Count вместо EXISTS, недостающие индексы), **UX-01/02** (застрявший спиннер upload/2FA-disable), **UX-03-06** (monitor no-data, dashboard search aria, toggle-admin confirm, notes label), **S-44-1** (ExternalLogin без UNIQUE).
+> **Контекст:** pass 30-44 закрыты полностью. Новые находки: **UX-01 — JS SyntaxError для гостей** (незакрытый `{{if}}` в games-list ломал весь скрипт), **P-45-5 — Preload Members/Author/GetAvailableUsers тащили password_hash/email**, **S-45-4 — можно разжаловать последнего админа**, **S-45-1 — user enumeration через team search API**, **A-02 — OAuthRateLimit игнорировал лимит** (брал loginRateLimiter), **P-45-4 — дубль индекса co_authors**, **P-45-3/6/7** (COUNT метрики, Preload вопросов, полный Author), **UX-02/03/04** (confirm «Удалить», edit-ссылка всем, дубль og:description).
+
+---
+
+# PASS 45 (повторное ревью) — 9 августа 2026
+
+> Шестнадцатое повторное ревью после полного закрытия pass 30-44. Выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture) с **личной верификацией** ключевых находок по коду.
+
+## Статус (обновлено 9 авг 2026) — PASS 45 ОТКРЫТ
+
+Находки перечислены ниже; закрытие — раундами фиксов.
+
+**Раунд 1** (правки текущие, не закоммичены до проверки):
+- **UX-01** (высокий): games-list — `{{if .CurrentUserID}}`-ветка вынесена в отдельный `if`; для гостей рендерится валидный JS (раньше SyntaxError ломал view-toggle, навигацию карточек, клавиатуру).
+- **P-45-5** (высокий): GetByIDWithMembers — Preload Captain/Members `Select(id,name,email,avatar_path)`; GetAvailableUsers — `Select(id,name,email)`; GetByIDPreloaded — Preload Author `Select(id,name,avatar_path)` (без password_hash).
+- **S-45-4**: ToggleAdmin — нельзя разжаловать последнего админа (CountByRole + flash `admin.last_admin_error`).
+- **S-45-1**: team user search — только капитан команды или админ (CanManageTeam + IsAdmin), 403 иначе.
+- **A-02**: OAuthRateLimit — собственный `oauthRateLimiter` (Init/Stop/Valkey), limit=10 применяется; тест `TestOAuthRateLimit`.
+- **P-45-4**: миграция 000051 — убран дубль индекса co_authors (GORM AutoMigrate уже создаёт uniqueIndex idx_game_user).
+- **P-45-3**: updateTeamMembersTotal — throttle 1/мин (не полный COUNT на каждую мутацию).
+- **P-45-6**: ListByGameOrdered — без Preload вопросов/ответов (список уровней не показывает их).
+- **UX-02**: admin toggle-admin — `data-confirm-ok` (кнопка «Разжаловать»/«Сделать админом» вместо «Удалить»).
+- **UX-03**: tournaments-show — edit-ссылка только для владельца (IsOwner).
+- **UX-04**: games-show — `Description` передаётся в layout (og:description единственный), ExtraHead-дубль убран.
+- **Опровергнуто лично**: S-45-2 (шаблон teams-members показывает Name/Email — PII самой команды, password_hash теперь не грузится), S-45-3 (push SSRF re-check — HTTPS-only, impact speculativ), S-45-5 (LOW — stale authz до reconnect), A-07 (BlackboxVote inline errors — стилевое).
+
+**Осталось к pass 46** (документировано): S-45-3 (push SSRF DNS-rebinding — HTTPS-only, низкий риск), S-45-5 (WS stale authz после удаления из команды), P-43-4 (authed-листинг кэш), P-44-3 (GetGameplayData 7 round-trips), P-44-4 (HasPermission 2 запроса), P-45-10/11 (индексы game_passings/player_ratings — SPECULATIVE, EXPLAIN), P-45-13 (invitations user_id,status индекс), UX-05 (wizard финальный submit — SPECULATIVE), UX-06 (emoji aria-hidden на error pages), UX-08 (invitations-my decline без confirm).
+
+---
+
+## Найденные ошибки pass 45 (верифицировано лично)
+
+### 🟠 Высокие
+
+| ID | Файл | Проблема | Статус |
+|---|---|---|---|
+| **UX-01** | `games-list.html:296-304` | **JS SyntaxError для гостей**: `{{if .CurrentUserID}} else if ... {{end}}` рендерился без закрывающей `}` — весь скрипт (view-toggle, навигация карточек, клавиатура) умирал на публичной странице /games. | ✅ Исправлено (отдельный if) |
+| **P-45-5** | `team/repository.go:95-102,276-281`, `game/repository.go:99-113` | **Preload тащил password_hash/email**: GetByIDWithMembers (Members), GetAvailableUsers, GetByIDPreloaded (Author). | ✅ Исправлено (Select-проекции) |
+
+### 🟡 Средние
+
+| ID | Файл | Проблема | Статус |
+|---|---|---|---|
+| **S-45-4** | `admin/handler.go:277-281` | ToggleAdmin может разжаловать последнего админа (панель, /metrics, /swagger, /debug/pprof недоступны). | ✅ Исправлено (CountByRole guard) |
+| **S-45-1** | `team/user_search_handler.go:28-54` | User enumeration — любой авторизованный мог искать пользователей. | ✅ Исправлено (CanManageTeam+IsAdmin) |
+| **A-02** | `middleware/rate_limiter.go:332-347` | OAuthRateLimit использовал `loginRateLimiter` — limit=10 игнорировался (применялся 5). | ✅ Исправлено (свой лимитер+init+тест) |
+| **P-45-4** | `migrations/000051` | Дубль индекса co_authors (GORM AutoMigrate уже создаёт uniqueIndex idx_game_user). | ✅ Исправлено (миграция очищена) |
+| **P-45-3** | `team/service.go:160-167` | updateTeamMembersTotal — полный COUNT(*) на каждую мутацию команды. | ✅ Исправлено (throttle 1/мин) |
+| **P-45-6** | `level/repository.go:110-117` | ListByGameOrdered — Preload вопросов/ответов на списке уровней. | ✅ Исправлено |
+| **UX-02** | `admin-users.html` | Toggle-admin confirm — кнопка «Удалить» (дефолт). | ✅ Исправлено (data-confirm-ok) |
+| **UX-03** | `tournaments-show.html:107` | Edit-ссылка рендерилась всем (аноним → login → 403). | ✅ Исправлено (IsOwner) |
+| **UX-04** | `games-show.html:5`, `hnd_game.go` | Дубль og:description + generic из layout. | ✅ Исправлено (Description в layout) |
+
+### 🔲 Низкие / мелочи
+
+| ID | Файл | Проблема | Статус |
+|---|---|---|---|
+| **S-45-3** | `push_handler.go:156-199` | Push SSRF re-check только при subscribe (DNS-rebinding). | 📋 HTTPS-only; низкий риск |
+| **S-45-5** | `monitor/handler.go:604-616` | WS stale authz после удаления из команды (до reconnect). | 📋 LOW |
+| **P-45-10** | `game_passings` | Composite (game_id, status) — SPECULATIVE. | 📋 EXPLAIN на потом |
+| **P-45-11** | `player_ratings` | Индекс score для лидерборда — SPECULATIVE. | 📋 Размер таблицы невелик |
+| **P-45-13** | `invitations` | Индекс (user_id, status). | 📋 Проверить модель |
+| **UX-05** | `games-new-wizard` | Финальный submit — disabled-btn может блокировать native submit. | 📋 SPECULATIVE; проверить в браузере |
+| **UX-06** | `errors-*.html` | Emoji без aria-hidden. | 📋 Мелочь |
+| **UX-08** | `invitations-my.html` | Decline без confirm (обратимое). | 📋 Приемлемо |
+
+### 🔲 Опровергнуто / безопасно (личная проверка)
+
+- **S-45-2**: teams-members показывает Name/Email — PII самой команды (видит только авторизованный); password_hash теперь не грузится. ✓
+- **S-44-4**: voting rate limits (start/vote/close) — VERIFIED. ✓
+- **Pass 44 round 2**: OAuth key separation, timer-sync, wizard validation, touch targets — VERIFIED. ✓
+- **A-07**: BlackboxVote inline errors — стилевое, не security. ✓
+- **Worker pools**: SnapshotDispatcher, monitor pollers, WS handlers — чистые. ✓
+- **CSRF/2FA/IDOR/вход**: без новых проблем. ✓
+
+---
+
+## B. Оптимизации (производительность)
+
+1. **P-45-5**: Select-проекции Users (без password_hash) — меньше данных и раскрытия.
+2. **P-45-3**: throttle метрики (не COUNT на каждую мутацию).
+3. **P-45-6**: без Preload вопросов/ответов на списке уровней.
+
+## C. Улучшения кодовой базы (архитектура)
+
+1. **A-02**: отдельный OAuthRateLimiter + init/stop (как остальные).
+2. **S-45-4**: guard последнего админа.
+3. **S-45-1**: авторизация поиска пользователей.
+
+## D. Улучшения UX
+
+1. **UX-01**: валидный JS для гостей (полный скрипт жив).
+2. **UX-02/03**: честные кнопки confirm + edit-ссылка по правам.
+3. **UX-04**: единственный og:description.
+
+## Приоритет фиксов (pass 45)
+1. **UX-01** (сломанная публичная страница) + **P-45-5** (password_hash в Preload) — уже сделано.
+2. **S-45-4/S-45-1/A-02** (security/availability) — уже сделано.
+3. **P-45-3/4/6 + UX-02/03/04** (перф/UX) — уже сделано.
 
 ---
 

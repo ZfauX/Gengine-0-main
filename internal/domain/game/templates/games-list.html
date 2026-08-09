@@ -297,7 +297,8 @@
             e.preventDefault();
             var searchInput = document.getElementById('filter-search');
             if (searchInput) searchInput.focus();
-        {{if .CurrentUserID}} else if (e.key.toLowerCase() === 'n') {
+        }
+        {{if .CurrentUserID}}if (e.key.toLowerCase() === 'n') {
             e.preventDefault();
             window.location.href = '/games/new';
         }{{end}}

@@ -1,8 +1,9 @@
 {{define "ExtraHead"}}
 {{if .Game}}
 <!-- SEO-1 (pass 39): og:title уже в layout (с суффиксом) — дубль здесь давал
-     второй meta, который краулеры игнорировали. Остаются per-page теги. -->
-<meta property="og:description" content="{{truncate .Game.Description 200}}">
+     второй meta, который краулеры игнорировали. Остаются per-page теги.
+     UX-04 (pass 45): og:description убран — layout использует .Description
+     (хендлер передаёт его); раньше было два og:description. -->
 <meta property="og:type" content="article">
 {{if .OGImage}}<meta property="og:image" content="{{.OGImage}}">{{end}}
 {{end}}

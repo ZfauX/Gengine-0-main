@@ -334,6 +334,7 @@ var ruMessages = map[string]string{
 	"admin.backup_file_not_found":  "Файл бекапа не найден",
 	"admin.user_get_error":         "Ошибка получения пользователя",
 	"admin.user_role_update_error": "Ошибка обновления роли пользователя",
+	"admin.last_admin_error":       "Нельзя разжаловать последнего администратора",
 	"admin.user_delete_error":      "Ошибка удаления пользователя",
 	"admin.cannot_delete_self":     "Вы не можете удалить свой собственный аккаунт",
 	"admin.game_delete_error":      "Ошибка удаления игры",

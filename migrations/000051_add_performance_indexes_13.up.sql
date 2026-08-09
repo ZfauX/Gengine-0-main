@@ -14,8 +14,6 @@ CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_external_logins_provider_exte
 -- не покрывают выборку.
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_blackbox_voting_sessions_passing_level
     ON blackbox_voting_sessions(game_passing_id, level_id);
-
--- P-44-4 (доп): FindByGameAndUser фильтрует co_authors(game_id, user_id) —
--- раздельных индексов нет, выборка по обеим колонкам делала bitmap-комбинацию.
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_co_authors_game_user
-    ON co_authors(game_id, user_id);
+-- NB (P-45-4, pass 45): co_authors composite НЕ добавляем — GORM AutoMigrate уже
+-- создаёт uniqueIndex idx_game_user(GameID, UserID) (model.go:132-133), покрывающий
+-- FindByGameAndUser. Миграция 000051 из pass 44 содержала дубль — удалён.

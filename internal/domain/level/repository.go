@@ -109,7 +109,9 @@ func (r *gormLevelRepo) GetFullLevel(ctx context.Context, id uint) (*Level, erro
 }
 func (r *gormLevelRepo) ListByGameOrdered(ctx context.Context, gameID uint) ([]Level, error) {
 	var levels []Level
-	err := r.db.WithContext(ctx).Preload("Questions.Answers").
+	// P-45-6 (pass 45): БЕЗ Preload вопросов/ответов — страница списка уровней
+	// показывает только name/position; вопросы грузятся ListWithQuestions.
+	err := r.db.WithContext(ctx).
 		Where("game_id = ?", gameID).
 		Order("position ASC").
 		Find(&levels).Error

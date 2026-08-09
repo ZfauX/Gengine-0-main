@@ -721,6 +721,29 @@ func TestLoginRateLimit(t *testing.T) {
 	assert.Contains(t, w.Body.String(), middleware.ErrRateLimitLogin.Error())
 }
 
+func TestOAuthRateLimit(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(middleware.OAuthRateLimit(100*time.Millisecond, 2))
+	router.POST("/oauth", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest("POST", "/oauth", nil)
+		req.RemoteAddr = "5.6.7.8:5678"
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+	}
+
+	req := httptest.NewRequest("POST", "/oauth", nil)
+	req.RemoteAddr = "5.6.7.8:5678"
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusTooManyRequests, w.Code)
+}
+
 func TestCodeSubmissionRateLimit(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

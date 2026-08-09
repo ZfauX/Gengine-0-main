@@ -220,6 +220,7 @@ func run() error {
 			middleware.InitSSERateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitSSE)
 			middleware.InitAPIRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitAPI)
 			middleware.InitPasswordResetRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitPasswordReset)
+			middleware.InitOAuthRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitLoginRequests)
 		}
 	} else {
 		middleware.InitGlobalRateLimiter(rateLimitWindow, cfg.Server.RateLimitGlobalRequests)
@@ -229,6 +230,7 @@ func run() error {
 		middleware.InitSSERateLimiter(rateLimitWindow, cfg.Server.RateLimitSSE)
 		middleware.InitAPIRateLimiter(rateLimitWindow, cfg.Server.RateLimitAPI)
 		middleware.InitPasswordResetRateLimiter(rateLimitWindow, cfg.Server.RateLimitPasswordReset)
+		middleware.InitOAuthRateLimiter(rateLimitWindow, cfg.Server.RateLimitLoginRequests)
 	}
 
 	// --- Инициализация persistent-очереди email (только если SMTP включён) ---
@@ -459,6 +461,7 @@ func run() error {
 	middleware.StopPasswordResetRateLimiter()
 	middleware.StopSSERateLimiter()
 	middleware.StopAPIRateLimiter()
+	middleware.StopOAuthRateLimiter()
 
 	// 2. Останавливаем очередь email (если была запущена) — до HTTP, чтобы
 	//    рабочие завершили отправку, прежде чем сервер перестанет принимать запросы.

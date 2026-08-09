@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
+	"time"
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/user"
@@ -17,6 +19,10 @@ import (
 
 type TeamService struct {
 	teamRepo TeamRepository
+
+	// P-45-3 (pass 45): throttle метрики «всего участников» — не чаще 1/мин.
+	membersMetricMu   sync.Mutex
+	membersMetricNext time.Time
 }
 
 // Sentinel-ошибки команды (A-M4, pass 34): handlers могут делать errors.Is.
@@ -158,7 +164,19 @@ func (s *TeamService) ChangeCaptain(ctx context.Context, teamID, newCaptainID, a
 }
 
 // updateTeamMembersTotal обновляет gauge с общим количеством участников команд.
+// P-45-3 (pass 45): throttle 1 раз в минуту — раньше полный COUNT(*) по всей
+// таблице team_members выполнялся на КАЖДУЮ мутацию (AddMember/RemoveMember/
+// AcceptInvitation). Метрика не читается запросами, точность ±1 мин достаточна.
 func (s *TeamService) updateTeamMembersTotal(ctx context.Context) {
+	now := time.Now()
+	s.membersMetricMu.Lock()
+	if now.Before(s.membersMetricNext) {
+		s.membersMetricMu.Unlock()
+		return
+	}
+	s.membersMetricNext = now.Add(time.Minute)
+	s.membersMetricMu.Unlock()
+
 	count, err := s.teamRepo.TeamMembersCount(ctx)
 	if err != nil {
 		return

@@ -275,6 +275,20 @@ func (h *AdminHandler) ToggleAdmin(c *gin.Context) {
 	}
 
 	if u.Role == "admin" {
+		// S-45-4 (pass 45): нельзя разжаловать ПОСЛЕДНЕГО админа — иначе админ-панель,
+		// /metrics, /swagger, /debug/pprof (AdminRequired) становятся недоступными.
+		admins, countErr := h.userRepo.CountByRole(ctx, "admin")
+		if countErr != nil {
+			log.Error().Err(countErr).Msg("ToggleAdmin: failed to count admins")
+			render.SetFlash(c, "error", i18n.T("admin.user_role_update_error"))
+			c.Redirect(http.StatusFound, "/admin/users")
+			return
+		}
+		if admins <= 1 {
+			render.SetFlash(c, "error", i18n.T("admin.last_admin_error"))
+			c.Redirect(http.StatusFound, "/admin/users")
+			return
+		}
 		u.Role = "user"
 	} else {
 		u.Role = "admin"

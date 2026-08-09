@@ -98,12 +98,15 @@ func (r *gormGameRepo) GetByID(ctx context.Context, id uint) (*Game, error) {
 }
 func (r *gormGameRepo) GetByIDPreloaded(ctx context.Context, id uint) (*Game, error) {
 	var g Game
-	// P-5 (pass 33) + F1 (pass 34): явный LEFT JOIN для Author — GORM
-	// Joins("Author") генерирует INNER JOIN, и игра с удалённым/отсутствующим
-	// автором исчезала бы из результата (404). GameSetting через Preload
-	// (has-one может отсутствовать — JOIN потерял бы строку).
+	// P-5 (pass 33) + F1 (pass 34): Preload для Author — отдельный запрос,
+	// LEFT-семантика (игра с удалённым автором не исчезает). GameSetting —
+	// has-one, может отсутствовать.
+	// P-45-7 (pass 45): Select ограничивает users-колонки — раньше в Author
+	// попадали password_hash/email.
 	err := r.db.WithContext(ctx).
-		Joins("LEFT JOIN users ON users.id = games.author_id").
+		Preload("Author", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id, name, avatar_path")
+		}).
 		Preload("GameSetting").
 		First(&g, id).Error
 	if err != nil {

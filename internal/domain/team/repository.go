@@ -94,7 +94,16 @@ func (r *gormTeamRepo) GetByID(ctx context.Context, id uint) (*Team, error) {
 }
 func (r *gormTeamRepo) GetByIDWithMembers(ctx context.Context, id uint) (*Team, error) {
 	var t Team
-	err := r.db.WithContext(ctx).Preload("Captain").Preload("Members").First(&t, id).Error
+	// P-45-5 (pass 45): Preload только нужных колонок — раньше users.*
+	// (password_hash/email) уходил на страницу участников команды.
+	err := r.db.WithContext(ctx).
+		Preload("Captain", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id, name, email, avatar_path")
+		}).
+		Preload("Members", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id, name, email, avatar_path")
+		}).
+		First(&t, id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +277,10 @@ func (r *gormTeamRepo) GetAvailableUsers(ctx context.Context, teamID uint) ([]us
 	var users []user.User
 	subQuery := r.db.WithContext(ctx).Table("team_members").Select("user_id").Where("team_id = ?", teamID)
 	// P-5: лимитируем выборку — не тянем всю таблицу пользователей.
-	err := r.db.WithContext(ctx).Model(&user.User{}).Where("id NOT IN (?)", subQuery).Limit(100).Find(&users).Error
+	// P-45-5 (pass 45): Select только id/name/email — не password_hash.
+	err := r.db.WithContext(ctx).Model(&user.User{}).
+		Select("id, name, email").
+		Where("id NOT IN (?)", subQuery).Limit(100).Find(&users).Error
 	return users, err
 }
 
