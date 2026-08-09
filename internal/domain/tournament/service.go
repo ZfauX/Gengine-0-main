@@ -13,6 +13,7 @@ import (
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/pkg/cache"
 	"gengine-0/internal/pkg/email"
+	"gengine-0/internal/pkg/util"
 
 	"github.com/lib/pq"
 	"github.com/rs/zerolog/log"
@@ -455,13 +456,13 @@ func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint
 				args = append(args, id, pts)
 				passingIDs = append(passingIDs, id)
 			}
-			idPlaceholders := joinPlaceholders(len(passingIDs))
+			idPlaceholders := util.JoinPlaceholders(len(passingIDs))
 			q := fmt.Sprintf(
 				"UPDATE game_passings SET tournament_points = CASE id %s ELSE tournament_points END WHERE id IN (%s)",
 				strings.Join(cases, " "),
 				idPlaceholders,
 			)
-			args = append(args, toAnySlice(passingIDs)...)
+			args = append(args, util.ToAnySlice(passingIDs)...)
 			if ptsErr := tx.Exec(q, args...).Error; ptsErr != nil {
 				return ptsErr
 			}
@@ -508,22 +509,4 @@ func (s *TournamentService) GetLeaderboard(ctx context.Context, tournamentID uin
 		}
 	}
 	return s.tournamentResultRepo.GetLeaderboard(ctx, tournamentID)
-}
-
-// joinPlaceholders возвращает "?, ?, ..." для n значений (P-1, pass 37).
-func joinPlaceholders(n int) string {
-	parts := make([]string, n)
-	for i := range parts {
-		parts[i] = "?"
-	}
-	return strings.Join(parts, ", ")
-}
-
-// toAnySlice конвертирует срез в []any для GORM-аргументов.
-func toAnySlice[T any](s []T) []any {
-	result := make([]any, len(s))
-	for i, v := range s {
-		result[i] = v
-	}
-	return result
 }

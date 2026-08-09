@@ -30,8 +30,8 @@ func wrapGameAdminService(db *gorm.DB, teamRepo team.TeamRepository, userRepo us
 	return game.NewGameAdminService(db, coAuthorSvc, cfg).WithRepositories(teamRepo, userRepo).WithSSEManager(sseMgr)
 }
 
-func wrapGameplayHandler(gameService game.GameServiceInterface, gamePlaySvc game.GamePlayServiceInterface, attemptSvc *game.AttemptService, progressSvc *game.LevelProgressService, monitorSvc *game.MonitorService, hub *ws.RoomHub, store storage.FileStorage) *game.GameplayHandler {
-	return game.NewGameplayHandler(gameService, gamePlaySvc, attemptSvc, progressSvc, monitorSvc, hub, store)
+func wrapGameplayHandler(gameService game.GameServiceInterface, gamePlaySvc game.GamePlayServiceInterface, progressSvc *game.LevelProgressService, monitorSvc *game.MonitorService, hub *ws.RoomHub, store storage.FileStorage) *game.GameplayHandler {
+	return game.NewGameplayHandler(gameService, gamePlaySvc, progressSvc, monitorSvc, hub, store)
 }
 
 func wrapGameService(gameRepo game.GameRepository, passingRepo game.GamePassingRepository, ca *game.CoAuthorService, rs *game.ReviewService, ms *game.MonitorService, ps *game.PhotoService, hub *ws.RoomHub, cfg *config.Config, storage storage.FileStorage, cacheStore cache.CacheStore, userRepo user.UserRepository, ratingSvc *game.RatingService) *game.GameService {

@@ -57,10 +57,14 @@
 
         function connect() {
             if (wsConnected) return;
-            if (wsClient) wsClient.close();
+            // UX-3 (pass 38): если клиент уже создан (в reconnecting/backoff) —
+            // не пересоздаём его, иначе polling каждые 10с сбрасывал бы
+            // exponential-backoff и maxAttempts из UX15. Новый клиент создаётся
+            // только после onFinalClose (wsClient = null).
+            if (wsClient) return;
 
             // Единый reconnecting-клиент (UX15). После исчерпания попыток
-            // onFinalClose переключает монитор на polling.
+            // onFinalClose переключает монитор на polling и сбрасывает клиент.
             wsClient = window.createReconnectingWebSocket(wsUrl, {
                 maxAttempts: MAX_RECONNECT_ATTEMPTS,
                 onMessage: function(e) {
@@ -96,6 +100,8 @@
                 },
                 onFinalClose: function() {
                     wsConnected = false;
+                    // Разрешаем создать нового клиента при следующем polling.
+                    wsClient = null;
                 }
             });
         }
@@ -295,7 +301,8 @@
             .catch(err => {
                 console.error('Дисквалификация:', err);
                 window.showToast('{{ T $.Lang "monitor.disqualify_error" }}' + err.message, 'error');
-                if (btn) {
+                // UX-2 (pass 38): btn может быть fallback-объектом без classList.
+                if (btn && btn.classList) {
                     btn.disabled = false;
                     btn.classList.remove('opacity-50', 'cursor-not-allowed');
                 }

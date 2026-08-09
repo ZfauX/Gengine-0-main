@@ -51,6 +51,22 @@
 
 Находки перечислены ниже; закрытие — раундами фиксов, как в pass 30-37.
 
+**Раунд 1 (критичное + высокие):**
+- **R-1**: data race исправлен — промоушен LRU выполняется под `mu.Lock()` (не RLock) в GetOrFetchSnapshot и GetOrFetchSnapshotJSON.
+- **UX-1**: games-show preview-btn — null-guard (нет JS-краша на не-manager страницах).
+- **P-1**: добавлен `AdvanceToNextLevelWithPassing` — checkTimeoutsImpl и DeleteLevelFromActiveGame передают уже загруженный passing (нет повторных SELECT).
+- **P-2**: autostart — прогрессы создаются `CreateInBatches` с `ON CONFLICT (game_passing_id, level_id)`; статус пачкой; миграция 000045 → **UNIQUE** индекс.
+
+**Раунд 2 (средние):**
+- **N-1**: удалено мёртвое DI-поле `AttemptSvc` (GameDeps, NewGameplayHandler, wire, router).
+- **UX-2**: monitor disqualify catch — guard `btn.classList` (нет TypeError при fallback-кнопке).
+- **UX-3**: monitor WS — connect() не пересоздаёт клиент в reconnecting (нет сброса backoff каждые 10с); onFinalClose сбрасывает wsClient=null.
+- **UX-4**: reCAPTCHA theme sync — очистка контейнера перед render (реальный пере-рендер).
+- **N-2**: HasPermission через CoAuthorRepository (GetGameAuthorID + FindByGameAndUser), общий hasCoAuthorRole; HasPermissionTx оставлен для tx.
+- **N-4**: `joinPlaceholders`/`toAnySlice` вынесены в `internal/pkg/util` (убраны дубли из game/tournament).
+
+**Осталось на раунд 3+ (низкий приоритет):** P-3 (GetLogsByGameID sort-индекс), P-4 (ForceFinishGame двойная загрузка капитанов), UX-5 (mobile cards tournaments-list/admin-audit), UX-6 (OG-теги в layout), UX-7 (aria-hidden эмодзи тостов), UX-8 (replace('%s') $ в подсказке), UX-9 (дублирование submit auth-register), UX-10 (touch targets).
+
 ---
 
 ## A. Найденные ошибки pass 38 (верифицировано лично)

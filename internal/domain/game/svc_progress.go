@@ -132,6 +132,14 @@ func AdvanceToNextLevel(db *gorm.DB, gamePassingID, completedLevelID uint, onGam
 	if err = db.First(&passing, gamePassingID).Error; err != nil {
 		return nil, err
 	}
+	return AdvanceToNextLevelWithPassing(db, &passing, completedLevelID, onGameFinished)
+}
+
+// AdvanceToNextLevelWithPassing — вариант AdvanceToNextLevel, принимающий уже
+// загруженное прохождение (P-1, pass 38): убирает повторный SELECT из
+// checkTimeoutsImpl, где passings грузятся батчем.
+func AdvanceToNextLevelWithPassing(db *gorm.DB, passing *GamePassing, completedLevelID uint, onGameFinished func()) (onCommit func(), err error) {
+	gamePassingID := passing.ID
 
 	// Perf (pass 24): вместо загрузки ВСЕХ уровней игры — один запрос
 	// следующего уровня после завершённого.
@@ -161,7 +169,7 @@ func AdvanceToNextLevel(db *gorm.DB, gamePassingID, completedLevelID uint, onGam
 		// Последний уровень — завершаем игру (кроме тестирования).
 		if passing.Status != StatusTesting {
 			passing.Status = StatusFinished
-			if err = db.Save(&passing).Error; err != nil {
+			if err = db.Save(passing).Error; err != nil {
 				return nil, err
 			}
 			if onGameFinished != nil {
@@ -347,7 +355,10 @@ func checkTimeoutsImpl(db *gorm.DB, ctx context.Context, onGameFinished GameComp
 				log.Error().Uint("passing_id", p.GamePassingID).Msg("CheckTimeouts: passing not found")
 				return fmt.Errorf("не удалось загрузить прохождение %d", p.GamePassingID)
 			}
-			onCommit, err := AdvanceToNextLevel(tx, p.GamePassingID, p.LevelID, func() {
+			// P-1 (pass 38): передаём уже загруженный passing — AdvanceToNextLevel
+			// больше не делает повторный SELECT на каждый просроченный прогресс.
+			passingCopy := passing
+			onCommit, err := AdvanceToNextLevelWithPassing(tx, &passingCopy, p.LevelID, func() {
 				if onGameFinished != nil {
 					onGameFinished(ctx, passing.GameID)
 				}
@@ -452,22 +463,32 @@ func checkAutoStartGamesImpl(db *gorm.DB, ctx context.Context) {
 			}
 
 			now := time.Now()
+			// P-2 (pass 38): создаём прогрессы пачкой (CreateInBatches) с явным
+			// ON CONFLICT по (game_passing_id, level_id) — раньше был цикл
+			// 2 запроса × passing и OnConflict без Columns (no-op без unique).
+			progresses := make([]LevelProgress, 0, len(passings))
 			for _, p := range passings {
-				// Batch-создание прогресса первого уровня; ON CONFLICT — защита
-				// от дублей при повторном тике джобы.
-				progress := LevelProgress{
+				progresses = append(progresses, LevelProgress{
 					GamePassingID: p.ID,
 					LevelID:       firstLevel.ID,
 					StartedAt:     now,
-				}
-				if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&progress).Error; err != nil {
-					log.Error().Err(err).Uint("passing_id", p.ID).Msg("CheckAutoStartGames: failed to init first level")
-					return err
-				}
-				p.Status = StatusStarted
-				if err := tx.Save(&p).Error; err != nil {
-					return err
-				}
+				})
+			}
+			if err := tx.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "game_passing_id"}, {Name: "level_id"}},
+				DoNothing: true,
+			}).CreateInBatches(&progresses, levelProgressBatchSize).Error; err != nil {
+				log.Error().Err(err).Uint("game_id", g.ID).Msg("CheckAutoStartGames: failed to init first levels")
+				return err
+			}
+			// Статус прохождений пачкой.
+			passingIDs := make([]uint, 0, len(passings))
+			for _, p := range passings {
+				passingIDs = append(passingIDs, p.ID)
+			}
+			if err := tx.Model(&GamePassing{}).Where("id IN ?", passingIDs).Update("status", StatusStarted).Error; err != nil {
+				log.Error().Err(err).Uint("game_id", g.ID).Msg("CheckAutoStartGames: failed to update passings status")
+				return err
 			}
 			return nil
 		}); err != nil {

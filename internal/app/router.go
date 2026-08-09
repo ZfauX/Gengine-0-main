@@ -369,7 +369,7 @@ func (app *App) registerUserRoutes(r *gin.RouterGroup) {
 func (app *App) registerGameRoutes(r *gin.RouterGroup) {
 	game.RegisterRoutes(r, &game.GameDeps{
 		GameService: app.Deps.Services.Game, PassingService: app.Deps.Services.GamePassing,
-		CoAuthorSvc: app.Deps.Services.CoAuthor, AttemptSvc: app.Deps.Services.Attempt,
+		CoAuthorSvc: app.Deps.Services.CoAuthor,
 		ProgressSvc: app.Deps.Services.Progress, MonitorSvc: app.Deps.Services.Monitor,
 		LocalStorage: app.LocalStorage, Hub: app.Hub, Cfg: app.Config,
 		AuditSvc: app.Deps.AuditSvc, AuthService: app.Deps.Services.Auth,

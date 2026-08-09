@@ -43,7 +43,6 @@ type GameplayHandler struct {
 func NewGameplayHandler(
 	gameService GameServiceInterface,
 	gamePlaySvc GamePlayServiceInterface,
-	_ *AttemptService,
 	progressSvc *LevelProgressService,
 	monitorSvc *MonitorService,
 	hub *ws.RoomHub,

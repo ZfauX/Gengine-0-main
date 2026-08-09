@@ -51,15 +51,21 @@
                             theme: dark ? 'dark' : 'light'
                         });
                     }
-                    // UX-3 (pass 37): пере-рендер виджета при смене темы
-                    // (layout вызывает window.onThemeChanged из applyTheme).
+                    // UX-3 (pass 37) + UX-4 (pass 38): пере-рендер виджета при
+                    // смене темы. grecaptcha.render на уже отрендеренный
+                    // контейнер бросает ошибку — сначала очищаем контейнер.
                     window.onThemeChanged = function(dark) {
                         if (typeof grecaptcha === 'undefined') return;
-                        try { grecaptcha.reset(0); } catch (e) {}
-                        try { grecaptcha.render('recaptcha-widget', {
-                            sitekey: '{{.RecaptchaSiteKey}}',
-                            theme: dark ? 'dark' : 'light'
-                        }); } catch (e) {}
+                        var widget = document.getElementById('recaptcha-widget');
+                        if (!widget) return;
+                        try { grecaptcha.reset(); } catch (e) {}
+                        widget.innerHTML = '';
+                        try {
+                            grecaptcha.render(widget, {
+                                sitekey: '{{.RecaptchaSiteKey}}',
+                                theme: dark ? 'dark' : 'light'
+                            });
+                        } catch (e) { /* виджет может быть уже удалён */ }
                     };
                 </script>
             </div>

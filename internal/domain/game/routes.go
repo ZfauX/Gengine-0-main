@@ -21,7 +21,6 @@ type GameDeps struct {
 	GameService     *GameService
 	PassingService  *GamePassingService
 	CoAuthorSvc     *CoAuthorService
-	AttemptSvc      *AttemptService
 	ProgressSvc     *LevelProgressService
 	MonitorSvc      *MonitorService
 	SimulateSvc     *SimulateService

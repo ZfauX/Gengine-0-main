@@ -82,8 +82,10 @@ type TeamProgress struct {
 // GetOrFetchSnapshot возвращает снимок игры: из кэша, если TTL не истёк, иначе из БД.
 // Использует singleflight для предотвращения множественных одновременных запросов к БД.
 func (s *MonitorService) GetOrFetchSnapshot(ctx context.Context, gameID uint) ([]TeamProgress, error) {
-	// Быстрая проверка кэша с RLock
-	s.mu.RLock()
+	// R-1 (pass 38): промоушен в LRU мутирует cacheList (MoveToBack), поэтому
+	// нужен эксклюзивный Lock, а не RLock — раньше был data race между
+	// конкурентными поллерами SSE и InvalidateCache.
+	s.mu.Lock()
 	if cached, ok := s.cache[gameID]; ok && time.Since(cached.timestamp) < s.cacheTTL {
 		// P-5 (pass 37): промотируем активную игру в LRU-списке — иначе
 		// поллер каждые 5с «замораживал» позицию записи, и активная игра
@@ -91,10 +93,11 @@ func (s *MonitorService) GetOrFetchSnapshot(ctx context.Context, gameID uint) ([
 		if elem, elemOk := s.cacheKeys[gameID]; elemOk {
 			s.cacheList.MoveToBack(elem)
 		}
-		s.mu.RUnlock()
-		return cached.data, nil
+		data := cached.data
+		s.mu.Unlock()
+		return data, nil
 	}
-	s.mu.RUnlock()
+	s.mu.Unlock()
 
 	// Используем singleflight для группировки одновременных запросов
 	key := fmt.Sprintf("snapshot:%d", gameID)
@@ -162,7 +165,8 @@ func (s *MonitorService) GetOrFetchSnapshot(ctx context.Context, gameID uint) ([
 // маршалнутые байты вместе с данными (F-2, pass 36). Поллер SSE вызывает
 // именно его, чтобы не сериализовать полный снапшот каждые 5с.
 func (s *MonitorService) GetOrFetchSnapshotJSON(ctx context.Context, gameID uint) ([]byte, error) {
-	s.mu.RLock()
+	// R-1 (pass 38): промоушен мутирует cacheList — нужен Lock, не RLock.
+	s.mu.Lock()
 	if cached, ok := s.cache[gameID]; ok && time.Since(cached.timestamp) < s.cacheTTL {
 		if cached.json != nil {
 			bytes := cached.json
@@ -170,11 +174,11 @@ func (s *MonitorService) GetOrFetchSnapshotJSON(ctx context.Context, gameID uint
 			if elem, elemOk := s.cacheKeys[gameID]; elemOk {
 				s.cacheList.MoveToBack(elem)
 			}
-			s.mu.RUnlock()
+			s.mu.Unlock()
 			return bytes, nil
 		}
 	}
-	s.mu.RUnlock()
+	s.mu.Unlock()
 
 	// Кэш устарел или json ещё не заполнен (старая запись) — загружаем.
 	snapshot, err := s.GetOrFetchSnapshot(ctx, gameID)
@@ -371,7 +375,7 @@ func (s *MonitorService) CalculateResults(ctx context.Context, gameID uint) erro
 			ids = append(ids, res.ID)
 		}
 
-		idPlaceholders := joinPlaceholders(len(results))
+		idPlaceholders := util.JoinPlaceholders(len(results))
 
 		// Первый UPDATE: длительность
 		durQuery := fmt.Sprintf(
@@ -379,7 +383,7 @@ func (s *MonitorService) CalculateResults(ctx context.Context, gameID uint) erro
 			strings.Join(durationCases, " "),
 			idPlaceholders,
 		)
-		allDurationArgs := append(durationArgs, toAnySlice(ids)...)
+		allDurationArgs := append(durationArgs, util.ToAnySlice(ids)...)
 		if err := tx.Exec(durQuery, allDurationArgs...).Error; err != nil {
 			return fmt.Errorf("обновление длительности: %w", err)
 		}
@@ -390,32 +394,13 @@ func (s *MonitorService) CalculateResults(ctx context.Context, gameID uint) erro
 			strings.Join(placeCases, " "),
 			idPlaceholders,
 		)
-		allPlaceArgs := append(placeArgs, toAnySlice(ids)...)
+		allPlaceArgs := append(placeArgs, util.ToAnySlice(ids)...)
 		if err := tx.Exec(placeQuery, allPlaceArgs...).Error; err != nil {
 			return fmt.Errorf("обновление места: %w", err)
 		}
 
 		return nil
 	})
-}
-
-func joinPlaceholders(n int) string {
-	if n <= 0 {
-		return ""
-	}
-	parts := make([]string, n)
-	for i := range parts {
-		parts[i] = "?"
-	}
-	return strings.Join(parts, ", ")
-}
-
-func toAnySlice[T any](s []T) []any {
-	result := make([]any, len(s))
-	for i, v := range s {
-		result[i] = v
-	}
-	return result
 }
 
 // analyzeTeamsBehavior — batch-версия: проверяет все команды одним запросом.

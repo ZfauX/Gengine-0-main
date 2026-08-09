@@ -212,7 +212,10 @@
             return String(text).replace(/[&<>"']/g, m => map[m]);
         }
 
-        document.getElementById('preview-btn').addEventListener('click', function() {
+        // UX-1 (pass 38): preview-btn рендерится только для менеджера —
+        // null-guard против TypeError на публичных страницах.
+        var previewBtn = document.getElementById('preview-btn');
+        if (previewBtn) previewBtn.addEventListener('click', function() {
             const now = Date.now();
             if (previewCache[gameID] && (now - previewCache[gameID].timestamp) < CACHE_TIMEOUT) {
                 renderPreview(previewCache[gameID].data);

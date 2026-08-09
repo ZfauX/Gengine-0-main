@@ -241,7 +241,10 @@ func (s *GameAdminService) DeleteLevelFromActiveGame(ctx context.Context, gameID
 					log.Error().Uint("progress", progress.ID).Err(err).Msg("DeleteLevelFromActiveGame: Save progress error")
 					return fmt.Errorf("не удалось завершить прогресс прохождения %d: %w", p.ID, err)
 				}
-				if _, err := AdvanceToNextLevel(tx, p.ID, levelID, nil); err != nil {
+				// P-3 (pass 38): передаём уже загруженный passing (range p) —
+				// AdvanceToNextLevel не делает повторный SELECT.
+				pCopy := p
+				if _, err := AdvanceToNextLevelWithPassing(tx, &pCopy, levelID, nil); err != nil {
 					log.Error().Uint("passing", p.ID).Err(err).Msg("DeleteLevelFromActiveGame: AdvanceToNextLevel error")
 					return fmt.Errorf("не удалось перевести прохождение %d на следующий уровень: %w", p.ID, err)
 				}

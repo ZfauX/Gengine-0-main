@@ -4,7 +4,6 @@ package game
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"gorm.io/gorm"
 )
@@ -42,8 +41,41 @@ func (s *CoAuthorService) IsUserManager(ctx context.Context, gameID, userID uint
 }
 
 // HasPermission проверяет наличие у пользователя конкретной роли в игре.
+// N-2 (pass 38): через репозиторий, а не raw s.db — единый путь с
+// IsUserManager (раньше было два разных SQL-пути для одной проверки прав).
 func (s *CoAuthorService) HasPermission(ctx context.Context, gameID, userID uint, requiredRole string) (bool, error) {
-	return s.HasPermissionTx(s.db.WithContext(ctx), gameID, userID, requiredRole)
+	authorID, err := s.repo.GetGameAuthorID(ctx, gameID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, gorm.ErrRecordNotFound
+		}
+		return false, err
+	}
+	if authorID == userID {
+		return true, nil
+	}
+	co, err := s.repo.FindByGameAndUser(ctx, gameID, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return hasCoAuthorRole(co.Role, requiredRole), nil
+}
+
+// hasCoAuthorRole проверяет, что роль соавтора покрывает требуемую.
+func hasCoAuthorRole(role, requiredRole string) bool {
+	switch requiredRole {
+	case RoleContentEditor:
+		return role == RoleContentEditor || role == RoleModerator
+	case RoleModerator:
+		return role == RoleModerator
+	case RoleObserver:
+		return true
+	default:
+		return false
+	}
 }
 
 // HasPermissionTx — версия HasPermission с передачей транзакции.
@@ -71,16 +103,7 @@ func (s *CoAuthorService) HasPermissionTx(tx *gorm.DB, gameID, userID uint, requ
 		}
 		return false, err
 	}
-	switch requiredRole {
-	case RoleContentEditor:
-		return co.Role == RoleContentEditor || co.Role == RoleModerator, nil
-	case RoleModerator:
-		return co.Role == RoleModerator, nil
-	case RoleObserver:
-		return true, nil
-	default:
-		return false, fmt.Errorf("неизвестная роль: %s", requiredRole)
-	}
+	return hasCoAuthorRole(co.Role, requiredRole), nil
 }
 
 // CanModerateGame — удобный метод для проверки права на модерацию игры.
