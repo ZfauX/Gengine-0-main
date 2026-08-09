@@ -128,6 +128,10 @@ type EmailVerificationRepository interface {
 // ExternalLoginRepository — контракт для OAuth-привязок.
 type ExternalLoginRepository interface {
 	FindOrCreate(ctx context.Context, login *ExternalLogin) error
+	// ExistsByProviderExternalID проверяет, что связка уже привязана
+	// (S-43-4, pass 43: VK-вход для существующего email разрешён только если
+	// пользователь сам привязал VK в профиле).
+	ExistsByProviderExternalID(ctx context.Context, provider, externalID string) (bool, error)
 }
 
 // RefreshTokenRepository — контракт для работы с refresh-токенами (добавлен).
@@ -586,6 +590,14 @@ func NewGormExternalLoginRepo(db *gorm.DB) ExternalLoginRepository { return &gor
 func (r *gormExternalLoginRepo) FindOrCreate(ctx context.Context, login *ExternalLogin) error {
 	return r.db.WithContext(ctx).Where("provider = ? AND external_id = ?", login.Provider, login.ExternalID).
 		FirstOrCreate(login).Error
+}
+
+func (r *gormExternalLoginRepo) ExistsByProviderExternalID(ctx context.Context, provider, externalID string) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&ExternalLogin{}).
+		Where("provider = ? AND external_id = ?", provider, externalID).
+		Count(&count).Error
+	return count > 0, err
 }
 
 // ---------- GORM implementation for RefreshTokenRepository (добавлен) ----------

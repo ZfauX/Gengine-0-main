@@ -247,8 +247,10 @@ func (r *gormGameRepo) GetLogsByGameIDPaginated(ctx context.Context, gameID uint
 	var rows []logRow
 	// P-5 (pass 39): фильтр по logs.game_id без JOIN; index (game_id, created_at)
 	// покрывает и сортировку ASC (обратный проход по индексу).
+	// P-43-12 (pass 43): проекция нужных колонок вместо logs.* (message — и так
+	// обязателен, тянем только id/created_at/level_id/message).
 	err := r.db.WithContext(ctx).
-		Select("logs.*, COUNT(*) OVER() AS total_count").
+		Select("logs.id, logs.created_at, logs.level_id, logs.message, COUNT(*) OVER() AS total_count").
 		Where("logs.game_id = ?", gameID).
 		Order("logs.created_at ASC").
 		Limit(pageSize).Offset(offset).
