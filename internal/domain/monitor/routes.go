@@ -2,6 +2,8 @@
 package monitor
 
 import (
+	"time"
+
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/middleware"
@@ -169,7 +171,7 @@ func RegisterRoutes(
 	// @Failure 403 {object} map[string]interface{} "Недостаточно прав"
 	// @Router /voting/vote [post]
 	// @Security JWT
-	protected.POST("/voting/vote", monitorHandler.Vote)
+	protected.POST("/voting/vote", middleware.CodeSubmissionRateLimit(1*time.Minute, 20), monitorHandler.Vote)
 
 	// @Summary Результаты голосования
 	// @Description Возвращает текущие результаты голосования по сессии (количество голосов за каждый вариант)

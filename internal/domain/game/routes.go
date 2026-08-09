@@ -153,7 +153,9 @@ func RegisterRoutes(r *gin.RouterGroup, deps *GameDeps) {
 
 		protected.GET("/:id/review", reviewHandler.ShowForm)
 
-		protected.POST("/:id/review", reviewHandler.Create)
+		// M5 (pass 36) + pass 40: rate limit на создание отзывов — раньше
+		// эндпоинт можно было флудить (пачки отзывов).
+		protected.POST("/:id/review", middleware.CodeSubmissionRateLimit(1*time.Minute, 10), reviewHandler.Create)
 	}
 
 	// API для autocomplete поиска игр
