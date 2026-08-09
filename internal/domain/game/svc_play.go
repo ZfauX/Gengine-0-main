@@ -37,6 +37,19 @@ var ErrBlackboxOnly = errors.New("подтверждение ответа дос
 // ErrNotInGame — пользователь не участвует в прохождении игры.
 var ErrNotInGame = errors.New("вы не участвуете в этом прохождении")
 
+// A-4 (pass 39): sentinel-ошибки игрового процесса — позволяют хендлерам
+// различать причины (машинно-читаемо) вместо сравнения строк.
+var (
+	// ErrLevelNotFileUpload — уровень не поддерживает файловые ответы.
+	ErrLevelNotFileUpload = errors.New("этот уровень не поддерживает файловые ответы")
+	// ErrGameNotStarted — игра ещё не запущена.
+	ErrGameNotStarted = errors.New("игра не запущена")
+	// ErrHintsDisabled — подсказки запрещены настройками игры.
+	ErrHintsDisabled = errors.New("подсказки запрещены")
+	// ErrNoHintAvailable — на уровне нет подсказки.
+	ErrNoHintAvailable = errors.New("на этом уровне нет подсказки")
+)
+
 // GamePlayService отвечает за игровой процесс: отправку кодов, файлов, подсказок,
 // работу с чёрным ящиком и тестовый режим.
 type GamePlayService struct {
@@ -211,7 +224,7 @@ func (s *GamePlayService) SubmitFile(ctx context.Context, passingID, userID uint
 			return findErr
 		}
 		if lvl.Type != level.TypeFileUpload {
-			return errors.New("этот уровень не поддерживает файловые ответы")
+			return ErrLevelNotFileUpload
 		}
 
 		att, submitErr := s.attemptSvc.SubmitFileWithTx(ctx, tx, progress, filePath)
@@ -265,7 +278,7 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (
 		levelID = progress.LevelID
 
 		if passing.Status != StatusStarted {
-			return errors.New("игра не запущена")
+			return ErrGameNotStarted
 		}
 		var settings GameSetting
 		if findErr := tx.Where("game_id = ?", gameID).First(&settings).Error; findErr != nil {
@@ -278,7 +291,7 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (
 		}
 
 		if !settings.AllowHints {
-			return errors.New("подсказки запрещены")
+			return ErrHintsDisabled
 		}
 		if settings.MaxHints > 0 && progress.HintsUsed >= settings.MaxHints {
 			return ErrHintLimitReached
@@ -296,7 +309,7 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (
 		}
 		// C-13: у уровня нет вопросов/подсказки — не списываем и не штрафуем.
 		if hintOnly.Hint == "" {
-			return errors.New("на этом уровне нет подсказки")
+			return ErrNoHintAvailable
 		}
 		hintText = hintOnly.Hint
 

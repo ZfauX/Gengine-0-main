@@ -182,6 +182,18 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 // @Failure 500 {object} map[string]interface{} render.Tr(c, "handler.internal_error")
 // @Router /calendar/export.ics [get]
 func (h *CalendarHandler) CalendarICal(c *gin.Context) {
+	// P-6 (pass 39): собранный .ics кэшируем на 5 мин — Google/Apple опрашивают
+	// endpoint регулярно, а полногодовой запрос с Preload дорогой.
+	const icsCacheKey = "ics"
+	h.cacheMu.Lock()
+	if e, ok := h.cache[icsCacheKey]; ok && time.Now().Before(e.expires) {
+		ics := e.data
+		h.cacheMu.Unlock()
+		h.writeICS(c, ics)
+		return
+	}
+	h.cacheMu.Unlock()
+
 	now := time.Now()
 	startRange := now
 	endRange := now.AddDate(1, 0, 0) // 1 год вперёд
@@ -237,9 +249,19 @@ func (h *CalendarHandler) CalendarICal(c *gin.Context) {
 
 	sb.WriteString("END:VCALENDAR\r\n")
 
+	// Сохраняем в кэш.
+	h.cacheMu.Lock()
+	h.cache[icsCacheKey] = calendarCacheEntry{data: []byte(sb.String()), expires: time.Now().Add(calendarCacheTTL)}
+	h.cacheMu.Unlock()
+
+	h.writeICS(c, []byte(sb.String()))
+}
+
+// writeICS отдаёт собранный .ics (общий для кэша и не-кэш-пути).
+func (h *CalendarHandler) writeICS(c *gin.Context, ics []byte) {
 	c.Header("Content-Type", "text/calendar; charset=utf-8")
 	c.Header("Content-Disposition", `attachment; filename="encounter-calendar.ics"`)
-	c.String(http.StatusOK, sb.String())
+	c.Data(http.StatusOK, "text/calendar; charset=utf-8", ics)
 }
 
 // EscapeICalText экранирует спецсимволы для формата iCalendar.

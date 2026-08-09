@@ -21,6 +21,8 @@ const levelProgressBatchSize = 50
 var (
 	ErrNoActiveLevel = errors.New("нет активного уровня")
 	ErrNoLevels      = errors.New("у игры нет уровней")
+	// ErrCompletedLevelNotFound — завершённый уровень удалён из игры (A-4, pass 39).
+	ErrCompletedLevelNotFound = errors.New("завершённый уровень не найден")
 )
 
 type LevelProgressService struct {
@@ -164,7 +166,7 @@ func AdvanceToNextLevelWithPassing(db *gorm.DB, passing *GamePassing, completedL
 		}
 		if exists == 0 {
 			log.Warn().Uint("game_passing_id", gamePassingID).Uint("level_id", completedLevelID).Msg("AdvanceToNextLevel: completed level not found (possibly deleted)")
-			return nil, errors.New("завершённый уровень не найден")
+			return nil, ErrCompletedLevelNotFound
 		}
 		// Последний уровень — завершаем игру (кроме тестирования).
 		if passing.Status != StatusTesting {
@@ -349,28 +351,113 @@ func checkTimeoutsImpl(db *gorm.DB, ctx context.Context, onGameFinished GameComp
 		for i := range passings {
 			passingByID[passings[i].ID] = passings[i]
 		}
+
+		// P-1 (pass 39): вместо N запросов next-level на каждый просроченный
+		// прогресс — prefetch уровней всех затронутых игр одним запросом и
+		// ручной поиск следующего уровня по позиции.
+		gameIDs := make([]uint, 0, len(passings))
+		seenGames := make(map[uint]bool, len(passings))
+		for _, passing := range passings {
+			if !seenGames[passing.GameID] {
+				seenGames[passing.GameID] = true
+				gameIDs = append(gameIDs, passing.GameID)
+			}
+		}
+		var levelsByGame map[uint][]level.Level
+		if len(gameIDs) > 0 {
+			var allLevels []level.Level
+			if err := tx.Where("game_id IN ? AND deleted_at IS NULL", gameIDs).
+				Order("game_id ASC, position ASC").
+				Find(&allLevels).Error; err != nil {
+				return fmt.Errorf("не удалось загрузить уровни: %w", err)
+			}
+			levelsByGame = make(map[uint][]level.Level, len(gameIDs))
+			for _, lvl := range allLevels {
+				levelsByGame[lvl.GameID] = append(levelsByGame[lvl.GameID], lvl)
+			}
+		}
+
+		// Находим следующий уровень после completedLevelID.
+		// Возвращает next=nil, completedExists=false, если завершённый уровень
+		// был удалён из игры (прежняя COUNT-проверка из AdvanceToNextLevel).
+		nextLevelFor := func(gameID, completedLevelID uint) (next *level.Level, completedExists bool) {
+			var completedPos int
+			foundCompleted := false
+			for _, lvl := range levelsByGame[gameID] {
+				if lvl.ID == completedLevelID {
+					completedPos = lvl.Position
+					foundCompleted = true
+					break
+				}
+			}
+			if !foundCompleted {
+				return nil, false
+			}
+			for _, lvl := range levelsByGame[gameID] {
+				if lvl.Position > completedPos {
+					return &lvl, true
+				}
+			}
+			return nil, true
+		}
+
+		// Собираем batch новых прогрессов и прохождения, которые нужно завершить.
+		type finishItem struct {
+			passing  *GamePassing
+			onFinish func()
+		}
+		var newProgresses []LevelProgress
+		var finishItems []finishItem
 		for _, p := range progressesToAdvance {
 			passing, ok := passingByID[p.GamePassingID]
 			if !ok {
 				log.Error().Uint("passing_id", p.GamePassingID).Msg("CheckTimeouts: passing not found")
 				return fmt.Errorf("не удалось загрузить прохождение %d", p.GamePassingID)
 			}
-			// P-1 (pass 38): передаём уже загруженный passing — AdvanceToNextLevel
-			// больше не делает повторный SELECT на каждый просроченный прогресс.
-			passingCopy := passing
-			onCommit, err := AdvanceToNextLevelWithPassing(tx, &passingCopy, p.LevelID, func() {
-				if onGameFinished != nil {
-					onGameFinished(ctx, passing.GameID)
+			onFinish := func(gid uint) func() {
+				return func() {
+					if onGameFinished != nil {
+						onGameFinished(ctx, gid)
+					}
 				}
-			})
-			if err != nil {
-				log.Error().Err(err).Uint("progress_id", p.ID).Msg("CheckTimeouts: AdvanceToNextLevel failed")
-				return fmt.Errorf("не удалось перевести прохождение %d: %w", p.GamePassingID, err)
+			}(passing.GameID)
+
+			next, completedExists := nextLevelFor(passing.GameID, p.LevelID)
+			if !completedExists {
+				// Завершённый уровень удалён — не можем перевести прохождение.
+				log.Warn().Uint("passing_id", p.GamePassingID).Uint("level_id", p.LevelID).Msg("CheckTimeouts: completed level not found (possibly deleted)")
+				return fmt.Errorf("завершённый уровень %d не найден: %w", p.LevelID, ErrCompletedLevelNotFound)
 			}
-			if onCommit != nil {
-				// callback будет вызван после коммита транзакции
-				onCommitCallbacks = append(onCommitCallbacks, onCommit)
+			if next != nil {
+				newProgresses = append(newProgresses, LevelProgress{
+					GamePassingID: p.GamePassingID,
+					LevelID:       next.ID,
+					StartedAt:     time.Now(),
+				})
+				continue
 			}
+			// Следующего нет: последний уровень.
+			passingCopy := passing
+			finishItems = append(finishItems, finishItem{passing: &passingCopy, onFinish: onFinish})
+		}
+
+		// Batch-create новых прогрессов.
+		if len(newProgresses) > 0 {
+			if err := tx.CreateInBatches(&newProgresses, levelProgressBatchSize).Error; err != nil {
+				return fmt.Errorf("не удалось создать прогрессы следующих уровней: %w", err)
+			}
+		}
+
+		// Завершаем игры с последним пройденным уровнем (кроме тестирования).
+		for _, fi := range finishItems {
+			if fi.passing.Status == StatusTesting {
+				continue
+			}
+			fi.passing.Status = StatusFinished
+			if err := tx.Save(fi.passing).Error; err != nil {
+				return fmt.Errorf("не удалось завершить прохождение %d: %w", fi.passing.ID, err)
+			}
+			onCommitCallbacks = append(onCommitCallbacks, fi.onFinish)
 		}
 		return nil
 	})

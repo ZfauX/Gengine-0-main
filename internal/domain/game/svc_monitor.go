@@ -2,17 +2,16 @@
 package game
 
 import (
-	"container/list"
 	"context"
 	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"gengine-0/internal/pkg/util"
 
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
@@ -26,15 +25,15 @@ type MonitorServiceInterface interface {
 }
 
 // MonitorService собирает сводную информацию о прохождении игры.
+// P-3 (pass 39): самописный LRU (cache+list+keys+mu) заменён на thread-safe
+// hashicorp/golang-lru — устранён глобальный Lock contention на горячем
+// polling-пути и риск гонок при ручном eviction.
 type MonitorService struct {
-	db        *gorm.DB
-	repo      MonitorRepository
-	cache     map[uint]*cachedSnapshot
-	cacheList *list.List
-	cacheKeys map[uint]*list.Element
-	cacheTTL  time.Duration
-	mu        sync.RWMutex
-	sfGroup   singleflight.Group
+	db       *gorm.DB
+	repo     MonitorRepository
+	cache    *lru.Cache[uint, *cachedSnapshot]
+	cacheTTL time.Duration
+	sfGroup  singleflight.Group
 }
 
 type cachedSnapshot struct {
@@ -48,14 +47,17 @@ type cachedSnapshot struct {
 const maxMonitorCacheSize = 1000
 
 func NewMonitorService(db *gorm.DB) *MonitorService {
-	s := &MonitorService{
+	cache, err := lru.New[uint, *cachedSnapshot](maxMonitorCacheSize)
+	if err != nil {
+		// Практически недостижимо при size>0.
+		log.Error().Err(err).Msg("MonitorService: failed to create LRU cache, using unlimited")
+		cache, _ = lru.New[uint, *cachedSnapshot](0)
+	}
+	return &MonitorService{
 		db:       db,
-		cache:    make(map[uint]*cachedSnapshot),
+		cache:    cache,
 		cacheTTL: 30 * time.Second,
 	}
-	s.cacheList = list.New()
-	s.cacheKeys = make(map[uint]*list.Element)
-	return s
 }
 
 // WithRepository устанавливает репозиторий мониторинга (A-2, pass 31).
@@ -81,34 +83,19 @@ type TeamProgress struct {
 
 // GetOrFetchSnapshot возвращает снимок игры: из кэша, если TTL не истёк, иначе из БД.
 // Использует singleflight для предотвращения множественных одновременных запросов к БД.
+// P-3 (pass 39): thread-safe LRU — Get() сам промоутит элемент, ручные лок/evict не нужны.
 func (s *MonitorService) GetOrFetchSnapshot(ctx context.Context, gameID uint) ([]TeamProgress, error) {
-	// R-1 (pass 38): промоушен в LRU мутирует cacheList (MoveToBack), поэтому
-	// нужен эксклюзивный Lock, а не RLock — раньше был data race между
-	// конкурентными поллерами SSE и InvalidateCache.
-	s.mu.Lock()
-	if cached, ok := s.cache[gameID]; ok && time.Since(cached.timestamp) < s.cacheTTL {
-		// P-5 (pass 37): промотируем активную игру в LRU-списке — иначе
-		// поллер каждые 5с «замораживал» позицию записи, и активная игра
-		// могла быть вытеснена при maxMonitorCacheSize, хотя к ней идут хиты.
-		if elem, elemOk := s.cacheKeys[gameID]; elemOk {
-			s.cacheList.MoveToBack(elem)
-		}
-		data := cached.data
-		s.mu.Unlock()
-		return data, nil
+	if cached, ok := s.cache.Get(gameID); ok && time.Since(cached.timestamp) < s.cacheTTL {
+		return cached.data, nil
 	}
-	s.mu.Unlock()
 
 	// Используем singleflight для группировки одновременных запросов
 	key := fmt.Sprintf("snapshot:%d", gameID)
 	result, err, _ := s.sfGroup.Do(key, func() (any, error) {
-		// Повторная проверка кэша уже внутри Lock (защита от гонки)
-		s.mu.RLock()
-		if cached, ok := s.cache[gameID]; ok && time.Since(cached.timestamp) < s.cacheTTL {
-			s.mu.RUnlock()
+		// Повторная проверка кэша (без промоушена) — защита от гонки.
+		if cached, ok := s.cache.Peek(gameID); ok && time.Since(cached.timestamp) < s.cacheTTL {
 			return cached.data, nil
 		}
-		s.mu.RUnlock()
 
 		// Загрузка из БД
 		snapshot, err := s.GameSnapshot(ctx, gameID)
@@ -116,37 +103,18 @@ func (s *MonitorService) GetOrFetchSnapshot(ctx context.Context, gameID uint) ([
 			return nil, err
 		}
 
-		// Сохраняем в кэш с лимитом: максимум maxMonitorCacheSize, вытеснение старых
-		s.mu.Lock()
-		if len(s.cache) >= maxMonitorCacheSize {
-			front := s.cacheList.Front()
-			if front != nil {
-				if oldestID, ok := front.Value.(uint); ok {
-					delete(s.cache, oldestID)
-					delete(s.cacheKeys, oldestID)
-					s.cacheList.Remove(front)
-				}
-			}
-		}
 		// F-2 (pass 36): маршалим сразу при загрузке из БД и кэшируем байты —
 		// поллер GetOrFetchSnapshotJSON не будет сериализовать каждые 5с.
 		jsonData, marshalErr := json.Marshal(snapshot)
 		if marshalErr != nil {
-			s.mu.Unlock()
 			return nil, marshalErr
 		}
-		s.cache[gameID] = &cachedSnapshot{
+		// lru.Add сам вытесняет самый старый элемент при превышении maxMonitorCacheSize.
+		s.cache.Add(gameID, &cachedSnapshot{
 			data:      snapshot,
 			timestamp: time.Now(),
 			json:      jsonData,
-		}
-		// Удаляем старый элемент списка для того же gameID, чтобы LRU-список не рос
-		// бесконечно при повторных обновлениях одного снапшота (утечка памяти).
-		if elem, ok := s.cacheKeys[gameID]; ok {
-			s.cacheList.Remove(elem)
-		}
-		s.cacheKeys[gameID] = s.cacheList.PushBack(gameID)
-		s.mu.Unlock()
+		})
 
 		return snapshot, nil
 	})
@@ -165,20 +133,13 @@ func (s *MonitorService) GetOrFetchSnapshot(ctx context.Context, gameID uint) ([
 // маршалнутые байты вместе с данными (F-2, pass 36). Поллер SSE вызывает
 // именно его, чтобы не сериализовать полный снапшот каждые 5с.
 func (s *MonitorService) GetOrFetchSnapshotJSON(ctx context.Context, gameID uint) ([]byte, error) {
-	// R-1 (pass 38): промоушен мутирует cacheList — нужен Lock, не RLock.
-	s.mu.Lock()
-	if cached, ok := s.cache[gameID]; ok && time.Since(cached.timestamp) < s.cacheTTL {
+	// P-3 (pass 39): thread-safe LRU — Get() промоутит элемент без ручных локов.
+	if cached, ok := s.cache.Get(gameID); ok && time.Since(cached.timestamp) < s.cacheTTL {
 		if cached.json != nil {
 			bytes := cached.json
-			// P-5 (pass 37): промоушен активной игры в LRU.
-			if elem, elemOk := s.cacheKeys[gameID]; elemOk {
-				s.cacheList.MoveToBack(elem)
-			}
-			s.mu.Unlock()
 			return bytes, nil
 		}
 	}
-	s.mu.Unlock()
 
 	// Кэш устарел или json ещё не заполнен (старая запись) — загружаем.
 	snapshot, err := s.GetOrFetchSnapshot(ctx, gameID)
@@ -189,16 +150,14 @@ func (s *MonitorService) GetOrFetchSnapshotJSON(ctx context.Context, gameID uint
 	// P-4 (pass 37): GetOrFetchSnapshot мог вернуть данные из кэша-хита без
 	// заполнения json (старая запись) — тогда cached.json == nil и метод
 	// вернул бы (nil, nil). Маршалим сами и обновляем кэш.
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if cached, ok := s.cache[gameID]; ok && cached.json != nil {
+	if cached, ok := s.cache.Get(gameID); ok && cached.json != nil {
 		return cached.json, nil
 	}
 	jsonData, marshalErr := json.Marshal(snapshot)
 	if marshalErr != nil {
 		return nil, marshalErr
 	}
-	if cached, ok := s.cache[gameID]; ok {
+	if cached, ok := s.cache.Get(gameID); ok {
 		cached.json = jsonData
 		return jsonData, nil
 	}
@@ -207,13 +166,7 @@ func (s *MonitorService) GetOrFetchSnapshotJSON(ctx context.Context, gameID uint
 
 // InvalidateCache удаляет кэшированный снимок игры (вызывается при изменениях).
 func (s *MonitorService) InvalidateCache(gameID uint) {
-	s.mu.Lock()
-	delete(s.cache, gameID)
-	if elem, ok := s.cacheKeys[gameID]; ok {
-		s.cacheList.Remove(elem)
-		delete(s.cacheKeys, gameID)
-	}
-	s.mu.Unlock()
+	s.cache.Remove(gameID)
 	// P-4 (pass 39): форсим singleflight — иначе пересчёт, начатый до
 	// инвалидации, перезапишет кэш данными, прочитанными до изменений.
 	s.sfGroup.Forget(fmt.Sprintf("snapshot:%d", gameID))

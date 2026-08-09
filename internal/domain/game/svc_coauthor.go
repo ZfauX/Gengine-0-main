@@ -81,24 +81,20 @@ func hasCoAuthorRole(role, requiredRole string) bool {
 }
 
 // HasPermissionTx — версия HasPermission с передачей транзакции.
-// M14 (pass 30): загружаем только author_id (Select+Scan) вместо полной
-// строки Game — description и другие тяжёлые поля не читаются.
-// First(&scalar) с Table() не работает в GORM ("model value required"),
-// поэтому Scan + проверка RowsAffected для ErrRecordNotFound (pass 30).
+// A-2 (pass 39): через репозиторий (GetGameAuthorIDWithTx + FindByGameAndUserWithTx) —
+// единый путь к данным, raw SQL убран из сервиса.
 func (s *CoAuthorService) HasPermissionTx(tx *gorm.DB, gameID, userID uint, requiredRole string) (bool, error) {
-	var authorID uint
-	res := tx.Model(&Game{}).Select("author_id").Where("id = ?", gameID).Scan(&authorID)
-	if res.Error != nil {
-		return false, res.Error
-	}
-	if res.RowsAffected == 0 {
-		return false, gorm.ErrRecordNotFound
+	authorID, err := s.repo.GetGameAuthorIDWithTx(context.Background(), tx, gameID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, gorm.ErrRecordNotFound
+		}
+		return false, err
 	}
 	if authorID == userID {
 		return true, nil
 	}
-	var co CoAuthor
-	err := tx.Where("game_id = ? AND user_id = ?", gameID, userID).First(&co).Error
+	co, err := s.repo.FindByGameAndUserWithTx(context.Background(), tx, gameID, userID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return false, nil

@@ -12,6 +12,12 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// A-4 (pass 39): sentinel-ошибки CRUD — хендлеры различают причины через errors.Is.
+var (
+	// ErrGameDeleteForbidden — удаление разрешено только владельцу игры.
+	ErrGameDeleteForbidden = errors.New("только владелец может удалить игру")
+)
+
 // GameCRUDService отвечает за базовые CRUD-операции с играми.
 type GameCRUDService struct {
 	gameRepo       GameRepository
@@ -100,7 +106,7 @@ func (s *GameCRUDService) Delete(ctx context.Context, id uint, userID uint) erro
 		return err
 	}
 	if game.AuthorID != userID {
-		return errors.New("только владелец может удалить игру")
+		return ErrGameDeleteForbidden
 	}
 
 	if err := s.gameRepo.Delete(ctx, id); err != nil {

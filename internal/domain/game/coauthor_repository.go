@@ -16,6 +16,10 @@ type CoAuthorRepository interface {
 	GetGameAuthorID(ctx context.Context, gameID uint) (uint, error)
 	FindByGameAndUser(ctx context.Context, gameID, userID uint) (*CoAuthor, error)
 	FindUnscopedByGameAndUser(ctx context.Context, gameID, userID uint) (*CoAuthor, error)
+	// A-2 (pass 39): транзакционные варианты для HasPermissionTx — единый путь
+	// к данным (raw SQL был в сервисе).
+	GetGameAuthorIDWithTx(ctx context.Context, tx *gorm.DB, gameID uint) (uint, error)
+	FindByGameAndUserWithTx(ctx context.Context, tx *gorm.DB, gameID, userID uint) (*CoAuthor, error)
 	Save(ctx context.Context, co *CoAuthor) error
 	Create(ctx context.Context, co *CoAuthor) error
 	DeleteByGameAndUser(ctx context.Context, gameID, userID uint) error
@@ -52,6 +56,26 @@ func (r *gormCoAuthorRepo) GetGameAuthorID(ctx context.Context, gameID uint) (ui
 		return 0, err
 	}
 	return game.AuthorID, nil
+}
+
+// GetGameAuthorIDWithTx — вариант GetGameAuthorID внутри транзакции (A-2, pass 39).
+func (r *gormCoAuthorRepo) GetGameAuthorIDWithTx(ctx context.Context, tx *gorm.DB, gameID uint) (uint, error) {
+	var game Game
+	err := tx.WithContext(ctx).First(&game, gameID).Error
+	if err != nil {
+		return 0, err
+	}
+	return game.AuthorID, nil
+}
+
+// FindByGameAndUserWithTx — вариант FindByGameAndUser внутри транзакции.
+func (r *gormCoAuthorRepo) FindByGameAndUserWithTx(ctx context.Context, tx *gorm.DB, gameID, userID uint) (*CoAuthor, error) {
+	var co CoAuthor
+	err := tx.WithContext(ctx).Where("game_id = ? AND user_id = ?", gameID, userID).First(&co).Error
+	if err != nil {
+		return nil, err
+	}
+	return &co, nil
 }
 
 func (r *gormCoAuthorRepo) FindByGameAndUser(ctx context.Context, gameID, userID uint) (*CoAuthor, error) {
