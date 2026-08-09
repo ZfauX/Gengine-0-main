@@ -2,8 +2,8 @@
 {{if .Game}}
 <meta property="og:title" content="{{.Game.Name}} — Gengine-0">
 <meta property="og:description" content="{{truncate .Game.Description 200}}">
-<meta property="og:type" content="website">
-<meta property="og:image" content="{{.Game.CoverURL}}">
+<meta property="og:type" content="article">
+{{if .OGImage}}<meta property="og:image" content="{{.OGImage}}">{{end}}
 {{end}}
 {{end}}
 
@@ -231,7 +231,9 @@
             })
             .then(res => {
                 previewCache[gameID] = { data: res.data, timestamp: Date.now() };
-                sessionStorage.setItem('previewCache', JSON.stringify(previewCache));
+                // UX-4 (pass 36): при заблокированном storage (приватный режим)
+                // setItem бросает — кэш только в памяти, ошибки пользователю нет.
+                try { sessionStorage.setItem('previewCache', JSON.stringify(previewCache)); } catch (e) {}
                 renderPreview(res.data);
                 openModal();
             })

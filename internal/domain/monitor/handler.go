@@ -380,12 +380,10 @@ func (h *MonitorHandler) MonitorStreamSSE(c *gin.Context) {
 	c.Header("X-Accel-Buffering", "no")
 
 	// Subscribe to shared poller — один сборщик на игру вместо N клиентов × 1 запрос/сек
+	// F-2 (pass 36): GetOrFetchSnapshotJSON кэширует маршалнутые байты —
+	// json.Marshal больше не выполняется каждый тик поллера.
 	snapFn := func(ctx context.Context) ([]byte, error) {
-		snapshot, err := h.monitorService.GetOrFetchSnapshot(ctx, gameID)
-		if err != nil {
-			return nil, err
-		}
-		return json.Marshal(snapshot)
+		return h.monitorService.GetOrFetchSnapshotJSON(ctx, gameID)
 	}
 	sub := subscribeMonitor(gameID, snapFn)
 	defer unsubscribeMonitor(gameID, sub)

@@ -153,6 +153,15 @@ function initConfirmDialogs() {
         var message = form.getAttribute('data-confirm-form');
         var confirmed = await showModalConfirm(message, form);
         if (confirmed) {
+            // UX-6 (pass 36): программный submit не триггерит initFormLoading,
+            // поэтому сами блокируем кнопку + показываем спиннер — иначе
+            // двойной POST при медленной сети.
+            var btn = form.querySelector('button[type="submit"]');
+            if (btn && !btn.dataset.noLoading) {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="inline-block animate-spin mr-1">\u27F3</span> ' + (btn.dataset.loadingText || tI18n('sending'));
+                btn.classList.add('opacity-70', 'cursor-not-allowed');
+            }
             // Remove the attribute to prevent loop, then submit
             form.removeAttribute('data-confirm-form');
             form.submit();

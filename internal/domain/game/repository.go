@@ -3,6 +3,7 @@ package game
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -70,6 +71,12 @@ type GamePassingRepository interface {
 	// GetByIDWithGame загружает Passing с присоединённой Game (A-H1, pass 34:
 	// перенесено из GamePlayService.GetPassingWithGame — убирает s.db read).
 	GetByIDWithGame(ctx context.Context, id uint) (*GamePassing, error)
+	// A-3 (pass 36): read-методы геймплея — перенесены из
+	// GamePlayService.GetGameplayData (убирают 4 s.db read с горячего экрана).
+	GetByIDWithTeam(ctx context.Context, id uint) (*GamePassing, error)
+	GetCurrentProgressWithLevel(ctx context.Context, passingID uint) (*LevelProgress, error)
+	GetAttemptsByProgress(ctx context.Context, progressID uint, limit int) ([]Attempt, error)
+	GetOpenVotingSession(ctx context.Context, passingID, levelID uint) (*GameBlackboxVotingSession, bool, error)
 }
 
 // ---------- GORM implementations ----------
@@ -412,6 +419,57 @@ func (r *gormGamePassingRepo) GetByIDWithGame(ctx context.Context, id uint) (*Ga
 		return nil, err
 	}
 	return &p, nil
+}
+
+// GetByIDWithTeam загружает прохождение с командой (A-3, pass 36).
+func (r *gormGamePassingRepo) GetByIDWithTeam(ctx context.Context, id uint) (*GamePassing, error) {
+	var p GamePassing
+	if err := r.db.WithContext(ctx).Preload("Team").First(&p, id).Error; err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+// GetCurrentProgressWithLevel загружает текущий (незавершённый) прогресс
+// уровня вместе с лёгким уровнем (A-3, pass 36).
+func (r *gormGamePassingRepo) GetCurrentProgressWithLevel(ctx context.Context, passingID uint) (*LevelProgress, error) {
+	var progress LevelProgress
+	err := r.db.WithContext(ctx).
+		Preload("Level", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id, game_id, name, description, type, hint, position")
+		}).
+		Where("game_passing_id = ? AND finished_at IS NULL", passingID).
+		First(&progress).Error
+	if err != nil {
+		return nil, err
+	}
+	return &progress, nil
+}
+
+// GetAttemptsByProgress возвращает последние попытки прогресса (A-3, pass 36).
+func (r *gormGamePassingRepo) GetAttemptsByProgress(ctx context.Context, progressID uint, limit int) ([]Attempt, error) {
+	var attempts []Attempt
+	err := r.db.WithContext(ctx).
+		Where("level_progress_id = ?", progressID).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&attempts).Error
+	return attempts, err
+}
+
+// GetOpenVotingSession возвращает открытую сессию голосования (если есть).
+func (r *gormGamePassingRepo) GetOpenVotingSession(ctx context.Context, passingID, levelID uint) (*GameBlackboxVotingSession, bool, error) {
+	var session GameBlackboxVotingSession
+	err := r.db.WithContext(ctx).
+		Where("game_passing_id = ? AND level_id = ? AND is_open = true", passingID, levelID).
+		First(&session).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return &session, true, nil
 }
 func (r *gormGamePassingRepo) FindByGameAndTeam(ctx context.Context, gameID, teamID uint) (*GamePassing, error) {
 	var p GamePassing

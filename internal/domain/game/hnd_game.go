@@ -211,6 +211,21 @@ func (h *GameHandler) Show(c *gin.Context) {
 	canApply := !g.IsDraft &&
 		(g.RegistrationDeadline == nil || g.RegistrationDeadline.After(time.Now()))
 
+	// UX-5 (pass 36): absolute og:image для шеринга в соцсетях — CoverPath
+	// относительный (/uploads/...), краулеры требуют абсолютный URL.
+	ogImage := ""
+	if g.CoverPath != "" {
+		if strings.HasPrefix(g.CoverPath, "http://") || strings.HasPrefix(g.CoverPath, "https://") {
+			ogImage = g.CoverPath
+		} else {
+			scheme := "http"
+			if c.Request.TLS != nil {
+				scheme = "https"
+			}
+			ogImage = scheme + "://" + c.Request.Host + g.CoverPath
+		}
+	}
+
 	render.Page(c, http.StatusOK, "games-show.html", gin.H{
 		"Game":           g,
 		"CurrentUserID":  userID,
@@ -222,6 +237,7 @@ func (h *GameHandler) Show(c *gin.Context) {
 		"IncludeLeaflet": true,
 		"csrf":           csrf.GetToken(c),
 		"Title":          g.Name + " · Encounter Engine",
+		"OGImage":        ogImage,
 		"Breadcrumbs": []map[string]string{
 			{"name": "nav.home", "url": "/"},
 			{"name": "nav.games", "url": "/games"},

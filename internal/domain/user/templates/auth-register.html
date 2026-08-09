@@ -36,11 +36,22 @@
                 {{if .Errors.Password}}<p class="field-error">{{.Errors.Password}}</p>{{end}}
             </div>
 
-            <!-- reCAPTCHA (опционально) -->
+            <!-- reCAPTCHA (опционально). UX-2 (pass 36): виджет рендерится
+                 явно с темой по классу <html> (class-стратегия dark mode). -->
             {{if .RecaptchaSiteKey}}
             <div class="flex justify-center">
-                <div class="g-recaptcha" data-sitekey="{{.RecaptchaSiteKey}}"></div>
-                <script src="https://www.google.com/recaptcha/api.js" async defer nonce="{{.csp_nonce}}"></script>
+                <div id="recaptcha-widget"></div>
+                <script src="https://www.google.com/recaptcha/api.js?onload=initRecaptcha&render=explicit" async defer nonce="{{.csp_nonce}}"></script>
+                <script nonce="{{.csp_nonce}}">
+                    function initRecaptcha() {
+                        if (typeof grecaptcha === 'undefined') return;
+                        var dark = document.documentElement.classList.contains('dark');
+                        grecaptcha.render('recaptcha-widget', {
+                            sitekey: '{{.RecaptchaSiteKey}}',
+                            theme: dark ? 'dark' : 'light'
+                        });
+                    }
+                </script>
             </div>
             {{end}}
 

@@ -4,6 +4,7 @@ package game
 import (
 	"container/list"
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -39,6 +40,9 @@ type MonitorService struct {
 type cachedSnapshot struct {
 	data      []TeamProgress
 	timestamp time.Time
+	// json — маршалнутые байты data (F-2, pass 36): чтобы поллер не
+	// сериализовал снапшот каждые 5с, когда данные не менялись.
+	json []byte
 }
 
 const maxMonitorCacheSize = 1000
@@ -115,9 +119,17 @@ func (s *MonitorService) GetOrFetchSnapshot(ctx context.Context, gameID uint) ([
 				}
 			}
 		}
+		// F-2 (pass 36): маршалим сразу при загрузке из БД и кэшируем байты —
+		// поллер GetOrFetchSnapshotJSON не будет сериализовать каждые 5с.
+		jsonData, marshalErr := json.Marshal(snapshot)
+		if marshalErr != nil {
+			s.mu.Unlock()
+			return nil, marshalErr
+		}
 		s.cache[gameID] = &cachedSnapshot{
 			data:      snapshot,
 			timestamp: time.Now(),
+			json:      jsonData,
 		}
 		// Удаляем старый элемент списка для того же gameID, чтобы LRU-список не рос
 		// бесконечно при повторных обновлениях одного снапшота (утечка памяти).
@@ -138,6 +150,33 @@ func (s *MonitorService) GetOrFetchSnapshot(ctx context.Context, gameID uint) ([
 		return nil, fmt.Errorf("unexpected type for result")
 	}
 	return teamProgress, nil
+}
+
+// GetOrFetchSnapshotJSON возвращает JSON-представление снапшота, кэшируя
+// маршалнутые байты вместе с данными (F-2, pass 36). Поллер SSE вызывает
+// именно его, чтобы не сериализовать полный снапшот каждые 5с.
+func (s *MonitorService) GetOrFetchSnapshotJSON(ctx context.Context, gameID uint) ([]byte, error) {
+	s.mu.RLock()
+	if cached, ok := s.cache[gameID]; ok && time.Since(cached.timestamp) < s.cacheTTL {
+		if cached.json != nil {
+			bytes := cached.json
+			s.mu.RUnlock()
+			return bytes, nil
+		}
+	}
+	s.mu.RUnlock()
+
+	// Кэш устарел или json ещё не заполнен (старая запись) — загружаем.
+	if _, err := s.GetOrFetchSnapshot(ctx, gameID); err != nil {
+		return nil, err
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if cached, ok := s.cache[gameID]; ok {
+		return cached.json, nil
+	}
+	return nil, fmt.Errorf("monitor: snapshot cache lost for game %d", gameID)
 }
 
 // InvalidateCache удаляет кэшированный снимок игры (вызывается при изменениях).

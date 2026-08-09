@@ -193,7 +193,7 @@
 
                     ${team.suspicious ? `
                         <div class="mt-3 text-xs text-yellow-800 dark:text-yellow-200 bg-yellow-100 dark:bg-yellow-900/40 p-2 rounded-md flex items-center gap-1">
-                            <span>⚠️</span> ${escapeHtml(team.suspicious_reason || '{{ T $.Lang "monitor.suspicious" }}')}
+                            <span aria-hidden="true">⚠️</span> ${escapeHtml(team.suspicious_reason || '{{ T $.Lang "monitor.suspicious" }}')}
                         </div>
                     ` : ''}
 

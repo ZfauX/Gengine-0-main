@@ -60,7 +60,10 @@ func setCSPHeaders(c *gin.Context, nonce string, forceHSTS bool) {
 	//   Vimeo:     https://player.vimeo.com (frame-src)
 	csp := "default-src 'self'; " +
 		"script-src 'self' 'nonce-" + nonce + "' " + getLeafletHash() + " https://www.google.com https://www.gstatic.com; " +
-		"style-src 'self' 'nonce-" + nonce + "' 'unsafe-inline' " + getLeafletCSSHash() + " https://www.gstatic.com; " +
+		// S-4 (pass 36): убран 'unsafe-inline' — единственный <style> блок уже
+		// с nonce, inline style-атрибутов в шаблонах нет. Tailwind компилируется
+		// в output.css (style-src 'self').
+		"style-src 'self' 'nonce-" + nonce + "' " + getLeafletCSSHash() + " https://www.gstatic.com; " +
 		"img-src 'self' data: https:; " +
 		"connect-src 'self' ws: wss:; " +
 		"form-action 'self'; " +

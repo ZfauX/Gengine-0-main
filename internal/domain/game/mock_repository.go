@@ -470,6 +470,21 @@ func (mr *MockGamePassingRepositoryMockRecorder) FindByGameAndTeam(ctx, gameID, 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindByGameAndTeam", reflect.TypeOf((*MockGamePassingRepository)(nil).FindByGameAndTeam), ctx, gameID, teamID)
 }
 
+// GetAttemptsByProgress mocks base method.
+func (m *MockGamePassingRepository) GetAttemptsByProgress(ctx context.Context, progressID uint, limit int) ([]Attempt, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetAttemptsByProgress", ctx, progressID, limit)
+	ret0, _ := ret[0].([]Attempt)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetAttemptsByProgress indicates an expected call of GetAttemptsByProgress.
+func (mr *MockGamePassingRepositoryMockRecorder) GetAttemptsByProgress(ctx, progressID, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAttemptsByProgress", reflect.TypeOf((*MockGamePassingRepository)(nil).GetAttemptsByProgress), ctx, progressID, limit)
+}
+
 // GetByID mocks base method.
 func (m *MockGamePassingRepository) GetByID(ctx context.Context, id uint) (*GamePassing, error) {
 	m.ctrl.T.Helper()
@@ -498,6 +513,52 @@ func (m *MockGamePassingRepository) GetByIDWithGame(ctx context.Context, id uint
 func (mr *MockGamePassingRepositoryMockRecorder) GetByIDWithGame(ctx, id any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByIDWithGame", reflect.TypeOf((*MockGamePassingRepository)(nil).GetByIDWithGame), ctx, id)
+}
+
+// GetByIDWithTeam mocks base method.
+func (m *MockGamePassingRepository) GetByIDWithTeam(ctx context.Context, id uint) (*GamePassing, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetByIDWithTeam", ctx, id)
+	ret0, _ := ret[0].(*GamePassing)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetByIDWithTeam indicates an expected call of GetByIDWithTeam.
+func (mr *MockGamePassingRepositoryMockRecorder) GetByIDWithTeam(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByIDWithTeam", reflect.TypeOf((*MockGamePassingRepository)(nil).GetByIDWithTeam), ctx, id)
+}
+
+// GetCurrentProgressWithLevel mocks base method.
+func (m *MockGamePassingRepository) GetCurrentProgressWithLevel(ctx context.Context, passingID uint) (*LevelProgress, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetCurrentProgressWithLevel", ctx, passingID)
+	ret0, _ := ret[0].(*LevelProgress)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetCurrentProgressWithLevel indicates an expected call of GetCurrentProgressWithLevel.
+func (mr *MockGamePassingRepositoryMockRecorder) GetCurrentProgressWithLevel(ctx, passingID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCurrentProgressWithLevel", reflect.TypeOf((*MockGamePassingRepository)(nil).GetCurrentProgressWithLevel), ctx, passingID)
+}
+
+// GetOpenVotingSession mocks base method.
+func (m *MockGamePassingRepository) GetOpenVotingSession(ctx context.Context, passingID, levelID uint) (*GameBlackboxVotingSession, bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetOpenVotingSession", ctx, passingID, levelID)
+	ret0, _ := ret[0].(*GameBlackboxVotingSession)
+	ret1, _ := ret[1].(bool)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// GetOpenVotingSession indicates an expected call of GetOpenVotingSession.
+func (mr *MockGamePassingRepositoryMockRecorder) GetOpenVotingSession(ctx, passingID, levelID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetOpenVotingSession", reflect.TypeOf((*MockGamePassingRepository)(nil).GetOpenVotingSession), ctx, passingID, levelID)
 }
 
 // ListByGamePaginated mocks base method.

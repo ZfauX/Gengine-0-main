@@ -84,15 +84,26 @@ func (r *gormMonitorRepo) AggregateGameSnapshot(ctx context.Context, gameID uint
 }
 
 func (r *gormMonitorRepo) ListRecentAttempts(ctx context.Context, passingIDs []uint, since time.Time) ([]AttemptRecord, error) {
+	// F-3 (pass 36): LIMIT 500 последних попыток (DESC) вместо выкачивания
+	// ВСЕХ кодов попыток за окно на каждый промах снапшот-кэша. Rate-детекция
+	// (500/5мин = 100/мин >> 10/мин) и streak-детекция (3 подряд в пределах
+	// 500) остаются корректными; хронологию восстанавливаем реверсом в Go.
+	const recentAttemptsLimit = 500
+
 	var attempts []AttemptRecord
 	err := r.db.WithContext(ctx).Table("attempts").
 		Select("level_progresses.game_passing_id AS passing_id, attempts.code, attempts.success, attempts.created_at").
 		Joins("JOIN level_progresses ON level_progresses.id = attempts.level_progress_id").
 		Where("level_progresses.game_passing_id IN ? AND attempts.created_at >= ?", passingIDs, since).
-		Order("attempts.created_at ASC").
+		Order("attempts.created_at DESC").
+		Limit(recentAttemptsLimit).
 		Find(&attempts).Error
 	if err != nil {
 		return nil, err
+	}
+	// Хронологический порядок (ASC) для streak-детекции.
+	for i, j := 0, len(attempts)-1; i < j; i, j = i+1, j-1 {
+		attempts[i], attempts[j] = attempts[j], attempts[i]
 	}
 	return attempts, nil
 }

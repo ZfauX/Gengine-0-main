@@ -84,6 +84,24 @@
 
 ---
 
+## Дефер разобран (раунд 3)
+
+Все отложенные пункты pass 35/36 закрыты:
+
+- **UX-2**: reCAPTCHA рендерится явно с `theme` по классу `<html>` (dark/light).
+- **UX-3**: `aria-hidden` на декоративные emoji (offline 📡, games-list 🕵️, monitor-page ⚠️).
+- **UX-4**: `sessionStorage.setItem` обёрнут в try/catch (приватный режим).
+- **UX-5**: OG-теги — absolute `og:image` (из CoverPath через scheme+host), `og:type=article`.
+- **UX-6**: `data-confirm-form` — спиннер + disabled submit перед `form.submit()` (без двойного POST).
+- **F-2**: `GetOrFetchSnapshotJSON` — кэш маршалнутых байт в cachedSnapshot; поллер не сериализует каждые 5с.
+- **F-3**: `ListRecentAttempts` — LIMIT 500 последних попыток (DESC + реверс) вместо выкачивания всех кодов.
+- **A-3**: `GetGameplayData` — все 5 read-запросов через GamePassingRepository (GetByIDWithTeam, GetCurrentProgressWithLevel, GetAttemptsByProgress, GetOpenVotingSession) + GetGameSettingByGameID; `s.db` только для транзакций.
+- **S-4**: CSP `style-src` — убран `'unsafe-inline'` (единственный `<style>` с nonce, inline-атрибутов нет).
+
+**Проверка:** `go build ./...` ✓, `go vet ./...` ✓, `golangci-lint 2.12.2` → 0 issues ✓, `gofmt -l .` → пусто ✓, `go test -count=1 -short ./...` ✓, 84 шаблона валидны ✓.
+
+---
+
 ## A. Найденные ошибки pass 36 (верифицировано лично)
 
 ### 🔴 Критично
