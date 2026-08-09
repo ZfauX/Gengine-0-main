@@ -1,12 +1,12 @@
-# Deep Review Gengine-0 — 9 августа 2026 (pass 38 — повторное ревью после закрытия pass 30-37)
+# Deep Review Gengine-0 — 9 августа 2026 (pass 39 — повторное ревью после закрытия pass 30-38)
 
 ## Резюме
 
 Повторное глубокое ревью выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture/DI) с последующей **личной верификацией ключевых находок** по коду.
 
-**Итог pass 38:** 1 критичная (data race), 3 высоких (все подтверждены лично), ~10 средних, ~10 низких.
+**Итог pass 39:** 0 критичных, 2 высоких (все подтверждены лично), ~10 средних, ~10 низких.
 
-> **Контекст:** pass 30-37 закрыты полностью; линтер 2.12.2 чист. Новые проблемы: **data race в MonitorService LRU** (регресс P-5 pass 37), **N+1 в checkTimeoutsImpl**, **мнимая защита от дублей в autostart** (OnConflict без unique), **мёртвое DI-поле AttemptSvc**, **JS-краш на не-manager странице игры**, **бесконечная WS-реконнект-нагрузка при polling**.
+> **Контекст:** pass 30-38 закрыты полностью; линтер 2.12.2 чист. Новые проблемы: **регрессия UX-9 pass 38** (data-no-loading на form не читается initFormLoading), **SEO-баг** (двойной суффикс, пустой canonical, дубль og:title), **N+1 в checkTimeouts** (next-level по одному), **JSON round-trip на in-memory cache hit**, **UNIQUE-индекс level_progresses без WHERE deleted_at**.
 
 ---
 
@@ -32,6 +32,115 @@
 **Проверка:** `go build ./...` ✓, `go test -short ./...` ✓, `go test -tags=integration` (game/user/tournament/admin) ✓, `go vet ./...` ✓, `gofmt -l .` → пусто ✓. `-race` недоступен на Windows (нет CGO).
 
 > Примечание: `golangci-lint` на этой машине — v1 с конфигом v2 (инфраструктурная проблема, не кодовая).
+
+---
+
+# PASS 39 (повторное ревью) — 9 августа 2026
+
+> Десятое повторное ревью после полного закрытия pass 30-38. Выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture) с **личной верификацией** ключевых находок по коду.
+
+## Резюме pass 39
+
+**Итог:** 0 критичных, 2 высоких (все подтверждены лично), ~10 средних, ~10 низких.
+
+> Кодовая база стабильна, линтер 2.12.2 чист. Найдены: **регрессия UX-9 pass 38** (data-no-loading на form не читается initFormLoading — кнопка перетирается спиннером), **SEO-баг** (двойной суффикс «· Encounter Engine», пустой canonical, дубль og:title), **N+1 в checkTimeouts** (next-level по одному), **JSON round-trip на каждый in-memory cache hit**, **UNIQUE-индекс level_progresses без WHERE deleted_at** (миграция может упасть на дублях).
+
+---
+
+## Статус (обновлено 9 авг 2026) — PASS 39 ОТКРЫТ
+
+Находки перечислены ниже; закрытие — раундами фиксов, как в pass 30-38.
+
+---
+
+## A. Найденные ошибки pass 39 (верифицировано лично)
+
+### 🔴 Критично
+
+Нет.
+
+### 🟠 Высокие
+
+| ID | Файл | Проблема |
+|---|---|---|
+| **UX-1** | `static/js/app.js:119` vs `auth-register.html:12`, `notes-manage.html:8` | **Регрессия UX-9 pass 38: data-no-loading не работает.** initFormLoading читает `btn.dataset.noLoading` (кнопка), но атрибут поставлен на **форму**. Результат: на регистрации текст «Регистрируем…» перетирается спиннером «⟳ Отправка…»; на notes-manage кнопка «Сохранить» теряет подпись после ошибки. **Верифицировано лично.** |
+| **SEO-1** | `hnd_game.go:241` + `layout.html:64` | **Двойной суффикс «· Encounter Engine»** (хендлер + layout) → «Name · Encounter Engine · Encounter Engine». Плюс `games-show.html:3` создаёт второй `og:title` («Gengine-0» vs «Encounter Engine»), краулеры берут первый из layout. **Верифицировано лично.** |
+| **SEO-2** | `render/helper.go:208` | **Canonical всегда пустой**: `data["CanonicalURL"] = ""`, ни один хендлер не переопределяет → `<link rel="canonical" href="">` на каждой странице. **Верифицировано лично.** |
+
+### 🟡 Средние
+
+| ID | Файл | Проблема |
+|---|---|---|
+| **P-1** | `game/svc_progress.go:335-374` | **checkTimeouts advance-loop всё ещё N+1**: next-level выбирается по одному на просроченный прогресс (SELECT + INSERT, или + COUNT) — до 100 SQL/цикл каждые 30с. |
+| **P-2** | `game/service.go:199-223` | **JSON round-trip на каждый in-memory cache hit** (листинг, отзывы, leaderboard): value уже типизирован в LRU, но cacheGetJSON делает Marshal+Unmarshal. |
+| **P-3** | `game/svc_monitor.go:88-99` | **Глобальный эксклюзивный Lock на каждом cache-hit снапшота** — горячий polling-путь (поллер 5с + зрители), точка контеншена с InvalidateCache. |
+| **P-4** | `game/svc_monitor.go:209-217` | **InvalidateCache не форсит singleflight** — пересчёт, начатый до инвалидации, перезапишет кэш устаревшими данными. |
+| **S-1** | `migrations/000045` + `model.go:100-111` | **UNIQUE-индекс level_progresses(game_passing_id, level_id) без WHERE deleted_at IS NULL**: 1) миграция упадёт, если в проде уже есть дубликаты; 2) soft-delete прогресса + повторное создание того же (passing, level) → unique-violation. **Верифицировано лично (по коду).** |
+| **A-1** | `game/svc_coauthor.go:22,26` | **Мёртвое поле `db *gorm.DB` в CoAuthorService** — после N-2 (pass 38) ни один метод не читает `s.db` (HasPermission через repo, HasPermissionTx принимает tx). Тянется в DI зря. **Верифицировано лично.** |
+| **A-2** | `game/svc_coauthor.go:46-65,86-107` | **Два параллельных пути проверки прав**: HasPermission (repo, 2 запроса) vs HasPermissionTx (raw SQL) — структура продублирована, риск расхождения. |
+| **A-3** | `game/service.go:337-339` vs `svc_crud.go:102-104` | **Дублированная проверка владельца при удалении** (GameService.Delete + GameCRUDService.Delete) + raw errors.New. |
+| **UX-2** | `gameplay-show.html:175` | **aria-live спам**: в последние 60с условие `timeLeft <= 60` истинно каждую секунду → скринридер читает `#timer-live` каждую секунду. |
+| **UX-3** | `gameplay-show.html:378,523`, `follow-list.html:44`, `profile-public.html:148,154` | **replace('%s', str) с `$`-паттернами** (класс UX-8 pass 38) не исправлен везде — `$&`/`$'` в данных искажают текст. |
+
+### 🔲 Низкие / мелочи
+
+| ID | Файл | Проблема |
+|---|---|---|
+| **P-5** | `game/repository.go:202-260` | **P-3 pass 38 открыт**: GetLogsByGameID ORDER BY поперёк passings без денормализации logs.game_id. |
+| **P-6** | `calendar/handler.go:184-243` | CalendarICal — полногодовой запрос без кэша (в отличие от CalendarData). |
+| **P-7** | `pkg/websocket/room_hub.go:114-214` | WS-хаб: broadcast'ы сериализуются одной горутиной; большие комнаты → дропы. |
+| **UX-4** | `layout.html:61` | `og:locale` жёстко `ru_RU` (игнорирует .Lang); `og:site_name` «Encounter Engine» vs ExtraHead «Gengine-0». |
+| **UX-5** | `games-list.html:8,205,213` | Кнопка переключения вида показывает текущий вид, а не целевой. |
+| **UX-6** | `levels-list.html:156-163` | drag&drop fetch на drop без `.catch` → unhandled rejection. |
+| **UX-7** | `calendar-page.html:6` | Дубль `<meta name="csrf-token">` (дублирует layout.html:6; мета в body — невалидный HTML). |
+| **UX-8** | `gameplay-show.html:228-241` | `lastScrollY` мёртвая переменная, scroll-listener без throttle. |
+| **UX-9** | `app.js:111` | initFormLoading вешается на все формы включая GET-фильтры (поиск меняет кнопку на «⟳ Отправка…»). |
+| **UX-10** | — | Touch targets < 44px (пагинация, themeToggle). |
+| **A-4** | game-домен | `errors.New` в проде без sentinel (service.go:338, svc_crud.go:71,104, svc_play.go:38, svc_progress.go:167) — хендлеры не различают 403/404. |
+
+### 🔲 Опровергнуто / безопасно (личная проверка + агенты)
+
+- **R-1 (LRU Lock, pass 38)** — race устранён: RLock остался только в non-mutating re-check, мутации под Lock. ✓
+- **P-1 (AdvanceToNextLevelWithPassing, pass 38)** — мутация passing.Status только над копией (passingCopy/pCopy), разделения нет. ✓
+- **N-2 (HasPermission, pass 38)** — поведение совпадает с HasPermissionTx (ErrRecordNotFound, soft-delete scoped, hasCoAuthorRole). ✓
+- **N-1 (AttemptSvc, pass 38)** — AttemptService легитимно задействован (wire, svc_play вызовы SubmitCodeWithTx), не dead code. ✓
+- **Read-path утечки *gorm.DB** — не обнаружены (все прямые обращения — транзакции или переданный tx).
+- **joinPlaceholders/toAnySlice** — вынесены в util, копий нет. ✓
+- **CSRF, OAuth state, email verification, refresh-ротация, webauthn** — безопасно.
+
+---
+
+## B. Оптимизации (производительность)
+
+1. **P-1**: выбрать next-level одним запросом (unnest пар game_id+position JOIN levels) + CreateInBatches; завершения детектить COUNT пачкой.
+2. **P-2**: для in-memory Cache добавить typed-Get (type assertion + shallow copy) в cacheGetJSON/cacheGetRating; JSON-путь только для Valkey.
+3. **P-3**: sharding монитор-кэша по gameID (массив мьютексов) или thread-safe LRU (hashicorp/golang-lru).
+4. **P-4**: `sfGroup.Forget("snapshot:%d")` в InvalidateCache.
+5. **P-5**: денормализовать `logs.game_id` + индекс `(game_id, created_at DESC)`.
+6. **P-6**: кэшировать собранный .ics на 5-15 мин.
+7. **P-7**: per-room воркер-горутины для broadcast (ограниченный пул).
+
+## C. Улучшения кодовой базы (архитектура)
+
+1. **A-1**: удалить мёртвое поле `CoAuthorService.db` + упростить конструктор `NewCoAuthorService(repo)` + wire.
+2. **A-2**: вынести HasPermissionTx на репозиторий с tx-параметром (единая реализация).
+3. **A-3**: убрать дублированную проверку владельца; sentinel ErrNotOwner.
+4. **S-1**: частичный UNIQUE-индекс `WHERE deleted_at IS NULL` + дедуп перед миграцией.
+5. **A-4**: sentinel-ошибки для game-домена.
+
+## D. Улучшения UX
+
+1. **UX-1**: initFormLoading — читать `form.hasAttribute('data-no-loading')` (или перенести атрибут на кнопку, как auth-login).
+2. **SEO-1**: убрать суффикс из hnd_game.go (layout — единственное место); ExtraHead переопределяет og:title (без дубля).
+3. **SEO-2**: CanonicalURL = self-URL из `c.Request.URL` в helper.
+4. **UX-2**: aria-live только на смене минуты и границах (60/30/10).
+5. **UX-3**: единый helper `formatReplace` с replacement-функцией.
+
+## Приоритет фиксов (pass 39)
+1. **UX-1** (регрессия pass 38 — кнопка регистрации) + **SEO-1/SEO-2** (двойной суффикс, canonical).
+2. **P-1/P-2** (N+1 + JSON round-trip).
+3. **S-1** (UNIQUE-индекс — миграция).
+4. **A-1/A-2** (мёртвое поле, единый путь прав).
 
 ---
 
