@@ -170,8 +170,10 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 		// 6. Сохраняем лог
 		logEntry := Log{
 			GamePassingID: passingID,
-			LevelID:       progress.LevelID,
-			Message:       fmt.Sprintf("код ***: %s", map[bool]string{true: "принят", false: "неверный"}[success]),
+			// P-5 (pass 39): денормализованный game_id для запросов без JOIN.
+			GameID:  gameID,
+			LevelID: progress.LevelID,
+			Message: fmt.Sprintf("код ***: %s", map[bool]string{true: "принят", false: "неверный"}[success]),
 		}
 		return tx.Create(&logEntry).Error
 	})
@@ -235,8 +237,10 @@ func (s *GamePlayService) SubmitFile(ctx context.Context, passingID, userID uint
 
 		logEntry := Log{
 			GamePassingID: passingID,
-			LevelID:       progress.LevelID,
-			Message:       fmt.Sprintf("загружен файл: %s", filepath.Base(filepath.Clean(filePath))),
+			// P-5 (pass 39): денормализованный game_id.
+			GameID:  gameID,
+			LevelID: progress.LevelID,
+			Message: fmt.Sprintf("загружен файл: %s", filepath.Base(filepath.Clean(filePath))),
 		}
 		return tx.Create(&logEntry).Error
 	})
@@ -323,8 +327,10 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (
 
 		logEntry := Log{
 			GamePassingID: passingID,
-			LevelID:       progress.LevelID,
-			Message:       fmt.Sprintf("использована подсказка (+%d сек)", penalty),
+			// P-5 (pass 39): денормализованный game_id.
+			GameID:  gameID,
+			LevelID: progress.LevelID,
+			Message: fmt.Sprintf("использована подсказка (+%d сек)", penalty),
 		}
 		if createErr := tx.Create(&logEntry).Error; createErr != nil {
 			return createErr
@@ -404,8 +410,10 @@ func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, u
 
 		logEntry := Log{
 			GamePassingID: passingID,
-			LevelID:       progress.LevelID,
-			Message:       "автор принял ответ",
+			// P-5 (pass 39): денормализованный game_id.
+			GameID:  gameID,
+			LevelID: progress.LevelID,
+			Message: "автор принял ответ",
 		}
 		if err := tx.Create(&logEntry).Error; err != nil {
 			return err

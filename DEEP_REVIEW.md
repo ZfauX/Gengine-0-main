@@ -94,6 +94,13 @@
 
 ---
 
+## Крупные рефакторинги P-5/P-7 выполнены
+
+- **P-5**: денормализация `logs.game_id` — модель Log + миграция 000046 (ADD COLUMN + backfill + индекс `idx_logs_game_created (game_id, created_at DESC)`); GetLogsByGameID/GetLogsByGameIDPaginated фильтруют по `logs.game_id` без JOIN game_passings (index-only); все 4 создания логов (svc_play) заполняют GameID.
+- **P-7**: WS-хаб per-room workers — broadcast диспатчится в очередь комнаты, воркер комнаты рассылает независимо от других комнат (раньше runLoop сериализовал все рассылки одной горутиной); очереди закрываются при опустении комнаты и в Stop; `roomWorkersWg.Wait()` в Stop.
+
+---
+
 ## A. Найденные ошибки pass 39 (верифицировано лично)
 
 ### 🔴 Критично

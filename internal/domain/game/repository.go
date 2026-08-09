@@ -202,11 +202,11 @@ func (r *gormGameRepo) GetFinishedPassingByGameAndTeam(ctx context.Context, game
 func (r *gormGameRepo) GetLogsByGameID(ctx context.Context, gameID uint) ([]Log, error) {
 	var logs []Log
 	// P-6 (pass 37): LIMIT последних логов — раньше выгружалась вся таблица
-	// логов игры (сотни тысяч записей) в память. DESC + реверс для
-	// хронологического порядка.
+	// логов игры (сотни тысяч записей) в память.
+	// P-5 (pass 39): фильтр по денормализованному logs.game_id без JOIN;
+	// ORDER BY DESC покрывается индексом idx_logs_game_created.
 	err := r.db.WithContext(ctx).
-		Joins("JOIN game_passings ON game_passings.id = logs.game_passing_id").
-		Where("game_passings.game_id = ?", gameID).
+		Where("logs.game_id = ?", gameID).
 		Order("logs.created_at DESC").
 		Limit(500).
 		Find(&logs).Error
@@ -238,10 +238,11 @@ func (r *gormGameRepo) GetLogsByGameIDPaginated(ctx context.Context, gameID uint
 		TotalCount int64
 	}
 	var rows []logRow
+	// P-5 (pass 39): фильтр по logs.game_id без JOIN; index (game_id, created_at)
+	// покрывает и сортировку ASC (обратный проход по индексу).
 	err := r.db.WithContext(ctx).
 		Select("logs.*, COUNT(*) OVER() AS total_count").
-		Joins("JOIN game_passings ON game_passings.id = logs.game_passing_id").
-		Where("game_passings.game_id = ?", gameID).
+		Where("logs.game_id = ?", gameID).
 		Order("logs.created_at ASC").
 		Limit(pageSize).Offset(offset).
 		Scan(&rows).Error

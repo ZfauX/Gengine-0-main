@@ -177,10 +177,14 @@ type PlayerRating struct {
 type Log struct {
 	gorm.Model
 	GamePassingID uint `gorm:"not null;index:idx_logs_passing"`
-	LevelID       uint `gorm:"index:idx_logs_level"`
-	Message       string
-	GamePassing   GamePassing `gorm:"foreignKey:GamePassingID"`
-	Level         level.Level `gorm:"foreignKey:LevelID"`
+	// P-5 (pass 39): денормализованный game_id — GetLogsByGameID и
+	// GetLogsByGameIDPaginated фильтруют по нему без JOIN game_passings,
+	// сортировка по (game_id, created_at DESC) покрывается индексом.
+	GameID      uint `gorm:"not null;index:idx_logs_game_created,priority:1"`
+	LevelID     uint `gorm:"index:idx_logs_level"`
+	Message     string
+	GamePassing GamePassing `gorm:"foreignKey:GamePassingID"`
+	Level       level.Level `gorm:"foreignKey:LevelID"`
 }
 
 // ---------- типы и константы ----------

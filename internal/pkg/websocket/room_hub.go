@@ -20,6 +20,13 @@ type RoomHub struct {
 	wg         sync.WaitGroup
 	stopped    bool
 
+	// P-7 (pass 39): per-room очереди и воркеры — рассылка в одной комнате
+	// не блокирует рассылку в других (раньше runLoop сериализовал все
+	// broadcast'ы одной горутиной; на больших комнатах это тормозило
+	// регистрацию новых соединений и другие комнаты).
+	roomQueues    map[string]chan *Message
+	roomWorkersWg sync.WaitGroup
+
 	// Лимиты и счётчики
 	maxTotalConns int
 	maxConnsPerIP int
@@ -35,6 +42,7 @@ func NewRoomHub() *RoomHub {
 		unregister:    make(chan *Client, hubChanCapacity),
 		broadcast:     make(chan *Message, hubChanCapacity),
 		done:          make(chan struct{}),
+		roomQueues:    make(map[string]chan *Message),
 		maxTotalConns: 1000,
 		maxConnsPerIP: 50,
 		connsPerIP:    make(map[string]int),
@@ -150,6 +158,11 @@ func (h *RoomHub) runLoop() {
 				delete(room, client)
 				if len(room) == 0 {
 					delete(h.rooms, client.RoomID)
+					// P-7 (pass 39): закрываем очередь воркера — он завершится.
+					if q, qok := h.roomQueues[client.RoomID]; qok {
+						delete(h.roomQueues, client.RoomID)
+						close(q)
+					}
 					log.Debug().Str("room", client.RoomID).Msg("Room removed (empty)")
 				}
 			}
@@ -161,56 +174,106 @@ func (h *RoomHub) runLoop() {
 				log.Warn().Str("room", msg.Room).Msg("RoomHub: broadcast skipped, hub is stopping")
 				continue
 			}
-			// Копируем список клиентов под локом, затем рассылка БЕЗ блокировки
+			// P-7 (pass 39): диспатчим в per-room очередь — рассылка идёт в
+			// воркере комнаты, не блокируя другие комнаты.
 			h.mu.RLock()
-			room, ok := h.rooms[msg.Room]
-			if !ok {
-				h.mu.RUnlock()
+			_, roomExists := h.rooms[msg.Room]
+			queue := h.roomQueues[msg.Room]
+			h.mu.RUnlock()
+			if !roomExists {
 				continue
 			}
-			// Собираем клиентов в слайс (меньше аллокаций, чем map[*Client]bool)
-			clients := make([]*Client, 0, len(room))
-			for client := range room {
-				clients = append(clients, client)
-			}
-			h.mu.RUnlock()
-
-			// Рассылка БЕЗ удержания лока
-			for _, client := range clients {
-				if client.IsClosed() {
-					// Удаляем из оригинальной map под локом
-					h.mu.Lock()
-					if h.rooms[msg.Room] == nil {
-						h.mu.Unlock()
-						continue
-					}
-					delete(room, client)
-					h.mu.Unlock()
-					continue
+			if queue == nil {
+				// Первый broadcast в комнату — создаём очередь и воркер.
+				h.mu.Lock()
+				queue = h.roomQueues[msg.Room]
+				if queue == nil {
+					queue = make(chan *Message, hubChanCapacity)
+					h.roomQueues[msg.Room] = queue
+					h.roomWorkersWg.Add(1)
+					go h.roomWorker(msg.Room, queue)
 				}
-				select {
-				case client.Send <- msg.Data:
-				case <-client.Done():
-					h.mu.Lock()
-					if h.rooms[msg.Room] == nil {
-						h.mu.Unlock()
-						continue
-					}
-					delete(room, client)
-					h.mu.Unlock()
-				default:
-					log.Debug().Str("room", msg.Room).Msg("broadcast: client buffer full, dropping message")
-				}
+				h.mu.Unlock()
 			}
-			// Перечитываем комнату под lock — локальная room могла стать stale
-			h.mu.Lock()
-			if current, exists := h.rooms[msg.Room]; exists && len(current) == 0 {
-				delete(h.rooms, msg.Room)
-				log.Debug().Str("room", msg.Room).Msg("Room removed (empty)")
+			// Неблокирующая отправка в очередь комнаты (drop-on-full).
+			select {
+			case queue <- msg:
+			default:
+				log.Debug().Str("room", msg.Room).Msg("RoomHub: room queue full, dropping message")
 			}
-			h.mu.Unlock()
 		}
 	}
+}
+
+// roomWorker рассылает сообщения очереди комнаты (P-7, pass 39).
+func (h *RoomHub) roomWorker(roomID string, queue chan *Message) {
+	defer h.roomWorkersWg.Done()
+	for {
+		select {
+		case <-h.done:
+			return
+		case msg, ok := <-queue:
+			if !ok {
+				return
+			}
+			h.dispatchToRoom(roomID, msg.Data)
+		}
+	}
+}
+
+// dispatchToRoom копирует клиентов комнаты и рассылает сообщение без удержания лока.
+func (h *RoomHub) dispatchToRoom(roomID string, data []byte) {
+	h.mu.RLock()
+	room, ok := h.rooms[roomID]
+	if !ok {
+		h.mu.RUnlock()
+		return
+	}
+	// Собираем клиентов в слайс (меньше аллокаций, чем map[*Client]bool)
+	clients := make([]*Client, 0, len(room))
+	for client := range room {
+		clients = append(clients, client)
+	}
+	h.mu.RUnlock()
+
+	// Рассылка БЕЗ удержания лока
+	for _, client := range clients {
+		if client.IsClosed() {
+			// Удаляем из оригинальной map под локом
+			h.mu.Lock()
+			if h.rooms[roomID] == nil {
+				h.mu.Unlock()
+				continue
+			}
+			delete(h.rooms[roomID], client)
+			h.mu.Unlock()
+			continue
+		}
+		select {
+		case client.Send <- data:
+		case <-client.Done():
+			h.mu.Lock()
+			if h.rooms[roomID] == nil {
+				h.mu.Unlock()
+				continue
+			}
+			delete(h.rooms[roomID], client)
+			h.mu.Unlock()
+		default:
+			log.Debug().Str("room", roomID).Msg("broadcast: client buffer full, dropping message")
+		}
+	}
+	// Перечитываем комнату под lock — локальная room могла стать stale
+	h.mu.Lock()
+	if current, exists := h.rooms[roomID]; exists && len(current) == 0 {
+		delete(h.rooms, roomID)
+		if q, qok := h.roomQueues[roomID]; qok {
+			delete(h.roomQueues, roomID)
+			close(q)
+		}
+		log.Debug().Str("room", roomID).Msg("Room removed (empty)")
+	}
+	h.mu.Unlock()
 }
 
 // isStopped проверяет, остановлен ли хаб.
@@ -236,8 +299,16 @@ func (h *RoomHub) Stop() {
 	// Закрываем done под тем же локом, чтобы никакой новый register
 	// не мог пройти между установкой stopped и закрытием done
 	close(h.done)
+	// Закрываем очереди комнат — воркеры завершатся на select h.done
+	// (либо на закрытии очереди), ничего не блокируя.
+	for roomID, q := range h.roomQueues {
+		delete(h.roomQueues, roomID)
+		close(q)
+	}
 	h.mu.Unlock()
 	h.wg.Wait()
+	// P-7 (pass 39): ждём завершения per-room воркеров.
+	h.roomWorkersWg.Wait()
 
 	// Теперь безопасно закрываем все соединения (Run() уже не рассылает)
 	h.mu.Lock()
