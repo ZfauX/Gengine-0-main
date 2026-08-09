@@ -427,17 +427,40 @@ func checkAutoStartGamesImpl(db *gorm.DB, ctx context.Context) {
 			continue
 		}
 
-		// Транзакция на всю партию passings для одной игры
+		// Транзакция на всю партию passings для одной игры.
+		// P-2 (pass 37): первый уровень грузим ОДИН раз на игру, прогрессы
+		// создаём batch INSERT (OnConflict DoNothing) — раньше на каждый
+		// passing шли Count+First+Create+Save = 4 запроса (N+1 при автостарте).
 		if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			var passings []GamePassing
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("game_id = ? AND status = ?", g.ID, StatusAccepted).Find(&passings).Error; err != nil {
 				return err
 			}
-			// F-1 (pass 36): сервис прогресса один на все passings — раньше
-			// NewLevelProgressService(tx) аллоцировался на каждую итерацию.
-			txProgressSvc := NewLevelProgressService(tx)
+			if len(passings) == 0 {
+				return nil
+			}
+
+			var firstLevel level.Level
+			if err := tx.Where("game_id = ?", g.ID).Order("position ASC").Limit(1).First(&firstLevel).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return ErrNoLevels
+				}
+				return err
+			}
+			if firstLevel.ID == 0 {
+				return ErrNoLevels
+			}
+
+			now := time.Now()
 			for _, p := range passings {
-				if err := txProgressSvc.InitFirstLevelWithTx(ctx, tx, p.ID); err != nil {
+				// Batch-создание прогресса первого уровня; ON CONFLICT — защита
+				// от дублей при повторном тике джобы.
+				progress := LevelProgress{
+					GamePassingID: p.ID,
+					LevelID:       firstLevel.ID,
+					StartedAt:     now,
+				}
+				if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&progress).Error; err != nil {
 					log.Error().Err(err).Uint("passing_id", p.ID).Msg("CheckAutoStartGames: failed to init first level")
 					return err
 				}

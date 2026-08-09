@@ -21,7 +21,22 @@
         </div>
     </form>
 
-    <div class="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+    <!-- UX-5 (pass 37): мобильные карточки — на < sm таблица скрыта. -->
+    <div class="space-y-3 sm:hidden">
+        {{range .Teams}}
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+            <div class="flex items-center justify-between">
+                <div class="font-medium text-gray-900 dark:text-gray-100">{{.Name}}</div>
+                <a href="/teams/{{.ID}}" class="btn btn-outline text-xs">{{ T $.Lang "common.view" }}</a>
+            </div>
+            <div class="mt-1 text-sm text-gray-600 dark:text-gray-400">{{ T $.Lang "admin.captain" }}: {{.Captain.Name}}</div>
+        </div>
+        {{else}}
+        <p class="text-center text-sm text-gray-500 dark:text-gray-400 py-8">{{ T $.Lang "admin.no_teams" }}</p>
+        {{end}}
+    </div>
+
+    <div class="hidden sm:block overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
         <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50 dark:bg-gray-800">
                 <tr>

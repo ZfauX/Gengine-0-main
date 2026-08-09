@@ -85,6 +85,12 @@ func (s *MonitorService) GetOrFetchSnapshot(ctx context.Context, gameID uint) ([
 	// Быстрая проверка кэша с RLock
 	s.mu.RLock()
 	if cached, ok := s.cache[gameID]; ok && time.Since(cached.timestamp) < s.cacheTTL {
+		// P-5 (pass 37): промотируем активную игру в LRU-списке — иначе
+		// поллер каждые 5с «замораживал» позицию записи, и активная игра
+		// могла быть вытеснена при maxMonitorCacheSize, хотя к ней идут хиты.
+		if elem, elemOk := s.cacheKeys[gameID]; elemOk {
+			s.cacheList.MoveToBack(elem)
+		}
 		s.mu.RUnlock()
 		return cached.data, nil
 	}
@@ -160,6 +166,10 @@ func (s *MonitorService) GetOrFetchSnapshotJSON(ctx context.Context, gameID uint
 	if cached, ok := s.cache[gameID]; ok && time.Since(cached.timestamp) < s.cacheTTL {
 		if cached.json != nil {
 			bytes := cached.json
+			// P-5 (pass 37): промоушен активной игры в LRU.
+			if elem, elemOk := s.cacheKeys[gameID]; elemOk {
+				s.cacheList.MoveToBack(elem)
+			}
 			s.mu.RUnlock()
 			return bytes, nil
 		}

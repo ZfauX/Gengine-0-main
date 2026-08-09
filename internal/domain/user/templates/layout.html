@@ -362,6 +362,11 @@
                     mt.textContent = icon;
                     mt.setAttribute('aria-pressed', dark ? 'true' : 'false');
                 }
+                // UX-3 (pass 37): страницы могут подписаться на смену темы
+                // (reCAPTCHA пере-рендер) через window.onThemeChanged.
+                if (typeof window.onThemeChanged === 'function') {
+                    window.onThemeChanged(dark);
+                }
             }
 
             function setThemeState(dark) {

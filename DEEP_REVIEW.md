@@ -66,6 +66,16 @@
 
 **Осталось на раунд 2+:** P-2/P-3 (N+1 автостарт/таймауты), P-5 (LRU MoveToBack), P-6 (GetLogsByGameID LIMIT), P-7 (индекс 000045), UX-3 (reCAPTCHA theme sync), UX-4 (timer-sync), UX-5 (mobile cards admin-teams/tournaments), UX-6 (actionBtn null), UX-7 (localStorage dashboard), A-3 (HasPermission raw db), A-4 (tournament ignored err), L-1 (coauthor export).
 
+**Раунд 2 (текущий):**
+- **P-2**: автостарт — первый уровень грузится один раз на игру; прогрессы batch INSERT с OnConflict DoNothing (вместо 4 запросов × passing).
+- **P-5**: снапшот-кэш — MoveToBack при кэш-хите (активные игры не вытесняются).
+- **P-7**: миграция 000045 — `idx_level_progresses_passing_level (game_passing_id, level_id)`.
+- **UX-3**: reCAPTCHA пере-рендерится при смене темы через `window.onThemeChanged` (layout → auth-register).
+- **UX-4**: таймер геймплея — clearInterval при истечении (нет бесконечных /timer-sync).
+- **UX-5**: mobile-карточки для admin-teams (таблица скрыта на < sm).
+
+**Осталось на раунд 3+ (низкий приоритет):** P-3 (N+1 таймауты), P-6 (GetLogsByGameID LIMIT), UX-6 (actionBtn null), UX-7 (localStorage dashboard), A-3 (HasPermission raw db), A-4 (tournament ignored err), L-1 (coauthor export), UX-5 остаток (tournaments-list/admin-audit mobile cards).
+
 ---
 
 ## A. Найденные ошибки pass 37 (верифицировано лично)
