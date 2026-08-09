@@ -7,7 +7,9 @@
     {{end}}
 
     <div class="card">
-        <form action="/auth/register" method="POST" class="space-y-4">
+        <!-- UX-9 (pass 38): data-no-loading — локализованный inline submit-
+             обработчик не должен перетираться спиннером из initFormLoading. -->
+        <form action="/auth/register" method="POST" class="space-y-4" data-no-loading>
             <input type="hidden" name="_csrf" value="{{.csrf}}">
 
             <!-- Имя -->

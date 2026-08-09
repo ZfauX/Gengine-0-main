@@ -84,7 +84,8 @@ function initToast() {
         closeBtn.innerHTML = '&times;';
         closeBtn.addEventListener('click', function() { toast.remove(); });
         toast.innerHTML = '<div class="flex items-start gap-3">' +
-            '<span class="text-lg shrink-0">' + (icons[type] || icons.info) + '</span>' +
+            // UX-7 (pass 38): эмодзи-иконка декоративна — скрываем от скринридера.
+            '<span class="text-lg shrink-0" aria-hidden="true">' + (icons[type] || icons.info) + '</span>' +
             '<div class="flex-1">' + escapeHtml(message) + '</div>' +
             '</div>';
         toast.appendChild(closeBtn);

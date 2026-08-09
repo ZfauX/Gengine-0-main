@@ -282,7 +282,10 @@
                         html += `<div class="pl-4 border-l-4 border-blue-400">`;
                         html += `<p class="font-medium text-gray-700 dark:text-gray-300">${escapeHtml(q.text)}</p>`;
                         if (q.hint) {
-                            const hintHtml = '{{ T $.Lang "game.show_preview_hint_label" }}'.replace('%s', escapeHtml(q.hint));
+                            // UX-8 (pass 38): replacement-функция — escapeHtml
+                            // не экранирует $, а replace('%s', str) интерпретирует
+                            // $&/$' в подсказке.
+                            const hintHtml = '{{ T $.Lang "game.show_preview_hint_label" }}'.replace('%s', function() { return escapeHtml(q.hint); });
                             html += `<p class="text-sm text-gray-500 dark:text-gray-400">${hintHtml}</p>`;
                         }
                         if (q.answers && q.answers.length > 0) {

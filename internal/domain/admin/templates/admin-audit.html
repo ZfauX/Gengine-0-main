@@ -37,7 +37,20 @@
     </form>
 
     <!-- Таблица -->
-    <div class="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+    <div class="space-y-3 sm:hidden">
+        {{range .Logs}}
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+            <div class="text-xs text-gray-500 dark:text-gray-400">{{ formatDateTime $.Lang $.TZOffset .CreatedAt }}</div>
+            <div class="mt-1 font-medium text-gray-900 dark:text-gray-100">{{.UserName}} ({{.UserID}})</div>
+            <div class="mt-1 text-sm"><span class="text-gray-600 dark:text-gray-300">{{.Action}}</span> · {{.ObjectType}} #{{.ObjectID}}</div>
+            {{if .Details}}<div class="mt-1 text-xs text-gray-500 dark:text-gray-400 break-words">{{.Details}}</div>{{end}}
+        </div>
+        {{else}}
+        <p class="text-center text-sm text-gray-500 dark:text-gray-400 py-8">{{ T $.Lang "admin.audit_no_records" }}</p>
+        {{end}}
+    </div>
+
+    <div class="hidden sm:block overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
         <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50 dark:bg-gray-800">
                 <tr>

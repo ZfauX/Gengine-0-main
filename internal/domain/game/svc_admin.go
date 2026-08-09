@@ -78,7 +78,6 @@ func (s *GameAdminService) ForceFinishGame(ctx context.Context, gameID, userID u
 
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("game_id = ? AND status = ?", gameID, StatusStarted).
-			Preload("Team.Captain").
 			Find(&passings).Error; err != nil {
 			return err
 		}
@@ -138,7 +137,6 @@ func (s *GameAdminService) DisqualifyTeam(ctx context.Context, gameID, teamID, u
 
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("game_id = ? AND team_id = ? AND status = ?", gameID, teamID, StatusStarted).
-			Preload("Team.Captain").
 			First(&passing).Error; err != nil {
 			// Различаем «команда не в игре» и реальную ошибку БД (B3).
 			if errors.Is(err, gorm.ErrRecordNotFound) {

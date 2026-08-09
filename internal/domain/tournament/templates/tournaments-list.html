@@ -7,7 +7,21 @@
     </div>
 
     {{if .Tournaments}}
-    <div class="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+    <!-- UX-5 (pass 38): мобильные карточки — на < sm таблица скрыта. -->
+    <div class="space-y-3 sm:hidden">
+        {{range .Tournaments}}
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+            <div class="flex items-center justify-between gap-2">
+                <a href="/tournaments/{{.ID}}" class="font-medium text-blue-600 dark:text-blue-400 hover:underline">{{.Name}}</a>
+                <a href="/tournaments/{{.ID}}" class="btn btn-outline text-xs">{{ T $.Lang "tournament.view" }}</a>
+            </div>
+            <div class="mt-1 text-sm text-gray-600 dark:text-gray-400">{{ T $.Lang "tournament.table_author" }}: {{.Author.Name}}</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">{{ formatDate $.Lang $.TZOffset .CreatedAt }}</div>
+        </div>
+        {{end}}
+    </div>
+
+    <div class="hidden sm:block overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
         <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50 dark:bg-gray-800">
                 <tr>

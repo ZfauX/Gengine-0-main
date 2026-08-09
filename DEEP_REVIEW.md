@@ -47,11 +47,11 @@
 
 ---
 
-## Статус (обновлено 9 авг 2026) — PASS 38 ОТКРЫТ
+## Статус (обновлено 9 авг 2026) — PASS 38 ЗАКРЫТ
 
-Находки перечислены ниже; закрытие — раундами фиксов, как в pass 30-37.
+**Все находки pass 38 исправлены** (3 раунда фиксов):
 
-**Раунд 1 (критичное + высокие):**
+**Раунд 1-2** (`e6ea790`):
 - **R-1**: data race исправлен — промоушен LRU выполняется под `mu.Lock()` (не RLock) в GetOrFetchSnapshot и GetOrFetchSnapshotJSON.
 - **UX-1**: games-show preview-btn — null-guard (нет JS-краша на не-manager страницах).
 - **P-1**: добавлен `AdvanceToNextLevelWithPassing` — checkTimeoutsImpl и DeleteLevelFromActiveGame передают уже загруженный passing (нет повторных SELECT).
@@ -66,6 +66,20 @@
 - **N-4**: `joinPlaceholders`/`toAnySlice` вынесены в `internal/pkg/util` (убраны дубли из game/tournament).
 
 **Осталось на раунд 3+ (низкий приоритет):** P-3 (GetLogsByGameID sort-индекс), P-4 (ForceFinishGame двойная загрузка капитанов), UX-5 (mobile cards tournaments-list/admin-audit), UX-6 (OG-теги в layout), UX-7 (aria-hidden эмодзи тостов), UX-8 (replace('%s') $ в подсказке), UX-9 (дублирование submit auth-register), UX-10 (touch targets).
+
+**Раунд 3 (текущий):**
+- **UX-5**: mobile-карточки для tournaments-list и admin-audit (таблица скрыта на < sm).
+- **UX-6**: layout — базовые og:site_name/locale/title + twitter:title для всех страниц.
+- **UX-7**: эмодзи-иконки тостов — aria-hidden (app.js).
+- **UX-8**: replace('%s', function(){...}) для подсказок ($&/$' не интерпретируются).
+- **UX-9**: auth-register форма — data-no-loading (inline локализованный обработчик не перетирается спиннером).
+- **P-4**: ForceFinishGame/DisqualifyTeam — убраны неиспользуемые Preload("Team.Captain") (notify пере-загружает через repo).
+
+**Проверка:** `go build ./...` ✓, `go vet ./...` ✓, `golangci-lint 2.12.2` → 0 issues ✓, `gofmt -l .` → пусто ✓, `go test -count=1 -short ./...` ✓, 84 шаблона валидны ✓.
+
+**Оставлено осознанно (задокументировано):**
+- **P-3** (GetLogsByGameID sort-индекс) — требует денормализации logs.game_id (миграция+триггер), без функционального бага.
+- **UX-10** (touch targets < 44px) — низкий приоритет, частично покрыто кнопками.
 
 ---
 
