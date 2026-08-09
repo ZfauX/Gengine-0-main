@@ -7,6 +7,15 @@
     <meta name="description" content="{{.Description | default (T $.Lang "layout.meta_description")}}">
     <meta name="keywords" content="{{ T $.Lang "layout.meta_keywords" }}">
     <meta name="author" content="Encounter Engine">
+    <!-- UX-6 (pass 40): OG-теги — соцсети и мессенджеры собирают превью ссылок.
+         og:image не добавляем: нет статического превью (static/img отсутствует). -->
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Encounter Engine">
+    <meta property="og:title" content="{{.Title}}">
+    <meta property="og:description" content="{{.Description | default (T $.Lang "layout.meta_description")}}">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="{{.Title}}">
+    <meta name="twitter:description" content="{{.Description | default (T $.Lang "layout.meta_description")}}">
     <meta name="theme-color" content="#2563eb" id="theme-color-meta">
     <link rel="manifest" href="/static/manifest.json">
     <script nonce="{{.csp_nonce}}">

@@ -64,7 +64,10 @@ func (r *gormBackupRepo) GetByID(ctx context.Context, id uint) (*Backup, error) 
 
 func (r *gormBackupRepo) List(ctx context.Context) ([]Backup, error) {
 	var backups []Backup
-	err := r.db.WithContext(ctx).Order("created_at DESC").Find(&backups).Error
+	// P-10 (pass 42): защитный лимит — раньше без LIMIT тянули все записи
+	// (MaxBackups=10 ограничивает рост, но stale-записи могли накопиться).
+	// 100 — практический потолок для администратора.
+	err := r.db.WithContext(ctx).Order("created_at DESC").Limit(100).Find(&backups).Error
 	return backups, err
 }
 

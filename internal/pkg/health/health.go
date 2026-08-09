@@ -11,6 +11,7 @@ import (
 	"gengine-0/internal/pkg/email"
 	ws "gengine-0/internal/pkg/websocket"
 
+	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
 
@@ -117,20 +118,24 @@ func (c *Checker) Check(ctx context.Context) HealthResponse {
 }
 
 // checkDatabase проверяет соединение с БД через ping.
+// Обезличенный message (pass 42): err.Error() может содержать host/DSN —
+// логируем детали, наружу отдаём generic (healthz публичный).
 func (c *Checker) checkDatabase(ctx context.Context) Status {
 	start := time.Now()
 	sqlDB, err := c.db.DB()
 	if err != nil {
+		log.Error().Err(err).Msg("health: failed to get sql.DB")
 		return Status{
 			Status:  "error",
-			Message: "failed to get sql.DB: " + err.Error(),
+			Message: "database unavailable",
 			Latency: time.Since(start).String(),
 		}
 	}
 	if err := sqlDB.PingContext(ctx); err != nil {
+		log.Error().Err(err).Msg("health: database ping failed")
 		return Status{
 			Status:  "error",
-			Message: "ping failed: " + err.Error(),
+			Message: "database unavailable",
 			Latency: time.Since(start).String(),
 		}
 	}
@@ -206,9 +211,10 @@ func (c *Checker) checkEmailQueue(ctx context.Context) Status {
 
 	var failedCount int64
 	if err := c.db.WithContext(ctx).Model(&email.QueuedEmail{}).Where("status = ?", "failed").Count(&failedCount).Error; err != nil {
+		log.Error().Err(err).Msg("health: email queue check failed")
 		return Status{
 			Status:  "error",
-			Message: "failed to check email queue: " + err.Error(),
+			Message: "email queue unavailable",
 			Latency: time.Since(start).String(),
 		}
 	}
@@ -237,9 +243,10 @@ func (c *Checker) checkDiskSpace(ctx context.Context) Status {
 
 	freeBytes, err := freeDiskSpace(dir)
 	if err != nil {
+		log.Error().Err(err).Str("dir", dir).Msg("health: disk space check failed")
 		return Status{
 			Status:  "error",
-			Message: "failed to check disk space: " + err.Error(),
+			Message: "disk space unavailable",
 			Latency: time.Since(start).String(),
 		}
 	}

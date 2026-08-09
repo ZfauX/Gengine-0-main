@@ -4,7 +4,7 @@
 
 Повторное глубокое ревью выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture/DI) с последующей **личной верификацией ключевых находок** по коду.
 
-**Итог pass 42:** 0 критичных, 0 высоких, ~8 средних, ~8 низких. Найдено после закрытия pass 30-41; все ключевые находки исправлены раундами 1-2 (раунд 2 — остаточные пункты + завершённый security-аудит).
+**Итог pass 42:** 0 критичных, 0 высоких, ~8 средних, ~8 низких. Найдено после закрытия pass 30-41; все ключевые находки исправлены раундами 1-3 (раунд 3 — доделки: A-1 через DI, backup LIMIT, healthz обезличивание, OG-теги, touch-targets).
 
 > **Контекст:** pass 30-41 закрыты полностью. Новые находки: **Vote-EXISTS из pass 41 не настоящий EXISTS** (Count+Limit(1) в PG — полный count), **миграция 000048 дублировала UNIQUE-индекс 000023 (no-op)**, **data-loss race в delete-модалке games-show**, **double-submit в wizard-форме**, **audit Count+List — два round-trip**, **follows/followers без лимита**, **string-match в team AddMember/RemoveMember**, **inline-ошибки в svc_passing.go**, **общий ключ CSRF и сессии**, **refresh-mismatch разлогинивал все сессии (NAT/мобильные)**.
 
@@ -54,7 +54,16 @@
 - **P-11 опровергнут**: AggregateGameSnapshot индексы уже покрывают (PK level_progresses.id + idx_level_progresses_game_passing_id).
 - **S-42-6**: Login() не имеет побочных эффектов — JWT генерируется, но не выставляется (wasted-issue, менять не требуется).
 
-**Осталось к pass 43** (документировано): P-10 (backup list — ограничено MaxBackups=10), UX-16 (полная arrow-навигация календаря — фича), healthz disclosure (обезличивание сообщений — рискованно для мониторинга, требуется решение ops).
+**Раунд 3** (доделки — оставшиеся пункты из pass 30-42):
+- **A-1**: `GetUserThemeSettings(ctx, db, ...)` убрана — middleware темы использует `ProfileService` из DI (`app.Deps.Services.Profile`); raw *gorm.DB больше не протекает наружу.
+- **P-10**: backup list — защитный LIMIT 100.
+- **healthz disclosure**: checkDatabase/checkEmailQueue/checkDiskSpace — обезличены сообщения (err.Error() в логи через zerolog; наружу generic «database unavailable» и т.п.).
+- **UX-10**: пагинация admin-teams/admin-audit — `min-h-[44px] min-w-[44px]` на стрелках (touch targets).
+- **UX-6**: OG-теги (og:title/og:description/og:type/twitter:card) в layout.html; og:image не добавлен — static/img отсутствует.
+- **S-1 (pass 41)**: оставлен как осознанный компромисс (L-1) — завышение счётчика на 1 до TTL при гонке Create/getUnreadCount, self-heals за 30с; устранить без потери L-1 невозможно без блокировки БД.
+- **Опровергнуто/уже решено**: P-6 (logs LIMIT+индекс — pass 39), P-4 (ForceFinishGame батч — P-M8), F-4 (tournament LIMIT 50 — pass 35), UX-9 (auth-register data-no-loading — pass 38), UX-8 (replace('%s') function-заменители — pass 36), UX-11 (пустые переводы — заполнены), A-4 (sentinel game-домен — хендлеры используют LocalizeError, не errors.Is).
+
+**Осталось к pass 43** (документировано): UX-16 (полная arrow-навигация календаря — фича, не баг), A-4 (sentinel game-домен — стилевой), P-3 (глобальный Lock монитор-кэша — sharding), P-7 (WS-хаб per-room workers), A-2/A-3 (единый путь прав), UX-3 (replace('%s') везде — стилевой).
 
 ---
 
@@ -82,7 +91,7 @@
 | **P-04** | `migrations/000048` | Нет индексов attempts(level_progress_id, is_file, code/file_path) — residual-фильтр в Vote. | ✅ Исправлено (миграция) |
 | **P-06** | `game/repository.go:184-196` | GetPassingByUser JOIN team_members без user_id-индекса. | ✅ Исправлено (миграция) |
 | **P-08** | `calendar/handler.go:119,202` | ListByDateRange вызывается дважды (месяц + iCal). | ✅ Опровергнуто: iCal уже кэшируется 5 мин (P-6 pass 39) |
-| **P-10** | `admin/model.go:65-69` | Backup list без пагинации. | 📋 Ограничено MaxBackups=10 |
+| **P-10** | `admin/model.go:65-69` | Backup list без пагинации. | ✅ Исправлено (LIMIT 100) |
 | **P-11** | `game/monitor_repository.go:64-71` | AggregateGameSnapshot — широкая выборка попыток. | ✅ Опровергнуто: индексы уже покрывают (PK level_progresses.id, idx_level_progresses_game_passing_id) |
 | **S-42-3** | `user/handler.go:26-34` | Refresh привязан к IP-префиксу — NAT/мобильные ротируют IP → разлогин всей семьи. | ✅ Исправлено (раунд 2): mismatch отзывает только текущий токен, reuse — семью |
 | **S-42-6** | `user/auth_handler.go:131-168` | JWT выпускается до 2FA-гейта (wasted-issue, токен не выставляется). | 📋 Не требует действий (нет побочных эффектов в Login) |
@@ -157,7 +166,7 @@
 - **A-2**: svc_play.go — убрано shadowing receiver `s` в goroutine (gs).
 - **Опровергнуто лично**: G5 (ProcessSnapshot уже имеет WithTimeout 10s), UX-3 (один aria-live, L-8 управляет), A-4 (нет string-match в social repository).
 
-**Осталось к pass 42**: S-1 (unread race — компромисс L-1, документирован), A-1 (GetUserThemeSettings принимает raw *gorm.DB — намеренно).
+**Осталось к pass 42**: S-1 (unread race — компромисс L-1, документирован), A-1 (GetUserThemeSettings — решён в pass 42 раунд 3).
 
 ---
 
@@ -187,7 +196,7 @@
 
 | ID | Файл | Проблема | Статус |
 |---|---|---|---|
-| **A-1** | `user/profile_service.go:76` | `GetUserThemeSettings(ctx, db, ...)` принимает raw `*gorm.DB` — кандидат на репозиторий. | 📋 Намеренно |
+| **A-1** | `user/profile_service.go:76` | `GetUserThemeSettings(ctx, db, ...)` принимает raw `*gorm.DB` — кандидат на репозиторий. | ✅ Исправлено (pass 42, раунд 3: через ProfileService из DI, функция удалена) |
 | **G5** | `game/svc_play.go` | ProcessSnapshot(context.Background()) в тестах — без отмены. | ✅ Опровергнуто: внутри WithTimeout(10s) |
 | **UX-3** | `monitor/templates/chat-page.html` | Дубль aria-live. | ✅ Опровергнуто: один role=log, L-8 управляет |
 | **A-4** | `social/repository.go` | String-match ошибок. | ✅ Опровергнуто |

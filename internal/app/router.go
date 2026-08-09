@@ -66,8 +66,10 @@ func (app *App) setupEngine(r *gin.Engine) error {
 	})
 
 	// Загрузчик настроек темы для авторизованных пользователей (используется auth-мидлварями)
+	// A-1 (pass 42): через ProfileService из DI вместо raw *gorm.DB (как было в
+	// user.GetUserThemeSettings) — middleware не знает о БД.
 	middleware.SetThemeSettingsLoader(func(ctx context.Context, userID uint) any {
-		ts, err := user.GetUserThemeSettings(ctx, app.DB, userID)
+		ts, err := app.Deps.Services.Profile.GetThemeSettings(ctx, userID)
 		if err != nil {
 			return user.DefaultThemeSettings()
 		}

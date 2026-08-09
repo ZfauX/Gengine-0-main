@@ -4,8 +4,6 @@ package user
 import (
 	"context"
 	"errors"
-
-	"gorm.io/gorm"
 )
 
 // ErrEmailTaken — email уже занят другим пользователем.
@@ -69,12 +67,6 @@ func (s *ProfileService) GetThemeSettings(ctx context.Context, userID uint) (The
 // SaveThemeSettings сохраняет настройки темы пользователя.
 func (s *ProfileService) SaveThemeSettings(ctx context.Context, userID uint, ts ThemeSettings) error {
 	return s.repo.SaveThemeSettings(ctx, userID, ts)
-}
-
-// GetUserThemeSettings загружает настройки темы пользователя из БД.
-// Удобная обёртка для middleware (не требует создания сервиса на вызывающей стороне).
-func GetUserThemeSettings(ctx context.Context, db *gorm.DB, userID uint) (ThemeSettings, error) {
-	return NewProfileService(NewGormProfileRepo(db)).GetThemeSettings(ctx, userID)
 }
 
 // GetGamesView возвращает сохранённое предпочтение вида списка игр.
