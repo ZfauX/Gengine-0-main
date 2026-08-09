@@ -24,23 +24,23 @@ func NewGormReviewRepo(db *gorm.DB) ReviewRepository {
 }
 
 func (r *gormReviewRepo) CanReview(ctx context.Context, gameID, userID uint) (bool, error) {
-	var count int64
-	err := r.db.WithContext(ctx).Model(&GamePassing{}).
-		Joins("JOIN teams ON teams.id = game_passings.team_id").
-		Where("game_passings.game_id = ? AND game_passings.status = ?", gameID, StatusFinished).
-		Where("(teams.captain_id = ? OR EXISTS (SELECT 1 FROM team_members WHERE team_members.team_id = game_passings.team_id AND team_members.user_id = ?))", userID, userID).
-		Count(&count).Error
-	if err != nil {
-		return false, err
-	}
-	if count == 0 {
-		return false, nil
-	}
-	var reviewCount int64
-	if err := r.db.WithContext(ctx).Model(&Review{}).Where("game_id = ? AND user_id = ?", gameID, userID).Count(&reviewCount).Error; err != nil {
-		return false, err
-	}
-	return reviewCount == 0, nil
+	// P-43-13 (pass 43): один EXISTS вместо двух COUNT — раньше было 2 round-trip
+	// (прошёл ли игру + не оставлял ли отзыв) на каждую загрузку страницы игры.
+	var can bool
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT EXISTS (
+			SELECT 1 FROM game_passings
+			JOIN teams ON teams.id = game_passings.team_id
+			WHERE game_passings.game_id = ? AND game_passings.status = ?
+			  AND (teams.captain_id = ?
+			       OR EXISTS (SELECT 1 FROM team_members
+			                  WHERE team_members.team_id = game_passings.team_id
+			                    AND team_members.user_id = ?))
+			  AND NOT EXISTS (SELECT 1 FROM reviews
+			                  WHERE reviews.game_id = ? AND reviews.user_id = ?)
+		)`, gameID, StatusFinished, userID, userID, gameID, userID).
+		Scan(&can).Error
+	return can, err
 }
 
 // CreateIfNotExists создаёт отзыв с ON CONFLICT DO NOTHING.

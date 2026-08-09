@@ -4,7 +4,7 @@
 
 Повторное глубокое ревью выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture/DI) с последующей **личной верификацией ключевых находок** по коду.
 
-**Итог pass 43:** 1 критичный (S-43-1 — обход авторизации в командном чате), 2 высоких (UX-H1/H2 — stale user selection), ~8 средних, ~8 низких. Все ключевые находки исправлены раундом 1.
+**Итог pass 43:** 1 критичный (S-43-1 — обход авторизации в командном чате), 2 высоких (UX-H1/H2 — stale user selection), ~8 средних, ~8 низких. Все ключевые находки исправлены раундами 1-2 (раунд 2 — доделки: RotateBackups ListOldest, partial-индекс 000050, CanReview EXISTS, unread sweep, touch targets, safeToast).
 
 > **Контекст:** pass 30-42 закрыты полностью. Новые находки: **S-43-1 — участник команды A мог читать/писать в чат команды B** (проверка TeamID была мёртвым кодом), **UX-H1/H2 — stale user selection + Enter-bypass в search-формах** (приглашение/соавтор не того пользователя), **P-43-1/5/6/7** (reviews без LIMIT, teams.name без trgm, LOWER LIKE, GetAvailableGames), **P-43-10** (snapshot eviction race → 500 у SSE), **UX-M1-M6** (change_captain error flash, дубль OG-тегов, cover aria, hardcoded строки, валидация), **A-44** (stale mock).
 
@@ -35,7 +35,16 @@
 - **A-44**: `go generate ./internal/domain/user/` — MockProfileRepository сгенерирован.
 - **Опровергнуто лично**: A-45 (ProcessSnapshot уже имеет WithTimeout 10s), P-7/P-3 (room workers и LRU уже реализованы в коде), P-43-2 (COUNT OVER не окупается из-за Preload).
 
-**Осталось к pass 44** (документировано): S-43-2 (RotateBackups работает с LIMIT-100 — при >100 записей может оставить больше MaxBackups), S-43-3 (2FA-статус угадывается по редиректу), S-43-4 (VK OAuth не пускает существующих пользователей — намеренный trade-off), P-43-3 (partial-индекс level_progresses на started_at/finished_at — проверить в live), P-43-4 (authed листинг OR без кэша), P-43-11 (sweep unread под мутексом), P-43-12 (logs.* проекция), P-43-13 (CanReview 2 запроса), UX-M6 (games-edit datetime cross-field), UX-L6/L7 (touch targets webauthn/levels), UX-L9 (fast-click ReferenceError).
+**Раунд 2** (доделки — оставшиеся пункты pass 43):
+- **S-43-2**: RotateBackups — добавлен `ListOldest(ctx, limit)` (интерфейс+репо); ротация удаляет САМЫЕ СТАРЫЕ записи (List отдавал новые DESC+LIMIT 100 и при >100 записей старые не удалялись никогда).
+- **P-43-3**: миграция 000050 — partial-индекс `level_progresses(started_at) WHERE finished_at IS NULL` (CheckTimeouts 30s sweep).
+- **P-43-11**: getUnreadCount sweep ограничен 256 записями за проход (не блокирует мутекс надолго).
+- **P-43-13**: CanReview — один `SELECT EXISTS` вместо двух COUNT.
+- **UX-L6**: webauthn-login-button — min-h-44px + safeToast (UX-L9, fast-click до загрузки app.js).
+- **UX-L7**: levels-list move-кнопки — min-h/min-w 44px.
+- **Опровергнуто**: UX-M6 (ValidateGameDates НЕ должен запрещать deadline после старта — регистрация может продолжаться во время игры, подтверждено тестом), P-43-12 (Log-структура компактна — message и так нужен), P-43-4 (authed-листинг — низкий приоритет, задокументировано), S-43-3 (2FA fingerprint — приемлемый компромисс).
+
+**Осталось к pass 44** (документировано): S-43-3 (2FA-статус по редиректу — приемлемо), S-43-4 (VK OAuth anti-hijack — намеренно), P-43-4 (authed-листинг OR без кэша — низкий приоритет), P-43-12 (logs.* проекция — мелкий выигрыш).
 
 ---
 
@@ -77,17 +86,17 @@
 | **UX-M3** | `games-edit.html:74-86` | Cover file input без доступного имени. | ✅ Исправлено (id/for) |
 | **UX-L4** | `user-2fa-enable.html` | Двойной обработчик submit (inline + initFormLoading). | ✅ Исправлено (data-no-loading) |
 | **UX-L5** | `user-2fa-disable.html:34` | Ad-hoc red-классы вместо btn-danger. | ✅ Исправлено |
-| **S-43-2** | `admin/service.go` | RotateBackups работает с LIMIT-100 — при >100 записей может остаться больше MaxBackups. | 📋 Редкий случай; задокументировано |
+| **S-43-2** | `admin/service.go` | RotateBackups работает с LIMIT-100 — при >100 записей может остаться больше MaxBackups. | ✅ Исправлено (ListOldest) |
 | **S-43-3** | `auth_handler.go:155-168` | 2FA-статус угадывается по редиректу при известном пароле. | 📋 Приемлемый fingerprint |
 | **S-43-4** | `oauth_service.go:239-241` | VK OAuth не пускает существующих пользователей (emailVerified=false). | 📋 Намеренный anti-hijack |
-| **P-43-3** | `svc_progress.go:234-248` | CheckTimeouts ORDER BY started_at на unfinished-множестве — partial-индекс не покрывает. | 📋 Проверить live |
+| **P-43-3** | `svc_progress.go:234-248` | CheckTimeouts ORDER BY started_at на unfinished-множестве — partial-индекс не покрывает. | ✅ Исправлено (миграция 000050) |
 | **P-43-4** | `svc_listing.go` | Authed-листинг OR-предикаты без кэша. | 📋 Низкий приоритет |
-| **P-43-11** | `notification/service.go:429-435` | Lazy sweep под мутексом O(n). | 📋 Ограничено активными юзерами |
+| **P-43-11** | `notification/service.go:429-435` | Lazy sweep под мутексом O(n). | ✅ Исправлено (лимит 256 за проход) |
 | **P-43-12** | `game/repository.go:251` | GetLogsByGameIDPaginated — logs.* (тяжёлый текст). | 📋 Проекция на потом |
-| **P-43-13** | `review_repository.go:26-44` | CanReview — два COUNT. | 📋 Можно EXISTS |
-| **UX-M6** | `games-edit.html:33-45` | deadline/starts_at порядок не валидируется. | 📋 На потом |
-| **UX-L6/L7** | `webauthn-login-button`, `levels-list` | Touch targets < 44px (mitigated). | 📋 Мелочь |
-| **UX-L9** | `webauthn-login-button.html` | showToast до загрузки app.js — ReferenceError (fast-click). | 📋 Спекулятивно |
+| **P-43-13** | `review_repository.go:26-44` | CanReview — два COUNT. | ✅ Исправлено (EXISTS) |
+| **UX-M6** | `games-edit.html:33-45` | deadline/starts_at порядок не валидируется. | ✅ Опровергнуто: регистрация после старта намеренно допустима (тест) |
+| **UX-L6/L7** | `webauthn-login-button`, `levels-list` | Touch targets < 44px (mitigated). | ✅ Исправлено (min-h/min-w 44px) |
+| **UX-L9** | `webauthn-login-button.html` | showToast до загрузки app.js — ReferenceError (fast-click). | ✅ Исправлено (safeToast guard) |
 
 ### 🔲 Опровергнуто / безопасно (личная проверка)
 

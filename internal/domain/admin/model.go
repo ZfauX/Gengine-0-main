@@ -37,6 +37,9 @@ type BackupRepository interface {
 	Create(ctx context.Context, backup *Backup) error
 	GetByID(ctx context.Context, id uint) (*Backup, error)
 	List(ctx context.Context) ([]Backup, error)
+	// ListOldest возвращает самые СТАРЫЕ записи (для ротации) — List отдаёт
+	// DESC+LIMIT 100 (новые), а удалять при ротации нужно самые старые.
+	ListOldest(ctx context.Context, limit int) ([]Backup, error)
 	Delete(ctx context.Context, id uint) error
 	Count(ctx context.Context) (int64, error)
 }
@@ -68,6 +71,17 @@ func (r *gormBackupRepo) List(ctx context.Context) ([]Backup, error) {
 	// (MaxBackups=10 ограничивает рост, но stale-записи могли накопиться).
 	// 100 — практический потолок для администратора.
 	err := r.db.WithContext(ctx).Order("created_at DESC").Limit(100).Find(&backups).Error
+	return backups, err
+}
+
+// ListOldest возвращает самые старые записи (S-43-2, pass 43): ротация удаляет
+// старые бекапы, поэтому List (DESC, LIMIT 100) здесь не годится.
+func (r *gormBackupRepo) ListOldest(ctx context.Context, limit int) ([]Backup, error) {
+	var backups []Backup
+	if limit < 1 {
+		return backups, nil
+	}
+	err := r.db.WithContext(ctx).Order("created_at ASC").Limit(limit).Find(&backups).Error
 	return backups, err
 }
 

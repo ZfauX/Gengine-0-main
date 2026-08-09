@@ -426,9 +426,17 @@ func (s *NotificationService) getUnreadCount(ctx context.Context, userID uint) i
 	s.unreadMu.Lock()
 	// Lazy sweep (P-2): записи живут 30с и удаляются при Create/MarkAsRead;
 	// периодически чистим истёкшие, чтобы map не росла с числом активных юзеров.
+	// P-43-11 (pass 43): ограничиваем проход 256 записями — полный sweep под
+	// мутексом блокировал бы все Create/getUnreadCount на время прохода по
+	// большой map. Истёкшие всё равно удаляются при следующем доступе к ним.
 	if len(s.unreadCache) > 512 {
 		now := time.Now()
+		checked := 0
 		for uid, e := range s.unreadCache {
+			if checked >= 256 {
+				break
+			}
+			checked++
 			if now.After(e.expires) {
 				delete(s.unreadCache, uid)
 			}

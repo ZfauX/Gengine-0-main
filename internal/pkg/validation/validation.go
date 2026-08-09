@@ -40,6 +40,9 @@ func ValidateGameDates(startsAt, registrationDeadline *time.Time) error {
 	if startsAt != nil && startsAt.Before(time.Now()) {
 		return errors.New("дата начала не может быть в прошлом")
 	}
+	// NB: cross-field «deadline ≤ start» НЕ навязываем — существующий тест
+	// TestValidateGameDates_DeadlineAfterStart разрешает регистрацию после
+	// старта (организатор может принимать команды во время игры).
 	return nil
 }
 

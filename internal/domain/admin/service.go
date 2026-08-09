@@ -161,25 +161,25 @@ func (s *BackupService) RotateBackups(ctx context.Context) error {
 		return nil
 	}
 
-	backups, err := s.backupRepo.List(ctx)
+	// S-43-2 (pass 43): удаляем САМЫЕ СТАРЫЕ записи — List отдаёт новые
+	// (DESC+LIMIT 100) и не подходит для ротации при count > 100.
+	toDelete := int(count) - s.MaxBackups
+	backups, err := s.backupRepo.ListOldest(ctx, toDelete)
 	if err != nil {
 		return err
 	}
 
-	toDelete := len(backups) - s.MaxBackups
-	if toDelete > 0 {
-		for i := len(backups) - 1; i >= len(backups)-toDelete; i-- {
-			// H-1 (pass 41): удаляем только файлы внутри BackupDir — раньше
-			// os.Remove по пути из БД без boundary-проверки (компрометация
-			// записи = удаление произвольного файла ФС).
-			if !s.isWithinBackupDir(backups[i].FilePath) {
-				log.Warn().Str("file", backups[i].FilePath).Msg("RotateBackups: skipping file outside backup dir")
-				continue
-			}
-			errors.LogSilently(os.Remove(backups[i].FilePath), "RotateBackups: failed to remove old backup file")
-			if err := s.backupRepo.Delete(ctx, backups[i].ID); err != nil {
-				log.Error().Err(err).Uint("backup", backups[i].ID).Msg("RotateBackups: failed to delete record")
-			}
+	for i := range backups {
+		// H-1 (pass 41): удаляем только файлы внутри BackupDir — раньше
+		// os.Remove по пути из БД без boundary-проверки (компрометация
+		// записи = удаление произвольного файла ФС).
+		if !s.isWithinBackupDir(backups[i].FilePath) {
+			log.Warn().Str("file", backups[i].FilePath).Msg("RotateBackups: skipping file outside backup dir")
+			continue
+		}
+		errors.LogSilently(os.Remove(backups[i].FilePath), "RotateBackups: failed to remove old backup file")
+		if err := s.backupRepo.Delete(ctx, backups[i].ID); err != nil {
+			log.Error().Err(err).Uint("backup", backups[i].ID).Msg("RotateBackups: failed to delete record")
 		}
 	}
 	return nil
