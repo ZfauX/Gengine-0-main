@@ -69,9 +69,6 @@
 - **UX-3**: replace('%s', str) с `$`-паттернами исправлен на replacement-функции (hint, level_name, authorName, follow errors).
 - **A-3**: убрана дублированная проверка владельца в GameService.Delete (права проверяет GameCRUDService.Delete).
 - **UX-9**: initFormLoading не обрабатывает GET-формы (фильтры/поиск не меняют кнопку).
-- **UX-7**: удалён дублирующий `<meta csrf-token>` из calendar-page (уже в layout head).
-- **UX-8**: убрана мёртвая lastScrollY; scroll-listener passive.
-- **UX-6**: dnd fetch в levels-list получил .catch.
 
 **Проверка:** `go build ./...` ✓, `go vet ./...` ✓, `golangci-lint 2.12.2` → 0 issues ✓, `gofmt -l .` → пусто ✓, `go test -count=1 -short ./...` ✓, 84 шаблона валидны ✓.
 
@@ -80,6 +77,20 @@
 - **P-3/P-5/P-6/P-7** (Lock sharding, logs.game_id, ical кэш, WS per-room) — перф-оптимизации без влияния на корректность.
 - **A-2** (единый путь прав HasPermission vs HasPermissionTx) — оба варианта корректны, поведение совпадает; кандидат на рефакторинг.
 - **A-4** (sentinel game-домен) — конвенции Go, без функционального бага.
+
+---
+
+## Дефер pass 39 разобран (commit `c46e524`)
+
+- **P-6**: CalendarICal кэшируется на 5 мин (полногодовой запрос + Preload только раз в 5 мин).
+- **A-2**: HasPermissionTx через CoAuthorRepository tx-методы (GetGameAuthorIDWithTx + FindByGameAndUserWithTx) — единый путь, raw SQL убран из сервиса.
+- **P-1**: checkTimeouts advance-loop — prefetch уровней затронутых игр одним запросом + ручной поиск next-level + batch CreateInBatches (было 1-2 SQL на просроченный прогресс каждые 30с).
+- **P-3**: монитор-кэш — самописный LRU (map+list+mu с глобальным Lock на горячем polling-пути) заменён на thread-safe `hashicorp/golang-lru` (Get промоутит, Add вытесняет; без ручных локов и гонок).
+- **A-4**: sentinel-ошибки game-домена (ErrLevelNotFileUpload, ErrGameNotStarted, ErrHintsDisabled, ErrNoHintAvailable, ErrGameDeleteForbidden, ErrCompletedLevelNotFound).
+
+**Осталось задокументировано (крупные рефакторинги без функционального бага):**
+- **P-5**: GetLogsByGameID sort-индекс — требует денормализации `logs.game_id` (миграция + backfill + триггер).
+- **P-7**: WS-хаб per-room workers для broadcast на большие комнаты.
 
 ---
 
