@@ -716,6 +716,20 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 				log.Warn().Str("room_id", roomID).Uint("user_id", userID).Msg("ChatWS: message rate limit exceeded")
 				continue
 			}
+			// S-45-5 (pass 45): recheck членства в командном чате — участника,
+			// удалённого из команды после подключения, отсекаем при каждой
+			// отправке (раньше проверялось только на connect, сокет жил дальше).
+			if chatRoom.TeamID != nil {
+				stillMember, memberErr := h.chatService.IsTeamMemberOrCaptain(wsCtx, *chatRoom.TeamID, userID)
+				if memberErr != nil {
+					log.Error().Err(memberErr).Uint("team_id", *chatRoom.TeamID).Uint("user_id", userID).Msg("ChatWS: team membership recheck error")
+					return
+				}
+				if !stillMember {
+					log.Warn().Uint("team_id", *chatRoom.TeamID).Uint("user_id", userID).Msg("ChatWS: member removed from team, closing socket")
+					return
+				}
+			}
 			msg, err := h.chatService.SaveMessage(wsCtx, uint(roomIDUint), userID, cleanContent)
 			if err != nil {
 				log.Error().Err(err).Str("room_id", roomID).Uint("user_id", userID).Msg("ChatWS: failed to save message")

@@ -307,7 +307,7 @@
                 });
             })
             .catch(err => {
-                console.error('Дисквалификация:', err);
+                console.error('Monitor: disqualify error', err);
                 window.showToast('{{ T $.Lang "monitor.disqualify_error" }}' + err.message, 'error');
                 // UX-2 (pass 38): btn может быть fallback-объектом без classList.
                 if (btn && btn.classList) {

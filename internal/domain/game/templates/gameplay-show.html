@@ -299,8 +299,8 @@
             const now = new Date();
             const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
             const badge = success
-                ? '<span class="inline-flex items-center gap-1 text-green-700 font-medium">{{ T $.Lang "gameplay.attempt_correct" }}</span>'
-                : '<span class="inline-flex items-center gap-1 text-red-600 font-medium">{{ T $.Lang "gameplay.attempt_wrong" }}</span>';
+                ? '<span class="inline-flex items-center gap-1 text-green-700 dark:text-green-400 font-medium">{{ T $.Lang "gameplay.attempt_correct" }}</span>'
+                : '<span class="inline-flex items-center gap-1 text-red-600 dark:text-red-400 font-medium">{{ T $.Lang "gameplay.attempt_wrong" }}</span>';
             li.innerHTML = `<span class="font-mono">${escapeHtml(code)}</span><span class="flex items-center gap-2">${badge}<span class="text-gray-500 text-xs">${timeStr}</span></span>`;
             attemptsList.prepend(li);
         }

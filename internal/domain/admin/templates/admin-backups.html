@@ -47,7 +47,8 @@
                 {{range .Backups}}
                 <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 transition">
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">{{.Filename}}</td>
-                    <td class="table-cell">{{.Size}} B</td>
+                    <!-- UX-15 (pass 45): formatBytes вместо хардкода "B" -->
+                    <td class="table-cell">{{formatBytes .Size}}</td>
                     <td class="table-cell">{{ formatDateTime $.Lang $.TZOffset .CreatedAt }}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">
                         <a href="/admin/backups/{{.ID}}/download" class="btn btn-primary text-xs">{{ T $.Lang "admin.download" }}</a>

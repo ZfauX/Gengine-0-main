@@ -83,6 +83,12 @@ type NotificationService struct {
 	pushJobs     chan pushJob
 	pushWg       sync.WaitGroup
 	pushShutting bool
+
+	// pushHTTPClient — HTTP-клиент с блокировкой приватных адресов на уровне
+	// соединения (S-45-3, pass 45): endpoint проверяется при подписке, но
+	// DNS-rebinding мог переключить имя на внутренний адрес к моменту отправки —
+	// DialContext резолвит и отклоняет приватные IP прямо в момент запроса.
+	pushHTTPClient *http.Client
 }
 
 type pushJob struct {
@@ -110,6 +116,8 @@ func NewNotificationService(repo NotificationRepository, hub *ws.RoomHub) *Notif
 		repo:        repo,
 		hub:         hub,
 		unreadCache: make(map[uint]unreadEntry),
+		// S-45-3 (pass 45): клиент с блокировкой приватных IP на DialContext.
+		pushHTTPClient: newPushHTTPClient(),
 	}
 }
 
@@ -357,6 +365,9 @@ func (s *NotificationService) sendWebPush(ctx context.Context, userID uint, n *N
 		VAPIDPublicKey:  s.vapidCfg.PublicKey,
 		VAPIDPrivateKey: s.vapidCfg.PrivateKey,
 		TTL:             3600,
+		// S-45-3 (pass 45): безопасный клиент — приватные IP блокируются на
+		// DialContext (DNS-rebinding не пройдёт).
+		HTTPClient: s.pushHTTPClient,
 	}
 
 	for _, sub := range subs {

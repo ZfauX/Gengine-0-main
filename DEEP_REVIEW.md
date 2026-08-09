@@ -4,7 +4,7 @@
 
 Повторное глубокое ревью выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture/DI) с последующей **личной верификацией ключевых находок** по коду.
 
-**Итог pass 45:** 0 критичных, 2 высоких (UX-01 — SyntaxError для гостей ломает games-list, P-45-5 — password_hash/email через Preload Members), ~10 средних, ~8 низких. Все ключевые находки исправлены раундами 1-2 (раунд 2 — доделки: HasPermission один запрос, wizard submit, error pages aria, invitation confirm).
+**Итог pass 45:** 0 критичных, 2 высоких (UX-01 — SyntaxError для гостей ломает games-list, P-45-5 — password_hash/email через Preload Members), ~10 средних, ~8 низких. Все ключевые находки исправлены раундами 1-3 (раунд 3 — доделки: push SSRF DialContext, WS recheck, calendar touch, console/bytes).
 
 > **Контекст:** pass 30-44 закрыты полностью. Новые находки: **UX-01 — JS SyntaxError для гостей** (незакрытый `{{if}}` в games-list ломал весь скрипт), **P-45-5 — Preload Members/Author/GetAvailableUsers тащили password_hash/email**, **S-45-4 — можно разжаловать последнего админа**, **S-45-1 — user enumeration через team search API**, **A-02 — OAuthRateLimit игнорировал лимит** (брал loginRateLimiter), **P-45-4 — дубль индекса co_authors**, **P-45-3/6/7** (COUNT метрики, Preload вопросов, полный Author), **UX-02/03/04** (confirm «Удалить», edit-ссылка всем, дубль og:description).
 
@@ -41,7 +41,18 @@
 - **UX-08**: invitations-my decline — confirm-модалка (data-confirm-danger + data-confirm-ok), ключ `invitation.decline_confirm`.
 - **Опровергнуто/отложено**: P-45-11 (player_ratings score индекс — таблица мала), S-45-3 (push SSRF — HTTPS-only), S-45-5 (WS stale authz — recheck на каждый send дорого; reconnect решает).
 
-**Осталось к pass 46** (документировано): S-45-3 (push SSRF — HTTPS-only, низкий риск), S-45-5 (WS stale authz после удаления из команды — reconnect), P-43-4 (authed-листинг кэш), P-44-3 (GetGameplayData 7 round-trips), P-45-11 (player_ratings score индекс — SPECULATIVE).
+**Раунд 3** (доделки — оставшиеся пункты pass 45):
+- **S-45-3**: push SSRF — создан `push_client.go` с безопасным HTTP-клиентом: `DialContext` резолвит имя и блокирует приватные/loopback/CGNAT IP В МОМЕНТ отправки (DNS-rebinding закрыт навсегда); `webpush.Options.HTTPClient`.
+- **S-45-5**: ChatWS — recheck членства в командном чате при КАЖДОЙ отправке (участник, удалённый из команды, отсекается и сокет закрывается).
+- **P-45-11**: player_ratings(score) — УЖЕ есть (idx_player_ratings_score 000038).
+- **P-44-3**: GetGameplayData — оставлено (Code/Success/CreatedAt все нужны шаблону; объединение запросов рискованно, errgroup уже параллелит).
+- **P-43-4**: authed-листинг кэш — оставлено (per-user ключи фрагментируют LRU).
+- **UX-09**: addAttempt — dark: варианты badge-цветов.
+- **UX-10**: calendar indicator — min-w/h 36px (было 24px).
+- **UX-14**: русские console-строки → английские.
+- **UX-15**: admin-backups — `formatBytes` вместо хардкода "B".
+
+**Осталось к pass 46** (документировано): P-43-4 (authed-листинг кэш — фрагментирует LRU), P-44-3 (GetGameplayData 7 round-trips — errgroup уже параллелит), UX-13 (chat onFinalClose retry).
 
 ---
 
@@ -72,10 +83,9 @@
 
 | ID | Файл | Проблема | Статус |
 |---|---|---|---|
-| **S-45-3** | `push_handler.go:156-199` | Push SSRF re-check только при subscribe (DNS-rebinding). | 📋 HTTPS-only; низкий риск |
-| **S-45-5** | `monitor/handler.go:604-616` | WS stale authz после удаления из команды (до reconnect). | 📋 LOW |
-| **P-45-10** | `game_passings` | Composite (game_id, status) — SPECULATIVE. | ✅ Уже есть (idx_game_passings_game_status 000007) |
-| **P-45-11** | `player_ratings` | Индекс score для лидерборда — SPECULATIVE. | 📋 Размер таблицы невелик |
+| **S-45-3** | `push_handler.go:156-199` | Push SSRF re-check только при subscribe (DNS-rebinding). | ✅ Исправлено (безопасный DialContext на отправке) |
+| **S-45-5** | `monitor/handler.go:604-616` | WS stale authz после удаления из команды (до reconnect). | ✅ Исправлено (recheck членства на каждую отправку) |
+| **P-45-11** | `player_ratings` | Индекс score для лидерборда — SPECULATIVE. | ✅ Уже есть (idx_player_ratings_score 000038) |
 | **P-45-13** | `invitations` | Индекс (user_id, status). | ✅ Уже есть (idx_invitations_user_status 000023) |
 | **UX-05** | `games-new-wizard` | Финальный submit — disabled-btn может блокировать native submit. | ✅ Исправлено (явный form.submit) |
 | **UX-06** | `errors-*.html` | Emoji без aria-hidden. | ✅ Исправлено (aria-hidden) |
@@ -152,7 +162,7 @@
 - **UX-12**: wizard — client-side валидация дат (шаг 1): start не в прошлом + предупреждение deadline > start.
 - **Опровергнуто/отложено**: P-44-3 (GetGameplayData 6 round-trips — errgroup уже параллелит), P-44-4 (HasPermission — ролевая логика в SQL рискованна), P-44-7 (Body нужен), P-44-10/11 (LOW), P-43-4 (authed-листинг — низкий приоритет).
 
-**Осталось к pass 45** (документировано): P-43-4 (authed-листинг кэш — низкий приоритет), P-44-3 (GetGameplayData round-trips), P-44-10/11 (LOW), UX-09 (client-clock attempt timestamps + dark-контраст), UX-10 (calendar indicator 24px), UX-13 (chat onFinalClose retry), UX-14 (console strings), UX-15 (admin-backups "B" hardcode). *(P-44-4 HasPermission решён в pass 45 раунд 2.)*
+**Осталось к pass 45** (документировано): P-43-4 (authed-листинг кэш — низкий приоритет), P-44-3 (GetGameplayData round-trips), P-44-10/11 (LOW), UX-13 (chat onFinalClose retry). *(UX-09/10/14/15 и P-44-4 решены в pass 45 раунды 2-3.)*
 
 ---
 
