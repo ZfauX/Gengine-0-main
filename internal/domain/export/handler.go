@@ -474,8 +474,15 @@ func (h *ExportHandler) ExportTeamResultsCSV(c *gin.Context) {
 		isAuthor = true
 	}
 
-	if !isCaptain && !isAuthor {
-		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Только капитан или автор может экспортировать результаты"})
+	// L-1 (pass 37): соавтор (manager) тоже может экспортировать результаты —
+	// раньше только капитан или автор (isAuthor по AuthorID).
+	isManager := false
+	if mgr, mgrErr := h.gameService.IsUserManager(c.Request.Context(), gameID, userID); mgrErr == nil && mgr {
+		isManager = true
+	}
+
+	if !isCaptain && !isAuthor && !isManager {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Только капитан, автор или соавтор может экспортировать результаты"})
 		return
 	}
 

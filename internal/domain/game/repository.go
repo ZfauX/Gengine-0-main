@@ -201,12 +201,22 @@ func (r *gormGameRepo) GetFinishedPassingByGameAndTeam(ctx context.Context, game
 
 func (r *gormGameRepo) GetLogsByGameID(ctx context.Context, gameID uint) ([]Log, error) {
 	var logs []Log
+	// P-6 (pass 37): LIMIT последних логов — раньше выгружалась вся таблица
+	// логов игры (сотни тысяч записей) в память. DESC + реверс для
+	// хронологического порядка.
 	err := r.db.WithContext(ctx).
 		Joins("JOIN game_passings ON game_passings.id = logs.game_passing_id").
 		Where("game_passings.game_id = ?", gameID).
-		Order("logs.created_at ASC").
+		Order("logs.created_at DESC").
+		Limit(500).
 		Find(&logs).Error
-	return logs, err
+	if err != nil {
+		return nil, err
+	}
+	for i, j := 0, len(logs)-1; i < j; i, j = i+1, j-1 {
+		logs[i], logs[j] = logs[j], logs[i]
+	}
+	return logs, nil
 }
 
 // GetLogsByGameIDPaginated возвращает страницу логов игры (H6, pass 30 —

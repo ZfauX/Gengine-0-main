@@ -47,11 +47,11 @@
 
 ---
 
-## Статус (обновлено 9 авг 2026) — PASS 37 ОТКРЫТ
+## Статус (обновлено 9 авг 2026) — PASS 37 ЗАКРЫТ
 
-Находки перечислены ниже; закрытие — раундами фиксов, как в pass 30-36.
+**Все находки pass 37 исправлены** (3 раунда фиксов):
 
-**Раунд 1 (текущий):**
+**Раунд 1** (`358588d`):
 - **S-1**: full-preview больше не отдаёт `q.Hint` не-менеджерам (только текст вопроса; менеджеры видят hint+answers для редактирования).
 - **S-2**: `SettingsPage` (GET) требует IsUserManager || IsAdmin (как SaveSettings) — настройки не раскрывают тактику.
 - **S-3**: TwoFALoginVerify — fail-closed TTL: при отсутствии `pending_expires` pending-шаг считается истёкшим (redirect). Тест обновлён.
@@ -75,6 +75,18 @@
 - **UX-5**: mobile-карточки для admin-teams (таблица скрыта на < sm).
 
 **Осталось на раунд 3+ (низкий приоритет):** P-3 (N+1 таймауты), P-6 (GetLogsByGameID LIMIT), UX-6 (actionBtn null), UX-7 (localStorage dashboard), A-3 (HasPermission raw db), A-4 (tournament ignored err), L-1 (coauthor export), UX-5 остаток (tournaments-list/admin-audit mobile cards).
+
+**Раунд 3 (текущий):**
+- **P-6**: GetLogsByGameID — LIMIT 500 последних логов (DESC + реверс).
+- **UX-6**: disqualifyTeam — fallback-элемент при null actionBtn (красная OK-кнопка сохраняется).
+- **UX-7**: dashboard onboarding — localStorage в try/catch.
+- **A-4**: CanApply — ошибка GetByTournamentAndTeamIDs логируется, возвращает false.
+- **L-1**: coauthor (manager) может экспортировать результаты команды.
+
+**Проверка:** `go build ./...` ✓, `go vet ./...` ✓, `golangci-lint 2.12.2` → 0 issues ✓, `gofmt -l .` → пусто ✓, `go test -count=1 -short ./...` ✓, 84 шаблона валидны ✓.
+
+**Оставлено осознанно (задокументировано):**
+- **P-3** (N+1 таймауты), **A-3** (HasPermission raw db), **UX-5 остаток** (tournaments-list/admin-audit mobile cards) — стилевые/перф-улучшения без функционального бага, кандидаты на следующий раунд.
 
 ---
 

@@ -39,8 +39,15 @@
     </div>
     <script nonce="{{.csp_nonce}}">
     (function(){
-        if(localStorage.getItem('onboarding_dismissed')==='1'){var b=document.getElementById('onboarding-banner');if(b)b.style.display='none'}
-        document.getElementById('onboarding-dismiss')?.addEventListener('click',function(){localStorage.setItem('onboarding_dismissed','1');var b=document.getElementById('onboarding-banner');if(b)b.style.display='none'});
+        // UX-7 (pass 37): localStorage может быть заблокирован (приватный режим).
+        var dismissed = false;
+        try { dismissed = localStorage.getItem('onboarding_dismissed') === '1'; } catch (e) {}
+        if (dismissed) { var b = document.getElementById('onboarding-banner'); if (b) b.style.display = 'none'; }
+        document.getElementById('onboarding-dismiss')?.addEventListener('click', function() {
+            try { localStorage.setItem('onboarding_dismissed', '1'); } catch (e) {}
+            var b = document.getElementById('onboarding-banner');
+            if (b) b.style.display = 'none';
+        });
     })();
     </script>
     {{end}}

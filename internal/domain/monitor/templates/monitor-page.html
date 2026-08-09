@@ -257,13 +257,18 @@
         window.disqualifyTeam = async function(teamId) {
             // Единая кастомная модалка (UX1) вместо нативного confirm.
             // S-5 (pass 33): элемент-кнопка передаётся для определения danger.
-            const actionBtn = teamsContainer.querySelector('[data-action="disqualify"][data-team-id="' + teamId + '"]');
+            let actionBtn = teamsContainer.querySelector('[data-action="disqualify"][data-team-id="' + teamId + '"]');
+            // UX-6 (pass 37): если карточка перерисована снапшотом до клика —
+            // кнопка может быть null; фолбэк-элемент сохраняет красную OK-кнопку.
+            if (!actionBtn) {
+                actionBtn = { dataset: { confirmDanger: 'true' } };
+            }
             const ok = await window.showModalConfirm('{{ T $.Lang "monitor.disqualify_confirm" }}', actionBtn);
             if (!ok) return;
 
             // MED-7: блокируем кнопку на время запроса (защита от двойного POST).
             const btn = actionBtn;
-            if (btn) {
+            if (btn && typeof btn.disabled === 'boolean') {
                 btn.disabled = true;
                 btn.classList.add('opacity-50', 'cursor-not-allowed');
             }

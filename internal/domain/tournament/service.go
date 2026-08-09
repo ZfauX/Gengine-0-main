@@ -339,7 +339,12 @@ func (s *TournamentService) CanApply(ctx context.Context, tournamentID, userID u
 		teamIDs[i] = t.ID
 	}
 
-	existing, _ := s.tournamentTeamRepo.GetByTournamentAndTeamIDs(ctx, tournamentID, teamIDs)
+	existing, err := s.tournamentTeamRepo.GetByTournamentAndTeamIDs(ctx, tournamentID, teamIDs)
+	if err != nil {
+		// A-4 (pass 37): сбой БД — консервативно false (не раскрываем участие).
+		log.Error().Err(err).Uint("tournament_id", tournamentID).Msg("CanApply: failed to check existing teams")
+		return false
+	}
 	existingMap := make(map[uint]bool)
 	for _, tt := range existing {
 		existingMap[tt.TeamID] = true
