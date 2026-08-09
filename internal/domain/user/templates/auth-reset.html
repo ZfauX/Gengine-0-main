@@ -7,7 +7,9 @@
     {{end}}
 
     <div class="card">
-        <form action="/auth/reset" method="POST" class="space-y-4">
+        <!-- F-02 (pass 41): data-no-loading — локализованный inline-обработчик
+             не должен перетираться спиннером из initFormLoading (как register). -->
+        <form action="/auth/reset" method="POST" class="space-y-4" data-no-loading>
             <input type="hidden" name="_csrf" value="{{.csrf}}">
             <input type="hidden" name="reset_code" value="{{.ResetCode}}">
 

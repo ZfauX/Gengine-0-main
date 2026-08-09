@@ -9,7 +9,10 @@ import (
 	"gengine-0/internal/domain/user"
 )
 
-var ErrNotFollowing = errors.New("не подписан")
+var (
+	ErrNotFollowing      = errors.New("не подписан")
+	ErrCannotFollowSelf  = errors.New("нельзя подписаться на самого себя")
+)
 
 // ---------- FollowService ----------
 
@@ -23,7 +26,7 @@ func NewFollowService(followRepo FollowRepository) *FollowService {
 
 func (s *FollowService) Follow(ctx context.Context, followerID, authorID uint) error {
 	if followerID == authorID {
-		return errors.New("нельзя подписаться на самого себя")
+		return ErrCannotFollowSelf
 	}
 	exists, err := s.followRepo.IsFollowing(ctx, followerID, authorID)
 	if err != nil {

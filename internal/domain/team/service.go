@@ -29,6 +29,8 @@ var (
 	ErrNewCaptainNotMember   = errors.New("новый капитан должен состоять в команде")
 	ErrUserNotFound          = errors.New("пользователь не найден")
 	ErrInvitationNotPending  = errors.New("приглашение не в статусе ожидания")
+	ErrInvitationExists      = errors.New("приглашение уже отправлено")
+	ErrOnlyCaptainCanInvite  = errors.New("только капитан может создавать приглашения")
 )
 
 func NewTeamService(teamRepo TeamRepository) *TeamService {
@@ -191,7 +193,7 @@ func (s *InvitationService) CreateInvitation(ctx context.Context, teamID, invite
 	}
 
 	if team.CaptainID != actorID {
-		return nil, errors.New("только капитан может создавать приглашения")
+		return nil, ErrOnlyCaptainCanInvite
 	}
 
 	// Проверяем, что приглашаемый пользователь существует
@@ -213,7 +215,7 @@ func (s *InvitationService) CreateInvitation(ctx context.Context, teamID, invite
 		return nil, getExistErr
 	}
 	if existing != nil && existing.Status == InvitationPending {
-		return nil, errors.New("приглашение уже отправлено")
+		return nil, ErrInvitationExists
 	}
 
 	inv := &Invitation{

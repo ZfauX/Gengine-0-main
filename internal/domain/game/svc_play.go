@@ -738,7 +738,8 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 	var g errgroup.Group
 
 	g.Go(func() error {
-		s, err := s.gameRepo.GetGameSettingByGameID(ctx, passing.GameID)
+		// A-2 (pass 41): gs вместо s — раньше локальная s shadowing'ила receiver.
+		gs, err := s.gameRepo.GetGameSettingByGameID(ctx, passing.GameID)
 		if err != nil {
 			if !errors.Is(err, gorm.ErrRecordNotFound) {
 				// На не-NotFound ошибке тоже используем дефолты (C-M9), а не
@@ -749,7 +750,9 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 			settings = *defaultGameSetting(passing.GameID)
 			return nil
 		}
-		settings = *s
+		if gs != nil {
+			settings = *gs
+		}
 		return nil
 	})
 

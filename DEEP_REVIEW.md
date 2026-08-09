@@ -1,12 +1,69 @@
-# Deep Review Gengine-0 — 9 августа 2026 (pass 40 — повторное ревью после закрытия pass 30-39 + дефера)
+# Deep Review Gengine-0 — 9 августа 2026 (pass 41 — повторное ревью после полного закрытия pass 30-40)
 
 ## Резюме
 
 Повторное глубокое ревью выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture/DI) с последующей **личной верификацией ключевых находок** по коду.
 
-**Итог pass 40:** 1 критичная (panic в RoomHub — регресс P-7), 2 высоких (все подтверждены), ~10 средних, ~8 низких.
+**Итог pass 41:** 0 критичных, 2 высоких (P-1 Vote-EXISTS, S-1 unread race), ~8 средних, ~8 низких. Найдено после закрытия pass 30-40; ключевые находки исправлены раундом 1.
 
-> **Контекст:** pass 30-39 закрыты; дефер (P-5/P-7) разобран. Критичная находка — **регрессия P-7**: `close(q)` в RoomHub вызывал panic `send on closed channel` (конкурентный broadcast+unregister). Исправлено в раунде 1 вместе с data race на cachedSnapshot.json и сломанным поиском на дашборде.
+> **Контекст:** pass 30-40 закрыты полностью. Новые находки: **Vote грузит все попытки уровня без LIMIT** (горячий путь голосования), **нет композитного индекса blackbox_votes(session_id, voter_id)**, **race в incrementUnreadCount**, **unfollow confirm «Удалить» вместо «Отписаться»**, **RotateBackups без boundary-проверки**, **CreateNow без таймаута pg_dump**, **string-match ошибок в team/social**.
+
+---
+
+# PASS 41 (повторное ревью) — 9 августа 2026
+
+> Двенадцатое повторное ревью после полного закрытия pass 30-40. Выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture) с **личной верификацией** ключевых находок по коду.
+
+## Статус (обновлено 9 авг 2026) — PASS 41 ОТКРЫТ
+
+Находки перечислены ниже; закрытие — раундами фиксов.
+
+**Раунд 1** (правки текущие):
+- **H-1**: RotateBackups — boundary-проверка пути через `isWithinBackupDir` (filepath.Rel), пропуск файлов вне BackupDir.
+- **S-3**: CreateNow — собственный `context.WithTimeout(10m)` для pg_dump + чистка частичного файла при ошибке.
+- **N-1**: Vote — `EXISTS` через `Count+Limit(1)` вместо загрузки ВСЕХ attempts уровня.
+- **N-2**: миграция 000048 — композитный индекс `blackbox_votes(session_id, voter_id)`.
+- **N-3**: ListByDateRange — `Select` только нужных колонок games (вместо games.*).
+- **F-01**: unfollow — `data-confirm-ok` + `data-confirm-danger` (кнопка «Отписаться», а не «Удалить»).
+- **F-02**: auth-reset — `data-no-loading` (локализованный спиннер не перетирается).
+- **G6**: team/social — sentinel-ошибки (ErrInvitationExists, ErrOnlyCaptainCanInvite, ErrCannotFollowSelf) + `errors.Is` вместо string-match в хендлерах.
+- **A-2**: svc_play.go — убрано shadowing receiver `s` в goroutine (gs).
+- **Опровергнуто лично**: G5 (ProcessSnapshot уже имеет WithTimeout 10s), UX-3 (один aria-live, L-8 управляет), A-4 (нет string-match в social repository).
+
+**Осталось к pass 42**: S-1 (unread race — компромисс L-1, документирован), A-1 (GetUserThemeSettings принимает raw *gorm.DB — намеренно).
+
+---
+
+## Найденные ошибки pass 41 (верифицировано лично)
+
+### 🟠 Высокие
+
+| ID | Файл | Проблема | Статус |
+|---|---|---|---|
+| **P-1** | `monitor/service.go:162-177` | **Vote загружает ВСЕ попытки уровня без LIMIT** (`Find(&attempts)` + фильтр в Go) — на активной игре тысячи строк кодов в память на каждый голос. | ✅ Исправлено (EXISTS) |
+| **S-1** | `notification/service.go:453-464` | **Race в incrementUnreadCount** — параллельный getUnreadCount может положить в кэш COUNT с уже-включённым уведомлением, затем increment завысит на 1 до TTL (30с). Само-лечится; компромисс ради L-1. | 📋 Компромисс |
+
+### 🟡 Средние
+
+| ID | Файл | Проблема | Статус |
+|---|---|---|---|
+| **S-2** | `admin/service.go` | **RotateBackups удаляет файл по пути из БД без boundary-проверки** (в отличие от Download) — при компрометации записи удаление произвольного файла ФС. | ✅ Исправлено (isWithinBackupDir) |
+| **S-3** | `admin/service.go:71-83` | **CreateNow — pg_dump без собственного таймаута**: disconnect оставит частичный файл. | ✅ Исправлено (10m timeout + cleanup) |
+| **N-2** | `migrations/000002` + `monitor/service.go` | **Нет композитного индекса `blackbox_votes(session_id, voter_id)`** — только раздельные (bitmap-OR). | ✅ Исправлено (миграция 000048) |
+| **N-3** | `game/repository.go` | **ListByDateRange SELECT games.*** — тянет Description/search_vector/rating на год вперёд для календаря/iCal. | ✅ Исправлено (Select) |
+| **F-01** | `social/templates/follow-list.html` | **unfollow confirm: кнопка «Удалить» вместо «Отписаться»** — нет data-confirm-ok/danger. | ✅ Исправлено |
+| **F-02** | `user/templates/auth-reset.html` | **Двойной обработчик submit**: inline локализованный «Сброс…» перетирается generic-спиннером. | ✅ Исправлено (data-no-loading) |
+| **G6** | `team/handler.go`, `social/handler.go` | **String-match ошибок по err.Error()** вместо errors.Is — brittle. | ✅ Исправлено (sentinel + errors.Is) |
+| **A-2** | `game/svc_play.go:741` | **Shadowing receiver `s`** внутри goroutine. | ✅ Исправлено (gs) |
+
+### 🔲 Низкие / мелочи
+
+| ID | Файл | Проблема | Статус |
+|---|---|---|---|
+| **A-1** | `user/profile_service.go:76` | `GetUserThemeSettings(ctx, db, ...)` принимает raw `*gorm.DB` — кандидат на репозиторий. | 📋 Намеренно |
+| **G5** | `game/svc_play.go` | ProcessSnapshot(context.Background()) в тестах — без отмены. | ✅ Опровергнуто: внутри WithTimeout(10s) |
+| **UX-3** | `monitor/templates/chat-page.html` | Дубль aria-live. | ✅ Опровергнуто: один role=log, L-8 управляет |
+| **A-4** | `social/repository.go` | String-match ошибок. | ✅ Опровергнуто |
 
 ---
 

@@ -168,7 +168,10 @@ func (r *gormGameRepo) ListByDateRange(ctx context.Context, from, to time.Time) 
 	var games []Game
 	// G4 (pass 40): Select в Preload Author — не тащим password_hash/email
 	// (полная строка users) на публичном calendar/ICal эндпоинте.
+	// N-3 (pass 41): Select только нужных колонок games — Description/
+	// search_vector/rating_value не нужны календарю/iCal (ранее games.*).
 	err := r.db.WithContext(ctx).
+		Select("id, name, description, starts_at, cover_path, visibility, is_draft, author_id").
 		Preload("Author", func(db *gorm.DB) *gorm.DB {
 			return db.Select("id, name, avatar_path")
 		}).

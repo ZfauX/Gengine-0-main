@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gengine-0/internal/config"
@@ -67,7 +68,14 @@ func (s *BackupService) CreateNow(ctx context.Context) error {
 	filename := fmt.Sprintf("backup_%s.sql", timestamp)
 	filepath := filepath.Join(s.BackupDir, filename)
 
-	cmd := exec.CommandContext(ctx, "pg_dump",
+	// S-3 (pass 41): собственный таймаут для pg_dump — раньше ctx запроса при
+	// disconnect (или отсутствующий deadline) оставлял частичный файл. Свой
+	// дедлайн гарантирует, что дамп либо завершится, либо зафейлится, а
+	// незавершённый файл не попадёт в список бэкапов.
+	dumpCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(dumpCtx, "pg_dump",
 		"-h", s.dbHost,
 		"-p", s.dbPort,
 		"-U", s.dbUser,
@@ -79,6 +87,8 @@ func (s *BackupService) CreateNow(ctx context.Context) error {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		// Чистим частичный файл (timeout/abort).
+		_ = os.Remove(filepath)
 		return fmt.Errorf("pg_dump failed: %w, output: %s", err, string(output))
 	}
 
@@ -159,6 +169,13 @@ func (s *BackupService) RotateBackups(ctx context.Context) error {
 	toDelete := len(backups) - s.MaxBackups
 	if toDelete > 0 {
 		for i := len(backups) - 1; i >= len(backups)-toDelete; i-- {
+			// H-1 (pass 41): удаляем только файлы внутри BackupDir — раньше
+			// os.Remove по пути из БД без boundary-проверки (компрометация
+			// записи = удаление произвольного файла ФС).
+			if !s.isWithinBackupDir(backups[i].FilePath) {
+				log.Warn().Str("file", backups[i].FilePath).Msg("RotateBackups: skipping file outside backup dir")
+				continue
+			}
 			errors.LogSilently(os.Remove(backups[i].FilePath), "RotateBackups: failed to remove old backup file")
 			if err := s.backupRepo.Delete(ctx, backups[i].ID); err != nil {
 				log.Error().Err(err).Uint("backup", backups[i].ID).Msg("RotateBackups: failed to delete record")
@@ -166,6 +183,27 @@ func (s *BackupService) RotateBackups(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// isWithinBackupDir проверяет, что путь находится внутри BackupDir (boundary
+// для Download/RotateBackups — защита от произвольного удаления/чтения).
+func (s *BackupService) isWithinBackupDir(path string) bool {
+	if path == "" {
+		return false
+	}
+	absDir, err := filepath.Abs(s.BackupDir)
+	if err != nil {
+		return false
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(absDir, absPath)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // GetMaxBackups возвращает текущее значение лимита бекапов.

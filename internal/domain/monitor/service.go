@@ -159,20 +159,18 @@ func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID, 
 			return ErrVotingClosed
 		}
 
-		var attempts []game.Attempt
-		if findErr := tx.Where("level_progress_id IN (SELECT id FROM level_progresses WHERE game_passing_id = ? AND level_id = ?)",
-			lockedSession.GamePassingID, lockedSession.LevelID).
-			Find(&attempts).Error; findErr != nil {
+		// N-1 (pass 41): EXISTS вместо загрузки ВСЕХ попыток уровня в память
+		// (ранее Find + фильтр в Go — на активной игре тысячи строк кодов).
+		var exists int64
+		if findErr := tx.Model(&game.Attempt{}).
+			Where("level_progress_id IN (SELECT id FROM level_progresses WHERE game_passing_id = ? AND level_id = ?)",
+				lockedSession.GamePassingID, lockedSession.LevelID).
+			Where("(is_file = true AND file_path = ?) OR (is_file = false AND code = ?)", option, option).
+			Limit(1).
+			Count(&exists).Error; findErr != nil {
 			return findErr
 		}
-		valid := false
-		for _, a := range attempts {
-			if (a.IsFile && a.FilePath == option) || (!a.IsFile && a.Code == option) {
-				valid = true
-				break
-			}
-		}
-		if !valid {
+		if exists == 0 {
 			return ErrInvalidOption
 		}
 

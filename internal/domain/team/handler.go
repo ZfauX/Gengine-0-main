@@ -560,8 +560,9 @@ func (h *InvitationHandler) Create(c *gin.Context) {
 
 	_, err := h.invitationService.CreateInvitation(c.Request.Context(), req.TeamID, input.UserID, userID)
 	if err != nil {
-		switch err.Error() {
-		case "пользователь не найден", "пользователь уже в команде", "приглашение уже отправлено":
+		// G6 (pass 41): errors.Is вместо string-match — brittle при локализации.
+		switch {
+		case errors.Is(err, ErrUserNotFound), errors.Is(err, ErrUserAlreadyInTeam), errors.Is(err, ErrInvitationExists):
 			render.Page(c, http.StatusBadRequest, "invitations-new.html", gin.H{
 				"Title": "Новое приглашение",
 				"Error": render.LocalizeError(c, err.Error()),

@@ -73,8 +73,9 @@ func (h *FollowHandler) Follow(c *gin.Context) {
 	}
 
 	if err := h.followService.Follow(c.Request.Context(), userID, req.ID); err != nil {
-		switch err.Error() {
-		case "нельзя подписаться на самого себя", "не подписан":
+		// G6 (pass 41): errors.Is вместо string-match.
+		switch {
+		case errors.Is(err, ErrCannotFollowSelf), errors.Is(err, ErrNotFollowing):
 			appErr := apperrors.BadRequest(render.LocalizeError(c, err.Error()))
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
 		default:

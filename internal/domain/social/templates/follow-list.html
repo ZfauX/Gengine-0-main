@@ -10,7 +10,10 @@
                 <span class="font-medium text-gray-800 dark:text-gray-100">{{.Name}}</span>
                 {{if .Email}}<span class="text-sm text-gray-500 dark:text-gray-400 ml-2">{{.Email}}</span>{{end}}
             </div>
-            <button class="btn btn-danger text-sm unfollow-btn" data-author-id="{{.ID}}" data-author-name="{{.Name}}">{{ T $.Lang "follow.unfollow" }}</button>
+            <!-- F-01 (pass 41): data-confirm-ok + danger — раньше модалка
+                 показывала дефолтный «Удалить» с синей кнопкой для отписки. -->
+            <button class="btn btn-danger text-sm unfollow-btn" data-author-id="{{.ID}}" data-author-name="{{.Name}}"
+                    data-confirm-danger="true" data-confirm-ok="{{ T $.Lang "follow.unfollow" }}">{{ T $.Lang "follow.unfollow" }}</button>
         </div>
         {{end}}
     </div>
