@@ -45,25 +45,24 @@ func (s *CoAuthorService) IsUserManager(ctx context.Context, gameID, userID uint
 // HasPermission проверяет наличие у пользователя конкретной роли в игре.
 // N-2 (pass 38): через репозиторий, а не raw s.db — единый путь с
 // IsUserManager (раньше было два разных SQL-пути для одной проверки прав).
+// P-44-4 (pass 45): один запрос (автор ИЛИ соавтор с допустимой ролью) вместо
+// GetGameAuthorID + FindByGameAndUser.
 func (s *CoAuthorService) HasPermission(ctx context.Context, gameID, userID uint, requiredRole string) (bool, error) {
-	authorID, err := s.repo.GetGameAuthorID(ctx, gameID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, gorm.ErrRecordNotFound
-		}
-		return false, err
+	return s.repo.HasPermissionRole(ctx, gameID, userID, rolesForRequired(requiredRole))
+}
+
+// rolesForRequired возвращает роли соавторов, покрывающие требуемую роль
+// (пустой список = любой соавтор, RoleObserver). Роль автора покрывается
+// отдельной веткой запроса HasPermissionRole.
+func rolesForRequired(requiredRole string) []string {
+	switch requiredRole {
+	case RoleContentEditor:
+		return []string{RoleContentEditor, RoleModerator}
+	case RoleModerator:
+		return []string{RoleModerator}
+	default: // RoleObserver — любой соавтор
+		return nil
 	}
-	if authorID == userID {
-		return true, nil
-	}
-	co, err := s.repo.FindByGameAndUser(ctx, gameID, userID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, nil
-		}
-		return false, err
-	}
-	return hasCoAuthorRole(co.Role, requiredRole), nil
 }
 
 // hasCoAuthorRole проверяет, что роль соавтора покрывает требуемую.

@@ -24,7 +24,10 @@
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
                     <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "invitation.accept" }}</button>
                 </form>
-                <form action="/invitations/{{.ID}}/decline" method="POST" class="inline">
+                <!-- UX-08 (pass 45): confirm на decline (консистентно с dashboard). -->
+                <form action="/invitations/{{.ID}}/decline" method="POST" class="inline"
+                      data-confirm-danger="true" data-confirm-form='{{ T $.Lang "invitation.decline_confirm" }}'
+                      data-confirm-ok='{{ T $.Lang "invitation.decline" }}'>
                     <input type="hidden" name="_csrf" value="{{$.csrf}}">
                     <button type="submit" class="btn btn-danger text-sm">{{ T $.Lang "invitation.decline" }}</button>
                 </form>

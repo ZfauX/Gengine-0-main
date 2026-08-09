@@ -16,6 +16,10 @@ type CoAuthorRepository interface {
 	GetGameAuthorID(ctx context.Context, gameID uint) (uint, error)
 	FindByGameAndUser(ctx context.Context, gameID, userID uint) (*CoAuthor, error)
 	FindUnscopedByGameAndUser(ctx context.Context, gameID, userID uint) (*CoAuthor, error)
+	// HasPermissionRole — один запрос вместо двух (P-44-4, pass 45): проверяет,
+	// что userID является автором игры ЛИБО соавтором с одной из допустимых ролей.
+	// allowedRoles пуст → достаточно быть любым соавтором (RoleObserver).
+	HasPermissionRole(ctx context.Context, gameID, userID uint, allowedRoles []string) (bool, error)
 	// A-2 (pass 39): транзакционные варианты для HasPermissionTx — единый путь
 	// к данным (raw SQL был в сервисе).
 	GetGameAuthorIDWithTx(ctx context.Context, tx *gorm.DB, gameID uint) (uint, error)
@@ -47,6 +51,26 @@ func (r *gormCoAuthorRepo) IsUserManager(ctx context.Context, gameID, userID uin
 		return false, err
 	}
 	return count > 0, nil
+}
+
+// HasPermissionRole — P-44-4 (pass 45): один запрос вместо двух
+// (GetGameAuthorID + FindByGameAndUser). allowedRoles пуст → любой соавтор.
+func (r *gormCoAuthorRepo) HasPermissionRole(ctx context.Context, gameID, userID uint, allowedRoles []string) (bool, error) {
+	query := `
+		SELECT EXISTS (
+			SELECT 1 FROM games WHERE id = ? AND author_id = ? AND deleted_at IS NULL
+			UNION
+			SELECT 1 FROM co_authors WHERE game_id = ? AND user_id = ? AND deleted_at IS NULL`
+	args := []any{gameID, userID, gameID, userID}
+	if len(allowedRoles) > 0 {
+		query += ` AND role IN (?)`
+		args = append(args, allowedRoles)
+	}
+	query += `
+		)`
+	var exists bool
+	err := r.db.WithContext(ctx).Raw(query, args...).Scan(&exists).Error
+	return exists, err
 }
 
 func (r *gormCoAuthorRepo) GetGameAuthorID(ctx context.Context, gameID uint) (uint, error) {

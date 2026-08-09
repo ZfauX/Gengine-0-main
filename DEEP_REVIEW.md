@@ -4,7 +4,7 @@
 
 Повторное глубокое ревью выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture/DI) с последующей **личной верификацией ключевых находок** по коду.
 
-**Итог pass 45:** 0 критичных, 2 высоких (UX-01 — SyntaxError для гостей ломает games-list, P-45-5 — password_hash/email через Preload Members), ~10 средних, ~8 низких. Все ключевые находки исправлены раундом 1.
+**Итог pass 45:** 0 критичных, 2 высоких (UX-01 — SyntaxError для гостей ломает games-list, P-45-5 — password_hash/email через Preload Members), ~10 средних, ~8 низких. Все ключевые находки исправлены раундами 1-2 (раунд 2 — доделки: HasPermission один запрос, wizard submit, error pages aria, invitation confirm).
 
 > **Контекст:** pass 30-44 закрыты полностью. Новые находки: **UX-01 — JS SyntaxError для гостей** (незакрытый `{{if}}` в games-list ломал весь скрипт), **P-45-5 — Preload Members/Author/GetAvailableUsers тащили password_hash/email**, **S-45-4 — можно разжаловать последнего админа**, **S-45-1 — user enumeration через team search API**, **A-02 — OAuthRateLimit игнорировал лимит** (брал loginRateLimiter), **P-45-4 — дубль индекса co_authors**, **P-45-3/6/7** (COUNT метрики, Preload вопросов, полный Author), **UX-02/03/04** (confirm «Удалить», edit-ссылка всем, дубль og:description).
 
@@ -32,7 +32,16 @@
 - **UX-04**: games-show — `Description` передаётся в layout (og:description единственный), ExtraHead-дубль убран.
 - **Опровергнуто лично**: S-45-2 (шаблон teams-members показывает Name/Email — PII самой команды, password_hash теперь не грузится), S-45-3 (push SSRF re-check — HTTPS-only, impact speculativ), S-45-5 (LOW — stale authz до reconnect), A-07 (BlackboxVote inline errors — стилевое).
 
-**Осталось к pass 46** (документировано): S-45-3 (push SSRF DNS-rebinding — HTTPS-only, низкий риск), S-45-5 (WS stale authz после удаления из команды), P-43-4 (authed-листинг кэш), P-44-3 (GetGameplayData 7 round-trips), P-44-4 (HasPermission 2 запроса), P-45-10/11 (индексы game_passings/player_ratings — SPECULATIVE, EXPLAIN), P-45-13 (invitations user_id,status индекс), UX-05 (wizard финальный submit — SPECULATIVE), UX-06 (emoji aria-hidden на error pages), UX-08 (invitations-my decline без confirm).
+**Раунд 2** (доделки — оставшиеся пункты pass 45):
+- **P-44-4**: HasPermission — один запрос `HasPermissionRole` (автор ИЛИ соавтор с допустимой ролью) вместо GetGameAuthorID + FindByGameAndUser; `rolesForRequired` хелпер.
+- **P-45-13**: invitations(user_id, status) — УЖЕ есть (idx_invitations_user_status 000023 + idx_invitations_user_status_created 000040).
+- **P-45-10**: game_passings(game_id, status) — УЖЕ есть (idx_game_passings_game_status 000007).
+- **UX-05**: wizard финальный submit — явный `form.submit()` в click-обработчике (disabled-кнопка больше не блокирует отправку).
+- **UX-06**: error pages — `aria-hidden="true"` на декоративных эмодзи (6 страниц).
+- **UX-08**: invitations-my decline — confirm-модалка (data-confirm-danger + data-confirm-ok), ключ `invitation.decline_confirm`.
+- **Опровергнуто/отложено**: P-45-11 (player_ratings score индекс — таблица мала), S-45-3 (push SSRF — HTTPS-only), S-45-5 (WS stale authz — recheck на каждый send дорого; reconnect решает).
+
+**Осталось к pass 46** (документировано): S-45-3 (push SSRF — HTTPS-only, низкий риск), S-45-5 (WS stale authz после удаления из команды — reconnect), P-43-4 (authed-листинг кэш), P-44-3 (GetGameplayData 7 round-trips), P-45-11 (player_ratings score индекс — SPECULATIVE).
 
 ---
 
@@ -65,12 +74,12 @@
 |---|---|---|---|
 | **S-45-3** | `push_handler.go:156-199` | Push SSRF re-check только при subscribe (DNS-rebinding). | 📋 HTTPS-only; низкий риск |
 | **S-45-5** | `monitor/handler.go:604-616` | WS stale authz после удаления из команды (до reconnect). | 📋 LOW |
-| **P-45-10** | `game_passings` | Composite (game_id, status) — SPECULATIVE. | 📋 EXPLAIN на потом |
+| **P-45-10** | `game_passings` | Composite (game_id, status) — SPECULATIVE. | ✅ Уже есть (idx_game_passings_game_status 000007) |
 | **P-45-11** | `player_ratings` | Индекс score для лидерборда — SPECULATIVE. | 📋 Размер таблицы невелик |
-| **P-45-13** | `invitations` | Индекс (user_id, status). | 📋 Проверить модель |
-| **UX-05** | `games-new-wizard` | Финальный submit — disabled-btn может блокировать native submit. | 📋 SPECULATIVE; проверить в браузере |
-| **UX-06** | `errors-*.html` | Emoji без aria-hidden. | 📋 Мелочь |
-| **UX-08** | `invitations-my.html` | Decline без confirm (обратимое). | 📋 Приемлемо |
+| **P-45-13** | `invitations` | Индекс (user_id, status). | ✅ Уже есть (idx_invitations_user_status 000023) |
+| **UX-05** | `games-new-wizard` | Финальный submit — disabled-btn может блокировать native submit. | ✅ Исправлено (явный form.submit) |
+| **UX-06** | `errors-*.html` | Emoji без aria-hidden. | ✅ Исправлено (aria-hidden) |
+| **UX-08** | `invitations-my.html` | Decline без confirm (обратимое). | ✅ Исправлено (confirm-модалка) |
 
 ### 🔲 Опровергнуто / безопасно (личная проверка)
 
@@ -143,7 +152,7 @@
 - **UX-12**: wizard — client-side валидация дат (шаг 1): start не в прошлом + предупреждение deadline > start.
 - **Опровергнуто/отложено**: P-44-3 (GetGameplayData 6 round-trips — errgroup уже параллелит), P-44-4 (HasPermission — ролевая логика в SQL рискованна), P-44-7 (Body нужен), P-44-10/11 (LOW), P-43-4 (authed-листинг — низкий приоритет).
 
-**Осталось к pass 45** (документировано): P-43-4 (authed-листинг кэш — низкий приоритет), P-44-3 (GetGameplayData round-trips), P-44-4 (HasPermission 2 запроса), P-44-10/11 (LOW), UX-09 (client-clock attempt timestamps + dark-контраст), UX-10 (calendar indicator 24px), UX-13 (chat onFinalClose retry), UX-14 (console strings), UX-15 (admin-backups "B" hardcode).
+**Осталось к pass 45** (документировано): P-43-4 (authed-листинг кэш — низкий приоритет), P-44-3 (GetGameplayData round-trips), P-44-10/11 (LOW), UX-09 (client-clock attempt timestamps + dark-контраст), UX-10 (calendar indicator 24px), UX-13 (chat onFinalClose retry), UX-14 (console strings), UX-15 (admin-backups "B" hardcode). *(P-44-4 HasPermission решён в pass 45 раунд 2.)*
 
 ---
 

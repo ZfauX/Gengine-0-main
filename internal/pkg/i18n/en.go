@@ -1152,6 +1152,7 @@ var enMessages = map[string]string{
 	"invitation.team_label":          "Team: %s",
 	"invitation.accept":              "Accept",
 	"invitation.decline":             "Decline",
+	"invitation.decline_confirm":     "Decline the team invitation?",
 	"invitation.list_title":          "Team invitations",
 	"invitation.create_button":       "+ Create new invitation",
 	"invitation.no_invitations_list": "No invitations yet.",

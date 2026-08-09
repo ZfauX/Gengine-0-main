@@ -178,9 +178,13 @@
                     submitBtn.scrollIntoView({ block: 'nearest' });
                 } else {
                     // H4: на финальном шаге — защита от двойного submit (дубли игры).
+                    // UX-05 (pass 45): явный form.submit() — раньше после disabled=true
+                    // браузер мог НЕ запустить нативный submit (форма не отправлялась).
                     if (this.disabled) { e.preventDefault(); return; }
+                    e.preventDefault();
                     this.disabled = true;
                     this.innerHTML = '<span class="inline-block animate-spin mr-1">\u27F3</span> ' + createText;
+                    if (form) form.submit();
                 }
             });
         }

@@ -1154,6 +1154,7 @@ var ruMessages = map[string]string{
 	"invitation.team_label":          "Команда: %s",
 	"invitation.accept":              "Принять",
 	"invitation.decline":             "Отклонить",
+	"invitation.decline_confirm":     "Отклонить приглашение в команду?",
 	"invitation.list_title":          "Приглашения в команду",
 	"invitation.create_button":       "+ Создать новое приглашение",
 	"invitation.no_invitations_list": "Приглашений пока нет.",
