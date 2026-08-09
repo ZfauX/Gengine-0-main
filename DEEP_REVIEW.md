@@ -1,12 +1,12 @@
-# Deep Review Gengine-0 — 9 августа 2026 (pass 36 — повторное ревью после закрытия pass 30-35)
+# Deep Review Gengine-0 — 9 августа 2026 (pass 37 — повторное ревью после закрытия pass 30-36 + дефера)
 
 ## Резюме
 
 Повторное глубокое ревью выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture/DI) с последующей **личной верификацией ключевых находок** по коду.
 
-**Итог pass 36:** 1 критичная, 5 высоких (все подтверждены лично), ~10 средних, ~10 низких.
+**Итог pass 37:** 0 критичных, 3 высоких (все подтверждены лично), ~12 средних, ~10 низких.
 
-> **Контекст:** pass 30-35 закрыты полностью. Новые проблемы: **утечка ответов через /games/{id}/full-preview**, **регрессии pass 35** (бейдж чата заблокирован CSP, HTML в ошибках submit, нет warning-ветки), **WebAuthn 2FA pending без TTL**, **2FA enable без lockout**, мёртвые поля God-фасадов, CSV/Excel injection.
+> **Контекст:** pass 30-36 закрыты полностью; дефер разобран; линтер 2.12.2 чист. Новые проблемы: **утечка подсказок через FullPreview**, **GET /settings без прав**, **fail-open TTL pending 2FA**, N+1 в UpdateScoresForGame/автостарте/таймаутах, **og:image http за reverse-proxy**, мёртвые не-Tx методы AttemptService, отсутствие тестов на новый код pass 36.
 
 ---
 
@@ -32,6 +32,118 @@
 **Проверка:** `go build ./...` ✓, `go test -short ./...` ✓, `go test -tags=integration` (game/user/tournament/admin) ✓, `go vet ./...` ✓, `gofmt -l .` → пусто ✓. `-race` недоступен на Windows (нет CGO).
 
 > Примечание: `golangci-lint` на этой машине — v1 с конфигом v2 (инфраструктурная проблема, не кодовая).
+
+---
+
+# PASS 37 (повторное ревью) — 9 августа 2026
+
+> Восьмое повторное ревью после полного закрытия pass 30-36 и разбора дефера. Выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture) с **личной верификацией** ключевых находок по коду.
+
+## Резюме pass 37
+
+**Итог:** 0 критичных, 3 высоких (все подтверждены лично), ~12 средних, ~10 низких.
+
+> Кодовая база стабильна, линтер 2.12.2 чист. Найдены: **утечка подсказок через FullPreview** (после K-1 pass 36 остался hint для не-менеджеров), **GET /settings без проверки прав**, **fail-open TTL pending 2FA**, N+1 в UpdateScoresForGame/автостарте/таймаутах, **og:image http за reverse-proxy**, мёртвые не-Tx методы AttemptService, дублированный flash-auto-hide.
+
+---
+
+## Статус (обновлено 9 авг 2026) — PASS 37 ОТКРЫТ
+
+Находки перечислены ниже; закрытие — раундами фиксов, как в pass 30-36.
+
+---
+
+## A. Найденные ошибки pass 37 (верифицировано лично)
+
+### 🔴 Критично
+
+Нет.
+
+### 🟠 Высокие
+
+| ID | Файл | Проблема |
+|---|---|---|
+| **S-1** | `game/hnd_fullpreview.go:110` | **Утечка подсказок (hint) через FullPreview.** После K-1 (pass 36) для non-manager убраны `Answer.Code`, но **`q.Hint` остался** для публичных игр. В геймплее hint выдаётся только по кнопке UseHint в активной сессии со штрафом; здесь — бесплатно и до старта. Разрушает экономику игры. **Верифицировано лично.** |
+| **S-2** | `game/hnd_settings.go:47-98` | **GET /games/{id}/settings без проверки IsUserManager.** `SettingsPage` проверяет только `GetByID` (видимость публичной игры), любой залогиненный видит AllowHints/MaxHints/HintPenaltySeconds/PerLevelTimeLimit/HideAnswersUntilFinished/AutoStart — раскрывает тактику. `SaveSettings` (POST) права проверяет корректно. **Верифицировано лично.** |
+| **S-3** | `user/auth_handler.go:220-232` | **Fail-open TTL pending-шага 2FA.** `TwoFALoginVerify` проверяет `pending_expires` только если ключ существует — флоу, забывший поставить ключ, получит бессрочное окно перебора TOTP. Pass 36 добавил установку в WebAuthn FinishLogin, но защита остаётся обходной. **Верифицировано лично.** |
+
+### 🟡 Средние
+
+| ID | Файл | Проблема |
+|---|---|---|
+| **P-1** | `tournament/service.go:433` | **N+1 UPDATE в UpdateScoresForGame** — по одному `UPDATE game_passings SET tournament_points` на прохождение в цикле (при N командах — N UPDATE в одной транзакции с advisory lock). **Верифицировано лично.** |
+| **P-2** | `game/svc_progress.go:63-88,440` | **N+1 в InitFirstLevelWithTx при автостарте** — Count + First(firstLevel) + Create + Save = 4 запроса на passing; игра с 100 командами = 400 запросов каждые 30с. |
+| **P-3** | `game/svc_progress.go:131-134,350` | **Повторная загрузка passing в AdvanceToNextLevel** при таймаутах (batch=100 → 300-500 запросов каждые 30с), хотя passings уже загружены батчем. |
+| **P-4** | `game/svc_monitor.go:158-180` | **GetOrFetchSnapshotJSON может вернуть (nil, nil)**: при кэш-хите с json==nil (старая запись) `GetOrFetchSnapshot` вернёт data без пересчёта json → пустой payload SSE. **Верифицировано лично.** |
+| **P-5** | `game/svc_monitor.go:84-153` | **LRU снапшот-кэш не промотирует активные игры** (нет MoveToBack при хите) — активные игры могут быть вытеснены, старые живут. |
+| **P-6** | `game/repository.go:202-210` | **GetLogsByGameID без LIMIT** — выгрузка всех логов игры (сотни тысяч записей) в память. |
+| **A-1** | `monitor/service.go:59` | **StartVoting — read-path raw s.db** `Joins("Game")`, при готовом repo-методе `GetPassingWithGameByGamePassingID` (pass 36). Дублирование SQL. **Верифицировано лично.** |
+| **A-2** | `game/svc_attempt.go:25,86,107` | **Мёртвые не-Tx методы AttemptService** (SubmitCode/SubmitFile/AcceptPendingAttempt) — 0 прод-вызовов (rg подтвердил); write вне транзакции — небезопасный профиль. **Верифицировано лично.** |
+| **UX-1** | `game/hnd_game.go:221-225` | **og:image http за reverse-proxy**: схема по `c.Request.TLS`, X-Forwarded-Proto игнорируется → social sharing сломан при продакшен-деплое. **Верифицировано лично.** |
+| **UX-2** | `user/templates/layout.html:125-130,548-560` | **Дублированное авто-скрытие flash**: первый блок (querySelector, без fade) гасит анимацию fade-версии и удаляет только первый flash. **Верифицировано лично.** |
+| **UX-3** | `auth-register.html:41-56` | **reCAPTCHA не синхронизируется с переключателем темы** — тема фиксируется при рендере. |
+| **UX-4** | `gameplay-show.html:204-210` | **Бесконечные /timer-sync после истечения таймера** — setInterval не очищается. |
+| **T-1** | game/export/monitor | **Нет юнит-тестов на новый код pass 36**: GetGameplayData repo-методы (GetByIDWithTeam/GetCurrentProgressWithLevel/GetAttemptsByProgress/GetOpenVotingSession), GetOrFetchSnapshotJSON, ListRecentAttempts LIMIT+reverse, 2FA Enable lockout, WebAuthn pending_expires, csvSafe — все 0% покрытия. |
+| **T-2** | `export/service.go:53` | **csvSafe не покрыт тестами** — защита formula injection без проверки; и сам helper не обрабатывает ведущий пробел перед `=` (`" =2+2"`). |
+
+### 🔲 Низкие / мелочи
+
+| ID | Файл | Проблема |
+|---|---|---|
+| **UX-5** | `admin-teams.html`, `tournaments-list.html`, `admin-audit.html` | Нет мобильных карточек (только overflow-x-auto) — несоответствие admin-users/games (pass 35). |
+| **UX-6** | `monitor-page.html:260-261` | `actionBtn` может быть null после перерисовки карточки — красная кнопка OK теряется. |
+| **UX-7** | `dashboard-index.html:42-43` | localStorage без try/catch (приватный режим). |
+| **UX-8** | `layout.html:123` | Серверный flash без ветки warning (сейчас хендлеры не шлют — ловушка). |
+| **A-3** | `game/svc_coauthor.go:46` | HasPermission через raw s.db (в отличие от IsUserManager через repo) — дублирование форм проверки прав. |
+| **A-4** | `tournament/service.go:341` | `existing, _ := ...GetByTournamentAndTeamIDs(...)` — игнорирует ошибку. |
+| **P-7** | — | Отсутствует индекс `level_progresses(game_passing_id, level_id)` (миграция 000045). **Верифицировано лично.** |
+| **L-1** | `export/handler.go:466-480` | Соавтор (manager) не может экспортировать результаты команды (isAuthor только по AuthorID) — UX-регрессия pass 36. |
+
+### 🔲 Опровергнуто / безопасно (личная проверка)
+
+- **ExportTeamResultsCSV IDOR** — НЕ IDOR: GetFinishedPassingForTeam привязывает teamID к gameID, IsTeamCaptain не даёт экспорт чужой команды. Безопасно.
+- **2FA lockout + сброс счётчика при успехе** (pass 36) — корректен на всех путях (Verify/BackupVerify/Enable/Disable).
+- **WebAuthn pending_expires** — ставится в FinishLogin. ✓
+- **Refresh-ротация, password reset SHA-256, jti blacklist** — корректны.
+- **CSRF** на всех проверенных формах; CSP nonce работает; XSS экранируется.
+- **FullPreview GetByID** различает 403/404 корректно.
+
+---
+
+## B. Оптимизации (производительность)
+
+1. **P-1**: batch `UPDATE game_passings SET tournament_points = v.points FROM unnest(...)` в UpdateScoresForGame (паттерн уже есть в RemoveGame).
+2. **P-2**: первый уровень игры грузить один раз (map firstLevelByGameID); `INSERT ... ON CONFLICT DO NOTHING` вместо Count+Create.
+3. **P-3**: передавать passing из уже загруженного батча в AdvanceToNextLevel (новый вариант с preloaded passing).
+4. **P-4**: в GetOrFetchSnapshot заполнять json при кэш-хите, если пуст; в GetOrFetchSnapshotJSON fallback на `json.Marshal(cached.data)`.
+5. **P-5**: `cacheList.MoveToBack(elem)` при кэш-хите снапшота.
+6. **P-7**: миграция 000045 — `CREATE INDEX ... ON level_progresses(game_passing_id, level_id)`.
+7. **P-6**: GetLogsByGameID — LIMIT или переиспользование GetLogsByGameIDPaginated.
+
+## C. Улучшения кодовой базы (архитектура)
+
+1. **S-1**: убрать `q.Hint` из full-preview для non-manager (оставить только Text/Description), либо проверять участие/статус игры.
+2. **S-2**: `SettingsPage` — добавить `IsUserManager || IsAdmin` (как в SaveSettings).
+3. **S-3**: fail-closed TTL — при отсутствии `pending_expires` считать pending истёкшим (`expires := 0`).
+4. **A-1**: StartVoting через `blackboxRepo.GetPassingWithGameByGamePassingID`.
+5. **A-2**: удалить мёртвые не-Tx методы AttemptService (или перевести на явные tx-сигнатуры).
+6. **T-1/T-2**: добавить тесты: repo-методы GetGameplayData (sqlmock), GetOrFetchSnapshotJSON, csvSafe (включая `" =2+2"`), 2FA Enable lockout, WebAuthn pending_expires.
+
+## D. Улучшения UX
+
+1. **UX-1**: схема og:image — учитывать X-Forwarded-Proto (как HSTS в security.go:79) или конфиг внешнего base URL.
+2. **UX-2**: удалить первый блок auto-hide flash (125-130), оставить fade-версию.
+3. **UX-3**: reCAPTCHA — пере-рендер при переключении темы (MutationObserver или click на themeToggle).
+4. **UX-4**: clearInterval таймера при истечении/level_completed.
+5. **UX-5**: mobile-карточки для admin-teams/tournaments-list/admin-audit.
+6. **UX-7**: try/catch вокруг localStorage в dashboard.
+
+## Приоритет фиксов (pass 37)
+1. **S-1** (hint утечка) + **S-2** (settings GET) + **S-3** (fail-open TTL) — security.
+2. **UX-1** (og:image http) — продакшен social sharing.
+3. **P-1/P-4** (N+1 UpdateScores + JSON nil).
+4. **A-1/A-2** (read-path + мёртвые методы).
+5. **T-1** (тесты нового кода pass 36).
 
 ---
 
