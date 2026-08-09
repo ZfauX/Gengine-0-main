@@ -122,6 +122,10 @@ type JWTConfig struct {
 // SessionConfig содержит параметры сессий.
 type SessionConfig struct {
 	Secret string // секретный ключ для подписи cookie сессии (минимум 32 символа)
+
+	// CSRFSecret — отдельный ключ для CSRF-токенов (S-42-4 pass 42).
+	// Если не задан — используется Session.Secret (совместимость).
+	CSRFSecret string
 }
 
 // AdminConfig содержит учётные данные администратора, создаваемого при инициализации.
@@ -283,6 +287,15 @@ func LoadConfig() (*Config, error) {
 	if cfg.Session.Secret, err = requireStrongSecret("SESSION_SECRET", 32); err != nil {
 		return nil, err
 	}
+
+	// Отдельный CSRF-ключ (S-42-4, pass 42): опционален, fallback на
+	// SESSION_SECRET. Рекомендуется задавать CSRF_SECRET — компрометация
+	// одного ключа не ослабляет второй механизм.
+	csrfSecret := os.Getenv("CSRF_SECRET")
+	if csrfSecret == "" {
+		csrfSecret = cfg.Session.Secret
+	}
+	cfg.Session.CSRFSecret = csrfSecret
 
 	// Администратор – обязателен
 	if cfg.Admin.Email, err = requireEnv("ADMIN_EMAIL"); err != nil {

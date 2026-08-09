@@ -336,8 +336,9 @@ func (h *TeamHandler) AddMember(c *gin.Context) {
 	}
 
 	if err := h.teamService.AddMember(c.Request.Context(), req.TeamID, input.UserID, actorID); err != nil {
-		switch err.Error() {
-		case "пользователь уже в команде", "только капитан может добавлять участников":
+		// A-42-01 (pass 42): errors.Is вместо string-match (как Create в pass 41).
+		switch {
+		case errors.Is(err, ErrUserAlreadyInTeam), errors.Is(err, ErrOnlyCaptainCanAdd):
 			render.RenderError(c, http.StatusBadRequest, render.LocalizeError(c, err.Error()))
 		default:
 			log.Error().Err(err).Uint("team_id", req.TeamID).Uint("user_id", input.UserID).Uint("actor_id", actorID).Msg("AddMember: failed to add member")
@@ -358,8 +359,9 @@ func (h *TeamHandler) RemoveMember(c *gin.Context) {
 	actorID := c.GetUint("userID")
 
 	if err := h.teamService.RemoveMember(c.Request.Context(), req.TeamID, req.MemberID, actorID); err != nil {
-		switch err.Error() {
-		case "невозможно удалить капитана", "нет прав на удаление участников":
+		// A-42-01 (pass 42): errors.Is вместо string-match (как Create в pass 41).
+		switch {
+		case errors.Is(err, ErrCannotRemoveCaptain), errors.Is(err, ErrNoPermissionRemove):
 			render.RenderError(c, http.StatusBadRequest, render.LocalizeError(c, err.Error()))
 		default:
 			log.Error().Err(err).Uint("team_id", req.TeamID).Uint("member_id", req.MemberID).Uint("actor_id", actorID).Msg("RemoveMember: failed to remove member")

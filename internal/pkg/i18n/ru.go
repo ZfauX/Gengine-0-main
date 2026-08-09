@@ -617,6 +617,7 @@ var ruMessages = map[string]string{
 	"dashboard.in_game":               "в игре",
 	"dashboard.accept":                "Принять",
 	"dashboard.decline":               "Отклонить",
+	"dashboard.decline_confirm_message": "Отклонить приглашение в команду? Это действие нельзя отменить.",
 	"dashboard.team_label":            "Команда ",
 
 	// ── Profile ──
@@ -1174,6 +1175,7 @@ var ruMessages = map[string]string{
 	"chat.disconnected":      "🔴 Отключено. Переподключение...",
 	"chat.reconnecting":      "Переподключение...",
 	"chat.connection_error":  "⚠️ Соединение не установлено. Сообщение не отправлено.",
+	"chat.delivery_timeout":  "⚠️ Сообщение, возможно, не доставлено (нет подтверждения от сервера).",
 	"chat.waiting":           "⏳",
 
 	// ── Game Chat ──

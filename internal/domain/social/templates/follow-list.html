@@ -40,12 +40,16 @@
 
         document.addEventListener('click', async function(e) {
             const btn = e.target.closest('.unfollow-btn');
-            if (!btn) return;
+            if (!btn || btn.disabled) return;
             const authorID = btn.dataset.authorId;
             const authorName = btn.dataset.authorName;
             if (!authorID) return;
             var confirmed = await showModalConfirm(confirmMsg.replace('%s', function() { return authorName; }), btn);
             if (!confirmed) return;
+            // UX-11 (pass 42): блокируем кнопку на время DELETE — повторный
+            // клик мог отправить второй запрос (404 на повторном unfollow).
+            btn.disabled = true;
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
             fetch('/follow/' + authorID, {
                 method: 'DELETE',
                 headers: {

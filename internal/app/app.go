@@ -89,7 +89,7 @@ func (app *App) SetupRouter() (*gin.Engine, error) {
 	// TLS, reverse-proxy (TrustedProxies) и FORCE_SECURE_COOKIE. Раньше CSRF-кука
 	// была Secure только при собственном TLS и уходила по HTTP за TLS-терминатором.
 	secure := app.Config.TLS.CertFile != "" || app.Config.Server.TrustedProxies != "" || app.Config.Server.ForceSecureCookie
-	csrfMW := csrf.Middleware(app.Config.Session.Secret, secure, []string{app.Config.Server.BaseURL})
+	csrfMW := csrf.Middleware(app.Config.Session.CSRFSecret, secure, []string{app.Config.Server.BaseURL})
 	htmlGroup := r.Group("")
 	htmlGroup.Use(func(c *gin.Context) {
 		// /auth/webauthn/* в целом НЕ исключаем из CSRF: register/begin и

@@ -70,9 +70,14 @@ func (r *gormFollowRepo) GetSubscriptions(ctx context.Context, userID uint) ([]u
 	var authors []user.User
 	// S2: не выбираем users.email — списки подписок/подписчиков отдаются
 	// любому авторизованному пользователю.
+	// P-07 (pass 42): защитный кап — раньше без LIMIT тянули ВСЕ подписки
+	// (100k подписчиков = 100k строк users на профиль). UI без пагинации;
+	// 500 — практический потолок, полная пагинация — в pass 43.
 	err := r.db.WithContext(ctx).Select("users.id, users.name, users.avatar_path, users.profile_visibility, users.created_at").
 		Joins("JOIN follows ON follows.author_id = users.id").
 		Where("follows.follower_id = ?", userID).
+		Order("users.created_at ASC").
+		Limit(500).
 		Find(&authors).Error
 	return authors, err
 }
@@ -82,6 +87,8 @@ func (r *gormFollowRepo) GetFollowers(ctx context.Context, authorID uint) ([]use
 	err := r.db.WithContext(ctx).Select("users.id, users.name, users.avatar_path, users.profile_visibility, users.created_at").
 		Joins("JOIN follows ON follows.follower_id = users.id").
 		Where("follows.author_id = ?", authorID).
+		Order("users.created_at ASC").
+		Limit(500).
 		Find(&followers).Error
 	return followers, err
 }

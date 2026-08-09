@@ -596,6 +596,7 @@ var enMessages = map[string]string{
 	"dashboard.in_game":               "in game",
 	"dashboard.accept":                "Accept",
 	"dashboard.decline":               "Decline",
+	"dashboard.decline_confirm_message": "Decline the team invitation? This action cannot be undone.",
 	"dashboard.team_label":            "Team ",
 
 	// ── Profile ──
@@ -1172,6 +1173,7 @@ var enMessages = map[string]string{
 	"chat.disconnected":      "🔴 Disconnected. Reconnecting...",
 	"chat.reconnecting":      "Reconnecting...",
 	"chat.connection_error":  "⚠️ Connection not established. Message not sent.",
+	"chat.delivery_timeout":  "⚠️ Message may not have been delivered (no server acknowledgment).",
 	"chat.waiting":           "⏳",
 
 	// ── Game Chat ──

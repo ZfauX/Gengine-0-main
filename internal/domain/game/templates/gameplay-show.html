@@ -46,7 +46,9 @@
         <!-- Форма файла -->
         <form id="file-form" action="/game/{{.PassingID}}/file" method="POST" enctype="multipart/form-data" class="flex flex-wrap items-center gap-3 mt-3">
             <input type="hidden" name="_csrf" value="{{.csrf}}">
+            <!-- UX-07 (pass 42): aria-label — файловый input не имел доступного имени -->
             <input type="file" name="answer_file" id="file-input" accept="image/jpeg,image/png,image/gif,application/pdf,text/plain"
+                   aria-label='{{ T $.Lang "gameplay.upload_file" }}'
                    class="flex-1 text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
             <button type="submit" id="file-submit-btn" class="btn btn-outline text-sm whitespace-nowrap" data-no-loading>{{ T $.Lang "gameplay.upload_file" }}</button>
         </form>
@@ -77,9 +79,10 @@
                 <span class="font-mono">{{.Code}}</span>
                 <span class="flex items-center gap-2">
                     {{if .Success}}
-                    <span class="inline-flex items-center gap-1 text-green-700 font-medium">{{ T $.Lang "gameplay.attempt_correct" }}</span>
+                    <!-- UX-08 (pass 42): dark: варианты — text-green-700 на gray-900 не проходит контраст -->
+                    <span class="inline-flex items-center gap-1 text-green-700 dark:text-green-400 font-medium">{{ T $.Lang "gameplay.attempt_correct" }}</span>
                     {{else}}
-                    <span class="inline-flex items-center gap-1 text-red-600 font-medium">{{ T $.Lang "gameplay.attempt_wrong" }}</span>
+                    <span class="inline-flex items-center gap-1 text-red-600 dark:text-red-400 font-medium">{{ T $.Lang "gameplay.attempt_wrong" }}</span>
                     {{end}}
                     <span class="text-gray-500 text-xs">{{ formatTime $.TZOffset .CreatedAt }}</span>
                 </span>
@@ -154,11 +157,11 @@
             }
             if (timeLeft <= 0) {
                 timerDisplay.textContent = '{{ T $.Lang "gameplay.time_expired" }}';
-                timerDisplay.className = 'text-red-600 font-bold text-xl';
+                timerDisplay.className = 'text-red-600 dark:text-red-400 font-bold text-xl';
                 codeForm.style.display = 'none';
                 if (mobileTimerDisplay) {
                     mobileTimerDisplay.textContent = '{{ T $.Lang "gameplay.time_expired" }}';
-                    mobileTimerDisplay.className = 'text-center font-mono font-bold text-lg text-red-600';
+                    mobileTimerDisplay.className = 'text-center font-mono font-bold text-lg text-red-600 dark:text-red-400';
                 }
                 return;
             }
@@ -182,17 +185,18 @@
             }
 
             // Color coding: green > 5min, yellow > 1min, red < 1min
+            // UX-08 (pass 42): dark: варианты для контраста.
             if (timeLeft <= 60) {
-                timerDisplay.className = 'text-red-600 font-mono text-xl font-bold animate-pulse';
+                timerDisplay.className = 'text-red-600 dark:text-red-400 font-mono text-xl font-bold animate-pulse';
                 if (mobileTimerDisplay) {
                     mobileTimerDisplay.textContent = '{{ T $.Lang "gameplay.time_left" }}'.replace('%s', timeStr);
-                    mobileTimerDisplay.className = 'text-center font-mono font-bold text-lg text-red-600 animate-pulse';
+                    mobileTimerDisplay.className = 'text-center font-mono font-bold text-lg text-red-600 dark:text-red-400 animate-pulse';
                 }
             } else if (timeLeft <= 300) {
-                timerDisplay.className = 'text-yellow-700 font-mono text-xl font-bold';
+                timerDisplay.className = 'text-yellow-600 dark:text-yellow-400 font-mono text-xl font-bold';
                 if (mobileTimerDisplay) {
                     mobileTimerDisplay.textContent = '{{ T $.Lang "gameplay.time_left" }}'.replace('%s', timeStr);
-                    mobileTimerDisplay.className = 'text-center font-mono font-bold text-lg text-yellow-700';
+                    mobileTimerDisplay.className = 'text-center font-mono font-bold text-lg text-yellow-600 dark:text-yellow-400';
                 }
             } else {
                 timerDisplay.className = 'text-gray-700 dark:text-gray-300 font-mono text-xl';

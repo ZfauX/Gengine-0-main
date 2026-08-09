@@ -1,12 +1,130 @@
-# Deep Review Gengine-0 — 9 августа 2026 (pass 41 — повторное ревью после полного закрытия pass 30-40)
+# Deep Review Gengine-0 — 9 августа 2026 (pass 42 — повторное ревью после полного закрытия pass 30-41)
 
 ## Резюме
 
 Повторное глубокое ревью выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture/DI) с последующей **личной верификацией ключевых находок** по коду.
 
-**Итог pass 41:** 0 критичных, 2 высоких (P-1 Vote-EXISTS, S-1 unread race), ~8 средних, ~8 низких. Найдено после закрытия pass 30-40; ключевые находки исправлены раундом 1.
+**Итог pass 42:** 0 критичных, 0 высоких, ~8 средних, ~8 низких. Найдено после закрытия pass 30-41; ключевые находки исправлены раундом 1.
 
-> **Контекст:** pass 30-40 закрыты полностью. Новые находки: **Vote грузит все попытки уровня без LIMIT** (горячий путь голосования), **нет композитного индекса blackbox_votes(session_id, voter_id)**, **race в incrementUnreadCount**, **unfollow confirm «Удалить» вместо «Отписаться»**, **RotateBackups без boundary-проверки**, **CreateNow без таймаута pg_dump**, **string-match ошибок в team/social**.
+> **Контекст:** pass 30-41 закрыты полностью. Новые находки: **Vote-EXISTS из pass 41 не настоящий EXISTS** (Count+Limit(1) в PG — полный count), **миграция 000048 дублировала UNIQUE-индекс 000023 (no-op)**, **data-loss race в delete-модалке games-show**, **double-submit в wizard-форме**, **audit Count+List — два round-trip**, **follows/followers без лимита**, **string-match в team AddMember/RemoveMember**, **inline-ошибки в svc_passing.go**, **общий ключ CSRF и сессии**.
+
+---
+
+# PASS 42 (повторное ревью) — 9 августа 2026
+
+> Тринадцатое повторное ревью после полного закрытия pass 30-41. Выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture) с **личной верификацией** ключевых находок по коду.
+
+## Статус (обновлено 9 авг 2026) — PASS 42 ОТКРЫТ
+
+Находки перечислены ниже; закрытие — раундами фиксов.
+
+**Раунд 1** (правки текущие, не закоммичены до проверки):
+- **P-01**: Vote — настоящий `SELECT EXISTS(...)` через Raw().Scan (первая версия pass 41 Count+Limit(1) в PostgreSQL всё равно сканировала все совпадения; короткозамыкание).
+- **P-02**: удалена миграция 000048 из pass 41 — она дублировала `UNIQUE idx_blackbox_votes_session_voter` из 000023 (no-op) и её down.sql могла дропнуть UNIQUE-индекс.
+- **P-04**: миграция 000048 (новая) — `attempts(level_progress_id, is_file, code)` + `attempts(level_progress_id, is_file, file_path)`.
+- **P-05**: ListFilteredPaginated — Select только колонок карточек (вместо games.*) + индекс `games(is_draft, visibility, created_at DESC)`.
+- **P-06**: индекс `team_members(user_id)` (GetPassingByUser JOIN).
+- **P-07**: защитный LIMIT 500 в GetSubscriptions/GetFollowers.
+- **P-09**: audit List — `COUNT(*) OVER()` в одном запросе (вместо Count+List round-trip).
+- **UX-01**: games-show delete-модалка — undo блокируется при старте DELETE (data-loss race).
+- **UX-02**: wizard финальный шаг — защита от двойного Enter-submit.
+- **UX-03**: mobile-меню — Escape + click-outside + возврат фокуса.
+- **UX-04**: team-chat «отправка…» — таймер-фолбэк 10с (не висит вечно) + i18n.
+- **UX-05**: games-list карточки role=group вместо role=link (a11y).
+- **UX-06**: disabled-пагинация — span+aria-disabled вместо фокусируемых ссылок.
+- **UX-07**: aria-label на file-инпуты.
+- **UX-08**: dark-mode контраст статусных цветов (gameplay, dashboard, photos, simulate).
+- **UX-09**: toasts-ошибки → role=alert/assertive.
+- **UX-10**: decline приглашения → confirm-модалка + i18n.
+- **UX-11**: follow-list кнопка disabled на время DELETE.
+- **UX-12**: aria-label на переключатель вида.
+- **A-42-01/S-42-1**: team AddMember/RemoveMember → errors.Is (доделан pass 41).
+- **A-42-03**: svc_passing.go — sentinel (ErrNotCaptain, ErrCannotStartGame, ErrPassingNotActive) вместо inline.
+- **S-42-2**: убран мёртвый ErrNotFollowing из Follow-handler.
+- **S-42-4**: отдельный CSRF_SECRET (fallback на SESSION_SECRET).
+- **S-42-5**: VK user_ids → url.QueryEscape (defense-in-depth).
+- **Опровергнуто лично**: G-1 (shadowing фикс корректен), W-1 (wire DI консистентен).
+
+**Осталось к pass 43** (документировано): S-42-3 (refresh-привязка к IP — осознанный trade-off), S-42-6 (JWT до 2FA gate — wasted-issue), P-08 (calendar месяц кэшируется; iCal кэшируется клиентами), P-10 (backup list — ограничено MaxBackups), P-11 (AggregateGameSnapshot — измерить), UX-13/14/16 (мелочи), остаточный аудит security (WS/SSE auth, calendar/ical SSRF, uploads traversal, secrets scan — не завершён агентом).
+
+---
+
+## Найденные ошибки pass 42 (верифицировано лично)
+
+### 🟡 Средние
+
+| ID | Файл | Проблема | Статус |
+|---|---|---|---|
+| **P-01** | `monitor/service.go:162-175` | **Vote-EXISTS из pass 41 не настоящий EXISTS**: GORM `Count()+Limit(1)` в PostgreSQL даёт `count(*)` (LIMIT — no-op, сканируются все совпадения). Комментарий обещал short-circuit. | ✅ Исправлено (Raw EXISTS) |
+| **P-02** | `migrations/000048` (pass 41) | **Миграция 000048 — no-op**: `idx_blackbox_votes_session_voter` уже создан UNIQUE в 000023. Down.sql дропала чужой UNIQUE-индекс → race-уязвимость при откате. | ✅ Удалена (пересоздана с новым содержимым) |
+| **UX-01** | `games-show.html:437-441` | **Data-loss race в delete-модалке**: после отсчёта DELETE отправляется, но undo-кнопка активна — клик «Отменить» показывает «отменено» при уже-выполненном удалении. | ✅ Исправлено |
+| **UX-02** | `games-new-wizard.html:188-198` | **Двойной Enter на финальном шаге** создаёт дубль игры: submit-обработчик не защищал финальный шаг, а кнопка защищалась только по click. | ✅ Исправлено |
+| **A-42-03** | `game/svc_passing.go:81,218,222` | **Inline-ошибки без sentinel** — текст дублировал `tournament.ErrCaptainOnly`, но другой инстанс; errors.Is с ним не совпадёт. | ✅ Исправлено |
+| **A-42-01/S-42-1** | `team/handler.go:339,362` | **AddMember/RemoveMember всё ещё string-match** (pass 41 исправил только Create). | ✅ Исправлено |
+| **S-42-4** | `app.go:92`, `router.go:55` | **Один Secret на CSRF и session-store** — компрометация одного ослабляет оба. | ✅ Исправлено (CSRF_SECRET) |
+| **P-05** | `svc_listing.go:92-97` | **ListFilteredPaginated SELECT games.*** — description/search_vector на каждую строку (авторизованные не кэшируются); дефолтная сортировка без индекса. | ✅ Исправлено |
+| **P-07** | `social/repository.go:69-87` | **follows/followers без LIMIT** — 100k подписчиков = 100k строк users на просмотр профиля. | ✅ Исправлено (LIMIT 500) |
+| **P-09** | `pkg/audit/audit.go:74-109` | **Count + List — два round-trip** на каждый просмотр админ-страницы аудита. | ✅ Исправлено (COUNT OVER) |
+
+### 🔲 Низкие / мелочи
+
+| ID | Файл | Проблема | Статус |
+|---|---|---|---|
+| **P-04** | `migrations/000048` | Нет индексов attempts(level_progress_id, is_file, code/file_path) — residual-фильтр в Vote. | ✅ Исправлено (миграция) |
+| **P-06** | `game/repository.go:184-196` | GetPassingByUser JOIN team_members без user_id-индекса. | ✅ Исправлено (миграция) |
+| **P-08** | `calendar/handler.go:119,202` | ListByDateRange вызывается дважды (месяц + iCal). | 📋 Месяц кэшируется; iCal — у клиентов |
+| **P-10** | `admin/model.go:65-69` | Backup list без пагинации. | 📋 Ограничено MaxBackups=10 |
+| **P-11** | `game/monitor_repository.go:64-71` | AggregateGameSnapshot — широкая выборка попыток. | 📋 Измерить до правки |
+| **S-42-3** | `user/handler.go:26-34` | Refresh привязан к IP-префиксу — NAT/мобильные ротируют IP → разлогин всей семьи. | 📋 Осознанный trade-off |
+| **S-42-6** | `user/auth_handler.go:131-168` | JWT выпускается до 2FA-гейта (wasted-issue, токен не выставляется). | 📋 Не требует действий |
+| **UX-13** | `dashboard-index.html:174` | Неизвестный PassingStatus рендерится raw (locale-дыра). | 📋 Сервер шлёт только 2 статуса |
+| **UX-14** | `offline.html:7` | Кнопка без type=button (вне формы — безвредно). | 📋 Безвредно |
+| **UX-16** | `calendar-page.html` | Дни календаря не клавиатурные. | 📋 Приемлемо (кнопки есть) |
+
+### 🔲 Опровергнуто / безопасно (личная проверка)
+
+- **G-1** — shadowing-фикс svc_play.go корректен, errgroup Wait() даёт happens-before. ✓
+- **W-1** — wire DI консистентен (wire.go ↔ wire_gen.go ↔ wrap-функции). ✓
+- **UX-03-проверка**: CSP, XSS-экранирование, loading-состояния, focus-trap — все проверенные шаблоны в порядке. ✓
+- **S-42-регрессии**: isWithinBackupDir, CreateNow timeout, sentinel team/social — нет регрессий. ✓
+
+---
+
+## B. Оптимизации (производительность)
+
+1. **P-01**: настоящий EXISTS короткозамыкается — нет count всех attempts.
+2. **P-04/P-06**: композитные индексы attempts/team_members под hot-path Vote/GetPassingByUser.
+3. **P-09**: COUNT(*) OVER() — один round-trip вместо двух.
+4. **P-05**: Select колонок карточек + индекс дефолтной сортировки.
+5. **P-07**: лимит списков follows.
+
+## C. Улучшения кодовой базы (архитектура)
+
+1. **A-42-03**: sentinel-ошибки svc_passing (errors.Is вместо строк).
+2. **S-42-4**: разделение ключей CSRF/session.
+3. **A-42-01**: доделан errors.Is в team-handlers.
+4. **S-42-5**: QueryEscape defense-in-depth.
+
+## D. Улучшения UX
+
+1. **UX-01**: блокировка undo при старте delete.
+2. **UX-02**: защита двойного Enter в wizard.
+3. **UX-03/05/06/07/09/12**: a11y (меню, роли, aria, контраст).
+4. **UX-04/10/11**: таймаут «отправка…», confirm decline, disable на время запроса.
+
+## E. Остаточный аудит (к pass 43 — security агент не успел)
+- WebSocket/SSE auth: CheckOrigin, JWT-кука на upgrade, доступ к комнатам, `/ws` без CSRF.
+- SSRF в calendar/iCal.
+- Uploads: avatar/game cover/photo traversal.
+- Secrets-скан (проверить `.env` в .gitignore).
+- `/healthz` disclosure.
+- Webhook HMAC (наличие входящих вебхуков).
+
+## Приоритет фиксов (pass 42)
+1. **P-01 + P-02** (корректность Vote + опасная миграция) — уже сделано.
+2. **UX-01 + UX-02** (потеря данных / дубль создания) — уже сделано.
+3. **P-05/P-07/P-09** (перф горячих списков) — уже сделано.
+4. **A-42-01/A-42-03/S-42-4** (архитектура) — уже сделано.
 
 ---
 

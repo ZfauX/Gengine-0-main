@@ -33,6 +33,8 @@ type EntryWithUser struct {
 	ObjectType string `json:"object_type"`
 	ObjectID   uint   `json:"object_id"`
 	Details    string `json:"details"`
+	// TotalCount — P-09 (pass 42): COUNT(*) OVER() из того же запроса.
+	TotalCount int64 `json:"-"`
 }
 
 // Service записывает и читает события аудита.
@@ -71,40 +73,40 @@ func (s *Service) Count(ctx context.Context) (int64, error) {
 
 // List возвращает записи аудита с пагинацией и фильтрацией.
 // Добавлен контекст.
+// P-09 (pass 42): COUNT(*) OVER() в одном запросе — раньше отдельный Count
+// делал второй round-trip на каждый просмотр админ-страницы аудита.
 func (s *Service) List(ctx context.Context, userIDStr, action, query string, page, perPage int) ([]EntryWithUser, int64, error) {
 	base := s.DB.WithContext(ctx).Table("audit_logs").
 		Joins("LEFT JOIN users ON users.id = audit_logs.user_id")
 
-	countQ := s.DB.WithContext(ctx).Table("audit_logs")
 	if userIDStr != "" {
 		if id, err := strconv.Atoi(userIDStr); err == nil {
 			base = base.Where("audit_logs.user_id = ?", id)
-			countQ = countQ.Where("user_id = ?", id)
 		}
 	}
 	if action != "" {
 		base = base.Where("audit_logs.action = ?", action)
-		countQ = countQ.Where("action = ?", action)
 	}
 	if query != "" {
 		like := sqlutil.BuildLikePattern(query)
 		base = base.Where("(users.name ILIKE ? OR users.email ILIKE ?)", like, like)
-		countQ = countQ.Where("audit_logs.user_id IN (SELECT id FROM users WHERE name ILIKE ? OR email ILIKE ?)", like, like)
-	}
-
-	var total int64
-	if err := countQ.Count(&total).Error; err != nil {
-		return nil, 0, err
 	}
 
 	var rows []EntryWithUser
 	offset := (page - 1) * perPage
 	err := base.
-		Select("audit_logs.id, audit_logs.created_at, audit_logs.user_id, users.name AS user_name, audit_logs.action, audit_logs.object_type, audit_logs.object_id, audit_logs.details").
+		Select("audit_logs.id, audit_logs.created_at, audit_logs.user_id, users.name AS user_name, audit_logs.action, audit_logs.object_type, audit_logs.object_id, audit_logs.details, COUNT(*) OVER() AS total_count").
 		Order("audit_logs.created_at DESC").
 		Offset(offset).
 		Limit(perPage).
 		Scan(&rows).Error
+	if err != nil {
+		return nil, 0, err
+	}
 
-	return rows, total, err
+	var total int64
+	if len(rows) > 0 {
+		total = rows[0].TotalCount
+	}
+	return rows, total, nil
 }

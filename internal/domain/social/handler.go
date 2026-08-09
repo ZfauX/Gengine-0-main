@@ -74,8 +74,10 @@ func (h *FollowHandler) Follow(c *gin.Context) {
 
 	if err := h.followService.Follow(c.Request.Context(), userID, req.ID); err != nil {
 		// G6 (pass 41): errors.Is вместо string-match.
+		// S-42-2 (pass 42): ErrNotFollowing в Follow — мёртвая ветка (его
+		// возвращает только Unfollow); оставлен один реальный sentinel.
 		switch {
-		case errors.Is(err, ErrCannotFollowSelf), errors.Is(err, ErrNotFollowing):
+		case errors.Is(err, ErrCannotFollowSelf):
 			appErr := apperrors.BadRequest(render.LocalizeError(c, err.Error()))
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
 		default:

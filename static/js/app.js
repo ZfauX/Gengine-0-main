@@ -78,6 +78,14 @@ function initToast() {
 
         var toast = document.createElement('div');
         toast.className = 'toast toast-' + type + ' transition-all duration-300 ease-in-out';
+        // UX-09 (pass 42): ошибки объявляются assertive (role=alert), остальные —
+        // роль статуса; контейнер сам по себе polite (layout.html).
+        if (type === 'error') {
+            toast.setAttribute('role', 'alert');
+            toast.setAttribute('aria-live', 'assertive');
+        } else {
+            toast.setAttribute('role', 'status');
+        }
         var closeBtn = document.createElement('button');
         closeBtn.className = 'shrink-0 text-gray-400 hover:text-gray-600';
         closeBtn.setAttribute('aria-label', tI18n('close', 'Закрыть'));

@@ -470,15 +470,35 @@
         });
 
         // Mobile hamburger menu
+        // UX-03 (pass 42): добавлены Escape-close и click-outside — раньше меню
+        // оставалось открытым при выходе фокусом (a11y) и клике вне.
         (function() {
             const hamburger = document.getElementById('hamburgerBtn');
             const mobileMenu = document.getElementById('mobileMenu');
             if (!hamburger || !mobileMenu) return;
 
+            function closeMobileMenu(returnFocus) {
+                if (mobileMenu.classList.contains('hidden')) return;
+                mobileMenu.classList.add('hidden');
+                hamburger.setAttribute('aria-expanded', 'false');
+                if (returnFocus) hamburger.focus();
+            }
+
             hamburger.addEventListener('click', function() {
                 const isHidden = mobileMenu.classList.contains('hidden');
                 mobileMenu.classList.toggle('hidden');
                 hamburger.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
+            });
+
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') closeMobileMenu(true);
+            });
+
+            document.addEventListener('click', function(e) {
+                if (mobileMenu.classList.contains('hidden')) return;
+                if (!mobileMenu.contains(e.target) && !hamburger.contains(e.target)) {
+                    closeMobileMenu(false);
+                }
             });
         })();
 

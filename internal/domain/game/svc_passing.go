@@ -27,6 +27,9 @@ var (
 	ErrPassingNotFound     = errors.New("прохождение не найдено")
 	ErrAlreadyApplied      = errors.New("заявка уже подана")
 	ErrStatusNotAllowed    = errors.New("невозможно перевести прохождение в этот статус")
+	ErrNotCaptain          = errors.New("только капитан может подать заявку")
+	ErrCannotStartGame     = errors.New("только капитан или автор/модератор может начать игру")
+	ErrPassingNotActive    = errors.New("игра ещё не принята или уже началась")
 	ErrNotCaptainOrManager = errors.New("только капитан или модератор может менять статус заявки")
 )
 
@@ -78,7 +81,7 @@ func (s *GamePassingService) Apply(ctx context.Context, gameID, teamID, userID u
 			return err
 		}
 		if t.CaptainID != userID {
-			return errors.New("только капитан может подать заявку")
+			return ErrNotCaptain
 		}
 		var game Game
 		if err := tx.First(&game, gameID).Error; err != nil {
@@ -214,11 +217,11 @@ func (s *GamePassingService) StartGame(ctx context.Context, passingID, userID ui
 				return err
 			}
 			if !ok {
-				return errors.New("только капитан или автор/модератор может начать игру")
+				return ErrCannotStartGame
 			}
 		}
 		if passing.Status != StatusAccepted {
-			return errors.New("игра ещё не принята или уже началась")
+			return ErrPassingNotActive
 		}
 		passing.Status = StatusStarted
 		if err := tx.Save(&passing).Error; err != nil {

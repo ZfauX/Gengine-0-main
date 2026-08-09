@@ -159,18 +159,24 @@ func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID, 
 			return ErrVotingClosed
 		}
 
-		// N-1 (pass 41): EXISTS вместо загрузки ВСЕХ попыток уровня в память
-		// (ранее Find + фильтр в Go — на активной игре тысячи строк кодов).
-		var exists int64
-		if findErr := tx.Model(&game.Attempt{}).
-			Where("level_progress_id IN (SELECT id FROM level_progresses WHERE game_passing_id = ? AND level_id = ?)",
-				lockedSession.GamePassingID, lockedSession.LevelID).
-			Where("(is_file = true AND file_path = ?) OR (is_file = false AND code = ?)", option, option).
-			Limit(1).
-			Count(&exists).Error; findErr != nil {
+		// N-1 (pass 41) + P-01 (pass 42): настоящий EXISTS вместо загрузки ВСЕХ
+		// попыток уровня в память. Первая версия использовала Count()+Limit(1) —
+		// в PostgreSQL count(*) всё равно сканирует все совпадения (LIMIT — no-op);
+		// EXISTS короткозамыкается на первом совпадении.
+		var exists bool
+		if findErr := tx.Raw(
+			`SELECT EXISTS (
+				SELECT 1 FROM attempts
+				WHERE level_progress_id IN (
+					SELECT id FROM level_progresses WHERE game_passing_id = ? AND level_id = ?
+				)
+				AND ((is_file = true AND file_path = ?) OR (is_file = false AND code = ?))
+			)`,
+			lockedSession.GamePassingID, lockedSession.LevelID, option, option,
+		).Scan(&exists).Error; findErr != nil {
 			return findErr
 		}
-		if exists == 0 {
+		if !exists {
 			return ErrInvalidOption
 		}
 

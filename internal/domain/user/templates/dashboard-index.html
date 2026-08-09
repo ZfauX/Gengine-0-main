@@ -74,7 +74,7 @@
                 {{range .Dashboard.AuthoredGames}}
                 <li class="py-2 flex justify-between items-center">
                     <a href="/games/{{.ID}}" class="text-blue-600 dark:text-blue-400 hover:underline">{{.Name}}</a>
-                    {{if .IsDraft}}<span class="text-xs text-yellow-700 font-medium">{{ T $.Lang "profile.draft_badge" }}</span>{{end}}
+                    {{if .IsDraft}}<span class="text-xs text-yellow-700 dark:text-yellow-400 font-medium">{{ T $.Lang "profile.draft_badge" }}</span>{{end}}
                 </li>
                 {{end}}
             </ul>
@@ -199,7 +199,12 @@
                         <input type="hidden" name="_csrf" value="{{$.csrf}}">
                         <button type="submit" class="btn btn-primary text-xs">{{ T $.Lang "dashboard.accept" }}</button>
                     </form>
-                    <form action="/invitations/{{.ID}}/decline" method="POST" class="inline">
+                    <!-- UX-10 (pass 42): confirm на decline — отклонение приглашения
+                         необратимо; раньше срабатывало мгновенно без спроса. -->
+                    <form action="/invitations/{{.ID}}/decline" method="POST" class="inline"
+                          data-confirm-form='{{ T $.Lang "dashboard.decline_confirm_message" }}'
+                          data-confirm-danger="true"
+                          data-confirm-ok='{{ T $.Lang "dashboard.decline" }}'>
                         <input type="hidden" name="_csrf" value="{{$.csrf}}">
                         <button type="submit" class="btn btn-danger text-xs">{{ T $.Lang "dashboard.decline" }}</button>
                     </form>

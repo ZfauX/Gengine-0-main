@@ -9,6 +9,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -183,8 +184,10 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 		}
 		externalID = extraString(token.Extra("user_id"))
 
+		// S-42-5 (pass 42): QueryEscape — user_id приходит от провайдера в токене,
+		// но невалидированная конкатенация в URL — плохая практика (defense-in-depth).
 		userReq, reqErr := http.NewRequestWithContext(ctxWithClient, "GET",
-			"https://api.vk.com/method/users.get?v=5.131&user_ids="+externalID, nil)
+			"https://api.vk.com/method/users.get?v=5.131&user_ids="+url.QueryEscape(externalID), nil)
 		if reqErr != nil {
 			log.Warn().Err(reqErr).Str("external_id", externalID).Msg("VK: failed to create user request")
 			name = emailStr

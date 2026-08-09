@@ -89,8 +89,12 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 	var b strings.Builder
 	b.Grow(1500)
 
+	// P-05 (pass 42): Select только колонок, нужных карточкам листинга —
+	// раньше games.* тащил description (2000) + search_vector (tsvector) на
+	// каждую строку страницы, в т.ч. для авторизованных (некэшируемых) списков.
 	b.WriteString(`
-		SELECT games.*,
+		SELECT games.id, games.name, games.cover_path, games.starts_at, games.is_draft,
+			games.visibility, games.rating_value, games.participant_count, games.author_id,
 			users.name as author__name,
 			COUNT(*) OVER() AS total_count
 		FROM games

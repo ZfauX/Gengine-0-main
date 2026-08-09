@@ -436,6 +436,11 @@
 
                 if (elapsed >= totalDuration) {
                     clearInterval(deleteTimer);
+                    // UX-01 (pass 42): как только отсчёт завершён и DELETE ушёл,
+                    // блокируем undo — иначе клик «Отменить удаление» покажет
+                    // «отменено», хотя удаление уже выполняется (data-loss race).
+                    undoDeleteBtn.disabled = true;
+                    undoDeleteBtn.classList.add('opacity-50', 'cursor-not-allowed');
                     // Actually delete
                     fetch('/games/' + pendingGameId + '/delete', {
                         method: 'POST',

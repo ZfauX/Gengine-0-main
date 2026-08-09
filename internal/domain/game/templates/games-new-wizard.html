@@ -187,13 +187,29 @@
 
         // Enter в любом поле не должен отправлять форму с первого шага (UX6):
         // перехватываем submit и переходим к следующему шагу, как по кнопке.
+        // UX-02 (pass 42): на финальном шаге Enter отправлял форму нативно,
+        // обходя защиту кнопки — двойной Enter мог создать дубль игры.
         if (form) {
+            let submitting = false;
             form.addEventListener('submit', function(e) {
                 if (currentStep < totalSteps - 1) {
                     e.preventDefault();
                     if (!validateStep(currentStep)) return;
                     showStep(currentStep + 1);
+                    return;
                 }
+                // Финальный шаг: блокируем повторную отправку.
+                if (submitting) {
+                    e.preventDefault();
+                    return;
+                }
+                submitting = true;
+                e.preventDefault();
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '<span class="inline-block animate-spin mr-1">\u27F3</span> ' + createText;
+                }
+                form.submit();
             });
         }
 
