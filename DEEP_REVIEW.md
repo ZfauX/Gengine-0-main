@@ -51,6 +51,25 @@
 
 Находки перечислены ниже; закрытие — раундами фиксов.
 
+**Раунд 1** (`0947b44`):
+- **L-1**: unread-счётчик инкрементируется (вместо invalidate + COUNT-per-Create) — P-M6 достигнут.
+- **L-3**: миграция 000047 — `idx_tournament_results_tournament_team (tournament_id, team_id)`.
+- **L-4**: SSE `[]byte` один раз на broadcast.
+- **L-5**: cache.removeExpired — `Peek` вместо `Get` (sweep не промоутит).
+- **L-6**: пагинация админки — cap page ≤ 10000.
+- **L-7**: pg_dump файлы chmod 0600.
+- **L-8**: chat aria-live off на время загрузки истории (chat-page + team-chat).
+- **L-9**: calendar dark today highlight (`dark:bg-blue-900/30`).
+- **L-10**: `ErrTestingOnly` sentinel (убран дубликат).
+- **L-11**: monitor startPolling идемпотентен.
+
+**Раунд 2** (`19ef9b8`):
+- **T1**: room_hub_worker_test.go — стресс broadcast↔unregister (50 раундов, ловит C-1 panic), idle-exit lifecycle, Stop worker exit, multi-room no-leak.
+- **Rate limit**: добавлен на POST /voting/vote (20/мин) и POST /games/:id/review (10/мин) — были без лимита.
+- **IDOR team/tournament/export** — проверено: CanManageTeam / checkGameAccess / AuthorID — безопасно.
+
+**L-2** — закрыт как опровергнутый: `idx_follows_author_id` уже существует в миграции 000002.
+
 ---
 
 ## A. Найденные ошибки pass 40 (верифицировано лично)
