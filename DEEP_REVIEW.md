@@ -4,7 +4,7 @@
 
 Повторное глубокое ревью выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture/DI) с последующей **личной верификацией ключевых находок** по коду.
 
-**Итог pass 44:** 0 критичных, 2 высоких (A-09 — push-pool shutdown race, A-02 — VK ownership ослаблен), ~8 средних, ~8 низких. Все ключевые находки исправлены раундом 1.
+**Итог pass 44:** 0 критичных, 2 высоких (A-09 — push-pool shutdown race, A-02 — VK ownership ослаблен), ~8 средних, ~8 низких. Все ключевые находки исправлены раундами 1-2 (раунд 2 — доделки: rate-limit voting/OAuth, timer-sync, touch targets, wizard validation).
 
 > **Контекст:** pass 30-43 закрыты полностью. Новые находки: **A-09 — panic send-on-closed-channel в push-pool при shutdown** (select+default не защищает), **A-02 — VK-проверка связки не сверяла владельца** (вход как жертва при чужой привязке), **P-44-1/2/5/6/7/8/9** (лидерборд без LIMIT, Preload полных Team/Level, Count вместо EXISTS, недостающие индексы), **UX-01/02** (застрявший спиннер upload/2FA-disable), **UX-03-06** (monitor no-data, dashboard search aria, toggle-admin confirm, notes label), **S-44-1** (ExternalLogin без UNIQUE).
 
@@ -36,7 +36,16 @@
 - **A-01**: интеграционные тесты VK existing-user (deny без привязки / allow с привязкой).
 - **Опровергнуто лично**: P-44-4 (HasPermission — ролевая логика в SQL рискованна, idx_co_authors_game_user уже ускоряет), P-44-7 (Body нужен в списке уведомлений), S-44-3 (исходное дизайн-ограничение анти-hijack, не регрессия).
 
-**Осталось к pass 45** (документировано): S-44-2 (OAuth делит login rate-limiter — осознанно), S-44-4 (voting/start+close без rate-limit), P-43-4 (authed-листинг кэш — низкий приоритет), P-44-3 (GetGameplayData 6 round-trips), P-44-10/11/12 (LOW), UX-07-15 (LOW: timer-sync clamp, gameplay code-form data-no-loading, console strings, touch targets admin-users/notes/photos, wizard step-2-4 валидация).
+**Раунд 2** (доделки — оставшиеся пункты pass 44):
+- **S-44-4**: /voting/start + /voting/:id/close — CodeSubmissionRateLimit (20/мин), как на vote.
+- **S-44-2**: OAuthRateLimit — отдельный ключ "oauth:"+ip (не делит бюджет с парольным логином).
+- **UX-07**: gameplay timer-sync — синхронизация в обе стороны; форма возвращается при положительном серверном времени.
+- **UX-08**: gameplay #code-form — data-no-loading (inline .finally управляет кнопкой).
+- **UX-11**: touch targets — admin-users пагинация, notes delete, photos delete (min-h/min-w 44px).
+- **UX-12**: wizard — client-side валидация дат (шаг 1): start не в прошлом + предупреждение deadline > start.
+- **Опровергнуто/отложено**: P-44-3 (GetGameplayData 6 round-trips — errgroup уже параллелит), P-44-4 (HasPermission — ролевая логика в SQL рискованна), P-44-7 (Body нужен), P-44-10/11 (LOW), P-43-4 (authed-листинг — низкий приоритет).
+
+**Осталось к pass 45** (документировано): P-43-4 (authed-листинг кэш — низкий приоритет), P-44-3 (GetGameplayData round-trips), P-44-4 (HasPermission 2 запроса), P-44-10/11 (LOW), UX-09 (client-clock attempt timestamps + dark-контраст), UX-10 (calendar indicator 24px), UX-13 (chat onFinalClose retry), UX-14 (console strings), UX-15 (admin-backups "B" hardcode).
 
 ---
 
@@ -72,17 +81,17 @@
 
 | ID | Файл | Проблема | Статус |
 |---|---|---|---|
-| **S-44-2** | `routes.go:48,86-88` | OAuth делит password-login rate-limiter (IP). | 📋 Осознанно (общий защитный лимит) |
-| **S-44-4** | `monitor/routes.go:158,200` | /voting/start, /voting/:id/close без rate-limit. | 📋 Менеджер-гейт; низкий приоритет |
+| **S-44-2** | `routes.go:48,86-88` | OAuth делит password-login rate-limiter (IP). | ✅ Исправлено (OAuthRateLimit, ключ "oauth:") |
+| **S-44-4** | `monitor/routes.go:158,200` | /voting/start, /voting/:id/close без rate-limit. | ✅ Исправлено (CodeSubmissionRateLimit) |
 | **P-44-3** | `svc_play.go:723-826` | GetGameplayData — 6 round-trips. | 📋 errgroup уже параллелит; на потом |
 | **P-44-4** | `svc_coauthor.go:48-67` | HasPermission 2 round-trips. | 📋 Ролевая логика в SQL рискованна; индекс добавлен |
 | **P-44-7** | `notification/repository.go:82-108` | notifications.* (Body нужен списку). | 📋 Body обязателен |
 | **P-44-10** | `monitor_repository.go:41-84` | AggregateGameSnapshot LATERAL — дорогой, но индексирован. | 📋 TTL 30с разумен |
 | **P-44-11** | `room_hub.go:212-239` | roomWorker idle 30с. | 📋 Ограничен idle-timeout |
-| **UX-07** | `gameplay-show.html` | Timer-sync только уменьшает (не увеличивает). | 📋 Edge-case |
-| **UX-08** | `gameplay-show.html` | #code-form без data-no-loading (inline .finally восстановит). | 📋 Некритично |
-| **UX-11** | `admin-users/notes/photos` | Touch targets < 44px (пагинация admin-users). | 📋 На потом |
-| **UX-12** | `games-new-wizard` | Валидация шагов 2-4 только серверная. | 📋 Сервер валидирует |
+| **UX-07** | `gameplay-show.html` | Timer-sync только уменьшает (не увеличивает). | ✅ Исправлено (двусторонняя синхронизация) |
+| **UX-08** | `gameplay-show.html` | #code-form без data-no-loading (inline .finally восстановит). | ✅ Исправлено (data-no-loading) |
+| **UX-11** | `admin-users/notes/photos` | Touch targets < 44px (пагинация admin-users). | ✅ Исправлено (min-h/min-w) |
+| **UX-12** | `games-new-wizard` | Валидация шагов 2-4 только серверная. | ✅ Исправлено (client-side дат) |
 
 ### 🔲 Опровергнуто / безопасно (личная проверка)
 

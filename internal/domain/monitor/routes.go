@@ -155,7 +155,9 @@ func RegisterRoutes(
 	// @Failure 403 {object} map[string]interface{} "Недостаточно прав (только автор)"
 	// @Router /voting/start [post]
 	// @Security JWT
-	protected.POST("/voting/start", monitorHandler.StartVoting)
+	// S-44-4 (pass 44): rate-limit как на vote — start/close выполняют DB-работу
+	// и рассылают письма капитанам при SMTP; спам менеджером ограничен.
+	protected.POST("/voting/start", middleware.CodeSubmissionRateLimit(1*time.Minute, 20), monitorHandler.StartVoting)
 
 	// @Summary Голосование
 	// @Description Команда голосует за вариант ответа на уровне-чёрном ящике
@@ -197,5 +199,6 @@ func RegisterRoutes(
 	// @Failure 403 {object} map[string]interface{} "Недостаточно прав (только автор)"
 	// @Router /voting/{session_id}/close [post]
 	// @Security JWT
-	protected.POST("/voting/:session_id/close", monitorHandler.CloseVoting)
+	// S-44-4 (pass 44): rate-limit на close — пересчёт результатов + письма капитанам.
+	protected.POST("/voting/:session_id/close", middleware.CodeSubmissionRateLimit(1*time.Minute, 20), monitorHandler.CloseVoting)
 }

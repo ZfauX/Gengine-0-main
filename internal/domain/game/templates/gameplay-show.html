@@ -28,7 +28,9 @@
         </div>
 
         <!-- Форма отправки кода -->
-        <form id="code-form" action="/game/{{.PassingID}}/submit" method="POST" class="flex flex-wrap items-center gap-3 mt-4 fade-in">
+        <!-- UX-08 (pass 44): data-no-loading — inline AJAX сам управляет кнопкой
+             (.finally восстанавливает); initFormLoading перетирал локализованный спиннер. -->
+        <form id="code-form" action="/game/{{.PassingID}}/submit" method="POST" data-no-loading class="flex flex-wrap items-center gap-3 mt-4 fade-in">
             <input type="hidden" name="_csrf" value="{{.csrf}}">
             <label for="code-input" class="sr-only">{{ T $.Lang "gameplay.code_placeholder" }}</label>
             <input type="text" name="code" id="code-input" placeholder='{{ T $.Lang "gameplay.code_placeholder" }}' required autocomplete="off"
@@ -138,7 +140,10 @@
                 return r.json();
             })
             .then(function(data) {
-                if (data.timeLeft !== undefined && data.timeLeft < timeLeft) {
+                // UX-07 (pass 44): синхронизация в ОБЕ стороны — раньше только
+                // уменьшение; при server clock skew/reset клиент в 0 оставался
+                // с заблокированной формой навсегда.
+                if (data.timeLeft !== undefined) {
                     timeLeft = data.timeLeft;
                 }
                 renderTimer();
@@ -164,6 +169,11 @@
                     mobileTimerDisplay.className = 'text-center font-mono font-bold text-lg text-red-600 dark:text-red-400';
                 }
                 return;
+            }
+            // UX-07 (pass 44): сервер вернул положительное время после 0 —
+            // возвращаем форму (раньше скрытая форма оставалась скрытой).
+            if (codeForm.style.display === 'none') {
+                codeForm.style.display = '';
             }
             const mins = Math.floor(timeLeft / 60);
             const secs = timeLeft % 60;

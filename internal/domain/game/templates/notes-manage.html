@@ -27,7 +27,8 @@
                     {{end}}
                 </div>
                 {{if eq .UserID $.CurrentUserID}}
-                <button class="delete-note-btn text-gray-500 hover:text-red-600 transition text-xl leading-none" data-note-id="{{.ID}}" title="{{ T $.Lang "notes.delete_title" }}" aria-label="{{ T $.Lang "notes.delete_title" }}" data-confirm-danger="true">×</button>
+                <!-- UX-11 (pass 44): min-h/min-w — touch target (×) -->
+                <button class="delete-note-btn text-gray-500 hover:text-red-600 transition text-xl leading-none min-h-[44px] min-w-[44px]" data-note-id="{{.ID}}" title="{{ T $.Lang "notes.delete_title" }}" aria-label="{{ T $.Lang "notes.delete_title" }}" data-confirm-danger="true">×</button>
                 {{end}}
             </div>
             <p class="mt-2 text-gray-700 dark:text-gray-300 text-sm">{{.Text}}</p>

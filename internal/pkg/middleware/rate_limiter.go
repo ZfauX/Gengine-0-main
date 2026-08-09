@@ -326,6 +326,26 @@ func LoginRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 	}
 }
 
+// OAuthRateLimit — отдельный бюджет для OAuth redirect/callback (S-44-2, pass 44):
+// раньше OAuth делил ключ "login:"+ip с парольным логином — спам редиректами
+// блокировал и парольный вход с того же IP. Свой ключ развязывает бюджеты.
+func OAuthRateLimit(window time.Duration, limit int) gin.HandlerFunc {
+	rl := loginRateLimiter
+	if rl == nil {
+		rl = NewRateLimiter(window, limit)
+	}
+	return func(c *gin.Context) {
+		ip := c.ClientIP()
+		result := rl.Allow("oauth:" + ip)
+		setRateLimitHeaders(c, result)
+		if !result.Allowed {
+			respondRateLimitError(c, ErrRateLimitLogin, result)
+			return
+		}
+		c.Next()
+	}
+}
+
 var registrationRateLimiter *RateLimiter
 
 func InitRegistrationRateLimiter(window time.Duration, limit int) {

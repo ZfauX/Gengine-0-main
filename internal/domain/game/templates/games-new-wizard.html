@@ -234,6 +234,33 @@
                     return false;
                 }
             }
+            if (step === 1) {
+                // UX-12 (pass 44): client-side проверка дат — раньше только сервер.
+                const startsAt = document.getElementById('starts_at');
+                const deadline = document.getElementById('registration_deadline');
+                if (startsAt && startsAt.value) {
+                    const startDate = new Date(startsAt.value);
+                    if (isNaN(startDate.getTime())) {
+                        showToast('{{ T $.Lang "game.new_validation_date" }}', 'error');
+                        startsAt.focus();
+                        return false;
+                    }
+                    // Сервер допускает deadline после start (регистрация во время игры),
+                    // но "start в прошлом" блокируется.
+                    if (startDate.getTime() < Date.now()) {
+                        showToast('{{ T $.Lang "game.new_validation_start_past" }}', 'error');
+                        startsAt.focus();
+                        return false;
+                    }
+                }
+                if (deadline && deadline.value && startsAt && startsAt.value) {
+                    const d = new Date(deadline.value);
+                    const s = new Date(startsAt.value);
+                    if (!isNaN(d.getTime()) && !isNaN(s.getTime()) && d.getTime() > s.getTime()) {
+                        showToast('{{ T $.Lang "game.new_validation_deadline_warn" }}', 'warning', 6000);
+                    }
+                }
+            }
             return true;
         }
 

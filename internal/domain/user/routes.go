@@ -45,7 +45,8 @@ func RegisterRoutes(
 
 	twoFactorHandler := NewTwoFactorHandler(twoFactorSvc, authSvc, userRepo, cfg.JWT.AccessExpiry)
 
-	oauthRateLimit := middleware.LoginRateLimit(5*time.Minute, 5)
+	// S-44-2 (pass 44): отдельный ключ OAuth — не делит бюджет с парольным логином.
+	oauthRateLimit := middleware.OAuthRateLimit(5*time.Minute, 10)
 
 	authGroup := r.Group("/auth")
 	{

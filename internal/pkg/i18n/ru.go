@@ -836,6 +836,9 @@ var ruMessages = map[string]string{
 	"game.new_next":                "Далее →",
 	"game.new_validation_name":     "Введите название игры (минимум 3 символа)",
 	"game.new_validation_teams":    "Укажите корректное количество команд",
+	"game.new_validation_date":     "Некорректная дата начала",
+	"game.new_validation_start_past": "Дата начала не может быть в прошлом",
+	"game.new_validation_deadline_warn": "Крайний срок регистрации позже даты начала — регистрация может продолжаться во время игры",
 	"game.new_unsupported_format":  "Неподдерживаемый формат файла. Используйте JPG, PNG или WebP.",
 	"game.new_file_too_large":      "Файл слишком большой. Максимум 5MB.",
 

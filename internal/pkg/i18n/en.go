@@ -815,6 +815,9 @@ var enMessages = map[string]string{
 	"game.new_next":                "Next →",
 	"game.new_validation_name":     "Enter game name (minimum 3 characters)",
 	"game.new_validation_teams":    "Enter a valid number of teams",
+	"game.new_validation_date":     "Invalid start date",
+	"game.new_validation_start_past": "Start date cannot be in the past",
+	"game.new_validation_deadline_warn": "Registration deadline is after the start date — registration may continue during the game",
 	"game.new_unsupported_format":  "Unsupported file format. Use JPG, PNG or WebP.",
 	"game.new_file_too_large":      "File too large. Maximum 5MB.",
 
