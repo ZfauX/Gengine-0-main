@@ -1,12 +1,12 @@
-# Deep Review Gengine-0 — 9 августа 2026 (pass 35 — повторное ревью после закрытия pass 30-34 + дефера)
+# Deep Review Gengine-0 — 9 августа 2026 (pass 36 — повторное ревью после закрытия pass 30-35)
 
 ## Резюме
 
 Повторное глубокое ревью выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture/DI) с последующей **личной верификацией ключевых находок** по коду.
 
-**Итог pass 35:** 0 критичных, 4 высоких (все подтверждены лично), ~10 средних, ~12 низких.
+**Итог pass 36:** 1 критичная, 5 высоких (все подтверждены лично), ~10 средних, ~10 низких.
 
-> **Контекст:** pass 30-34 закрыты полностью; отложенный дефер (H3 unexport DB, A-H1 read-пути, A-M2 notify-репозитории, A-M5 миграционные runner'ы) разобран. Новые проблемы: **missing lockout на change-password/2fa-disable**, **мёртвый reCAPTCHA**, **несоответствие Secure-флага CSRF**, **мёртвый gameRepo в BlackboxVoteService**, кардинальность кэш-ключей листинга, a11y-пробелы (focus-visible, role=alert), языковая эвристика ошибки кода.
+> **Контекст:** pass 30-35 закрыты полностью. Новые проблемы: **утечка ответов через /games/{id}/full-preview**, **регрессии pass 35** (бейдж чата заблокирован CSP, HTML в ошибках submit, нет warning-ветки), **WebAuthn 2FA pending без TTL**, **2FA enable без lockout**, мёртвые поля God-фасадов, CSV/Excel injection.
 
 ---
 
@@ -32,6 +32,120 @@
 **Проверка:** `go build ./...` ✓, `go test -short ./...` ✓, `go test -tags=integration` (game/user/tournament/admin) ✓, `go vet ./...` ✓, `gofmt -l .` → пусто ✓. `-race` недоступен на Windows (нет CGO).
 
 > Примечание: `golangci-lint` на этой машине — v1 с конфигом v2 (инфраструктурная проблема, не кодовая).
+
+---
+
+# PASS 36 (повторное ревью) — 9 августа 2026
+
+> Седьмое повторное ревью после полного закрытия pass 30-35. Выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture) с **личной верификацией** ключевых находок по коду.
+
+## Резюме pass 36
+
+**Итог:** 1 критичная, 5 высоких (все подтверждены лично), ~10 средних, ~10 низких.
+
+> Кодовая база зрелая, но найдены: **утечка ответов через `/games/{id}/full-preview`** (любой аутентифицированный получает коды ответов публичной игры), **регрессии pass 35 в чатах** (бейдж «новые сообщения» заблокирован CSP), **WebAuthn 2FA pending без TTL**, **мёртвые поля God-фасадов**, CSV/Excel injection в экспорте.
+
+---
+
+## Статус (обновлено 9 авг 2026) — PASS 36 ОТКРЫТ
+
+Находки перечислены ниже; закрытие — раундами фиксов, как в pass 30-35.
+
+---
+
+## A. Найденные ошибки pass 36 (верифицировано лично)
+
+### 🔴 Критично
+
+| ID | Файл | Проблема |
+|---|---|---|
+| **K-1** | `game/hnd_fullpreview.go:59-105` + `routes.go:101` | **Утечка ответов игры.** `/games/:id/full-preview` защищён только `AuthRequired` (не IsUserManager). `GameService.GetByID` пропускает любого пользователя для публичных не-draft игр, а хендлер отдаёт **все уровни, вопросы, подсказки И коды ответов** (`a.Code`). Любой участник может получить ответы до/во время игры — разрушает честность. **Верифицировано лично.** |
+
+### 🟠 Высокие
+
+| ID | Файл | Проблема |
+|---|---|---|
+| **S-1** | `user/webauthn_handler.go:419-431` vs `auth_handler.go:159-165` | **WebAuthn 2FA pending без TTL.** Passkey-логин с 2FA ставит только `pending_user_id`, не `pending_expires`/`pending_email`. `TwoFALoginVerify` пропускает TTL-проверку при отсутствии `pending_expires` — pending-шаг живёт до конца session-cookie, расширяя окно перебора TOTP. Парольный вход (pass 31) ставит TTL, WebAuthn — нет. **Верифицировано лично.** |
+| **S-2** | `user/two_factor_handler.go:370-475` + `routes.go:199` | **2FA Enable без lockout.** `/user/2fa/enable` не имеет rate limit, `VerifyCode` не инкрементирует счётчик/не блокирует. Украденная сессия+пароль → перебор 6-значного TOTP. Контраст с `Disable` (pass 35). **Верифицировано лично.** |
+| **S-3** | `export/service.go:60-81,156-174,302-311,430-522` | **CSV/Excel formula injection.** `lvl.Name`, `q.Text`, `q.Hint`, `answerCodes`, `p.Team.Name` без санитизации — значения с `=`,`+`,`-`,`@` интерпретируются как формулы в Excel/LibreOffice. **Верифицировано по коду.** |
+| **UX-R1/R2** | `monitor/templates/chat-page.html:31`, `team/templates/team-chat.html:13` | **Регрессия pass 35: бейдж «новые сообщения» мёртв.** Inline `onclick` заблокирован CSP (`script-src` без `'unsafe-inline'`, nonce к атрибутам не применяется). Клик не работает, счётчик не сбрасывается. **Верифицировано лично.** |
+| **UX-R3** | `game/templates/gameplay-show.html:300-324` | **Регрессия pass 35: ошибки submit показывают HTML.** `renderGameplayError` рендерит полную страницу (400), клиент берёт `r.text()` как сообщение → пользователь видит «стену» HTML. Комментарий «localized error messages» неверен для non-redirect ошибок. **Верифицировано лично.** |
+
+### 🟡 Средние
+
+| ID | Файл | Проблема |
+|---|---|---|
+| **A-1** | `game/service.go:83`, `game/svc_play.go:48,52` | **Мёртвые поля God-фасадов**: `GameService.db` (0 использований в 27 методах), `GamePlayService.cfg`, `GamePlayService.progressSvc` (только присваиваются). Тащатся в wire. **Верифицировано лично.** |
+| **A-2** | `monitor/service.go:60,107,142,207,228,232,261,321` | **BlackboxVoteService — 8 read-path `s.db`** при инъектированном BlackboxRepository (GetSessionByID/GetVotesBySession есть). + 3 мёртвых метода интерфейса (UpdateSession, CreateVote, GetVoteBySessionAndVoter — не вызываются). **Верифицировано лично.** |
+| **A-3** | `game/svc_play.go:705-772` | **GetGameplayData — 5 read-запросов через `s.db`** (passing, settings, progress+level, attempts, voting session) при внедрённых gameRepo/passingRepo. Самый горячий экран не юнит-тестируется без БД. |
+| **UX-R4** | `game/templates/gameplay-show.html:251-255` | **showMessage без ветки warning** — рендерится зелёным success. Нет `.flash-warning` в app.css. **Верифицировано лично.** |
+| **UX-J1** | `game/templates/gameplay-show.html:354` | **Двойное декодирование hint** (`URLSearchParams.get` уже декодирует + `decodeURIComponent`) → URIError при «%» в подсказке. **Верифицировано лично.** |
+| **F-1** | `game/svc_progress.go:425-451` | **checkAutoStartGamesImpl N+1**: ~3 запроса × N прохождений внутри транзакции на игру (InitFirstLevelWithTx = Count+First, + Save). Игра с 50 командами = ~150 round-trips. |
+| **F-2** | `monitor/handler.go:166-193` | **JSON-маршалинг полного снапшота каждые 5с** на активную игру даже когда данные не менялись (bytes.Equal экономит рассылку, не сериализацию). |
+| **F-3** | `game/monitor_repository.go:86-98` | **ListRecentAttempts выкачивает коды всех попыток за 5 мин** на каждый промах снапшот-кэша — широкая выборка на регулярной основе. |
+| **S-4** | `middleware/security.go:63` | **CSP `style-src 'unsafe-inline'`** — ослабляет nonce-защиту стилей (риск низкий, но отклонение от строгого CSP). |
+| **S-5** | `game/hnd_review.go:51-54,87-94` | **Reviews ShowForm/Create не рендерят `.csrf`** в данные шаблона — форма может быть сломана или обходит CSRF-поле (зависит от шаблона). |
+
+### 🔲 Низкие / мелочи
+
+| ID | Файл | Проблема |
+|---|---|---|
+| **UX-1** | `export/handler.go:443-475` | Капитан, не являющийся менеджером, не может экспортировать (checkGameAccess раньше isCaptain) — fail-closed, но функциональный дефект. |
+| **UX-2** | `auth-register.html` | reCAPTCHA виджет светлый в dark-mode (нет `data-theme="dark"`). |
+| **UX-3** | `offline.html:4`, `profile-show.html:88`, `games-list.html:77`, `monitor-page.html:196` | Emoji без `aria-hidden`. |
+| **UX-4** | `gameplay-show.html:233-234` | `sessionStorage.setItem` без try/catch (приватный режим → ошибка превью). |
+| **UX-5** | `games-show.html:3-6` | OG-теги: `og:image` может быть пустым/относительным, `og:type` всегда website. |
+| **UX-6** | admin/mobile | `data-confirm-form` формы без спиннера при подтверждении — риск двойного POST. |
+| **A-4** | `pkg/recaptcha` | **Новый security-пакет pass 35 без единого теста.** |
+| **A-5** | `pkg/cache/cache.go:156-164` | `Set` с `ttl=0` создаёт мгновенно протухающий ключ (expires=now, не zero). Реальных вызовов с ttl=0 нет (проверено) — теоретическая ловушка. |
+| **A-6** | `game/svc_play.go:611`, `monitor/service.go:70-271` | Строковые `errors.New` вместо sentinel. |
+
+### 🔲 Опровергнуто / безопасно (личная проверка)
+
+- **CSRF на новых admin mobile-карточках** — есть `_csrf` (проверено). Безопасно.
+- **reCAPTCHA рендер** — структурно корректен, CSP разрешает google/gstatic.
+- **role=alert после ContentHTML** — работает (R8).
+- **TTL=0 кэш** — реальных вызовов с ttl=0 нет (только tournament с 30с).
+- **Path traversal uploads/backup** — защищены. **Push SSRF** — DNS-rebinding защита есть. **OAuth redirect_uri** — фиксирован. **Refresh-ротация** — корректна.
+- **`style-src unsafe-inline`** — компромисс для inline-стилей Tailwind; осознанно.
+
+---
+
+## B. Оптимизации (производительность)
+
+1. **F-1 (автостарт)**: batch `INSERT INTO level_progresses SELECT ...` для всех прохождений + один UPDATE статуса; вынести `NewLevelProgressService(tx)` за цикл.
+2. **F-2 (monitor polling)**: кэшировать маршалнутые байты снапшота вместе с данными (или сравнивать timestamp) — не сериализовать каждые 5с.
+3. **F-3 (ListRecentAttempts)**: агрегировать в SQL (группировка по passing, только non-success, limit на команду).
+4. **A-2 (Blackbox)**: добавить typed-методы в BlackboxRepository (GetPassingWithGame, GetCaptainEmailsByGame, IsTeamMember) — убрать 8 s.db read.
+5. **A-3 (GetGameplayData)**: вынести 5 read-запросов в репозиторий (или составной GetGameplayData) — юнит-тестируемость.
+6. **UX-R2**: сброс `unreadCount` + не показывать бейдж для собственных сообщений (если автор — current user).
+
+## C. Улучшения кодовой базы (архитектура)
+
+1. **A-1**: удалить мёртвые поля (`GameService.db`, `GamePlayService.cfg`, `GamePlayService.progressSvc`) + параметры конструкторов + wire.
+2. **A-2**: удалить 3 мёртвых метода BlackboxRepository или перевести Vote/CloseVoting на tx-методы репо.
+3. **A-4**: httptest-тесты для recaptcha (success/failure/non-200/bad JSON/empty token/disabled).
+4. **A-5**: `Set` с `ttl<=0` → expires=zero (без истечения).
+5. **S-3**: CSV-экранирование (префикс `'` для строк с `=+-@`); excelize — префикс/EscapeCsv.
+6. **S-1**: `pending_expires` в WebAuthn 2FA-ветке.
+7. **S-2**: lockout в 2FA Enable (как в Disable).
+
+## D. Улучшения UX
+
+1. **UX-R1/R2**: заменить inline `onclick` на addEventListener внутри nonce-скрипта; сброс счётчика в обработчике.
+2. **UX-R3**: парсить `X-Error-Code` + локальная карта сообщений на клиенте (или сервер возвращает plain-text; или извлекать `.flash-error`).
+3. **UX-R4**: добавить `.flash-warning` и ветку в showMessage.
+4. **UX-J1**: убрать `decodeURIComponent` (URLSearchParams уже декодирует).
+5. **UX-2**: `data-theme="dark"` для reCAPTCHA в dark-mode.
+6. **UX-4**: try/catch вокруг sessionStorage.
+7. **UX-5**: absolute og:image + og:type article для игр.
+
+## Приоритет фиксов (pass 36)
+1. **K-1** — full-preview утечка ответов (security).
+2. **UX-R1/R2** — регрессия бейджа чата (pass 35).
+3. **UX-R3** — HTML в сообщениях ошибок submit.
+4. **S-1/S-2** — WebAuthn TTL + 2FA enable lockout.
+5. **A-1** — мёртвые поля God-фасадов.
 
 ---
 
