@@ -54,9 +54,11 @@ func NewBlackboxVoteService(
 
 // StartVoting открывает новую сессию голосования и оповещает участников.
 func (s *BlackboxVoteService) StartVoting(ctx context.Context, gamePassingID, levelID, userID uint) error {
-	// JOIN-оптимизация: получаем passing + game в 1 SQL-запросе
-	var passing game.GamePassing
-	if err := s.db.WithContext(ctx).Joins("Game").First(&passing, gamePassingID).Error; err != nil {
+	// JOIN-оптимизация: passing + game в 1 SQL-запросе.
+	// A-1 (pass 37): через репозиторий — раньше read-path шёл через s.db,
+	// дублируя готовый GetPassingWithGameByGamePassingID (pass 36).
+	passing, err := s.blackboxRepo.GetPassingWithGameByGamePassingID(ctx, gamePassingID)
+	if err != nil {
 		return err
 	}
 	g := passing.Game

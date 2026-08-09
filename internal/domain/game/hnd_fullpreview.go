@@ -107,10 +107,13 @@ func (h *FullPreviewHandler) FullPreview(c *gin.Context) {
 			Description: lvl.Description,
 		}
 		for _, q := range lvl.Questions {
-			qp := questionPreview{Text: q.Text, Hint: q.Hint}
-			// K-1 (pass 36): менеджеры видят ответы (предпросмотр при
-			// редактировании), остальные — только вопросы/подсказки.
+			// K-1 (pass 36) + S-1 (pass 37): менеджеры видят ответы И подсказки
+			// (предпросмотр при редактировании). Остальные — только текст вопроса:
+			// подсказка выдаётся в геймплее по кнопке UseHint со штрафом, её утечка
+			// до старта разрушает экономику игры.
+			qp := questionPreview{Text: q.Text}
 			if isManager {
+				qp.Hint = q.Hint
 				for _, a := range q.Answers {
 					qp.Answers = append(qp.Answers, a.Code)
 				}

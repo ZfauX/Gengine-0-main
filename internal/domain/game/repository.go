@@ -464,6 +464,7 @@ func (r *gormGamePassingRepo) GetOpenVotingSession(ctx context.Context, passingI
 		Where("game_passing_id = ? AND level_id = ? AND is_open = true", passingID, levelID).
 		First(&session).Error
 	if err != nil {
+		// Нет сессии — не ошибка.
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, false, nil
 		}

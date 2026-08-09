@@ -122,12 +122,6 @@
     <div class="fixed top-4 right-4 z-[110] max-w-sm" role="alert" aria-live="assertive">
         {{if eq .FlashType "error"}}<div class="flash flash-error">{{.Flash}}</div>{{else if eq .FlashType "info"}}<div class="flash flash-info">{{.Flash}}</div>{{else}}<div class="flash flash-success">{{.Flash}}</div>{{end}}
     </div>
-    <script nonce="{{.csp_nonce}}">
-        setTimeout(() => {
-            const flash = document.querySelector('.flash');
-            if (flash) flash.remove();
-        }, 5000);
-    </script>
     {{end}}
 
     <!-- Leaflet JS (локально) — только на страницах с картами -->

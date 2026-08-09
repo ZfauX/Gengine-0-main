@@ -11,18 +11,14 @@ import (
 	"gorm.io/gorm"
 )
 
-type AttemptService struct {
-	db *gorm.DB
-}
+// AttemptService — stateless сервис проверки попыток. Все операции требуют
+// переданного *gorm.DB (обычно транзакции) — A-2 (pass 37): удалены не-Tx
+// методы (SubmitCode/SubmitFile/AcceptPendingAttempt), которые были мёртвым
+// кодом и писали вне транзакции.
+type AttemptService struct{}
 
-func NewAttemptService(db *gorm.DB) *AttemptService {
-	return &AttemptService{db: db}
-}
-
-// SubmitCode проверяет введённый код для указанного прогресса уровня.
-// Делегирует SubmitCodeWithTx для единообразной обработки.
-func (s *AttemptService) SubmitCode(ctx context.Context, progress *LevelProgress, code string) (*Attempt, bool, error) {
-	return s.SubmitCodeWithTx(ctx, s.db, progress, code)
+func NewAttemptService() *AttemptService {
+	return &AttemptService{}
 }
 
 // SubmitCodeWithTx — проверяет код внутри переданной транзакции.
@@ -80,12 +76,6 @@ func (s *AttemptService) SubmitCodeWithTx(ctx context.Context, tx *gorm.DB, prog
 	return attempt, success, nil
 }
 
-// SubmitFile создаёт файловую попытку.
-// Делегирует SubmitFileWithTx для единообразной обработки.
-func (s *AttemptService) SubmitFile(ctx context.Context, progress *LevelProgress, filePath string) (*Attempt, error) {
-	return s.SubmitFileWithTx(ctx, s.db, progress, filePath)
-}
-
 // SubmitFileWithTx создаёт файловую попытку внутри переданной транзакции.
 func (s *AttemptService) SubmitFileWithTx(ctx context.Context, tx *gorm.DB, progress *LevelProgress, filePath string) (*Attempt, error) {
 	attempt := &Attempt{
@@ -99,12 +89,6 @@ func (s *AttemptService) SubmitFileWithTx(ctx context.Context, tx *gorm.DB, prog
 	}
 	metrics.IncAttempt(false)
 	return attempt, nil
-}
-
-// AcceptPendingAttempt помечает последнюю неподтверждённую попытку как успешную.
-// Делегирует AcceptPendingAttemptWithTx для единообразной обработки.
-func (s *AttemptService) AcceptPendingAttempt(ctx context.Context, progress *LevelProgress) error {
-	return s.AcceptPendingAttemptWithTx(ctx, s.db, progress)
 }
 
 // AcceptPendingAttemptWithTx работает в транзакции.

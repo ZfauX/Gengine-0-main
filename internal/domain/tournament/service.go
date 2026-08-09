@@ -5,6 +5,7 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"gengine-0/internal/config"
@@ -406,6 +407,10 @@ func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint
 		// Собираем дельты (не аккумулированные значения) — UpsertMany
 		// инкрементирует существующую строку через EXCLUDED (M9, pass 30).
 		deltaResults := make([]TournamentResult, 0, len(passings))
+		// P-1 (pass 37): точки за места собираем в map, затем один batch UPDATE
+		// (CASE id) — раньше был N+1 построчных UPDATE внутри транзакции с
+		// advisory lock (игра со 100 командами = 100 UPDATE).
+		pointsByPassing := make(map[uint]int, len(passings))
 		for _, p := range passings {
 			if !inTournament[p.TeamID] {
 				continue
@@ -430,10 +435,31 @@ func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint
 				GamesPlayed:  1,
 			})
 			// Сохраняем точное значение начисленных очков для точного списания (C-M2).
-			if pointsErr := tx.Model(&game.GamePassing{}).Where("id = ?", p.ID).Update("tournament_points", points).Error; pointsErr != nil {
-				return pointsErr
-			}
+			pointsByPassing[p.ID] = points
 			scoredIDs = append(scoredIDs, p.ID)
+		}
+
+		// Batch UPDATE tournament_points (P-1, pass 37): один запрос на все
+		// прохождения вместо N построчных.
+		if len(pointsByPassing) > 0 {
+			passingIDs := make([]uint, 0, len(pointsByPassing))
+			cases := make([]string, 0, len(pointsByPassing))
+			args := make([]any, 0, len(pointsByPassing)*2)
+			for id, pts := range pointsByPassing {
+				cases = append(cases, "WHEN ? THEN ?")
+				args = append(args, id, pts)
+				passingIDs = append(passingIDs, id)
+			}
+			idPlaceholders := joinPlaceholders(len(passingIDs))
+			q := fmt.Sprintf(
+				"UPDATE game_passings SET tournament_points = CASE id %s ELSE tournament_points END WHERE id IN (%s)",
+				strings.Join(cases, " "),
+				idPlaceholders,
+			)
+			args = append(args, toAnySlice(passingIDs)...)
+			if ptsErr := tx.Exec(q, args...).Error; ptsErr != nil {
+				return ptsErr
+			}
 		}
 
 		// Единый батч-upsert вместо построчного Save (M9, pass 30).
@@ -477,4 +503,22 @@ func (s *TournamentService) GetLeaderboard(ctx context.Context, tournamentID uin
 		}
 	}
 	return s.tournamentResultRepo.GetLeaderboard(ctx, tournamentID)
+}
+
+// joinPlaceholders возвращает "?, ?, ..." для n значений (P-1, pass 37).
+func joinPlaceholders(n int) string {
+	parts := make([]string, n)
+	for i := range parts {
+		parts[i] = "?"
+	}
+	return strings.Join(parts, ", ")
+}
+
+// toAnySlice конвертирует срез в []any для GORM-аргументов.
+func toAnySlice[T any](s []T) []any {
+	result := make([]any, len(s))
+	for i, v := range s {
+		result[i] = v
+	}
+	return result
 }

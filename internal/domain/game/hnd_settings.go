@@ -64,6 +64,21 @@ func (h *SettingsHandler) SettingsPage(c *gin.Context) {
 		return
 	}
 
+	// S-2 (pass 37): настройки (лимиты подсказок, скрытие ответов, автостарт)
+	// раскрывают тактику игры — доступ только автору/соавтору (как в SaveSettings).
+	if !middleware.IsAdmin(c) {
+		isMgr, checkErr := h.coAuthorSvc.IsUserManager(c.Request.Context(), g.ID, userID)
+		if checkErr != nil {
+			log.Error().Err(checkErr).Int("game_id", gameID).Msg("SettingsHandler.SettingsPage: failed to check manager")
+			render.RenderErrorPage(c, http.StatusInternalServerError)
+			return
+		}
+		if !isMgr {
+			render.RenderErrorPage(c, http.StatusForbidden)
+			return
+		}
+	}
+
 	var settings *GameSetting
 	if g.GameSetting.ID != 0 {
 		settings = &g.GameSetting

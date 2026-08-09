@@ -218,17 +218,20 @@ func (h *AuthHandler) TwoFALoginVerify(c *gin.Context) {
 	}
 
 	// S-3 (pass 31): pending-шаг 2FA истекает через 10 минут.
-	if expiresUnix, ok := sess.Get("pending_expires").(int64); ok {
-		if time.Now().Unix() > expiresUnix {
-			sess.Delete("pending_user_id")
-			sess.Delete("pending_email")
-			sess.Delete("pending_expires")
-			if err := sess.Save(); err != nil {
-				log.Error().Err(err).Msg("TwoFALoginVerify: failed to clear expired pending session")
-			}
-			c.Redirect(http.StatusFound, "/auth/login")
-			return
+	// S-3 (pass 37): fail-closed — если pending_expires отсутствует (флоу
+	// забыл поставить TTL), считаем pending истёкшим. Раньше при отсутствии
+	// ключа TTL-проверка пропускалась и окно перебора TOTP жило до конца
+	// session-cookie.
+	expiresUnix, hasExpiry := sess.Get("pending_expires").(int64)
+	if !hasExpiry || time.Now().Unix() > expiresUnix {
+		sess.Delete("pending_user_id")
+		sess.Delete("pending_email")
+		sess.Delete("pending_expires")
+		if err := sess.Save(); err != nil {
+			log.Error().Err(err).Msg("TwoFALoginVerify: failed to clear expired pending session")
 		}
+		c.Redirect(http.StatusFound, "/auth/login")
+		return
 	}
 
 	code := c.PostForm("code")

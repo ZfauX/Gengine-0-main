@@ -48,13 +48,20 @@ func NewExportService(
 }
 
 // csvSafe нейтрализует CSV/Excel formula injection (S-3, pass 36): значения,
-// начинающиеся с =, +, -, @, \t, \r, интерпретируются Excel/LibreOffice как
-// формулы. Апостроф-префикс запрещает вычисление.
+// начинающиеся с =, +, -, @, \t, \r (даже после ведущих пробелов — L-1, pass 37),
+// интерпретируются Excel/LibreOffice как формулы. Апостроф-префикс запрещает
+// вычисление.
 func csvSafe(s string) string {
 	if s == "" {
 		return s
 	}
-	switch s[0] {
+	// L-1 (pass 37): Excel обрабатывает " =2+2" как формулу — смотрим первый
+	// не-пробельный символ.
+	trimmed := strings.TrimLeft(s, " \t")
+	if trimmed == "" {
+		return s
+	}
+	switch trimmed[0] {
 	case '=', '+', '-', '@', '\t', '\r':
 		return "'" + s
 	}

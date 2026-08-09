@@ -211,15 +211,17 @@ func (h *GameHandler) Show(c *gin.Context) {
 	canApply := !g.IsDraft &&
 		(g.RegistrationDeadline == nil || g.RegistrationDeadline.After(time.Now()))
 
-	// UX-5 (pass 36): absolute og:image для шеринга в соцсетях — CoverPath
-	// относительный (/uploads/...), краулеры требуют абсолютный URL.
+	// UX-5 (pass 36) + UX-1 (pass 37): absolute og:image для шеринга в соцсетях.
+	// CoverPath относительный (/uploads/...) — нужен абсолютный URL. Схему
+	// определяем как HSTS: собственный TLS ИЛИ X-Forwarded-Proto (за
+	// reverse-proxy/nginx) — иначе og:image уходил бы как http:// в продакшене.
 	ogImage := ""
 	if g.CoverPath != "" {
 		if strings.HasPrefix(g.CoverPath, "http://") || strings.HasPrefix(g.CoverPath, "https://") {
 			ogImage = g.CoverPath
 		} else {
 			scheme := "http"
-			if c.Request.TLS != nil {
+			if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
 				scheme = "https"
 			}
 			ogImage = scheme + "://" + c.Request.Host + g.CoverPath

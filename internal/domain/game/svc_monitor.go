@@ -167,14 +167,26 @@ func (s *MonitorService) GetOrFetchSnapshotJSON(ctx context.Context, gameID uint
 	s.mu.RUnlock()
 
 	// Кэш устарел или json ещё не заполнен (старая запись) — загружаем.
-	if _, err := s.GetOrFetchSnapshot(ctx, gameID); err != nil {
+	snapshot, err := s.GetOrFetchSnapshot(ctx, gameID)
+	if err != nil {
 		return nil, err
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if cached, ok := s.cache[gameID]; ok {
+	// P-4 (pass 37): GetOrFetchSnapshot мог вернуть данные из кэша-хита без
+	// заполнения json (старая запись) — тогда cached.json == nil и метод
+	// вернул бы (nil, nil). Маршалим сами и обновляем кэш.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if cached, ok := s.cache[gameID]; ok && cached.json != nil {
 		return cached.json, nil
+	}
+	jsonData, marshalErr := json.Marshal(snapshot)
+	if marshalErr != nil {
+		return nil, marshalErr
+	}
+	if cached, ok := s.cache[gameID]; ok {
+		cached.json = jsonData
+		return jsonData, nil
 	}
 	return nil, fmt.Errorf("monitor: snapshot cache lost for game %d", gameID)
 }

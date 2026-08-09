@@ -51,6 +51,21 @@
 
 Находки перечислены ниже; закрытие — раундами фиксов, как в pass 30-36.
 
+**Раунд 1 (текущий):**
+- **S-1**: full-preview больше не отдаёт `q.Hint` не-менеджерам (только текст вопроса; менеджеры видят hint+answers для редактирования).
+- **S-2**: `SettingsPage` (GET) требует IsUserManager || IsAdmin (как SaveSettings) — настройки не раскрывают тактику.
+- **S-3**: TwoFALoginVerify — fail-closed TTL: при отсутствии `pending_expires` pending-шаг считается истёкшим (redirect). Тест обновлён.
+- **UX-1**: og:image — схема учитывает X-Forwarded-Proto (как HSTS).
+- **P-1**: UpdateScoresForGame — batch UPDATE `CASE id` вместо N+1 построчных (helper'ы joinPlaceholders/toAnySlice).
+- **P-4**: GetOrFetchSnapshotJSON — fallback на json.Marshal при кэш-хите с пустым json (нет (nil,nil)).
+- **A-1**: StartVoting — через `blackboxRepo.GetPassingWithGameByGamePassingID` (убран raw s.db read).
+- **A-2**: удалены мёртвые не-Tx методы AttemptService (SubmitCode/SubmitFile/AcceptPendingAttempt) + db поле; конструктор без параметров; wire перегенерирован.
+- **UX-2**: layout.html — удалён дублированный auto-hide flash (125-130); осталась fade-версия.
+- **T-2**: добавлен `csvsafe_test.go` (включая ведущий пробел перед `=`) + L-1: csvSafe учитывает TrimLeft пробелов.
+- **T-1**: добавлены sqlmock-тесты GetByIDWithTeam, GetCurrentProgressWithLevel, GetAttemptsByProgress, GetOpenVotingSession (вкл. «нет сессии»).
+
+**Осталось на раунд 2+:** P-2/P-3 (N+1 автостарт/таймауты), P-5 (LRU MoveToBack), P-6 (GetLogsByGameID LIMIT), P-7 (индекс 000045), UX-3 (reCAPTCHA theme sync), UX-4 (timer-sync), UX-5 (mobile cards admin-teams/tournaments), UX-6 (actionBtn null), UX-7 (localStorage dashboard), A-3 (HasPermission raw db), A-4 (tournament ignored err), L-1 (coauthor export).
+
 ---
 
 ## A. Найденные ошибки pass 37 (верифицировано лично)

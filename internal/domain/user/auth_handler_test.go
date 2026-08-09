@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"gengine-0/internal/pkg/render"
 
@@ -277,10 +278,12 @@ func TestTwoFALoginVerify_InvalidCode(t *testing.T) {
 	handler := &AuthHandler{twoFactorSvc: NewTwoFactorService()}
 	router.POST("/auth/2fa/login", handler.TwoFALoginVerify)
 
-	// Устанавливаем pending_user_id.
+	// Устанавливаем pending_user_id + pending_expires (S-3, pass 37: без
+	// expires fail-closed редиректит на /auth/login).
 	router.GET("/setup-session", func(c *gin.Context) {
 		sess := sessions.Default(c)
 		sess.Set("pending_user_id", uint(42))
+		sess.Set("pending_expires", time.Now().Add(pending2FATTL).Unix())
 		if err := sess.Save(); err != nil {
 			t.Fatal(err)
 		}
