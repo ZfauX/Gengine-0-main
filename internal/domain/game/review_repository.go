@@ -58,9 +58,11 @@ func (r *gormReviewRepo) CreateIfNotExists(ctx context.Context, review *Review) 
 
 func (r *gormReviewRepo) ListByGame(ctx context.Context, gameID uint) ([]Review, error) {
 	var reviews []Review
+	// P-43-1 (pass 43): защитный LIMIT — раньше грузили ВСЕ отзывы игры в память
+	// (и в 5-мин кэш). UI показывает скролл-блок; 100 — практический потолок.
 	err := r.db.WithContext(ctx).Preload("User", func(db *gorm.DB) *gorm.DB {
 		return db.Select("id, name, avatar_path")
-	}).Where("game_id = ?", gameID).Order("created_at DESC").Find(&reviews).Error
+	}).Where("game_id = ?", gameID).Order("created_at DESC").Limit(100).Find(&reviews).Error
 	return reviews, err
 }
 

@@ -76,7 +76,11 @@ func (r *gormTournamentRepo) List(ctx context.Context) ([]Tournament, error) {
 	err := r.db.WithContext(ctx).
 		Select("id, created_at, updated_at, deleted_at, name, author_id, " +
 			"points_for_first, points_for_second, points_for_third, points_for_participation").
-		Preload("Author").
+		// P-43-9 (pass 43): Preload только нужных колонок автора — раньше users.*
+		// (password_hash/email) на каждый турнир листинга.
+		Preload("Author", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id, name, avatar_path")
+		}).
 		Order("created_at DESC").
 		Limit(50).
 		Find(&tournaments).Error
@@ -113,8 +117,15 @@ func (r *gormTournamentGameRepo) ListGames(ctx context.Context, tournamentID uin
 }
 func (r *gormTournamentGameRepo) GetAvailableGames(ctx context.Context, tournamentID, authorID uint) ([]game.Game, error) {
 	var games []game.Game
+	// P-43-7 (pass 43): Select(id,name)+LIMIT — UI нужен только dropdown (ID/Name);
+	// раньше грузились все строки games.* (description/search_vector) автора.
 	subQuery := r.db.WithContext(ctx).Table("tournament_games").Select("game_id").Where("tournament_id = ?", tournamentID)
-	err := r.db.WithContext(ctx).Where("author_id = ? AND id NOT IN (?)", authorID, subQuery).Find(&games).Error
+	err := r.db.WithContext(ctx).
+		Select("id, name").
+		Where("author_id = ? AND id NOT IN (?)", authorID, subQuery).
+		Order("created_at DESC").
+		Limit(100).
+		Find(&games).Error
 	return games, err
 }
 func (r *gormTournamentGameRepo) FindByGameID(ctx context.Context, gameID uint) (*TournamentGame, error) {

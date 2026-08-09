@@ -134,7 +134,7 @@ func (h *SettingsHandler) SaveSettings(c *gin.Context) {
 	if limitErr := LimitRequestBody(c, 1*1024*1024); limitErr != nil {
 		g, _ := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID, middleware.IsAdmin(c))
 		render.Page(c, http.StatusBadRequest, "games-settings.html", gin.H{
-			"Title": "Настройки игры",
+			"Title": render.Tr(c, "game.settings_title"),
 			"Game":  g,
 			"Error": limitErr.Error(),
 			"csrf":  csrf.GetToken(c),
@@ -163,15 +163,23 @@ func (h *SettingsHandler) SaveSettings(c *gin.Context) {
 	if perLevelTimeLimit < 0 {
 		perLevelTimeLimit = 0
 	}
+	// UX-M4 (pass 43): локализуем ошибку лимита; UX-M5 — верхняя граница
+	// hint_penalty_seconds и max_hints (иначе принимались молча).
 	if perLevelTimeLimit > 3600 {
 		g, _ := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID, middleware.IsAdmin(c))
 		render.Page(c, http.StatusBadRequest, "games-settings.html", gin.H{
-			"Title": "Настройки игры",
+			"Title": render.Tr(c, "game.settings_title"),
 			"Game":  g,
-			"Error": "Лимит времени на уровень не может превышать 3600 минут",
+			"Error": render.Tr(c, "game.settings_time_limit_error"),
 			"csrf":  csrf.GetToken(c),
 		})
 		return
+	}
+	if hintPenaltySeconds > 3600 {
+		hintPenaltySeconds = 3600
+	}
+	if maxHints > 100 {
+		maxHints = 100
 	}
 
 	g, err := h.gameService.GetByID(c.Request.Context(), uint(gameID), userID, middleware.IsAdmin(c))

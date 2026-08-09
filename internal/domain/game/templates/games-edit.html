@@ -71,7 +71,8 @@
 
         <!-- Обложка -->
         <div>
-            <label class="form-label">{{ T $.Lang "game.edit_cover_label" }}</label>
+            <!-- UX-M3 (pass 43): for/id — файловый input не имел доступного имени -->
+            <label for="cover" class="form-label">{{ T $.Lang "game.edit_cover_label" }}</label>
             {{if .Game.CoverPath}}
             <div class="mb-3">
                 <img src="{{.Game.CoverPath}}" alt="{{ T $.Lang "game.edit_cover_label" }}" class="max-h-32 rounded-md border border-gray-200 dark:border-gray-700">
@@ -82,7 +83,7 @@
                 </div>
             </div>
             {{end}}
-            <input type="file" name="cover" accept="image/jpeg,image/png,image/webp"
+            <input type="file" name="cover" id="cover" accept="image/jpeg,image/png,image/webp"
                    class="w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
         </div>
 

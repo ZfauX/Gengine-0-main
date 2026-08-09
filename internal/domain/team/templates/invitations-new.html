@@ -51,6 +51,14 @@
 
     searchInput.addEventListener('input', function() {
         const val = this.value.trim();
+        // UX-H1 (pass 43): изменение текста после выбора инвалидирует выбор —
+        // иначе Enter/сабмит пригласит СТАРОГО выбранного пользователя.
+        if (selected && val !== selected.name) {
+            selected = null;
+            selectedId.value = '';
+            selectedInfo.classList.add('hidden');
+            inviteBtn.disabled = true;
+        }
         if (val.length < 2) {
             resultsEl.classList.add('hidden');
             return;
@@ -112,6 +120,18 @@
             resultsEl.classList.add('hidden');
         }
     });
+
+    // UX-H2 (pass 43): Enter в поле поиска отправляет форму даже при disabled
+    // submit-кнопке (implicit submission). Блокируем, пока пользователь не выбран.
+    var inviteForm = document.querySelector('form[action="/teams/{{.TeamID}}/invitations/new"]');
+    if (inviteForm) {
+        inviteForm.addEventListener('submit', function(e) {
+            if (!selected || !selectedId.value) {
+                e.preventDefault();
+                resultsEl.classList.add('hidden');
+            }
+        });
+    }
 })();
 </script>
 {{end}}

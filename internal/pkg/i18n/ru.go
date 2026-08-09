@@ -860,6 +860,7 @@ var ruMessages = map[string]string{
 	"game.settings_allow_hints":    "Разрешить подсказки",
 	"game.settings_hint_penalty":   "Штраф за подсказку (секунд)",
 	"game.settings_max_hints":      "Максимальное количество подсказок",
+	"game.settings_time_limit_error": "Лимит времени на уровень не может превышать 3600 минут",
 	"game.settings_per_level_time": "Лимит времени на уровень (минут, 0 — без ограничения)",
 	"game.settings_hide_answers":   "Скрывать ответы до финиша",
 	"game.settings_auto_start":     "Автоматический старт в указанное время",

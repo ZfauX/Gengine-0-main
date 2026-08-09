@@ -383,6 +383,147 @@ func (mr *MockUserRepositoryMockRecorder) Update(ctx, id, fields any) *gomock.Ca
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Update", reflect.TypeOf((*MockUserRepository)(nil).Update), ctx, id, fields)
 }
 
+// MockProfileRepository is a mock of ProfileRepository interface.
+type MockProfileRepository struct {
+	ctrl     *gomock.Controller
+	recorder *MockProfileRepositoryMockRecorder
+	isgomock struct{}
+}
+
+// MockProfileRepositoryMockRecorder is the mock recorder for MockProfileRepository.
+type MockProfileRepositoryMockRecorder struct {
+	mock *MockProfileRepository
+}
+
+// NewMockProfileRepository creates a new mock instance.
+func NewMockProfileRepository(ctrl *gomock.Controller) *MockProfileRepository {
+	mock := &MockProfileRepository{ctrl: ctrl}
+	mock.recorder = &MockProfileRepositoryMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockProfileRepository) EXPECT() *MockProfileRepositoryMockRecorder {
+	return m.recorder
+}
+
+// GetGamesView mocks base method.
+func (m *MockProfileRepository) GetGamesView(ctx context.Context, userID uint) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetGamesView", ctx, userID)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetGamesView indicates an expected call of GetGamesView.
+func (mr *MockProfileRepositoryMockRecorder) GetGamesView(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetGamesView", reflect.TypeOf((*MockProfileRepository)(nil).GetGamesView), ctx, userID)
+}
+
+// GetPublicProfileStats mocks base method.
+func (m *MockProfileRepository) GetPublicProfileStats(ctx context.Context, userID uint) (*UserStats, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetPublicProfileStats", ctx, userID)
+	ret0, _ := ret[0].(*UserStats)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetPublicProfileStats indicates an expected call of GetPublicProfileStats.
+func (mr *MockProfileRepositoryMockRecorder) GetPublicProfileStats(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPublicProfileStats", reflect.TypeOf((*MockProfileRepository)(nil).GetPublicProfileStats), ctx, userID)
+}
+
+// GetRecentGames mocks base method.
+func (m *MockProfileRepository) GetRecentGames(ctx context.Context, authorID uint) ([]RecentGame, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetRecentGames", ctx, authorID)
+	ret0, _ := ret[0].([]RecentGame)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetRecentGames indicates an expected call of GetRecentGames.
+func (mr *MockProfileRepositoryMockRecorder) GetRecentGames(ctx, authorID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRecentGames", reflect.TypeOf((*MockProfileRepository)(nil).GetRecentGames), ctx, authorID)
+}
+
+// GetThemeSettings mocks base method.
+func (m *MockProfileRepository) GetThemeSettings(ctx context.Context, userID uint) (ThemeSettings, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetThemeSettings", ctx, userID)
+	ret0, _ := ret[0].(ThemeSettings)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetThemeSettings indicates an expected call of GetThemeSettings.
+func (mr *MockProfileRepositoryMockRecorder) GetThemeSettings(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetThemeSettings", reflect.TypeOf((*MockProfileRepository)(nil).GetThemeSettings), ctx, userID)
+}
+
+// IsFollowing mocks base method.
+func (m *MockProfileRepository) IsFollowing(ctx context.Context, followerID, authorID uint) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsFollowing", ctx, followerID, authorID)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// IsFollowing indicates an expected call of IsFollowing.
+func (mr *MockProfileRepositoryMockRecorder) IsFollowing(ctx, followerID, authorID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsFollowing", reflect.TypeOf((*MockProfileRepository)(nil).IsFollowing), ctx, followerID, authorID)
+}
+
+// SaveGamesView mocks base method.
+func (m *MockProfileRepository) SaveGamesView(ctx context.Context, userID uint, view string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SaveGamesView", ctx, userID, view)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SaveGamesView indicates an expected call of SaveGamesView.
+func (mr *MockProfileRepositoryMockRecorder) SaveGamesView(ctx, userID, view any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveGamesView", reflect.TypeOf((*MockProfileRepository)(nil).SaveGamesView), ctx, userID, view)
+}
+
+// SaveThemeSettings mocks base method.
+func (m *MockProfileRepository) SaveThemeSettings(ctx context.Context, userID uint, ts ThemeSettings) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SaveThemeSettings", ctx, userID, ts)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SaveThemeSettings indicates an expected call of SaveThemeSettings.
+func (mr *MockProfileRepositoryMockRecorder) SaveThemeSettings(ctx, userID, ts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveThemeSettings", reflect.TypeOf((*MockProfileRepository)(nil).SaveThemeSettings), ctx, userID, ts)
+}
+
+// UpdateProfile mocks base method.
+func (m *MockProfileRepository) UpdateProfile(ctx context.Context, userID uint, name, email string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateProfile", ctx, userID, name, email)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateProfile indicates an expected call of UpdateProfile.
+func (mr *MockProfileRepositoryMockRecorder) UpdateProfile(ctx, userID, name, email any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateProfile", reflect.TypeOf((*MockProfileRepository)(nil).UpdateProfile), ctx, userID, name, email)
+}
+
 // MockAchievementRepository is a mock of AchievementRepository interface.
 type MockAchievementRepository struct {
 	ctrl     *gomock.Controller

@@ -2,6 +2,8 @@
 <div class="max-w-3xl mx-auto">
     <h1 class="page-title">{{ T $.Lang "team.change_captain_title" }}</h1>
 
+    {{if .Error}}<div class="flash flash-error">{{.Error}}</div>{{end}}
+
     <form action="/teams/{{.TeamID}}/change-captain" method="POST" class="card space-y-4">
         <input type="hidden" name="_csrf" value="{{.csrf}}">
 

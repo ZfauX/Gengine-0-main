@@ -839,6 +839,7 @@ var enMessages = map[string]string{
 	"game.settings_allow_hints":    "Allow hints",
 	"game.settings_hint_penalty":   "Hint penalty (seconds)",
 	"game.settings_max_hints":      "Max number of hints",
+	"game.settings_time_limit_error": "Time limit per level cannot exceed 3600 minutes",
 	"game.settings_per_level_time": "Time limit per level (minutes, 0 = no limit)",
 	"game.settings_hide_answers":   "Hide answers until finish",
 	"game.settings_auto_start":     "Auto start at specified time",

@@ -31,7 +31,9 @@
                        class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
             </div>
 
-            <button type="submit" id="disableBtn" class="w-full btn bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-md transition-colors">
+            <!-- UX-L5 (pass 43): btn-danger вместо ad-hoc red-классов — единый
+                 стиль hover/disabled. -->
+            <button type="submit" id="disableBtn" class="w-full btn btn-danger">
                 {{ T $.Lang "twofa.disable_button" }}
             </button>
         </form>

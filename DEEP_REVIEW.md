@@ -1,12 +1,127 @@
-# Deep Review Gengine-0 — 9 августа 2026 (pass 42 — повторное ревью после полного закрытия pass 30-41)
+# Deep Review Gengine-0 — 9 августа 2026 (pass 43 — повторное ревью после полного закрытия pass 30-42)
 
 ## Резюме
 
 Повторное глубокое ревью выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture/DI) с последующей **личной верификацией ключевых находок** по коду.
 
-**Итог pass 42:** 0 критичных, 0 высоких, ~8 средних, ~8 низких. Найдено после закрытия pass 30-41; все ключевые находки исправлены раундами 1-3 (раунд 3 — доделки: A-1 через DI, backup LIMIT, healthz обезличивание, OG-теги, touch-targets).
+**Итог pass 43:** 1 критичный (S-43-1 — обход авторизации в командном чате), 2 высоких (UX-H1/H2 — stale user selection), ~8 средних, ~8 низких. Все ключевые находки исправлены раундом 1.
 
-> **Контекст:** pass 30-41 закрыты полностью. Новые находки: **Vote-EXISTS из pass 41 не настоящий EXISTS** (Count+Limit(1) в PG — полный count), **миграция 000048 дублировала UNIQUE-индекс 000023 (no-op)**, **data-loss race в delete-модалке games-show**, **double-submit в wizard-форме**, **audit Count+List — два round-trip**, **follows/followers без лимита**, **string-match в team AddMember/RemoveMember**, **inline-ошибки в svc_passing.go**, **общий ключ CSRF и сессии**, **refresh-mismatch разлогинивал все сессии (NAT/мобильные)**.
+> **Контекст:** pass 30-42 закрыты полностью. Новые находки: **S-43-1 — участник команды A мог читать/писать в чат команды B** (проверка TeamID была мёртвым кодом), **UX-H1/H2 — stale user selection + Enter-bypass в search-формах** (приглашение/соавтор не того пользователя), **P-43-1/5/6/7** (reviews без LIMIT, teams.name без trgm, LOWER LIKE, GetAvailableGames), **P-43-10** (snapshot eviction race → 500 у SSE), **UX-M1-M6** (change_captain error flash, дубль OG-тегов, cover aria, hardcoded строки, валидация), **A-44** (stale mock).
+
+---
+
+# PASS 43 (повторное ревью) — 9 августа 2026
+
+> Четырнадцатое повторное ревью после полного закрытия pass 30-42. Выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture) с **личной верификацией** ключевых находок по коду.
+
+## Статус (обновлено 9 авг 2026) — PASS 43 ОТКРЫТ
+
+Находки перечислены ниже; закрытие — раундами фиксов.
+
+**Раунд 1** (правки текущие, не закоммичены до проверки):
+- **S-43-1** (критично): ChatWS — проверка TeamID-first для командных комнат (участник команды A больше не может подключиться к чату команды B).
+- **UX-H1/H2**: co_authors-manage + invitations-new — изменение текста инвалидирует выбор; submit-guard при пустом выборе.
+- **P-43-1**: ReviewRepository.ListByGame — защитный LIMIT 100.
+- **P-43-5/6**: миграция 000049 (teams.name trgm) + ILIKE вместо LOWER(x) LIKE в SearchUsersForInvitation.
+- **P-43-7**: GetAvailableGames — Select(id,name)+LIMIT 100.
+- **P-43-9**: tournament List Preload("Author") с Select колонок (без password_hash/email).
+- **P-43-10**: GetOrFetchSnapshotJSON — eviction между Get/Peek больше не даёт 500 (возвращает данные без кэша).
+- **UX-M1**: teams-change_captain — flash error.
+- **UX-M2**: layout.html — убраны дубли OG/twitter-тегов (pass 38 блок).
+- **UX-M3**: games-edit cover — id/for label.
+- **UX-M4/M5**: hnd_settings.go — локализованная ошибка лимита времени + верхние границы hint_penalty/max_hints.
+- **UX-L4**: user-2fa-enable — data-no-loading.
+- **UX-L5**: user-2fa-disable — btn-danger.
+- **A-44**: `go generate ./internal/domain/user/` — MockProfileRepository сгенерирован.
+- **Опровергнуто лично**: A-45 (ProcessSnapshot уже имеет WithTimeout 10s), P-7/P-3 (room workers и LRU уже реализованы в коде), P-43-2 (COUNT OVER не окупается из-за Preload).
+
+**Осталось к pass 44** (документировано): S-43-2 (RotateBackups работает с LIMIT-100 — при >100 записей может оставить больше MaxBackups), S-43-3 (2FA-статус угадывается по редиректу), S-43-4 (VK OAuth не пускает существующих пользователей — намеренный trade-off), P-43-3 (partial-индекс level_progresses на started_at/finished_at — проверить в live), P-43-4 (authed листинг OR без кэша), P-43-11 (sweep unread под мутексом), P-43-12 (logs.* проекция), P-43-13 (CanReview 2 запроса), UX-M6 (games-edit datetime cross-field), UX-L6/L7 (touch targets webauthn/levels), UX-L9 (fast-click ReferenceError).
+
+---
+
+## Найденные ошибки pass 43 (верифицировано лично)
+
+### 🔴 Критично
+
+| ID | Файл | Проблема | Статус |
+|---|---|---|---|
+| **S-43-1** | `monitor/handler.go:600-622`, `repository.go:80-84` | **Обход авторизации командного чата**: комнаты команд создаются со всеми тремя полями (GameID+TeamID+PassingID), поэтому `else if chatRoom.TeamID != nil` — мёртвый код; единственная проверка — «менеджер ИЛИ участник любого прохождения игры». Участник команды A мог перебирать ID комнат, читать и писать в чат команды B (раскрытие private-чата + греф). | ✅ Исправлено (TeamID-first) |
+
+### 🟠 Высокие
+
+| ID | Файл | Проблема | Статус |
+|---|---|---|---|
+| **UX-H1** | `co_authors-manage.html`, `invitations-new.html` | **Stale user selection**: после выбора пользователя продолжение ввода не очищает hidden `user_id` — сабмит добавляет/приглашает СТАРОГО выбранного. | ✅ Исправлено |
+| **UX-H2** | `co_authors-manage.html`, `invitations-new.html` | **Enter-bypass disabled submit**: Enter в поле поиска отправляет форму (implicit submission), hidden user_id пуст → валидные ошибки или неверное действие. | ✅ Исправлено (submit-guard) |
+
+### 🟡 Средние
+
+| ID | Файл | Проблема | Статус |
+|---|---|---|---|
+| **P-43-1** | `game/review_repository.go:59-65` | ListByGame без LIMIT — все отзывы игры в память и 5-мин кэш. | ✅ Исправлено (LIMIT 100) |
+| **P-43-5** | `team/repository.go:145-168` | teams.name ILIKE без trgm-индекса (users.name — есть). | ✅ Исправлено (миграция 000049) |
+| **P-43-6** | `team/repository.go:213-233` | LOWER(name) LIKE не использует trgm (case-sensitive). | ✅ Исправлено (ILIKE) |
+| **P-43-7** | `tournament/repository.go:114-119` | GetAvailableGames — все игры автора (games.*). | ✅ Исправлено (Select+Limit) |
+| **P-43-9** | `tournament/repository.go:72-84` | Preload("Author") — users.* (password_hash/email) на 50 турниров. | ✅ Исправлено (Select) |
+| **P-43-10** | `game/svc_monitor.go:153-170` | Eviction между Get/Peek → 500 у SSE-клиента. | ✅ Исправлено |
+| **UX-M1** | `teams-change_captain.html` | Нет flash-блока ошибки (валидация молча фейлится). | ✅ Исправлено |
+| **UX-M2** | `layout.html` | Дубли OG/twitter-тегов (pass 38 + pass 40/42) + конфликт twitter:card. | ✅ Исправлено |
+| **UX-M4** | `hnd_settings.go:137,171` | Hardcoded русские строки (Title/ошибка) в обход i18n. | ✅ Исправлено |
+| **UX-M5** | `hnd_settings.go:157-175` | max_hints/hint_penalty без верхней границы (999999 принимался молча). | ✅ Исправлено (clamp) |
+| **A-44** | `user/mock_service.go` | Stale mock: MockProfileRepository отсутствовал (ProfileRepository добавлен pass 35). | ✅ Исправлено (go generate) |
+
+### 🔲 Низкие / мелочи
+
+| ID | Файл | Проблема | Статус |
+|---|---|---|---|
+| **UX-M3** | `games-edit.html:74-86` | Cover file input без доступного имени. | ✅ Исправлено (id/for) |
+| **UX-L4** | `user-2fa-enable.html` | Двойной обработчик submit (inline + initFormLoading). | ✅ Исправлено (data-no-loading) |
+| **UX-L5** | `user-2fa-disable.html:34` | Ad-hoc red-классы вместо btn-danger. | ✅ Исправлено |
+| **S-43-2** | `admin/service.go` | RotateBackups работает с LIMIT-100 — при >100 записей может остаться больше MaxBackups. | 📋 Редкий случай; задокументировано |
+| **S-43-3** | `auth_handler.go:155-168` | 2FA-статус угадывается по редиректу при известном пароле. | 📋 Приемлемый fingerprint |
+| **S-43-4** | `oauth_service.go:239-241` | VK OAuth не пускает существующих пользователей (emailVerified=false). | 📋 Намеренный anti-hijack |
+| **P-43-3** | `svc_progress.go:234-248` | CheckTimeouts ORDER BY started_at на unfinished-множестве — partial-индекс не покрывает. | 📋 Проверить live |
+| **P-43-4** | `svc_listing.go` | Authed-листинг OR-предикаты без кэша. | 📋 Низкий приоритет |
+| **P-43-11** | `notification/service.go:429-435` | Lazy sweep под мутексом O(n). | 📋 Ограничено активными юзерами |
+| **P-43-12** | `game/repository.go:251` | GetLogsByGameIDPaginated — logs.* (тяжёлый текст). | 📋 Проекция на потом |
+| **P-43-13** | `review_repository.go:26-44` | CanReview — два COUNT. | 📋 Можно EXISTS |
+| **UX-M6** | `games-edit.html:33-45` | deadline/starts_at порядок не валидируется. | 📋 На потом |
+| **UX-L6/L7** | `webauthn-login-button`, `levels-list` | Touch targets < 44px (mitigated). | 📋 Мелочь |
+| **UX-L9** | `webauthn-login-button.html` | showToast до загрузки app.js — ReferenceError (fast-click). | 📋 Спекулятивно |
+
+### 🔲 Опровергнуто / безопасно (личная проверка)
+
+- **A-45** — ProcessSnapshot(context.Background()) в dispatcher: внутри `context.WithTimeout(10s)` — утечки нет. ✓
+- **P-7/P-3** — per-room workers и Monitor LRU **уже реализованы** в коде (статус «open» устарел). ✓
+- **P-43-2** — ListByGamePaginated COUNT+SELECT: Preload Team/Captain всё равно делает 2+ запроса, COUNT OVER не окупается. ✓
+- **Pass 42 round 3** — theme loader via DI, healthz sanitized, backup LIMIT: всё VERIFIED. ✓
+- **WS send-side** — room_id в payload игнорируется, broadcast только в свою комнату; уязвим только connect-authz (исправлен). ✓
+- **Voting/upload/password-reset//api/*/i18n-escape/OAuth/admin-2FA** — защищены. ✓
+
+---
+
+## B. Оптимизации (производительность)
+
+1. **P-43-1**: LIMIT ревью — кэш меньше, страница легче.
+2. **P-43-5/6**: trgm-индекс teams.name + ILIKE — поиск команд без seq-scan.
+3. **P-43-7/9**: Select-проекции — меньше данных из БД.
+
+## C. Улучшения кодовой базы (архитектура)
+
+1. **S-43-1**: правильная приоритизация authz (TeamID-first для командных комнат).
+2. **A-44**: go generate для user-моков (MockProfileRepository).
+
+## D. Улучшения UX
+
+1. **UX-H1/H2**: защита от неверного выбора пользователя в search-формах.
+2. **UX-M1-M5**: flash error, единые OG-теги, a11y cover, локализация, валидация границ.
+3. **UX-L4/L5**: единые паттерны форм/кнопок.
+
+## Приоритет фиксов (pass 43)
+1. **S-43-1** (security — обход авторизации) — уже сделано.
+2. **UX-H1/H2** (неверный invitee/соавтор) — уже сделано.
+3. **P-43-1/5/6/7/10** (перф) — уже сделано.
+4. **UX-M1-M5, A-44** (качество) — уже сделано.
 
 ---
 

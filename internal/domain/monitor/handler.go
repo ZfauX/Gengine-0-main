@@ -597,7 +597,24 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "комната не найдена"})
 		return
 	}
-	if chatRoom.GameID != nil {
+	// S-43-1 (pass 43): командные комнаты создаются со ВСЕМИ тремя полями
+	// (GameID+TeamID+PassingID), поэтому проверка GameID-first ловила и командные
+	// комнаты — проверка TeamID была мёртвым кодом, и участник команды A мог
+	// подключиться к чату команды B. Сначала проверяем членство в команде.
+	if chatRoom.TeamID != nil {
+		// Проверка доступа к командному чату (участник или капитан).
+		ok, memberErr := h.chatService.IsTeamMemberOrCaptain(c.Request.Context(), *chatRoom.TeamID, userID)
+		if memberErr != nil {
+			log.Error().Err(memberErr).Uint("team_id", *chatRoom.TeamID).Uint("user_id", userID).Msg("ChatWS: team membership check error")
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "внутренняя ошибка"})
+			return
+		}
+		if !ok {
+			log.Warn().Uint("user_id", userID).Uint("team_id", *chatRoom.TeamID).Msg("ChatWS: access denied, not a team member")
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
+			return
+		}
+	} else if chatRoom.GameID != nil {
 		isManager, mgrErr := h.coAuthorSvc.IsUserManager(c.Request.Context(), *chatRoom.GameID, userID)
 		if mgrErr != nil {
 			log.Error().Err(mgrErr).Uint("game_id", *chatRoom.GameID).Uint("user_id", userID).Msg("ChatWS: manager check error")
@@ -611,13 +628,6 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
 				return
 			}
-		}
-	} else if chatRoom.TeamID != nil {
-		// Проверка доступа к командному чату (участник или капитан).
-		ok, memberErr := h.chatService.IsTeamMemberOrCaptain(c.Request.Context(), *chatRoom.TeamID, userID)
-		if memberErr != nil || !ok {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
-			return
 		}
 	}
 

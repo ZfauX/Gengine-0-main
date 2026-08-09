@@ -3,7 +3,6 @@ package team
 
 import (
 	"context"
-	"strings"
 
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/i18n"
@@ -220,11 +219,12 @@ func (r *gormTeamRepo) SearchUsersForInvitation(ctx context.Context, query strin
 	}{}
 	// Экранируем wildcard-символы LIKE (C-M7): иначе запрос с % или _ искал
 	// бы всех пользователей. Пользовательский ввод — только как литерал.
-	escaped := sqlutil.EscapeLike(strings.ToLower(query))
+	// P-43-6 (pass 43): ILIKE вместо LOWER(x) LIKE — trgm-индекс (name gin_trgm_ops)
+	// не используется для LOWER(name), т.к. он case-sensitive; ILIKE его использует.
+	escaped := sqlutil.BuildLikePattern(query)
 	err := r.db.WithContext(ctx).Table("users").
 		Select("id, name").
-		Where("LOWER(name) LIKE ? OR LOWER(email) LIKE ?",
-			"%"+escaped+"%", "%"+escaped+"%").
+		Where("name ILIKE ? OR email ILIKE ?", escaped, escaped).
 		Where("id NOT IN (SELECT user_id FROM team_members WHERE team_id = ?)", teamID).
 		Where("id != (SELECT captain_id FROM teams WHERE id = ?)", teamID).
 		Limit(20).

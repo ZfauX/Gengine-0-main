@@ -59,6 +59,12 @@
 
     searchInput.addEventListener('input', function() {
         var val = searchInput.value.trim();
+        // UX-H1 (pass 43): любое изменение текста после выбора пользователя
+        // инвалидирует выбор — иначе сабмит добавит СТАРОГО выбранного.
+        if (val !== (selectedInput.dataset.selectedName || '')) {
+            selectedInput.value = '';
+            addBtn.disabled = true;
+        }
         if (val.length < 2) {
             resultsEl.classList.add('hidden');
             resultsEl.innerHTML = '';
@@ -92,6 +98,7 @@
                     btn.dataset.userName = u.name;
                     btn.addEventListener('click', function() {
                         selectedInput.value = this.dataset.userId;
+                        selectedInput.dataset.selectedName = this.dataset.userName;
                         searchInput.value = this.dataset.userName;
                         resultsEl.classList.add('hidden');
                         resultsEl.innerHTML = '';
@@ -113,6 +120,19 @@
             resultsEl.classList.add('hidden');
         }
     });
+
+    // UX-H2 (pass 43): Enter в поле поиска отправляет форму даже при disabled
+    // submit-кнопке (implicit submission). Блокируем, если пользователь не выбран.
+    var coauthorForm = document.querySelector('form[action="/games/{{.GameID}}/co-authors"]');
+    if (coauthorForm) {
+        coauthorForm.addEventListener('submit', function(e) {
+            if (!selectedInput.value) {
+                e.preventDefault();
+                resultsEl.classList.add('hidden');
+                return;
+            }
+        });
+    }
 })();
 </script>
 {{end}}

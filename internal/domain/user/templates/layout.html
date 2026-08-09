@@ -63,13 +63,9 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="twitter:card" content="summary_large_image">
-    <!-- UX-6 (pass 38): базовые OG-мета для шеринга всех страниц (games-show
-         дополняет их через ExtraHead). -->
-    <meta property="og:site_name" content="Encounter Engine">
+    <!-- UX-M2 (pass 43): дубли OG-тегов из pass 38 удалены — единый блок выше
+         (строки 10-18). Дополнительно указываем локаль. -->
     <meta property="og:locale" content="ru_RU">
-    <meta property="og:title" content="{{.Title}} · Encounter Engine">
-    <meta name="twitter:title" content="{{.Title}} · Encounter Engine">
     <title>{{.Title}} · Encounter Engine</title>
     <link rel="canonical" href="{{.CanonicalURL}}">
     <!-- Accessibility -->

@@ -159,15 +159,16 @@ func (s *MonitorService) GetOrFetchSnapshotJSON(ctx context.Context, gameID uint
 	}
 	// H-1 (pass 40): НЕ мутируем cached.json — на объект ссылаются другие
 	// читатели LRU (data race). Добавляем целиком новое значение.
+	// P-43-10 (pass 43): если запись эвиктнута между Get и Peek — не падаем
+	// с ошибкой (SSE-клиент получил бы 500); возвращаем данные без кэша.
 	if cached, ok := s.cache.Peek(gameID); ok {
 		s.cache.Add(gameID, &cachedSnapshot{
 			data:      cached.data,
 			timestamp: cached.timestamp,
 			json:      jsonData,
 		})
-		return jsonData, nil
 	}
-	return nil, fmt.Errorf("monitor: snapshot cache lost for game %d", gameID)
+	return jsonData, nil
 }
 
 // InvalidateCache удаляет кэшированный снимок игры (вызывается при изменениях).
