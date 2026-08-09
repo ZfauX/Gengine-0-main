@@ -163,6 +163,15 @@
                         } else if (name === 'connecting') {
                             updateConnectionStatus('{{ T $.Lang "gamechat.connecting" }}', '#888');
                         }
+                    },
+                    // UX-13 (pass 45): попытки исчерпаны — сообщаем и пробуем
+                    // полную перезагрузку через 30с (единственный способ пересоздать WS).
+                    onFinalClose: function() {
+                        updateConnectionStatus('{{ T $.Lang "gamechat.connection_error" }}', '#e74c3c');
+                        if (typeof window.showToast === 'function') {
+                            window.showToast('{{ T $.Lang "chat.final_close" }}', 'error', 6000);
+                        }
+                        setTimeout(function() { window.location.reload(); }, 30000);
                     }
                 }
             );

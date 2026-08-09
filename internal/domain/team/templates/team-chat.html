@@ -79,6 +79,15 @@
                     statusEl.textContent = '{{ T $.Lang "chat.connection_error" }}';
                     statusEl.className = 'mt-2 text-sm text-red-500';
                 }
+            },
+            // UX-13 (pass 45): попытки переподключения исчерпаны — даём
+            // кнопку «Переподключиться» вместо тихого отказа.
+            onFinalClose: function() {
+                statusEl.textContent = '{{ T $.Lang "chat.final_close" }}';
+                statusEl.className = 'mt-2 text-sm text-red-500';
+                if (typeof window.showToast === 'function') {
+                    window.showToast('{{ T $.Lang "chat.final_close" }}', 'error', 6000);
+                }
             }
         });
     }

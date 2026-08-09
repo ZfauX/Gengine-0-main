@@ -57,11 +57,11 @@ func TestGormGamePassingRepo_GetAttemptsByProgress(t *testing.T) {
 	db, mock := newMockGorm(t)
 	repo := NewGormGamePassingRepo(db)
 
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "attempts" WHERE level_progress_id = $1 AND "attempts"."deleted_at" IS NULL ORDER BY created_at DESC LIMIT $2`)).
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id, created_at, code, success FROM "attempts" WHERE level_progress_id = $1 AND "attempts"."deleted_at" IS NULL ORDER BY created_at DESC LIMIT $2`)).
 		WithArgs(uint(77), 50).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "level_progress_id", "code", "success"}).
-			AddRow(1, 77, "a", true).
-			AddRow(2, 77, "b", false))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "code", "success"}).
+			AddRow(1, time.Now(), "a", true).
+			AddRow(2, time.Now(), "b", false))
 
 	attempts, err := repo.GetAttemptsByProgress(context.Background(), 77, 50)
 	require.NoError(t, err)

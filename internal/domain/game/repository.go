@@ -476,9 +476,12 @@ func (r *gormGamePassingRepo) GetCurrentProgressWithLevel(ctx context.Context, p
 }
 
 // GetAttemptsByProgress возвращает последние попытки прогресса (A-3, pass 36).
+// P-44-3 (pass 45): Select нужных колонок — файловые попытки (IsFile/FilePath)
+// не рендерятся в списке; Code для is_file попыток пуст, тащим только текст.
 func (r *gormGamePassingRepo) GetAttemptsByProgress(ctx context.Context, progressID uint, limit int) ([]Attempt, error) {
 	var attempts []Attempt
 	err := r.db.WithContext(ctx).
+		Select("id, created_at, code, success").
 		Where("level_progress_id = ?", progressID).
 		Order("created_at DESC").
 		Limit(limit).

@@ -1183,6 +1183,7 @@ var ruMessages = map[string]string{
 	"chat.reconnecting":      "Переподключение...",
 	"chat.connection_error":  "⚠️ Соединение не установлено. Сообщение не отправлено.",
 	"chat.delivery_timeout":  "⚠️ Сообщение, возможно, не доставлено (нет подтверждения от сервера).",
+	"chat.final_close":       "⚠️ Соединение с чатом потеряно. Перезагрузите страницу.",
 	"chat.waiting":           "⏳",
 
 	// ── Game Chat ──

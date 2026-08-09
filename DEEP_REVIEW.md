@@ -4,7 +4,7 @@
 
 Повторное глубокое ревью выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture/DI) с последующей **личной верификацией ключевых находок** по коду.
 
-**Итог pass 45:** 0 критичных, 2 высоких (UX-01 — SyntaxError для гостей ломает games-list, P-45-5 — password_hash/email через Preload Members), ~10 средних, ~8 низких. Все ключевые находки исправлены раундами 1-3 (раунд 3 — доделки: push SSRF DialContext, WS recheck, calendar touch, console/bytes).
+**Итог pass 45:** 0 критичных, 2 высоких (UX-01 — SyntaxError для гостей ломает games-list, P-45-5 — password_hash/email через Preload Members), ~10 средних, ~8 низких. Все ключевые находки исправлены раундами 1-4 (раунд 4 — финальные доделки: chat onFinalClose, attempts проекция).
 
 > **Контекст:** pass 30-44 закрыты полностью. Новые находки: **UX-01 — JS SyntaxError для гостей** (незакрытый `{{if}}` в games-list ломал весь скрипт), **P-45-5 — Preload Members/Author/GetAvailableUsers тащили password_hash/email**, **S-45-4 — можно разжаловать последнего админа**, **S-45-1 — user enumeration через team search API**, **A-02 — OAuthRateLimit игнорировал лимит** (брал loginRateLimiter), **P-45-4 — дубль индекса co_authors**, **P-45-3/6/7** (COUNT метрики, Preload вопросов, полный Author), **UX-02/03/04** (confirm «Удалить», edit-ссылка всем, дубль og:description).
 
@@ -52,8 +52,12 @@
 - **UX-14**: русские console-строки → английские.
 - **UX-15**: admin-backups — `formatBytes` вместо хардкода "B".
 
-**Осталось к pass 46** (документировано): P-43-4 (authed-листинг кэш — фрагментирует LRU), P-44-3 (GetGameplayData 7 round-trips — errgroup уже параллелит), UX-13 (chat onFinalClose retry).
+**Раунд 4** (доделки — финальные пункты pass 45):
+- **UX-13**: team-chat + chat-page — onFinalClose (попытки переподключения исчерпаны): toast + статус «перезагрузите страницу», chat-page — авто-перезагрузка через 30с; ключ `chat.final_close`.
+- **P-44-3 (частично)**: GetAttemptsByProgress — Select (id, created_at, code, success) без IsFile/FilePath (файловые попытки не рендерятся); sqlmock-тест обновлён. Полное объединение 7 запросов оставлено (рискованно, errgroup уже параллелит).
+- **P-43-4**: authed-листинг кэш — оставлено (per-user ключи фрагментируют LRU; split public/own — сложный рефакторинг с неопределённым выигрышем).
 
+**Осталось к pass 46** (документировано): P-43-4 (authed-листинг кэш — фрагментирует LRU), P-44-3 (GetGameplayData полное объединение — errgroup уже параллелит).
 ---
 
 ## Найденные ошибки pass 45 (верифицировано лично)
@@ -162,7 +166,7 @@
 - **UX-12**: wizard — client-side валидация дат (шаг 1): start не в прошлом + предупреждение deadline > start.
 - **Опровергнуто/отложено**: P-44-3 (GetGameplayData 6 round-trips — errgroup уже параллелит), P-44-4 (HasPermission — ролевая логика в SQL рискованна), P-44-7 (Body нужен), P-44-10/11 (LOW), P-43-4 (authed-листинг — низкий приоритет).
 
-**Осталось к pass 45** (документировано): P-43-4 (authed-листинг кэш — низкий приоритет), P-44-3 (GetGameplayData round-trips), P-44-10/11 (LOW), UX-13 (chat onFinalClose retry). *(UX-09/10/14/15 и P-44-4 решены в pass 45 раунды 2-3.)*
+**Осталось к pass 45** (документировано): P-43-4 (authed-листинг кэш — низкий приоритет), P-44-3 (GetGameplayData round-trips). *(UX-09/10/13/14/15 и P-44-4 решены в pass 45 раунды 2-4.)*
 
 ---
 
@@ -200,7 +204,7 @@
 |---|---|---|---|
 | **S-44-2** | `routes.go:48,86-88` | OAuth делит password-login rate-limiter (IP). | ✅ Исправлено (OAuthRateLimit, ключ "oauth:") |
 | **S-44-4** | `monitor/routes.go:158,200` | /voting/start, /voting/:id/close без rate-limit. | ✅ Исправлено (CodeSubmissionRateLimit) |
-| **P-44-3** | `svc_play.go:723-826` | GetGameplayData — 6 round-trips. | 📋 errgroup уже параллелит; на потом |
+| **P-44-3** | `svc_play.go:723-826` | GetGameplayData — 6 round-trips. | 🟡 Частично: attempts проекция (раунд 4); полное объединение отложено |
 | **P-44-4** | `svc_coauthor.go:48-67` | HasPermission 2 round-trips. | 📋 Ролевая логика в SQL рискованна; индекс добавлен |
 | **P-44-7** | `notification/repository.go:82-108` | notifications.* (Body нужен списку). | 📋 Body обязателен |
 | **P-44-10** | `monitor_repository.go:41-84` | AggregateGameSnapshot LATERAL — дорогой, но индексирован. | 📋 TTL 30с разумен |

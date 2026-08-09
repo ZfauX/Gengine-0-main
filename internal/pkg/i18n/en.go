@@ -1181,6 +1181,7 @@ var enMessages = map[string]string{
 	"chat.reconnecting":      "Reconnecting...",
 	"chat.connection_error":  "⚠️ Connection not established. Message not sent.",
 	"chat.delivery_timeout":  "⚠️ Message may not have been delivered (no server acknowledgment).",
+	"chat.final_close":       "⚠️ Chat connection lost. Please reload the page.",
 	"chat.waiting":           "⏳",
 
 	// ── Game Chat ──
