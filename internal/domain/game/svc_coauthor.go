@@ -83,8 +83,10 @@ func hasCoAuthorRole(role, requiredRole string) bool {
 // HasPermissionTx — версия HasPermission с передачей транзакции.
 // A-2 (pass 39): через репозиторий (GetGameAuthorIDWithTx + FindByGameAndUserWithTx) —
 // единый путь к данным, raw SQL убран из сервиса.
-func (s *CoAuthorService) HasPermissionTx(tx *gorm.DB, gameID, userID uint, requiredRole string) (bool, error) {
-	authorID, err := s.repo.GetGameAuthorIDWithTx(context.Background(), tx, gameID)
+// C1 (pass 40): ctx прокидывается из вызовов (раньше context.Background —
+// запросы прав не отменялись при disconnect).
+func (s *CoAuthorService) HasPermissionTx(ctx context.Context, tx *gorm.DB, gameID, userID uint, requiredRole string) (bool, error) {
+	authorID, err := s.repo.GetGameAuthorIDWithTx(ctx, tx, gameID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return false, gorm.ErrRecordNotFound
@@ -94,7 +96,7 @@ func (s *CoAuthorService) HasPermissionTx(tx *gorm.DB, gameID, userID uint, requ
 	if authorID == userID {
 		return true, nil
 	}
-	co, err := s.repo.FindByGameAndUserWithTx(context.Background(), tx, gameID, userID)
+	co, err := s.repo.FindByGameAndUserWithTx(ctx, tx, gameID, userID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return false, nil

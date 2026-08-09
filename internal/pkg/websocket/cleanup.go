@@ -105,6 +105,10 @@ func (h *RoomHub) cleanupInactiveClients() cleanupResult {
 
 	for _, roomID := range roomsToRemove {
 		delete(h.rooms, roomID)
+		// C-1/G2 (pass 40): очередь НЕ закрываем (send-on-closed panic);
+		// воркер завершится по idle-таймеру. Удаляем из map, чтобы новые
+		// broadcast создали свежую очередь/воркер.
+		delete(h.roomQueues, roomID)
 		result.removedRooms++
 	}
 

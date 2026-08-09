@@ -3,6 +3,7 @@ package websocket
 
 import (
 	"sync"
+	"time"
 
 	"github.com/rs/zerolog/log"
 )
@@ -158,11 +159,10 @@ func (h *RoomHub) runLoop() {
 				delete(room, client)
 				if len(room) == 0 {
 					delete(h.rooms, client.RoomID)
-					// P-7 (pass 39): закрываем очередь воркера — он завершится.
-					if q, qok := h.roomQueues[client.RoomID]; qok {
-						delete(h.roomQueues, client.RoomID)
-						close(q)
-					}
+					// C-1 (pass 40): очередь НЕ закрываем (иначе broadcast может
+					// сделать send-on-closed → panic); воркер завершится по
+					// idle-таймеру, когда увидит, что комнаты нет.
+					delete(h.roomQueues, client.RoomID)
 					log.Debug().Str("room", client.RoomID).Msg("Room removed (empty)")
 				}
 			}
@@ -206,8 +206,14 @@ func (h *RoomHub) runLoop() {
 }
 
 // roomWorker рассылает сообщения очереди комнаты (P-7, pass 39).
+// C-1 (pass 40): каналы очередей НИКОГДА не закрываются (иначе broadcast
+// может сделать send-on-closed → panic). Воркер завершается по h.done
+// (при Stop) или по idle-таймеру, если комната удалена (нет утечки).
 func (h *RoomHub) roomWorker(roomID string, queue chan *Message) {
 	defer h.roomWorkersWg.Done()
+	idleTicker := time.NewTicker(30 * time.Second)
+	defer idleTicker.Stop()
+
 	for {
 		select {
 		case <-h.done:
@@ -217,6 +223,17 @@ func (h *RoomHub) roomWorker(roomID string, queue chan *Message) {
 				return
 			}
 			h.dispatchToRoom(roomID, msg.Data)
+		case <-idleTicker.C:
+			// Комната могла быть удалена или очередь пересоздана (новый
+			// register после удаления) — воркер старой очереди должен выйти.
+			h.mu.RLock()
+			_, exists := h.rooms[roomID]
+			currentQueue := h.roomQueues[roomID]
+			h.mu.RUnlock()
+			if !exists || currentQueue != queue {
+				log.Debug().Str("room", roomID).Msg("RoomHub: room worker exiting (room removed or queue replaced)")
+				return
+			}
 		}
 	}
 }
@@ -267,10 +284,9 @@ func (h *RoomHub) dispatchToRoom(roomID string, data []byte) {
 	h.mu.Lock()
 	if current, exists := h.rooms[roomID]; exists && len(current) == 0 {
 		delete(h.rooms, roomID)
-		if q, qok := h.roomQueues[roomID]; qok {
-			delete(h.roomQueues, roomID)
-			close(q)
-		}
+		// C-1 (pass 40): очередь НЕ закрываем (send-on-closed panic);
+		// воркер завершится по idle-таймеру.
+		delete(h.roomQueues, roomID)
 		log.Debug().Str("room", roomID).Msg("Room removed (empty)")
 	}
 	h.mu.Unlock()
@@ -299,12 +315,9 @@ func (h *RoomHub) Stop() {
 	// Закрываем done под тем же локом, чтобы никакой новый register
 	// не мог пройти между установкой stopped и закрытием done
 	close(h.done)
-	// Закрываем очереди комнат — воркеры завершатся на select h.done
-	// (либо на закрытии очереди), ничего не блокируя.
-	for roomID, q := range h.roomQueues {
-		delete(h.roomQueues, roomID)
-		close(q)
-	}
+	// C-1 (pass 40): очереди НЕ закрываем (send-on-closed panic); воркеры
+	// завершатся по select h.done. Опустошаем map.
+	h.roomQueues = make(map[string]chan *Message)
 	h.mu.Unlock()
 	h.wg.Wait()
 	// P-7 (pass 39): ждём завершения per-room воркеров.

@@ -389,7 +389,7 @@ func (s *GamePlayService) AcceptBlackboxAnswer(ctx context.Context, passingID, u
 		// G8: принимать ответы может автор ИЛИ модератор игры (соавтор с ролью
 		// moderator). Раньше проверка ограничивала только автором — модератор,
 		// не состоящий в команде, не мог принять ответ «чёрного ящика».
-		ok, permErr := s.coAuthorSvc.HasPermissionTx(tx, passing.GameID, userID, RoleModerator)
+		ok, permErr := s.coAuthorSvc.HasPermissionTx(ctx, tx, passing.GameID, userID, RoleModerator)
 		if permErr != nil {
 			return permErr
 		}

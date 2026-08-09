@@ -190,7 +190,7 @@
                 li.className = 'text-sm';
                 var startFmt = '{{ T $.Lang "calendar.starts_at" }}';
                 var notSpec = '{{ T $.Lang "calendar.not_specified" }}';
-                li.innerHTML = `<a href="/games/${game.id}" class="text-blue-600 dark:text-blue-400 hover:underline">${escapeHtml(game.name)}</a> — ${startFmt.replace('%s', escapeHtml(game.time || notSpec))}`;
+                li.innerHTML = `<a href="/games/${game.id}" class="text-blue-600 dark:text-blue-400 hover:underline">${escapeHtml(game.name)}</a> — ${startFmt.replace('%s', function() { return escapeHtml(game.time || notSpec); })}`;
                 list.appendChild(li);
             });
         }

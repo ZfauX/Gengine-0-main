@@ -82,14 +82,17 @@
                         console.error('Monitor: parse error', err);
                     }
                 },
-                onStatus: function(name) {
+                onStatus: function(name, detail) {
                     if (name === 'connected') {
                         wsConnected = true;
                         updateConnectionStatus('{{ T $.Lang "monitor.connected" }}', '#2ecc71');
                         stopPolling();
                     } else if (name === 'reconnecting') {
                         wsConnected = false;
-                        updateConnectionStatus('{{ T $.Lang "monitor.reconnecting" }}', '#e67e22');
+                        // UX-F2 (pass 40): onStatus передаёт {attempt, delay} —
+                        // подставляем %d, иначе «Переподключение через %dс...».
+                        var reconDelay = (detail && detail.delay) ? Math.round(detail.delay / 1000) : 0;
+                        updateConnectionStatus('{{ T $.Lang "monitor.reconnecting" }}'.replace('%d', reconDelay), '#e67e22');
                     } else if (name === 'error') {
                         updateConnectionStatus('{{ T $.Lang "monitor.error_connecting" }}', '#e74c3c');
                     } else if (name === 'failed') {

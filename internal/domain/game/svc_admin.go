@@ -68,7 +68,7 @@ func (s *GameAdminService) ForceFinishGame(ctx context.Context, gameID, userID u
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Проверка прав ВНУТРИ транзакции (предотвращает race condition)
-		ok, err := s.coAuthorSvc.HasPermissionTx(tx, gameID, userID, RoleModerator)
+		ok, err := s.coAuthorSvc.HasPermissionTx(ctx, tx, gameID, userID, RoleModerator)
 		if err != nil {
 			return fmt.Errorf("ошибка проверки прав: %w", err)
 		}
@@ -127,7 +127,7 @@ func (s *GameAdminService) DisqualifyTeam(ctx context.Context, gameID, teamID, u
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Проверка прав ВНУТРИ транзакции (предотвращает race condition)
-		ok, err := s.coAuthorSvc.HasPermissionTx(tx, gameID, userID, RoleModerator)
+		ok, err := s.coAuthorSvc.HasPermissionTx(ctx, tx, gameID, userID, RoleModerator)
 		if err != nil {
 			return fmt.Errorf("ошибка проверки прав: %w", err)
 		}
@@ -183,7 +183,7 @@ func (s *GameAdminService) DisqualifyTeam(ctx context.Context, gameID, teamID, u
 func (s *GameAdminService) DeleteLevelFromActiveGame(ctx context.Context, gameID, levelID, userID uint) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Проверка прав внутри транзакции
-		ok, err := s.coAuthorSvc.HasPermissionTx(tx, gameID, userID, RoleContentEditor)
+		ok, err := s.coAuthorSvc.HasPermissionTx(ctx, tx, gameID, userID, RoleContentEditor)
 		if err != nil {
 			return fmt.Errorf("ошибка проверки прав: %w", err)
 		}

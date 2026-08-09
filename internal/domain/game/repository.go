@@ -166,8 +166,12 @@ func (r *gormGameRepo) SearchVectorExists(ctx context.Context) (bool, error) {
 // ListByDateRange возвращает опубликованные публичные игры за указанный период.
 func (r *gormGameRepo) ListByDateRange(ctx context.Context, from, to time.Time) ([]Game, error) {
 	var games []Game
+	// G4 (pass 40): Select в Preload Author — не тащим password_hash/email
+	// (полная строка users) на публичном calendar/ICal эндпоинте.
 	err := r.db.WithContext(ctx).
-		Preload("Author").
+		Preload("Author", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id, name, avatar_path")
+		}).
 		Where("is_draft = false AND visibility = 'public' AND starts_at BETWEEN ? AND ?", from, to).
 		Order("starts_at ASC").
 		Find(&games).Error

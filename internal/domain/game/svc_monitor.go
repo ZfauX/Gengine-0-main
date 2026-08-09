@@ -157,8 +157,14 @@ func (s *MonitorService) GetOrFetchSnapshotJSON(ctx context.Context, gameID uint
 	if marshalErr != nil {
 		return nil, marshalErr
 	}
-	if cached, ok := s.cache.Get(gameID); ok {
-		cached.json = jsonData
+	// H-1 (pass 40): НЕ мутируем cached.json — на объект ссылаются другие
+	// читатели LRU (data race). Добавляем целиком новое значение.
+	if cached, ok := s.cache.Peek(gameID); ok {
+		s.cache.Add(gameID, &cachedSnapshot{
+			data:      cached.data,
+			timestamp: cached.timestamp,
+			json:      jsonData,
+		})
 		return jsonData, nil
 	}
 	return nil, fmt.Errorf("monitor: snapshot cache lost for game %d", gameID)

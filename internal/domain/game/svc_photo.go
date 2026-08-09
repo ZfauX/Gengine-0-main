@@ -52,9 +52,9 @@ func (s *PhotoService) Delete(ctx context.Context, photoID, userID uint) error {
 			}
 			return err
 		}
-		// S-6 (pass 32): разрешаем только content_editor/moderator (как handler).
-		// Раньше условие «не observer» молча авторизовало бы любую будущую слабую роль.
-		if coAuthor.Role != RoleContentEditor && coAuthor.Role != RoleModerator {
+		// S-6 (pass 32) + P1 (pass 40): общий hasCoAuthorRole — раньше инлайн
+		// сравнение дублировало канонический путь (риск расхождения ролей).
+		if !hasCoAuthorRole(coAuthor.Role, RoleContentEditor) {
 			return errors.New("нет прав на удаление фото")
 		}
 	}

@@ -157,7 +157,7 @@ func (s *GamePassingService) UpdateStatus(ctx context.Context, passingID uint, s
 		currentStatus = passing.Status
 
 		// passing.Game загружен через JOIN
-		ok, err := s.coAuthor.HasPermissionTx(tx, passing.GameID, userID, RoleModerator)
+		ok, err := s.coAuthor.HasPermissionTx(ctx, tx, passing.GameID, userID, RoleModerator)
 		if err != nil {
 			return err
 		}
@@ -209,7 +209,7 @@ func (s *GamePassingService) StartGame(ctx context.Context, passingID, userID ui
 		isCaptain := (t.CaptainID == userID)
 		if !isCaptain {
 			// Проверка прав ВНУТРИ транзакции (предотвращает race condition)
-			ok, err := s.coAuthor.HasPermissionTx(tx, passing.GameID, userID, RoleModerator)
+			ok, err := s.coAuthor.HasPermissionTx(ctx, tx, passing.GameID, userID, RoleModerator)
 			if err != nil {
 				return err
 			}
