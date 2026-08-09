@@ -4,9 +4,9 @@
 
 Повторное глубокое ревью выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture/DI) с последующей **личной верификацией ключевых находок** по коду.
 
-**Итог pass 42:** 0 критичных, 0 высоких, ~8 средних, ~8 низких. Найдено после закрытия pass 30-41; ключевые находки исправлены раундом 1.
+**Итог pass 42:** 0 критичных, 0 высоких, ~8 средних, ~8 низких. Найдено после закрытия pass 30-41; все ключевые находки исправлены раундами 1-2 (раунд 2 — остаточные пункты + завершённый security-аудит).
 
-> **Контекст:** pass 30-41 закрыты полностью. Новые находки: **Vote-EXISTS из pass 41 не настоящий EXISTS** (Count+Limit(1) в PG — полный count), **миграция 000048 дублировала UNIQUE-индекс 000023 (no-op)**, **data-loss race в delete-модалке games-show**, **double-submit в wizard-форме**, **audit Count+List — два round-trip**, **follows/followers без лимита**, **string-match в team AddMember/RemoveMember**, **inline-ошибки в svc_passing.go**, **общий ключ CSRF и сессии**.
+> **Контекст:** pass 30-41 закрыты полностью. Новые находки: **Vote-EXISTS из pass 41 не настоящий EXISTS** (Count+Limit(1) в PG — полный count), **миграция 000048 дублировала UNIQUE-индекс 000023 (no-op)**, **data-loss race в delete-модалке games-show**, **double-submit в wizard-форме**, **audit Count+List — два round-trip**, **follows/followers без лимита**, **string-match в team AddMember/RemoveMember**, **inline-ошибки в svc_passing.go**, **общий ключ CSRF и сессии**, **refresh-mismatch разлогинивал все сессии (NAT/мобильные)**.
 
 ---
 
@@ -45,7 +45,16 @@
 - **S-42-5**: VK user_ids → url.QueryEscape (defense-in-depth).
 - **Опровергнуто лично**: G-1 (shadowing фикс корректен), W-1 (wire DI консистентен).
 
-**Осталось к pass 43** (документировано): S-42-3 (refresh-привязка к IP — осознанный trade-off), S-42-6 (JWT до 2FA gate — wasted-issue), P-08 (calendar месяц кэшируется; iCal кэшируется клиентами), P-10 (backup list — ограничено MaxBackups), P-11 (AggregateGameSnapshot — измерить), UX-13/14/16 (мелочи), остаточный аудит security (WS/SSE auth, calendar/ical SSRF, uploads traversal, secrets scan — не завершён агентом).
+**Раунд 2** (остаточные пункты pass 42, не закоммичены до проверки):
+- **S-42-3**: refresh fingerprint mismatch → отзыв только текущего токена (вместо всей семьи). Reuse отозванного по-прежнему отзывает семью. Тест `TestAuthService_FingerprintMismatchKeepsFamily`.
+- **UX-13**: dashboard неизвестный PassingStatus → `passing.status_unknown` (вместо raw-строки).
+- **UX-14**: offline.html кнопка — type=button.
+- **Остаточный security-аудит завершён**: WS/SSE — CheckOrigin exact-host + authRequired (монитор, чат, логи, уведомления `/ws/notifications`); uploads — все через `storage.Save` (sanitizeFilename, boundary Rel, уникальные имена, MIME-проверка); iCal — без внешних запросов (SSRF нет); `.env` — в .gitignore; webhook-эндпоинтов нет (HMAC не требуется); /healthz раскрывает текст ошибки БД — задокументировано (обезличивать рискованно для мониторинга).
+- **P-08 опровергнут**: iCal уже кэшируется 5 мин (P-6 pass 39).
+- **P-11 опровергнут**: AggregateGameSnapshot индексы уже покрывают (PK level_progresses.id + idx_level_progresses_game_passing_id).
+- **S-42-6**: Login() не имеет побочных эффектов — JWT генерируется, но не выставляется (wasted-issue, менять не требуется).
+
+**Осталось к pass 43** (документировано): P-10 (backup list — ограничено MaxBackups=10), UX-16 (полная arrow-навигация календаря — фича), healthz disclosure (обезличивание сообщений — рискованно для мониторинга, требуется решение ops).
 
 ---
 
@@ -72,14 +81,14 @@
 |---|---|---|---|
 | **P-04** | `migrations/000048` | Нет индексов attempts(level_progress_id, is_file, code/file_path) — residual-фильтр в Vote. | ✅ Исправлено (миграция) |
 | **P-06** | `game/repository.go:184-196` | GetPassingByUser JOIN team_members без user_id-индекса. | ✅ Исправлено (миграция) |
-| **P-08** | `calendar/handler.go:119,202` | ListByDateRange вызывается дважды (месяц + iCal). | 📋 Месяц кэшируется; iCal — у клиентов |
+| **P-08** | `calendar/handler.go:119,202` | ListByDateRange вызывается дважды (месяц + iCal). | ✅ Опровергнуто: iCal уже кэшируется 5 мин (P-6 pass 39) |
 | **P-10** | `admin/model.go:65-69` | Backup list без пагинации. | 📋 Ограничено MaxBackups=10 |
-| **P-11** | `game/monitor_repository.go:64-71` | AggregateGameSnapshot — широкая выборка попыток. | 📋 Измерить до правки |
-| **S-42-3** | `user/handler.go:26-34` | Refresh привязан к IP-префиксу — NAT/мобильные ротируют IP → разлогин всей семьи. | 📋 Осознанный trade-off |
-| **S-42-6** | `user/auth_handler.go:131-168` | JWT выпускается до 2FA-гейта (wasted-issue, токен не выставляется). | 📋 Не требует действий |
-| **UX-13** | `dashboard-index.html:174` | Неизвестный PassingStatus рендерится raw (locale-дыра). | 📋 Сервер шлёт только 2 статуса |
-| **UX-14** | `offline.html:7` | Кнопка без type=button (вне формы — безвредно). | 📋 Безвредно |
-| **UX-16** | `calendar-page.html` | Дни календаря не клавиатурные. | 📋 Приемлемо (кнопки есть) |
+| **P-11** | `game/monitor_repository.go:64-71` | AggregateGameSnapshot — широкая выборка попыток. | ✅ Опровергнуто: индексы уже покрывают (PK level_progresses.id, idx_level_progresses_game_passing_id) |
+| **S-42-3** | `user/handler.go:26-34` | Refresh привязан к IP-префиксу — NAT/мобильные ротируют IP → разлогин всей семьи. | ✅ Исправлено (раунд 2): mismatch отзывает только текущий токен, reuse — семью |
+| **S-42-6** | `user/auth_handler.go:131-168` | JWT выпускается до 2FA-гейта (wasted-issue, токен не выставляется). | 📋 Не требует действий (нет побочных эффектов в Login) |
+| **UX-13** | `dashboard-index.html:174` | Неизвестный PassingStatus рендерится raw (locale-дыра). | ✅ Исправлено (passing.status_unknown) |
+| **UX-14** | `offline.html:7` | Кнопка без type=button (вне формы — безвредно). | ✅ Исправлено (type=button) |
+| **UX-16** | `calendar-page.html` | Дни календаря не клавиатурные. | 📋 Полная arrow-навигация — фича, не баг (кнопки дней есть) |
 
 ### 🔲 Опровергнуто / безопасно (личная проверка)
 
@@ -112,13 +121,13 @@
 3. **UX-03/05/06/07/09/12**: a11y (меню, роли, aria, контраст).
 4. **UX-04/10/11**: таймаут «отправка…», confirm decline, disable на время запроса.
 
-## E. Остаточный аудит (к pass 43 — security агент не успел)
-- WebSocket/SSE auth: CheckOrigin, JWT-кука на upgrade, доступ к комнатам, `/ws` без CSRF.
-- SSRF в calendar/iCal.
-- Uploads: avatar/game cover/photo traversal.
-- Secrets-скан (проверить `.env` в .gitignore).
-- `/healthz` disclosure.
-- Webhook HMAC (наличие входящих вебхуков).
+## E. Остаточный аудит (выполнен в раунде 2 — pass 42)
+- ✅ WebSocket/SSE auth: **CheckOrigin exact-host** (монитор, чат, логи — `monitor/handler.go`; уведомления — `notification/routes.go`), все WS/SSE под `AuthRequired` + `gameManager` на games-роутах, `/ws/notifications` — room по userID.
+- ✅ SSRF в calendar/iCal: **отсутствует** — iCal строит .ics из БД, внешних запросов нет.
+- ✅ Uploads traversal: **все через `storage.Save`** — sanitizeFilename (Base+regex), генерация уникальных имён, boundary через filepath.Rel, MIME-проверка (avatar, cover, photos, answers).
+- ✅ Secrets-скан: `.env`, `.env.local`, `.env.*.local` — в .gitignore.
+- ✅ `/healthz`: раскрывает текст ошибки БД (err.Error()) — **документировано**, обезличивать не стали (риск для мониторинга; решение за ops).
+- ✅ Webhook HMAC: **входящих вебхуков нет** — не требуется.
 
 ## Приоритет фиксов (pass 42)
 1. **P-01 + P-02** (корректность Vote + опасная миграция) — уже сделано.

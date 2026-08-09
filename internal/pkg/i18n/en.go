@@ -1035,6 +1035,7 @@ var enMessages = map[string]string{
 	"passing.status_started":      "Playing",
 	"passing.status_finished":     "Finished",
 	"passing.status_disqualified": "Disqualified",
+	"passing.status_unknown":      "Unknown",
 	"passing.accept":              "Accept",
 	"passing.reject":              "Reject",
 	"passing.start_game":          "Start game",

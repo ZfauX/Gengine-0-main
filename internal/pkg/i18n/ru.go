@@ -1036,6 +1036,7 @@ var ruMessages = map[string]string{
 	"passing.status_rejected":     "Отклонена",
 	"passing.status_started":      "Идёт игра",
 	"passing.status_finished":     "Завершена",
+	"passing.status_unknown":      "Неизвестно",
 	"passing.status_disqualified": "Дисквалифицирована",
 	"passing.accept":              "Принять",
 	"passing.reject":              "Отклонить",

@@ -257,6 +257,38 @@ func TestAuthService_FingerprintMismatch(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestAuthService_FingerprintMismatchKeepsFamily (S-42-3, pass 42): mismatch
+// отпечатка отзывает ТОЛЬКО текущий токен, а не всю семью — раньше ротация
+// IP (мобильные/NAT) разлогинивала все сессии сразу. Reuse отозванного токена
+// по-прежнему отзывает семью (TestAuthService_ReuseRevokesFamily).
+func TestAuthService_FingerprintMismatchKeepsFamily(t *testing.T) {
+	db := newTestDB(t)
+	cfg := newTestConfig()
+	userRepo, achievRepo, _, emailVerifRepo, _, refreshTokenRepo := newTestRepos(db)
+	service := newTestAuthService(userRepo, achievRepo, emailVerifRepo, refreshTokenRepo, cfg)
+
+	user := createTestUser(t, db, "fpsib@example.com", "pass", "FpSib")
+
+	r1, err := service.GenerateRefreshToken(context.Background(), *user, "dev1", "fp1")
+	require.NoError(t, err)
+
+	// Ротация r1 → r2 (одна семья, верный отпечаток).
+	_, r2, err := service.RefreshAccessToken(context.Background(), r1, "dev1", "fp1")
+	require.NoError(t, err)
+
+	// Неверный отпечаток на r2: r2 отзывается, но семья остаётся живой.
+	_, _, err = service.RefreshAccessToken(context.Background(), r2, "dev1", "fp2")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "отпечаток")
+
+	// r3 — новый токен, выданный по другой сессии той же семьи, жив (семья не
+	// отозвана). Генерируем новую пару напрямую для проверки, что семья жива.
+	r3, err := service.GenerateRefreshToken(context.Background(), *user, "dev2", "fp3")
+	require.NoError(t, err)
+	_, _, err = service.RefreshAccessToken(context.Background(), r3, "dev2", "fp3")
+	assert.NoError(t, err)
+}
+
 func TestAuthService_ParseToken(t *testing.T) {
 	db := newTestDB(t)
 	cfg := newTestConfig()

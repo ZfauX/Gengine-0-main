@@ -143,14 +143,15 @@ func (s *RefreshTokenService) RefreshAccessToken(ctx context.Context, refreshTok
 	// Пустой fingerprint клиента НЕ обходит проверку (S5): если токен был
 	// привязан к устройству, требуется точное совпадение.
 	if stored.ClientFingerprint != "" && stored.ClientFingerprint != clientFingerprint {
-		// #5: mismatch с другого устройства = признак кражи — отзываем семью,
-		// как при reuse, и логируем.
-		if stored.FamilyID != "" {
-			if famErr := s.refreshTokenRepo.RevokeAllByFamily(ctx, stored.FamilyID); famErr != nil {
-				log.Error().Err(famErr).Uint("user_id", stored.UserID).Str("family_id", stored.FamilyID).Msg("RefreshAccessToken: family revoke failed on fingerprint mismatch")
-			}
+		// S-42-3 (pass 42): mismatch НЕ отзывает всю семью (как reuse) — только
+		// текущий токен. Привязка содержит IP-префикс (/24, /64): мобильные
+		// операторы/NAT ротируют IP, и раньше легитимный пользователь терял
+		// ВСЕ сессии после одного refresh. Reuse отозванного токена по-прежнему
+		// отзывает семью (см. выше) — защита от кражи сохранена.
+		log.Warn().Uint("user_id", stored.UserID).Str("family_id", stored.FamilyID).Msg("RefreshAccessToken: fingerprint mismatch — single token revoked")
+		if revokeErr := s.refreshTokenRepo.Revoke(ctx, stored.ID); revokeErr != nil {
+			log.Error().Err(revokeErr).Uint("user_id", stored.UserID).Msg("RefreshAccessToken: failed to revoke token on fingerprint mismatch")
 		}
-		log.Warn().Uint("user_id", stored.UserID).Str("family_id", stored.FamilyID).Msg("RefreshAccessToken: fingerprint mismatch — family revoked")
 		return "", "", stderrors.New("отпечаток клиента не совпадает — используйте токен с того же устройства")
 	}
 
