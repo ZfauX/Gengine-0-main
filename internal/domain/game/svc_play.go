@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"time"
 
-	"gengine-0/internal/config"
 	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/pkg/metrics"
@@ -45,11 +44,9 @@ type GamePlayService struct {
 	gameRepo    GameRepository
 	passingRepo GamePassingRepository
 	attemptSvc  *AttemptService
-	progressSvc *LevelProgressService
 	monitorSvc  MonitorServiceInterface
 	hub         *ws.RoomHub
 	coAuthorSvc *CoAuthorService
-	cfg         *config.Config
 	sseMgr      *SSEManager
 	// snapshotDispatcher дебаунсит пересчёт снапшота мониторинга (S3).
 	// Если nil — пересчёт выполняется синхронно (fallback для тестов).
@@ -74,23 +71,21 @@ func (s *GamePlayService) WithPassingRepository(repo GamePassingRepository) *Gam
 }
 
 // NewGamePlayService создаёт новый экземпляр GamePlayService.
+// A-1 (pass 36): удалены мёртвые поля cfg и progressSvc — ни один метод
+// GamePlayService их не использовал (progressSvc был только в GamePassingService).
 func NewGamePlayService(
 	db *gorm.DB,
 	attemptSvc *AttemptService,
-	progressSvc *LevelProgressService,
 	monitorSvc MonitorServiceInterface,
 	hub *ws.RoomHub,
 	coAuthorSvc *CoAuthorService,
-	cfg *config.Config,
 ) *GamePlayService {
 	return &GamePlayService{
 		db:          db,
 		attemptSvc:  attemptSvc,
-		progressSvc: progressSvc,
 		monitorSvc:  monitorSvc,
 		hub:         hub,
 		coAuthorSvc: coAuthorSvc,
-		cfg:         cfg,
 	}
 }
 

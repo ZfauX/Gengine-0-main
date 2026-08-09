@@ -73,6 +73,20 @@ func (h *FullPreviewHandler) FullPreview(c *gin.Context) {
 		return
 	}
 
+	// K-1 (pass 36): коды ответов доступны только автору/соавтору (менеджеру).
+	// Раньше полный предпросмотр отдавал Answer.Code любому аутентифицированному
+	// пользователю для публичных игр — ломало честность игры (ответы до старта).
+	isManager, mgrErr := h.gameService.IsUserManager(c.Request.Context(), uint(gameID), userID)
+	if mgrErr != nil {
+		log.Error().Err(mgrErr).Int("game_id", gameID).Msg("FullPreview: failed to check manager rights")
+		appErr := apperr.Wrap(mgrErr, "FullPreview: failed to check manager rights")
+		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
+			"error": appErr.Message,
+			"code":  appErr.Code,
+		})
+		return
+	}
+
 	levels, err := h.levelService.ListWithQuestions(c.Request.Context(), uint(gameID))
 	if err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Msg("FullPreview: failed to load levels")
@@ -94,8 +108,12 @@ func (h *FullPreviewHandler) FullPreview(c *gin.Context) {
 		}
 		for _, q := range lvl.Questions {
 			qp := questionPreview{Text: q.Text, Hint: q.Hint}
-			for _, a := range q.Answers {
-				qp.Answers = append(qp.Answers, a.Code)
+			// K-1 (pass 36): менеджеры видят ответы (предпросмотр при
+			// редактировании), остальные — только вопросы/подсказки.
+			if isManager {
+				for _, a := range q.Answers {
+					qp.Answers = append(qp.Answers, a.Code)
+				}
 			}
 			lp.Questions = append(lp.Questions, qp)
 		}

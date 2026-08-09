@@ -24,11 +24,11 @@
                 </div>
             </div>
             <!-- UX-6 (pass 35): бейдж «новые сообщения» — появляется, когда
-                 пришло сообщение, а пользователь читает выше. -->
+                 пришло сообщение, а пользователь читает выше. R1 (pass 36):
+                 обработчик через addEventListener — inline onclick блокируется CSP. -->
             <button id="chat-unread-badge" type="button"
                     class="hidden absolute bottom-6 left-1/2 -translate-x-1/2 z-10 btn btn-primary text-xs shadow-lg"
-                    aria-label="{{ T $.Lang "gamechat.unread_messages" }}"
-                    onclick="document.getElementById('chat-messages').scrollTo({top: document.getElementById('chat-messages').scrollHeight, behavior: 'smooth'}); this.classList.add('hidden');"></button>
+                    aria-label="{{ T $.Lang "gamechat.unread_messages" }}"></button>
         </div>
 
         <!-- Поле ввода и отправка -->
@@ -199,6 +199,16 @@
             if (!chatUnreadBadge) return;
             unreadCount = 0;
             chatUnreadBadge.classList.add('hidden');
+        }
+
+        // R1/R2 (pass 36): клик по бейджу — скролл вниз + сброс счётчика.
+        // Раньше был inline onclick, который CSP (script-src без unsafe-inline)
+        // блокировал — бейдж был мёртв, счётчик не сбрасывался.
+        if (chatUnreadBadge) {
+            chatUnreadBadge.addEventListener('click', function() {
+                chatMessages.scrollTo({top: chatMessages.scrollHeight, behavior: 'smooth'});
+                hideUnreadBadge();
+            });
         }
 
         function escapeHtml(text) {

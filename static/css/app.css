@@ -287,6 +287,13 @@ input, textarea, select {
     color: #1e40af;
     border: 1px solid #bfdbfe;
   }
+  /* UX-R4 (pass 36): warning-вариант flash — раньше warning рендерился
+     зелёным success-блоком. */
+  .flash-warning {
+    background: #fffbeb;
+    color: #92400e;
+    border: 1px solid #fde68a;
+  }
 
   /* Dark theme: toasts and flashes */
   .dark .toast-success { background: #052e16; color: #86efac; border: 1px solid #166534; }
@@ -296,6 +303,7 @@ input, textarea, select {
   .dark .flash-success { background: #052e16; color: #86efac; border: 1px solid #166534; }
   .dark .flash-error { background: #450a0a; color: #fca5a5; border: 1px solid #991b1b; }
   .dark .flash-info { background: #172554; color: #93c5fd; border: 1px solid #1e40af; }
+  .dark .flash-warning { background: #451a03; color: #fcd34d; border: 1px solid #854d0e; }
   .dark .skeleton { background: #334155; }
 
   /* Skeleton loading */

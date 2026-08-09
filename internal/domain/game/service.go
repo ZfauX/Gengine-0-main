@@ -23,7 +23,6 @@ import (
 	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
-	"gorm.io/gorm"
 )
 
 // Константы для фильтрации статусов игр (чтобы избежать магических строк)
@@ -80,15 +79,14 @@ type GameService struct {
 	cache          cache.CacheStore
 	ratingService  *RatingService
 	gameRepo       GameRepository
-	db             *gorm.DB
 	coAuthorSvc    *CoAuthorService
 	userRepo       user.UserRepository
 	sg             singleflight.Group
 }
 
 // NewGameService создаёт фасад GameService с подсервисами.
+// A-1 (pass 36): удалено мёртвое поле db — не использовалось ни одним методом.
 func NewGameService(
-	db *gorm.DB,
 	gameRepo GameRepository,
 	passingRepo GamePassingRepository,
 	ca *CoAuthorService,
@@ -120,7 +118,6 @@ func NewGameService(
 		cache:          cacheStore,
 		ratingService:  ratingSvc,
 		gameRepo:       gameRepo,
-		db:             db,
 		coAuthorSvc:    ca,
 		userRepo:       userRepo,
 	}

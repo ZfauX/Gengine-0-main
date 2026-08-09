@@ -248,10 +248,24 @@
             }
         }
 
+        // UX-R4 (pass 36): ветка warning — раньше warning рендерился зелёным
+        // success-блоком (в app.css не было .flash-warning).
         function showMessage(text, type) {
-            const cls = type === 'error' ? 'flash flash-error' : 'flash flash-success';
+            const cls = type === 'error' ? 'flash flash-error' : (type === 'warning' ? 'flash flash-warning' : 'flash flash-success');
             msgArea.innerHTML = `<div class="${cls}">${escapeHtml(text)}</div>`;
             setTimeout(() => { msgArea.innerHTML = ''; }, 4000);
+        }
+
+        // UX-R3 (pass 36): извлекает человекочитаемое сообщение из HTML-ответа
+        // сервера (.flash-error / .field-error), чтобы не показывать «стену» HTML.
+        function extractErrorMessage(htmlText) {
+            if (!htmlText) return '';
+            try {
+                const doc = new DOMParser().parseFromString(htmlText, 'text/html');
+                const err = doc.querySelector('.flash-error') || doc.querySelector('.field-error');
+                if (err && err.textContent.trim()) return err.textContent.trim();
+            } catch (e) { /* non-HTML fallback */ }
+            return htmlText.trim();
         }
 
         function addAttempt(code, success) {
@@ -308,13 +322,13 @@
                 if (!data) return; // redirect happened
             })
             .catch(err => {
-                // Backend now returns localized error messages — display directly.
-                // Fall back to a generic message only if empty.
-                const errorMsg = String(err.message || '').trim();
+                // UX-R3 (pass 36): сервер при ошибке submit рендерит полную
+                // страницу (400) — извлекаем человекочитаемое сообщение из
+                // .flash-error вместо показа «стены» HTML как текста ошибки.
+                const errorMsg = extractErrorMessage(String(err.message || ''));
                 const shownMsg = errorMsg || '{{ T $.Lang "gameplay.wrong_code" }}';
                 // UX-1 (pass 35): severity по X-Error-Code, а не по тексту.
                 // Сервер всегда ставит код при ошибке submit → показываем как error.
-                // Fallback для ответов без заголовка — предыдущая эвристика.
                 const errCode = err.headers ? err.headers.get('x-error-code') : '';
                 const isWrongCode = errCode !== '' ? true : (!errorMsg || /код|code|answer|ответ/i.test(errorMsg));
                 showMessage(shownMsg, isWrongCode ? 'error' : 'warning');
@@ -351,7 +365,9 @@
                         // а не window.location — сервер редиректит на /game/{id}?hint=...
                         const hint = new URLSearchParams(new URL(r.url, window.location.origin).search).get('hint');
                         if (hint) {
-                            showToast('💡 {{ T $.Lang "gameplay.hint_label" }}'.replace('%s', decodeURIComponent(hint)), 'info');
+                            // J1 (pass 36): URLSearchParams.get уже декодирует —
+                            // повторный decodeURIComponent бросал URIError на «%».
+                            showToast('💡 {{ T $.Lang "gameplay.hint_label" }}'.replace('%s', hint), 'info');
                         } else {
                             showToast('{{ T $.Lang "gameplay.hint_used_refresh" }}', 'success');
                         }

@@ -156,10 +156,17 @@ func (c *Cache) Get(key string) (any, bool) {
 func (c *Cache) Set(key string, value any, ttl time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.lru.Add(key, cacheItem{value: value, expires: time.Now().Add(ttl)})
-	if ttl > 0 {
+	// A-5 (pass 36): ttl==0 — запись без истечения (expires=zero). Раньше
+	// ttl=0 давал expires=time.Now() — запись мгновенно протухала и «кэш»
+	// никогда не хитнился, при этом ключ попадал в ttlKeys.
+	// ttl<0 — мгновенно протухший (обратная совместимость с тестами):
+	// expires = now.Add(ttl) уходит в прошлое.
+	expires := time.Time{}
+	if ttl != 0 {
+		expires = time.Now().Add(ttl)
 		c.ttlKeys[key] = true
 	}
+	c.lru.Add(key, cacheItem{value: value, expires: expires})
 	c.trackPrefix(key)
 }
 

@@ -6,11 +6,11 @@
         <!-- Область сообщений -->
         <div class="relative">
             <div id="chat-messages" role="log" aria-live="polite" aria-relevant="additions" class="h-96 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-800 mb-3"></div>
-            <!-- UX-6 (pass 35): бейдж «новые сообщения» — читающий выше видит счётчик. -->
+            <!-- UX-6 (pass 35): бейдж «новые сообщения» — читающий выше видит счётчик.
+                 R1 (pass 36): обработчик через addEventListener — inline onclick блокируется CSP. -->
             <button id="chat-unread-badge" type="button"
                     class="hidden absolute bottom-6 left-1/2 -translate-x-1/2 z-10 btn btn-primary text-xs shadow-lg"
-                    aria-label="{{ T $.Lang "team.unread_messages" }}"
-                    onclick="var el=document.getElementById('chat-messages'); el.scrollTo({top: el.scrollHeight, behavior: 'smooth'}); document.getElementById('chat-unread-badge').classList.add('hidden');"></button>
+                    aria-label="{{ T $.Lang "team.unread_messages" }}"></button>
         </div>
 
         <!-- Поле ввода и отправка -->
@@ -124,6 +124,14 @@
         if (!chatUnreadBadge) return;
         unreadCount = 0;
         chatUnreadBadge.classList.add('hidden');
+    }
+
+    // R1/R2 (pass 36): клик по бейджу — скролл вниз + сброс счётчика.
+    if (chatUnreadBadge) {
+        chatUnreadBadge.addEventListener('click', function() {
+            messagesEl.scrollTo({top: messagesEl.scrollHeight, behavior: 'smooth'});
+            hideUnreadBadge();
+        });
     }
 
     function escapeHtml(text) {

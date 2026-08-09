@@ -197,7 +197,9 @@ func RegisterRoutes(
 	userGroup.Use(middleware.AuthRequired(authSvc))
 	{
 		userGroup.GET("/2fa/enable", twoFactorHandler.EnableForm)
-		userGroup.POST("/2fa/enable", twoFactorHandler.Enable)
+		// S-2 (pass 36): rate limit на включение 2FA (пароль + TOTP перебираются
+		// с lockout в хендлере; IP-лимит — вторая линия защиты).
+		userGroup.POST("/2fa/enable", middleware.LoginRateLimit(5*time.Minute, 5), twoFactorHandler.Enable)
 		userGroup.GET("/2fa/disable", twoFactorHandler.DisableForm)
 		// S-2 (pass 35): rate limit на отключение 2FA (пароль + TOTP перебираются
 		// с lockout в хендлере; IP-лимит — вторая линия защиты).

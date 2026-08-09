@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/pkg/audit"
@@ -416,8 +417,13 @@ func (h *WebAuthnHandler) FinishLogin(c *gin.Context) {
 	// S-H1: passkey — это первый фактор. Для пользователя с включённой 2FA
 	// JWT не выдаём без TOTP — тот же flow, что и у парольного входа:
 	// ставим pending_user_id и отправляем на /auth/2fa/verify.
+	// S-1 (pass 36): pending_expires обязателен — TwoFALoginVerify пропускает
+	// TTL-проверку, если ключа нет, и pending-шаг жил бы до конца session-cookie
+	// (расширяя окно перебора TOTP). Парольный вход (pass 31) ставит его.
 	if waUserTyped.user.TwoFactorEnabled {
 		sess.Set("pending_user_id", waUserTyped.user.ID)
+		sess.Set("pending_email", waUserTyped.user.Email)
+		sess.Set("pending_expires", time.Now().Add(pending2FATTL).Unix())
 		if saveErr := sess.Save(); saveErr != nil {
 			log.Error().Err(saveErr).Msg("FinishLogin: failed to set pending 2FA session")
 		}

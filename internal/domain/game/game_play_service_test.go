@@ -5,7 +5,6 @@ import (
 	"context"
 	"testing"
 
-	"gengine-0/internal/config"
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/user"
@@ -28,9 +27,8 @@ func setupGamePlayTest(t *testing.T) (*gorm.DB, *game.GamePlayService, *game.Lev
 	progressSvc := game.NewLevelProgressService(db).WithRepository(game.NewGormLevelProgressRepo(db))
 	monitorSvc := game.NewMonitorService(db).WithRepository(game.NewGormMonitorRepo(db))
 	coAuthorSvc := game.NewCoAuthorService(db).WithRepository(game.NewGormCoAuthorRepo(db))
-	cfg := &config.Config{}
 
-	playSvc := game.NewGamePlayService(db, attemptSvc, progressSvc, monitorSvc, hub, coAuthorSvc, cfg).
+	playSvc := game.NewGamePlayService(db, attemptSvc, monitorSvc, hub, coAuthorSvc).
 		WithRepository(game.NewGormGameRepo(db)).
 		WithPassingRepository(game.NewGormGamePassingRepo(db))
 	return db, playSvc, progressSvc

@@ -47,6 +47,20 @@ func NewExportService(
 	}, nil
 }
 
+// csvSafe нейтрализует CSV/Excel formula injection (S-3, pass 36): значения,
+// начинающиеся с =, +, -, @, \t, \r, интерпретируются Excel/LibreOffice как
+// формулы. Апостроф-префикс запрещает вычисление.
+func csvSafe(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	}
+	return s
+}
+
 // ExportGameToCSV записывает все уровни, вопросы и ответы игры в CSV-формате.
 func (s *ExportService) ExportGameToCSV(ctx context.Context, gameID uint, w io.Writer) error {
 	_, levels, err := s.exportRepo.GetGameWithLevels(ctx, gameID)
@@ -69,10 +83,10 @@ func (s *ExportService) ExportGameToCSV(ctx context.Context, gameID uint, w io.W
 			}
 			if err := csvWriter.Write([]string{
 				strconv.Itoa(lvl.Position),
-				lvl.Name,
-				q.Text,
-				q.Hint,
-				strings.Join(answerCodes, "|"),
+				csvSafe(lvl.Name),
+				csvSafe(q.Text),
+				csvSafe(q.Hint),
+				csvSafe(strings.Join(answerCodes, "|")),
 			}); err != nil {
 				return fmt.Errorf("ошибка записи CSV-строки: %w", err)
 			}
@@ -162,7 +176,7 @@ func (s *ExportService) ExportTeamResultsToCSV(ctx context.Context, gameID, team
 
 	for _, r := range results {
 		if err := csvWriter.Write([]string{
-			r.LevelName,
+			csvSafe(r.LevelName),
 			r.Status,
 			r.StartedAt,
 			r.FinishedAt,
@@ -301,7 +315,7 @@ func (s *ExportService) ExportResultsToCSV(ctx context.Context, gameID uint, w i
 		}
 		if err := csvWriter.Write([]string{
 			place,
-			p.Team.Name,
+			csvSafe(p.Team.Name),
 			timeStr,
 			strconv.Itoa(attempts),
 		}); err != nil {
@@ -467,10 +481,10 @@ func (s *ExportService) ExportGameToExcel(ctx context.Context, gameID uint, w io
 			if setErr := f.SetCellValue(sheetName, fmt.Sprintf("A%d", row), lvl.Position); setErr != nil {
 				return fmt.Errorf("ошибка записи уровня в Excel: %w", setErr)
 			}
-			if setErr := f.SetCellValue(sheetName, fmt.Sprintf("B%d", row), lvl.Name); setErr != nil {
+			if setErr := f.SetCellValue(sheetName, fmt.Sprintf("B%d", row), csvSafe(lvl.Name)); setErr != nil {
 				return fmt.Errorf("ошибка записи уровня в Excel: %w", setErr)
 			}
-			if setErr := f.SetCellValue(sheetName, fmt.Sprintf("C%d", row), lvl.Description); setErr != nil {
+			if setErr := f.SetCellValue(sheetName, fmt.Sprintf("C%d", row), csvSafe(lvl.Description)); setErr != nil {
 				return fmt.Errorf("ошибка записи уровня в Excel: %w", setErr)
 			}
 			if setErr := f.SetCellValue(sheetName, fmt.Sprintf("D%d", row), lvl.Type); setErr != nil {
@@ -487,22 +501,22 @@ func (s *ExportService) ExportGameToExcel(ctx context.Context, gameID uint, w io
 				if setErr := f.SetCellValue(sheetName, fmt.Sprintf("A%d", row), lvl.Position); setErr != nil {
 					return fmt.Errorf("ошибка записи уровня в Excel: %w", setErr)
 				}
-				if setErr := f.SetCellValue(sheetName, fmt.Sprintf("B%d", row), lvl.Name); setErr != nil {
+				if setErr := f.SetCellValue(sheetName, fmt.Sprintf("B%d", row), csvSafe(lvl.Name)); setErr != nil {
 					return fmt.Errorf("ошибка записи уровня в Excel: %w", setErr)
 				}
-				if setErr := f.SetCellValue(sheetName, fmt.Sprintf("C%d", row), lvl.Description); setErr != nil {
+				if setErr := f.SetCellValue(sheetName, fmt.Sprintf("C%d", row), csvSafe(lvl.Description)); setErr != nil {
 					return fmt.Errorf("ошибка записи уровня в Excel: %w", setErr)
 				}
 				if setErr := f.SetCellValue(sheetName, fmt.Sprintf("D%d", row), lvl.Type); setErr != nil {
 					return fmt.Errorf("ошибка записи уровня в Excel: %w", setErr)
 				}
-				if setErr := f.SetCellValue(sheetName, fmt.Sprintf("E%d", row), q.Text); setErr != nil {
+				if setErr := f.SetCellValue(sheetName, fmt.Sprintf("E%d", row), csvSafe(q.Text)); setErr != nil {
 					return fmt.Errorf("ошибка записи вопроса в Excel: %w", setErr)
 				}
-				if setErr := f.SetCellValue(sheetName, fmt.Sprintf("F%d", row), q.Hint); setErr != nil {
+				if setErr := f.SetCellValue(sheetName, fmt.Sprintf("F%d", row), csvSafe(q.Hint)); setErr != nil {
 					return fmt.Errorf("ошибка записи подсказки в Excel: %w", setErr)
 				}
-				if setErr := f.SetCellValue(sheetName, fmt.Sprintf("G%d", row), answersStr); setErr != nil {
+				if setErr := f.SetCellValue(sheetName, fmt.Sprintf("G%d", row), csvSafe(answersStr)); setErr != nil {
 					return fmt.Errorf("ошибка записи ответов в Excel: %w", setErr)
 				}
 				row++
@@ -572,7 +586,7 @@ func (s *ExportService) ExportResultsToExcel(ctx context.Context, gameID uint, w
 		if setErr := f.SetCellValue(sheetName, fmt.Sprintf("A%d", row), place); setErr != nil {
 			return fmt.Errorf("ошибка записи места в Excel: %w", setErr)
 		}
-		if setErr := f.SetCellValue(sheetName, fmt.Sprintf("B%d", row), p.Team.Name); setErr != nil {
+		if setErr := f.SetCellValue(sheetName, fmt.Sprintf("B%d", row), csvSafe(p.Team.Name)); setErr != nil {
 			return fmt.Errorf("ошибка записи команды в Excel: %w", setErr)
 		}
 		if setErr := f.SetCellValue(sheetName, fmt.Sprintf("C%d", row), timeStr); setErr != nil {

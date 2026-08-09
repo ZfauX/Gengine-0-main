@@ -51,6 +51,21 @@
 
 Находки перечислены ниже; закрытие — раундами фиксов, как в pass 30-35.
 
+**Раунд 1 (текущий):**
+- **K-1**: full-preview больше не отдаёт коды ответов не-менеджерам (`hnd_fullpreview.go` — IsUserManager check; менеджеры видят ответы, остальные только вопросы/подсказки).
+- **UX-R1/R2**: бейдж «новые сообщения» починен — inline onclick заменён на addEventListener в nonce-скрипте (CSP блокировал onclick); счётчик сбрасывается при клике.
+- **UX-R3**: ошибки submit — клиент извлекает сообщение из `.flash-error` через DOMParser вместо «стены» HTML.
+- **UX-R4**: добавлена ветка warning в showMessage + `.flash-warning` в app.css.
+- **UX-J1**: убран двойной decodeURIComponent подсказки (URIError на «%»).
+- **S-1**: WebAuthn 2FA pending теперь ставит `pending_expires`/`pending_email` (TTL 10 мин, как парольный вход).
+- **S-2**: 2FA Enable — lockout (инкремент счётчика + backoff на пароль и TOTP) + LoginRateLimit на маршрут.
+- **A-1**: удалены мёртвые поля `GameService.db`, `GamePlayService.cfg`, `GamePlayService.progressSvc` + параметры конструкторов + wire.
+- **A-4**: добавлены тесты recaptcha (httptest-фейк siteverify: success/failure/non-200/bad JSON/empty token/disabled/network).
+- **S-3**: CSV/Excel formula injection — helper `csvSafe` (апостроф-префикс для `=+-@\t\r`) применён во всех CSV/Excel экспортах.
+- **A-5**: cache `Set` с `ttl==0` — запись без истечения (expires=zero); ttl<0 — мгновенно протухший.
+
+**Осталось на раунд 2+:** A-2 (BlackboxVoteService read-path утечки + мёртвые методы интерфейса), A-3 (GetGameplayData через репозиторий), F-1 (автостарт batch), F-2 (JSON-маршалинг снапшота), F-3 (ListRecentAttempts), S-4 (CSP style-src), S-5 (reviews .csrf), UX-1..6 (низкие).
+
 ---
 
 ## A. Найденные ошибки pass 36 (верифицировано лично)

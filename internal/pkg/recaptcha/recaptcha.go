@@ -17,8 +17,9 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// verifyURL — эндпоинт siteverify Google.
-const verifyURL = "https://www.google.com/recaptcha/api/siteverify"
+// verifyURL — эндпоинт siteverify Google. var (не const) для тестов
+// (recaptcha_test.go подменяет на httptest.Server).
+var verifyURL = "https://www.google.com/recaptcha/api/siteverify"
 
 // siteverifyResponse — ответ Google API.
 type siteverifyResponse struct {

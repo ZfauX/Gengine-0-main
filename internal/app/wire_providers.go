@@ -22,8 +22,8 @@ import (
 	"gorm.io/gorm"
 )
 
-func wrapGamePlayService(db *gorm.DB, gameRepo game.GameRepository, passingRepo game.GamePassingRepository, attemptSvc *game.AttemptService, progressSvc *game.LevelProgressService, monitorSvc *game.MonitorService, hub *ws.RoomHub, coAuthorSvc *game.CoAuthorService, cfg *config.Config, sseMgr *game.SSEManager) *game.GamePlayService {
-	return game.NewGamePlayService(db, attemptSvc, progressSvc, monitorSvc, hub, coAuthorSvc, cfg).WithRepository(gameRepo).WithPassingRepository(passingRepo).WithSSEManager(sseMgr)
+func wrapGamePlayService(db *gorm.DB, gameRepo game.GameRepository, passingRepo game.GamePassingRepository, attemptSvc *game.AttemptService, monitorSvc *game.MonitorService, hub *ws.RoomHub, coAuthorSvc *game.CoAuthorService, sseMgr *game.SSEManager) *game.GamePlayService {
+	return game.NewGamePlayService(db, attemptSvc, monitorSvc, hub, coAuthorSvc).WithRepository(gameRepo).WithPassingRepository(passingRepo).WithSSEManager(sseMgr)
 }
 
 func wrapGameAdminService(db *gorm.DB, teamRepo team.TeamRepository, userRepo user.UserRepository, coAuthorSvc *game.CoAuthorService, cfg *config.Config, sseMgr *game.SSEManager) *game.GameAdminService {
@@ -34,8 +34,8 @@ func wrapGameplayHandler(gameService game.GameServiceInterface, gamePlaySvc game
 	return game.NewGameplayHandler(gameService, gamePlaySvc, attemptSvc, progressSvc, monitorSvc, hub, store)
 }
 
-func wrapGameService(db *gorm.DB, gameRepo game.GameRepository, passingRepo game.GamePassingRepository, ca *game.CoAuthorService, rs *game.ReviewService, ms *game.MonitorService, ps *game.PhotoService, hub *ws.RoomHub, cfg *config.Config, storage storage.FileStorage, cacheStore cache.CacheStore, userRepo user.UserRepository, ratingSvc *game.RatingService) *game.GameService {
-	return game.NewGameService(db, gameRepo, passingRepo, ca, rs, ms, ps, hub, cfg, storage, cacheStore, userRepo, ratingSvc)
+func wrapGameService(gameRepo game.GameRepository, passingRepo game.GamePassingRepository, ca *game.CoAuthorService, rs *game.ReviewService, ms *game.MonitorService, ps *game.PhotoService, hub *ws.RoomHub, cfg *config.Config, storage storage.FileStorage, cacheStore cache.CacheStore, userRepo user.UserRepository, ratingSvc *game.RatingService) *game.GameService {
+	return game.NewGameService(gameRepo, passingRepo, ca, rs, ms, ps, hub, cfg, storage, cacheStore, userRepo, ratingSvc)
 }
 
 // wrapCoAuthorService — соавторы: нетранзакционные методы через репозиторий

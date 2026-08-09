@@ -389,8 +389,10 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 		return
 	}
 
-	// S2: включение 2FA требует подтверждения пароля. ��наче атакующий с
+	// S2: включение 2FA требует подтверждения пароля. Иначе атакующий с
 	// украденной сессией привязал бы свой TOTP-секрет к чужому аккаунту.
+	// S-2 (pass 36): lockout на весь enable-flow — украденная сессия+пароль
+	// не даёт бесконечного перебора 6-значного TOTP.
 	renderEnableError := func(msg string) {
 		render.Page(c, http.StatusOK, "user-2fa-enable.html", gin.H{
 			"Title": render.Tr(c, "twofa.page_title"),
@@ -399,7 +401,19 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 			"csrf":  csrf.GetToken(c),
 		})
 	}
+	if user.LockedUntil != nil && time.Now().Before(*user.LockedUntil) {
+		renderEnableError(render.Tr(c, "handler.wrong_code_try_again"))
+		return
+	}
 	if bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)) != nil {
+		// Неверный пароль — инкремент счётчика + backoff-блокировка.
+		if newAttempts, incErr := h.userRepo.AtomicIncrementFailedAttempts(c.Request.Context(), userID); incErr != nil {
+			log.Error().Err(incErr).Uint("user_id", userID).Msg("2fa-enable: atomic increment failed")
+		} else if newAttempts >= 5 {
+			if lockErr := h.lockUser(c.Request.Context(), userID); lockErr != nil {
+				log.Error().Err(lockErr).Uint("user_id", userID).Msg("2fa-enable: failed to lock account")
+			}
+		}
 		renderEnableError(render.Tr(c, "handler.wrong_password"))
 		return
 	}
@@ -420,8 +434,25 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 	// Проверяем код против сохранённого секрета
 	valid, err := h.twoFactorSvc.VerifyCode(pendingSecret, input.Code)
 	if err != nil || !valid {
+		// Неверный TOTP — инкремент счётчика + backoff-блокировка.
+		if newAttempts, incErr := h.userRepo.AtomicIncrementFailedAttempts(c.Request.Context(), userID); incErr != nil {
+			log.Error().Err(incErr).Uint("user_id", userID).Msg("2fa-enable: atomic increment failed")
+		} else if newAttempts >= 5 {
+			if lockErr := h.lockUser(c.Request.Context(), userID); lockErr != nil {
+				log.Error().Err(lockErr).Uint("user_id", userID).Msg("2fa-enable: failed to lock account")
+			}
+		}
 		renderEnableError(render.Tr(c, "handler.wrong_code_try_again"))
 		return
+	}
+
+	// Успешная проверка — сбрасываем счётчик неудач.
+	if resetErr := h.userRepo.Update(c.Request.Context(), userID, map[string]any{
+		"failed_login_attempts": 0,
+		"locked_until":          nil,
+		"lock_count":            0,
+	}); resetErr != nil {
+		log.Error().Err(resetErr).Uint("user_id", userID).Msg("2fa-enable: failed to reset attempts")
 	}
 
 	// Генерируем резервные коды
