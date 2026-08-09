@@ -1,12 +1,12 @@
-# Deep Review Gengine-0 — 9 августа 2026 (pass 37 — повторное ревью после закрытия pass 30-36 + дефера)
+# Deep Review Gengine-0 — 9 августа 2026 (pass 38 — повторное ревью после закрытия pass 30-37)
 
 ## Резюме
 
 Повторное глубокое ревью выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture/DI) с последующей **личной верификацией ключевых находок** по коду.
 
-**Итог pass 37:** 0 критичных, 3 высоких (все подтверждены лично), ~12 средних, ~10 низких.
+**Итог pass 38:** 1 критичная (data race), 3 высоких (все подтверждены лично), ~10 средних, ~10 низких.
 
-> **Контекст:** pass 30-36 закрыты полностью; дефер разобран; линтер 2.12.2 чист. Новые проблемы: **утечка подсказок через FullPreview**, **GET /settings без прав**, **fail-open TTL pending 2FA**, N+1 в UpdateScoresForGame/автостарте/таймаутах, **og:image http за reverse-proxy**, мёртвые не-Tx методы AttemptService, отсутствие тестов на новый код pass 36.
+> **Контекст:** pass 30-37 закрыты полностью; линтер 2.12.2 чист. Новые проблемы: **data race в MonitorService LRU** (регресс P-5 pass 37), **N+1 в checkTimeoutsImpl**, **мнимая защита от дублей в autostart** (OnConflict без unique), **мёртвое DI-поле AttemptSvc**, **JS-краш на не-manager странице игры**, **бесконечная WS-реконнект-нагрузка при polling**.
 
 ---
 
@@ -32,6 +32,115 @@
 **Проверка:** `go build ./...` ✓, `go test -short ./...` ✓, `go test -tags=integration` (game/user/tournament/admin) ✓, `go vet ./...` ✓, `gofmt -l .` → пусто ✓. `-race` недоступен на Windows (нет CGO).
 
 > Примечание: `golangci-lint` на этой машине — v1 с конфигом v2 (инфраструктурная проблема, не кодовая).
+
+---
+
+# PASS 38 (повторное ревью) — 9 августа 2026
+
+> Девятое повторное ревью после полного закрытия pass 30-37. Выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture) с **личной верификацией** ключевых находок по коду.
+
+## Резюме pass 38
+
+**Итог:** 1 критичная (data race), 3 высоких (все подтверждены лично), ~10 средних, ~10 низких.
+
+> Кодовая база стабильна, линтер 2.12.2 чист. Найдены: **data race в MonitorService LRU** (MoveToBack под RLock — регресс P-5 pass 37), **N+1 в checkTimeoutsImpl** (перегруз passing), **мнимая защита от дублей в autostart** (OnConflict без unique-индекса), **мёртвое DI-поле AttemptSvc**, **JS-краш на не-manager странице игры** (preview-btn без null-guard), **бесконечная ре-коннект-нагрузка WS при polling-фолбэке**.
+
+---
+
+## Статус (обновлено 9 авг 2026) — PASS 38 ОТКРЫТ
+
+Находки перечислены ниже; закрытие — раундами фиксов, как в pass 30-37.
+
+---
+
+## A. Найденные ошибки pass 38 (верифицировано лично)
+
+### 🔴 Критично
+
+| ID | Файл | Проблема |
+|---|---|---|
+| **R-1** | `game/svc_monitor.go:92,171` | **Data race в MonitorService LRU.** P-5 (pass 37) добавил `cacheList.MoveToBack(elem)` под `mu.RLock()` — но `container/list.MoveToBack` **мутирует** список (перелинковка). Конкурентные поллеры SSE (разные игры) + `InvalidateCache`/refresh под Lock → гонка, порча linked-list. Внесено регрессом pass 37. **Верифицировано лично.** |
+
+### 🟠 Высокие
+
+| ID | Файл | Проблема |
+|---|---|---|
+| **P-1** | `game/svc_progress.go:344-354,129-134` | **N+1 в checkTimeoutsImpl**: passings уже загружены батчем в `passingByID`, но `AdvanceToNextLevel` пере-загружает passing (`db.First`) + next-level + COUNT на каждый просроченный прогресс. 50 просроченных = ~150 запросов каждые 30с. **Верифицировано лично.** |
+| **P-2** | `game/svc_progress.go:455-471` | **Мнимая защита от дублей в autostart**: `OnConflict{DoNothing:true}` без `Columns` срабатывает только на unique-ограничение, а `idx_level_progresses_passing_level` (000045) — **не unique**. Также прогрессы создаются циклом (2 запроса на passing), не batch. **Верифицировано лично.** |
+| **UX-1** | `game/templates/games-show.html:215` | **JS-краш на не-manager странице игры**: `document.getElementById('preview-btn').addEventListener(...)` без null-guard; кнопка рендерится только при `{{if .IsManager}}` (строка 96). TypeError обрывает первый `<script>` — close/Escape-обработчики модалки не навешиваются. **Верифицировано лично.** |
+
+### 🟡 Средние
+
+| ID | Файл | Проблема |
+|---|---|---|
+| **N-1** | `game/routes.go:24`, `app/router.go:372`, `hnd_gameplay.go:46` | **Мёртвое DI-поле `AttemptSvc`**: `_ *AttemptService` параметр в NewGameplayHandler, `AttemptSvc` в GameDeps и wire_providers передают неиспользуемый сервис. **Верифицировано лично.** |
+| **N-2** | `game/svc_coauthor.go:46` | **HasPermission через raw s.db** (в отличие от IsUserManager через repo) — A-3 из pass 37 остался; два SQL-пути для одной проверки прав. |
+| **N-3** | `tournament/service.go:400-405` | **Сырой SQL через tx** в UpdateScoresForGame (репозитории непригодны для транзакционной композиции из-за search_path). |
+| **N-4** | `game/svc_monitor.go:402-419`, `tournament/service.go:512-529` | **Дублирование `joinPlaceholders`/`toAnySlice`** (два пакета) + 4+ варианта проверки прав автора/соавтора (IsUserManager/HasPermission/HasPermissionTx/export-ветка). |
+| **UX-2** | `monitor/templates/monitor-page.html:298-301` | **`.catch` disqualifyTeam**: при fallback-кнопке (`{dataset:{confirmDanger:'true'}}` из UX-6 pass 37) `btn.classList` undefined → TypeError внутри catch → тост об ошибке не показывается. **Верифицировано по коду.** |
+| **UX-3** | `monitor/templates/monitor-page.html:58-100,104-138` | **Бесконечная ре-коннект-нагрузка WS**: polling-fallback каждые 10с закрывает старый wsClient и создаёт новый → backoff/maxAttempts сбрасываются. |
+| **UX-4** | `auth-register.html:56-63` | **reCAPTCHA theme sync не работает**: `grecaptcha.render()` на уже отрендеренный контейнер бросает ошибку (молча ловится); нет официального API смены theme на лету. UX-3 pass 37 — цель не достигнута. |
+| **P-3** | `game/repository.go:202-220` | **GetLogsByGameID ORDER BY не покрыт индексом**: sort поперёк всех passings игры (индекс logs(game_passing_id, created_at) не помогает); 100k логов = full sort. |
+| **P-4** | `game/svc_admin.go:79-84,284-333` | **ForceFinishGame двойная загрузка команд/капитанов**: Preload("Team.Captain") уже есть, но notify пере-загружает teamRepo.ListByIDs + userRepo.ListByIDs. |
+
+### 🔲 Низкие / мелочи
+
+| ID | Файл | Проблема |
+|---|---|---|
+| **UX-5** | `tournaments-list.html`, `admin-audit.html` | Mobile-карточки не добавлены (только overflow-x-auto) — несоответствие admin-teams (pass 37). |
+| **UX-6** | `layout.html:57` + `games-show.html:1-8` | OG-теги только на games-show; twitter:card без title/image; нет og:site_name/locale. |
+| **UX-7** | `app.js:86-89` | Эмодзи тостов (✅❌⚠️ℹ️) без aria-hidden в aria-live контейнере. |
+| **UX-8** | `games-show.html:282` | `replace('%s', escapeHtml(q.hint))` — replacement-строка интерпретирует `$&`/`$'` в подсказке. |
+| **UX-9** | `auth-register.html:72-77` + `app.js:109-125` | Дублирование submit-обработчика (inline + initFormLoading) — перетирает текст кнопки. |
+| **UX-10** | `admin-teams.html:84-88`, `admin-audit.html:88-92`, `layout.html:221` | Touch-цели пагинации/themeToggle < 44px. |
+| **C-1** | `monitor/repository.go:96-106` | SaveMessage: Create + повторный GetMessageByID (2-3 запроса на сообщение). |
+| **C-2** | `calendar/handler.go:184-243` | CalendarICal не кэшируется (в отличие от CalendarData). |
+
+### 🔲 Опровергнуто / безопасно (личная проверка + агенты)
+
+- **Admin-доступ** — все `/admin/*` за AuthRequired + TwoFactorRequired + adminOnly; роль из БД с кэшем 5с. Безопасно.
+- **FullPreview hint gating (pass 37)** — менеджеры получают hint+answers, остальные только вопрос. ✓
+- **Settings GET authz (pass 37)** — IsUserManager добавлен. ✓
+- **TwoFALoginVerify fail-closed (pass 37)** — отсутствие pending_expires = истёкший; тесты обновлены. ✓
+- **UpdateScoresForGame batch CASE** — SQL корректен (параметризован). ✓
+- **AttemptService без db** — stateless, wire консистентен. ✓
+- **Refresh-ротация, 2FA lockout, Push SSRF, uploads path traversal, CSV injection, CSRF** — подтверждено безопасно.
+- **Concurrency (кроме R-1)**: SnapshotDispatcher, monitor pollers unsubscribe, WS hub unregister, push pool — утечек не найдено.
+
+---
+
+## B. Оптимизации (производительность)
+
+1. **R-1**: промоушен LRU вынести в отдельный метод с полным `mu.Lock()` (или Lock-блок вокруг MoveToBack).
+2. **P-1**: `AdvanceToNextLevel` принять уже загруженный `*GamePassing` (вариант `AdvanceToNextLevelWithPassing`) — убрать ре-лоад; next-level можно выбрать одним IN-запросом для партии.
+3. **P-2**: `CreateInBatches(&progresses, 100)` с `OnConflict{Columns: {game_passing_id, level_id}, DoNothing: true}` + **unique-индекс** в миграции; UPDATE статуса пачкой `WHERE id IN`.
+4. **N-1**: убрать мёртвый `AttemptSvc` из GameDeps/NewGameplayHandler/wire.
+5. **N-4**: вынести `joinPlaceholders`/`toAnySlice` в `internal/pkg/util`; централизовать проверку прав.
+6. **P-3**: денормализовать `logs.game_id` + индекс `(game_id, created_at DESC)`.
+7. **P-4**: собирать капитанов из Preload-графа в ForceFinishGame.
+
+## C. Улучшения кодовой базы (архитектура)
+
+1. **N-2**: `HasPermission` через CoAuthorRepository (типизированные GetGameAuthorID + FindByGameAndUser); HasPermissionTx — только для tx.
+2. **N-3**: транзакционные методы в TournamentTeamRepository (ListByTournamentAndTeamIDsTx).
+3. **UX-3**: WS-polling — не пересоздавать клиент, если он isOpen.
+4. **N-5**: единый путь проверки прав автора/соавтора.
+
+## D. Улучшения UX
+
+1. **UX-1**: null-guard на preview-btn (если нет кнопки — не навешивать).
+2. **UX-2**: guard `btn.classList` в catch disqualifyTeam.
+3. **UX-4**: при переключении темы — очищать контейнер (`widget.innerHTML=''`) перед render, либо только reset(0).
+4. **UX-5**: mobile-карточки для tournaments-list/admin-audit.
+5. **UX-6**: базовые og:site_name/locale/twitter в layout.
+6. **UX-7**: aria-hidden на эмодзи тостов.
+7. **UX-8**: replace('%s', function(){...}) для подсказок.
+
+## Приоритет фиксов (pass 38)
+1. **R-1** (data race — критично).
+2. **UX-1** (JS-краш публичной страницы) + **P-1/P-2** (N+1 фоновых тиков).
+3. **N-1** (мёртвое DI-поле) + **UX-2/UX-3** (catch-краш, WS-реконнект).
+4. **N-2/N-4** (архитектура прав/дубликаты).
 
 ---
 
