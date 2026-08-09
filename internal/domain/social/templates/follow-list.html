@@ -41,7 +41,7 @@
             const authorID = btn.dataset.authorId;
             const authorName = btn.dataset.authorName;
             if (!authorID) return;
-            var confirmed = await showModalConfirm(confirmMsg.replace('%s', authorName), btn);
+            var confirmed = await showModalConfirm(confirmMsg.replace('%s', function() { return authorName; }), btn);
             if (!confirmed) return;
             fetch('/follow/' + authorID, {
                 method: 'DELETE',

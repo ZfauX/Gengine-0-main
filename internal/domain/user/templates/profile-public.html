@@ -145,13 +145,13 @@
                         location.reload();
                     } else {
                         btn.disabled = false;
-                        window.showToast(data.error ? '{{ T $.Lang "profile.follow_network_error" }}'.replace('%s', data.error) : '{{ T $.Lang "profile.follow_error" }}', 'error');
+                        window.showToast(data.error ? '{{ T $.Lang "profile.follow_network_error" }}'.replace('%s', function() { return data.error; }) : '{{ T $.Lang "profile.follow_error" }}', 'error');
                     }
                 })
                 .catch(err => {
                     btn.disabled = false;
                     console.error('Follow error:', err);
-                    window.showToast('{{ T $.Lang "profile.follow_network_error" }}'.replace('%s', err.message), 'error');
+                    window.showToast('{{ T $.Lang "profile.follow_network_error" }}'.replace('%s', function() { return err.message; }), 'error');
                 });
         });
     })();

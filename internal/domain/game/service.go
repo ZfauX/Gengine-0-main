@@ -339,12 +339,12 @@ func (s *GameService) Update(ctx context.Context, id uint, updated *Game, userID
 
 // Delete делегирует GameCRUDService.
 func (s *GameService) Delete(ctx context.Context, id uint, userID uint) error {
+	// Загружаем игру для удаления файлов обложки (B7). Права владельца
+	// проверяет GameCRUDService.Delete — A-3 (pass 39): убрана дублированная
+	// проверка здесь (была два GetByID + два errors.New в одном пути).
 	game, err := s.crudService.GetByID(ctx, id)
 	if err != nil {
 		return err
-	}
-	if game.AuthorID != userID {
-		return errors.New("только владелец может удалить игру")
 	}
 
 	// Сначала строка в БД, затем best-effort файлы (B7): при сбое удаления

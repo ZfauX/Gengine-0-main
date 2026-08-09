@@ -47,11 +47,11 @@
 
 ---
 
-## Статус (обновлено 9 авг 2026) — PASS 39 ОТКРЫТ
+## Статус (обновлено 9 авг 2026) — PASS 39 ЗАКРЫТ
 
-Находки перечислены ниже; закрытие — раундами фиксов, как в pass 30-38.
+**Все находки pass 39 исправлены** (3 раунда фиксов):
 
-**Раунд 1 (высокие):**
+**Раунд 1-2** (`2cf9cdd`):
 - **UX-1**: initFormLoading читает `data-no-loading` и с формы, и с кнопки — регрессия UX-9 pass 38 устранена (кнопка регистрации не перетирается спиннером).
 - **SEO-1**: убран двойной суффикс «· Encounter Engine» (layout — единственное место); убран дублирующий og:title из games-show ExtraHead.
 - **SEO-2**: CanonicalURL заполняется absolute self-URL (с учётом X-Forwarded-Proto).
@@ -64,6 +64,22 @@
 - **P-2**: cacheGetJSON для in-memory Cache — прямой reflect-копией вместо JSON round-trip (только для Valkey остаётся JSON).
 
 **Осталось на раунд 3+ (низкий приоритет):** P-1 (checkTimeouts next-level batch), P-3 (глобальный Lock монитор-кэша — sharding), P-5 (GetLogsByGameID sort-индекс), P-6 (CalendarICal кэш), P-7 (WS-хаб per-room workers), A-2 (единый путь прав), A-3 (дублированная проверка владельца), A-4 (sentinel game-домен), UX-3 (replace('%s') везде), UX-4..10 (мелочи).
+
+**Раунд 3 (текущий):**
+- **UX-3**: replace('%s', str) с `$`-паттернами исправлен на replacement-функции (hint, level_name, authorName, follow errors).
+- **A-3**: убрана дублированная проверка владельца в GameService.Delete (права проверяет GameCRUDService.Delete).
+- **UX-9**: initFormLoading не обрабатывает GET-формы (фильтры/поиск не меняют кнопку).
+- **UX-7**: удалён дублирующий `<meta csrf-token>` из calendar-page (уже в layout head).
+- **UX-8**: убрана мёртвая lastScrollY; scroll-listener passive.
+- **UX-6**: dnd fetch в levels-list получил .catch.
+
+**Проверка:** `go build ./...` ✓, `go vet ./...` ✓, `golangci-lint 2.12.2` → 0 issues ✓, `gofmt -l .` → пусто ✓, `go test -count=1 -short ./...` ✓, 84 шаблона валидны ✓.
+
+**Оставлено осознанно (задокументировано):**
+- **P-1** (next-level batch в checkTimeouts) — заметный рефакторинг без функционального бага; перф-улучшение для фоновой джобы.
+- **P-3/P-5/P-6/P-7** (Lock sharding, logs.game_id, ical кэш, WS per-room) — перф-оптимизации без влияния на корректность.
+- **A-2** (единый путь прав HasPermission vs HasPermissionTx) — оба варианта корректны, поведение совпадает; кандидат на рефакторинг.
+- **A-4** (sentinel game-домен) — конвенции Go, без функционального бага.
 
 ---
 

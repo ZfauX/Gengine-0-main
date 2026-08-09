@@ -160,6 +160,9 @@ function duplicateLevel(gameId, levelId) {
             }).then(function(r) {
                 if (r.ok || r.redirected) window.location.reload();
                 else window.showToast('{{ T $.Lang "level.sort_error" }}', 'error');
+            }).catch(function() {
+                // UX-6 (pass 39): сетевая ошибка — unhandled rejection раньше.
+                window.showToast('{{ T $.Lang "level.sort_error" }}', 'error');
             });
         }
     });

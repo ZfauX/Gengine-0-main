@@ -228,9 +228,9 @@
 
             // Show mobile sticky timer on scroll
             if (mobileStickyTimer && mobileTimerDisplay) {
-                let lastScrollY = 0;
+                // UX-8 (pass 39): lastScrollY была мёртвой; passive — без
+                // preventDefault, слушатель не блокирует скролл.
                 window.addEventListener('scroll', function() {
-                    const scrollY = window.scrollY || window.pageYOffset;
                     const timerContainer = document.getElementById('timer-container');
                     if (timerContainer) {
                         const rect = timerContainer.getBoundingClientRect();
@@ -240,8 +240,7 @@
                             mobileStickyTimer.classList.add('hidden');
                         }
                     }
-                    lastScrollY = scrollY;
-                });
+                }, { passive: true });
             }
         }
 
@@ -378,7 +377,7 @@
                         if (hint) {
                             // J1 (pass 36): URLSearchParams.get уже декодирует —
                             // повторный decodeURIComponent бросал URIError на «%».
-                            showToast('💡 {{ T $.Lang "gameplay.hint_label" }}'.replace('%s', hint), 'info');
+                            showToast('💡 {{ T $.Lang "gameplay.hint_label" }}'.replace('%s', function() { return hint; }), 'info');
                         } else {
                             showToast('{{ T $.Lang "gameplay.hint_used_refresh" }}', 'success');
                         }
@@ -523,7 +522,7 @@
             eventSource.addEventListener('level_completed', function(e) {
                 const data = parseSSE(e);
                 if (!data || !data.data) return;
-                showToast('{{ T $.Lang "gameplay.level_completed_with_name" }}'.replace('%s', data.data.level_name), 'success', 6000);
+                showToast('{{ T $.Lang "gameplay.level_completed_with_name" }}'.replace('%s', function() { return data.data.level_name; }), 'success', 6000);
                 // Update timer display
                 const timerDisplay = document.getElementById('timer-display');
                 if (timerDisplay) {

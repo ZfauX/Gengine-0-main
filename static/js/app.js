@@ -111,6 +111,9 @@ function initFormLoading() {
     var forms = document.querySelectorAll('form');
     forms.forEach(function(form) {
         form.addEventListener('submit', function(e) {
+            // UX-9 (pass 39): GET-формы (фильтры/поиск) — полный переход,
+            // кнопка не должна превращаться в «⟳ Отправка…».
+            if ((form.getAttribute('method') || 'get').toLowerCase() === 'get') return;
             // Формы с кастомным подтверждением (data-confirm-form) могут быть отменены
             // document-обработчиком — не блокируем кнопку заранее, иначе после «Отмена»
             // она останется залипшей со спиннером.

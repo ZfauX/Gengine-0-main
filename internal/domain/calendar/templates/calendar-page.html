@@ -2,8 +2,8 @@
 <div class="max-w-7xl mx-auto">
     <h1 class="page-title">{{ T $.Lang "calendar.title" }}</h1>
 
-    <!-- Скрытый CSRF-токен для AJAX-запросов -->
-    <meta name="csrf-token" content="{{.csrf}}">
+    <!-- UX-7 (pass 39): csrf-token мета уже есть в layout head — дубль здесь
+         (мета в body) удалён как невалидный. -->
 
     <div class="card">
         <!-- Управление месяцем -->
