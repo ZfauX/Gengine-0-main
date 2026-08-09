@@ -1,12 +1,12 @@
-# Deep Review Gengine-0 — 9 августа 2026 (pass 39 — повторное ревью после закрытия pass 30-38)
+# Deep Review Gengine-0 — 9 августа 2026 (pass 40 — повторное ревью после закрытия pass 30-39 + дефера)
 
 ## Резюме
 
 Повторное глубокое ревью выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture/DI) с последующей **личной верификацией ключевых находок** по коду.
 
-**Итог pass 39:** 0 критичных, 2 высоких (все подтверждены лично), ~10 средних, ~10 низких.
+**Итог pass 40:** 1 критичная (panic в RoomHub — регресс P-7), 2 высоких (все подтверждены), ~10 средних, ~8 низких.
 
-> **Контекст:** pass 30-38 закрыты полностью; линтер 2.12.2 чист. Новые проблемы: **регрессия UX-9 pass 38** (data-no-loading на form не читается initFormLoading), **SEO-баг** (двойной суффикс, пустой canonical, дубль og:title), **N+1 в checkTimeouts** (next-level по одному), **JSON round-trip на in-memory cache hit**, **UNIQUE-индекс level_progresses без WHERE deleted_at**.
+> **Контекст:** pass 30-39 закрыты; дефер (P-5/P-7) разобран. Критичная находка — **регрессия P-7**: `close(q)` в RoomHub вызывал panic `send on closed channel` (конкурентный broadcast+unregister). Исправлено в раунде 1 вместе с data race на cachedSnapshot.json и сломанным поиском на дашборде.
 
 ---
 
@@ -32,6 +32,108 @@
 **Проверка:** `go build ./...` ✓, `go test -short ./...` ✓, `go test -tags=integration` (game/user/tournament/admin) ✓, `go vet ./...` ✓, `gofmt -l .` → пусто ✓. `-race` недоступен на Windows (нет CGO).
 
 > Примечание: `golangci-lint` на этой машине — v1 с конфигом v2 (инфраструктурная проблема, не кодовая).
+
+---
+
+# PASS 40 (повторное ревью) — 9 августа 2026
+
+> Одиннадцатое повторное ревью после полного закрытия pass 30-39 и разбора дефера (P-5/P-7). Выполнено **4 параллельными агентами** (security, performance/DB, frontend/UX, tests/architecture) с **личной верификацией** ключевых находок по коду.
+
+## Резюме pass 40
+
+**Итог:** 1 критичная (panic в RoomHub — регресс P-7), 2 высоких (все подтверждены), ~10 средних, ~8 низких.
+
+> **Важно:** критичная находка — **регрессия P-7 pass 39**: `close(q)` в RoomHub вызывал panic `send on closed channel` при конкурентном broadcast+unregister. Исправлено. Также: **data race на cachedSnapshot.json**, **поиск на дашборде полностью сломан** (form отправляла `q`, сервер читал `search`), **monitor %dс плейсхолдер**, HasPermissionTx с context.Background.
+
+---
+
+## Статус (обновлено 9 авг 2026) — PASS 40 ОТКРЫТ
+
+Находки перечислены ниже; закрытие — раундами фиксов.
+
+---
+
+## A. Найденные ошибки pass 40 (верифицировано лично)
+
+### 🔴 Критично
+
+| ID | Файл | Проблема |
+|---|---|---|
+| **R-1** | `pkg/websocket/room_hub.go:199-203` | **Регресс P-7: panic `send on closed channel`.** broadcast берёт `queue` под RLock, отпускает, затем `queue <- msg` — параллельно unregister/dispatchToRoom/Stop закрывают очередь (`close(q)`) → panic в горутине runLoop → крах всего WS-хаба. Подтверждено тремя агентами + лично. **Исправлено** (см. ниже). |
+
+### 🟠 Высокие
+
+| ID | Файл | Проблема |
+|---|---|---|
+| **R-2** | `game/svc_monitor.go:160-163` | **Data race на `cachedSnapshot.json`**: `cached.json = jsonData` мутирует объект, на который ссылаются другие читатели LRU. **Исправлено** (Add нового значения). |
+| **R-3** | `user/templates/dashboard-index.html` + `dashboard_handler.go:41` | **Поиск на дашборде полностью сломан**: формы отправляли текст в `name="q"`, сервер читал `c.Query("search")` (старое значение из hidden). Ввод «исчезал». **Исправлено** (text → name="search", hidden убран во всех 4 формах). |
+
+### 🟡 Средние
+
+| ID | Файл | Проблема |
+|---|---|---|
+| **R-4** | `monitor/templates/monitor-page.html:90-92` | **`%dс` утекает в статус реконнекта** — onStatus получает `{delay}`, но replace('%d') не вызывался. **Исправлено.** |
+| **R-5** | `calendar/templates/calendar-page.html:193` | **replace('%s', str)** с `$`-паттернами (класс UX-3 pass 39 не доделан). **Исправлено** (replacement-fn). |
+| **R-6** | `game/svc_coauthor.go:86-105` | **HasPermissionTx с `context.Background()`** — запросы прав не отменяются. **Исправлено** (ctx прокинут из всех 6 вызовов). |
+| **R-7** | `game/svc_photo.go:47-58` | **Дублирующая проверка прав соавтора** (инлайн вместо hasCoAuthorRole) — риск расхождения ролей. **Исправлено.** |
+| **R-8** | `game/repository.go:167-175` | **ListByDateRange Preload("Author") без Select** — password_hash/email в памяти на публичном calendar/ICal. **Исправлено** (id,name,avatar_path). |
+| **R-9** | `pkg/websocket/room_hub.go` (G2) | **Утечка room-воркера через cleanupInactiveClients** (не удалял roomQueues). **Исправлено.** |
+| **R-10** | `game/svc_monitor.go:138-141` | Возврат общего `cached.json` слайса консьюмерам (defensive nit). |
+
+### 🔲 Низкие / мелочи
+
+| ID | Файл | Проблема |
+|---|---|---|
+| **L-1** | `notification/service.go:229,397` | getUnreadCount — лишний COUNT на каждое создание уведомления (P-M6 не достигнут). |
+| **L-2** | `social/repository.go:80-87` | Отсутствует индекс `follows(author_id)` для GetFollowers (СПОРНО, migration 000002 не проверен). |
+| **L-3** | `tournament/repository.go:248` | Отсутствует индекс `tournament_results(tournament_id, team_id)` (СПОРНО). |
+| **L-4** | `hnd_sse.go:270-274` | SSE Broadcast аллокация []byte на каждого подписчика. |
+| **L-5** | `pkg/cache/cache.go:114-137` | removeExpired — полный проход ttlKeys под write-lock (Peek вместо Get не промоутит). |
+| **L-6** | `admin/handler.go:174,380` | Пагинация без верхней границы page → огромные OFFSET. |
+| **L-7** | `admin/service.go:70-83` | Плейнтекстовые pg_dump-бекапы (hash паролей/2FA секреты) без шифрования — hardening. |
+| **L-8** | `chat-page.html:16`, `team-chat.html:8` | История чата объявляется скринридером целиком (aria-live на время загрузки истории). |
+| **L-9** | `calendar-page.html:136` | Подсветка «сегодня» только в light (нет dark:bg-blue-900/30). |
+| **L-10** | `svc_play.go:562,619` | Дубликат ошибки «тестовый режим…» в двух методах + прочие errors.New без sentinel. |
+| **L-11** | `monitor-page.html:116-121` | startPolling вызывает fetchInitialData при каждом вызове (лишние fetch). |
+
+### 🔲 Опровергнуто / безопасно (личная проверка + агенты)
+
+- **checkTimeouts batch advance (P-1 pass 39)** — корректен, защита от дублей (RowsAffected + Pluck), финиш игры не пропускается.
+- **checkAutoStartGames (S-1)** — ON CONFLICT с partial-индексом корректен.
+- **monitor LRU (P-3 pass 39)** — thread-safe, singleflight с Peek double-check корректен (кроме R-2/R-10).
+- **logs.game_id (P-5 pass 40)** — индекс покрывает оба запроса; COUNT OVER 1 запрос.
+- **room_hub (после фикса)** — очередь не закрывается, воркеры завершаются по done/idle-таймеру, нет send-on-closed.
+- **CSRF, admin-доступ, pg_dump (exec array, PGPASSWORD), uploads MIME, push SSRF, refresh-ротация** — безопасно.
+
+---
+
+## B. Оптимизации (производительность)
+
+1. **L-1**: не инвалидировать unread-кэш до отправки WS (инвалидация после) или инкрементировать счётчик.
+2. **L-2**: индекс `follows(author_id)` для GetFollowers (подтвердить migration 000002).
+3. **L-3**: индекс `tournament_results(tournament_id, team_id)`.
+4. **L-4**: `eventBytes := []byte(event)` один раз до цикла в SSE.
+5. **L-5**: Peek вместо Get в removeExpired (не промоутит при sweep).
+6. **L-6**: верхняя граница page в пагинации (напр. ≤ 10000).
+7. **R-10**: возвращать копию json слайса из GetOrFetchSnapshotJSON.
+
+## C. Улучшения кодовой базы (архитектура)
+
+1. **L-10**: единый sentinel для «тестовый режим…», объединить дубликаты.
+2. **HasPermissionTx ctx** — уже сделано (R-6); проверить, что нет context.Background в других горячих путях.
+3. **room_hub тесты** — добавить стресс-тест «broadcast → unregister → broadcast» под -race + goleak.
+
+## D. Улучшения UX
+
+1. **L-8**: aria-live="off" на время загрузки истории чата.
+2. **L-9**: dark:bg-blue-900/30 для подсветки «сегодня» в календаре.
+3. **L-11**: не вызывать fetchInitialData при каждом startPolling.
+
+## Приоритет фиксов (pass 40)
+1. **R-1** (panic RoomHub) — сделано.
+2. **R-2/R-3** (data race + dashboard search) — сделано.
+3. **R-4..R-10** (мелкие UX/arch) — сделано.
+4. **L-1..L-11** (низкие) — кандидаты на раунд 2.
 
 ---
 
