@@ -8,7 +8,6 @@ import (
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/game"
-	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/email"
 	"gengine-0/internal/pkg/i18n"
 
@@ -103,13 +102,8 @@ func (s *BlackboxVoteService) StartVoting(ctx context.Context, gamePassingID, le
 	}
 
 	if s.cfg != nil && s.cfg.SMTP.Enabled {
-		var captains []string
-		if err := s.db.WithContext(ctx).Model(&user.User{}).
-			Select("users.email").
-			Joins("JOIN teams ON teams.captain_id = users.id").
-			Joins("JOIN game_passings ON game_passings.team_id = teams.id").
-			Where("game_passings.game_id = ? AND game_passings.status = ?", g.ID, game.StatusStarted).
-			Pluck("email", &captains).Error; err != nil {
+		captains, err := s.blackboxRepo.GetCaptainEmailsByGame(ctx, g.ID)
+		if err != nil {
 			log.Error().Err(err).Uint("game_id", g.ID).Msg("failed to load captains for voting start email")
 		}
 
@@ -138,12 +132,11 @@ func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID, 
 
 	// Проверка членства: пользователь должен быть участником команды voterTeamID
 	// или автором игры. Иначе любой может голосовать за чужую команду.
-	var memberCount int64
-	if err := s.db.WithContext(ctx).Table("team_members").
-		Where("team_id = ? AND user_id = ?", voterTeamID, userID).Count(&memberCount).Error; err != nil {
+	isMember, err := s.blackboxRepo.IsTeamMember(ctx, voterTeamID, userID)
+	if err != nil {
 		return err
 	}
-	if memberCount == 0 {
+	if !isMember {
 		// Менеджер/автор игры может голосовать от любой команды
 		isManager, mgrErr := s.isGameManager(ctx, session, userID)
 		if mgrErr != nil || !isManager {
@@ -203,8 +196,8 @@ func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID, 
 // isGameManager проверяет, что пользователь является автором ИЛИ соавтором игры
 // (единый механизм прав, согласован с game.CoAuthorService.IsUserManager — C4).
 func (s *BlackboxVoteService) isGameManager(ctx context.Context, session *BlackboxVotingSession, userID uint) (bool, error) {
-	var passing game.GamePassing
-	if err := s.db.WithContext(ctx).First(&passing, session.GamePassingID).Error; err != nil {
+	passing, err := s.blackboxRepo.GetPassingByGamePassingID(ctx, session.GamePassingID)
+	if err != nil {
 		return false, err
 	}
 	return s.coAuthorSvc.IsUserManager(ctx, passing.GameID, userID)
@@ -224,16 +217,15 @@ func (s *BlackboxVoteService) GetVotingResults(ctx context.Context, sessionID, u
 		return nil, err
 	}
 	if !isManager {
-		var passing game.GamePassing
-		if findErr := s.db.WithContext(ctx).First(&passing, session.GamePassingID).Error; findErr != nil {
+		passing, findErr := s.blackboxRepo.GetPassingByGamePassingID(ctx, session.GamePassingID)
+		if findErr != nil {
 			return nil, findErr
 		}
-		var memberCount int64
-		if countErr := s.db.WithContext(ctx).Table("team_members").
-			Where("team_id = ? AND user_id = ?", passing.TeamID, userID).Count(&memberCount).Error; countErr != nil {
+		isMember, countErr := s.blackboxRepo.IsTeamMember(ctx, passing.TeamID, userID)
+		if countErr != nil {
 			return nil, countErr
 		}
-		if memberCount == 0 {
+		if !isMember {
 			return nil, ErrAccessDenied
 		}
 	}
@@ -257,8 +249,8 @@ func (s *BlackboxVoteService) CloseVoting(ctx context.Context, sessionID, userID
 	}
 
 	// JOIN-оптимизация: passing + game в 1 SQL-запросе
-	var passing game.GamePassing
-	if findErr := s.db.WithContext(ctx).Joins("Game").First(&passing, session.GamePassingID).Error; findErr != nil {
+	passing, findErr := s.blackboxRepo.GetPassingWithGameByGamePassingID(ctx, session.GamePassingID)
+	if findErr != nil {
 		return "", findErr
 	}
 	g := passing.Game
@@ -317,13 +309,8 @@ func (s *BlackboxVoteService) CloseVoting(ctx context.Context, sessionID, userID
 	}
 
 	if s.cfg != nil && s.cfg.SMTP.Enabled {
-		var captains []string
-		if err := s.db.WithContext(ctx).Model(&user.User{}).
-			Select("users.email").
-			Joins("JOIN teams ON teams.captain_id = users.id").
-			Joins("JOIN game_passings ON game_passings.team_id = teams.id").
-			Where("game_passings.game_id = ? AND game_passings.status = ?", g.ID, game.StatusStarted).
-			Pluck("email", &captains).Error; err != nil {
+		captains, err := s.blackboxRepo.GetCaptainEmailsByGame(ctx, g.ID)
+		if err != nil {
 			log.Error().Err(err).Uint("game_id", g.ID).Msg("failed to load captains for voting end email")
 		}
 

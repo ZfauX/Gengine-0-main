@@ -66,6 +66,14 @@
 
 **Осталось на раунд 2+:** A-2 (BlackboxVoteService read-path утечки + мёртвые методы интерфейса), A-3 (GetGameplayData через репозиторий), F-1 (автостарт batch), F-2 (JSON-маршалинг снапшота), F-3 (ListRecentAttempts), S-4 (CSP style-src), S-5 (reviews .csrf), UX-1..6 (низкие).
 
+**Раунд 2 (текущий):**
+- **A-2**: BlackboxVoteService — 8 read-path `s.db` заменены на typed-методы BlackboxRepository (GetPassingByGamePassingID, GetPassingWithGameByGamePassingID, GetCaptainEmailsByGame, IsTeamMember); удалены 3 мёртвых метода интерфейса (UpdateSession, CreateVote, GetVoteBySessionAndVoter).
+- **S-5**: reviews ShowForm/Create передают `csrf` в шаблон (форма была CSRF-сломана — шаблон имел `<input name=_csrf>`).
+- **UX-1**: ExportTeamResultsCSV больше не требует IsUserManager — капитан команды/автор может экспортировать (раньше checkGameAccess блокировал капитанов без manager-прав).
+- **F-1**: checkAutoStartGamesImpl — `NewLevelProgressService(tx)` вынесен за цикл.
+
+**Осталось на раунд 3+ (низкий приоритет):** A-3 (GetGameplayData → GameplayReadRepository — большой read-assembly, осознанно отложен), F-2 (JSON-маршалинг снапшота), F-3 (ListRecentAttempts SQL-агрегация), S-4 (CSP style-src), UX-2..6 (низкие).
+
 ---
 
 ## A. Найденные ошибки pass 36 (верифицировано лично)

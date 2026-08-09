@@ -9,6 +9,8 @@ import (
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/validation"
 
+	csrf "gengine-0/internal/pkg/csrf"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -51,6 +53,8 @@ func (h *ReviewHandler) ShowForm(c *gin.Context) {
 	render.Page(c, http.StatusOK, "reviews-new.html", gin.H{
 		"Title":  "Отзывы",
 		"GameID": gameID,
+		// S-5 (pass 36): csrf обязателен — шаблон имеет <input name=_csrf>.
+		"csrf": csrf.GetToken(c),
 	})
 }
 
@@ -89,6 +93,7 @@ func (h *ReviewHandler) Create(c *gin.Context) {
 			"GameID": gameID,
 			"Error":  errs.Error(),
 			"Errors": errs,
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}
@@ -98,6 +103,7 @@ func (h *ReviewHandler) Create(c *gin.Context) {
 			"Title":  "Отзывы",
 			"GameID": gameID,
 			"Error":  render.LocalizeError(c, err.Error()),
+			"csrf":   csrf.GetToken(c),
 		})
 		return
 	}

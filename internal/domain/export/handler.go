@@ -439,10 +439,15 @@ func (h *ExportHandler) ExportTeamResultsCSV(c *gin.Context) {
 	}
 
 	userID := c.GetUint("userID")
-
-	if !h.checkGameAccess(c, gameID) {
+	if userID == 0 {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": render.Tr(c, "handler.unauthorized")})
 		return
 	}
+
+	// UX-1 (pass 36): НЕ требуем IsUserManager здесь — доступ должен быть у
+	// капитана команды или автора игры. Раньше checkGameAccess (IsUserManager)
+	// вызывался до проверки isCaptain, и капитан без manager-прав не мог
+	// экспортировать результаты своей команды.
 
 	// Проверяем, что пользователь — капитан команды или автор игры
 	if _, passingErr := h.gameService.GetFinishedPassingForTeam(c.Request.Context(), gameID, uint(teamID)); passingErr != nil {

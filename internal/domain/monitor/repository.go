@@ -6,6 +6,9 @@ import (
 	"errors"
 	"fmt"
 
+	"gengine-0/internal/domain/game"
+	"gengine-0/internal/domain/user"
+
 	"gorm.io/gorm"
 )
 
@@ -25,10 +28,13 @@ type BlackboxRepository interface {
 	CreateSession(ctx context.Context, session *BlackboxVotingSession) error
 	GetSessionByPassingAndLevel(ctx context.Context, passingID, levelID uint) (*BlackboxVotingSession, error)
 	GetSessionByID(ctx context.Context, id uint) (*BlackboxVotingSession, error)
-	UpdateSession(ctx context.Context, session *BlackboxVotingSession) error
-	CreateVote(ctx context.Context, vote *BlackboxVote) error
 	GetVotesBySession(ctx context.Context, sessionID uint) ([]BlackboxVote, error)
-	GetVoteBySessionAndVoter(ctx context.Context, sessionID, voterID uint) (*BlackboxVote, error)
+	// A-2 (pass 36): typed read-методы — раньше BlackboxVoteService ходил
+	// в БД напрямую (s.db) для passing/капитанов/членства.
+	GetPassingByGamePassingID(ctx context.Context, passingID uint) (*game.GamePassing, error)
+	GetPassingWithGameByGamePassingID(ctx context.Context, passingID uint) (*game.GamePassing, error)
+	GetCaptainEmailsByGame(ctx context.Context, gameID uint) ([]string, error)
+	IsTeamMember(ctx context.Context, teamID, userID uint) (bool, error)
 }
 
 // ---------- GORM implementations ----------
@@ -179,25 +185,48 @@ func (r *gormBlackboxRepo) GetSessionByID(ctx context.Context, id uint) (*Blackb
 	return &session, nil
 }
 
-func (r *gormBlackboxRepo) UpdateSession(ctx context.Context, session *BlackboxVotingSession) error {
-	return r.db.WithContext(ctx).Save(session).Error
-}
-
-func (r *gormBlackboxRepo) CreateVote(ctx context.Context, vote *BlackboxVote) error {
-	return r.db.WithContext(ctx).Create(vote).Error
-}
-
 func (r *gormBlackboxRepo) GetVotesBySession(ctx context.Context, sessionID uint) ([]BlackboxVote, error) {
 	var votes []BlackboxVote
 	err := r.db.WithContext(ctx).Where("session_id = ?", sessionID).Find(&votes).Error
 	return votes, err
 }
 
-func (r *gormBlackboxRepo) GetVoteBySessionAndVoter(ctx context.Context, sessionID, voterID uint) (*BlackboxVote, error) {
-	var vote BlackboxVote
-	err := r.db.WithContext(ctx).Where("session_id = ? AND voter_id = ?", sessionID, voterID).First(&vote).Error
-	if err != nil {
+// GetPassingByGamePassingID загружает прохождение (A-2, pass 36).
+func (r *gormBlackboxRepo) GetPassingByGamePassingID(ctx context.Context, passingID uint) (*game.GamePassing, error) {
+	var passing game.GamePassing
+	if err := r.db.WithContext(ctx).First(&passing, passingID).Error; err != nil {
 		return nil, err
 	}
-	return &vote, nil
+	return &passing, nil
+}
+
+// GetPassingWithGameByGamePassingID загружает прохождение с игрой (JOIN).
+func (r *gormBlackboxRepo) GetPassingWithGameByGamePassingID(ctx context.Context, passingID uint) (*game.GamePassing, error) {
+	var passing game.GamePassing
+	if err := r.db.WithContext(ctx).Joins("Game").First(&passing, passingID).Error; err != nil {
+		return nil, err
+	}
+	return &passing, nil
+}
+
+// GetCaptainEmailsByGame возвращает email капитанов стартовавших команд.
+func (r *gormBlackboxRepo) GetCaptainEmailsByGame(ctx context.Context, gameID uint) ([]string, error) {
+	var captains []string
+	err := r.db.WithContext(ctx).Model(&user.User{}).
+		Select("users.email").
+		Joins("JOIN teams ON teams.captain_id = users.id").
+		Joins("JOIN game_passings ON game_passings.team_id = teams.id").
+		Where("game_passings.game_id = ? AND game_passings.status = ?", gameID, game.StatusStarted).
+		Pluck("email", &captains).Error
+	return captains, err
+}
+
+// IsTeamMember проверяет членство пользователя в команде.
+func (r *gormBlackboxRepo) IsTeamMember(ctx context.Context, teamID, userID uint) (bool, error) {
+	var memberCount int64
+	if err := r.db.WithContext(ctx).Table("team_members").
+		Where("team_id = ? AND user_id = ?", teamID, userID).Count(&memberCount).Error; err != nil {
+		return false, err
+	}
+	return memberCount > 0, nil
 }

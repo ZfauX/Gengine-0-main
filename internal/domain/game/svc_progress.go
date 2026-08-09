@@ -433,8 +433,10 @@ func checkAutoStartGamesImpl(db *gorm.DB, ctx context.Context) {
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("game_id = ? AND status = ?", g.ID, StatusAccepted).Find(&passings).Error; err != nil {
 				return err
 			}
+			// F-1 (pass 36): сервис прогресса один на все passings — раньше
+			// NewLevelProgressService(tx) аллоцировался на каждую итерацию.
+			txProgressSvc := NewLevelProgressService(tx)
 			for _, p := range passings {
-				txProgressSvc := NewLevelProgressService(tx)
 				if err := txProgressSvc.InitFirstLevelWithTx(ctx, tx, p.ID); err != nil {
 					log.Error().Err(err).Uint("passing_id", p.ID).Msg("CheckAutoStartGames: failed to init first level")
 					return err
