@@ -74,7 +74,7 @@ func (r *gormTournamentRepo) List(ctx context.Context) ([]Tournament, error) {
 	// F-4 (pass 35): LIMIT + без тяжёлого Description — листинг не должен
 	// тащить всё в память при росте числа турниров.
 	err := r.db.WithContext(ctx).
-		Select("id, created_at, updated_at, deleted_at, name, author_id, " +
+		Select("id, created_at, updated_at, deleted_at, name, author_id, "+
 			"points_for_first, points_for_second, points_for_third, points_for_participation").
 		// P-43-9 (pass 43): Preload только нужных колонок автора — раньше users.*
 		// (password_hash/email) на каждый турнир листинга.

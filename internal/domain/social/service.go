@@ -10,8 +10,8 @@ import (
 )
 
 var (
-	ErrNotFollowing      = errors.New("не подписан")
-	ErrCannotFollowSelf  = errors.New("нельзя подписаться на самого себя")
+	ErrNotFollowing     = errors.New("не подписан")
+	ErrCannotFollowSelf = errors.New("нельзя подписаться на самого себя")
 )
 
 // ---------- FollowService ----------

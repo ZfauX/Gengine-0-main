@@ -372,6 +372,73 @@ func (h *TeamHandler) RemoveMember(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/teams/"+strconv.Itoa(int(req.TeamID)))
 }
 
+// LeaveMember — добровольный выход игрока из команды (A-5, pass 45).
+func (h *TeamHandler) LeaveMember(c *gin.Context) {
+	var req TeamIDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_team_id"))
+		return
+	}
+	userID := c.GetUint("userID")
+
+	if err := h.teamService.LeaveMember(c.Request.Context(), req.TeamID, userID); err != nil {
+		render.RenderError(c, http.StatusBadRequest, render.LocalizeError(c, err.Error()))
+		return
+	}
+	c.Redirect(http.StatusFound, "/teams")
+}
+
+// SetMemberRole — назначение роли участника (member/deputy) (A-2, pass 45).
+func (h *TeamHandler) SetMemberRole(c *gin.Context) {
+	var req TeamIDAndMemberIDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
+		render.RenderError(c, http.StatusBadRequest, "Неверные ID")
+		return
+	}
+	actorID := c.GetUint("userID")
+	role := c.PostForm("role")
+
+	if err := h.teamService.SetMemberRole(c.Request.Context(), req.TeamID, req.MemberID, actorID, role); err != nil {
+		render.RenderError(c, http.StatusBadRequest, render.LocalizeError(c, err.Error()))
+		return
+	}
+	c.Redirect(http.StatusFound, "/teams/"+strconv.Itoa(int(req.TeamID)))
+}
+
+// SetMemberGroup — перевод в группу (main/reserve) (A-3, pass 45).
+func (h *TeamHandler) SetMemberGroup(c *gin.Context) {
+	var req TeamIDAndMemberIDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
+		render.RenderError(c, http.StatusBadRequest, "Неверные ID")
+		return
+	}
+	actorID := c.GetUint("userID")
+	group := c.PostForm("group_type")
+
+	if err := h.teamService.SetMemberGroup(c.Request.Context(), req.TeamID, req.MemberID, actorID, group); err != nil {
+		render.RenderError(c, http.StatusBadRequest, render.LocalizeError(c, err.Error()))
+		return
+	}
+	c.Redirect(http.StatusFound, "/teams/"+strconv.Itoa(int(req.TeamID)))
+}
+
+// SetFieldRole — назначение роли на поле (field/driver/navigator) (A-3, pass 45).
+func (h *TeamHandler) SetFieldRole(c *gin.Context) {
+	var req TeamIDAndMemberIDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
+		render.RenderError(c, http.StatusBadRequest, "Неверные ID")
+		return
+	}
+	actorID := c.GetUint("userID")
+	fieldRole := c.PostForm("field_role")
+
+	if err := h.teamService.SetFieldRole(c.Request.Context(), req.TeamID, req.MemberID, actorID, fieldRole); err != nil {
+		render.RenderError(c, http.StatusBadRequest, render.LocalizeError(c, err.Error()))
+		return
+	}
+	c.Redirect(http.StatusFound, "/teams/"+strconv.Itoa(int(req.TeamID)))
+}
+
 // ChangeCaptainForm показывает форму смены капитана.
 func (h *TeamHandler) ChangeCaptainForm(c *gin.Context) {
 	var req TeamIDRequest

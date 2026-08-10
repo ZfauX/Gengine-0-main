@@ -60,6 +60,29 @@
             <label for="auto_start" class="ml-2 text-sm text-gray-700 dark:text-gray-300">{{ T $.Lang "game.settings_auto_start" }}</label>
         </div>
 
+        <!-- A-4 (pass 45): ограничения состава команды (0 = без ограничения) -->
+        <div class="border-t border-gray-200 dark:border-gray-700 pt-4 space-y-4">
+            <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">{{ T $.Lang "game.settings_limits_title" }}</h3>
+            <div>
+                <label for="max_hq_players" class="form-label">{{ T $.Lang "game.settings_max_hq" }}</label>
+                <input type="number" name="max_hq_players" id="max_hq_players"
+                       value="{{.Settings.MaxHQPlayers}}" min="0" placeholder="0"
+                       class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+            </div>
+            <div>
+                <label for="max_field_players" class="form-label">{{ T $.Lang "game.settings_max_field" }}</label>
+                <input type="number" name="max_field_players" id="max_field_players"
+                       value="{{.Settings.MaxFieldPlayers}}" min="0" placeholder="0"
+                       class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+            </div>
+            <div>
+                <label for="max_cars_per_team" class="form-label">{{ T $.Lang "game.settings_max_cars" }}</label>
+                <input type="number" name="max_cars_per_team" id="max_cars_per_team"
+                       value="{{.Settings.MaxCarsPerTeam}}" min="0" placeholder="0"
+                       class="w-full rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+            </div>
+        </div>
+
         <!-- Кнопки -->
         <div class="flex flex-wrap gap-3 pt-2">
             <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "game.settings_save" }}</button>

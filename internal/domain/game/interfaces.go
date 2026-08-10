@@ -30,7 +30,8 @@ type CoAuthorServiceInterface interface {
 	HasPermission(ctx context.Context, gameID, userID uint, requiredRole string) (bool, error)
 	CanModerateGame(ctx context.Context, gameID, userID uint) (bool, error)
 	CanEditContent(ctx context.Context, gameID, userID uint) (bool, error)
-	Add(ctx context.Context, gameID, newCoAuthorID, ownerID uint) error
+	// A-1 (pass 45): Add принимает пресет роли и выборочные permissions.
+	Add(ctx context.Context, gameID, newCoAuthorID, ownerID uint, role string, permissions []string) error
 	Remove(ctx context.Context, gameID, coAuthorUserID, ownerID uint) error
 	List(ctx context.Context, gameID uint) ([]CoAuthor, error)
 }

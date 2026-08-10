@@ -45,6 +45,8 @@ var (
 	ErrInvitationNotPending  = errors.New("приглашение не в статусе ожидания")
 	ErrInvitationExists      = errors.New("приглашение уже отправлено")
 	ErrOnlyCaptainCanInvite  = errors.New("только капитан может создавать приглашения")
+	// A-5 (pass 45): игрок может состоять только в одной команде.
+	ErrAlreadyInOtherTeam = errors.New("игрок уже состоит в другой команде")
 )
 
 func NewTeamService(teamRepo TeamRepository) *TeamService {
@@ -134,6 +136,21 @@ func (s *TeamService) CanManageTeam(ctx context.Context, teamID, userID uint) bo
 	return team.CaptainID == userID
 }
 
+// userInOtherTeam проверяет, что пользователь уже состоит в какой-либо команде
+// (кроме указанной). A-5 (pass 45): игрок — только в одной команде.
+func (s *TeamService) userInOtherTeam(ctx context.Context, userID, excludeTeamID uint) (bool, error) {
+	teams, err := s.teamRepo.GetTeamsByUserID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	for _, t := range teams {
+		if t.ID != excludeTeamID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (s *TeamService) GetAvailableUsers(ctx context.Context, teamID uint) ([]user.User, error) {
 	return s.teamRepo.GetAvailableUsers(ctx, teamID)
 }
@@ -148,6 +165,14 @@ func (s *TeamService) AddMember(ctx context.Context, teamID, newMemberID, actorI
 	}
 	if isMember {
 		return ErrUserAlreadyInTeam
+	}
+	// A-5 (pass 45): игрок не может состоять в другой команде.
+	inOther, err := s.userInOtherTeam(ctx, newMemberID, teamID)
+	if err != nil {
+		return err
+	}
+	if inOther {
+		return ErrAlreadyInOtherTeam
 	}
 	if err := s.teamRepo.AddMember(ctx, teamID, newMemberID); err != nil {
 		return err
@@ -172,6 +197,71 @@ func (s *TeamService) RemoveMember(ctx context.Context, teamID, memberID, actorI
 	}
 	s.updateTeamMembersTotal(ctx)
 	return nil
+}
+
+// LeaveMember — добровольный выход игрока из команды (A-5, pass 45).
+// Капитан не может выйти через этот метод — он должен передать капитанство
+// или команда остаётся без капитана (админ может удалить).
+func (s *TeamService) LeaveMember(ctx context.Context, teamID, userID uint) error {
+	team, err := s.teamRepo.GetByID(ctx, teamID)
+	if err != nil {
+		return err
+	}
+	if team.CaptainID == userID {
+		return errors.New("капитан не может выйти из команды — передайте капитанство сначала")
+	}
+	if err := s.teamRepo.RemoveMember(ctx, teamID, userID); err != nil {
+		return err
+	}
+	s.updateTeamMembersTotal(ctx)
+	return nil
+}
+
+// SetMemberRole назначает роль участника (member/deputy) — капитан или админ (A-2).
+func (s *TeamService) SetMemberRole(ctx context.Context, teamID, memberID, actorID uint, role string) error {
+	if role != MemberRole && role != MemberRoleDeputy {
+		return errors.New("неизвестная роль участника")
+	}
+	if !s.CanManageTeam(ctx, teamID, actorID) {
+		return ErrNoPermissionChangeCap
+	}
+	team, err := s.teamRepo.GetByID(ctx, teamID)
+	if err != nil {
+		return err
+	}
+	if team.CaptainID == memberID {
+		return errors.New("капитан уже имеет высшую роль")
+	}
+	return s.teamRepo.SetMemberRole(ctx, teamID, memberID, role)
+}
+
+// SetMemberGroup переводит участника в группу (main/reserve) (A-3).
+func (s *TeamService) SetMemberGroup(ctx context.Context, teamID, memberID, actorID uint, groupType string) error {
+	if groupType != GroupMain && groupType != GroupReserve {
+		return errors.New("неизвестная группа")
+	}
+	if !s.CanManageTeam(ctx, teamID, actorID) {
+		return ErrNoPermissionChangeCap
+	}
+	return s.teamRepo.SetMemberGroup(ctx, teamID, memberID, groupType)
+}
+
+// SetFieldRole назначает роль на поле (field/driver/navigator) (A-3).
+func (s *TeamService) SetFieldRole(ctx context.Context, teamID, memberID, actorID uint, fieldRole string) error {
+	switch fieldRole {
+	case FieldRoleField, FieldRoleDriver, FieldRoleNavigator:
+	default:
+		return errors.New("неизвестная роль на поле")
+	}
+	if !s.CanManageTeam(ctx, teamID, actorID) {
+		return ErrNoPermissionChangeCap
+	}
+	return s.teamRepo.SetFieldRole(ctx, teamID, memberID, fieldRole)
+}
+
+// GetMembersWithRoles возвращает участников с ролями и группами (A-2/A-3).
+func (s *TeamService) GetMembersWithRoles(ctx context.Context, teamID uint) ([]TeamMember, error) {
+	return s.teamRepo.GetMembersWithRoles(ctx, teamID)
 }
 
 func (s *TeamService) ChangeCaptain(ctx context.Context, teamID, newCaptainID, actorID uint, isAdmin bool) error {
@@ -305,6 +395,17 @@ func (s *InvitationService) AcceptInvitation(ctx context.Context, invitationID, 
 	}
 	if inv.Status != InvitationPending {
 		return errors.New("приглашение уже обработано")
+	}
+	// A-5 (pass 45): игрок может принять приглашение только если не состоит
+	// в другой команде.
+	userTeams, teamErr := s.teamRepo.GetTeamsByUserID(ctx, userID)
+	if teamErr != nil {
+		return teamErr
+	}
+	for _, t := range userTeams {
+		if t.ID != inv.TeamID {
+			return ErrAlreadyInOtherTeam
+		}
 	}
 
 	tx := s.teamRepo.BeginTransaction(ctx)

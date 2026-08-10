@@ -131,6 +131,20 @@ func (mr *MockGameServiceInterfaceMockRecorder) GetSettingsWithDefaults(ctx, gam
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSettingsWithDefaults", reflect.TypeOf((*MockGameServiceInterface)(nil).GetSettingsWithDefaults), ctx, gameID)
 }
 
+// GetUserGamesView mocks base method.
+func (m *MockGameServiceInterface) GetUserGamesView(ctx context.Context, userID uint) string {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetUserGamesView", ctx, userID)
+	ret0, _ := ret[0].(string)
+	return ret0
+}
+
+// GetUserGamesView indicates an expected call of GetUserGamesView.
+func (mr *MockGameServiceInterfaceMockRecorder) GetUserGamesView(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUserGamesView", reflect.TypeOf((*MockGameServiceInterface)(nil).GetUserGamesView), ctx, userID)
+}
+
 // IsUserManager mocks base method.
 func (m *MockGameServiceInterface) IsUserManager(ctx context.Context, gameID, userID uint) (bool, error) {
 	m.ctrl.T.Helper()
@@ -263,17 +277,17 @@ func (m *MockCoAuthorServiceInterface) EXPECT() *MockCoAuthorServiceInterfaceMoc
 }
 
 // Add mocks base method.
-func (m *MockCoAuthorServiceInterface) Add(ctx context.Context, gameID, newCoAuthorID, ownerID uint) error {
+func (m *MockCoAuthorServiceInterface) Add(ctx context.Context, gameID, newCoAuthorID, ownerID uint, role string, permissions []string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Add", ctx, gameID, newCoAuthorID, ownerID)
+	ret := m.ctrl.Call(m, "Add", ctx, gameID, newCoAuthorID, ownerID, role, permissions)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Add indicates an expected call of Add.
-func (mr *MockCoAuthorServiceInterfaceMockRecorder) Add(ctx, gameID, newCoAuthorID, ownerID any) *gomock.Call {
+func (mr *MockCoAuthorServiceInterfaceMockRecorder) Add(ctx, gameID, newCoAuthorID, ownerID, role, permissions any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Add", reflect.TypeOf((*MockCoAuthorServiceInterface)(nil).Add), ctx, gameID, newCoAuthorID, ownerID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Add", reflect.TypeOf((*MockCoAuthorServiceInterface)(nil).Add), ctx, gameID, newCoAuthorID, ownerID, role, permissions)
 }
 
 // CanEditContent mocks base method.

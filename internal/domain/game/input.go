@@ -36,4 +36,7 @@ type DisqualifyInput struct {
 
 type AddCoAuthorInput struct {
 	UserID uint `form:"user_id" binding:"required,gt=0"`
+	// A-1 (pass 45): выборочные права (чеки в форме); если пусто — пресет роли.
+	Role        string   `form:"role"`
+	Permissions []string `form:"permissions"`
 }

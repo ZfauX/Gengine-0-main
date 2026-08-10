@@ -157,7 +157,7 @@ func (h *CoAuthorHandler) AddCoAuthor(c *gin.Context) {
 		return
 	}
 
-	if err := h.coAuthorSvc.Add(c.Request.Context(), uint(gameID), input.UserID, ownerID); err != nil {
+	if err := h.coAuthorSvc.Add(c.Request.Context(), uint(gameID), input.UserID, ownerID, input.Role, input.Permissions); err != nil {
 		errs := validation.FieldErrors{}
 		errs.Add("form", err)
 		h.renderCoAuthorManagePage(c, gameID, errs)

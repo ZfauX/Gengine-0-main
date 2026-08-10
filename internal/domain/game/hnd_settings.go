@@ -146,6 +146,10 @@ func (h *SettingsHandler) SaveSettings(c *gin.Context) {
 	hintPenaltySeconds, _ := strconv.Atoi(c.PostForm("hint_penalty_seconds"))
 	maxHints, _ := strconv.Atoi(c.PostForm("max_hints"))
 	perLevelTimeLimit, _ := strconv.Atoi(c.PostForm("per_level_time_limit"))
+	// A-4 (pass 45): ограничения состава команды.
+	maxHQPlayers, _ := strconv.Atoi(c.PostForm("max_hq_players"))
+	maxFieldPlayers, _ := strconv.Atoi(c.PostForm("max_field_players"))
+	maxCarsPerTeam, _ := strconv.Atoi(c.PostForm("max_cars_per_team"))
 
 	allowHints := c.PostForm("allow_hints") == "true"
 	hideAnswersUntilFinished := c.PostForm("hide_answers_until_finished") == "true"
@@ -162,6 +166,15 @@ func (h *SettingsHandler) SaveSettings(c *gin.Context) {
 	}
 	if perLevelTimeLimit < 0 {
 		perLevelTimeLimit = 0
+	}
+	if maxHQPlayers < 0 {
+		maxHQPlayers = 0
+	}
+	if maxFieldPlayers < 0 {
+		maxFieldPlayers = 0
+	}
+	if maxCarsPerTeam < 0 {
+		maxCarsPerTeam = 0
 	}
 	// UX-M4 (pass 43): локализуем ошибку лимита; UX-M5 — верхняя граница
 	// hint_penalty_seconds и max_hints (иначе принимались молча).
@@ -208,6 +221,9 @@ func (h *SettingsHandler) SaveSettings(c *gin.Context) {
 		PerLevelTimeLimit:        perLevelTimeLimit,
 		HideAnswersUntilFinished: hideAnswersUntilFinished,
 		AutoStart:                autoStart,
+		MaxHQPlayers:             maxHQPlayers,
+		MaxFieldPlayers:          maxFieldPlayers,
+		MaxCarsPerTeam:           maxCarsPerTeam,
 	})
 	if err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Msg("SettingsHandler.SaveSettings: failed to save settings")

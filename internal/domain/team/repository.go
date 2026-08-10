@@ -50,6 +50,11 @@ type TeamRepository interface {
 	RemoveMember(ctx context.Context, teamID, userID uint) error
 	ChangeCaptain(ctx context.Context, teamID, newCaptainID uint) error
 	IsMember(ctx context.Context, teamID, userID uint) (bool, error)
+	// A-2/A-3 (pass 45): роли и группы участников.
+	SetMemberRole(ctx context.Context, teamID, userID uint, role string) error
+	SetMemberGroup(ctx context.Context, teamID, userID uint, groupType string) error
+	SetFieldRole(ctx context.Context, teamID, userID uint, fieldRole string) error
+	GetMembersWithRoles(ctx context.Context, teamID uint) ([]TeamMember, error)
 	// ListByIDs возвращает команды по списку ID (A-M2, pass 34: для
 	// notify-чтений GameAdminService вместо raw s.db).
 	ListByIDs(ctx context.Context, ids []uint) ([]Team, error)
@@ -190,6 +195,37 @@ func (r *gormTeamRepo) IsMember(ctx context.Context, teamID, userID uint) (bool,
 	var count int64
 	err := r.db.WithContext(ctx).Table("team_members").Where("team_id = ? AND user_id = ?", teamID, userID).Count(&count).Error
 	return count > 0, err
+}
+
+// A-2/A-3 (pass 45): роли и группы участников.
+func (r *gormTeamRepo) SetMemberRole(ctx context.Context, teamID, userID uint, role string) error {
+	return r.db.WithContext(ctx).Table("team_members").
+		Where("team_id = ? AND user_id = ?", teamID, userID).
+		Update("role", role).Error
+}
+
+func (r *gormTeamRepo) SetMemberGroup(ctx context.Context, teamID, userID uint, groupType string) error {
+	return r.db.WithContext(ctx).Table("team_members").
+		Where("team_id = ? AND user_id = ?", teamID, userID).
+		Update("group_type", groupType).Error
+}
+
+func (r *gormTeamRepo) SetFieldRole(ctx context.Context, teamID, userID uint, fieldRole string) error {
+	return r.db.WithContext(ctx).Table("team_members").
+		Where("team_id = ? AND user_id = ?", teamID, userID).
+		Update("field_role", fieldRole).Error
+}
+
+func (r *gormTeamRepo) GetMembersWithRoles(ctx context.Context, teamID uint) ([]TeamMember, error) {
+	var members []TeamMember
+	err := r.db.WithContext(ctx).
+		Preload("User", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id, name, avatar_path")
+		}).
+		Where("team_id = ?", teamID).
+		Order("group_type DESC, field_role ASC").
+		Find(&members).Error
+	return members, err
 }
 func (r *gormTeamRepo) GetPassingByTeam(ctx context.Context, teamID uint) (*teamGamePassing, error) {
 	var passing teamGamePassing

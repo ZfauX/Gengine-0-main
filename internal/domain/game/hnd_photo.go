@@ -136,12 +136,12 @@ func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 
-	// #1: загрузка фото — только менеджер игры (автор/соавтор) или админ.
-	// Раньше любой залогиненный мог заливать фото в галерею любой игры.
+	// #1: загрузка фото — только соавтор с правом upload_media (A-1, pass 45)
+	// или админ. Раньше любой менеджер мог заливать, без учёта выборочных прав.
 	if !middleware.IsAdmin(c) {
-		ok, mErr := h.coAuthorSvc.IsUserManager(c.Request.Context(), uint(gameID), userID)
+		ok, mErr := h.coAuthorSvc.HasPermission(c.Request.Context(), uint(gameID), userID, RoleUploadMedia)
 		if mErr != nil {
-			log.Error().Err(mErr).Int("game_id", gameID).Msg("UploadPhoto: failed to check manager")
+			log.Error().Err(mErr).Int("game_id", gameID).Msg("UploadPhoto: failed to check permission")
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "internal error", "code": "internal"})
 			return
 		}

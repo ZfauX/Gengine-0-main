@@ -60,6 +60,10 @@ type GameSetting struct {
 	PerLevelTimeLimit        int  `gorm:"default:0"`
 	HideAnswersUntilFinished bool `gorm:"default:false"`
 	AutoStart                bool `gorm:"default:false"`
+	// A-4 (pass 45): ограничения состава команды.
+	MaxHQPlayers    int `gorm:"default:0"` // 0 = без ограничения (штаб)
+	MaxFieldPlayers int `gorm:"default:0"` // 0 = без ограничения (поле)
+	MaxCarsPerTeam  int `gorm:"default:0"` // 0 = без ограничения (машины)
 }
 
 // defaultGameSetting возвращает значения настроек по умолчанию.
@@ -74,6 +78,9 @@ func defaultGameSetting(gameID uint) *GameSetting {
 		PerLevelTimeLimit:        0,
 		HideAnswersUntilFinished: false,
 		AutoStart:                false,
+		MaxHQPlayers:             0,
+		MaxFieldPlayers:          0,
+		MaxCarsPerTeam:           0,
 	}
 }
 
@@ -129,11 +136,14 @@ type SubmitResult struct {
 
 type CoAuthor struct {
 	gorm.Model
-	GameID uint      `gorm:"not null;uniqueIndex:idx_game_user"`
-	UserID uint      `gorm:"not null;uniqueIndex:idx_game_user"`
-	Role   string    `gorm:"default:'content_editor'"`
-	Game   Game      `gorm:"foreignKey:GameID"`
-	User   user.User `gorm:"foreignKey:UserID"`
+	GameID uint   `gorm:"not null;uniqueIndex:idx_game_user"`
+	UserID uint   `gorm:"not null;uniqueIndex:idx_game_user"`
+	Role   string `gorm:"default:'content_editor'"`
+	// Permissions — A-1 (pass 45): выборочные права соавтора (jsonb).
+	// Набор строк из Perm*; Role остаётся пресетом для совместимости.
+	Permissions []string  `gorm:"type:jsonb;default:'[\"read\"]'"`
+	Game        Game      `gorm:"foreignKey:GameID"`
+	User        user.User `gorm:"foreignKey:UserID"`
 }
 
 type Note struct {

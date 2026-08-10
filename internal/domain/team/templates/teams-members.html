@@ -42,6 +42,18 @@
     </div>
     {{end}}
 
+    <!-- A-5 (pass 45): добровольный выход из команды (не для капитана) -->
+    {{if and .CurrentUserID (ne .CurrentUserID .Team.CaptainID)}}
+    <div class="mb-6">
+        <form action="/teams/{{.Team.ID}}/leave" method="POST" class="inline"
+              data-confirm-danger="true" data-confirm-form='{{ T $.Lang "team.leave_confirm" }}'
+              data-confirm-ok='{{ T $.Lang "team.leave" }}'>
+            <input type="hidden" name="_csrf" value="{{$.csrf}}">
+            <button type="submit" class="btn btn-danger text-sm">{{ T $.Lang "team.leave" }}</button>
+        </form>
+    </div>
+    {{end}}
+
     <!-- Навигация назад -->
     <div class="mt-6">
         <a href="/teams" class="btn btn-outline text-sm">{{ T $.Lang "teams.to_list" }}</a>

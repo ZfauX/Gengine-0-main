@@ -8,12 +8,36 @@ import (
 	"gorm.io/gorm"
 )
 
-// Роли соавторов
+// Роли соавторов (пресеты — совместимость)
 const (
 	RoleContentEditor = "content_editor"
 	RoleModerator     = "moderator"
 	RoleObserver      = "observer"
+	// RoleUploadMedia — псевдо-роль для проверки права на загрузку медиа (A-1).
+	RoleUploadMedia = "upload_media_role"
 )
+
+// A-1 (pass 45): выборочные права соавторов.
+const (
+	PermRead        = "read"         // чтение (базовое, всегда у соавтора)
+	PermEditContent = "edit_content" // уровни, вопросы, ответы, подсказки
+	PermUploadMedia = "upload_media" // фото и видео материалы
+	PermModerate    = "moderate"     // модерация (удаление контента, управление)
+)
+
+// PresetPermissions возвращает набор прав для пресета роли.
+func PresetPermissions(role string) []string {
+	switch role {
+	case RoleModerator:
+		return []string{PermRead, PermEditContent, PermUploadMedia, PermModerate}
+	case RoleContentEditor:
+		return []string{PermRead, PermEditContent, PermUploadMedia}
+	case RoleObserver:
+		return []string{PermRead}
+	default:
+		return []string{PermRead}
+	}
+}
 
 // ErrNotOwner — действие доступно только владельцу игры (S-2, pass 33).
 var ErrNotOwner = errors.New("только владелец может управлять соавторами")
@@ -72,30 +96,62 @@ func (s *CoAuthorService) IsUserManager(ctx context.Context, gameID, userID uint
 	return s.repo.IsUserManager(ctx, gameID, userID)
 }
 
-// HasPermission проверяет наличие у пользователя конкретной роли в игре.
+// HasPermission проверяет наличие у пользователя конкретной роли/права в игре.
 // N-2 (pass 38): через репозиторий, а не raw s.db — единый путь с
 // IsUserManager (раньше было два разных SQL-пути для одной проверки прав).
-// P-44-4 (pass 45): один запрос (автор ИЛИ соавтор с допустимой ролью) вместо
-// GetGameAuthorID + FindByGameAndUser.
+// A-1 (pass 45): учитывает выборочные Permissions (jsonb); для старых записей
+// без Permissions — fallback на пресет роли.
 func (s *CoAuthorService) HasPermission(ctx context.Context, gameID, userID uint, requiredRole string) (bool, error) {
 	// P0-3 (pass 45): супер-админ инсталляции имеет права на всё.
 	if s.isSuperAdmin(ctx, userID) {
 		return true, nil
 	}
-	return s.repo.HasPermissionRole(ctx, gameID, userID, rolesForRequired(requiredRole))
+	authorID, err := s.repo.GetGameAuthorID(ctx, gameID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, gorm.ErrRecordNotFound
+		}
+		return false, err
+	}
+	if authorID == userID {
+		return true, nil
+	}
+	co, err := s.repo.FindByGameAndUser(ctx, gameID, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return coAuthorHasPermission(co, requiredRole), nil
 }
 
-// rolesForRequired возвращает роли соавторов, покрывающие требуемую роль
-// (пустой список = любой соавтор, RoleObserver). Роль автора покрывается
-// отдельной веткой запроса HasPermissionRole.
-func rolesForRequired(requiredRole string) []string {
+// coAuthorHasPermission проверяет права соавтора на требуемую роль.
+// Если Permissions заданы (jsonb непустой) — по пермишену; иначе по роли-пресету.
+func coAuthorHasPermission(co *CoAuthor, requiredRole string) bool {
+	required := roleToPermission(requiredRole)
+	if len(co.Permissions) > 0 {
+		for _, p := range co.Permissions {
+			if p == required {
+				return true
+			}
+		}
+		return false
+	}
+	return hasCoAuthorRole(co.Role, requiredRole)
+}
+
+// roleToPermission маппит требуемую роль/псевдо-роль на конкретный пермишен (A-1).
+func roleToPermission(requiredRole string) string {
 	switch requiredRole {
-	case RoleContentEditor:
-		return []string{RoleContentEditor, RoleModerator}
 	case RoleModerator:
-		return []string{RoleModerator}
-	default: // RoleObserver — любой соавтор
-		return nil
+		return PermModerate
+	case RoleContentEditor:
+		return PermEditContent
+	case RoleUploadMedia:
+		return PermUploadMedia
+	default: // RoleObserver и любые другие
+		return PermRead
 	}
 }
 
@@ -140,7 +196,7 @@ func (s *CoAuthorService) HasPermissionTx(ctx context.Context, tx *gorm.DB, game
 		}
 		return false, err
 	}
-	return hasCoAuthorRole(co.Role, requiredRole), nil
+	return coAuthorHasPermission(co, requiredRole), nil
 }
 
 // CanModerateGame — удобный метод для проверки права на модерацию игры.
@@ -154,7 +210,8 @@ func (s *CoAuthorService) CanEditContent(ctx context.Context, gameID, userID uin
 }
 
 // Add добавляет нового соавтора или восстанавливает удалённого.
-func (s *CoAuthorService) Add(ctx context.Context, gameID, newCoAuthorID, ownerID uint) error {
+// A-1 (pass 45): role — пресет, permissions — выборочные права (jsonb).
+func (s *CoAuthorService) Add(ctx context.Context, gameID, newCoAuthorID, ownerID uint, role string, permissions []string) error {
 	authorID, err := s.repo.GetGameAuthorID(ctx, gameID)
 	if err != nil {
 		return err
@@ -165,6 +222,13 @@ func (s *CoAuthorService) Add(ctx context.Context, gameID, newCoAuthorID, ownerI
 	if authorID == newCoAuthorID {
 		return errors.New("владелец уже имеет полный доступ")
 	}
+	// Если permissions не заданы — берём пресет роли (A-1).
+	if len(permissions) == 0 {
+		permissions = PresetPermissions(role)
+	}
+	if role == "" {
+		role = RoleContentEditor
+	}
 
 	// Проверяем, есть ли запись (включая мягко удалённые)
 	co, findErr := s.repo.FindUnscopedByGameAndUser(ctx, gameID, newCoAuthorID)
@@ -172,6 +236,8 @@ func (s *CoAuthorService) Add(ctx context.Context, gameID, newCoAuthorID, ownerI
 		if co.DeletedAt.Valid {
 			// Восстанавливаем мягко удалённую запись
 			co.DeletedAt = gorm.DeletedAt{}
+			co.Role = role
+			co.Permissions = permissions
 			if saveErr := s.repo.Save(ctx, co); saveErr != nil {
 				return saveErr
 			}
@@ -183,7 +249,7 @@ func (s *CoAuthorService) Add(ctx context.Context, gameID, newCoAuthorID, ownerI
 	}
 
 	// Нет записи — создаём новую
-	co = &CoAuthor{GameID: gameID, UserID: newCoAuthorID, Role: RoleContentEditor}
+	co = &CoAuthor{GameID: gameID, UserID: newCoAuthorID, Role: role, Permissions: permissions}
 	return s.repo.Create(ctx, co)
 }
 

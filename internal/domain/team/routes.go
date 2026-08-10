@@ -46,6 +46,14 @@ func RegisterRoutes(
 
 		teamsGroup.POST("/:team_id/members/:member_id/remove", teamHandler.RemoveMember)
 
+		// A-5 (pass 45): добровольный выход из команды.
+		teamsGroup.POST("/:team_id/leave", teamHandler.LeaveMember)
+
+		// A-2/A-3 (pass 45): роли и группы участников.
+		teamsGroup.POST("/:team_id/members/:member_id/role", teamHandler.SetMemberRole)
+		teamsGroup.POST("/:team_id/members/:member_id/group", teamHandler.SetMemberGroup)
+		teamsGroup.POST("/:team_id/members/:member_id/field-role", teamHandler.SetFieldRole)
+
 		teamsGroup.GET("/:team_id/change-captain", teamHandler.ChangeCaptainForm)
 		teamsGroup.POST("/:team_id/change-captain", teamHandler.ChangeCaptain)
 	}
