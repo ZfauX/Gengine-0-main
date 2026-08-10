@@ -237,7 +237,7 @@ func (s *CoAuthorService) Add(ctx context.Context, gameID, newCoAuthorID, ownerI
 			// Восстанавливаем мягко удалённую запись
 			co.DeletedAt = gorm.DeletedAt{}
 			co.Role = role
-			co.Permissions = permissions
+			co.Permissions = PermissionSlice(permissions)
 			if saveErr := s.repo.Save(ctx, co); saveErr != nil {
 				return saveErr
 			}
@@ -249,7 +249,7 @@ func (s *CoAuthorService) Add(ctx context.Context, gameID, newCoAuthorID, ownerI
 	}
 
 	// Нет записи — создаём новую
-	co = &CoAuthor{GameID: gameID, UserID: newCoAuthorID, Role: role, Permissions: permissions}
+	co = &CoAuthor{GameID: gameID, UserID: newCoAuthorID, Role: role, Permissions: PermissionSlice(permissions)}
 	return s.repo.Create(ctx, co)
 }
 

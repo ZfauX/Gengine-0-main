@@ -59,7 +59,8 @@ func setupRouterTest(t *testing.T) (*gin.Engine, *gorm.DB, func()) {
 			BaseURL: "http://localhost:8080",
 		},
 		Session: config.SessionConfig{
-			Secret: "test-session-secret-32chars-long!!!",
+			Secret:     "test-session-secret-32chars-long!!!",
+			CSRFSecret: "test-csrf-secret-32chars-long!!!!!!",
 		},
 		JWT: config.JWTConfig{
 			Secret:       "test-jwt-secret-32chars-long!!!!!",

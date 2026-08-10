@@ -246,13 +246,21 @@ func (r *gormChatRepo) GetMessages(ctx context.Context, roomID uint, limit int) 
 }
 
 // AddRoomMember добавляет/обновляет членство в комнате (B-1/B-5, pass 45).
+// Используем map, а не struct: GORM пропускает zero-value (false) поля struct
+// при Create, и тогда БД применяет default:true — права «выключить» нельзя.
 func (r *gormChatRepo) AddRoomMember(ctx context.Context, roomID, userID uint, canRead, canWrite, canAttach bool) error {
 	return r.db.WithContext(ctx).Table("chat_room_members").
 		Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "room_id"}, {Name: "user_id"}},
 			DoUpdates: clause.Assignments(map[string]any{"can_read": canRead, "can_write": canWrite, "can_attach": canAttach}),
 		}).
-		Create(&ChatRoomMember{RoomID: roomID, UserID: userID, CanRead: canRead, CanWrite: canWrite, CanAttach: canAttach}).Error
+		Create(map[string]any{
+			"room_id":    roomID,
+			"user_id":    userID,
+			"can_read":   canRead,
+			"can_write":  canWrite,
+			"can_attach": canAttach,
+		}).Error
 }
 
 // GetRoomMember возвращает членство пользователя в комнате (B-5).

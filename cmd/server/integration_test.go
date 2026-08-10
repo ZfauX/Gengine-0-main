@@ -161,7 +161,8 @@ func TestFullGameFlow(t *testing.T) {
 			AccessExpiry: 24 * time.Hour,
 		},
 		Session: config.SessionConfig{
-			Secret: "test-session-secret-32chars-long!!!",
+			Secret:     "test-session-secret-32chars-long!!!",
+			CSRFSecret: "test-csrf-secret-32chars-long!!!!!!",
 		},
 		SMTP: config.SMTPConfig{
 			Enabled: false,
@@ -282,7 +283,8 @@ func TestIntegration_PermissionChecks(t *testing.T) {
 			AccessExpiry: 24 * time.Hour,
 		},
 		Session: config.SessionConfig{
-			Secret: "test-session-secret-32chars-long!!!",
+			Secret:     "test-session-secret-32chars-long!!!",
+			CSRFSecret: "test-csrf-secret-32chars-long!!!!!!",
 		},
 		SMTP: config.SMTPConfig{
 			Enabled: false,
@@ -482,7 +484,8 @@ func TestForceFinishPermissions(t *testing.T) {
 			AccessExpiry: 24 * time.Hour,
 		},
 		Session: config.SessionConfig{
-			Secret: "test-session-secret-32chars-long!!!",
+			Secret:     "test-session-secret-32chars-long!!!",
+			CSRFSecret: "test-csrf-secret-32chars-long!!!!!!",
 		},
 		SMTP: config.SMTPConfig{
 			Enabled: false,

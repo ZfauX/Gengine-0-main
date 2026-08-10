@@ -55,7 +55,7 @@ func TestLevelService_Create_NotAuthor(t *testing.T) {
 	lvl := &level.Level{Name: "L1", Position: 1}
 	err := svc.Create(context.Background(), g.ID, lvl, other.ID)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "только автор или контент-менеджер может создавать уровни")
+	assert.Contains(t, err.Error(), "недостаточно прав")
 }
 
 func TestLevelService_Update(t *testing.T) {

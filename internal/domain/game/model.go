@@ -190,9 +190,9 @@ type CoAuthor struct {
 	Role   string `gorm:"default:'content_editor'"`
 	// Permissions — A-1 (pass 45): выборочные права соавтора (jsonb).
 	// Набор строк из Perm*; Role остаётся пресетом для совместимости.
-	Permissions []string  `gorm:"type:jsonb;default:'[\"read\"]'"`
-	Game        Game      `gorm:"foreignKey:GameID"`
-	User        user.User `gorm:"foreignKey:UserID"`
+	Permissions PermissionSlice `gorm:"type:jsonb;default:'[\"read\"]'"`
+	Game        Game            `gorm:"foreignKey:GameID"`
+	User        user.User       `gorm:"foreignKey:UserID"`
 }
 
 type Note struct {

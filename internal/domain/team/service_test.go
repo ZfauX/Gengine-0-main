@@ -141,20 +141,26 @@ func TestTeamService_GetMyTeams(t *testing.T) {
 	db := setupTeamDB(t)
 	ts := newTeamService(db)
 
-	u1 := createUser(t, db, "user1@test.com", "pass")
-	u2 := createUser(t, db, "user2@test.com", "pass")
+	capA := createUser(t, db, "user1@test.com", "pass")
+	capB := createUser(t, db, "user2@test.com", "pass")
+	u3 := createUser(t, db, "user3@test.com", "pass")
 
-	tmA, _ := ts.CreateTeam(context.Background(), "Team A", u1.ID)
-	tmB, _ := ts.CreateTeam(context.Background(), "Team B", u2.ID)
-	require.NoError(t, ts.AddMember(context.Background(), tmB.ID, u1.ID, u2.ID))
+	tmA, _ := ts.CreateTeam(context.Background(), "Team A", capA.ID)
+	tmB, _ := ts.CreateTeam(context.Background(), "Team B", capB.ID)
+	// A-5 (pass 45): игрок в одной команде — u3 член только Team B.
+	require.NoError(t, ts.AddMember(context.Background(), tmB.ID, u3.ID, capB.ID))
 
-	teams, err := ts.GetMyTeams(context.Background(), u1.ID)
+	// Капитан видит свою команду.
+	teamsA, err := ts.GetMyTeams(context.Background(), capA.ID)
 	require.NoError(t, err)
-	assert.Len(t, teams, 2)
+	require.Len(t, teamsA, 1)
+	assert.Equal(t, tmA.ID, teamsA[0].ID)
 
-	ids := []uint{teams[0].ID, teams[1].ID}
-	assert.Contains(t, ids, tmA.ID)
-	assert.Contains(t, ids, tmB.ID)
+	// Игрок видит свою команду.
+	teams3, err := ts.GetMyTeams(context.Background(), u3.ID)
+	require.NoError(t, err)
+	require.Len(t, teams3, 1)
+	assert.Equal(t, tmB.ID, teams3[0].ID)
 }
 
 // ---------- InvitationService ----------

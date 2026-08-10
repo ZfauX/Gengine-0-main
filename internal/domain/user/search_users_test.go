@@ -118,6 +118,10 @@ func TestSearchUsersAPI_Results(t *testing.T) {
 			c, _ := gin.CreateTestContext(w)
 			req := httptest.NewRequest(http.MethodGet, "/api/users/search?q="+tt.query, nil)
 			c.Request = req
+			// S-2 (pass 34): неавторизованные пользователи не видят email даже
+			// в маске (защита PII). Авторизованные видят маску, админы — полный.
+			c.Set("userID", uint(1))
+			c.Set("role", "user")
 
 			handler(c)
 
@@ -135,6 +139,39 @@ func TestSearchUsersAPI_Results(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSearchUsersAPI_AnonymousNoEmail проверяет, что аноним не получает email
+// (S-2, pass 34): публичный поиск не раскрывает email даже в маске.
+func TestSearchUsersAPI_AnonymousNoEmail(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test (requires PostgreSQL)")
+	}
+
+	gin.SetMode(gin.TestMode)
+
+	db := testutil.SetupPostgresDB(t, &User{})
+
+	u := User{Email: "anon@example.com", Password: "hashed1", Name: "Anon User"}
+	require.NoError(t, db.Create(&u).Error)
+
+	handler := SearchUsersAPI(NewGormUserRepo(db))
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest(http.MethodGet, "/api/users/search?q=anon", nil)
+	c.Request = req
+	// Нет userID в контексте — аноним.
+
+	handler(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp struct {
+		Users []map[string]any `json:"users"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Len(t, resp.Users, 1)
+	assert.Equal(t, "", resp.Users[0]["email"], "аноним не должен видеть email")
 }
 
 func TestSearchUsersAPI_NoDB(t *testing.T) {

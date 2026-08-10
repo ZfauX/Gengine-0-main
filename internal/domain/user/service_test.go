@@ -30,7 +30,7 @@ import (
 
 func newTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	return testutil.SetupPostgresDB(t, &User{}, &Achievement{}, &PasswordResetToken{}, &EmailVerificationToken{}, &RefreshToken{})
+	return testutil.SetupPostgresDB(t, &User{}, &Achievement{}, &PasswordResetToken{}, &EmailVerificationToken{}, &RefreshToken{}, &ExternalLogin{})
 }
 
 func newTestConfig() *config.Config {
