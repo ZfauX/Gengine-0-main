@@ -40,8 +40,8 @@ func NewSettingsHandler(
 // @Param id path int true "ID игры"
 // @Success 200 {string} html "Страница настроек"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
-// @Failure 404 {object} map[string]interface{} render.Tr(c, "handler.game_not_found")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
+// @Failure 404 {object} map[string]interface{} "handler.game_not_found"
 // @Router /games/{id}/settings [get]
 // @Security JWT
 func (h *SettingsHandler) SettingsPage(c *gin.Context) {
@@ -120,7 +120,7 @@ func (h *SettingsHandler) SettingsPage(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}/settings"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/settings [post]
 // @Security JWT
 func (h *SettingsHandler) SaveSettings(c *gin.Context) {

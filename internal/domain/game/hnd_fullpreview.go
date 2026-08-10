@@ -42,7 +42,7 @@ func NewFullPreviewHandler(
 // @Success 200 {object} map[string]interface{} "Полная структура игры"
 // @Failure 400 {object} map[string]interface{} "Неверный ID"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/full-preview [get]
 // @Security JWT
 func (h *FullPreviewHandler) FullPreview(c *gin.Context) {

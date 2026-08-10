@@ -85,7 +85,7 @@ func NewGameStatsHandler(gs GameServiceInterface, gps GamePlayServiceInterface) 
 // @Param id path int true "ID игры"
 // @Success 200 {object} map[string]interface{} "Статистика игры"
 // @Failure 400 {object} map[string]interface{} "Неверный ID"
-// @Failure 404 {object} map[string]interface{} render.Tr(c, "handler.game_not_found")
+// @Failure 404 {object} map[string]interface{} "handler.game_not_found"
 // @Router /api/games/{id}/stats [get]
 func (h *GameStatsHandler) Show(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))

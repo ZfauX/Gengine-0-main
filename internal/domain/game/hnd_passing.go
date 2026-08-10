@@ -51,7 +51,7 @@ func NewPassingHandler(
 // @Param id path int true "ID игры"
 // @Success 200 {string} html "Список прохождений"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/passings [get]
 // @Security JWT
 func (h *PassingHandler) ListPassings(c *gin.Context) {
@@ -156,7 +156,7 @@ func (h *PassingHandler) ApplyForm(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/apply [post]
 // @Security JWT
 func (h *PassingHandler) Apply(c *gin.Context) {
@@ -215,7 +215,7 @@ func (h *PassingHandler) Apply(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}/passings"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/passings/{passing_id}/status [post]
 // @Security JWT
 func (h *PassingHandler) UpdatePassingStatus(c *gin.Context) {
@@ -246,7 +246,7 @@ func (h *PassingHandler) UpdatePassingStatus(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}/passings"
 // @Failure 400 {object} map[string]interface{} "Ошибка"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/passings/{passing_id}/start [post]
 // @Security JWT
 func (h *PassingHandler) StartGame(c *gin.Context) {
@@ -273,7 +273,7 @@ func (h *PassingHandler) StartGame(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}/passings"
 // @Failure 400 {object} map[string]interface{} "Ошибка"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/force-finish [post]
 // @Security JWT
 func (h *PassingHandler) ForceFinish(c *gin.Context) {
@@ -306,7 +306,7 @@ func (h *PassingHandler) ForceFinish(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}/passings"
 // @Failure 400 {object} map[string]interface{} "Ошибка"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/disqualify [post]
 // @Security JWT
 func (h *PassingHandler) DisqualifyTeam(c *gin.Context) {

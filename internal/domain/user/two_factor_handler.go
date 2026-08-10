@@ -363,7 +363,7 @@ func (h *TwoFactorHandler) QRCode(c *gin.Context) {
 // @Produce html
 // @Param code formData string true "Код подтверждения"
 // @Success 302 {string} string "Перенаправление в профиль"
-// @Failure 400 {object} map[string]interface{} render.Tr(c, "handler.invalid_code")
+// @Failure 400 {object} map[string]interface{} "handler.invalid_code"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 // @Router /user/2fa/enable [post]
 // @Security JWT
@@ -547,7 +547,7 @@ func (h *TwoFactorHandler) DisableForm(c *gin.Context) {
 // @Produce html
 // @Param code formData string true "Код подтверждения"
 // @Success 302 {string} string "Перенаправление в профиль"
-// @Failure 400 {object} map[string]interface{} render.Tr(c, "handler.invalid_code")
+// @Failure 400 {object} map[string]interface{} "handler.invalid_code"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 // @Router /user/2fa/disable [post]
 // @Security JWT

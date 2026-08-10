@@ -182,7 +182,7 @@ func (h *TeamHandler) CreateTeam(c *gin.Context) {
 // @Param team_id path int true "ID команды"
 // @Success 200 {string} html "Страница команды"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 404 {object} map[string]interface{} render.Tr(c, "handler.team_not_found")
+// @Failure 404 {object} map[string]interface{} "handler.team_not_found"
 // @Router /teams/{team_id} [get]
 // @Security JWT
 func (h *TeamHandler) ViewTeam(c *gin.Context) {
@@ -684,7 +684,7 @@ func (h *InvitationHandler) MyInvitations(c *gin.Context) {
 // @Param id path int true "ID приглашения"
 // @Success 302 {string} string "Перенаправление на страницу команды"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /invitations/{id}/accept [post]
 // @Security JWT
 func (h *InvitationHandler) Accept(c *gin.Context) {
@@ -710,7 +710,7 @@ func (h *InvitationHandler) Accept(c *gin.Context) {
 // @Param id path int true "ID приглашения"
 // @Success 302 {string} string "Перенаправление на /invitations/my"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /invitations/{id}/decline [post]
 // @Security JWT
 func (h *InvitationHandler) Decline(c *gin.Context) {

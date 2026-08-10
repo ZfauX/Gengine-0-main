@@ -73,7 +73,7 @@ func (h *CalendarHandler) CalendarPage(c *gin.Context) {
 // @Param year query int false "Год" default(текущий)
 // @Param month query int false "Месяц (1-12)" default(текущий)
 // @Success 200 {object} map[string]interface{} "События календаря (ключ — дата, значение — массив игр)"
-// @Failure 500 {object} map[string]interface{} render.Tr(c, "handler.internal_error")
+// @Failure 500 {object} map[string]interface{} "handler.internal_error"
 // @Router /api/v1/calendar [get]
 func (h *CalendarHandler) CalendarData(c *gin.Context) {
 	var req CalendarDataRequest
@@ -179,7 +179,7 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 // @Tags calendar
 // @Produce text/calendar
 // @Success 200 {string} string "iCalendar файл"
-// @Failure 500 {object} map[string]interface{} render.Tr(c, "handler.internal_error")
+// @Failure 500 {object} map[string]interface{} "handler.internal_error"
 // @Router /calendar/export.ics [get]
 func (h *CalendarHandler) CalendarICal(c *gin.Context) {
 	// P-6 (pass 39): собранный .ics кэшируем на 5 мин — Google/Apple опрашивают

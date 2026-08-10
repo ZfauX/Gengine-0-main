@@ -40,7 +40,7 @@ func NewCoAuthorHandler(
 // @Param id path int true "ID игры"
 // @Success 200 {string} html "Страница соавторов"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/co-authors [get]
 // @Security JWT
 func (h *CoAuthorHandler) ManageCoAuthors(c *gin.Context) {
@@ -125,7 +125,7 @@ func (h *CoAuthorHandler) renderCoAuthorManagePage(c *gin.Context, gameID int, e
 // @Success 302 {string} string "Перенаправление на /games/{id}/co-authors"
 // @Failure 400 {object} map[string]interface{} "Ошибка"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/co-authors [post]
 // @Security JWT
 func (h *CoAuthorHandler) AddCoAuthor(c *gin.Context) {
@@ -173,7 +173,7 @@ func (h *CoAuthorHandler) AddCoAuthor(c *gin.Context) {
 // @Param user_id path int true "ID пользователя"
 // @Success 302 {string} string "Перенаправление на /games/{id}/co-authors"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/co-authors/{user_id}/delete [post]
 // @Security JWT
 func (h *CoAuthorHandler) RemoveCoAuthor(c *gin.Context) {

@@ -176,8 +176,8 @@ func (h *GameHandler) List(c *gin.Context) {
 // @Produce html
 // @Param id path int true "ID игры"
 // @Success 200 {string} html "Страница игры"
-// @Failure 404 {object} map[string]interface{} render.Tr(c, "handler.game_not_found")
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 404 {object} map[string]interface{} "handler.game_not_found"
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id} [get]
 func (h *GameHandler) Show(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
@@ -396,8 +396,8 @@ func (h *GameHandler) Create(c *gin.Context) {
 // @Param id path int true "ID игры"
 // @Success 200 {string} html "Форма редактирования"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
-// @Failure 404 {object} map[string]interface{} render.Tr(c, "handler.game_not_found")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
+// @Failure 404 {object} map[string]interface{} "handler.game_not_found"
 // @Router /games/{id}/edit [get]
 // @Security JWT
 func (h *GameHandler) EditForm(c *gin.Context) {
@@ -458,7 +458,7 @@ func (h *GameHandler) EditForm(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на страницу игры"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/edit [post]
 // @Security JWT
 func (h *GameHandler) Update(c *gin.Context) {
@@ -607,7 +607,7 @@ func (h *GameHandler) Update(c *gin.Context) {
 // @Param id path int true "ID игры"
 // @Success 302 {string} string "Перенаправление на /games"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/delete [post]
 // @Security JWT
 func (h *GameHandler) Delete(c *gin.Context) {
@@ -645,7 +645,7 @@ func (h *GameHandler) Delete(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на страницу игры"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/publish [post]
 // @Security JWT
 func (h *GameHandler) Publish(c *gin.Context) {

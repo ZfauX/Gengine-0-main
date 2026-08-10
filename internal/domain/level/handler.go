@@ -123,7 +123,7 @@ func (h *LevelHandler) WithImportService(s *ImportService) *LevelHandler {
 // @Param id path int true "ID игры"
 // @Success 200 {string} html "Список уровней"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/levels [get]
 // @Security JWT
 func (h *LevelHandler) ListByGame(c *gin.Context) {
@@ -186,7 +186,7 @@ func (h *LevelHandler) ListByGame(c *gin.Context) {
 // @Param id path int true "ID игры"
 // @Success 200 {string} html "Форма создания уровня"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/levels/new [get]
 // @Security JWT
 func (h *LevelHandler) NewForm(c *gin.Context) {
@@ -249,7 +249,7 @@ func (h *LevelHandler) NewForm(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}/levels"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/levels [post]
 // @Security JWT
 func (h *LevelHandler) Create(c *gin.Context) {
@@ -328,8 +328,8 @@ func (h *LevelHandler) Create(c *gin.Context) {
 // @Param level_id path int true "ID уровня"
 // @Success 200 {string} html "Форма редактирования уровня"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
-// @Failure 404 {object} map[string]interface{} render.Tr(c, "handler.level_not_found")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
+// @Failure 404 {object} map[string]interface{} "handler.level_not_found"
 // @Router /games/{id}/levels/{level_id} [get]
 // @Security JWT
 func (h *LevelHandler) EditForm(c *gin.Context) {
@@ -404,7 +404,7 @@ func (h *LevelHandler) EditForm(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}/levels"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/levels/{level_id} [put]
 // @Security JWT
 func (h *LevelHandler) Update(c *gin.Context) {
@@ -494,7 +494,7 @@ func (h *LevelHandler) Update(c *gin.Context) {
 // @Param level_id path int true "ID уровня"
 // @Success 302 {string} string "Перенаправление на /games/{id}/levels"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/levels/{level_id}/delete [post]
 // @Security JWT
 func (h *LevelHandler) Delete(c *gin.Context) {
@@ -525,7 +525,7 @@ func (h *LevelHandler) Delete(c *gin.Context) {
 // @Param level_id path int true "ID уровня"
 // @Success 302 {string} string "Перенаправление на /games/{id}/levels"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/levels/{level_id}/duplicate [post]
 // @Security JWT
 func (h *LevelHandler) Duplicate(c *gin.Context) {
@@ -556,7 +556,7 @@ func (h *LevelHandler) Duplicate(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}/levels"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/levels/{level_id}/move [post]
 // @Security JWT
 func (h *LevelHandler) Move(c *gin.Context) {
@@ -594,7 +594,7 @@ func (h *LevelHandler) Move(c *gin.Context) {
 // @Param level_id path int true "ID уровня"
 // @Success 200 {string} html "Список вопросов"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/levels/{level_id}/questions [get]
 // @Security JWT
 func (h *LevelHandler) ListQuestions(c *gin.Context) {
@@ -671,7 +671,7 @@ func (h *LevelHandler) ListQuestions(c *gin.Context) {
 // @Param level_id path int true "ID уровня"
 // @Success 200 {string} html "Форма создания вопроса"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/levels/{level_id}/questions/new [get]
 // @Security JWT
 func (h *LevelHandler) NewQuestionForm(c *gin.Context) {
@@ -729,7 +729,7 @@ func (h *LevelHandler) NewQuestionForm(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}/levels/{level_id}/questions"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/levels/{level_id}/questions [post]
 // @Security JWT
 func (h *LevelHandler) CreateQuestion(c *gin.Context) {
@@ -781,8 +781,8 @@ func (h *LevelHandler) CreateQuestion(c *gin.Context) {
 // @Param question_id path int true "ID вопроса"
 // @Success 200 {string} html "Форма редактирования вопроса"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
-// @Failure 404 {object} map[string]interface{} render.Tr(c, "handler.question_not_found")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
+// @Failure 404 {object} map[string]interface{} "handler.question_not_found"
 // @Router /games/{id}/levels/{level_id}/questions/{question_id}/edit [get]
 // @Security JWT
 func (h *LevelHandler) EditQuestionForm(c *gin.Context) {
@@ -845,7 +845,7 @@ func (h *LevelHandler) EditQuestionForm(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}/levels/{level_id}/questions"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/levels/{level_id}/questions/{question_id} [put]
 // @Security JWT
 func (h *LevelHandler) UpdateQuestion(c *gin.Context) {
@@ -895,7 +895,7 @@ func (h *LevelHandler) UpdateQuestion(c *gin.Context) {
 // @Param question_id path int true "ID вопроса"
 // @Success 302 {string} string "Перенаправление на /games/{id}/levels/{level_id}/questions"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/levels/{level_id}/questions/{question_id}/delete [post]
 // @Security JWT
 func (h *LevelHandler) DeleteQuestion(c *gin.Context) {
@@ -927,7 +927,7 @@ func (h *LevelHandler) DeleteQuestion(c *gin.Context) {
 // @Param question_id path int true "ID вопроса"
 // @Success 200 {string} html "Список ответов"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/levels/{level_id}/questions/{question_id}/answers [get]
 // @Security JWT
 func (h *LevelHandler) ListAnswers(c *gin.Context) {
@@ -1019,7 +1019,7 @@ func (h *LevelHandler) ListAnswers(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}/levels/{level_id}/questions/{question_id}/answers"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/levels/{level_id}/questions/{question_id}/answers [post]
 // @Security JWT
 func (h *LevelHandler) CreateAnswer(c *gin.Context) {
@@ -1071,7 +1071,7 @@ func (h *LevelHandler) CreateAnswer(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}/levels/{level_id}/questions/{question_id}/answers"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/levels/{level_id}/questions/{question_id}/answers/{answer_id}/delete [post]
 // @Security JWT
 func (h *LevelHandler) DeleteAnswer(c *gin.Context) {

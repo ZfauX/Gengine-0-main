@@ -152,7 +152,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -191,7 +191,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -233,7 +233,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -282,7 +282,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -337,7 +337,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -405,7 +405,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -456,10 +456,90 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/teams": {
+            "get": {
+                "security": [
+                    {
+                        "JWT": []
+                    }
+                ],
+                "produces": [
+                    "text/html"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Список команд",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Номер страницы",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Количество записей на странице",
+                        "name": "per_page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Список команд",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/teams/create": {
+            "post": {
+                "security": [
+                    {
+                        "JWT": []
+                    }
+                ],
+                "consumes": [
+                    "application/x-www-form-urlencoded"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Создание команды",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Название",
+                        "name": "name",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "ID капитана",
+                        "name": "captain_id",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "302": {
+                        "description": "Редирект",
+                        "schema": {
+                            "type": "string"
                         }
                     }
                 }
@@ -517,10 +597,57 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/users/create": {
+            "post": {
+                "security": [
+                    {
+                        "JWT": []
+                    }
+                ],
+                "consumes": [
+                    "application/x-www-form-urlencoded"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Создание пользователя",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Email",
+                        "name": "email",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Имя",
+                        "name": "name",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Пароль",
+                        "name": "password",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "302": {
+                        "description": "Редирект",
+                        "schema": {
+                            "type": "string"
                         }
                     }
                 }
@@ -568,7 +695,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -619,7 +746,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -662,7 +789,7 @@ const docTemplate = `{
                         }
                     },
                     "404": {
-                        "description": "Игра не найдена",
+                        "description": "handler.game_not_found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -918,7 +1045,7 @@ const docTemplate = `{
                         }
                     },
                     "500": {
-                        "description": "Внутренняя ошибка",
+                        "description": "handler.internal_error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1551,7 +1678,7 @@ const docTemplate = `{
                         }
                     },
                     "500": {
-                        "description": "Внутренняя ошибка",
+                        "description": "handler.internal_error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1715,7 +1842,54 @@ const docTemplate = `{
                         }
                     },
                     "500": {
-                        "description": "Внутренняя ошибка",
+                        "description": "handler.internal_error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/chat/personal/{user_id}": {
+            "get": {
+                "security": [
+                    {
+                        "JWT": []
+                    }
+                ],
+                "produces": [
+                    "text/html"
+                ],
+                "tags": [
+                    "monitor"
+                ],
+                "summary": "Личный чат",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID собеседника",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "страница чата",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "handler.invalid_user_id",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "handler.internal_error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1986,14 +2160,14 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "Прохождение не найдено",
+                        "description": "handler.passing_not_found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2037,7 +2211,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2098,7 +2272,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2149,7 +2323,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2226,7 +2400,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Неверный код",
+                        "description": "handler.invalid_code",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2240,7 +2414,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2433,7 +2607,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2468,14 +2642,14 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "Игра не найдена",
+                        "description": "handler.game_not_found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2571,7 +2745,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2661,6 +2835,114 @@ const docTemplate = `{
                 }
             }
         },
+        "/games/{id}/chat/rooms": {
+            "get": {
+                "security": [
+                    {
+                        "JWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "monitor"
+                ],
+                "summary": "Комнаты чата игры",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID игры",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "handler.invalid_game_id",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "handler.internal_error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "JWT": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "monitor"
+                ],
+                "summary": "Создание комнаты чата",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID игры",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Название комнаты",
+                        "name": "name",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "handler.invalid_game_id",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "handler.forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "handler.internal_error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/games/{id}/co-authors": {
             "get": {
                 "security": [
@@ -2699,7 +2981,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2755,7 +3037,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2806,7 +3088,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2856,7 +3138,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2913,7 +3195,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -2960,14 +3242,14 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "Игра не найдена",
+                        "description": "handler.game_not_found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3046,7 +3328,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3108,7 +3390,7 @@ const docTemplate = `{
                         }
                     },
                     "500": {
-                        "description": "Внутренняя ошибка",
+                        "description": "handler.internal_error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3170,7 +3452,7 @@ const docTemplate = `{
                         }
                     },
                     "500": {
-                        "description": "Внутренняя ошибка",
+                        "description": "handler.internal_error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3232,7 +3514,7 @@ const docTemplate = `{
                         }
                     },
                     "500": {
-                        "description": "Внутренняя ошибка",
+                        "description": "handler.internal_error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3294,7 +3576,7 @@ const docTemplate = `{
                         }
                     },
                     "500": {
-                        "description": "Внутренняя ошибка",
+                        "description": "handler.internal_error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3356,7 +3638,7 @@ const docTemplate = `{
                         }
                     },
                     "500": {
-                        "description": "Внутренняя ошибка",
+                        "description": "handler.internal_error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3418,7 +3700,7 @@ const docTemplate = `{
                         }
                     },
                     "500": {
-                        "description": "Внутренняя ошибка",
+                        "description": "handler.internal_error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3475,7 +3757,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3530,7 +3812,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3696,7 +3978,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3776,7 +4058,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3823,7 +4105,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3877,14 +4159,14 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "Уровень не найден",
+                        "description": "handler.level_not_found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3964,7 +4246,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -4021,7 +4303,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -4072,7 +4354,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -4137,7 +4419,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -4191,7 +4473,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -4260,7 +4542,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -4314,7 +4596,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -4392,7 +4674,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -4453,7 +4735,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -4523,7 +4805,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -4595,7 +4877,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -4653,7 +4935,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -4714,14 +4996,14 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "Вопрос не найден",
+                        "description": "handler.question_not_found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5060,7 +5342,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5118,7 +5400,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5165,7 +5447,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5223,7 +5505,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5288,7 +5570,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5439,7 +5721,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5503,7 +5785,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5550,7 +5832,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5619,7 +5901,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5666,14 +5948,14 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "Игра не найдена",
+                        "description": "handler.game_not_found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5722,7 +6004,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5769,7 +6051,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5838,7 +6120,7 @@ const docTemplate = `{
                         }
                     },
                     "500": {
-                        "description": "Внутренняя ошибка",
+                        "description": "handler.internal_error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5885,7 +6167,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5932,7 +6214,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -6007,7 +6289,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -6051,10 +6333,93 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/payments": {
+            "get": {
+                "security": [
+                    {
+                        "JWT": []
+                    }
+                ],
+                "produces": [
+                    "text/html"
+                ],
+                "tags": [
+                    "payments"
+                ],
+                "summary": "Платежи пользователя",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/payments/create": {
+            "post": {
+                "security": [
+                    {
+                        "JWT": []
+                    }
+                ],
+                "consumes": [
+                    "application/x-www-form-urlencoded"
+                ],
+                "tags": [
+                    "payments"
+                ],
+                "summary": "Создание платежа",
+                "parameters": [
+                    {
+                        "type": "number",
+                        "format": "float64",
+                        "description": "Сумма",
+                        "name": "amount",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Описание",
+                        "name": "description",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "302": {
+                        "description": "Редирект на ЮKassa",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/payments/webhook": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "payments"
+                ],
+                "summary": "Вебхук ЮKassa",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
                         }
                     }
                 }
@@ -6090,7 +6455,7 @@ const docTemplate = `{
                         }
                     },
                     "404": {
-                        "description": "Пользователь не найден",
+                        "description": "handler.user_not_found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -6200,6 +6565,93 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Требуется аутентификация",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/profile/notify-game-days": {
+            "post": {
+                "security": [
+                    {
+                        "JWT": []
+                    }
+                ],
+                "consumes": [
+                    "application/x-www-form-urlencoded"
+                ],
+                "tags": [
+                    "profile"
+                ],
+                "summary": "Настройка уведомлений об играх",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "За сколько дней уведомлять (30/14/7/1/0)",
+                        "name": "notify_game_days",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "302": {
+                        "description": "Перенаправление на /profile",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/profile/theme-settings": {
+            "post": {
+                "security": [
+                    {
+                        "JWT": []
+                    }
+                ],
+                "description": "Сохраняет параметры автосмены темы: включена ли, время начала/конца тёмной темы",
+                "consumes": [
+                    "application/x-www-form-urlencoded"
+                ],
+                "produces": [
+                    "text/html"
+                ],
+                "tags": [
+                    "profile"
+                ],
+                "summary": "Настройки темы",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "Включена ли автоматическая смена темы",
+                        "name": "auto_theme",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Начало тёмной темы (HH:MM)",
+                        "name": "dark_from",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Конец тёмной темы (HH:MM)",
+                        "name": "dark_to",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "302": {
+                        "description": "Перенаправление на /profile",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Ошибка валидации",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -6458,7 +6910,7 @@ const docTemplate = `{
                 "tags": [
                     "teams"
                 ],
-                "summary": "Список моих команд",
+                "summary": "Список команд",
                 "responses": {
                     "200": {
                         "description": "Список команд",
@@ -6593,7 +7045,7 @@ const docTemplate = `{
                         }
                     },
                     "404": {
-                        "description": "Команда не найдена",
+                        "description": "handler.team_not_found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -6640,14 +7092,14 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "404": {
-                        "description": "Прохождение не найдено",
+                        "description": "handler.passing_not_found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -6691,7 +7143,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -6735,7 +7187,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Неверный код",
+                        "description": "handler.invalid_code",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -6749,7 +7201,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -6990,7 +7442,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -7086,7 +7538,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -7133,7 +7585,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -7187,7 +7639,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -7243,7 +7695,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -7294,7 +7746,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "Доступ запрещён",
+                        "description": "handler.forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -7366,7 +7818,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Неверный код",
+                        "description": "handler.invalid_code",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -7445,7 +7897,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Неверный код",
+                        "description": "handler.invalid_code",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -7488,7 +7940,7 @@ const docTemplate = `{
                         }
                     },
                     "404": {
-                        "description": "Пользователь не найден",
+                        "description": "handler.user_not_found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -7724,7 +8176,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Неверный ID сессии",
+                        "description": "handler.invalid_session_id",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true

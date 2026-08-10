@@ -278,7 +278,7 @@ func (h *TournamentHandler) Create(c *gin.Context) {
 // @Param id path int true "ID турнира"
 // @Success 200 {string} html "Форма редактирования"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Failure 404 {object} map[string]interface{} "Турнир не найден"
 // @Router /tournaments/{id}/edit [get]
 // @Security JWT
@@ -332,7 +332,7 @@ func (h *TournamentHandler) EditForm(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на страницу турнира"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /tournaments/{id} [put]
 // @Security JWT
 func (h *TournamentHandler) Update(c *gin.Context) {
@@ -404,7 +404,7 @@ func (h *TournamentHandler) Update(c *gin.Context) {
 // @Param id path int true "ID турнира"
 // @Success 200 {string} html "Список игр турнира"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /tournaments/{id}/games [get]
 // @Security JWT
 func (h *TournamentHandler) Games(c *gin.Context) {
@@ -446,7 +446,7 @@ func (h *TournamentHandler) Games(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /tournaments/{id}/games"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /tournaments/{id}/games [post]
 // @Security JWT
 func (h *TournamentHandler) AddGame(c *gin.Context) {
@@ -487,7 +487,7 @@ func (h *TournamentHandler) AddGame(c *gin.Context) {
 // @Param game_id path int true "ID игры"
 // @Success 302 {string} string "Перенаправление на /tournaments/{id}/games"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /tournaments/{id}/games/{game_id} [delete]
 // @Security JWT
 func (h *TournamentHandler) RemoveGame(c *gin.Context) {
@@ -548,7 +548,7 @@ func (h *TournamentHandler) ApplyForm(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на страницу турнира"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /tournaments/{id}/apply [post]
 // @Security JWT
 func (h *TournamentHandler) Apply(c *gin.Context) {

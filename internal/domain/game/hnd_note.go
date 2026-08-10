@@ -30,7 +30,7 @@ func NewNoteHandler(noteService *NoteService) *NoteHandler {
 // @Param id path int true "ID игры"
 // @Success 200 {object} map[string]interface{} "Список заметок"
 // @Failure 400 {object} map[string]interface{} "Неверный ID"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/notes [get]
 // @Security JWT
 func (h *NoteHandler) Notes(c *gin.Context) {
@@ -64,7 +64,7 @@ func (h *NoteHandler) Notes(c *gin.Context) {
 // @Param body body object true "Данные заметки"
 // @Success 201 {object} map[string]interface{} "Заметка создана"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/notes [post]
 // @Security JWT
 func (h *NoteHandler) CreateNote(c *gin.Context) {
@@ -125,7 +125,7 @@ func (h *NoteHandler) CreateNote(c *gin.Context) {
 // @Param note_id path int true "ID заметки"
 // @Success 200 {object} map[string]interface{} "Заметка удалена"
 // @Failure 400 {object} map[string]interface{} "Неверный ID"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/notes/{note_id} [delete]
 // @Security JWT
 func (h *NoteHandler) DeleteNote(c *gin.Context) {

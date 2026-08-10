@@ -152,7 +152,7 @@ func (h *AdminHandler) Dashboard(c *gin.Context) {
 // @Param per_page query int false "Количество записей на странице" default(20)
 // @Success 200 {string} html "Страница со списком пользователей"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /admin/users [get]
 // @Security JWT
 func (h *AdminHandler) ListUsers(c *gin.Context) {
@@ -334,7 +334,7 @@ func (h *AdminHandler) CreateTeam(c *gin.Context) {
 // @Param id path int true "ID пользователя"
 // @Success 302 {string} string "Перенаправление на /admin/users"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /admin/users/{id}/toggle-admin [post]
 // @Security JWT
 func (h *AdminHandler) ToggleAdmin(c *gin.Context) {
@@ -411,7 +411,7 @@ func (h *AdminHandler) ToggleAdmin(c *gin.Context) {
 // @Param id path int true "ID пользователя"
 // @Success 302 {string} string "Перенаправление на /admin/users"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /admin/users/{id}/delete [post]
 // @Security JWT
 func (h *AdminHandler) DeleteUser(c *gin.Context) {
@@ -464,7 +464,7 @@ func (h *AdminHandler) DeleteUser(c *gin.Context) {
 // @Param per_page query int false "Количество записей на странице" default(20)
 // @Success 200 {string} html "Страница со списком игр"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /admin/games [get]
 // @Security JWT
 func (h *AdminHandler) ListGames(c *gin.Context) {
@@ -537,7 +537,7 @@ func (h *AdminHandler) ListGames(c *gin.Context) {
 // @Param id path int true "ID игры"
 // @Success 302 {string} string "Перенаправление на /admin/games"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /admin/games/{id}/delete [post]
 // @Security JWT
 func (h *AdminHandler) DeleteGame(c *gin.Context) {
@@ -683,7 +683,7 @@ func (h *AdminHandler) ListTeams(c *gin.Context) {
 // @Param action query string false "Действие (create, update, delete, login и т.д.)"
 // @Success 200 {string} html "Страница аудита"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /admin/audit [get]
 // @Security JWT
 func (h *AdminHandler) AuditLog(c *gin.Context) {
@@ -749,7 +749,7 @@ func (h *AdminHandler) AuditLog(c *gin.Context) {
 // @Produce html
 // @Success 200 {string} html "Страница бекапов"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /admin/backups [get]
 // @Security JWT
 func (h *AdminHandler) ListBackups(c *gin.Context) {
@@ -779,7 +779,7 @@ func (h *AdminHandler) ListBackups(c *gin.Context) {
 // @Produce html
 // @Success 302 {string} string "Перенаправление на /admin/backups"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Failure 500 {object} map[string]interface{} "Ошибка создания бекапа"
 // @Router /admin/backups/create [post]
 // @Security JWT
@@ -801,7 +801,7 @@ func (h *AdminHandler) CreateBackup(c *gin.Context) {
 // @Success 200 {file} file "Файл бекапа"
 // @Failure 400 {object} map[string]interface{} "Неверный ID"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Failure 404 {object} map[string]interface{} "Бекап не найден"
 // @Router /admin/backups/{id}/download [get]
 // @Security JWT
@@ -835,7 +835,7 @@ func (h *AdminHandler) DownloadBackup(c *gin.Context) {
 // @Produce html
 // @Success 302 {string} string "Перенаправление на /admin/backups"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /admin/backups/rotate [post]
 // @Security JWT
 func (h *AdminHandler) RotateBackups(c *gin.Context) {

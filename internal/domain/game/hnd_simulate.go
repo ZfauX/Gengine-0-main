@@ -28,7 +28,7 @@ func NewSimulateHandler(simulateService *SimulateService) *SimulateHandler {
 // @Param id path int true "ID игры"
 // @Success 200 {string} html "Страница симуляции"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/simulate [get]
 // @Security JWT
 func (h *SimulateHandler) Simulate(c *gin.Context) {

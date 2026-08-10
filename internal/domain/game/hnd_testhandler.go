@@ -41,7 +41,7 @@ func NewTestHandler(
 // @Param id path int true "ID игры"
 // @Success 200 {string} html "Страница тестов"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/test [get]
 // @Security JWT
 func (h *TestHandler) TestPage(c *gin.Context) {

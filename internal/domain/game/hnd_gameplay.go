@@ -66,8 +66,8 @@ func NewGameplayHandler(
 // @Param passing_id path int true "ID прохождения"
 // @Success 200 {string} html "Страница прохождения"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
-// @Failure 404 {object} map[string]interface{} render.Tr(c, "handler.passing_not_found")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
+// @Failure 404 {object} map[string]interface{} "handler.passing_not_found"
 // @Router /game/{passing_id} [get]
 // @Security JWT
 func (h *GameplayHandler) ShowGame(c *gin.Context) {
@@ -166,9 +166,9 @@ func (h *GameplayHandler) renderGameplayError(c *gin.Context, passingID uint, er
 // @Param passing_id path int true "ID прохождения"
 // @Param code formData string true "Код ответа"
 // @Success 302 {string} string "Перенаправление на страницу прохождения"
-// @Failure 400 {object} map[string]interface{} render.Tr(c, "handler.invalid_code")
+// @Failure 400 {object} map[string]interface{} "handler.invalid_code"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Failure 429 {object} map[string]interface{} "Слишком много попыток"
 // @Router /game/{passing_id}/submit [post]
 // @Security JWT
@@ -253,7 +253,7 @@ func (h *GameplayHandler) SubmitCode(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на страницу прохождения"
 // @Failure 400 {object} map[string]interface{} "Ошибка"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /game/{passing_id}/hint [post]
 // @Security JWT
 func (h *GameplayHandler) UseHint(c *gin.Context) {
@@ -291,7 +291,7 @@ func (h *GameplayHandler) UseHint(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на страницу прохождения"
 // @Failure 400 {object} map[string]interface{} "Ошибка"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /game/{passing_id}/file [post]
 // @Security JWT
 func (h *GameplayHandler) SubmitFile(c *gin.Context) {
@@ -361,7 +361,7 @@ func (h *GameplayHandler) SubmitFile(c *gin.Context) {
 // @Param passing_id path int true "ID прохождения"
 // @Success 302 {string} string "Перенаправление на страницу прохождения"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /game/{passing_id}/accept [post]
 // @Security JWT
 func (h *GameplayHandler) AcceptAnswer(c *gin.Context) {
@@ -412,7 +412,7 @@ func (h *GameplayHandler) AcceptAnswer(c *gin.Context) {
 // @Param id path int true "ID игры"
 // @Success 302 {string} string "Перенаправление на страницу тестового прохождения"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/testing/start [get]
 // @Security JWT
 func (h *GameplayHandler) StartTesting(c *gin.Context) {
@@ -439,8 +439,8 @@ func (h *GameplayHandler) StartTesting(c *gin.Context) {
 // @Param passing_id path int true "ID прохождения"
 // @Success 200 {string} html "Страница тестового прохождения"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
-// @Failure 404 {object} map[string]interface{} render.Tr(c, "handler.passing_not_found")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
+// @Failure 404 {object} map[string]interface{} "handler.passing_not_found"
 // @Router /testing/{passing_id} [get]
 // @Security JWT
 func (h *GameplayHandler) ShowTestGame(c *gin.Context) {
@@ -499,9 +499,9 @@ func (h *GameplayHandler) ShowTestGame(c *gin.Context) {
 // @Param passing_id path int true "ID прохождения"
 // @Param code formData string true "Код ответа"
 // @Success 302 {string} string "Перенаправление на страницу тестового прохождения"
-// @Failure 400 {object} map[string]interface{} render.Tr(c, "handler.invalid_code")
+// @Failure 400 {object} map[string]interface{} "handler.invalid_code"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Failure 429 {object} map[string]interface{} "Слишком много попыток"
 // @Router /testing/{passing_id}/submit [post]
 // @Security JWT
@@ -580,7 +580,7 @@ func (h *GameplayHandler) SubmitTestCode(c *gin.Context) {
 // @Param passing_id path int true "ID прохождения"
 // @Success 302 {string} string "Перенаправление на страницу тестового прохождения"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /testing/{passing_id}/skip [post]
 // @Security JWT
 func (h *GameplayHandler) SkipTestLevel(c *gin.Context) {

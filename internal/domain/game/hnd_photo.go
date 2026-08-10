@@ -232,7 +232,7 @@ func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 // @Param photo_id path int true "ID фото"
 // @Success 200 {object} map[string]interface{} "Фото удалено"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Failure 404 {object} map[string]interface{} "Фото не найдено"
 // @Router /games/{id}/photos/{photo_id} [delete]
 // @Security JWT

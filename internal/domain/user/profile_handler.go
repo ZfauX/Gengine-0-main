@@ -48,7 +48,7 @@ func NewProfileHandler(st storage.FileStorage, authSvc *AuthService, profileSvc 
 // @Produce html
 // @Success 200 {string} html "Страница профиля"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 404 {object} map[string]interface{} render.Tr(c, "handler.user_not_found")
+// @Failure 404 {object} map[string]interface{} "handler.user_not_found"
 // @Router /profile [get]
 // @Security JWT
 func (h *ProfileHandler) Show(c *gin.Context) {
@@ -131,7 +131,7 @@ func calculateProfileCompletion(u *User) int {
 // @Produce html
 // @Param id path int true "ID пользователя"
 // @Success 200 {string} html "Публичный профиль"
-// @Failure 404 {object} map[string]interface{} render.Tr(c, "handler.user_not_found")
+// @Failure 404 {object} map[string]interface{} "handler.user_not_found"
 // @Router /users/{id} [get]
 func (h *ProfileHandler) PublicProfile(c *gin.Context) {
 	var req UserIDRequest

@@ -36,7 +36,7 @@ func NewReviewHandler(reviewService *ReviewService) *ReviewHandler {
 // @Param id path int true "ID игры"
 // @Success 200 {string} html "Форма отзыва"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/review [get]
 // @Security JWT
 func (h *ReviewHandler) ShowForm(c *gin.Context) {
@@ -70,7 +70,7 @@ func (h *ReviewHandler) ShowForm(c *gin.Context) {
 // @Success 302 {string} string "Перенаправление на /games/{id}"
 // @Failure 400 {object} map[string]interface{} "Ошибка валидации"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-// @Failure 403 {object} map[string]interface{} render.Tr(c, "handler.forbidden")
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
 // @Router /games/{id}/review [post]
 // @Security JWT
 func (h *ReviewHandler) Create(c *gin.Context) {

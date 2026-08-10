@@ -922,6 +922,15 @@ func (h *MonitorHandler) GlobalChatRoomID(c *gin.Context) {
 }
 
 // GameRooms возвращает список комнат игры (B-4, pass 45).
+// @Summary Комнаты чата игры
+// @Tags monitor
+// @Produce json
+// @Param id path int true "ID игры"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{} "handler.invalid_game_id"
+// @Failure 500 {object} map[string]interface{} "handler.internal_error"
+// @Security JWT
+// @Router /games/{id}/chat/rooms [get]
 func (h *MonitorHandler) GameRooms(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -939,6 +948,17 @@ func (h *MonitorHandler) GameRooms(c *gin.Context) {
 }
 
 // CreateRoom создаёт произвольную комнату игры (B-4, pass 45).
+// @Summary Создание комнаты чата
+// @Tags monitor
+// @Produce json
+// @Param id path int true "ID игры"
+// @Param name formData string true "Название комнаты"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{} "handler.invalid_game_id"
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
+// @Failure 500 {object} map[string]interface{} "handler.internal_error"
+// @Security JWT
+// @Router /games/{id}/chat/rooms [post]
 func (h *MonitorHandler) CreateRoom(c *gin.Context) {
 	var req GameIDRequest
 	if err := c.ShouldBindUri(&req); err != nil {
@@ -977,6 +997,15 @@ func (h *MonitorHandler) CreateRoom(c *gin.Context) {
 }
 
 // PersonalChat открывает личный чат 1-на-1 (B-7, pass 45).
+// @Summary Личный чат
+// @Tags monitor
+// @Produce html
+// @Param user_id path int true "ID собеседника"
+// @Success 200 {string} string "страница чата"
+// @Failure 400 {object} map[string]interface{} "handler.invalid_user_id"
+// @Failure 500 {object} map[string]interface{} "handler.internal_error"
+// @Security JWT
+// @Router /chat/personal/{user_id} [get]
 func (h *MonitorHandler) PersonalChat(c *gin.Context) {
 	userID := c.GetUint("userID")
 	otherID, _ := strconv.Atoi(c.Param("user_id"))
@@ -1249,7 +1278,7 @@ func (h *MonitorHandler) Vote(c *gin.Context) {
 // @Produce json
 // @Param session_id path int true "ID сессии голосования"
 // @Success 200 {object} map[string]interface{} "Результаты голосования"
-// @Failure 400 {object} map[string]interface{} render.Tr(c, "handler.invalid_session_id")
+// @Failure 400 {object} map[string]interface{} "handler.invalid_session_id"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 // @Router /voting/{session_id}/results [get]
 // @Security JWT

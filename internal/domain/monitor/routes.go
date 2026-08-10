@@ -193,7 +193,7 @@ func RegisterRoutes(
 	// @Param session_id path int true "ID сессии голосования"
 	// @Success 200 {object} map[string]interface{} "Результаты голосования"
 	// @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
-	// @Failure 500 {object} map[string]interface{} render.Tr(c, "handler.internal_error")
+	// @Failure 500 {object} map[string]interface{} "handler.internal_error"
 	// @Router /voting/{session_id}/results [get]
 	// @Security JWT
 	protected.GET("/voting/:session_id/results", monitorHandler.GetVotingResults)

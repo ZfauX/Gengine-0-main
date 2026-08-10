@@ -76,7 +76,7 @@ func parseGameID(c *gin.Context) (uint, error) {
 // @Failure 400 {object} map[string]interface{} "Неверный ID"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 // @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Failure 500 {object} map[string]interface{} render.Tr(c, "handler.internal_error")
+// @Failure 500 {object} map[string]interface{} "handler.internal_error"
 // @Router /games/{id}/export [get]
 // @Security JWT
 func (h *ExportHandler) ExportGameCSV(c *gin.Context) {
@@ -236,7 +236,7 @@ func (h *ExportHandler) ImportGame(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "Неверный ID"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 // @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Failure 500 {object} map[string]interface{} render.Tr(c, "handler.internal_error")
+// @Failure 500 {object} map[string]interface{} "handler.internal_error"
 // @Router /games/{id}/export-results [get]
 // @Security JWT
 func (h *ExportHandler) ExportResultsCSV(c *gin.Context) {
@@ -272,7 +272,7 @@ func (h *ExportHandler) ExportResultsCSV(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "Неверный ID"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 // @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Failure 500 {object} map[string]interface{} render.Tr(c, "handler.internal_error")
+// @Failure 500 {object} map[string]interface{} "handler.internal_error"
 // @Router /games/{id}/export-pdf [get]
 // @Security JWT
 func (h *ExportHandler) ExportGamePDF(c *gin.Context) {
@@ -308,7 +308,7 @@ func (h *ExportHandler) ExportGamePDF(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "Неверный ID"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 // @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Failure 500 {object} map[string]interface{} render.Tr(c, "handler.internal_error")
+// @Failure 500 {object} map[string]interface{} "handler.internal_error"
 // @Router /games/{id}/export-statistics-pdf [get]
 // @Security JWT
 func (h *ExportHandler) ExportStatisticsPDF(c *gin.Context) {
@@ -348,7 +348,7 @@ func (h *ExportHandler) ExportStatisticsPDF(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "Неверный ID"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 // @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Failure 500 {object} map[string]interface{} render.Tr(c, "handler.internal_error")
+// @Failure 500 {object} map[string]interface{} "handler.internal_error"
 // @Router /games/{id}/export-excel [get]
 // @Security JWT
 func (h *ExportHandler) ExportGameExcel(c *gin.Context) {
@@ -384,7 +384,7 @@ func (h *ExportHandler) ExportGameExcel(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "Неверный ID"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 // @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Failure 500 {object} map[string]interface{} render.Tr(c, "handler.internal_error")
+// @Failure 500 {object} map[string]interface{} "handler.internal_error"
 // @Router /games/{id}/export-results-excel [get]
 // @Security JWT
 func (h *ExportHandler) ExportResultsExcel(c *gin.Context) {
@@ -421,7 +421,7 @@ func (h *ExportHandler) ExportResultsExcel(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "Неверный ID"
 // @Failure 401 {object} map[string]interface{} "Требуется аутентификация"
 // @Failure 403 {object} map[string]interface{} "Недостаточно прав"
-// @Failure 500 {object} map[string]interface{} render.Tr(c, "handler.internal_error")
+// @Failure 500 {object} map[string]interface{} "handler.internal_error"
 // @Router /games/{id}/teams/{team_id}/export-results [get]
 // @Security JWT
 func (h *ExportHandler) ExportTeamResultsCSV(c *gin.Context) {

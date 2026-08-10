@@ -304,7 +304,7 @@ func (h *WebAuthnHandler) FinishRegistration(c *gin.Context) {
 // @Tags webauthn
 // @Produce json
 // @Success 200 {object} map[string]interface{} "Опции аутентификации"
-// @Failure 500 {object} map[string]interface{} render.Tr(c, "handler.internal_error")
+// @Failure 500 {object} map[string]interface{} "handler.internal_error"
 // @Router /auth/webauthn/login/begin [post]
 func (h *WebAuthnHandler) BeginLogin(c *gin.Context) {
 	assertion, sessionData, err := h.webAuthn.BeginDiscoverableLogin()
