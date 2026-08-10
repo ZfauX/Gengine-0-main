@@ -493,6 +493,19 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		}
 	}
 
+	// P0-1 (pass 45): без согласия с пользовательским соглашением регистрация
+	// невозможна (ст. 435-438 ГК РФ — акцепт оферты).
+	if !input.AcceptTerms {
+		render.Page(c, http.StatusBadRequest, "auth-register.html", gin.H{
+			"Title":            "Регистрация",
+			"Errors":           validation.FieldErrors{"accept_terms": render.Tr(c, "auth.accept_terms_required")},
+			"Error":            render.Tr(c, "auth.accept_terms_required"),
+			"csrf":             csrf.GetToken(c),
+			"RecaptchaSiteKey": h.recaptchaSiteKey(),
+		})
+		return
+	}
+
 	if err := validation.ValidatePasswordStrength(input.Password); err != nil {
 		render.Page(c, http.StatusBadRequest, "auth-register.html", gin.H{
 			"Title":            "Регистрация",

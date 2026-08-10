@@ -132,6 +132,16 @@ func TestRegisterInput_Validation(t *testing.T) {
 			},
 			expectErr: true,
 		},
+		{
+			name: "accept_terms parses from form",
+			input: RegisterInput{
+				Email:       "test@example.com",
+				Password:    "password123",
+				Name:        "Test User",
+				AcceptTerms: true,
+			},
+			expectErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -142,8 +152,11 @@ func TestRegisterInput_Validation(t *testing.T) {
 				"email":    {tt.input.Email},
 				"password": {tt.input.Password},
 				"name":     {tt.input.Name},
-			}.Encode()
-			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+			}
+			if tt.input.AcceptTerms {
+				body.Set("accept_terms", "1")
+			}
+			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body.Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			c.Request = req
 			err := c.ShouldBind(&tt.input)

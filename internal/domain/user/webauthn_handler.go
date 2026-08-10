@@ -75,7 +75,7 @@ func NewWebAuthnHandler(
 	}
 
 	wcfg := &gowebauthn.Config{
-		RPDisplayName: "Encounter Engine",
+		RPDisplayName: "Gengine-0",
 		RPID:          rpID,
 		RPOrigins:     rpOrigins,
 		AuthenticatorSelection: protocol.AuthenticatorSelection{

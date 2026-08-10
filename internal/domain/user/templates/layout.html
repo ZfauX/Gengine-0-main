@@ -6,11 +6,11 @@
     <meta name="csrf-token" content="{{.csrf}}" />
     <meta name="description" content="{{.Description | default (T $.Lang "layout.meta_description")}}">
     <meta name="keywords" content="{{ T $.Lang "layout.meta_keywords" }}">
-    <meta name="author" content="Encounter Engine">
+    <meta name="author" content="Gengine-0">
     <!-- UX-6 (pass 40): OG-теги — соцсети и мессенджеры собирают превью ссылок.
          og:image не добавляем: нет статического превью (static/img отсутствует). -->
     <meta property="og:type" content="website">
-    <meta property="og:site_name" content="Encounter Engine">
+    <meta property="og:site_name" content="Gengine-0">
     <meta property="og:title" content="{{.Title}}">
     <meta property="og:description" content="{{.Description | default (T $.Lang "layout.meta_description")}}">
     <meta name="twitter:card" content="summary">
@@ -66,7 +66,7 @@
     <!-- UX-M2 (pass 43): дубли OG-тегов из pass 38 удалены — единый блок выше
          (строки 10-18). Дополнительно указываем локаль. -->
     <meta property="og:locale" content="ru_RU">
-    <title>{{.Title}} · Encounter Engine</title>
+    <title>{{.Title}} · Gengine-0</title>
     <link rel="canonical" href="{{.CanonicalURL}}">
     <!-- Accessibility -->
     <meta name="format-detection" content="telephone=no">
@@ -172,7 +172,7 @@
                 <div class="flex items-center space-x-2">
                     <span class="text-2xl font-bold text-blue-600" aria-hidden="true">🕵️</span>
                     <a href="/" class="text-xl font-semibold text-gray-800 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400 transition">
-                        Encounter
+                        Gengine-0
                     </a>
                 </div>
 
@@ -296,7 +296,7 @@
 
     <!-- Футер (опционально) -->
     <footer class="border-t border-gray-200 dark:border-gray-700 mt-12 py-6 text-center text-sm text-gray-500 dark:text-gray-400" role="contentinfo">
-        &copy; 2026 Encounter Engine · {{ T $.Lang "layout.footer_rights" }}
+        &copy; 2026 Gengine-0 · {{ T $.Lang "layout.footer_rights" }}
     </footer>
 
     {{.ExtraScripts}}

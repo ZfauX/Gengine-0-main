@@ -21,8 +21,17 @@ var ErrNotOwner = errors.New("только владелец может упра�
 // CoAuthorService — сервис соавторов. A-1 (pass 39): поле db удалено — все
 // операции идут через CoAuthorRepository (HasPermission через repo, N-2 pass 38),
 // а транзакционные варианты принимают tx параметром.
+// P0-3 (pass 45): userRepo — для проверки супер-админа инсталляции (роль
+// "admin" bypass'ит проверки прав).
 type CoAuthorService struct {
-	repo CoAuthorRepository
+	repo     CoAuthorRepository
+	userRepo userRepository
+}
+
+// userRepository — минимальный контракт, нужный для проверки роли (избегаем
+// циклической зависимости game→user).
+type userRepository interface {
+	GetUserRole(ctx context.Context, id uint) (string, error)
 }
 
 func NewCoAuthorService() *CoAuthorService {
@@ -36,9 +45,30 @@ func (s *CoAuthorService) WithRepository(repo CoAuthorRepository) *CoAuthorServi
 	return s
 }
 
+// WithUserRepository внедряет репозиторий пользователей для проверки
+// супер-админа инсталляции (P0-3, pass 45).
+func (s *CoAuthorService) WithUserRepository(repo userRepository) *CoAuthorService {
+	s.userRepo = repo
+	return s
+}
+
+// isSuperAdmin проверяет, что пользователь — админ инсталляции (роль "admin").
+// Супер-админ имеет права на всё (P0-3).
+func (s *CoAuthorService) isSuperAdmin(ctx context.Context, userID uint) bool {
+	if s.userRepo == nil {
+		return false
+	}
+	role, err := s.userRepo.GetUserRole(ctx, userID)
+	return err == nil && role == "admin"
+}
+
 // IsUserManager проверяет, является ли пользователь автором или соавтором игры.
 // Оптимизация: использует один запрос с UNION вместо двух отдельных запросов.
+// P0-3 (pass 45): супер-админ всегда менеджер.
 func (s *CoAuthorService) IsUserManager(ctx context.Context, gameID, userID uint) (bool, error) {
+	if s.isSuperAdmin(ctx, userID) {
+		return true, nil
+	}
 	return s.repo.IsUserManager(ctx, gameID, userID)
 }
 
@@ -48,6 +78,10 @@ func (s *CoAuthorService) IsUserManager(ctx context.Context, gameID, userID uint
 // P-44-4 (pass 45): один запрос (автор ИЛИ соавтор с допустимой ролью) вместо
 // GetGameAuthorID + FindByGameAndUser.
 func (s *CoAuthorService) HasPermission(ctx context.Context, gameID, userID uint, requiredRole string) (bool, error) {
+	// P0-3 (pass 45): супер-админ инсталляции имеет права на всё.
+	if s.isSuperAdmin(ctx, userID) {
+		return true, nil
+	}
 	return s.repo.HasPermissionRole(ctx, gameID, userID, rolesForRequired(requiredRole))
 }
 
@@ -85,6 +119,10 @@ func hasCoAuthorRole(role, requiredRole string) bool {
 // C1 (pass 40): ctx прокидывается из вызовов (раньше context.Background —
 // запросы прав не отменялись при disconnect).
 func (s *CoAuthorService) HasPermissionTx(ctx context.Context, tx *gorm.DB, gameID, userID uint, requiredRole string) (bool, error) {
+	// P0-3 (pass 45): супер-админ инсталляции имеет права на всё.
+	if s.isSuperAdmin(ctx, userID) {
+		return true, nil
+	}
 	authorID, err := s.repo.GetGameAuthorIDWithTx(ctx, tx, gameID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

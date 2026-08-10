@@ -119,7 +119,7 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	gameRepository := repos.Game
 	gamePassingRepository := repos.GamePassing
 	coAuthorRepository := repos.CoAuthor
-	coAuthorService := wrapCoAuthorService(coAuthorRepository)
+	coAuthorService := wrapCoAuthorService(coAuthorRepository, userRepository)
 	reviewRepository := repos.Review
 	reviewService := wrapReviewService(reviewRepository, appCache)
 	monitorRepository := repos.Monitor
@@ -134,7 +134,7 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	gamePlayService := wrapGamePlayService(db, gameRepository, gamePassingRepository, attemptService, monitorService, hub, coAuthorService, sseManager)
 	teamRepository := repos.Team
 	gameAdminService := wrapGameAdminService(db, teamRepository, userRepository, coAuthorService, cfg, sseManager)
-	teamService := wrapTeamService(teamRepository)
+	teamService := wrapTeamService(teamRepository, userRepository)
 	levelProgressRepository := repos.LevelProgress
 	levelProgressService := wrapLevelProgressService(db, levelProgressRepository, sseManager, gameService)
 	gamePassingService := wrapGamePassingService(db, gamePassingRepository, teamService, coAuthorService, levelProgressService, hub, monitorService, sseManager)

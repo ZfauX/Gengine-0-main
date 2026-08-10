@@ -19,10 +19,18 @@ import (
 
 type TeamService struct {
 	teamRepo TeamRepository
+	// P0-3 (pass 45): userRepo для проверки супер-админа инсталляции.
+	userRepo TeamUserRepository
 
 	// P-45-3 (pass 45): throttle метрики «всего участников» — не чаще 1/мин.
 	membersMetricMu   sync.Mutex
 	membersMetricNext time.Time
+}
+
+// TeamUserRepository — минимальный контракт для проверки роли (избегаем
+// циклической зависимости team→user).
+type TeamUserRepository interface {
+	GetUserRole(ctx context.Context, id uint) (string, error)
 }
 
 // Sentinel-ошибки команды (A-M4, pass 34): handlers могут делать errors.Is.
@@ -43,6 +51,22 @@ func NewTeamService(teamRepo TeamRepository) *TeamService {
 	return &TeamService{
 		teamRepo: teamRepo,
 	}
+}
+
+// WithUserRepository внедряет репозиторий пользователей для проверки
+// супер-админа инсталляции (P0-3, pass 45).
+func (s *TeamService) WithUserRepository(repo TeamUserRepository) *TeamService {
+	s.userRepo = repo
+	return s
+}
+
+// isSuperAdmin проверяет, что пользователь — админ инсталляции.
+func (s *TeamService) isSuperAdmin(ctx context.Context, userID uint) bool {
+	if s.userRepo == nil {
+		return false
+	}
+	role, err := s.userRepo.GetUserRole(ctx, userID)
+	return err == nil && role == "admin"
 }
 
 func (s *TeamService) GetMyTeams(ctx context.Context, userID uint) ([]Team, error) {
@@ -98,6 +122,10 @@ func (s *TeamService) GetTeamWithMembers(ctx context.Context, teamID uint) (*Tea
 }
 
 func (s *TeamService) CanManageTeam(ctx context.Context, teamID, userID uint) bool {
+	// P0-3 (pass 45): супер-админ инсталляции управляет любой командой.
+	if s.isSuperAdmin(ctx, userID) {
+		return true
+	}
 	team, err := s.teamRepo.GetByID(ctx, teamID)
 	if err != nil {
 		log.Error().Err(err).Uint("team_id", teamID).Msg("CanManageTeam: failed to get team")

@@ -1,6 +1,6 @@
 {
-  "name": "Encounter Engine",
-  "short_name": "Encounter",
+  "name": "Gengine-0",
+  "short_name": "Gengine-0",
   "description": "Платформа для создания и проведения квестов",
   "start_url": "/dashboard?source=pwa",
   "scope": "/",

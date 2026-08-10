@@ -430,7 +430,7 @@ var ruMessages = map[string]string{
 
 	// ── Layout ──
 	"layout.nav_aria_label":     "Главная навигация",
-	"layout.logo_aria_label":    "Encounter Engine",
+	"layout.logo_aria_label":    "Gengine-0",
 	"layout.theme_toggle":       "Переключить тему",
 	"layout.mobile_menu":        "Меню",
 	"layout.main_content":       "Основной контент",
@@ -441,7 +441,7 @@ var ruMessages = map[string]string{
 	"layout.notif_load_error":   "Ошибка загрузки",
 	"layout.notif_none":         "Нет уведомлений",
 	"layout.meta_description":   "Платформа для создания и проведения квестов",
-	"layout.meta_keywords":      "квесты, игры, командные игры, urban quest, encounter",
+	"layout.meta_keywords":      "квесты, игры, командные игры, urban quest, gengine-0",
 	"layout.search_placeholder": "Поиск...",
 	"layout.offline_toast":      "Соединение потеряно. Изменения могут не сохраниться.",
 	"layout.online_toast":       "Соединение восстановлено.",
@@ -497,7 +497,7 @@ var ruMessages = map[string]string{
 	"common.characters":   "символов",
 
 	// ── Home ──
-	"home.title":              "Добро пожаловать в Encounter Engine",
+	"home.title":              "Добро пожаловать в Gengine-0",
 	"home.subtitle":           "Платформа для создания и проведения городских, полевых и онлайн‑квестов",
 	"home.search_placeholder": "Поиск игр...",
 	"home.search_button":      "Найти",
@@ -520,6 +520,9 @@ var ruMessages = map[string]string{
 	"auth.register_title":         "Регистрация",
 	"auth.register_button":        "Зарегистрироваться",
 	"auth.register_loading":       "Регистрация...",
+	"auth.accept_terms_prefix":    "Я принимаю условия",
+	"auth.accept_terms_link":      "пользовательского соглашения",
+	"auth.accept_terms_required":  "Необходимо принять пользовательское соглашение",
 	"auth.recaptcha_failed":       "Не удалось подтвердить, что вы не робот. Попробуйте ещё раз.",
 	"auth.have_account":           "Уже есть аккаунт? Войти",
 	"auth.name_label":             "Имя",
@@ -593,7 +596,7 @@ var ruMessages = map[string]string{
 	"dashboard.my_teams_captain":      "Мои команды",
 	"dashboard.my_teams_captain_sub":  "(капитанство)",
 	"dashboard.no_games_yet":          "У вас пока нет созданных игр.",
-	"dashboard.onboarding_title":      "Добро пожаловать в Encounter! 🚀",
+	"dashboard.onboarding_title":      "Добро пожаловать в Gengine-0! 🚀",
 	"dashboard.onboarding_desc":       "Начните с этих простых шагов:",
 	"dashboard.onboarding_step1":      "Создайте игру",
 	"dashboard.onboarding_step1_desc": "Придумайте свой первый квест",

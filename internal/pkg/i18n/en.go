@@ -408,7 +408,7 @@ var enMessages = map[string]string{
 
 	// ── Layout ──
 	"layout.nav_aria_label":     "Main navigation",
-	"layout.logo_aria_label":    "Encounter Engine",
+	"layout.logo_aria_label":    "Gengine-0",
 	"layout.theme_toggle":       "Toggle theme",
 	"layout.mobile_menu":        "Menu",
 	"layout.main_content":       "Main content",
@@ -419,7 +419,7 @@ var enMessages = map[string]string{
 	"layout.notif_load_error":   "Error loading",
 	"layout.notif_none":         "No notifications",
 	"layout.meta_description":   "Platform for creating and conducting quests",
-	"layout.meta_keywords":      "quests, games, team games, urban quest, encounter",
+	"layout.meta_keywords":      "quests, games, team games, urban quest, gengine-0",
 	"layout.search_placeholder": "Search...",
 	"layout.offline_toast":      "Connection lost. Changes may not be saved.",
 	"layout.online_toast":       "Connection restored.",
@@ -475,7 +475,7 @@ var enMessages = map[string]string{
 	"common.characters":   "characters",
 
 	// ── Home ──
-	"home.title":              "Welcome to Encounter Engine",
+	"home.title":              "Welcome to Gengine-0",
 	"home.subtitle":           "A platform for creating and running urban, field and online quests",
 	"home.search_placeholder": "Search games...",
 	"home.search_button":      "Search",
@@ -498,6 +498,9 @@ var enMessages = map[string]string{
 	"auth.register_title":         "Register",
 	"auth.register_button":        "Register",
 	"auth.register_loading":       "Registering...",
+	"auth.accept_terms_prefix":    "I accept the",
+	"auth.accept_terms_link":      "terms of service",
+	"auth.accept_terms_required":  "You must accept the terms of service",
 	"auth.recaptcha_failed":       "Could not verify you are not a robot. Please try again.",
 	"auth.have_account":           "Already have an account? Login",
 	"auth.name_label":             "Name",
@@ -572,7 +575,7 @@ var enMessages = map[string]string{
 	"dashboard.my_teams_captain":      "My teams",
 	"dashboard.my_teams_captain_sub":  "(captain)",
 	"dashboard.no_games_yet":          "You don't have any games yet.",
-	"dashboard.onboarding_title":      "Welcome to Encounter! 🚂",
+	"dashboard.onboarding_title":      "Welcome to Gengine-0! 🚂",
 	"dashboard.onboarding_desc":       "Get started with these quick steps:",
 	"dashboard.onboarding_step1":      "Create a game",
 	"dashboard.onboarding_step1_desc": "Design your first quest",

@@ -213,7 +213,7 @@ func (h *CalendarHandler) CalendarICal(c *gin.Context) {
 	var sb strings.Builder
 	sb.WriteString("BEGIN:VCALENDAR\r\n")
 	sb.WriteString("VERSION:2.0\r\n")
-	sb.WriteString("PRODID:-//Gengine//Encounter Engine//RU\r\n")
+	sb.WriteString("PRODID:-//Gengine//Gengine-0//RU\r\n")
 	sb.WriteString("CALSCALE:GREGORIAN\r\n")
 	sb.WriteString("METHOD:PUBLISH\r\n")
 
@@ -229,7 +229,7 @@ func (h *CalendarHandler) CalendarICal(c *gin.Context) {
 		end := start.Add(defaultEventDuration)
 
 		sb.WriteString("BEGIN:VEVENT\r\n")
-		fmt.Fprintf(&sb, "UID:%d-gengine@encounter\r\n", g.ID)
+		fmt.Fprintf(&sb, "UID:%d-gengine@gengine-0\r\n", g.ID)
 		fmt.Fprintf(&sb, "DTSTAMP:%s\r\n", now.UTC().Format("20060102T150405Z"))
 		fmt.Fprintf(&sb, "DTSTART:%s\r\n", start.Format("20060102T150405Z"))
 		fmt.Fprintf(&sb, "DTEND:%s\r\n", end.Format("20060102T150405Z"))
@@ -260,7 +260,7 @@ func (h *CalendarHandler) CalendarICal(c *gin.Context) {
 // writeICS отдаёт собранный .ics (общий для кэша и не-кэш-пути).
 func (h *CalendarHandler) writeICS(c *gin.Context, ics []byte) {
 	c.Header("Content-Type", "text/calendar; charset=utf-8")
-	c.Header("Content-Disposition", `attachment; filename="encounter-calendar.ics"`)
+	c.Header("Content-Disposition", `attachment; filename="gengine-0-calendar.ics"`)
 	c.Data(http.StatusOK, "text/calendar; charset=utf-8", ics)
 }
 

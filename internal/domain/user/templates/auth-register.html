@@ -73,6 +73,18 @@
             </div>
             {{end}}
 
+            <!-- P0-1 (pass 45): согласие с пользовательским соглашением (акцепт оферты) -->
+            <div>
+                <label class="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
+                    <input type="checkbox" name="accept_terms" id="accept_terms" value="1" required
+                           class="mt-0.5 rounded border-gray-300 dark:border-gray-600 text-blue-600 dark:text-blue-400 shadow-sm focus:ring-blue-500">
+                    <span>{{ T $.Lang "auth.accept_terms_prefix" }}
+                        <a href="/terms" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">{{ T $.Lang "auth.accept_terms_link" }}</a>
+                    </span>
+                </label>
+                {{if .Errors.accept_terms}}<p class="field-error">{{.Errors.accept_terms}}</p>{{end}}
+            </div>
+
             <button type="submit" id="registerBtn" class="w-full btn btn-primary text-sm">{{ T $.Lang "auth.register_button" }}</button>
         </form>
 

@@ -606,7 +606,7 @@ func loadVAPIDConfig(cfg *VAPIDConfig) error {
 	cfg.PrivateKey = os.Getenv("VAPID_PRIVATE_KEY")
 	cfg.Subject = os.Getenv("VAPID_SUBJECT")
 	if cfg.Subject == "" {
-		cfg.Subject = "mailto:admin@encounter-engine.local"
+		cfg.Subject = "mailto:admin@gengine-0.local"
 	}
 	if cfg.PublicKey != "" && cfg.PrivateKey != "" {
 		return nil

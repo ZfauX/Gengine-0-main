@@ -356,6 +356,15 @@ func (app *App) setupEngine(r *gin.Engine) error {
 		})
 	})
 
+	// P0-1 (pass 45): пользовательское соглашение (публичная страница).
+	r.GET("/terms", func(c *gin.Context) {
+		c.Header("Cache-Control", "public, max-age=3600")
+		render.Page(c, http.StatusOK, "terms.html", gin.H{
+			"Title": "Пользовательское соглашение",
+			"csrf":  csrf.GetToken(c),
+		})
+	})
+
 	return nil
 }
 

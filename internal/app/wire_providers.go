@@ -41,8 +41,9 @@ func wrapGameService(gameRepo game.GameRepository, passingRepo game.GamePassingR
 // wrapCoAuthorService — соавторы: нетранзакционные методы через репозиторий
 // (A-1, pass 32 — устранено дублирование запросов между сервисом и репозиторием).
 // A-1 (pass 39): db не нужен — сервис stateless (все операции через repo/tx).
-func wrapCoAuthorService(coAuthRepo game.CoAuthorRepository) *game.CoAuthorService {
-	return game.NewCoAuthorService().WithRepository(coAuthRepo)
+// P0-3 (pass 45): userRepo — супер-админ bypass прав.
+func wrapCoAuthorService(coAuthRepo game.CoAuthorRepository, userRepo user.UserRepository) *game.CoAuthorService {
+	return game.NewCoAuthorService().WithRepository(coAuthRepo).WithUserRepository(userRepo)
 }
 
 func wrapReviewService(reviewRepo game.ReviewRepository, cacheStore cache.CacheStore) *game.ReviewService {
@@ -92,8 +93,8 @@ func wrapTournamentService(db *gorm.DB, tournamentRepo tournament.TournamentRepo
 	return tournament.NewTournamentService(db, tournamentRepo, tournamentGameRepo, tournamentTeamRepo, tournamentResultRepo, teamService, cfg).WithCache(cacheStore)
 }
 
-func wrapTeamService(teamRepo team.TeamRepository) *team.TeamService {
-	return team.NewTeamService(teamRepo)
+func wrapTeamService(teamRepo team.TeamRepository, userRepo user.UserRepository) *team.TeamService {
+	return team.NewTeamService(teamRepo).WithUserRepository(userRepo)
 }
 
 func wrapInvitationService(invRepo team.InvitationRepository, teamRepo team.TeamRepository, cfg *config.Config) *team.InvitationService {

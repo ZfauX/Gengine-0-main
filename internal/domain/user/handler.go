@@ -158,6 +158,8 @@ type RegisterInput struct {
 	Password       string `form:"password" json:"password" binding:"required,min=8,max=72"`
 	Name           string `form:"name" json:"name" binding:"required,min=2,max=50"`
 	RecaptchaToken string `form:"g-recaptcha-response" json:"g_recaptcha_response"`
+	// AcceptTerms — обязательное согласие с пользовательским соглашением (P0-1).
+	AcceptTerms bool `form:"accept_terms" json:"accept_terms"`
 }
 
 type LoginInput struct {
