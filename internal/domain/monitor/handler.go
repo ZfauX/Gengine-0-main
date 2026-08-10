@@ -598,67 +598,24 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "комната не найдена"})
 		return
 	}
-	// S-43-1 (pass 43): командные комнаты создаются со ВСЕМИ тремя полями
-	// (GameID+TeamID+PassingID), поэтому проверка GameID-first ловила и командные
-	// комнаты — проверка TeamID была мёртвым кодом, и участник команды A мог
-	// подключиться к чату команды B. Сначала проверяем членство в команде.
-	// B-7 (pass 45): личная комната — доступ только двум участникам.
-	if chatRoom.RoomType == RoomTypePersonal {
-		if chatRoom.User1ID == nil || chatRoom.User2ID == nil ||
-			(*chatRoom.User1ID != userID && *chatRoom.User2ID != userID) {
-			log.Warn().Uint("user_id", userID).Uint("room_id", uint(roomIDUint)).Msg("ChatWS: personal room denied")
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
-			return
-		}
-	} else if chatRoom.TeamID != nil {
-		// Проверка доступа к командному чату (участник или капитан).
-		ok, memberErr := h.chatService.IsTeamMemberOrCaptain(c.Request.Context(), *chatRoom.TeamID, userID)
-		if memberErr != nil {
-			log.Error().Err(memberErr).Uint("team_id", *chatRoom.TeamID).Uint("user_id", userID).Msg("ChatWS: team membership check error")
-			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "внутренняя ошибка"})
-			return
-		}
-		if !ok {
-			log.Warn().Uint("user_id", userID).Uint("team_id", *chatRoom.TeamID).Msg("ChatWS: access denied, not a team member")
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
-			return
-		}
-	} else if chatRoom.GameID != nil {
-		// B-2 (pass 45): комната «только капитаны» — доступ только капитанам команд.
-		if chatRoom.RoomType == RoomTypeGameCaptains {
-			passing, findErr := h.gameService.GetPassingByUser(c.Request.Context(), *chatRoom.GameID, userID)
-			if findErr != nil {
-				log.Warn().Uint("user_id", userID).Uint("game_id", *chatRoom.GameID).Msg("ChatWS: captains room denied, not a participant")
-				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
-				return
-			}
-			isCaptain, capErr := h.gameService.IsTeamCaptain(c.Request.Context(), passing.TeamID, userID)
-			if capErr != nil {
-				log.Error().Err(capErr).Uint("team_id", passing.TeamID).Uint("user_id", userID).Msg("ChatWS: captain check error")
-				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "внутренняя ошибка"})
-				return
-			}
-			if !isCaptain {
-				log.Warn().Uint("user_id", userID).Uint("game_id", *chatRoom.GameID).Msg("ChatWS: captains room denied, not a captain")
-				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
-				return
-			}
-		} else {
-			isManager, mgrErr := h.coAuthorSvc.IsUserManager(c.Request.Context(), *chatRoom.GameID, userID)
-			if mgrErr != nil {
-				log.Error().Err(mgrErr).Uint("game_id", *chatRoom.GameID).Uint("user_id", userID).Msg("ChatWS: manager check error")
-				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "внутренняя ошибка"})
-				return
-			}
-			if !isManager {
-				_, findErr := h.gameService.GetPassingByUser(c.Request.Context(), *chatRoom.GameID, userID)
-				if findErr != nil {
-					log.Warn().Uint("user_id", userID).Uint("game_id", *chatRoom.GameID).Msg("ChatWS: access denied, not a participant")
-					c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
-					return
-				}
-			}
-		}
+	// S-46-2 (pass 46): проверка доступа к комнате вынесена в canJoinRoom —
+	// единая логика для ChatWS и других точек входа (персональная/командная/
+	// капитанская/общая комнаты), чтобы правила не расходились и были тестируемы.
+	ok, canErr := canJoinRoom(chatRoom, userID, chatAccessDeps{
+		IsTeamMemberOrCaptain: h.chatService.IsTeamMemberOrCaptain,
+		GetPassingByUser:      h.gameService.GetPassingByUser,
+		IsTeamCaptain:         h.gameService.IsTeamCaptain,
+		IsUserManager:         h.coAuthorSvc.IsUserManager,
+	})
+	if canErr != nil {
+		log.Error().Err(canErr).Uint("room_id", uint(roomIDUint)).Uint("user_id", userID).Msg("ChatWS: access check error")
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "внутренняя ошибка"})
+		return
+	}
+	if !ok {
+		log.Warn().Uint("user_id", userID).Uint("room_id", uint(roomIDUint)).Msg("ChatWS: access denied")
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
+		return
 	}
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
@@ -813,6 +770,71 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 			h.hub.BroadcastToRoom(roomID, resp)
 		}
 	}
+}
+
+// chatAccessDeps — зависимости для canJoinRoom (интерфейсы, чтобы можно было
+// unit-тестировать правила доступа без полного графа сервисов).
+type chatAccessDeps struct {
+	IsTeamMemberOrCaptain func(ctx context.Context, teamID, userID uint) (bool, error)
+	GetPassingByUser      func(ctx context.Context, gameID, userID uint) (*game.GamePassing, error)
+	IsTeamCaptain         func(ctx context.Context, teamID, userID uint) (bool, error)
+	IsUserManager         func(ctx context.Context, gameID, userID uint) (bool, error)
+}
+
+// canJoinRoom проверяет право пользователя подключиться к комнате чата
+// (S-46-2, pass 46). Единая логика для ChatWS и других точек входа:
+//   - personal: только два участника (User1ID/User2ID);
+//   - командная (TeamID != nil): участник или капитан;
+//   - «только капитаны»: капитан команды, участвующей в игре;
+//   - остальные игровые комнаты: менеджер игры или участник прохождения;
+//   - серверная/глобальная: любой аутентифицированный.
+func canJoinRoom(room *ChatRoom, userID uint, deps chatAccessDeps) (bool, error) {
+	// B-7 (pass 45): личная комната — доступ только двум участникам.
+	if room.RoomType == RoomTypePersonal {
+		if room.User1ID == nil || room.User2ID == nil ||
+			(*room.User1ID != userID && *room.User2ID != userID) {
+			return false, nil
+		}
+		return true, nil
+	}
+
+	// S-43-1 (pass 43): командные комнаты создаются со ВСЕМИ тремя полями
+	// (GameID+TeamID+PassingID), поэтому проверка GameID-first ловила бы и командные
+	// комнаты. Сначала проверяем членство в команде.
+	if room.TeamID != nil {
+		ok, memberErr := deps.IsTeamMemberOrCaptain(context.Background(), *room.TeamID, userID)
+		if memberErr != nil {
+			return false, memberErr
+		}
+		return ok, nil
+	}
+
+	if room.GameID == nil {
+		// Серверная/глобальная комната — любой аутентифицированный.
+		return true, nil
+	}
+
+	// B-2 (pass 45): комната «только капитаны» — доступ только капитанам команд.
+	if room.RoomType == RoomTypeGameCaptains {
+		passing, findErr := deps.GetPassingByUser(context.Background(), *room.GameID, userID)
+		if findErr != nil {
+			return false, nil
+		}
+		return deps.IsTeamCaptain(context.Background(), passing.TeamID, userID)
+	}
+
+	// Общая комната игры: менеджер или участник прохождения.
+	isManager, mgrErr := deps.IsUserManager(context.Background(), *room.GameID, userID)
+	if mgrErr != nil {
+		return false, mgrErr
+	}
+	if isManager {
+		return true, nil
+	}
+	if _, findErr := deps.GetPassingByUser(context.Background(), *room.GameID, userID); findErr != nil {
+		return false, nil
+	}
+	return true, nil
 }
 
 // ChatRoomIDs возвращает ID комнат чата (общая и командная) для игры.

@@ -14,6 +14,7 @@ import (
 	"gengine-0/internal/pkg/middleware"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -928,4 +929,24 @@ func TestAPIOriginGuard(t *testing.T) {
 		router.ServeHTTP(w, req)
 		assert.Equal(t, http.StatusOK, w.Code)
 	})
+}
+
+// S-46-1 (pass 46): поведение Valkey-лимитеров при недоступности Redis.
+func TestRateLimiter_ValkeyFailClosedVsOpen(t *testing.T) {
+	// Клиент на несуществующий адрес — каждая операция Lua будет падать.
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1", DialTimeout: 200 * time.Millisecond, ReadTimeout: 200 * time.Millisecond})
+	defer client.Close()
+
+	// fail-open: запрос пропускается, несмотря на сбой Redis.
+	open := middleware.NewValkeyRateLimiter(client, time.Minute, 5)
+	defer open.Stop()
+	resOpen := open.Allow("key:open")
+	assert.True(t, resOpen.Allowed, "fail-open должен пропускать при сбое Valkey")
+
+	// fail-closed: запрос отклоняется при сбое Redis (защита от брутфорса).
+	closed := middleware.NewValkeyRateLimiterFailClosed(client, time.Minute, 5)
+	defer closed.Stop()
+	resClosed := closed.Allow("key:closed")
+	assert.False(t, resClosed.Allowed, "fail-closed должен отклонять при сбое Valkey")
+	assert.Zero(t, resClosed.Remaining)
 }

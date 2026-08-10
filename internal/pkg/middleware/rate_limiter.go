@@ -157,6 +157,12 @@ type valkeyStore struct {
 	client *redis.Client
 	window time.Duration
 	limit  int
+	// failClosed (S-46-1, pass 46): при недоступности Valkey отклонять запросы
+	// (Allows=false → 429), а не пропускать. Используется для критичных лимитеров
+	// (логин, регистрация, 2FA, коды, сброс пароля), где fail-open отключает
+	// защиту от брутфорса при outage кэша. Глобальный/API-лимитеры остаются
+	// fail-open — их задача защищать от флуда, а не от подбора учётных данных.
+	failClosed bool
 }
 
 func newValkeyStore(client *redis.Client, window time.Duration, limit int) *valkeyStore {
@@ -175,6 +181,13 @@ func (s *valkeyStore) Allow(key string) RateLimitResult {
 
 	result, err := rateLimitLua.Run(ctx, s.client, []string{key}, s.limit, windowSec).Result()
 	if err != nil {
+		if s.failClosed {
+			// S-46-1 (pass 46): fail-closed — при сбое Valkey блокируем запрос.
+			// Осознанный trade-off для критичных лимитеров: outage кэша временно
+			// отключает вход/регистрацию, но не открывает брутфорс без лимита.
+			log.Error().Err(err).Str("key", key).Msg("valkey: Allow check failed, rejecting request (fail-closed)")
+			return RateLimitResult{Allowed: false, Limit: s.limit, Remaining: 0, ResetUnix: resetUnix}
+		}
 		// P3: fail-open при сбое Valkey. Если Redis недоступен, каждый запрос
 		// получал 429 (все лимитеры — глобальный, логин, API — держатся на нём),
 		// т.е. outage кэша превращался в полный outage сайта. Доступность
@@ -185,6 +198,10 @@ func (s *valkeyStore) Allow(key string) RateLimitResult {
 
 	vals, ok := result.([]any)
 	if !ok || len(vals) < 3 {
+		if s.failClosed {
+			log.Error().Str("key", key).Interface("result", result).Msg("valkey: unexpected script result, rejecting request (fail-closed)")
+			return RateLimitResult{Allowed: false, Limit: s.limit, Remaining: 0, ResetUnix: resetUnix}
+		}
 		log.Error().Str("key", key).Interface("result", result).Msg("valkey: unexpected script result, allowing request (fail-open)")
 		return RateLimitResult{Allowed: true, Limit: s.limit, Remaining: s.limit, ResetUnix: resetUnix}
 	}
@@ -215,6 +232,13 @@ func NewRateLimiter(window time.Duration, limit int) *RateLimiter {
 
 func NewValkeyRateLimiter(client *redis.Client, window time.Duration, limit int) *RateLimiter {
 	return &RateLimiter{store: newValkeyStore(client, window, limit)}
+}
+
+// NewValkeyRateLimiterFailClosed создаёт Valkey-лимитер с fail-closed поведением:
+// при недоступности Valkey запросы отклоняются (S-46-1, pass 46). Используется
+// для критичных лимитеров (логин, регистрация, 2FA, коды, сброс пароля).
+func NewValkeyRateLimiterFailClosed(client *redis.Client, window time.Duration, limit int) *RateLimiter {
+	return &RateLimiter{store: &valkeyStore{client: client, window: window, limit: limit, failClosed: true}}
 }
 
 func (rl *RateLimiter) Allow(key string) RateLimitResult {
@@ -303,6 +327,11 @@ func InitLoginRateLimiterWithValkey(client *redis.Client, window time.Duration, 
 	loginRateLimiter = NewValkeyRateLimiter(client, window, limit)
 }
 
+// InitLoginRateLimiterWithValkeyFailClosed — login с fail-closed поведением (S-46-1).
+func InitLoginRateLimiterWithValkeyFailClosed(client *redis.Client, window time.Duration, limit int) {
+	loginRateLimiter = NewValkeyRateLimiterFailClosed(client, window, limit)
+}
+
 func StopLoginRateLimiter() {
 	if loginRateLimiter != nil {
 		loginRateLimiter.Stop()
@@ -358,6 +387,11 @@ func InitOAuthRateLimiterWithValkey(client *redis.Client, window time.Duration, 
 	oauthRateLimiter = NewValkeyRateLimiter(client, window, limit)
 }
 
+// InitOAuthRateLimiterWithValkeyFailClosed — OAuth redirect/callback с fail-closed (S-46-1).
+func InitOAuthRateLimiterWithValkeyFailClosed(client *redis.Client, window time.Duration, limit int) {
+	oauthRateLimiter = NewValkeyRateLimiterFailClosed(client, window, limit)
+}
+
 func StopOAuthRateLimiter() {
 	if oauthRateLimiter != nil {
 		oauthRateLimiter.Stop()
@@ -372,6 +406,11 @@ func InitRegistrationRateLimiter(window time.Duration, limit int) {
 
 func InitRegistrationRateLimiterWithValkey(client *redis.Client, window time.Duration, limit int) {
 	registrationRateLimiter = NewValkeyRateLimiter(client, window, limit)
+}
+
+// InitRegistrationRateLimiterWithValkeyFailClosed — регистрация с fail-closed (S-46-1).
+func InitRegistrationRateLimiterWithValkeyFailClosed(client *redis.Client, window time.Duration, limit int) {
+	registrationRateLimiter = NewValkeyRateLimiterFailClosed(client, window, limit)
 }
 
 func StopRegistrationRateLimiter() {
@@ -405,6 +444,11 @@ func InitCodeSubmissionRateLimiter(window time.Duration, limit int) {
 
 func InitCodeSubmissionRateLimiterWithValkey(client *redis.Client, window time.Duration, limit int) {
 	codeSubmissionRateLimiter = NewValkeyRateLimiter(client, window, limit)
+}
+
+// InitCodeSubmissionRateLimiterWithValkeyFailClosed — ввод кодов с fail-closed (S-46-1).
+func InitCodeSubmissionRateLimiterWithValkeyFailClosed(client *redis.Client, window time.Duration, limit int) {
+	codeSubmissionRateLimiter = NewValkeyRateLimiterFailClosed(client, window, limit)
 }
 
 func StopCodeSubmissionRateLimiter() {
@@ -476,6 +520,11 @@ func InitPasswordResetRateLimiter(window time.Duration, limit int) {
 
 func InitPasswordResetRateLimiterWithValkey(client *redis.Client, window time.Duration, limit int) {
 	passwordResetRateLimiter = NewValkeyRateLimiter(client, window, limit)
+}
+
+// InitPasswordResetRateLimiterWithValkeyFailClosed — сброс пароля с fail-closed (S-46-1).
+func InitPasswordResetRateLimiterWithValkeyFailClosed(client *redis.Client, window time.Duration, limit int) {
+	passwordResetRateLimiter = NewValkeyRateLimiterFailClosed(client, window, limit)
 }
 
 func StopPasswordResetRateLimiter() {

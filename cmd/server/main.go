@@ -220,14 +220,19 @@ func run() error {
 		valkeyClient := cache.NewValkeyClient(cfg.Valkey.Host, cfg.Valkey.Port, cfg.Valkey.Password, cfg.Valkey.PoolSize, cfg.Valkey.MinIdleConns, cfg.Valkey.MaxRetries)
 		if valkeyClient != nil {
 			useValkey = true
+			// Глобальный/SSE/API — fail-open: при outage Valkey сайт остаётся доступен
+			// (их задача — защита от флуда, а не от подбора учётных данных).
 			middleware.InitGlobalRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitGlobalRequests)
-			middleware.InitLoginRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitLoginRequests)
-			middleware.InitRegistrationRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitRegistration)
-			middleware.InitCodeSubmissionRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitCodeSubmission)
 			middleware.InitSSERateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitSSE)
 			middleware.InitAPIRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitAPI)
-			middleware.InitPasswordResetRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitPasswordReset)
-			middleware.InitOAuthRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitLoginRequests)
+			// Критичные лимитеры (логин, регистрация, 2FA/коды, сброс пароля, OAuth) —
+			// fail-closed (S-46-1, pass 46): при outage Valkey запросы отклоняются,
+			// иначе брутфорс-защита отключается вместе с кэшем.
+			middleware.InitLoginRateLimiterWithValkeyFailClosed(valkeyClient, rateLimitWindow, cfg.Server.RateLimitLoginRequests)
+			middleware.InitRegistrationRateLimiterWithValkeyFailClosed(valkeyClient, rateLimitWindow, cfg.Server.RateLimitRegistration)
+			middleware.InitCodeSubmissionRateLimiterWithValkeyFailClosed(valkeyClient, rateLimitWindow, cfg.Server.RateLimitCodeSubmission)
+			middleware.InitPasswordResetRateLimiterWithValkeyFailClosed(valkeyClient, rateLimitWindow, cfg.Server.RateLimitPasswordReset)
+			middleware.InitOAuthRateLimiterWithValkeyFailClosed(valkeyClient, rateLimitWindow, cfg.Server.RateLimitLoginRequests)
 		} else {
 			log.Warn().Msg("Valkey configured but unavailable, falling back to in-memory rate limiters")
 		}
