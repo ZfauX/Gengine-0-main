@@ -1124,6 +1124,8 @@ var enMessages = map[string]string{
 
 	// ── Teams ──
 	"teams.my_title":         "My teams",
+	"teams.all_title":        "Teams",
+	"teams.you_captain":      "You are captain",
 	"teams.create_title":     "New team",
 	"teams.create_button":    "+ Create new team",
 	"teams.name_label":       "Team name",

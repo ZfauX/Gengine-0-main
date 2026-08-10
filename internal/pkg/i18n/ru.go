@@ -1126,6 +1126,8 @@ var ruMessages = map[string]string{
 
 	// ── Teams ──
 	"teams.my_title":         "Мои команды",
+	"teams.all_title":        "Команды",
+	"teams.you_captain":      "Вы капитан",
 	"teams.create_title":     "Новая команда",
 	"teams.create_button":    "+ Создать новую команду",
 	"teams.name_label":       "Название команды",

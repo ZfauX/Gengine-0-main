@@ -40,6 +40,9 @@ type TeamRepository interface {
 	GetByIDWithMembers(ctx context.Context, id uint) (*Team, error)
 	GetByCaptainID(ctx context.Context, captainID uint) ([]Team, error)
 	GetTeamsByUserID(ctx context.Context, userID uint) ([]Team, error)
+	// ListAllTeams возвращает ВСЕ активные команды (для вкладки «Команды» —
+	// пользователь видит все доступные команды, не только свои).
+	ListAllTeams(ctx context.Context) ([]Team, error)
 	Update(ctx context.Context, team *Team) error
 	Delete(ctx context.Context, id uint) error
 	Count(ctx context.Context) (int64, error)
@@ -134,6 +137,19 @@ func (r *gormTeamRepo) GetTeamsByUserID(ctx context.Context, userID uint) ([]Tea
 		Scan(&teams).Error
 	return teams, err
 }
+
+// ListAllTeams возвращает все активные команды (с капитаном для отображения).
+func (r *gormTeamRepo) ListAllTeams(ctx context.Context) ([]Team, error) {
+	var teams []Team
+	err := r.db.WithContext(ctx).
+		Preload("Captain", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id, name, avatar_path")
+		}).
+		Order("created_at DESC").
+		Find(&teams).Error
+	return teams, err
+}
+
 func (r *gormTeamRepo) Update(ctx context.Context, team *Team) error {
 	return r.db.WithContext(ctx).Save(team).Error
 }

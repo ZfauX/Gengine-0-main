@@ -72,9 +72,8 @@ func NewTeamHandler(teamService *TeamService, st storage.FileStorage) *TeamHandl
 	}
 }
 
-// MyTeams отображает список команд текущего пользователя (капитанство + участие).
-// MyTeams отображает список команд текущего пользователя.
-// @Summary Список моих команд
+// MyTeams отображает список ВСЕХ доступных команд (не только своих).
+// @Summary Список команд
 // @Tags teams
 // @Produce html
 // @Success 200 {string} html "Список команд"
@@ -83,7 +82,7 @@ func NewTeamHandler(teamService *TeamService, st storage.FileStorage) *TeamHandl
 // @Security JWT
 func (h *TeamHandler) MyTeams(c *gin.Context) {
 	userID := c.GetUint("userID")
-	teams, err := h.teamService.GetMyTeams(c.Request.Context(), userID)
+	teams, err := h.teamService.GetAllTeams(c.Request.Context())
 	if err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Msg("MyTeams: failed to get teams")
 		render.RenderErrorPage(c, http.StatusInternalServerError)
@@ -93,7 +92,7 @@ func (h *TeamHandler) MyTeams(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "teams-my.html", gin.H{
-		"Title":         "Мои команды",
+		"Title":         "Команды",
 		"Teams":         teams,
 		"CurrentUserID": userID,
 		"IsAdmin":       isAdmin,

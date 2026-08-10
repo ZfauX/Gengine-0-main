@@ -75,6 +75,11 @@ func (s *TeamService) GetMyTeams(ctx context.Context, userID uint) ([]Team, erro
 	return s.teamRepo.GetTeamsByUserID(ctx, userID)
 }
 
+// GetAllTeams возвращает все доступные команды (вкладка «Команды»).
+func (s *TeamService) GetAllTeams(ctx context.Context) ([]Team, error) {
+	return s.teamRepo.ListAllTeams(ctx)
+}
+
 // SearchUsersForInvitation ищет пользователей для приглашения (без уже состоящих в команде).
 func (s *TeamService) SearchUsersForInvitation(ctx context.Context, query string, teamID uint) ([]struct {
 	ID   uint
