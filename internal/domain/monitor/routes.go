@@ -111,6 +111,13 @@ func RegisterRoutes(
 	protected.GET("/chat/global", monitorHandler.GlobalChatPage)
 	protected.GET("/chat/global/room", monitorHandler.GlobalChatRoomID)
 
+	// B-4 (pass 45): комнаты игры — список и создание (менеджер).
+	protected.GET("/games/:id/chat/rooms", monitorHandler.GameRooms)
+	protected.POST("/games/:id/chat/rooms", monitorHandler.CreateRoom)
+
+	// B-7 (pass 45): личный чат 1-на-1.
+	protected.GET("/chat/personal/:user_id", monitorHandler.PersonalChat)
+
 	// @Summary ID комнат чата
 	// @Description Возвращает ID общей и командной комнат чата для игры (для инициализации WebSocket)
 	// @Tags monitor

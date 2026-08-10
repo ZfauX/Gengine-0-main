@@ -1,5 +1,5 @@
 {{define "chat-page.html"}}
-<div class="max-w-4xl mx-auto" data-game-id="{{.GameID}}" data-user-id="{{.UserID}}" data-user-name="{{.UserName}}" data-passing-id="{{.PassingID}}">
+<div class="max-w-4xl mx-auto" data-game-id="{{.GameID}}" data-user-id="{{.UserID}}" data-user-name="{{.UserName}}" data-passing-id="{{.PassingID}}" data-csrf="{{.csrf}}">
     <h1 class="page-title">{{ T $.Lang "gamechat.title" }}</h1>
 
     <div class="card">
@@ -9,7 +9,24 @@
             {{if .PassingID}}
             <button id="btn-team" class="btn btn-outline text-sm" aria-pressed="false">{{ T $.Lang "gamechat.team" }}</button>
             {{end}}
+            {{if .CanManage}}
+            <!-- B-4 (pass 45): создание комнат автором/соавтором -->
+            <button id="btn-create-room" type="button" class="btn btn-outline text-sm">{{ T $.Lang "gamechat.create_room" }}</button>
+            {{end}}
         </div>
+
+        <!-- B-4 (pass 45): форма создания комнаты -->
+        <div id="create-room-form" class="hidden mb-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+            <div class="flex flex-wrap gap-2">
+                <label for="new-room-name" class="sr-only">{{ T $.Lang "gamechat.room_name" }}</label>
+                <input type="text" id="new-room-name" placeholder="{{ T $.Lang "gamechat.room_name" }}"
+                       class="flex-1 min-w-[180px] rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-500 sm:text-sm px-3 py-2">
+                <button id="room-create-submit" type="button" class="btn btn-primary text-sm">{{ T $.Lang "gamechat.room_create" }}</button>
+            </div>
+        </div>
+
+        <!-- B-4 (pass 45): список дополнительных комнат -->
+        <div id="extra-rooms" class="flex flex-wrap gap-2 mb-2"></div>
 
         <!-- Область сообщений -->
         <div class="relative">
@@ -52,12 +69,14 @@
         const gameID = parseInt(container.dataset.gameId, 10);
         const userID = parseInt(container.dataset.userId, 10);
         const userName = container.dataset.userName || '{{ T $.Lang "common.you" }}';
+        const csrfToken = container.dataset.csrf || '';
         const passingID = container.dataset.passingId ? parseInt(container.dataset.passingId, 10) : null;
 
         let currentRoom = 'general';
-        let chat = null;
+        let activeRoomID = null;
         let generalRoomID = null;
         let teamRoomID = null;
+        let extraRooms = [];
         let roomsLoaded = false;
 
         const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -79,13 +98,14 @@
             }
         }
 
-        // Загружаем ID комнат
+        // Загружаем ID комнат + дополнительные комнаты (B-4)
         fetch('/games/' + gameID + '/chat-rooms')
             .then(r => r.json())
             .then(data => {
                 generalRoomID = data.general_room_id;
                 teamRoomID = data.team_room_id;
                 roomsLoaded = true;
+                activeRoomID = generalRoomID;
                 if (btnGeneral) btnGeneral.className = 'btn btn-primary text-sm';
                 connect();
             })
@@ -94,9 +114,73 @@
                 updateConnectionStatus('{{ T $.Lang "gamechat.load_error" }}', '#e74c3c');
             });
 
+        // B-4 (pass 45): загружаем дополнительные комнаты игры и рисуем кнопки.
+        const extraRoomsEl = document.getElementById('extra-rooms');
+        const btnCreateRoom = document.getElementById('btn-create-room');
+        const createRoomForm = document.getElementById('create-room-form');
+        const newRoomName = document.getElementById('new-room-name');
+        const roomCreateSubmit = document.getElementById('room-create-submit');
+
+        function loadExtraRooms() {
+            fetch('/games/' + gameID + '/chat/rooms')
+                .then(r => { if (!r.ok) return null; return r.json(); })
+                .then(data => {
+                    if (!data) return;
+                    extraRoomsEl.innerHTML = '';
+                    const all = data.rooms || [];
+                    // Все, кроме системной общей (game_id с room_type general создаётся системно).
+                    extraRooms = all.filter(r => r.room_type !== 'game_general' || r.id !== generalRoomID);
+                    extraRooms.forEach(function(room) {
+                        const btn = document.createElement('button');
+                        btn.type = 'button';
+                        btn.className = 'btn btn-outline text-sm';
+                        btn.textContent = '#' + room.name + ' (' + room.id + ')';
+                        btn.addEventListener('click', function() {
+                            activeRoomID = room.id;
+                            currentRoom = 'custom';
+                            connect();
+                            // Обновляем подсветку кнопок.
+                            btnGeneral.className = 'btn btn-outline text-sm';
+                            if (btnTeam) btnTeam.className = 'btn btn-outline text-sm';
+                            btn.className = 'btn btn-primary text-sm';
+                        });
+                        extraRoomsEl.appendChild(btn);
+                    });
+                })
+                .catch(err => console.error('Chat: error loading extra rooms:', err));
+        }
+        loadExtraRooms();
+
+        if (btnCreateRoom) {
+            btnCreateRoom.addEventListener('click', function() {
+                createRoomForm.classList.toggle('hidden');
+                if (!createRoomForm.classList.contains('hidden')) newRoomName.focus();
+            });
+        }
+        if (roomCreateSubmit) {
+            roomCreateSubmit.addEventListener('click', function() {
+                const name = newRoomName.value.trim();
+                if (!name) return;
+                const formData = new FormData();
+                formData.append('name', name);
+                fetch('/games/' + gameID + '/chat/rooms', {
+                    method: 'POST',
+                    body: formData,
+                    headers: { 'X-CSRF-Token': csrfToken }
+                })
+                .then(r => {
+                    if (!r.ok) throw new Error('create room failed');
+                    newRoomName.value = '';
+                    createRoomForm.classList.add('hidden');
+                    loadExtraRooms();
+                })
+                .catch(err => console.error('Chat: create room error:', err));
+            });
+        }
+
         function connect() {
             if (!roomsLoaded) return;
-            const room = currentRoom === 'general' ? generalRoomID : teamRoomID;
+            const room = activeRoomID;
             if (!room) {
                 updateConnectionStatus('{{ T $.Lang "gamechat.room_error" }}', '#e74c3c');
                 return;
@@ -241,9 +325,11 @@
         btnGeneral.addEventListener('click', function() {
             if (currentRoom === 'general') return;
             currentRoom = 'general';
+            activeRoomID = generalRoomID;
             btnGeneral.className = 'btn btn-primary text-sm';
             btnGeneral.setAttribute('aria-pressed', 'true');
             if (btnTeam) { btnTeam.className = 'btn btn-outline text-sm'; btnTeam.setAttribute('aria-pressed', 'false'); }
+            resetExtraButtons();
             connect();
         });
 
@@ -251,12 +337,19 @@
             btnTeam.addEventListener('click', function() {
                 if (currentRoom === 'team') return;
                 currentRoom = 'team';
+                activeRoomID = teamRoomID;
                 btnTeam.className = 'btn btn-primary text-sm';
                 btnTeam.setAttribute('aria-pressed', 'true');
                 btnGeneral.className = 'btn btn-outline text-sm';
                 btnGeneral.setAttribute('aria-pressed', 'false');
+                resetExtraButtons();
                 connect();
             });
+        }
+
+        function resetExtraButtons() {
+            const btns = extraRoomsEl.querySelectorAll('button');
+            btns.forEach(b => b.className = 'btn btn-outline text-sm');
         }
 
         // Отправка сообщения с оптимистичным отображением (C2):
@@ -273,7 +366,7 @@
                 updateConnectionStatus('{{ T $.Lang "gamechat.connection_error" }}', '#e74c3c');
                 return;
             }
-            const room = currentRoom === 'general' ? generalRoomID : teamRoomID;
+            const room = activeRoomID;
             chat.send(JSON.stringify({
                 type: 'message',
                 room_id: room || 0,

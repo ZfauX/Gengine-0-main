@@ -28,6 +28,11 @@ type ChatRepository interface {
 	// B-1/B-5 (pass 45): членство в комнате.
 	AddRoomMember(ctx context.Context, roomID, userID uint, canRead, canWrite, canAttach bool) error
 	GetRoomMember(ctx context.Context, roomID, userID uint) (*ChatRoomMember, error)
+	// B-4 (pass 45): создание произвольных комнат автором/соавтором + список комнат игры.
+	CreateRoom(ctx context.Context, room *ChatRoom) error
+	ListRoomsByGame(ctx context.Context, gameID uint) ([]ChatRoom, error)
+	// B-7 (pass 45): личный чат 1-на-1.
+	GetOrCreatePersonalRoom(ctx context.Context, userA, userB uint) (*ChatRoom, error)
 }
 
 // BlackboxRepository определяет контракт для работы с голосованиями.
@@ -258,6 +263,54 @@ func (r *gormChatRepo) GetRoomMember(ctx context.Context, roomID, userID uint) (
 		return nil, err
 	}
 	return &m, nil
+}
+
+// CreateRoom создаёт произвольную комнату игры (B-4, pass 45).
+func (r *gormChatRepo) CreateRoom(ctx context.Context, room *ChatRoom) error {
+	return r.db.WithContext(ctx).Create(room).Error
+}
+
+// ListRoomsByGame возвращает все комнаты игры (кроме системных командных).
+func (r *gormChatRepo) ListRoomsByGame(ctx context.Context, gameID uint) ([]ChatRoom, error) {
+	var rooms []ChatRoom
+	err := r.db.WithContext(ctx).
+		Where("game_id = ? AND team_id IS NULL", gameID).
+		Order("created_at ASC").
+		Find(&rooms).Error
+	return rooms, err
+}
+
+// GetOrCreatePersonalRoom возвращает/создаёт личный чат 1-на-1 (B-7, pass 45).
+// Пара userA<userB нормализуется — комната уникальна независимо от порядка.
+func (r *gormChatRepo) GetOrCreatePersonalRoom(ctx context.Context, userA, userB uint) (*ChatRoom, error) {
+	if userA > userB {
+		userA, userB = userB, userA
+	}
+	var room ChatRoom
+	err := r.db.WithContext(ctx).
+		Where("room_type = ? AND user1_id = ? AND user2_id = ?", RoomTypePersonal, userA, userB).
+		First(&room).Error
+	if err == nil {
+		return &room, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	room = ChatRoom{
+		Name:     "Личный чат",
+		RoomType: RoomTypePersonal,
+		User1ID:  &userA,
+		User2ID:  &userB,
+	}
+	if createErr := r.db.WithContext(ctx).Create(&room).Error; createErr != nil {
+		if err := r.db.WithContext(ctx).
+			Where("room_type = ? AND user1_id = ? AND user2_id = ?", RoomTypePersonal, userA, userB).
+			First(&room).Error; err != nil {
+			return nil, fmt.Errorf("failed to get or create personal chat room: %w", err)
+		}
+		return &room, nil
+	}
+	return &room, nil
 }
 
 type gormBlackboxRepo struct{ db *gorm.DB }

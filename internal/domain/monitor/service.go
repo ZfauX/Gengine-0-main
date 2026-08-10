@@ -376,6 +376,21 @@ func (s *ChatService) GetRoomMember(ctx context.Context, roomID, userID uint) (*
 	return s.chatRepo.GetRoomMember(ctx, roomID, userID)
 }
 
+// CreateRoom создаёт произвольную комнату игры (B-4, pass 45).
+func (s *ChatService) CreateRoom(ctx context.Context, room *ChatRoom) error {
+	return s.chatRepo.CreateRoom(ctx, room)
+}
+
+// ListRoomsByGame возвращает комнаты игры (B-4).
+func (s *ChatService) ListRoomsByGame(ctx context.Context, gameID uint) ([]ChatRoom, error) {
+	return s.chatRepo.ListRoomsByGame(ctx, gameID)
+}
+
+// GetOrCreatePersonalRoom возвращает/создаёт личный чат 1-на-1 (B-7).
+func (s *ChatService) GetOrCreatePersonalRoom(ctx context.Context, userA, userB uint) (*ChatRoom, error) {
+	return s.chatRepo.GetOrCreatePersonalRoom(ctx, userA, userB)
+}
+
 func (s *ChatService) SaveMessage(ctx context.Context, roomID, userID uint, content string) (*ChatMessage, error) {
 	return s.chatRepo.SaveMessage(ctx, roomID, userID, content)
 }

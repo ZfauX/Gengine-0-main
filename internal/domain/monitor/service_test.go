@@ -560,3 +560,70 @@ func createLevelProgress(t *testing.T, db *gorm.DB, passingID, levelID uint, fin
 	require.NoError(t, db.Create(p).Error)
 	return p
 }
+
+// B-4 (pass 45): создание произвольной комнаты игры.
+func TestChatService_CreateGameRoom_Extra(t *testing.T) {
+	db := testutil.SetupPostgresDB(t,
+		&monitor.ChatRoom{}, &monitor.ChatMessage{}, &monitor.ChatRoomMember{},
+		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
+		&game.LevelProgress{}, &game.Attempt{},
+		&monitor.BlackboxVotingSession{}, &monitor.BlackboxVote{},
+		&game.Log{},
+		&level.Level{},
+		&team.Team{},
+		&user.User{},
+	)
+	chatRepo := monitor.NewGormChatRepo(db)
+	cs := monitor.NewChatService(chatRepo)
+
+	author := createUser(t, db, "rooms@test.com", "pass")
+	g := createGame(t, db, author.ID, "Rooms Game")
+
+	gameID := g.ID
+	ownerID := author.ID
+	room := &monitor.ChatRoom{GameID: &gameID, Name: "Флудилка", RoomType: monitor.RoomTypeGameGeneral, OwnerID: &ownerID}
+	require.NoError(t, cs.CreateRoom(context.Background(), room))
+	assert.NotZero(t, room.ID)
+
+	rooms, err := cs.ListRoomsByGame(context.Background(), g.ID)
+	require.NoError(t, err)
+	assert.NotEmpty(t, rooms)
+	found := false
+	for _, r := range rooms {
+		if r.ID == room.ID {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "created room should be in ListRoomsByGame")
+}
+
+// B-7 (pass 45): личный чат 1-на-1 — идемпотентность, порядок не важен.
+func TestChatService_PersonalRoom(t *testing.T) {
+	db := testutil.SetupPostgresDB(t,
+		&monitor.ChatRoom{}, &monitor.ChatMessage{}, &monitor.ChatRoomMember{},
+		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
+		&game.LevelProgress{}, &game.Attempt{},
+		&monitor.BlackboxVotingSession{}, &monitor.BlackboxVote{},
+		&game.Log{},
+		&level.Level{},
+		&team.Team{},
+		&user.User{},
+	)
+	chatRepo := monitor.NewGormChatRepo(db)
+	cs := monitor.NewChatService(chatRepo)
+
+	u1 := createUser(t, db, "p1@test.com", "pass")
+	u2 := createUser(t, db, "p2@test.com", "pass")
+
+	room, err := cs.GetOrCreatePersonalRoom(context.Background(), u1.ID, u2.ID)
+	require.NoError(t, err)
+	assert.Equal(t, monitor.RoomTypePersonal, room.RoomType)
+	require.NotNil(t, room.User1ID)
+	require.NotNil(t, room.User2ID)
+
+	// Порядок не важен — та же комната.
+	room2, err := cs.GetOrCreatePersonalRoom(context.Background(), u2.ID, u1.ID)
+	require.NoError(t, err)
+	assert.Equal(t, room.ID, room2.ID)
+}

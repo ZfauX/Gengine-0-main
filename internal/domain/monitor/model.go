@@ -36,7 +36,10 @@ type ChatRoom struct {
 	// B-1 (pass 45): тип комнаты (game_general/game_captains/team_general/...)
 	RoomType string `gorm:"default:'game_general';index:idx_chat_rooms_type"`
 	// B-1 (pass 45): владелец комнаты (автор игры/команды или создатель личной).
-	OwnerID  *uint            `gorm:"index:idx_chat_rooms_owner"`
+	OwnerID *uint `gorm:"index:idx_chat_rooms_owner"`
+	// B-7 (pass 45): личный чат 1-на-1 (User1ID < User2ID).
+	User1ID  *uint            `gorm:"index:idx_chat_rooms_users"`
+	User2ID  *uint            `gorm:"index:idx_chat_rooms_users"`
 	Messages []ChatMessage    `gorm:"foreignKey:RoomID"`
 	Members  []ChatRoomMember `gorm:"foreignKey:RoomID"`
 }

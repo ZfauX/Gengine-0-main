@@ -602,7 +602,15 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 	// (GameID+TeamID+PassingID), поэтому проверка GameID-first ловила и командные
 	// комнаты — проверка TeamID была мёртвым кодом, и участник команды A мог
 	// подключиться к чату команды B. Сначала проверяем членство в команде.
-	if chatRoom.TeamID != nil {
+	// B-7 (pass 45): личная комната — доступ только двум участникам.
+	if chatRoom.RoomType == RoomTypePersonal {
+		if chatRoom.User1ID == nil || chatRoom.User2ID == nil ||
+			(*chatRoom.User1ID != userID && *chatRoom.User2ID != userID) {
+			log.Warn().Uint("user_id", userID).Uint("room_id", uint(roomIDUint)).Msg("ChatWS: personal room denied")
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
+			return
+		}
+	} else if chatRoom.TeamID != nil {
 		// Проверка доступа к командному чату (участник или капитан).
 		ok, memberErr := h.chatService.IsTeamMemberOrCaptain(c.Request.Context(), *chatRoom.TeamID, userID)
 		if memberErr != nil {
@@ -911,6 +919,83 @@ func (h *MonitorHandler) GlobalChatRoomID(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"room_id": room.ID})
+}
+
+// GameRooms возвращает список комнат игры (B-4, pass 45).
+func (h *MonitorHandler) GameRooms(c *gin.Context) {
+	var req GameIDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
+		appErr := apperrors.BadRequest(render.Tr(c, "handler.invalid_game_id"))
+		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
+		return
+	}
+	rooms, err := h.chatService.ListRoomsByGame(c.Request.Context(), req.ID)
+	if err != nil {
+		appErr := apperrors.Wrap(err, "MonitorHandler")
+		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"rooms": rooms})
+}
+
+// CreateRoom создаёт произвольную комнату игры (B-4, pass 45).
+func (h *MonitorHandler) CreateRoom(c *gin.Context) {
+	var req GameIDRequest
+	if err := c.ShouldBindUri(&req); err != nil {
+		appErr := apperrors.BadRequest(render.Tr(c, "handler.invalid_game_id"))
+		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
+		return
+	}
+	userID := c.GetUint("userID")
+
+	// Права: только менеджер игры (автор/соавтор).
+	isMgr, mErr := h.coAuthorSvc.IsUserManager(c.Request.Context(), req.ID, userID)
+	if mErr != nil || !isMgr {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden"), "code": "forbidden"})
+		return
+	}
+
+	name := strings.TrimSpace(c.PostForm("name"))
+	if name == "" {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "имя комнаты обязательно", "code": "invalid_name"})
+		return
+	}
+	gameID := req.ID
+	ownerID := userID
+	room := &ChatRoom{
+		GameID:   &gameID,
+		Name:     name,
+		RoomType: RoomTypeGameGeneral,
+		OwnerID:  &ownerID,
+	}
+	if err := h.chatService.CreateRoom(c.Request.Context(), room); err != nil {
+		appErr := apperrors.Wrap(err, "MonitorHandler")
+		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"room_id": room.ID})
+}
+
+// PersonalChat открывает личный чат 1-на-1 (B-7, pass 45).
+func (h *MonitorHandler) PersonalChat(c *gin.Context) {
+	userID := c.GetUint("userID")
+	otherID, _ := strconv.Atoi(c.Param("user_id"))
+	if otherID <= 0 || uint(otherID) == userID {
+		render.RenderError(c, http.StatusBadRequest, "некорректный собеседник")
+		return
+	}
+	room, err := h.chatService.GetOrCreatePersonalRoom(c.Request.Context(), userID, uint(otherID))
+	if err != nil {
+		log.Error().Err(err).Int("other_id", otherID).Uint("user_id", userID).Msg("PersonalChat: failed to get/create room")
+		render.RenderErrorPage(c, http.StatusInternalServerError)
+		return
+	}
+	render.Page(c, http.StatusOK, "chat-global.html", gin.H{
+		"Title":         "Личный чат",
+		"RoomID":        room.ID,
+		"CurrentUserID": userID,
+		"csrf":          csrf.GetToken(c),
+	})
 }
 
 // ListLogs отображает HTML-страницу с историей логов игры.
