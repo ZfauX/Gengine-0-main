@@ -2,6 +2,13 @@
 <div class="max-w-7xl mx-auto" data-game-id="{{.GameID}}">
     <h1 class="page-title">{{ T $.Lang "monitor.page_title" }}</h1>
 
+    <!-- F-5 (pass 48): мобильный переключатель «Команды / Карта» — на маленьких
+         экранах карта и список не прокручиваются друг под другом, а переключаются. -->
+    <div class="flex gap-2 mb-4 md:hidden" role="tablist" aria-label="{{ T $.Lang "monitor.mobile_tabs" }}">
+        <button id="mob-tab-teams" type="button" role="tab" aria-selected="true" class="btn btn-primary text-sm">{{ T $.Lang "monitor.teams_tab" }}</button>
+        <button id="mob-tab-map" type="button" role="tab" aria-selected="false" class="btn btn-outline text-sm">{{ T $.Lang "monitor.map_tab" }}</button>
+    </div>
+
     <div class="card">
         <div id="teams-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <!-- C1: skeleton-заглушка — видна до первого снапшота (данные приходят
@@ -29,7 +36,7 @@
     </div>
 
     <!-- G-3 (pass 45): карта позиций водителей -->
-    <div class="card mt-6">
+    <div class="card mt-6" id="map-card">
         <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ T $.Lang "monitor.map_title" }}</h2>
         <div id="driver-map" class="w-full h-96 rounded-lg border border-gray-200 dark:border-gray-700 z-0"></div>
         <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">{{ T $.Lang "monitor.map_hint" }}</p>
@@ -381,6 +388,36 @@
 
         // Инициализация карты и первый замер.
         if (isLeafletReady) { initDriverMap(); loadLocations(); }
-        setInterval(function() { initDriverMap(); loadLocations(); }, 15000);    })();
+        setInterval(function() { initDriverMap(); loadLocations(); }, 15000);
+
+        // F-5 (pass 48): мобильный переключатель «Команды / Карта».
+        const mobTabTeams = document.getElementById('mob-tab-teams');
+        const mobTabMap = document.getElementById('mob-tab-map');
+        const mapCard = document.getElementById('map-card');
+        if (mobTabTeams && mobTabMap && mapCard) {
+            const teamsCard = teamsContainer.closest('.card') || teamsContainer.parentElement;
+            function setMobileView(showMap) {
+                if (showMap) {
+                    if (teamsCard) teamsCard.classList.add('hidden');
+                    mapCard.classList.remove('hidden');
+                    mobTabTeams.className = 'btn btn-outline text-sm';
+                    mobTabMap.className = 'btn btn-primary text-sm';
+                    mobTabTeams.setAttribute('aria-selected', 'false');
+                    mobTabMap.setAttribute('aria-selected', 'true');
+                    // Карта могла не успеть инициализироваться, пока блок был hidden.
+                    if (isLeafletReady) { initDriverMap(); loadLocations(); }
+                } else {
+                    if (teamsCard) teamsCard.classList.remove('hidden');
+                    mapCard.classList.add('hidden');
+                    mobTabTeams.className = 'btn btn-primary text-sm';
+                    mobTabMap.className = 'btn btn-outline text-sm';
+                    mobTabTeams.setAttribute('aria-selected', 'true');
+                    mobTabMap.setAttribute('aria-selected', 'false');
+                }
+            }
+            mobTabTeams.addEventListener('click', function() { setMobileView(false); });
+            mobTabMap.addEventListener('click', function() { setMobileView(true); });
+        }
+    })();
 </script>
 {{end}}

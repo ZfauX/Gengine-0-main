@@ -72,6 +72,20 @@ func (h *ProfileHandler) Show(c *gin.Context) {
 		log.Warn().Err(ndErr).Uint("user_id", userID).Msg("Show: failed to load notify days, using 0")
 		notifyDays = 0
 	}
+
+	// F-1 (pass 48): статистика (игры/победы/рейтинг) и последние игры — те же
+	// данные, что на публичном профиле, теперь доступны и в личном кабинете.
+	stats, statsErr := h.profileSvc.GetPublicProfileStats(c.Request.Context(), userID)
+	if statsErr != nil {
+		log.Warn().Err(statsErr).Uint("user_id", userID).Msg("Show: failed to load stats, using zero")
+		stats = &UserStats{}
+	}
+	recentGames, rgErr := h.profileSvc.GetRecentGames(c.Request.Context(), userID)
+	if rgErr != nil {
+		log.Warn().Err(rgErr).Uint("user_id", userID).Msg("Show: failed to load recent games")
+		recentGames = []RecentGame{}
+	}
+
 	render.Page(c, http.StatusOK, "profile-show.html", gin.H{
 		"Title":          "Профиль",
 		"User":           user.ToPublic(),
@@ -82,6 +96,8 @@ func (h *ProfileHandler) Show(c *gin.Context) {
 		"NotifyGameDays": notifyDays,
 		"CurrentUserID":  userID,
 		"ProfilePercent": completion,
+		"Stats":          stats,
+		"RecentGames":    recentGames,
 		"csrf":           csrf.GetToken(c),
 		"Breadcrumbs": []map[string]string{
 			{"name": "nav.home", "url": "/"},

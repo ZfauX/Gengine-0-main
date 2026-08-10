@@ -177,8 +177,10 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, service *Notificatio
 			} else if perPage > 100 {
 				perPage = 100
 			}
+			// F-4 (pass 48): фильтр «только непрочитанные».
+			onlyUnread := c.Query("unread") == "1"
 
-			notifications, total, err := service.GetByUser(c.Request.Context(), userID, page, perPage)
+			notifications, total, err := service.GetByUser(c.Request.Context(), userID, page, perPage, onlyUnread)
 			if err != nil {
 				log.Error().Err(err).Uint("user_id", userID).Msg("Failed to list notifications")
 				c.JSON(http.StatusInternalServerError, gin.H{"error": render.Tr(c, "handler.internal_error")})
@@ -205,7 +207,9 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, service *Notificatio
 				page = 1
 			}
 			perPage := 50
-			notifications, total, err := service.GetByUser(c.Request.Context(), userID, page, perPage)
+			// F-4 (pass 48): фильтр «только непрочитанные».
+			onlyUnread := c.Query("unread") == "1"
+			notifications, total, err := service.GetByUser(c.Request.Context(), userID, page, perPage, onlyUnread)
 			if err != nil {
 				log.Error().Err(err).Uint("user_id", userID).Msg("Failed to list notifications")
 				render.RenderErrorPage(c, http.StatusInternalServerError)
@@ -221,6 +225,7 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, service *Notificatio
 				"Total":         total,
 				"Page":          page,
 				"TotalPages":    totalPages,
+				"OnlyUnread":    onlyUnread, // F-4 (pass 48): состояние фильтра.
 				"CurrentUserID": userID,
 				"csrf":          csrf.GetToken(c),
 				"Breadcrumbs": []map[string]string{

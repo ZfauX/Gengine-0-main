@@ -24,7 +24,7 @@ type mockRepo struct {
 	upsertSettingsFn func(ctx context.Context, userID uint, settingsJSON string) error
 	createFn         func(ctx context.Context, n *Notification) error
 	countUnreadFn    func(ctx context.Context, userID uint) (int64, error)
-	listFn           func(ctx context.Context, userID uint, offset, limit int) ([]Notification, int64, error)
+	listFn           func(ctx context.Context, userID uint, offset, limit int, onlyUnread bool) ([]Notification, int64, error)
 	markAsReadFn     func(ctx context.Context, userID, notificationID uint) (bool, error)
 	markAllAsReadFn  func(ctx context.Context, userID uint) error
 	subsFn           func(ctx context.Context, userID uint) ([]user.PushSubscription, error)
@@ -61,9 +61,9 @@ func (m *mockRepo) CountUnread(ctx context.Context, userID uint) (int64, error) 
 	return 0, nil
 }
 
-func (m *mockRepo) ListByUser(ctx context.Context, userID uint, offset, limit int) ([]Notification, int64, error) {
+func (m *mockRepo) ListByUser(ctx context.Context, userID uint, offset, limit int, onlyUnread bool) ([]Notification, int64, error) {
 	if m.listFn != nil {
-		return m.listFn(ctx, userID, offset, limit)
+		return m.listFn(ctx, userID, offset, limit, onlyUnread)
 	}
 	return nil, 0, nil
 }
@@ -328,7 +328,7 @@ func TestCreate_DBError(t *testing.T) {
 func TestGetByUser_DefaultPagination(t *testing.T) {
 	svc := &NotificationService{
 		repo: &mockRepo{
-			listFn: func(_ context.Context, _ uint, offset, limit int) ([]Notification, int64, error) {
+			listFn: func(_ context.Context, _ uint, offset, limit int, _ bool) ([]Notification, int64, error) {
 				// page=1, perPage=0 → дефолты page=1, perPage=20 → offset=0, limit=20.
 				assert.Equal(t, 0, offset)
 				assert.Equal(t, 20, limit)
@@ -337,7 +337,7 @@ func TestGetByUser_DefaultPagination(t *testing.T) {
 		},
 	}
 
-	notifs, total, err := svc.GetByUser(context.Background(), 7, 0, 0)
+	notifs, total, err := svc.GetByUser(context.Background(), 7, 0, 0, false)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), total)
 	assert.Len(t, notifs, 1)
@@ -347,7 +347,7 @@ func TestGetByUser_DefaultPagination(t *testing.T) {
 func TestGetByUser_Paginated(t *testing.T) {
 	svc := &NotificationService{
 		repo: &mockRepo{
-			listFn: func(_ context.Context, _ uint, offset, limit int) ([]Notification, int64, error) {
+			listFn: func(_ context.Context, _ uint, offset, limit int, _ bool) ([]Notification, int64, error) {
 				// page=3, perPage=10 → offset=20, limit=10.
 				assert.Equal(t, 20, offset)
 				assert.Equal(t, 10, limit)
@@ -356,7 +356,7 @@ func TestGetByUser_Paginated(t *testing.T) {
 		},
 	}
 
-	notifs, total, err := svc.GetByUser(context.Background(), 7, 3, 10)
+	notifs, total, err := svc.GetByUser(context.Background(), 7, 3, 10, false)
 	require.NoError(t, err)
 	assert.Equal(t, int64(25), total)
 	assert.Empty(t, notifs)
@@ -454,4 +454,22 @@ func TestSendTimeExpired(t *testing.T) {
 	err := svc.SendTimeExpired(context.Background(), 1, 42)
 	assert.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// F-4 (pass 48): фильтр «только непрочитанные» пробрасывается в репозиторий.
+func TestGetByUser_OnlyUnread(t *testing.T) {
+	svc := &NotificationService{
+		repo: &mockRepo{
+			listFn: func(_ context.Context, _ uint, offset, limit int, onlyUnread bool) ([]Notification, int64, error) {
+				assert.True(t, onlyUnread, "onlyUnread должен доходить до репозитория")
+				return []Notification{{ID: 9, Read: false}}, 1, nil
+			},
+		},
+	}
+
+	notifs, total, err := svc.GetByUser(context.Background(), 7, 1, 20, true)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	assert.Len(t, notifs, 1)
+	assert.False(t, notifs[0].Read)
 }

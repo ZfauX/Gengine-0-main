@@ -23,7 +23,7 @@ type NotificationRepository interface {
 	// Notifications
 	CreateNotification(ctx context.Context, n *Notification) error
 	CountUnread(ctx context.Context, userID uint) (int64, error)
-	ListByUser(ctx context.Context, userID uint, offset, limit int) ([]Notification, int64, error)
+	ListByUser(ctx context.Context, userID uint, offset, limit int, onlyUnread bool) ([]Notification, int64, error)
 	MarkAsRead(ctx context.Context, userID, notificationID uint) (bool, error)
 	MarkAllAsRead(ctx context.Context, userID uint) error
 	// DeleteOldRead удаляет прочитанные уведомления старше cutoff (P-2, pass 33:
@@ -79,18 +79,22 @@ func (r *gormNotificationRepo) CountUnread(ctx context.Context, userID uint) (in
 	return count, err
 }
 
-func (r *gormNotificationRepo) ListByUser(ctx context.Context, userID uint, offset, limit int) ([]Notification, int64, error) {
+func (r *gormNotificationRepo) ListByUser(ctx context.Context, userID uint, offset, limit int, onlyUnread bool) ([]Notification, int64, error) {
 	// F-7 (pass 31): COUNT(*) OVER() — total в том же запросе, без отдельного COUNT.
+	// F-4 (pass 48): фильтр «только непрочитанные».
 	type notificationRow struct {
 		Notification
 		TotalCount int64
 	}
 	var rows []notificationRow
-	err := r.db.WithContext(ctx).
+	q := r.db.WithContext(ctx).
 		Select("notifications.*, COUNT(*) OVER() AS total_count").
 		Model(&Notification{}).
-		Where("user_id = ?", userID).
-		Order("created_at DESC").
+		Where("user_id = ?", userID)
+	if onlyUnread {
+		q = q.Where("read = ?", false)
+	}
+	err := q.Order("created_at DESC").
 		Offset(offset).Limit(limit).
 		Scan(&rows).Error
 	if err != nil {

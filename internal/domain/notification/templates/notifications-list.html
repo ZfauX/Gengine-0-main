@@ -2,6 +2,14 @@
 <div class="max-w-4xl mx-auto">
     <h1 class="page-title">{{ T $.Lang "notif.list_title" }}</h1>
 
+    <!-- F-4 (pass 48): фильтр «Все / Непрочитанные» -->
+    <div class="flex gap-2 mb-4" role="tablist" aria-label="{{ T $.Lang "notif.filter_label" }}">
+        <a href="/notifications" role="tab" aria-selected="{{if not .OnlyUnread}}true{{else}}false{{end}}"
+           class="btn {{if not .OnlyUnread}}btn-primary{{else}}btn-outline{{end}} text-sm">{{ T $.Lang "notif.filter_all" }}</a>
+        <a href="/notifications?unread=1" role="tab" aria-selected="{{if .OnlyUnread}}true{{else}}false{{end}}"
+           class="btn {{if .OnlyUnread}}btn-primary{{else}}btn-outline{{end}} text-sm">{{ T $.Lang "notif.filter_unread" }}</a>
+    </div>
+
     {{if .Notifications}}
     <div class="card overflow-x-auto">
         <ul class="divide-y divide-gray-200 dark:divide-gray-700">

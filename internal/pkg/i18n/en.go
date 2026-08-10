@@ -670,6 +670,7 @@ var enMessages = map[string]string{
 	// ── Profile Public ──
 	"profile.public_title":         "User profile",
 	"profile.games_created":        "games created",
+	"profile.my_stats":             "My stats",
 	"profile.games_played":         "games played",
 	"profile.wins":                 "wins",
 	"profile.rating":               "rating",
@@ -1261,6 +1262,9 @@ var enMessages = map[string]string{
 
 	// ── Monitor ──
 	"monitor.page_title":         "Game monitor (real-time updates)",
+	"monitor.mobile_tabs":        "Monitor view",
+	"monitor.teams_tab":          "Teams",
+	"monitor.map_tab":            "Map",
 	"monitor.map_title":          "Player positions",
 	"monitor.map_hint":           "Markers refresh every 15 seconds (fresh driver positions only).",
 	"monitor.connected":          "Connected (real-time)",
@@ -1415,6 +1419,9 @@ var enMessages = map[string]string{
 
 	// ── Notifications List ──
 	"notif.list_title":          "Notifications",
+	"notif.filter_label":        "Notification filter",
+	"notif.filter_all":          "All",
+	"notif.filter_unread":       "Unread",
 	"notif.no_notifications":    "You have no notifications yet.",
 	"notif.total":               "Total notifications: %d",
 	"notif.more":                "Details →",

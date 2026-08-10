@@ -486,8 +486,9 @@ func (s *NotificationService) incrementUnreadCount(userID uint) {
 	delete(s.unreadCache, userID)
 }
 
-// GetByUser возвращает уведомления пользователя с пагинацией
-func (s *NotificationService) GetByUser(ctx context.Context, userID uint, page, perPage int) ([]Notification, int64, error) {
+// GetByUser возвращает уведомления пользователя с пагинацией.
+// F-4 (pass 48): onlyUnread=true возвращает только непрочитанные.
+func (s *NotificationService) GetByUser(ctx context.Context, userID uint, page, perPage int, onlyUnread bool) ([]Notification, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -496,7 +497,7 @@ func (s *NotificationService) GetByUser(ctx context.Context, userID uint, page, 
 	}
 
 	offset := (page - 1) * perPage
-	return s.repo.ListByUser(ctx, userID, offset, perPage)
+	return s.repo.ListByUser(ctx, userID, offset, perPage, onlyUnread)
 }
 
 // MarkAsRead помечает уведомление как прочитанное

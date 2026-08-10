@@ -691,6 +691,7 @@ var ruMessages = map[string]string{
 	// ── Profile Public ──
 	"profile.public_title":         "Профиль пользователя",
 	"profile.games_created":        "игр создано",
+	"profile.my_stats":             "Моя статистика",
 	"profile.games_played":         "игр пройдено",
 	"profile.wins":                 "побед",
 	"profile.rating":               "рейтинг",
@@ -1263,6 +1264,9 @@ var ruMessages = map[string]string{
 
 	// ── Monitor ──
 	"monitor.page_title":         "Мониторинг игры (обновляется в реальном времени)",
+	"monitor.mobile_tabs":        "Вид мониторинга",
+	"monitor.teams_tab":          "Команды",
+	"monitor.map_tab":            "Карта",
 	"monitor.map_title":          "Положение игроков",
 	"monitor.map_hint":           "Маркеры обновляются каждые 15 секунд (видны только свежие позиции водителей).",
 	"monitor.connected":          "Подключено (реальное время)",
@@ -1417,6 +1421,9 @@ var ruMessages = map[string]string{
 
 	// ── Notifications List ──
 	"notif.list_title":          "Уведомления",
+	"notif.filter_label":        "Фильтр уведомлений",
+	"notif.filter_all":          "Все",
+	"notif.filter_unread":       "Непрочитанные",
 	"notif.no_notifications":    "У вас пока нет уведомлений.",
 	"notif.total":               "Всего уведомлений: %d",
 	"notif.more":                "Подробнее →",
