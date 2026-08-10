@@ -27,6 +27,13 @@
         </div>
         <div id="connection-status" role="status" aria-live="polite" class="mt-4 text-sm text-gray-500 dark:text-gray-400"></div>
     </div>
+
+    <!-- G-3 (pass 45): карта позиций водителей -->
+    <div class="card mt-6">
+        <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ T $.Lang "monitor.map_title" }}</h2>
+        <div id="driver-map" class="w-full h-96 rounded-lg border border-gray-200 dark:border-gray-700 z-0"></div>
+        <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">{{ T $.Lang "monitor.map_hint" }}</p>
+    </div>
 </div>
 
 <script nonce="{{.csp_nonce}}">
@@ -325,6 +332,55 @@
             if (wsClient) wsClient.close();
             stopPolling();
         });
-    })();
+
+        // G-3 (pass 45): карта позиций водителей (Leaflet + периодическое обновление).
+        var driverMap = null;
+        var driverMarkers = {};
+        var mapLayer = null;
+        var isLeafletReady = typeof L !== 'undefined';
+
+        function initDriverMap() {
+            if (!isLeafletReady || !document.getElementById('driver-map')) return;
+            if (driverMap) return;
+            driverMap = L.map('driver-map').setView([55.7558, 37.6173], 10);
+            mapLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap'
+            });
+            mapLayer.addTo(driverMap);
+        }
+
+        function loadLocations() {
+            if (!isLeafletReady || !driverMap) return;
+            fetch('/games/' + gameID + '/locations')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var locs = data.locations || [];
+                    var seen = {};
+                    locs.forEach(function(loc) {
+                        seen[loc.UserID] = true;
+                        var key = loc.UserID;
+                        var lat = loc.Latitude, lng = loc.Longitude;
+                        if (typeof lat !== 'number' || typeof lng !== 'number') return;
+                        if (driverMarkers[key]) {
+                            driverMarkers[key].setLatLng([lat, lng]);
+                        } else {
+                            var icon = L.divIcon({
+                                className: 'driver-marker',
+                                html: '<div class="bg-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center text-xs font-bold shadow-lg border-2 border-white">' + (key) + '</div>',
+                                iconSize: [32, 32], iconAnchor: [16, 16]
+                            });
+                            driverMarkers[key] = L.marker([lat, lng], { icon: icon })
+                                .addTo(driverMap)
+                                .bindPopup('ID: ' + key);
+                        }
+                    });
+                })
+                .catch(function() { /* позиции недоступны — не критично */ });
+        }
+
+        // Инициализация карты и первый замер.
+        if (isLeafletReady) { initDriverMap(); loadLocations(); }
+        setInterval(function() { initDriverMap(); loadLocations(); }, 15000);    })();
 </script>
 {{end}}

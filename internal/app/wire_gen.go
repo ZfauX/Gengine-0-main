@@ -48,6 +48,7 @@ func initializeRepositories(db *gorm.DB) *repositories {
 	ratingRepository := game.NewGormRatingRepo(db)
 	coAuthorRepository := game.NewGormCoAuthorRepo(db)
 	monitorRepository := game.NewGormMonitorRepo(db)
+	geolocationRepository := game.NewGormGeolocationRepo(db)
 	levelRepository := level.NewGormLevelRepo(db)
 	questionRepository := level.NewGormQuestionRepo(db)
 	answerRepository := level.NewGormAnswerRepo(db)
@@ -81,6 +82,7 @@ func initializeRepositories(db *gorm.DB) *repositories {
 		Rating:        ratingRepository,
 		CoAuthor:      coAuthorRepository,
 		Monitor:       monitorRepository,
+		Geolocation:   geolocationRepository,
 		Level:         levelRepository,
 		Question:      questionRepository,
 		Answer:        answerRepository,
@@ -149,6 +151,9 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	questionService := wrapQuestionService(questionRepository, levelRepository, coAuthorService)
 	answerService := wrapAnswerService(answerRepository, questionRepository, levelRepository, coAuthorService)
 	importService := wrapImportService(db, coAuthorService)
+	geolocationRepository := repos.Geolocation
+	geolocationService := wrapGeolocationService(geolocationRepository)
+	geolocationHandler := wrapGeolocationHandler(geolocationService, gamePassingRepository, gameRepository)
 	invitationRepository := repos.Invitation
 	invitationService := wrapInvitationService(invitationRepository, teamRepository, cfg)
 	tournamentRepository := repos.Tournament
@@ -205,6 +210,8 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 		Question:        questionService,
 		Answer:          answerService,
 		Import:          importService,
+		Geolocation:     geolocationService,
+		GeolocationH:    geolocationHandler,
 		Team:            teamService,
 		Invitation:      invitationService,
 		Tournament:      tournamentService,

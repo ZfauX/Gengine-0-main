@@ -35,6 +35,7 @@ type GameDeps struct {
 	GameplayHandler *GameplayHandler
 	PhotoService    *PhotoService
 	LevelService    *level.LevelService
+	Geolocation     *GeolocationHandler // G-2/G-3 (pass 45)
 }
 
 // RegisterRoutes регистрирует маршруты для игр, используя готовые обработчики.
@@ -163,6 +164,14 @@ func RegisterRoutes(r *gin.RouterGroup, deps *GameDeps) {
 		// M5 (pass 36) + pass 40: rate limit на создание отзывов — раньше
 		// эндпоинт можно было флудить (пачки отзывов).
 		protected.POST("/:id/review", middleware.CodeSubmissionRateLimit(1*time.Minute, 10), reviewHandler.Create)
+
+		// ============================================================
+		// ГЕОЛОКАЦИЯ (G-2/G-3, pass 45)
+		// ============================================================
+		// Обновление позиции игрока (по ID прохождения) — для водителей.
+		protected.POST("/api/passings/:id/location", middleware.CodeSubmissionRateLimit(1*time.Minute, 60), deps.Geolocation.UpdateLocation)
+		// Позиции всех игроков игры (для мониторинга).
+		protected.GET("/:id/locations", deps.Geolocation.LocationsByGame)
 	}
 
 	// API для autocomplete поиска игр

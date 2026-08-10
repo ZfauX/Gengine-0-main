@@ -14,6 +14,10 @@
             <button type="button" id="tts-stop" class="btn btn-outline text-sm hidden" aria-label='{{ T $.Lang "gameplay.tts_stop" }}'>
                 ⏹ {{ T $.Lang "gameplay.tts_stop" }}
             </button>
+            <!-- G-1/G-2 (pass 45): запрос геолокации (водитель) -->
+            <button type="button" id="geo-btn" class="btn btn-outline text-sm min-h-11" aria-label='{{ T $.Lang "gameplay.geo_enable" }}'>
+                📍 {{ T $.Lang "gameplay.geo_enable" }}
+            </button>
         </div>
 
         {{if .Level}}{{if .Level.Description}}
@@ -633,6 +637,44 @@
             window.speechSynthesis.cancel();
             ttsBtn.classList.remove('hidden');
             ttsStop.classList.add('hidden');
+        });
+    })();
+    // G-2 (pass 45): отправка геопозиции водителя во время игры.
+    // Запускаем watchPosition только после явного нажатия «Включить геолокацию».
+    (function() {
+        var passingID = parseInt((document.querySelector('[data-passing-id]') || {}).dataset ? document.querySelector('[data-passing-id]').dataset.passingId : 0, 10);
+        if (!passingID) return;
+        var geoBtn = document.getElementById('geo-btn');
+        if (!geoBtn || !('geolocation' in navigator)) {
+            if (geoBtn) geoBtn.style.display = 'none';
+            return;
+        }
+        var watchId = null;
+        geoBtn.addEventListener('click', function() {
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+                geoBtn.textContent = '{{ T $.Lang "gameplay.geo_enable" }}';
+                geoBtn.classList.remove('hidden');
+                return;
+            }
+            geoBtn.textContent = '{{ T $.Lang "gameplay.geo_disable" }}';
+            watchId = navigator.geolocation.watchPosition(function(pos) {
+                var body = {
+                    lat: pos.coords.latitude,
+                    lng: pos.coords.longitude,
+                    accuracy: pos.coords.accuracy || 0
+                };
+                fetch('/api/passings/' + passingID + '/location', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                }).catch(function() { /* сеть недоступна — следующая позиция поправит */ });
+            }, function() {
+                geoBtn.textContent = '{{ T $.Lang "gameplay.geo_enable" }}';
+                watchId = null;
+                window.showToast && window.showToast('{{ T $.Lang "gameplay.geo_error" }}', 'error');
+            }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 });
         });
     })();</script>
 {{end}}

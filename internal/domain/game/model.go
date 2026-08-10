@@ -159,6 +159,23 @@ type Attempt struct {
 	User          user.User     `gorm:"foreignKey:UserID"`
 }
 
+// PlayerLocation — G-1..G-4 (pass 45): последняя известная позиция игрока
+// (водителя) во время игры. Одна запись на (game_passing, user).
+type PlayerLocation struct {
+	ID            uint `gorm:"primaryKey"`
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	GamePassingID uint    `gorm:"not null;uniqueIndex:idx_player_loc_passing_user"`
+	TeamID        uint    `gorm:"not null;index:idx_player_loc_team"`
+	UserID        uint    `gorm:"not null;uniqueIndex:idx_player_loc_passing_user"`
+	Latitude      float64 `gorm:"not null"`
+	Longitude     float64 `gorm:"not null"`
+	// Accuracy — точность определения (метры), для пометки маркера.
+	Accuracy float64 `gorm:"default:0"`
+}
+
+func (PlayerLocation) TableName() string { return "player_locations" }
+
 // SubmitResult содержит результат успешной отправки кода/файла.
 // GameID заполняется после транзакции для вызова CalculateResults.
 type SubmitResult struct {

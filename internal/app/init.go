@@ -42,6 +42,7 @@ type repositories struct {
 	Rating        game.RatingRepository
 	CoAuthor      game.CoAuthorRepository
 	Monitor       game.MonitorRepository
+	Geolocation   game.GeolocationRepository // G-1..G-4 (pass 45)
 	Level         level.LevelRepository
 	Question      level.QuestionRepository
 	Answer        level.AnswerRepository
@@ -91,7 +92,9 @@ type services struct {
 	Level           *level.LevelService
 	Question        *level.QuestionService
 	Answer          *level.AnswerService
-	Import          *level.ImportService // F-1 (pass 45)
+	Import          *level.ImportService     // F-1 (pass 45)
+	Geolocation     *game.GeolocationService // G-1..G-4 (pass 45)
+	GeolocationH    *game.GeolocationHandler // G-2/G-3
 	Team            *team.TeamService
 	Invitation      *team.InvitationService
 	Tournament      *tournament.TournamentService

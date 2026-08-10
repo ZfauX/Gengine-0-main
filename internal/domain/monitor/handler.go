@@ -315,11 +315,12 @@ func (h *MonitorHandler) MonitorPage(c *gin.Context) {
 	isAdmin := middleware.IsAdmin(c)
 
 	render.Page(c, http.StatusOK, "monitor-page.html", gin.H{
-		"Title":         render.Tr(c, "nav.monitor"),
-		"GameID":        req.ID,
-		"csrf":          csrf.GetToken(c),
-		"CurrentUserID": userID,
-		"IsAdmin":       isAdmin,
+		"Title":          render.Tr(c, "nav.monitor"),
+		"GameID":         req.ID,
+		"csrf":           csrf.GetToken(c),
+		"CurrentUserID":  userID,
+		"IsAdmin":        isAdmin,
+		"IncludeLeaflet": true, // G-3 (pass 45): карта позиций водителей
 		"Breadcrumbs": []map[string]string{
 			{"name": "nav.home", "url": "/"},
 			{"name": "nav.games", "url": "/games"},

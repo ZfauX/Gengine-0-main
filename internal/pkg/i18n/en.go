@@ -980,6 +980,9 @@ var enMessages = map[string]string{
 	"gameplay.submit_button":             "Submit",
 	"gameplay.tts_button":                "Read task aloud",
 	"gameplay.tts_stop":                  "Stop",
+	"gameplay.geo_enable":                "Enable geolocation",
+	"gameplay.geo_disable":               "Disable geolocation",
+	"gameplay.geo_error":                 "Could not get geolocation. Check browser permissions.",
 	"gameplay.hint_button":               "💡 Hint",
 	"gameplay.upload_file":               "Upload file",
 	"gameplay.upload_progress":           "Uploading: %d%% (%s / %s)",
@@ -1240,6 +1243,8 @@ var enMessages = map[string]string{
 
 	// ── Monitor ──
 	"monitor.page_title":         "Game monitor (real-time updates)",
+	"monitor.map_title":          "Player positions",
+	"monitor.map_hint":           "Markers refresh every 15 seconds (fresh driver positions only).",
 	"monitor.connected":          "Connected (real-time)",
 	"monitor.error_connecting":   "Connection error",
 	"monitor.reconnecting":       "Reconnecting in %ds...",

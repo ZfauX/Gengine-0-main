@@ -982,6 +982,9 @@ var ruMessages = map[string]string{
 	"gameplay.submit_button":             "Отправить",
 	"gameplay.tts_button":                "Озвучить задание",
 	"gameplay.tts_stop":                  "Остановить",
+	"gameplay.geo_enable":                "Включить геолокацию",
+	"gameplay.geo_disable":               "Выключить геолокацию",
+	"gameplay.geo_error":                 "Не удалось получить геопозицию. Проверьте разрешения браузера.",
 	"gameplay.hint_button":               "💡 Подсказка",
 	"gameplay.upload_file":               "Загрузить файл",
 	"gameplay.upload_progress":           "Загрузка: %d%% (%s / %s)",
@@ -1242,6 +1245,8 @@ var ruMessages = map[string]string{
 
 	// ── Monitor ──
 	"monitor.page_title":         "Мониторинг игры (обновляется в реальном времени)",
+	"monitor.map_title":          "Положение игроков",
+	"monitor.map_hint":           "Маркеры обновляются каждые 15 секунд (видны только свежие позиции водителей).",
 	"monitor.connected":          "Подключено (реальное время)",
 	"monitor.error_connecting":   "Ошибка соединения",
 	"monitor.reconnecting":       "Переподключение через %dс...",

@@ -381,3 +381,7 @@ input, textarea, select {
   content: attr(data-placeholder);
   color: #94a3b8;
 }
+
+/* G-3 (pass 45): маркеры водителей на карте мониторинга */
+.driver-marker { background: transparent; border: none; }
+.driver-marker div { display: flex; align-items: center; justify-content: center; }

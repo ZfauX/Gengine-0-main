@@ -387,7 +387,7 @@ func (app *App) registerGameRoutes(r *gin.RouterGroup) {
 		GamePlaySvc: app.Deps.Services.GamePlay, GameAdminSvc: app.Deps.Services.GameAdmin,
 		ReviewService: app.Deps.Services.Review, GameplayHandler: app.Deps.Services.GameplayHandler,
 		PhotoService: app.Deps.Services.PhotoService, LevelService: app.Deps.Services.Level,
-		SimulateSvc: app.Deps.Services.Simulate,
+		SimulateSvc: app.Deps.Services.Simulate, Geolocation: app.Deps.Services.GeolocationH,
 	})
 }
 

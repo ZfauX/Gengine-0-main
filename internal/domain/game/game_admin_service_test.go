@@ -38,6 +38,7 @@ var allModels = []interface{}{
 	&game.Review{},
 	&game.GamePassingLevel{},
 	&game.LevelTeamAnswer{},
+	&game.PlayerLocation{},
 }
 
 // createUser создаёт тестового пользователя

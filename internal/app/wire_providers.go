@@ -110,6 +110,16 @@ func wrapImportService(db *gorm.DB, coAuthorSvc *game.CoAuthorService) *level.Im
 	return level.NewImportService(db, coAuthorSvc)
 }
 
+// wrapGeolocationService — G-1..G-4 (pass 45): позиции игроков.
+func wrapGeolocationService(geoRepo game.GeolocationRepository) *game.GeolocationService {
+	return game.NewGeolocationService(geoRepo)
+}
+
+// wrapGeolocationHandler — G-2/G-3 (pass 45): API геолокации.
+func wrapGeolocationHandler(geoService *game.GeolocationService, passingRepo game.GamePassingRepository, gameRepo game.GameRepository) *game.GeolocationHandler {
+	return game.NewGeolocationHandler(geoService, passingRepo, gameRepo)
+}
+
 func wrapQuestionService(questionRepo level.QuestionRepository, levelRepo level.LevelRepository, coAuthorSvc *game.CoAuthorService) *level.QuestionService {
 	return level.NewQuestionService(questionRepo, levelRepo, coAuthorSvc)
 }

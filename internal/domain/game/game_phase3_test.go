@@ -144,3 +144,32 @@ func createPhase3Passing(t *testing.T, db *gorm.DB, gameID, teamID uint) *game.G
 	require.NoError(t, db.Create(p).Error)
 	return p
 }
+
+// G-1..G-4 (pass 45): позиции игроков (upsert + чтение по игре).
+func TestPhase35_PlayerLocations(t *testing.T) {
+	db := setupPhase3DB(t)
+	ctx := context.Background()
+
+	author := createUser(t, db, "geo@test.com", "pass")
+	g := createPhase3Game(t, db, author.ID, "Geo Game")
+	tm := createTeam(t, db, author.ID)
+	passing := createPhase3Passing(t, db, g.ID, tm.ID)
+	u1 := createUser(t, db, "geo1@test.com", "pass")
+
+	repo := game.NewGormGeolocationRepo(db)
+	svc := game.NewGeolocationService(repo)
+
+	// Запись позиции.
+	require.NoError(t, svc.UpdateLocation(ctx, passing.ID, tm.ID, u1.ID, 55.7558, 37.6173, 10))
+
+	// Обновление той же позиции (upsert — одна запись).
+	require.NoError(t, svc.UpdateLocation(ctx, passing.ID, tm.ID, u1.ID, 55.7560, 37.6180, 8))
+
+	locs, err := svc.LocationsByGame(ctx, g.ID)
+	require.NoError(t, err)
+	require.Len(t, locs, 1)
+	assert.Equal(t, u1.ID, locs[0].UserID)
+	assert.InDelta(t, 55.7560, locs[0].Latitude, 0.0001)
+	assert.InDelta(t, 37.6180, locs[0].Longitude, 0.0001)
+	assert.True(t, locs[0].IsFresh(time.Now()))
+}
