@@ -41,6 +41,7 @@ type Config struct {
 	Sentry    SentryConfig    // настройки Sentry (опционально)
 	VAPID     VAPIDConfig     // VAPID-ключи для Web Push (автогенерация при отсутствии)
 	WebSocket WebSocketConfig // настройки WebSocket-соединений
+	Payments  PaymentConfig   // настройки ЮKassa (опционально, G-1)
 }
 
 // ServerConfig содержит параметры HTTP-сервера и логирования.
@@ -182,6 +183,16 @@ type SentryConfig struct {
 type WebSocketConfig struct {
 	MaxTotalConns int // максимальное общее количество соединений (0 = без ограничения)
 	MaxConnsPerIP int // максимальное количество соединений с одного IP (0 = без ограничения)
+}
+
+// PaymentConfig содержит настройки ЮKassa (G-1, pass 45).
+// Опционально: если ShopID/SecretKey пустые — платёжная функция отключена.
+type PaymentConfig struct {
+	ShopID     string // идентификатор магазина в ЮKassa
+	SecretKey  string // секретный ключ (для API и подписи вебхуков)
+	WebhookKey string // ключ подписи вебхуков (если отличается от SecretKey)
+	Currency   string // валюта платежей (по умолчанию RUB)
+	ReturnURL  string // URL возврата после оплаты (если пусто — BaseURL + /profile)
 }
 
 // VAPIDConfig содержит VAPID-ключи для Web Push.
@@ -335,6 +346,21 @@ func LoadConfig() (*Config, error) {
 	// WebSocket
 	cfg.WebSocket.MaxTotalConns = getEnvAsInt("WS_MAX_TOTAL_CONNS", defaultWSMaxTotalConns)
 	cfg.WebSocket.MaxConnsPerIP = getEnvAsInt("WS_MAX_CONNS_PER_IP", defaultWSMaxConnsPerIP)
+
+	// ЮKassa (G-1, pass 45) — опционально, если ключи пустые — оплата выключена.
+	cfg.Payments.ShopID = os.Getenv("YKASSA_SHOP_ID")
+	cfg.Payments.SecretKey = os.Getenv("YKASSA_SECRET_KEY")
+	cfg.Payments.WebhookKey = os.Getenv("YKASSA_WEBHOOK_KEY")
+	if cfg.Payments.WebhookKey == "" {
+		cfg.Payments.WebhookKey = cfg.Payments.SecretKey
+	}
+	cfg.Payments.Currency = os.Getenv("YKASSA_CURRENCY")
+	if cfg.Payments.Currency == "" {
+		cfg.Payments.Currency = "RUB"
+	}
+	if cfg.Payments.ReturnURL == "" {
+		cfg.Payments.ReturnURL = cfg.Server.BaseURL + "/profile"
+	}
 
 	// VAPID
 	if err := loadVAPIDConfig(&cfg.VAPID); err != nil {

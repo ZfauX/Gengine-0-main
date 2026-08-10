@@ -100,6 +100,8 @@
         <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ T $.Lang "profile.notification_settings" }}</h3>
         <p class="text-sm text-gray-500 dark:text-gray-400">{{ T $.Lang "profile.notification_desc" }}</p>
         <a href="/settings/notifications" class="btn btn-primary text-sm">{{ T $.Lang "profile.save_notif_settings" }}</a>
+        <!-- G-6 (pass 45): оплата -->
+        <a href="/payments" class="btn btn-outline text-sm">{{ T $.Lang "profile.payments" }}</a>
         {{if .VapidPublicKey}}
         <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
             <button id="enable-push" data-vapid-key="{{.VapidPublicKey}}"

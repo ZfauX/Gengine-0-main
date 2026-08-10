@@ -1,0 +1,61 @@
+{{define "payments-index.html"}}
+<div class="max-w-3xl mx-auto">
+    <h1 class="page-title">{{ T $.Lang "payment.title" }}</h1>
+
+    {{if not .PaymentsEnabled}}
+    <div class="flash flash-error">{{ T $.Lang "payment.disabled" }}</div>
+    {{else}}
+    <div class="card mb-6">
+        <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ T $.Lang "payment.create_title" }}</h2>
+        <form action="/payments/create" method="POST" class="flex flex-wrap gap-3">
+            <input type="hidden" name="_csrf" value="{{.csrf}}">
+            <input type="number" name="amount" placeholder="{{ T $.Lang "payment.amount" }}" required min="1" step="0.01"
+                   class="flex-1 min-w-[140px] rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-500 sm:text-sm px-3 py-2">
+            <input type="text" name="description" placeholder="{{ T $.Lang "payment.description" }}"
+                   class="flex-1 min-w-[180px] rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-500 sm:text-sm px-3 py-2">
+            <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "payment.create_button" }}</button>
+        </form>
+    </div>
+    {{end}}
+
+    {{if .Payments}}
+    <div class="card">
+        <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4">{{ T $.Lang "payment.history" }}</h2>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50 dark:bg-gray-800">
+                    <tr>
+                        <th scope="col" class="table-header">{{ T $.Lang "payment.date" }}</th>
+                        <th scope="col" class="table-header">{{ T $.Lang "payment.amount" }}</th>
+                        <th scope="col" class="table-header">{{ T $.Lang "payment.description" }}</th>
+                        <th scope="col" class="table-header">{{ T $.Lang "payment.status" }}</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-100">
+                    {{range .Payments}}
+                    <tr>
+                        <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{{ formatDateTime $.Lang $.TZOffset .CreatedAt }}</td>
+                        <td class="px-4 py-3 text-sm font-medium text-gray-800 dark:text-gray-100">{{.Amount}} {{.Currency}}</td>
+                        <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-300">{{.Description}}</td>
+                        <td class="px-4 py-3 text-sm">
+                            {{if eq .Status "succeeded"}}
+                            <span class="px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-200">{{ T $.Lang "payment.status_succeeded" }}</span>
+                            {{else if eq .Status "canceled"}}
+                            <span class="px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-200">{{ T $.Lang "payment.status_canceled" }}</span>
+                            {{else}}
+                            <span class="px-2 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-200">{{ T $.Lang "payment.status_pending" }}</span>
+                            {{end}}
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {{else}}
+    <div class="card text-center py-12">
+        <p class="text-gray-500 dark:text-gray-400">{{ T $.Lang "payment.no_payments" }}</p>
+    </div>
+    {{end}}
+</div>
+{{end}}

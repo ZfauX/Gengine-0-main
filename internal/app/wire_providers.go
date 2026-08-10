@@ -9,6 +9,7 @@ import (
 	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/monitor"
 	"gengine-0/internal/domain/notification"
+	"gengine-0/internal/domain/payment"
 	"gengine-0/internal/domain/social"
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/tournament"
@@ -118,6 +119,16 @@ func wrapGeolocationService(geoRepo game.GeolocationRepository) *game.Geolocatio
 // wrapGeolocationHandler — G-2/G-3 (pass 45): API геолокации.
 func wrapGeolocationHandler(geoService *game.GeolocationService, passingRepo game.GamePassingRepository, gameRepo game.GameRepository) *game.GeolocationHandler {
 	return game.NewGeolocationHandler(geoService, passingRepo, gameRepo)
+}
+
+// wrapPaymentService — G-1..G-3 (pass 45): платежи ЮKassa.
+func wrapPaymentService(cfg *config.Config, paymentRepo payment.PaymentRepository) *payment.PaymentService {
+	return payment.NewPaymentService(cfg.Payments, paymentRepo)
+}
+
+// wrapPaymentHandler — G-1..G-3 (pass 45): HTTP-обработчики платежей.
+func wrapPaymentHandler(svc *payment.PaymentService) *payment.PaymentHandler {
+	return payment.NewPaymentHandler(svc)
 }
 
 func wrapQuestionService(questionRepo level.QuestionRepository, levelRepo level.LevelRepository, coAuthorSvc *game.CoAuthorService) *level.QuestionService {

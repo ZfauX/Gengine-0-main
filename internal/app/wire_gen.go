@@ -14,6 +14,7 @@ import (
 	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/monitor"
 	"gengine-0/internal/domain/notification"
+	"gengine-0/internal/domain/payment"
 	"gengine-0/internal/domain/social"
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/tournament"
@@ -49,6 +50,7 @@ func initializeRepositories(db *gorm.DB) *repositories {
 	coAuthorRepository := game.NewGormCoAuthorRepo(db)
 	monitorRepository := game.NewGormMonitorRepo(db)
 	geolocationRepository := game.NewGormGeolocationRepo(db)
+	paymentRepository := payment.NewGormPaymentRepo(db)
 	levelRepository := level.NewGormLevelRepo(db)
 	questionRepository := level.NewGormQuestionRepo(db)
 	answerRepository := level.NewGormAnswerRepo(db)
@@ -83,6 +85,7 @@ func initializeRepositories(db *gorm.DB) *repositories {
 		CoAuthor:      coAuthorRepository,
 		Monitor:       monitorRepository,
 		Geolocation:   geolocationRepository,
+		Payment:       paymentRepository,
 		Level:         levelRepository,
 		Question:      questionRepository,
 		Answer:        answerRepository,
@@ -154,6 +157,9 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	geolocationRepository := repos.Geolocation
 	geolocationService := wrapGeolocationService(geolocationRepository)
 	geolocationHandler := wrapGeolocationHandler(geolocationService, gamePassingRepository, gameRepository)
+	paymentRepository := repos.Payment
+	paymentService := wrapPaymentService(cfg, paymentRepository)
+	paymentHandler := wrapPaymentHandler(paymentService)
 	invitationRepository := repos.Invitation
 	invitationService := wrapInvitationService(invitationRepository, teamRepository, cfg)
 	tournamentRepository := repos.Tournament
@@ -212,6 +218,8 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 		Import:          importService,
 		Geolocation:     geolocationService,
 		GeolocationH:    geolocationHandler,
+		Payment:         paymentService,
+		PaymentHandler:  paymentHandler,
 		Team:            teamService,
 		Invitation:      invitationService,
 		Tournament:      tournamentService,

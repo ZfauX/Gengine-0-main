@@ -10,6 +10,7 @@ import (
 	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/monitor"
 	"gengine-0/internal/domain/notification"
+	"gengine-0/internal/domain/payment"
 	"gengine-0/internal/domain/social"
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/tournament"
@@ -43,6 +44,7 @@ type repositories struct {
 	CoAuthor      game.CoAuthorRepository
 	Monitor       game.MonitorRepository
 	Geolocation   game.GeolocationRepository // G-1..G-4 (pass 45)
+	Payment       payment.PaymentRepository  // G-1 (pass 45)
 	Level         level.LevelRepository
 	Question      level.QuestionRepository
 	Answer        level.AnswerRepository
@@ -95,6 +97,8 @@ type services struct {
 	Import          *level.ImportService     // F-1 (pass 45)
 	Geolocation     *game.GeolocationService // G-1..G-4 (pass 45)
 	GeolocationH    *game.GeolocationHandler // G-2/G-3
+	Payment         *payment.PaymentService  // G-1..G-3 (pass 45)
+	PaymentHandler  *payment.PaymentHandler  // G-1..G-3
 	Team            *team.TeamService
 	Invitation      *team.InvitationService
 	Tournament      *tournament.TournamentService

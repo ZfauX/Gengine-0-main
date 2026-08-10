@@ -11,6 +11,7 @@ import (
 	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/monitor"
 	"gengine-0/internal/domain/notification"
+	"gengine-0/internal/domain/payment"
 	"gengine-0/internal/domain/social"
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/tournament"
@@ -43,6 +44,7 @@ func initializeRepositories(db *gorm.DB) *repositories {
 		game.NewGormCoAuthorRepo,
 		game.NewGormMonitorRepo,
 		game.NewGormGeolocationRepo,
+		payment.NewGormPaymentRepo,
 		level.NewGormLevelRepo,
 		level.NewGormQuestionRepo,
 		level.NewGormAnswerRepo,
@@ -73,6 +75,7 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 			"Team", "Invitation",
 			"Tournament", "TournGame", "TournTeam", "TournResult",
 			"PushSub", "Follow", "Export", "Chat", "Blackbox", "Notification", "Backup", "Geolocation",
+			"Payment",
 		),
 		wrapCoAuthorService,
 		wrapReviewService,
@@ -97,6 +100,8 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 		wrapImportService,
 		wrapGeolocationService,
 		wrapGeolocationHandler,
+		wrapPaymentService,
+		wrapPaymentHandler,
 		wrapAuthService,
 		wrapRefreshTokenService,
 		wrapUserService,

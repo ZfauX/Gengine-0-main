@@ -20,6 +20,7 @@ import (
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/monitor"
+	"gengine-0/internal/domain/payment"
 	"gengine-0/internal/domain/social"
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/tournament"
@@ -375,6 +376,9 @@ func (app *App) registerAdminRoutes(r *gin.RouterGroup) {
 
 func (app *App) registerUserRoutes(r *gin.RouterGroup) {
 	user.RegisterRoutes(r, app.Config, app.Deps.Services.Auth, app.Deps.Services.User, app.Deps.Services.PasswordReset, app.Deps.Services.EmailVerif, app.Deps.Services.OAuth, app.Deps.AuditSvc, app.LocalStorage, app.Deps.Services.Email, app.Deps.WebAuthn, app.Deps.Repos.User, app.Deps.Services.PushHandler, app.Deps.Services.TwoFactor, app.Deps.Services.Profile, app.Deps.Repos.Achiev, app.Deps.Services.UserDashboard)
+
+	// G-1..G-3 (pass 45): платежи ЮKassa.
+	payment.RegisterRoutes(r, app.Deps.Services.PaymentHandler, app.Deps.Services.Auth)
 }
 
 func (app *App) registerGameRoutes(r *gin.RouterGroup) {
