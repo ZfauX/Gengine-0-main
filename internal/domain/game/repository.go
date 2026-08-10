@@ -77,6 +77,19 @@ type GamePassingRepository interface {
 	GetCurrentProgressWithLevel(ctx context.Context, passingID uint) (*LevelProgress, error)
 	GetAttemptsByProgress(ctx context.Context, progressID uint, limit int) ([]Attempt, error)
 	GetOpenVotingSession(ctx context.Context, passingID, levelID uint) (*GameBlackboxVotingSession, bool, error)
+	// Фаза 3 (C-1..C-5, pass 45): маршруты, старт, персональные ответы, коды на человека.
+	SetPassingStartTime(ctx context.Context, passingID uint, startTime *time.Time) error
+	SetTeamRoute(ctx context.Context, passingID uint, levelIDs []uint) error
+	GetTeamRoute(ctx context.Context, passingID uint) ([]GamePassingLevel, error)
+	SetTeamAnswer(ctx context.Context, levelID, teamID uint, code, hint string) error
+	GetTeamAnswer(ctx context.Context, levelID, teamID uint) (*LevelTeamAnswer, error)
+	GetAttemptsPerUser(ctx context.Context, gameID uint) ([]AttemptPerUser, error)
+}
+
+// AttemptPerUser — C-5 (pass 45): найденные коды по игрокам.
+type AttemptPerUser struct {
+	UserID uint
+	Count  int
 }
 
 // ---------- GORM implementations ----------
@@ -557,4 +570,75 @@ func (r *gormGamePassingRepo) ListTestPassings(ctx context.Context, gameID uint)
 
 func (r *gormGamePassingRepo) Save(ctx context.Context, passing *GamePassing) error {
 	return r.db.WithContext(ctx).Save(passing).Error
+}
+
+// Фаза 3 (C-1..C-5, pass 45) --------------------------------
+
+// SetPassingStartTime задаёт индивидуальное время старта команды (C-3).
+func (r *gormGamePassingRepo) SetPassingStartTime(ctx context.Context, passingID uint, startTime *time.Time) error {
+	return r.db.WithContext(ctx).Model(&GamePassing{}).
+		Where("id = ?", passingID).
+		Update("start_time", startTime).Error
+}
+
+// SetTeamRoute заменяет маршрут команды: уровни в заданном порядке (C-1/C-2).
+func (r *gormGamePassingRepo) SetTeamRoute(ctx context.Context, passingID uint, levelIDs []uint) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("game_passing_id = ?", passingID).Delete(&GamePassingLevel{}).Error; err != nil {
+			return err
+		}
+		for i, levelID := range levelIDs {
+			row := GamePassingLevel{GamePassingID: passingID, LevelID: levelID, OrderIndex: i}
+			if err := tx.Create(&row).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// GetTeamRoute возвращает маршрут команды, отсортированный по порядку (C-1).
+func (r *gormGamePassingRepo) GetTeamRoute(ctx context.Context, passingID uint) ([]GamePassingLevel, error) {
+	var route []GamePassingLevel
+	err := r.db.WithContext(ctx).
+		Preload("Level", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id, name, position")
+		}).
+		Where("game_passing_id = ?", passingID).
+		Order("order_index ASC").
+		Find(&route).Error
+	return route, err
+}
+
+// SetTeamAnswer задаёт персональный ответ уровня для команды (C-4).
+func (r *gormGamePassingRepo) SetTeamAnswer(ctx context.Context, levelID, teamID uint, code, hint string) error {
+	return r.db.WithContext(ctx).Table("level_team_answers").
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "level_id"}, {Name: "team_id"}},
+			DoUpdates: clause.Assignments(map[string]any{"code": code, "hint": hint}),
+		}).
+		Create(&LevelTeamAnswer{LevelID: levelID, TeamID: teamID, Code: code, Hint: hint}).Error
+}
+
+// GetTeamAnswer возвращает персональный ответ уровня для команды (C-4).
+func (r *gormGamePassingRepo) GetTeamAnswer(ctx context.Context, levelID, teamID uint) (*LevelTeamAnswer, error) {
+	var a LevelTeamAnswer
+	err := r.db.WithContext(ctx).Where("level_id = ? AND team_id = ?", levelID, teamID).First(&a).Error
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
+// GetAttemptsPerUser возвращает количество найденных кодов по игрокам (C-5).
+func (r *gormGamePassingRepo) GetAttemptsPerUser(ctx context.Context, gameID uint) ([]AttemptPerUser, error) {
+	var rows []AttemptPerUser
+	err := r.db.WithContext(ctx).Table("attempts").
+		Select("attempts.user_id, COUNT(*) AS count").
+		Joins("JOIN level_progresses ON level_progresses.id = attempts.level_progress_id").
+		Joins("JOIN game_passings ON game_passings.id = level_progresses.game_passing_id").
+		Where("game_passings.game_id = ? AND attempts.success = true AND attempts.user_id IS NOT NULL", gameID).
+		Group("attempts.user_id").
+		Scan(&rows).Error
+	return rows, err
 }

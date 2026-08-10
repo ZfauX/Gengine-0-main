@@ -23,7 +23,9 @@ func NewAttemptService() *AttemptService {
 
 // SubmitCodeWithTx — проверяет код внутри переданной транзакции.
 // Возвращает попытку и флаг успеха.
-func (s *AttemptService) SubmitCodeWithTx(ctx context.Context, tx *gorm.DB, progress *LevelProgress, code string) (*Attempt, bool, error) {
+// C-4 (pass 45): если для команды задан персональный ответ уровня
+// (level_team_answers), правильным считается именно он (вместо общих ответов).
+func (s *AttemptService) SubmitCodeWithTx(ctx context.Context, tx *gorm.DB, progress *LevelProgress, code string, teamID uint) (*Attempt, bool, error) {
 	// Уровень обычно уже прелоажен вместе с прогрессом
 	// (GetCurrentProgressForUpdate прелоадит Level.Questions.Answers).
 	// Догружаем только если вызывающий не сделал preload.
@@ -49,6 +51,26 @@ func (s *AttemptService) SubmitCodeWithTx(ctx context.Context, tx *gorm.DB, prog
 		}
 		metrics.IncAttempt(false)
 		return attempt, false, nil
+	}
+
+	// C-4 (pass 45): персональный ответ команды имеет приоритет.
+	if teamID > 0 {
+		var teamAnswer LevelTeamAnswer
+		if err := tx.WithContext(ctx).Where("level_id = ? AND team_id = ?", lvl.ID, teamID).First(&teamAnswer).Error; err == nil {
+			success := strings.EqualFold(teamAnswer.Code, code)
+			attempt := &Attempt{
+				LevelProgressID: progress.ID,
+				Code:            code,
+				Success:         success,
+			}
+			if createErr := tx.WithContext(ctx).Create(attempt).Error; createErr != nil {
+				return nil, false, createErr
+			}
+			metrics.IncAttempt(success)
+			return attempt, success, nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, false, err
+		}
 	}
 
 	success := false

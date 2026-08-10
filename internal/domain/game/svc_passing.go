@@ -137,7 +137,38 @@ func (s *GamePassingService) ListTestPassings(ctx context.Context, gameID uint, 
 	return nil
 }
 
-// UpdateStatus обновляет статус прохождения с транзакцией, блокировкой и валидацией переходов.
+// Фаза 3 (C-1..C-5, pass 45) --------------------------------
+
+// SetTeamRoute назначает маршрут команды (порядок уровней) (C-1/C-2).
+// Требует права менеджера игры или супер-админа (проверяет вызывающий хендлер).
+func (s *GamePassingService) SetTeamRoute(ctx context.Context, passingID uint, levelIDs []uint) error {
+	return s.repo.SetTeamRoute(ctx, passingID, levelIDs)
+}
+
+// GetTeamRoute возвращает маршрут команды (C-1).
+func (s *GamePassingService) GetTeamRoute(ctx context.Context, passingID uint) ([]GamePassingLevel, error) {
+	return s.repo.GetTeamRoute(ctx, passingID)
+}
+
+// SetTeamStartTime задаёт индивидуальное время старта команды (C-3).
+func (s *GamePassingService) SetTeamStartTime(ctx context.Context, passingID uint, startTime *time.Time) error {
+	return s.repo.SetPassingStartTime(ctx, passingID, startTime)
+}
+
+// SetTeamAnswer задаёт персональный ответ уровня для команды (C-4).
+func (s *GamePassingService) SetTeamAnswer(ctx context.Context, levelID, teamID uint, code, hint string) error {
+	return s.repo.SetTeamAnswer(ctx, levelID, teamID, code, hint)
+}
+
+// GetTeamAnswer возвращает персональный ответ уровня для команды (C-4).
+func (s *GamePassingService) GetTeamAnswer(ctx context.Context, levelID, teamID uint) (*LevelTeamAnswer, error) {
+	return s.repo.GetTeamAnswer(ctx, levelID, teamID)
+}
+
+// GetAttemptsPerUser возвращает количество найденных кодов по игрокам (C-5).
+func (s *GamePassingService) GetAttemptsPerUser(ctx context.Context, gameID uint) ([]AttemptPerUser, error) {
+	return s.repo.GetAttemptsPerUser(ctx, gameID)
+}
 func (s *GamePassingService) UpdateStatus(ctx context.Context, passingID uint, status GamePassingStatus, userID uint) error {
 	// Валидация переходов статусов
 	validTransitions := map[GamePassingStatus][]GamePassingStatus{

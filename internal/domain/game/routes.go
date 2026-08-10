@@ -127,6 +127,13 @@ func RegisterRoutes(r *gin.RouterGroup, deps *GameDeps) {
 
 		protected.POST("/:id/passings/:passing_id/start", passingHandler.StartGame)
 
+		// Фаза 3 (C-1..C-5, pass 45): маршруты, индивидуальный старт, ответы, итоги.
+		protected.POST("/:id/passings/:passing_id/route", passingHandler.SetTeamRoute)
+		protected.GET("/:id/passings/:passing_id/route", passingHandler.GetTeamRoute)
+		protected.POST("/:id/passings/:passing_id/start-time", passingHandler.SetTeamStartTime)
+		protected.POST("/:id/levels/:level_id/teams/:team_id/answer", passingHandler.SetTeamAnswer)
+		protected.GET("/:id/attempts-per-user", passingHandler.AttemptsPerUser)
+
 		protected.GET("/:id/apply", passingHandler.ApplyForm)
 
 		protected.POST("/:id/apply", passingHandler.Apply)

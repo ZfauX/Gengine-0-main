@@ -11,6 +11,11 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// TeamPassingTeamID — лёгкая выборка team_id из прохождения (C-4, pass 45).
+type TeamPassingTeamID struct {
+	TeamID uint
+}
+
 // CheckTeamMembership проверяет, является ли пользователь членом команды,
 // связанной с прохождением. Используется внутри транзакций.
 // Возвращает gameID прохождения (Perf: избавляет от повторного load passing

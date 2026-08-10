@@ -36,6 +36,8 @@ var allModels = []interface{}{
 	&game.Note{},
 	&game.Photo{},
 	&game.Review{},
+	&game.GamePassingLevel{},
+	&game.LevelTeamAnswer{},
 }
 
 // createUser создаёт тестового пользователя

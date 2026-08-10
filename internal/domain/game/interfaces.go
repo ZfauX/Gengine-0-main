@@ -3,6 +3,7 @@ package game
 
 import (
 	"context"
+	"time"
 
 	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/team"
@@ -47,6 +48,13 @@ type GamePassingServiceInterface interface {
 	UpdateStatus(ctx context.Context, passingID uint, status GamePassingStatus, userID uint) error
 	StartGame(ctx context.Context, passingID, userID uint) error
 	GetTeamsByCaptain(ctx context.Context, userID uint) ([]team.Team, error)
+	// Фаза 3 (C-1..C-5, pass 45).
+	SetTeamRoute(ctx context.Context, passingID uint, levelIDs []uint) error
+	GetTeamRoute(ctx context.Context, passingID uint) ([]GamePassingLevel, error)
+	SetTeamStartTime(ctx context.Context, passingID uint, startTime *time.Time) error
+	SetTeamAnswer(ctx context.Context, levelID, teamID uint, code, hint string) error
+	GetTeamAnswer(ctx context.Context, levelID, teamID uint) (*LevelTeamAnswer, error)
+	GetAttemptsPerUser(ctx context.Context, gameID uint) ([]AttemptPerUser, error)
 }
 
 type GamePlayServiceInterface interface {

@@ -1546,6 +1546,7 @@ var enMessages = map[string]string{
 
 	// ── Handler messages (previously hardcoded Russian) ──
 	"handler.invalid_game_id":          "Invalid game ID",
+	"handler.invalid_id":               "Invalid ID",
 	"handler.invalid_level_id":         "Invalid level ID",
 	"handler.invalid_question_id":      "Invalid question ID",
 	"handler.invalid_answer_id":        "Invalid answer ID",

@@ -1548,6 +1548,7 @@ var ruMessages = map[string]string{
 
 	// ── Handler messages ──
 	"handler.invalid_game_id":          "Неверный ID игры",
+	"handler.invalid_id":               "Неверный ID",
 	"handler.invalid_level_id":         "Неверный ID уровня",
 	"handler.invalid_question_id":      "Неверный ID вопроса",
 	"handler.invalid_answer_id":        "Неверный ID ответа",

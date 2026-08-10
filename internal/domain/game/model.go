@@ -96,13 +96,42 @@ type GamePassing struct {
 	TournamentScored bool `gorm:"column:tournament_scored;default:false"`
 	// TournamentPoints — точное значение начисленных турнирных очков (C-M2):
 	// RemoveGame списывает именно его, а не пересчитывает по текущему месту.
-	TournamentPoints int                         `gorm:"column:tournament_points;default:0"`
-	Game             Game                        `gorm:"foreignKey:GameID"`
-	Team             team.Team                   `gorm:"foreignKey:TeamID"`
-	Progresses       []LevelProgress             `gorm:"foreignKey:GamePassingID"`
-	Logs             []Log                       `gorm:"foreignKey:GamePassingID"`
-	VotingSessions   []GameBlackboxVotingSession `gorm:"foreignKey:GamePassingID"`
+	TournamentPoints int `gorm:"column:tournament_points;default:0"`
+	// StartTime — C-3 (pass 45): индивидуальное время старта команды (NULL = общее).
+	StartTime      *time.Time
+	Game           Game                        `gorm:"foreignKey:GameID"`
+	Team           team.Team                   `gorm:"foreignKey:TeamID"`
+	Progresses     []LevelProgress             `gorm:"foreignKey:GamePassingID"`
+	Logs           []Log                       `gorm:"foreignKey:GamePassingID"`
+	VotingSessions []GameBlackboxVotingSession `gorm:"foreignKey:GamePassingID"`
 }
+
+// GamePassingLevel — C-1/C-2 (pass 45): маршрут команды (порядок уровней).
+type GamePassingLevel struct {
+	ID            uint `gorm:"primaryKey"`
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	GamePassingID uint        `gorm:"not null;uniqueIndex:idx_gpl_passing_level"`
+	LevelID       uint        `gorm:"not null;uniqueIndex:idx_gpl_passing_level"`
+	OrderIndex    int         `gorm:"not null;default:0"`
+	GamePassing   GamePassing `gorm:"foreignKey:GamePassingID"`
+	Level         level.Level `gorm:"foreignKey:LevelID"`
+}
+
+func (GamePassingLevel) TableName() string { return "game_passing_levels" }
+
+// LevelTeamAnswer — C-4 (pass 45): персональный ответ уровня для команды.
+type LevelTeamAnswer struct {
+	ID        uint `gorm:"primaryKey"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	LevelID   uint   `gorm:"not null;uniqueIndex:idx_lta_level_team"`
+	TeamID    uint   `gorm:"not null;uniqueIndex:idx_lta_level_team"`
+	Code      string `gorm:"not null"`
+	Hint      string `gorm:"default:''"`
+}
+
+func (LevelTeamAnswer) TableName() string { return "level_team_answers" }
 
 type LevelProgress struct {
 	gorm.Model
@@ -120,11 +149,14 @@ type LevelProgress struct {
 type Attempt struct {
 	gorm.Model
 	LevelProgressID uint `gorm:"not null;index:idx_attempts_progress"`
-	Code            string
-	FilePath        string
-	IsFile          bool
-	Success         bool
-	LevelProgress   LevelProgress `gorm:"foreignKey:LevelProgressID"`
+	// UserID — C-5 (pass 45): кто из команды отправил (для итогов «на человека»).
+	UserID        *uint `gorm:"index:idx_attempts_user"`
+	Code          string
+	FilePath      string
+	IsFile        bool
+	Success       bool
+	LevelProgress LevelProgress `gorm:"foreignKey:LevelProgressID"`
+	User          user.User     `gorm:"foreignKey:UserID"`
 }
 
 // SubmitResult содержит результат успешной отправки кода/файла.

@@ -150,8 +150,15 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 			return checkErr
 		}
 
+		// C-4 (pass 45): teamID для персонального ответа уровня.
+		var teamID uint
+		var passing TeamPassingTeamID
+		if err := tx.Table("game_passings").Select("team_id").Where("id = ?", passingID).Scan(&passing).Error; err == nil {
+			teamID = passing.TeamID
+		}
+
 		// 3. Отправляем код через attemptService с передачей tx
-		att, success, submitErr := s.attemptSvc.SubmitCodeWithTx(ctx, tx, progress, code)
+		att, success, submitErr := s.attemptSvc.SubmitCodeWithTx(ctx, tx, progress, code, teamID)
 		if submitErr != nil {
 			return submitErr
 		}

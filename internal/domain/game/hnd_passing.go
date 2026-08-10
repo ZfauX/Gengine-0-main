@@ -4,6 +4,7 @@ package game
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/pkg/middleware"
@@ -337,4 +338,124 @@ func (h *PassingHandler) DisqualifyTeam(c *gin.Context) {
 	}
 
 	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/monitor")
+}
+
+// Фаза 3 (C-1..C-5, pass 45) --------------------------------
+
+// SetTeamRoute назначает маршрут команды (C-1/C-2).
+// @Summary Назначение маршрута команды
+// @Tags passings
+// @Param id path int true "ID игры"
+// @Param passing_id path int true "ID прохождения"
+// @Param level_ids formData []uint true "Порядок уровней"
+// @Success 302 {string} string "Редирект"
+// @Security JWT
+func (h *PassingHandler) SetTeamRoute(c *gin.Context) {
+	var req struct {
+		GameID    int    `uri:"id" binding:"required"`
+		PassingID int    `uri:"passing_id" binding:"required"`
+		LevelIDs  []uint `form:"level_ids"`
+	}
+	if err := c.ShouldBindUri(&req); err != nil {
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_id"))
+		return
+	}
+	if err := c.ShouldBind(&req); err != nil {
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_data"))
+		return
+	}
+	if err := h.passingService.SetTeamRoute(c.Request.Context(), uint(req.PassingID), req.LevelIDs); err != nil {
+		log.Error().Err(err).Int("passing_id", req.PassingID).Msg("SetTeamRoute: failed")
+		render.RenderError(c, http.StatusInternalServerError, render.LocalizeError(c, err.Error()))
+		return
+	}
+	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/passings")
+}
+
+// GetTeamRoute возвращает маршрут команды (JSON).
+func (h *PassingHandler) GetTeamRoute(c *gin.Context) {
+	var req struct {
+		PassingID int `uri:"passing_id" binding:"required"`
+	}
+	if err := c.ShouldBindUri(&req); err != nil {
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_id"))
+		return
+	}
+	route, err := h.passingService.GetTeamRoute(c.Request.Context(), uint(req.PassingID))
+	if err != nil {
+		log.Error().Err(err).Int("passing_id", req.PassingID).Msg("GetTeamRoute: failed")
+		render.RenderError(c, http.StatusInternalServerError, render.LocalizeError(c, err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"route": route})
+}
+
+// SetTeamStartTime задаёт индивидуальное время старта команды (C-3).
+func (h *PassingHandler) SetTeamStartTime(c *gin.Context) {
+	var req struct {
+		PassingID int `uri:"passing_id" binding:"required"`
+	}
+	if err := c.ShouldBindUri(&req); err != nil {
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_id"))
+		return
+	}
+	startTimeStr := c.PostForm("start_time")
+	var startTime *time.Time
+	if startTimeStr != "" {
+		if t, err := time.Parse("2006-01-02T15:04", startTimeStr); err == nil {
+			startTime = &t
+		} else {
+			render.RenderError(c, http.StatusBadRequest, "Неверный формат времени старта")
+			return
+		}
+	}
+	if err := h.passingService.SetTeamStartTime(c.Request.Context(), uint(req.PassingID), startTime); err != nil {
+		log.Error().Err(err).Int("passing_id", req.PassingID).Msg("SetTeamStartTime: failed")
+		render.RenderError(c, http.StatusInternalServerError, render.LocalizeError(c, err.Error()))
+		return
+	}
+	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/passings")
+}
+
+// SetTeamAnswer задаёт персональный ответ уровня для команды (C-4).
+func (h *PassingHandler) SetTeamAnswer(c *gin.Context) {
+	var req struct {
+		GameID  int `uri:"id" binding:"required"`
+		LevelID int `uri:"level_id" binding:"required"`
+		TeamID  int `uri:"team_id" binding:"required"`
+	}
+	if err := c.ShouldBindUri(&req); err != nil {
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_id"))
+		return
+	}
+	code := c.PostForm("code")
+	hint := c.PostForm("hint")
+	if code == "" {
+		render.RenderError(c, http.StatusBadRequest, "Укажите код ответа")
+		return
+	}
+	if err := h.passingService.SetTeamAnswer(c.Request.Context(), uint(req.LevelID), uint(req.TeamID), code, hint); err != nil {
+		log.Error().Err(err).Int("level_id", req.LevelID).Int("team_id", req.TeamID).Msg("SetTeamAnswer: failed")
+		render.RenderError(c, http.StatusInternalServerError, render.LocalizeError(c, err.Error()))
+		return
+	}
+	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels/"+strconv.Itoa(req.LevelID)+"/passings")
+}
+
+// AttemptsPerUser возвращает количество найденных кодов по игрокам (C-5).
+func (h *PassingHandler) AttemptsPerUser(c *gin.Context) {
+	var req struct {
+		GameID int `uri:"id" binding:"required"`
+	}
+	if err := c.ShouldBindUri(&req); err != nil {
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_id"))
+		return
+	}
+	rows, err := h.passingService.GetAttemptsPerUser(c.Request.Context(), uint(req.GameID))
+	if err != nil {
+		log.Error().Err(err).Int("game_id", req.GameID).Msg("AttemptsPerUser: failed")
+		render.RenderError(c, http.StatusInternalServerError, render.LocalizeError(c, err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"attempts_per_user": rows})
 }
