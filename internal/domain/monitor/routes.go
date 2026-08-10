@@ -107,6 +107,10 @@ func RegisterRoutes(
 	// @Security JWT
 	protected.GET("/chat/ws", monitorHandler.ChatWS)
 
+	// B-6 (pass 45): общий чат сервера.
+	protected.GET("/chat/global", monitorHandler.GlobalChatPage)
+	protected.GET("/chat/global/room", monitorHandler.GlobalChatRoomID)
+
 	// @Summary ID комнат чата
 	// @Description Возвращает ID общей и командной комнат чата для игры (для инициализации WebSocket)
 	// @Tags monitor

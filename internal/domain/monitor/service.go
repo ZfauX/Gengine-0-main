@@ -347,8 +347,33 @@ func (s *ChatService) GetOrCreateGameRoom(ctx context.Context, gameID uint) (*Ch
 	return s.chatRepo.GetOrCreateGameRoom(ctx, gameID)
 }
 
+// GetOrCreateCaptainsRoom — комната «только капитаны» игры (B-2).
+func (s *ChatService) GetOrCreateCaptainsRoom(ctx context.Context, gameID uint) (*ChatRoom, error) {
+	return s.chatRepo.GetOrCreateCaptainsRoom(ctx, gameID)
+}
+
 func (s *ChatService) GetOrCreateTeamRoom(ctx context.Context, gameID, teamID, passingID uint) (*ChatRoom, error) {
 	return s.chatRepo.GetOrCreateTeamRoom(ctx, gameID, teamID, passingID)
+}
+
+// GetOrCreateTeamFloodRoom — флудилка команды (B-3).
+func (s *ChatService) GetOrCreateTeamFloodRoom(ctx context.Context, gameID, teamID, passingID uint) (*ChatRoom, error) {
+	return s.chatRepo.GetOrCreateTeamFloodRoom(ctx, gameID, teamID, passingID)
+}
+
+// GetOrCreateServerRoom — общий чат всех игроков сервера (B-6).
+func (s *ChatService) GetOrCreateServerRoom(ctx context.Context) (*ChatRoom, error) {
+	return s.chatRepo.GetOrCreateServerRoom(ctx)
+}
+
+// AddRoomMember добавляет/обновляет права участника комнаты (B-5).
+func (s *ChatService) AddRoomMember(ctx context.Context, roomID, userID uint, canRead, canWrite, canAttach bool) error {
+	return s.chatRepo.AddRoomMember(ctx, roomID, userID, canRead, canWrite, canAttach)
+}
+
+// GetRoomMember возвращает права участника комнаты (B-5).
+func (s *ChatService) GetRoomMember(ctx context.Context, roomID, userID uint) (*ChatRoomMember, error) {
+	return s.chatRepo.GetRoomMember(ctx, roomID, userID)
 }
 
 func (s *ChatService) SaveMessage(ctx context.Context, roomID, userID uint, content string) (*ChatMessage, error) {

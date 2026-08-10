@@ -10,17 +10,24 @@ import (
 	"gengine-0/internal/domain/user"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ChatRepository определяет контракт для работы с чатами.
 type ChatRepository interface {
 	GetOrCreateGameRoom(ctx context.Context, gameID uint) (*ChatRoom, error)
+	GetOrCreateCaptainsRoom(ctx context.Context, gameID uint) (*ChatRoom, error)
 	GetOrCreateTeamRoom(ctx context.Context, gameID, teamID, passingID uint) (*ChatRoom, error)
+	GetOrCreateTeamFloodRoom(ctx context.Context, gameID, teamID, passingID uint) (*ChatRoom, error)
+	GetOrCreateServerRoom(ctx context.Context) (*ChatRoom, error)
 	GetByID(ctx context.Context, roomID uint) (*ChatRoom, error)
 	IsTeamMemberOrCaptain(ctx context.Context, teamID, userID uint) (bool, error)
 	SaveMessage(ctx context.Context, roomID, userID uint, content string) (*ChatMessage, error)
 	GetMessages(ctx context.Context, roomID uint, limit int) ([]ChatMessage, error)
 	GetMessageByID(ctx context.Context, messageID uint) (*ChatMessage, error)
+	// B-1/B-5 (pass 45): членство в комнате.
+	AddRoomMember(ctx context.Context, roomID, userID uint, canRead, canWrite, canAttach bool) error
+	GetRoomMember(ctx context.Context, roomID, userID uint) (*ChatRoomMember, error)
 }
 
 // BlackboxRepository определяет контракт для работы с голосованиями.
@@ -47,7 +54,7 @@ func NewGormChatRepo(db *gorm.DB) ChatRepository {
 
 func (r *gormChatRepo) GetOrCreateGameRoom(ctx context.Context, gameID uint) (*ChatRoom, error) {
 	var room ChatRoom
-	err := r.db.WithContext(ctx).Where("game_id = ? AND team_id IS NULL AND passing_id IS NULL", gameID).First(&room).Error
+	err := r.db.WithContext(ctx).Where("game_id = ? AND team_id IS NULL AND passing_id IS NULL AND room_type = ?", gameID, RoomTypeGameGeneral).First(&room).Error
 	if err == nil {
 		return &room, nil
 	}
@@ -55,13 +62,38 @@ func (r *gormChatRepo) GetOrCreateGameRoom(ctx context.Context, gameID uint) (*C
 		return nil, err
 	}
 	room = ChatRoom{
-		GameID: &gameID,
-		Name:   "Общий чат игры",
+		GameID:   &gameID,
+		Name:     "Общий чат игры",
+		RoomType: RoomTypeGameGeneral,
 	}
 	// Create with conflict handling — if duplicate (race), re-query
 	if createErr := r.db.WithContext(ctx).Create(&room).Error; createErr != nil {
-		if err := r.db.WithContext(ctx).Where("game_id = ? AND team_id IS NULL AND passing_id IS NULL", gameID).First(&room).Error; err != nil {
+		if err := r.db.WithContext(ctx).Where("game_id = ? AND team_id IS NULL AND passing_id IS NULL AND room_type = ?", gameID, RoomTypeGameGeneral).First(&room).Error; err != nil {
 			return nil, fmt.Errorf("failed to get or create game chat room: %w", err)
+		}
+		return &room, nil
+	}
+	return &room, nil
+}
+
+// GetOrCreateCaptainsRoom возвращает комнату «только капитаны» игры (B-2).
+func (r *gormChatRepo) GetOrCreateCaptainsRoom(ctx context.Context, gameID uint) (*ChatRoom, error) {
+	var room ChatRoom
+	err := r.db.WithContext(ctx).Where("game_id = ? AND team_id IS NULL AND passing_id IS NULL AND room_type = ?", gameID, RoomTypeGameCaptains).First(&room).Error
+	if err == nil {
+		return &room, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	room = ChatRoom{
+		GameID:   &gameID,
+		Name:     "Капитаны",
+		RoomType: RoomTypeGameCaptains,
+	}
+	if createErr := r.db.WithContext(ctx).Create(&room).Error; createErr != nil {
+		if err := r.db.WithContext(ctx).Where("game_id = ? AND team_id IS NULL AND passing_id IS NULL AND room_type = ?", gameID, RoomTypeGameCaptains).First(&room).Error; err != nil {
+			return nil, fmt.Errorf("failed to get or create captains chat room: %w", err)
 		}
 		return &room, nil
 	}
@@ -70,7 +102,7 @@ func (r *gormChatRepo) GetOrCreateGameRoom(ctx context.Context, gameID uint) (*C
 
 func (r *gormChatRepo) GetOrCreateTeamRoom(ctx context.Context, gameID, teamID, passingID uint) (*ChatRoom, error) {
 	var room ChatRoom
-	err := r.db.WithContext(ctx).Where("game_id = ? AND team_id = ? AND passing_id = ?", gameID, teamID, passingID).First(&room).Error
+	err := r.db.WithContext(ctx).Where("game_id = ? AND team_id = ? AND passing_id = ? AND room_type = ?", gameID, teamID, passingID, RoomTypeTeamGeneral).First(&room).Error
 	if err == nil {
 		return &room, nil
 	}
@@ -82,11 +114,62 @@ func (r *gormChatRepo) GetOrCreateTeamRoom(ctx context.Context, gameID, teamID, 
 		TeamID:    &teamID,
 		PassingID: &passingID,
 		Name:      "Командный чат",
+		RoomType:  RoomTypeTeamGeneral,
 	}
 	// Create with conflict handling — if duplicate (race), re-query
 	if createErr := r.db.WithContext(ctx).Create(&room).Error; createErr != nil {
-		if err := r.db.WithContext(ctx).Where("game_id = ? AND team_id = ? AND passing_id = ?", gameID, teamID, passingID).First(&room).Error; err != nil {
+		if err := r.db.WithContext(ctx).Where("game_id = ? AND team_id = ? AND passing_id = ? AND room_type = ?", gameID, teamID, passingID, RoomTypeTeamGeneral).First(&room).Error; err != nil {
 			return nil, fmt.Errorf("failed to get or create team chat room: %w", err)
+		}
+		return &room, nil
+	}
+	return &room, nil
+}
+
+// GetOrCreateTeamFloodRoom возвращает флудилку команды (B-3).
+func (r *gormChatRepo) GetOrCreateTeamFloodRoom(ctx context.Context, gameID, teamID, passingID uint) (*ChatRoom, error) {
+	var room ChatRoom
+	err := r.db.WithContext(ctx).Where("game_id = ? AND team_id = ? AND passing_id = ? AND room_type = ?", gameID, teamID, passingID, RoomTypeTeamFlood).First(&room).Error
+	if err == nil {
+		return &room, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	room = ChatRoom{
+		GameID:    &gameID,
+		TeamID:    &teamID,
+		PassingID: &passingID,
+		Name:      "Флудилка",
+		RoomType:  RoomTypeTeamFlood,
+	}
+	if createErr := r.db.WithContext(ctx).Create(&room).Error; createErr != nil {
+		if err := r.db.WithContext(ctx).Where("game_id = ? AND team_id = ? AND passing_id = ? AND room_type = ?", gameID, teamID, passingID, RoomTypeTeamFlood).First(&room).Error; err != nil {
+			return nil, fmt.Errorf("failed to get or create team flood room: %w", err)
+		}
+		return &room, nil
+	}
+	return &room, nil
+}
+
+// GetOrCreateServerRoom возвращает общий чат всех игроков сервера (B-6).
+// Единственная комната с room_type=server (без game/team).
+func (r *gormChatRepo) GetOrCreateServerRoom(ctx context.Context) (*ChatRoom, error) {
+	var room ChatRoom
+	err := r.db.WithContext(ctx).Where("room_type = ?", RoomTypeServer).First(&room).Error
+	if err == nil {
+		return &room, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	room = ChatRoom{
+		Name:     "Общий чат",
+		RoomType: RoomTypeServer,
+	}
+	if createErr := r.db.WithContext(ctx).Create(&room).Error; createErr != nil {
+		if err := r.db.WithContext(ctx).Where("room_type = ?", RoomTypeServer).First(&room).Error; err != nil {
+			return nil, fmt.Errorf("failed to get or create server chat room: %w", err)
 		}
 		return &room, nil
 	}
@@ -155,6 +238,26 @@ func (r *gormChatRepo) GetMessages(ctx context.Context, roomID uint, limit int) 
 		msgs[i], msgs[j] = msgs[j], msgs[i]
 	}
 	return msgs, nil
+}
+
+// AddRoomMember добавляет/обновляет членство в комнате (B-1/B-5, pass 45).
+func (r *gormChatRepo) AddRoomMember(ctx context.Context, roomID, userID uint, canRead, canWrite, canAttach bool) error {
+	return r.db.WithContext(ctx).Table("chat_room_members").
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "room_id"}, {Name: "user_id"}},
+			DoUpdates: clause.Assignments(map[string]any{"can_read": canRead, "can_write": canWrite, "can_attach": canAttach}),
+		}).
+		Create(&ChatRoomMember{RoomID: roomID, UserID: userID, CanRead: canRead, CanWrite: canWrite, CanAttach: canAttach}).Error
+}
+
+// GetRoomMember возвращает членство пользователя в комнате (B-5).
+func (r *gormChatRepo) GetRoomMember(ctx context.Context, roomID, userID uint) (*ChatRoomMember, error) {
+	var m ChatRoomMember
+	err := r.db.WithContext(ctx).Where("room_id = ? AND user_id = ?", roomID, userID).First(&m).Error
+	if err != nil {
+		return nil, err
+	}
+	return &m, nil
 }
 
 type gormBlackboxRepo struct{ db *gorm.DB }

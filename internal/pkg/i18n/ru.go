@@ -611,6 +611,10 @@ var ruMessages = map[string]string{
 	"dashboard.no_active_passings":      "Нет активных прохождений.",
 	"dashboard.invitations":             "Приглашения",
 	"dashboard.no_invitations":          "Нет ожидающих приглашений.",
+	"dashboard.chats_title":             "Чаты",
+	"dashboard.chat_global":             "Общий чат",
+	"dashboard.chat_global_desc":        "Все игроки сервера",
+	"dashboard.chat_game":               "Чат игры",
 	"dashboard.create_game":             "+ Создать игру",
 	"dashboard.create_team":             "+ Создать команду",
 	"dashboard.continue":                "Продолжить",
@@ -1207,6 +1211,7 @@ var ruMessages = map[string]string{
 
 	// ── Game Chat ──
 	"gamechat.title":             "Чаты игры",
+	"gamechat.global_title":      "Общий чат",
 	"gamechat.general":           "Общий чат",
 	"gamechat.team":              "Командный чат",
 	"gamechat.input_placeholder": "Введите сообщение...",

@@ -590,6 +590,10 @@ var enMessages = map[string]string{
 	"dashboard.no_active_passings":      "No active passings.",
 	"dashboard.invitations":             "Invitations",
 	"dashboard.no_invitations":          "No pending invitations.",
+	"dashboard.chats_title":             "Chats",
+	"dashboard.chat_global":             "Global chat",
+	"dashboard.chat_global_desc":        "All server players",
+	"dashboard.chat_game":               "Game chat",
 	"dashboard.create_game":             "+ Create game",
 	"dashboard.create_team":             "+ Create team",
 	"dashboard.continue":                "Continue",
@@ -1205,6 +1209,7 @@ var enMessages = map[string]string{
 
 	// ── Game Chat ──
 	"gamechat.title":             "Game chats",
+	"gamechat.global_title":      "Global chat",
 	"gamechat.general":           "General chat",
 	"gamechat.team":              "Team chat",
 	"gamechat.input_placeholder": "Enter message...",

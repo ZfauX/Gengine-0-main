@@ -216,5 +216,28 @@
         <p class="text-gray-500 dark:text-gray-400 text-sm">{{ T $.Lang "dashboard.no_invitations" }}</p>
         {{end}}
     </div>
+
+    <!-- B-8 (pass 45): чаты, доступные игроку -->
+    <div class="card">
+        <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4">{{ T $.Lang "dashboard.chats_title" }}</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <a href="/chat/global" class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg hover:shadow-md transition">
+                <span class="text-2xl" aria-hidden="true">💬</span>
+                <div>
+                    <div class="text-sm font-medium text-gray-800 dark:text-gray-100">{{ T $.Lang "dashboard.chat_global" }}</div>
+                    <div class="text-xs text-gray-500">{{ T $.Lang "dashboard.chat_global_desc" }}</div>
+                </div>
+            </a>
+            {{range .Dashboard.AuthoredGames}}
+            <a href="/games/{{.ID}}/chat" class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg hover:shadow-md transition">
+                <span class="text-2xl" aria-hidden="true">🎮</span>
+                <div>
+                    <div class="text-sm font-medium text-gray-800 dark:text-gray-100">{{.Name}}</div>
+                    <div class="text-xs text-gray-500">{{ T $.Lang "dashboard.chat_game" }}</div>
+                </div>
+            </a>
+            {{end}}
+        </div>
+    </div>
 </div>
 {{end}}

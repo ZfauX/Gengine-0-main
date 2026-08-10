@@ -1,0 +1,107 @@
+{{define "chat-global.html"}}
+<div class="max-w-4xl mx-auto" data-room-id="{{.RoomID}}" data-user-id="{{.CurrentUserID}}">
+    <h1 class="page-title">{{ T $.Lang "gamechat.global_title" }}</h1>
+
+    <div class="card">
+        <!-- Область сообщений -->
+        <div class="relative">
+            <div id="chat-messages" role="log" aria-live="polite" aria-relevant="additions" class="h-96 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-800 mb-3">
+                <div id="chat-skeleton" class="space-y-3" aria-hidden="true">
+                    <div class="skeleton h-4 w-1/2"></div>
+                    <div class="skeleton h-4 w-2/3"></div>
+                    <div class="skeleton h-4 w-1/3"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Поле ввода и отправка -->
+        <div class="flex flex-wrap items-center gap-2">
+            <label for="chat-input" class="sr-only">{{ T $.Lang "gamechat.input_placeholder" }}</label>
+            <input type="text" id="chat-input" placeholder="{{ T $.Lang "gamechat.input_placeholder" }}"
+                   class="flex-1 min-w-0 rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2">
+            <button id="send-btn" class="btn btn-primary text-sm whitespace-nowrap">{{ T $.Lang "gamechat.send_button" }}</button>
+        </div>
+
+        <!-- Статус подключения -->
+        <div id="connection-status" role="status" class="mt-2 text-sm text-gray-500 dark:text-gray-400"></div>
+    </div>
+</div>
+
+<script nonce="{{.csp_nonce}}">
+(function() {
+    const container = document.querySelector('[data-room-id]');
+    if (!container) return;
+
+    const roomID = container.dataset.roomId;
+    const userID = parseInt(container.dataset.userId, 10);
+
+    const chatMessages = document.getElementById('chat-messages');
+    const chatInput = document.getElementById('chat-input');
+    const sendBtn = document.getElementById('send-btn');
+    const statusEl = document.getElementById('connection-status');
+    const renderedIds = new Set();
+
+    const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+
+    function updateConnectionStatus(text, color) {
+        if (statusEl) { statusEl.textContent = text; if (color) statusEl.style.color = color; }
+    }
+
+    function escapeHtml(text) {
+        var map = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'};
+        return String(text).replace(/[&<>"']/g, function(m) { return map[m]; });
+    }
+
+    function renderMessage(msg) {
+        const id = msg.id || msg.ID || '';
+        if (!id || renderedIds.has(id)) return;
+        renderedIds.add(id);
+        const author = (msg.User && msg.User.Name) || msg.user_name || (msg.user && msg.user.name) || '{{ T $.Lang "gamechat.unknown_user" }}';
+        const time = msg.created_at || msg.CreatedAt ? new Date(msg.created_at || msg.CreatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        const div = document.createElement('div');
+        div.className = 'chat-message py-1';
+        div.innerHTML = `<span class="font-semibold text-gray-800 dark:text-gray-100">${escapeHtml(author)}:</span> ${escapeHtml(msg.Content || msg.content || msg.text)} <span class="text-xs text-gray-500">(${time})</span>`;
+        chatMessages.appendChild(div);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    const chat = window.createReconnectingWebSocket(
+        `${wsProtocol}//${location.host}/chat/ws?room=${roomID}`,
+        {
+            onMessage: function(e) {
+                try {
+                    const data = JSON.parse(e.data);
+                    if (data.type === 'history') {
+                        chatMessages.innerHTML = '';
+                        if (Array.isArray(data.messages)) data.messages.forEach(m => renderMessage(m));
+                        chatMessages.scrollTop = chatMessages.scrollHeight;
+                    } else if (data.type === 'message') {
+                        renderMessage(data.message || data);
+                    }
+                } catch (err) { console.error('Chat: message processing error', err); }
+            },
+            onStatus: function(name) {
+                if (name === 'connected') updateConnectionStatus('{{ T $.Lang "gamechat.connected" }}', '#2ecc71');
+                else if (name === 'reconnecting') updateConnectionStatus('{{ T $.Lang "gamechat.reconnecting" }}', '#e67e22');
+                else if (name === 'error' || name === 'failed') updateConnectionStatus('{{ T $.Lang "gamechat.connection_error" }}', '#e74c3c');
+                else if (name === 'connecting') updateConnectionStatus('{{ T $.Lang "gamechat.connecting" }}', '#888');
+            },
+            onFinalClose: function() {
+                updateConnectionStatus('{{ T $.Lang "chat.final_close" }}', '#e74c3c');
+                setTimeout(function() { window.location.reload(); }, 30000);
+            }
+        }
+    );
+
+    function sendMessage() {
+        const text = chatInput.value.trim();
+        if (!text) return;
+        chat.send(JSON.stringify({ type: 'message', room_id: roomID, content: text }));
+        chatInput.value = '';
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+    chatInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') sendMessage(); });
+})();
+</script>
+{{end}}

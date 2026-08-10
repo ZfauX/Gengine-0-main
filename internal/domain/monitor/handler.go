@@ -615,18 +615,39 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 			return
 		}
 	} else if chatRoom.GameID != nil {
-		isManager, mgrErr := h.coAuthorSvc.IsUserManager(c.Request.Context(), *chatRoom.GameID, userID)
-		if mgrErr != nil {
-			log.Error().Err(mgrErr).Uint("game_id", *chatRoom.GameID).Uint("user_id", userID).Msg("ChatWS: manager check error")
-			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "внутренняя ошибка"})
-			return
-		}
-		if !isManager {
-			_, findErr := h.gameService.GetPassingByUser(c.Request.Context(), *chatRoom.GameID, userID)
+		// B-2 (pass 45): комната «только капитаны» — доступ только капитанам команд.
+		if chatRoom.RoomType == RoomTypeGameCaptains {
+			passing, findErr := h.gameService.GetPassingByUser(c.Request.Context(), *chatRoom.GameID, userID)
 			if findErr != nil {
-				log.Warn().Uint("user_id", userID).Uint("game_id", *chatRoom.GameID).Msg("ChatWS: access denied, not a participant")
+				log.Warn().Uint("user_id", userID).Uint("game_id", *chatRoom.GameID).Msg("ChatWS: captains room denied, not a participant")
 				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
 				return
+			}
+			isCaptain, capErr := h.gameService.IsTeamCaptain(c.Request.Context(), passing.TeamID, userID)
+			if capErr != nil {
+				log.Error().Err(capErr).Uint("team_id", passing.TeamID).Uint("user_id", userID).Msg("ChatWS: captain check error")
+				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "внутренняя ошибка"})
+				return
+			}
+			if !isCaptain {
+				log.Warn().Uint("user_id", userID).Uint("game_id", *chatRoom.GameID).Msg("ChatWS: captains room denied, not a captain")
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
+				return
+			}
+		} else {
+			isManager, mgrErr := h.coAuthorSvc.IsUserManager(c.Request.Context(), *chatRoom.GameID, userID)
+			if mgrErr != nil {
+				log.Error().Err(mgrErr).Uint("game_id", *chatRoom.GameID).Uint("user_id", userID).Msg("ChatWS: manager check error")
+				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "внутренняя ошибка"})
+				return
+			}
+			if !isManager {
+				_, findErr := h.gameService.GetPassingByUser(c.Request.Context(), *chatRoom.GameID, userID)
+				if findErr != nil {
+					log.Warn().Uint("user_id", userID).Uint("game_id", *chatRoom.GameID).Msg("ChatWS: access denied, not a participant")
+					c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
+					return
+				}
 			}
 		}
 	}
@@ -730,6 +751,15 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 					return
 				}
 			}
+			// B-5 (pass 45): если есть запись о членстве в комнате — проверяем
+			// право на запись (can_write). Общие/командные комнаты без
+			// member-записей работают как раньше.
+			if member, mErr := h.chatService.GetRoomMember(wsCtx, uint(roomIDUint), userID); mErr == nil && member != nil {
+				if !member.CanWrite {
+					log.Warn().Uint("room_id", uint(roomIDUint)).Uint("user_id", userID).Msg("ChatWS: write denied by room permissions")
+					continue
+				}
+			}
 			msg, err := h.chatService.SaveMessage(wsCtx, uint(roomIDUint), userID, cleanContent)
 			if err != nil {
 				log.Error().Err(err).Str("room_id", roomID).Uint("user_id", userID).Msg("ChatWS: failed to save message")
@@ -802,7 +832,20 @@ func (h *MonitorHandler) ChatRoomIDs(c *gin.Context) {
 		return
 	}
 
+	// B-2 (pass 45): комната «только капитаны» — создаётся для игры.
+	captainsRoom, err := h.chatService.GetOrCreateCaptainsRoom(ctx, gameID)
+	if err != nil {
+		log.Error().Err(err).Uint("game_id", gameID).Msg("ChatRoomIDs: failed to get captains room")
+		appErr := apperrors.Wrap(err, "MonitorHandler")
+		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
+			"error": appErr.Message,
+			"code":  appErr.Code,
+		})
+		return
+	}
+
 	var teamRoom *ChatRoom
+	var floodRoom *ChatRoom
 	passing, findErr := h.gameService.GetPassingByUser(ctx, gameID, userID)
 	if findErr == nil {
 		room, roomErr := h.chatService.GetOrCreateTeamRoom(ctx, gameID, passing.TeamID, passing.ID)
@@ -811,20 +854,62 @@ func (h *MonitorHandler) ChatRoomIDs(c *gin.Context) {
 		} else {
 			teamRoom = room
 		}
+		// B-3 (pass 45): флудилка команды.
+		froom, fErr := h.chatService.GetOrCreateTeamFloodRoom(ctx, gameID, passing.TeamID, passing.ID)
+		if fErr != nil {
+			log.Error().Err(fErr).Uint("game_id", gameID).Uint("team_id", passing.TeamID).Msg("ChatRoomIDs: failed to get team flood room")
+		} else {
+			floodRoom = froom
+		}
 	} else if !errors.Is(findErr, gorm.ErrRecordNotFound) {
 		log.Error().Err(findErr).Uint("game_id", gameID).Uint("user_id", userID).Msg("ChatRoomIDs: failed to find passing")
 	}
 
 	resp := gin.H{
-		"general_room_id": generalRoom.ID,
+		"general_room_id":  generalRoom.ID,
+		"captains_room_id": captainsRoom.ID,
 	}
 	if teamRoom != nil {
 		resp["team_room_id"] = teamRoom.ID
 	} else {
 		resp["team_room_id"] = 0
 	}
+	if floodRoom != nil {
+		resp["flood_room_id"] = floodRoom.ID
+	} else {
+		resp["flood_room_id"] = 0
+	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// GlobalChatPage отображает общий чат всех игроков сервера (B-6, pass 45).
+func (h *MonitorHandler) GlobalChatPage(c *gin.Context) {
+	userID := c.GetUint("userID")
+	room, err := h.chatService.GetOrCreateServerRoom(c.Request.Context())
+	if err != nil {
+		log.Error().Err(err).Msg("GlobalChatPage: failed to get server room")
+		render.RenderErrorPage(c, http.StatusInternalServerError)
+		return
+	}
+	render.Page(c, http.StatusOK, "chat-global.html", gin.H{
+		"Title":         "Общий чат",
+		"RoomID":        room.ID,
+		"CurrentUserID": userID,
+		"csrf":          csrf.GetToken(c),
+	})
+}
+
+// GlobalChatRoomID возвращает ID серверной комнаты (для WebSocket) (B-6).
+func (h *MonitorHandler) GlobalChatRoomID(c *gin.Context) {
+	room, err := h.chatService.GetOrCreateServerRoom(c.Request.Context())
+	if err != nil {
+		log.Error().Err(err).Msg("GlobalChatRoomID: failed to get server room")
+		appErr := apperrors.Wrap(err, "MonitorHandler")
+		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"room_id": room.ID})
 }
 
 // ListLogs отображает HTML-страницу с историей логов игры.

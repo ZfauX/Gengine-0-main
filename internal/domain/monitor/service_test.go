@@ -26,7 +26,7 @@ import (
 
 func TestMonitorService_GameSnapshot(t *testing.T) {
 	db := testutil.SetupPostgresDB(t,
-		&monitor.ChatRoom{}, &monitor.ChatMessage{},
+		&monitor.ChatRoom{}, &monitor.ChatMessage{}, &monitor.ChatRoomMember{},
 		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
 		&game.LevelProgress{}, &game.Attempt{},
 		&monitor.BlackboxVotingSession{}, &monitor.BlackboxVote{},
@@ -55,7 +55,7 @@ func TestMonitorService_GameSnapshot(t *testing.T) {
 
 func TestMonitorService_CalculateResults(t *testing.T) {
 	db := testutil.SetupPostgresDB(t,
-		&monitor.ChatRoom{}, &monitor.ChatMessage{},
+		&monitor.ChatRoom{}, &monitor.ChatMessage{}, &monitor.ChatRoomMember{},
 		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
 		&game.LevelProgress{}, &game.Attempt{},
 		&game.CoAuthor{},
@@ -113,7 +113,7 @@ func TestMonitorService_CalculateResults(t *testing.T) {
 // одинаковое место (T-H4).
 func TestMonitorService_CalculateResults_Ties(t *testing.T) {
 	db := testutil.SetupPostgresDB(t,
-		&monitor.ChatRoom{}, &monitor.ChatMessage{},
+		&monitor.ChatRoom{}, &monitor.ChatMessage{}, &monitor.ChatRoomMember{},
 		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
 		&game.LevelProgress{}, &game.Attempt{},
 		&game.CoAuthor{},
@@ -169,7 +169,7 @@ func TestMonitorService_CalculateResults_Ties(t *testing.T) {
 // длительности (T-H4).
 func TestMonitorService_CalculateResults_Penalty(t *testing.T) {
 	db := testutil.SetupPostgresDB(t,
-		&monitor.ChatRoom{}, &monitor.ChatMessage{},
+		&monitor.ChatRoom{}, &monitor.ChatMessage{}, &monitor.ChatRoomMember{},
 		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
 		&game.LevelProgress{}, &game.Attempt{},
 		&game.CoAuthor{},
@@ -214,7 +214,7 @@ func TestMonitorService_CalculateResults_Penalty(t *testing.T) {
 
 func TestMonitorService_Cache(t *testing.T) {
 	db := testutil.SetupPostgresDB(t,
-		&monitor.ChatRoom{}, &monitor.ChatMessage{},
+		&monitor.ChatRoom{}, &monitor.ChatMessage{}, &monitor.ChatRoomMember{},
 		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
 		&game.LevelProgress{}, &game.Attempt{},
 		&game.CoAuthor{},
@@ -251,7 +251,7 @@ func TestMonitorService_Cache(t *testing.T) {
 
 func TestBlackboxVoteService_StartVoteAndClose(t *testing.T) {
 	db := testutil.SetupPostgresDB(t,
-		&monitor.ChatRoom{}, &monitor.ChatMessage{},
+		&monitor.ChatRoom{}, &monitor.ChatMessage{}, &monitor.ChatRoomMember{},
 		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
 		&game.LevelProgress{}, &game.Attempt{},
 		&game.CoAuthor{},
@@ -301,7 +301,7 @@ func TestBlackboxVoteService_StartVoteAndClose(t *testing.T) {
 
 func TestBlackboxVoteService_DuplicateVote(t *testing.T) {
 	db := testutil.SetupPostgresDB(t,
-		&monitor.ChatRoom{}, &monitor.ChatMessage{},
+		&monitor.ChatRoom{}, &monitor.ChatMessage{}, &monitor.ChatRoomMember{},
 		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
 		&game.LevelProgress{}, &game.Attempt{},
 		&game.CoAuthor{},
@@ -332,7 +332,7 @@ func TestBlackboxVoteService_DuplicateVote(t *testing.T) {
 
 func TestBlackboxVoteService_CloseVotingNotAuthor(t *testing.T) {
 	db := testutil.SetupPostgresDB(t,
-		&monitor.ChatRoom{}, &monitor.ChatMessage{},
+		&monitor.ChatRoom{}, &monitor.ChatMessage{}, &monitor.ChatRoomMember{},
 		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
 		&game.LevelProgress{}, &game.Attempt{},
 		&game.CoAuthor{},
@@ -361,7 +361,7 @@ func TestBlackboxVoteService_CloseVotingNotAuthor(t *testing.T) {
 
 func TestChatService_CreateGameRoom(t *testing.T) {
 	db := testutil.SetupPostgresDB(t,
-		&monitor.ChatRoom{}, &monitor.ChatMessage{},
+		&monitor.ChatRoom{}, &monitor.ChatMessage{}, &monitor.ChatRoomMember{},
 		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
 		&game.LevelProgress{}, &game.Attempt{},
 		&game.CoAuthor{},
@@ -384,7 +384,7 @@ func TestChatService_CreateGameRoom(t *testing.T) {
 
 func TestChatService_CreateTeamRoom(t *testing.T) {
 	db := testutil.SetupPostgresDB(t,
-		&monitor.ChatRoom{}, &monitor.ChatMessage{},
+		&monitor.ChatRoom{}, &monitor.ChatMessage{}, &monitor.ChatRoomMember{},
 		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
 		&game.LevelProgress{}, &game.Attempt{},
 		&game.CoAuthor{},
@@ -406,9 +406,81 @@ func TestChatService_CreateTeamRoom(t *testing.T) {
 	assert.NotNil(t, room.TeamID)
 }
 
+// B-2/B-3/B-6 (pass 45): комнаты капитанов, флудилка, серверный чат.
+func TestChatService_SpecialRooms(t *testing.T) {
+	db := testutil.SetupPostgresDB(t,
+		&monitor.ChatRoom{}, &monitor.ChatMessage{}, &monitor.ChatRoomMember{},
+		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
+		&game.LevelProgress{}, &game.Attempt{},
+		&game.CoAuthor{},
+		&monitor.BlackboxVotingSession{}, &monitor.BlackboxVote{},
+		&level.Level{},
+		&team.Team{},
+		&user.User{},
+	)
+	chatRepo := monitor.NewGormChatRepo(db)
+	cs := monitor.NewChatService(chatRepo)
+
+	author := createUser(t, db, "special@test.com", "pass")
+	g := createGame(t, db, author.ID, "Special Chat Game")
+	tm := createTeam(t, db, author.ID)
+
+	captains, err := cs.GetOrCreateCaptainsRoom(context.Background(), g.ID)
+	require.NoError(t, err)
+	assert.Equal(t, monitor.RoomTypeGameCaptains, captains.RoomType)
+
+	flood, err := cs.GetOrCreateTeamFloodRoom(context.Background(), g.ID, tm.ID, 100)
+	require.NoError(t, err)
+	assert.Equal(t, monitor.RoomTypeTeamFlood, flood.RoomType)
+
+	server, err := cs.GetOrCreateServerRoom(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, monitor.RoomTypeServer, server.RoomType)
+
+	// Идемпотентность: повторный вызов возвращает ту же комнату.
+	server2, err := cs.GetOrCreateServerRoom(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, server.ID, server2.ID)
+}
+
+// B-5 (pass 45): права членства в комнате (read/write/attach).
+func TestChatService_RoomMemberPermissions(t *testing.T) {
+	db := testutil.SetupPostgresDB(t,
+		&monitor.ChatRoom{}, &monitor.ChatMessage{}, &monitor.ChatRoomMember{},
+		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
+		&game.LevelProgress{}, &game.Attempt{},
+		&game.CoAuthor{},
+		&monitor.BlackboxVotingSession{}, &monitor.BlackboxVote{},
+		&level.Level{},
+		&team.Team{},
+		&user.User{},
+	)
+	chatRepo := monitor.NewGormChatRepo(db)
+	cs := monitor.NewChatService(chatRepo)
+
+	author := createUser(t, db, "perm@test.com", "pass")
+	g := createGame(t, db, author.ID, "Perm Chat Game")
+	room, err := cs.GetOrCreateGameRoom(context.Background(), g.ID)
+	require.NoError(t, err)
+
+	// Читатель без права писать.
+	require.NoError(t, cs.AddRoomMember(context.Background(), room.ID, author.ID, true, false, true))
+	member, err := cs.GetRoomMember(context.Background(), room.ID, author.ID)
+	require.NoError(t, err)
+	assert.True(t, member.CanRead)
+	assert.False(t, member.CanWrite)
+	assert.True(t, member.CanAttach)
+
+	// Обновление прав (upsert).
+	require.NoError(t, cs.AddRoomMember(context.Background(), room.ID, author.ID, true, true, true))
+	member, err = cs.GetRoomMember(context.Background(), room.ID, author.ID)
+	require.NoError(t, err)
+	assert.True(t, member.CanWrite)
+}
+
 func TestChatService_SaveAndGetMessages(t *testing.T) {
 	db := testutil.SetupPostgresDB(t,
-		&monitor.ChatRoom{}, &monitor.ChatMessage{},
+		&monitor.ChatRoom{}, &monitor.ChatMessage{}, &monitor.ChatRoomMember{},
 		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
 		&game.LevelProgress{}, &game.Attempt{},
 		&game.CoAuthor{},
