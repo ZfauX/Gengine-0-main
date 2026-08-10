@@ -467,3 +467,46 @@ func TestCache_RemoveExpired_Concurrent(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// T-2 (pass 47): ttl==0 в GetOrSet и GetOrSetWithCtx должен давать одинаковую
+// семантику — SetDefault (дефолтный TTL, ключ попадает в ttlKeys), а не
+// «запись без истечения». Раньше GetOrSetWithCtx с ttl=0 вызывал Set(key,val,0)
+// → запись «навсегда» и расходился с GetOrSet (SetDefault).
+func TestCache_GetOrSetTTLZeroConsistency(t *testing.T) {
+	t.Parallel()
+	c, _ := NewCache(time.Minute, 10*time.Minute)
+	defer c.Close()
+
+	fn := func() (any, error) { return "v", nil }
+
+	_, err := c.GetOrSet("k1", 0, fn)
+	require.NoError(t, err)
+	_, err = c.GetOrSetWithCtx(context.Background(), "k2", 0, fn)
+	require.NoError(t, err)
+
+	// Оба ключа должны иметь ненулевой TTL (попасть в ttlKeys = expiring).
+	assert.True(t, c.ttlKeys["k1"], "GetOrSet ttl=0 должен использовать дефолтный TTL")
+	assert.True(t, c.ttlKeys["k2"], "GetOrSetWithCtx ttl=0 должен использовать дефолтный TTL")
+}
+
+func TestCache_GetOrSetWithCtx(t *testing.T) {
+	t.Parallel()
+	c, _ := NewCache(time.Minute, 10*time.Minute)
+	defer c.Close()
+
+	var callCount int
+	fn := func() (any, error) {
+		callCount++
+		return "computed", nil
+	}
+
+	val, err := c.GetOrSetWithCtx(context.Background(), "key", time.Minute, fn)
+	require.NoError(t, err)
+	assert.Equal(t, "computed", val)
+	assert.Equal(t, 1, callCount)
+
+	val, err = c.GetOrSetWithCtx(context.Background(), "key", time.Minute, fn)
+	require.NoError(t, err)
+	assert.Equal(t, "computed", val)
+	assert.Equal(t, 1, callCount)
+}

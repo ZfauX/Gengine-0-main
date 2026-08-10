@@ -8,10 +8,10 @@ export function uniqueEmail(prefix = 'user'): string {
 // Регистрация нового пользователя через UI (включая чекбокс соглашения).
 // После успешной регистрации сервер редиректит на /auth/login (email-верификация),
 // поэтому для попадания в защищённую зону нужен loginUser.
-export async function registerUser(page: Page, email: string, password = 'Password123!') {
+export async function registerUser(page: Page, email: string, password = 'Password123!', name = 'E2E User') {
   await page.goto('/auth/register');
   await expect(page).toHaveTitle(/Регистрация|Register|Gengine/i, { timeout: 10000 });
-  await page.fill('#name', 'E2E User');
+  await page.fill('#name', name);
   await page.fill('#email', email);
   await page.fill('#password', password);
   // Чекбокс пользовательского соглашения.
