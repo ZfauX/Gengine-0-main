@@ -2,9 +2,13 @@
   "name": "gengine",
   "scripts": {
     "build:css": "tailwindcss -i ./static/css/app.css -o ./static/css/output.css --minify",
-    "watch:css": "tailwindcss -i ./static/css/app.css -o ./static/css/output.css --watch"
+    "watch:css": "tailwindcss -i ./static/css/app.css -o ./static/css/output.css --watch",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:report": "playwright show-report"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/cli": "^4.3.3",
     "tailwindcss": "^4.1.6"
   }

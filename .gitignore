@@ -61,3 +61,8 @@ Desktop.ini
 
 # Загруженные пользователями файлы
 uploads/
+# E2E (Playwright)
+/test-results/
+/playwright-report/
+/.env.e2e
+

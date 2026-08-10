@@ -74,11 +74,11 @@ func MigrateFromDir(gdb *gorm.DB, migrationsDir string) error {
 	}
 
 	// maxSquashedVersion — последняя версия в squashed-наборе. Squashed —
-	// «слепок» базовой схемы + tail (000006), покрывающий 000024-000036.
+	// «слепок» базовой схемы + tail (000007), покрывающий 000024-000059.
 	// БД с версией <= maxSquashedVersion создана через squashed и продолжает
 	// применяться squashed-набором (новые tail-версии догоняют схему).
 	// БД с большей версией создана через индивидуальные миграции (migrations/).
-	const maxSquashedVersion = 6
+	const maxSquashedVersion = 7
 
 	if migrationsDir == "" {
 		if hasAppliedMigrations(gdb) {

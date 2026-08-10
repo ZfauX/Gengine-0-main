@@ -8,11 +8,21 @@ make dev            # go run ./cmd/server
 make test           # go test -v -race -coverprofile=coverage.out ./...
 make test-short     # go test -v -short -race -cover ./...  (no DB needed)
 make test-integration # go test -v -race -tags=integration ./...  (requires PostgreSQL)
+make test-e2e       # npx playwright test  (Playwright E2E; needs e2e DB + server on :8081)
 make lint           # golangci-lint run ./...
 make swagger        # swag init -g ./cmd/server/main.go -o ./docs
 make css            # tailwindcss -i ./static/css/app.css -o ./static/css/output.css --minify
 go generate ./...   # re-run google/wire DI codegen (needed after constructor changes)
 ```
+
+E2E-тесты (Playwright, `e2e/`):
+- Сервер для E2E запускается на `:8081` с БД `gengine_e2e` (см. `.env.e2e`; не коммитится).
+- Лимиты rate-limiter в E2E подняты (`RATE_LIMIT_*=100000`), `TRUSTED_PROXIES` пуст — иначе
+  CSRF-кука станет Secure, а регистрация упрётся в дефолтный лимит 3/10мин из routes.go.
+- Первый запуск: `npm install`, `npx playwright install chromium`, применить миграции к `gengine_e2e`
+  (`go run ./cmd/server -migrate` с env из `.env.e2e`), запустить сервер, затем `make test-e2e`.
+- Service Workers блокируются в playwright.config.ts (`serviceWorkers: 'block'`) — SW кэширует
+  HTML-страницы и подставляет устаревший CSRF-токен.
 
 After changing any constructor signature in `internal/domain/*/service.go`, run:
 ```bash

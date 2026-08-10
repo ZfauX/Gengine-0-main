@@ -210,11 +210,16 @@ func run() error {
 	go hub.Run()
 
 	// --- Инициализация rate limiters (singleton, создаются один раз) ---
-	// Если Valkey доступен, используем его как shared backend для rate limiters между инстансами
+	// Если Valkey доступен, используем его как shared backend для rate limiters между инстансами.
+	// Если Valkey задан в конфиге, но недоступен (valkeyClient == nil), делаем fallback
+	// на in-memory лимитеры — иначе маршруты используют захардкоженные лимиты из routes.go
+	// (например, регистрация 3/10мин), игнорируя RATE_LIMIT_* из конфига.
 	rateLimitWindow := cfg.Server.RateLimitWindow
+	useValkey := false
 	if cfg.Valkey.Host != "" {
 		valkeyClient := cache.NewValkeyClient(cfg.Valkey.Host, cfg.Valkey.Port, cfg.Valkey.Password, cfg.Valkey.PoolSize, cfg.Valkey.MinIdleConns, cfg.Valkey.MaxRetries)
 		if valkeyClient != nil {
+			useValkey = true
 			middleware.InitGlobalRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitGlobalRequests)
 			middleware.InitLoginRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitLoginRequests)
 			middleware.InitRegistrationRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitRegistration)
@@ -223,8 +228,11 @@ func run() error {
 			middleware.InitAPIRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitAPI)
 			middleware.InitPasswordResetRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitPasswordReset)
 			middleware.InitOAuthRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitLoginRequests)
+		} else {
+			log.Warn().Msg("Valkey configured but unavailable, falling back to in-memory rate limiters")
 		}
-	} else {
+	}
+	if !useValkey {
 		middleware.InitGlobalRateLimiter(rateLimitWindow, cfg.Server.RateLimitGlobalRequests)
 		middleware.InitLoginRateLimiter(rateLimitWindow, cfg.Server.RateLimitLoginRequests)
 		middleware.InitRegistrationRateLimiter(rateLimitWindow, cfg.Server.RateLimitRegistration)

@@ -50,6 +50,11 @@ test-race:
 test-integration:
 	$(GO) test -v -race -cover -tags=integration ./...
 
+# E2E tests (Playwright). Prereq: e2e DB (see .env.e2e), server on :8081, npm install.
+test-e2e:
+	npx playwright test
+
+
 # Запуск линтера
 lint:
 	$(GOLANGCI) run ./...
