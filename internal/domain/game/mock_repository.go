@@ -320,6 +320,20 @@ func (m *MockGameRepository) ListByDateRange(ctx context.Context, from, to time.
 	return ret0, ret1
 }
 
+// ListUpcomingByDays mocks base method (D-1, pass 45).
+func (m *MockGameRepository) ListUpcomingByDays(ctx context.Context, days int) ([]Game, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListUpcomingByDays", ctx, days)
+	ret0, _ := ret[0].([]Game)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListUpcomingByDays indicates an expected call of ListUpcomingByDays.
+func (mr *MockGameRepositoryMockRecorder) ListUpcomingByDays(ctx, days any) *gomock.Call {
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListUpcomingByDays", reflect.TypeOf((*MockGameRepository)(nil).ListUpcomingByDays), ctx, days)
+}
+
 // ListByDateRange indicates an expected call of ListByDateRange.
 func (mr *MockGameRepositoryMockRecorder) ListByDateRange(ctx, from, to any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()

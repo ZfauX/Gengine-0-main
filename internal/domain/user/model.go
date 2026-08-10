@@ -24,6 +24,9 @@ type User struct {
 	ThemeSettingsJSON string `gorm:"column:theme_settings;type:text;default:''" json:"-"`
 	// Вид списка игр (table | cards) — серверная персонализация.
 	GamesView string `gorm:"column:games_view;type:varchar(10);default:'table'" json:"-"`
+	// NotifyGameDays — D-1 (pass 45): за сколько дней уведомлять о предстоящих
+	// играх (30/14/7/1; 0 = не уведомлять).
+	NotifyGameDays int `gorm:"column:notify_game_days;default:0" json:"-"`
 	// 2FA fields
 	TwoFactorEnabled     bool               `gorm:"default:false"`               // включена ли 2FA
 	TwoFactorSecret      string             `gorm:"default:'';size:64" json:"-"` // секрет для TOTP (Base32)

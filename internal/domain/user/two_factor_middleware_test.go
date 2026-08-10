@@ -503,3 +503,8 @@ func TestTwoFactorBackupCodeRequired_InvalidUserIDType(t *testing.T) {
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
+
+// GetUsersByNotifyDays — D-1 (pass 45): минимальная реализация для мока.
+func (m *mockUserRepo) GetUsersByNotifyDays(ctx context.Context, days int) ([]uint, error) {
+	return nil, nil
+}

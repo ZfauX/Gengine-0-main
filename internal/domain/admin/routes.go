@@ -48,6 +48,9 @@ func RegisterRoutes(
 
 		protected.GET("/users", adminHandler.ListUsers)
 
+		// E-1 (pass 45): админ создаёт игрока.
+		protected.POST("/users/create", adminHandler.CreateUser)
+
 		protected.POST("/users/:id/toggle-admin", adminHandler.ToggleAdmin)
 
 		protected.POST("/users/:id/delete", adminHandler.DeleteUser)
@@ -57,6 +60,9 @@ func RegisterRoutes(
 		protected.POST("/games/:id/delete", adminHandler.DeleteGame)
 
 		protected.GET("/teams", adminHandler.ListTeams)
+
+		// E-2 (pass 45): админ создаёт команду.
+		protected.POST("/teams/create", adminHandler.CreateTeam)
 
 		protected.GET("/audit", adminHandler.AuditLog)
 

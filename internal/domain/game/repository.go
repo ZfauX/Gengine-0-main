@@ -25,6 +25,9 @@ type GameRepository interface {
 	Save(ctx context.Context, game *Game) error
 	// Новый метод для календаря
 	ListByDateRange(ctx context.Context, from, to time.Time) ([]Game, error)
+	// ListUpcomingByDays — D-1 (pass 45): опубликованные игры, которые начинаются
+	// ровно через days дней (для уведомлений о предстоящих играх).
+	ListUpcomingByDays(ctx context.Context, days int) ([]Game, error)
 	// Read-хелперы для сервисного слоя (C1 — без прямого *gorm.DB в сервисах).
 	GetPassingByUser(ctx context.Context, gameID, userID uint) (*GamePassing, error)
 	GetFinishedPassingByGameAndTeam(ctx context.Context, gameID, teamID uint) (*GamePassing, error)
@@ -193,6 +196,20 @@ func (r *gormGameRepo) ListByDateRange(ctx context.Context, from, to time.Time) 
 		}).
 		Where("is_draft = false AND visibility = 'public' AND starts_at BETWEEN ? AND ?", from, to).
 		Order("starts_at ASC").
+		Find(&games).Error
+	return games, err
+}
+
+// ListUpcomingByDays возвращает опубликованные игры, стартующие ровно через
+// days дней (D-1, pass 45): окно [день 00:00, день 23:59] от текущего момента.
+func (r *gormGameRepo) ListUpcomingByDays(ctx context.Context, days int) ([]Game, error) {
+	var games []Game
+	now := time.Now()
+	from := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, days)
+	to := from.AddDate(0, 0, 1)
+	err := r.db.WithContext(ctx).
+		Select("id, name, starts_at").
+		Where("is_draft = false AND visibility = 'public' AND starts_at >= ? AND starts_at < ?", from, to).
 		Find(&games).Error
 	return games, err
 }

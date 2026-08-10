@@ -154,6 +154,24 @@
         </script>
     </div>
 
+    <!-- D-1 (pass 45): уведомления о предстоящих играх -->
+    <div class="card mb-6">
+        <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ T $.Lang "profile.game_reminders" }}</h3>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">{{ T $.Lang "profile.game_reminders_desc" }}</p>
+        <form action="/profile/notify-game-days" method="POST" class="flex flex-wrap items-center gap-3">
+            <input type="hidden" name="_csrf" value="{{.csrf}}">
+            <select name="notify_game_days" id="notify_game_days"
+                    class="rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2">
+                <option value="0" {{if eq .NotifyGameDays 0}}selected{{end}}>{{ T $.Lang "profile.remind_never" }}</option>
+                <option value="30" {{if eq .NotifyGameDays 30}}selected{{end}}>{{ TF $.Lang "profile.remind_days" 30 }}</option>
+                <option value="14" {{if eq .NotifyGameDays 14}}selected{{end}}>{{ TF $.Lang "profile.remind_days" 14 }}</option>
+                <option value="7" {{if eq .NotifyGameDays 7}}selected{{end}}>{{ TF $.Lang "profile.remind_days" 7 }}</option>
+                <option value="1" {{if eq .NotifyGameDays 1}}selected{{end}}>{{ TF $.Lang "profile.remind_days" 1 }}</option>
+            </select>
+            <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "profile.save_notif_settings" }}</button>
+        </form>
+    </div>
+
     <!-- Двухфакторная аутентификация -->
     <div class="card mb-6">
         <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ T $.Lang "profile.2fa_section" }}</h3>

@@ -78,3 +78,12 @@ func (s *ProfileService) GetGamesView(ctx context.Context, userID uint) (string,
 func (s *ProfileService) SaveGamesView(ctx context.Context, userID uint, view string) error {
 	return s.repo.SaveGamesView(ctx, userID, view)
 }
+
+// GetNotifyGameDays возвращает период уведомлений о предстоящих играх (D-1).
+func (s *ProfileService) GetNotifyGameDays(ctx context.Context, userID uint) (int, error) {
+	return s.repo.GetNotifyGameDays(ctx, userID)
+}
+
+func (s *ProfileService) SaveNotifyGameDays(ctx context.Context, userID uint, days int) error {
+	return s.repo.SaveNotifyGameDays(ctx, userID, days)
+}

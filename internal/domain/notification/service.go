@@ -32,6 +32,7 @@ const (
 	NotificationTypeNewMessage          NotificationType = "new_message"
 	NotificationTypeTimeWarning         NotificationType = "time_warning"
 	NotificationTypeTimeExpired         NotificationType = "time_expired"
+	NotificationTypeInfo                NotificationType = "info"
 )
 
 // Notification represents a user notification stored in the database.

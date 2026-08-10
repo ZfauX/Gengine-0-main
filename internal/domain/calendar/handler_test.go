@@ -88,6 +88,12 @@ func (m *mockGameRepo) ListByDateRange(ctx context.Context, from, to time.Time) 
 	return args.Get(0).([]game.Game), args.Error(1)
 }
 
+// ListUpcomingByDays — D-1 (pass 45): мок для интерфейса GameRepository.
+func (m *mockGameRepo) ListUpcomingByDays(ctx context.Context, days int) ([]game.Game, error) {
+	args := m.Called(ctx, days)
+	return args.Get(0).([]game.Game), args.Error(1)
+}
+
 func (m *mockGameRepo) GetPassingByUser(ctx context.Context, gameID, userID uint) (*game.GamePassing, error) {
 	args := m.Called(ctx, gameID, userID)
 	if args.Get(0) == nil {

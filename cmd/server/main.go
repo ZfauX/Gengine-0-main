@@ -23,8 +23,10 @@ import (
 	"gengine-0/internal/db"
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/monitor"
+	"gengine-0/internal/domain/notification"
 	"gengine-0/internal/pkg/cache"
 	"gengine-0/internal/pkg/email"
+	"gengine-0/internal/pkg/i18n"
 	"gengine-0/internal/pkg/logging"
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/storage"
@@ -408,6 +410,50 @@ func run() error {
 					log.Error().Err(err).Msg("Очистка уведомлений: ошибка")
 				} else if deleted > 0 {
 					log.Debug().Int64("deleted", deleted).Msg("Очистка уведомлений: удалено прочитанных старше 90 дней")
+				}
+			}
+		}
+	})
+
+	// D-1 (pass 45): уведомления о предстоящих играх. Раз в час проверяем,
+	// есть ли опубликованные игры, стартующие ровно через 30/14/7/1 день, и
+	// создаём уведомление пользователям с соответствующим notify_game_days.
+	bgWg.Add(1)
+	goSafe(func() {
+		defer bgWg.Done()
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				log.Info().Msg("upcoming game reminders: context canceled, stopping")
+				return
+			case <-ticker.C:
+				remindDays := []int{30, 14, 7, 1}
+				for _, days := range remindDays {
+					games, err := deps.Repos.Game.ListUpcomingByDays(ctx, days)
+					if err != nil {
+						log.Error().Err(err).Int("days", days).Msg("Upcoming game reminders: list failed")
+						continue
+					}
+					if len(games) == 0 {
+						continue
+					}
+					userIDs, err := deps.Repos.User.GetUsersByNotifyDays(ctx, days)
+					if err != nil {
+						log.Error().Err(err).Int("days", days).Msg("Upcoming game reminders: users failed")
+						continue
+					}
+					for _, game := range games {
+						link := fmt.Sprintf("/games/%d", game.ID)
+						for _, uid := range userIDs {
+							title := i18n.T("notif.upcoming_game_title")
+							body := fmt.Sprintf("%s: %s", i18n.T("notif.upcoming_game_body"), game.Name)
+							if err := deps.Services.Notification.Create(ctx, uid, notification.NotificationTypeInfo, title, body, link); err != nil {
+								log.Debug().Err(err).Uint("user_id", uid).Uint("game_id", game.ID).Msg("Upcoming game reminder: create failed")
+							}
+						}
+					}
 				}
 			}
 		}

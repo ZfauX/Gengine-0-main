@@ -4,6 +4,7 @@ package user
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -66,6 +67,11 @@ func (h *ProfileHandler) Show(c *gin.Context) {
 		log.Warn().Err(tsErr).Uint("user_id", userID).Msg("Show: failed to load theme settings, using defaults")
 		themeSettings = DefaultThemeSettings()
 	}
+	notifyDays, ndErr := h.profileSvc.GetNotifyGameDays(c.Request.Context(), userID)
+	if ndErr != nil {
+		log.Warn().Err(ndErr).Uint("user_id", userID).Msg("Show: failed to load notify days, using 0")
+		notifyDays = 0
+	}
 	render.Page(c, http.StatusOK, "profile-show.html", gin.H{
 		"Title":          "Профиль",
 		"User":           user.ToPublic(),
@@ -73,6 +79,7 @@ func (h *ProfileHandler) Show(c *gin.Context) {
 		"Achievements":   user.Achievements,
 		"VapidPublicKey": h.cfg.VAPID.PublicKey,
 		"ThemeSettings":  themeSettings,
+		"NotifyGameDays": notifyDays,
 		"CurrentUserID":  userID,
 		"ProfilePercent": completion,
 		"csrf":           csrf.GetToken(c),
@@ -453,6 +460,27 @@ func (h *ProfileHandler) UpdateThemeSettings(c *gin.Context) {
 	// Сбрасываем кэш темы, чтобы изменения применились сразу (P5).
 	middleware.InvalidateThemeCache(userID)
 
+	render.SetFlash(c, "success", render.Tr(c, "profile.settings_saved"))
+	c.Redirect(http.StatusFound, "/profile")
+}
+
+// UpdateNotifyGameDays сохраняет период уведомлений о предстоящих играх (D-1).
+// @Summary Настройка уведомлений об играх
+// @Tags profile
+// @Accept x-www-form-urlencoded
+// @Param notify_game_days formData int false "За сколько дней уведомлять (30/14/7/1/0)"
+// @Success 302 {string} string "Перенаправление на /profile"
+// @Router /profile/notify-game-days [post]
+// @Security JWT
+func (h *ProfileHandler) UpdateNotifyGameDays(c *gin.Context) {
+	userID := c.GetUint("userID")
+	days, _ := strconv.Atoi(c.PostForm("notify_game_days"))
+
+	if err := h.profileSvc.SaveNotifyGameDays(c.Request.Context(), userID, days); err != nil {
+		log.Error().Err(err).Uint("user_id", userID).Msg("UpdateNotifyGameDays: failed to save")
+		render.RenderErrorPage(c, http.StatusInternalServerError)
+		return
+	}
 	render.SetFlash(c, "success", render.Tr(c, "profile.settings_saved"))
 	c.Redirect(http.StatusFound, "/profile")
 }

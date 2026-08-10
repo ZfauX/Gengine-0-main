@@ -58,6 +58,9 @@ type UserRepository interface {
 	Update(ctx context.Context, id uint, fields map[string]any) error
 	GetByRole(ctx context.Context, role string) ([]User, error)
 	GetUserRole(ctx context.Context, id uint) (string, error)
+	// GetUsersByNotifyDays — D-1 (pass 45): пользователи, которые хотят
+	// уведомления о предстоящих играх за days дней.
+	GetUsersByNotifyDays(ctx context.Context, days int) ([]uint, error)
 	// GetGamesView возвращает предпочтение вида списка игр (U-3: server-side,
 	// чтобы не было FOUC при рендере списка).
 	GetGamesView(ctx context.Context, userID uint) (string, error)
@@ -96,6 +99,9 @@ type ProfileRepository interface {
 	SaveThemeSettings(ctx context.Context, userID uint, ts ThemeSettings) error
 	GetGamesView(ctx context.Context, userID uint) (string, error)
 	SaveGamesView(ctx context.Context, userID uint, view string) error
+	// D-1 (pass 45): уведомления о предстоящих играх.
+	GetNotifyGameDays(ctx context.Context, userID uint) (int, error)
+	SaveNotifyGameDays(ctx context.Context, userID uint, days int) error
 }
 
 // AchievementRepository определяет контракт для работы с достижениями.
@@ -320,6 +326,17 @@ func (r *gormUserRepo) GetUserRole(ctx context.Context, id uint) (string, error)
 		return "", gorm.ErrRecordNotFound
 	}
 	return role, nil
+}
+
+// GetUsersByNotifyDays возвращает ID пользователей, подписанных на уведомления
+// за days дней (D-1, pass 45).
+func (r *gormUserRepo) GetUsersByNotifyDays(ctx context.Context, days int) ([]uint, error) {
+	var ids []uint
+	err := r.db.WithContext(ctx).Table("users").
+		Select("id").
+		Where("notify_game_days = ? AND deleted_at IS NULL", days).
+		Scan(&ids).Error
+	return ids, err
 }
 
 func (r *gormUserRepo) GetGamesView(ctx context.Context, userID uint) (string, error) {

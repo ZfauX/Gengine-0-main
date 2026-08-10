@@ -109,6 +109,9 @@ func RegisterRoutes(
 
 		profileGroup.POST("/theme-settings", profileHandler.UpdateThemeSettings)
 
+		// D-1 (pass 45): период уведомлений о предстоящих играх.
+		profileGroup.POST("/notify-game-days", profileHandler.UpdateNotifyGameDays)
+
 		// S-1 (pass 35): rate limit на смену пароля — дополнительная защита от
 		// перебора старого пароля (lockout в сервисе + IP-лимит).
 		profileGroup.POST("/change-password", middleware.LoginRateLimit(5*time.Minute, 5), profileHandler.ChangePassword)

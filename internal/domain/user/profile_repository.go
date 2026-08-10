@@ -133,3 +133,22 @@ func (r *gormProfileRepo) SaveGamesView(ctx context.Context, userID uint, view s
 	}
 	return r.db.WithContext(ctx).Model(&User{}).Where("id = ?", userID).Update("games_view", view).Error
 }
+
+// D-1 (pass 45): уведомления о предстоящих играх.
+func (r *gormProfileRepo) GetNotifyGameDays(ctx context.Context, userID uint) (int, error) {
+	var days int
+	err := r.db.WithContext(ctx).Model(&User{}).Where("id = ?", userID).Select("notify_game_days").Scan(&days).Error
+	if err != nil {
+		return 0, err
+	}
+	return days, nil
+}
+
+func (r *gormProfileRepo) SaveNotifyGameDays(ctx context.Context, userID uint, days int) error {
+	switch days {
+	case 30, 14, 7, 1:
+	default:
+		days = 0
+	}
+	return r.db.WithContext(ctx).Model(&User{}).Where("id = ?", userID).Update("notify_game_days", days).Error
+}

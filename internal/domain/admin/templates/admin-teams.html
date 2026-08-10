@@ -21,6 +21,19 @@
         </div>
     </form>
 
+    <!-- E-2 (pass 45): админ создаёт команду -->
+    <div class="card mb-6">
+        <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-3">{{ T $.Lang "admin.create_team_title" }}</h2>
+        <form action="/admin/teams/create" method="POST" class="flex flex-wrap gap-3">
+            <input type="hidden" name="_csrf" value="{{.csrf}}">
+            <input type="text" name="name" placeholder="{{ T $.Lang "admin.team_name" }}" required
+                   class="flex-1 min-w-[180px] rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-500 sm:text-sm px-3 py-2">
+            <input type="number" name="captain_id" placeholder="{{ T $.Lang "admin.captain_id" }}" required min="1"
+                   class="flex-1 min-w-[120px] rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder:text-gray-500 sm:text-sm px-3 py-2">
+            <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "admin.create_team_button" }}</button>
+        </form>
+    </div>
+
     <!-- UX-5 (pass 37): мобильные карточки — на < sm таблица скрыта. -->
     <div class="space-y-3 sm:hidden">
         {{range .Teams}}

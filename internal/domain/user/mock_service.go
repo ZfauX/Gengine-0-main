@@ -294,6 +294,21 @@ func (mr *MockUserRepositoryMockRecorder) GetUserRole(ctx, id any) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUserRole", reflect.TypeOf((*MockUserRepository)(nil).GetUserRole), ctx, id)
 }
 
+// GetUsersByNotifyDays mocks base method.
+func (m *MockUserRepository) GetUsersByNotifyDays(ctx context.Context, days int) ([]uint, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetUsersByNotifyDays", ctx, days)
+	ret0, _ := ret[0].([]uint)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetUsersByNotifyDays indicates an expected call of GetUsersByNotifyDays.
+func (mr *MockUserRepositoryMockRecorder) GetUsersByNotifyDays(ctx, days any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUsersByNotifyDays", reflect.TypeOf((*MockUserRepository)(nil).GetUsersByNotifyDays), ctx, days)
+}
+
 // List mocks base method.
 func (m *MockUserRepository) List(ctx context.Context, role string) ([]User, error) {
 	m.ctrl.T.Helper()
@@ -422,6 +437,21 @@ func (mr *MockProfileRepositoryMockRecorder) GetGamesView(ctx, userID any) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetGamesView", reflect.TypeOf((*MockProfileRepository)(nil).GetGamesView), ctx, userID)
 }
 
+// GetNotifyGameDays mocks base method.
+func (m *MockProfileRepository) GetNotifyGameDays(ctx context.Context, userID uint) (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetNotifyGameDays", ctx, userID)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetNotifyGameDays indicates an expected call of GetNotifyGameDays.
+func (mr *MockProfileRepositoryMockRecorder) GetNotifyGameDays(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNotifyGameDays", reflect.TypeOf((*MockProfileRepository)(nil).GetNotifyGameDays), ctx, userID)
+}
+
 // GetPublicProfileStats mocks base method.
 func (m *MockProfileRepository) GetPublicProfileStats(ctx context.Context, userID uint) (*UserStats, error) {
 	m.ctrl.T.Helper()
@@ -494,6 +524,20 @@ func (m *MockProfileRepository) SaveGamesView(ctx context.Context, userID uint, 
 func (mr *MockProfileRepositoryMockRecorder) SaveGamesView(ctx, userID, view any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveGamesView", reflect.TypeOf((*MockProfileRepository)(nil).SaveGamesView), ctx, userID, view)
+}
+
+// SaveNotifyGameDays mocks base method.
+func (m *MockProfileRepository) SaveNotifyGameDays(ctx context.Context, userID uint, days int) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SaveNotifyGameDays", ctx, userID, days)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SaveNotifyGameDays indicates an expected call of SaveNotifyGameDays.
+func (mr *MockProfileRepositoryMockRecorder) SaveNotifyGameDays(ctx, userID, days any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveNotifyGameDays", reflect.TypeOf((*MockProfileRepository)(nil).SaveNotifyGameDays), ctx, userID, days)
 }
 
 // SaveThemeSettings mocks base method.

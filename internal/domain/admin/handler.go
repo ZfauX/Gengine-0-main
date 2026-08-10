@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/user"
 	"gengine-0/internal/pkg/audit"
 	"gengine-0/internal/pkg/cache"
+	"gengine-0/internal/pkg/crypto"
 	"gengine-0/internal/pkg/i18n"
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
@@ -20,6 +22,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -237,6 +240,89 @@ func (h *AdminHandler) ListUsers(c *gin.Context) {
 		"Error":         errorFlash,
 		"csrf":          csrf.GetToken(c),
 	})
+}
+
+// CreateUser — E-1 (pass 45): админ создаёт игрока.
+// @Summary Создание пользователя
+// @Tags admin
+// @Accept x-www-form-urlencoded
+// @Param email formData string true "Email"
+// @Param name formData string true "Имя"
+// @Param password formData string true "Пароль"
+// @Success 302 {string} string "Редирект"
+// @Router /admin/users/create [post]
+// @Security JWT
+func (h *AdminHandler) CreateUser(c *gin.Context) {
+	email := strings.TrimSpace(c.PostForm("email"))
+	name := strings.TrimSpace(c.PostForm("name"))
+	password := c.PostForm("password")
+
+	if email == "" || name == "" || len(password) < 8 {
+		render.SetFlash(c, "error", i18n.T("admin.create_user_invalid"))
+		c.Redirect(http.StatusFound, "/admin/users")
+		return
+	}
+	if _, err := h.userRepo.GetByEmail(c.Request.Context(), email); err == nil {
+		render.SetFlash(c, "error", i18n.T("admin.create_user_exists"))
+		c.Redirect(http.StatusFound, "/admin/users")
+		return
+	}
+
+	hashed, err := bcrypt.GenerateFromPassword([]byte(password), crypto.BcryptCost)
+	if err != nil {
+		log.Error().Err(err).Msg("CreateUser: failed to hash password")
+		render.RenderErrorPage(c, http.StatusInternalServerError)
+		return
+	}
+	u := &user.User{Email: email, Name: name, Password: string(hashed), EmailVerified: true}
+	if err := h.userRepo.Create(c.Request.Context(), u); err != nil {
+		log.Error().Err(err).Str("email", email).Msg("CreateUser: failed to create")
+		render.SetFlash(c, "error", i18n.T("admin.create_user_error"))
+		c.Redirect(http.StatusFound, "/admin/users")
+		return
+	}
+	if h.auditService != nil {
+		h.auditService.Log(c.GetUint("userID"), "admin.user_create", "users", u.ID, fmt.Sprintf("email=%s", email))
+	}
+	render.SetFlash(c, "success", i18n.T("admin.create_user_ok"))
+	c.Redirect(http.StatusFound, "/admin/users")
+}
+
+// CreateTeam — E-2 (pass 45): админ создаёт команду (с капитаном).
+// @Summary Создание команды
+// @Tags admin
+// @Accept x-www-form-urlencoded
+// @Param name formData string true "Название"
+// @Param captain_id formData uint true "ID капитана"
+// @Success 302 {string} string "Редирект"
+// @Router /admin/teams/create [post]
+// @Security JWT
+func (h *AdminHandler) CreateTeam(c *gin.Context) {
+	name := strings.TrimSpace(c.PostForm("name"))
+	captainID, _ := strconv.Atoi(c.PostForm("captain_id"))
+
+	if name == "" || captainID <= 0 {
+		render.SetFlash(c, "error", i18n.T("admin.create_team_invalid"))
+		c.Redirect(http.StatusFound, "/admin/teams")
+		return
+	}
+	if _, err := h.userRepo.GetByID(c.Request.Context(), uint(captainID)); err != nil {
+		render.SetFlash(c, "error", i18n.T("admin.create_team_captain_missing"))
+		c.Redirect(http.StatusFound, "/admin/teams")
+		return
+	}
+	team := &team.Team{Name: name, CaptainID: uint(captainID)}
+	if err := h.teamRepo.Create(c.Request.Context(), team); err != nil {
+		log.Error().Err(err).Str("name", name).Msg("CreateTeam: failed to create")
+		render.SetFlash(c, "error", i18n.T("admin.create_team_error"))
+		c.Redirect(http.StatusFound, "/admin/teams")
+		return
+	}
+	if h.auditService != nil {
+		h.auditService.Log(c.GetUint("userID"), "admin.team_create", "teams", team.ID, fmt.Sprintf("name=%s", name))
+	}
+	render.SetFlash(c, "success", i18n.T("admin.create_team_ok"))
+	c.Redirect(http.StatusFound, "/admin/teams")
 }
 
 // ToggleAdmin переключает роль пользователя между admin и user.
