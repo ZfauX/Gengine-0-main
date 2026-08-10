@@ -436,29 +436,35 @@ func (r *gormUserRepo) Delete(ctx context.Context, id uint) error {
 		// #4: чистим пользовательские данные в остальных таблицах, чтобы
 		// hard-delete не оставлял сирот (reviews, follows, achievements,
 		// notes, photos, co_authors, team_members, invitations, notifications).
-		for _, t := range []string{
-			"reviews", "follows", "user_achievements", "notes", "photos",
-			"co_authors", "team_members", "invitations", "notifications",
-			"chat_messages", "external_logins",
-		} {
-			if tx.Migrator().HasTable(t) {
-				col := "user_id"
-				if t == "follows" {
-					// подписки и подписчики
-					if err := tx.Exec("DELETE FROM follows WHERE follower_id = ? OR author_id = ?", id, id).Error; err != nil {
-						return err
-					}
-					continue
-				}
-				if t == "team_members" || t == "chat_messages" {
-					if err := tx.Exec("DELETE FROM "+t+" WHERE user_id = ?", id).Error; err != nil {
-						return err
-					}
-					continue
-				}
-				if err := tx.Exec("DELETE FROM "+t+" WHERE "+col+" = ?", id).Error; err != nil {
-					return err
-				}
+		// S-46-4 (pass 46): таблицы и колонки берутся только из статического
+		// whitelist — никакой конкатенации произвольных строк в SQL.
+		cleanup := []struct {
+			table string
+			col   string
+		}{
+			{"reviews", "user_id"},
+			{"user_achievements", "user_id"},
+			{"notes", "user_id"},
+			{"photos", "user_id"},
+			{"co_authors", "user_id"},
+			{"invitations", "user_id"},
+			{"notifications", "user_id"},
+			{"external_logins", "user_id"},
+			{"team_members", "user_id"},
+			{"chat_messages", "user_id"},
+		}
+		for _, tc := range cleanup {
+			if !tx.Migrator().HasTable(tc.table) {
+				continue
+			}
+			if err := tx.Exec("DELETE FROM "+tc.table+" WHERE "+tc.col+" = ?", id).Error; err != nil {
+				return err
+			}
+		}
+		// follows: подписки и подписчики (две колонки).
+		if tx.Migrator().HasTable("follows") {
+			if err := tx.Exec("DELETE FROM follows WHERE follower_id = ? OR author_id = ?", id, id).Error; err != nil {
+				return err
 			}
 		}
 

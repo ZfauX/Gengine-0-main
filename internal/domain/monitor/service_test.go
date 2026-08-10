@@ -627,3 +627,58 @@ func TestChatService_PersonalRoom(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, room.ID, room2.ID)
 }
+
+// S-46-5 (pass 46): единая проверка права на отправку сообщения в чате.
+func TestChatService_CanSendMessage(t *testing.T) {
+	db := testutil.SetupPostgresDB(t,
+		&monitor.ChatRoom{}, &monitor.ChatMessage{}, &monitor.ChatRoomMember{},
+		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
+		&game.LevelProgress{}, &game.Attempt{},
+		&game.CoAuthor{},
+		&monitor.BlackboxVotingSession{}, &monitor.BlackboxVote{},
+		&level.Level{},
+		&team.Team{},
+		&user.User{},
+	)
+	chatRepo := monitor.NewGormChatRepo(db)
+	cs := monitor.NewChatService(chatRepo)
+
+	author := createUser(t, db, "send@test.com", "pass")
+	other := createUser(t, db, "send2@test.com", "pass")
+	g := createGame(t, db, author.ID, "Send Chat Game")
+	tm := createTeam(t, db, author.ID)
+	passing := createPassing(t, db, g.ID, tm.ID, game.StatusStarted)
+	_ = passing
+
+	// Общая комната игры — без записей члена разрешено.
+	gameRoom, err := cs.GetOrCreateGameRoom(context.Background(), g.ID)
+	require.NoError(t, err)
+	allowed, exists, err := cs.CanSendMessage(context.Background(), gameRoom.ID, nil, other.ID)
+	require.NoError(t, err)
+	assert.True(t, allowed)
+	assert.False(t, exists)
+
+	// Член комнаты без права писать — запрещено, запись существует.
+	require.NoError(t, cs.AddRoomMember(context.Background(), gameRoom.ID, other.ID, true, false, true))
+	allowed, exists, err = cs.CanSendMessage(context.Background(), gameRoom.ID, nil, other.ID)
+	require.NoError(t, err)
+	assert.False(t, allowed)
+	assert.True(t, exists)
+
+	// Член с правом писать — разрешено.
+	require.NoError(t, cs.AddRoomMember(context.Background(), gameRoom.ID, other.ID, true, true, true))
+	allowed, _, err = cs.CanSendMessage(context.Background(), gameRoom.ID, nil, other.ID)
+	require.NoError(t, err)
+	assert.True(t, allowed)
+
+	// Командная комната: член команды может писать, посторонний — нет.
+	teamRoom, err := cs.GetOrCreateTeamRoom(context.Background(), g.ID, tm.ID, passing.ID)
+	require.NoError(t, err)
+	allowed, _, err = cs.CanSendMessage(context.Background(), teamRoom.ID, &tm.ID, author.ID)
+	require.NoError(t, err)
+	assert.True(t, allowed, "капитан команды может писать в командный чат")
+
+	allowed, _, err = cs.CanSendMessage(context.Background(), teamRoom.ID, &tm.ID, other.ID)
+	require.NoError(t, err)
+	assert.False(t, allowed, "посторонний не может писать в командный чат")
+}

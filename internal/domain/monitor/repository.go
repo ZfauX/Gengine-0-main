@@ -28,6 +28,8 @@ type ChatRepository interface {
 	// B-1/B-5 (pass 45): членство в комнате.
 	AddRoomMember(ctx context.Context, roomID, userID uint, canRead, canWrite, canAttach bool) error
 	GetRoomMember(ctx context.Context, roomID, userID uint) (*ChatRoomMember, error)
+	// S-46-5 (pass 46): единая проверка права на отправку сообщения (hot-path чата).
+	CanSendMessage(ctx context.Context, roomID uint, teamID *uint, userID uint) (allowed, memberExists bool, err error)
 	// B-4 (pass 45): создание произвольных комнат автором/соавтором + список комнат игры.
 	CreateRoom(ctx context.Context, room *ChatRoom) error
 	ListRoomsByGame(ctx context.Context, gameID uint) ([]ChatRoom, error)
@@ -271,6 +273,43 @@ func (r *gormChatRepo) GetRoomMember(ctx context.Context, roomID, userID uint) (
 		return nil, err
 	}
 	return &m, nil
+}
+
+// CanSendMessage проверяет право на отправку сообщения за минимальное число
+// запросов (S-46-5, pass 46):
+//   - если teamID != nil: пользователь должен быть участником команды или капитаном
+//     (одним LEFT JOIN на team_members + teams вместо двух отдельных COUNT/First);
+//   - затем, если для комнаты есть запись chat_room_members — требуется can_write.
+//
+// Возвращает (allowed, memberExists, err): memberExists показывает, есть ли запись
+// chat_room_members (для логов), allowed — можно ли писать.
+func (r *gormChatRepo) CanSendMessage(ctx context.Context, roomID uint, teamID *uint, userID uint) (allowed bool, memberExists bool, err error) {
+	var room ChatRoom
+	if err := r.db.WithContext(ctx).Where("id = ?", roomID).First(&room).Error; err != nil {
+		return false, false, err
+	}
+
+	// Проверка членства в команде (только для командных комнат).
+	if teamID != nil && room.TeamID != nil {
+		ok, err := r.IsTeamMemberOrCaptain(ctx, *room.TeamID, userID)
+		if err != nil {
+			return false, false, err
+		}
+		if !ok {
+			return false, false, nil
+		}
+	}
+
+	// Права записи в комнате: если записи нет — разрешено (общая/серверная комната).
+	var member ChatRoomMember
+	merr := r.db.WithContext(ctx).Where("room_id = ? AND user_id = ?", roomID, userID).First(&member).Error
+	if merr == nil {
+		return member.CanWrite, true, nil
+	}
+	if !errors.Is(merr, gorm.ErrRecordNotFound) {
+		return false, false, merr
+	}
+	return true, false, nil
 }
 
 // CreateRoom создаёт произвольную комнату игры (B-4, pass 45).

@@ -376,6 +376,11 @@ func (s *ChatService) GetRoomMember(ctx context.Context, roomID, userID uint) (*
 	return s.chatRepo.GetRoomMember(ctx, roomID, userID)
 }
 
+// CanSendMessage — единая проверка права на отправку сообщения (S-46-5).
+func (s *ChatService) CanSendMessage(ctx context.Context, roomID uint, teamID *uint, userID uint) (allowed, memberExists bool, err error) {
+	return s.chatRepo.CanSendMessage(ctx, roomID, teamID, userID)
+}
+
 // CreateRoom создаёт произвольную комнату игры (B-4, pass 45).
 func (s *ChatService) CreateRoom(ctx context.Context, room *ChatRoom) error {
 	return s.chatRepo.CreateRoom(ctx, room)

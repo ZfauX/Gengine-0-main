@@ -198,7 +198,7 @@ func (s *PaymentService) HandleWebhook(ctx context.Context, remoteIP string, raw
 		return fmt.Errorf("платежи не настроены")
 	}
 	if !isYooKassaIP(remoteIP) {
-		return fmt.Errorf("webhook from untrusted IP: %s", remoteIP)
+		return fmt.Errorf("%w: %s", ErrWebhookUntrustedIP, remoteIP)
 	}
 
 	var notif struct {
@@ -206,11 +206,11 @@ func (s *PaymentService) HandleWebhook(ctx context.Context, remoteIP string, raw
 		Object map[string]any `json:"object"`
 	}
 	if err := json.Unmarshal(rawBody, &notif); err != nil {
-		return fmt.Errorf("webhook: invalid body: %w", err)
+		return fmt.Errorf("%w: %v", ErrWebhookInvalid, err)
 	}
 	paymentID, _ := notif.Object["id"].(string)
 	if paymentID == "" {
-		return fmt.Errorf("webhook: missing payment id")
+		return fmt.Errorf("%w: missing payment id", ErrWebhookInvalid)
 	}
 
 	// Подтверждаем статус через API (самый надёжный способ против подделки).

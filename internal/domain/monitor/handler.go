@@ -730,28 +730,23 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 				log.Warn().Str("room_id", roomID).Uint("user_id", userID).Msg("ChatWS: message rate limit exceeded")
 				continue
 			}
-			// S-45-5 (pass 45): recheck членства в командном чате — участника,
-			// удалённого из команды после подключения, отсекаем при каждой
-			// отправке (раньше проверялось только на connect, сокет жил дальше).
-			if chatRoom.TeamID != nil {
-				stillMember, memberErr := h.chatService.IsTeamMemberOrCaptain(wsCtx, *chatRoom.TeamID, userID)
-				if memberErr != nil {
-					log.Error().Err(memberErr).Uint("team_id", *chatRoom.TeamID).Uint("user_id", userID).Msg("ChatWS: team membership recheck error")
-					return
-				}
-				if !stillMember {
-					log.Warn().Uint("team_id", *chatRoom.TeamID).Uint("user_id", userID).Msg("ChatWS: member removed from team, closing socket")
-					return
-				}
+			// S-46-5 (pass 46): единая проверка права на отправку (hot-path) —
+			// recheck членства в команде + can_write комнаты одним вызовом.
+			// Сохраняем прежнюю семантику:
+			//  - участник, удалённый из команды → закрываем сокет;
+			//  - запись члена комнаты с can_write=false → пропускаем сообщение.
+			allowed, memberExists, permErr := h.chatService.CanSendMessage(wsCtx, uint(roomIDUint), chatRoom.TeamID, userID)
+			if permErr != nil {
+				log.Error().Err(permErr).Str("room_id", roomID).Uint("user_id", userID).Msg("ChatWS: send permission check error")
+				return
 			}
-			// B-5 (pass 45): если есть запись о членстве в комнате — проверяем
-			// право на запись (can_write). Общие/командные комнаты без
-			// member-записей работают как раньше.
-			if member, mErr := h.chatService.GetRoomMember(wsCtx, uint(roomIDUint), userID); mErr == nil && member != nil {
-				if !member.CanWrite {
-					log.Warn().Uint("room_id", uint(roomIDUint)).Uint("user_id", userID).Msg("ChatWS: write denied by room permissions")
-					continue
-				}
+			if !allowed && chatRoom.TeamID != nil && !memberExists {
+				log.Warn().Uint("team_id", *chatRoom.TeamID).Uint("user_id", userID).Msg("ChatWS: member removed from team, closing socket")
+				return
+			}
+			if !allowed {
+				log.Warn().Uint("room_id", uint(roomIDUint)).Uint("user_id", userID).Msg("ChatWS: write denied by room permissions")
+				continue
 			}
 			msg, err := h.chatService.SaveMessage(wsCtx, uint(roomIDUint), userID, cleanContent)
 			if err != nil {

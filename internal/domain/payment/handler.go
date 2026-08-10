@@ -3,6 +3,7 @@
 package payment
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -94,14 +95,35 @@ func (h *PaymentHandler) Create(c *gin.Context) {
 // @Tags payments
 // @Accept json
 // @Success 200 {string} string "OK"
+// @Failure 400 {object} map[string]interface{} "Некорректное тело"
+// @Failure 403 {object} map[string]interface{} "Не доверенный IP"
 // @Router /payments/webhook [post]
 func (h *PaymentHandler) Webhook(c *gin.Context) {
 	body, _ := io.ReadAll(io.LimitReader(c.Request.Body, 2*1024*1024))
 	remoteIP := c.ClientIP()
-	if err := h.svc.HandleWebhook(c.Request.Context(), remoteIP, body); err != nil {
-		// Логируем, но отвечаем 200 — ЮKassa будет ретраить 24 часа при ошибке,
-		// а здесь мы не хотим зацикливания на неподтверждённых платежах.
-		log.Warn().Err(err).Str("ip", remoteIP).Msg("PaymentHandler.Webhook: rejected")
+	err := h.svc.HandleWebhook(c.Request.Context(), remoteIP, body)
+	if err == nil {
+		c.Status(http.StatusOK)
+		return
 	}
-	c.Status(http.StatusOK)
+
+	// S-46-3 (pass 46): rejected webhooks больше не «прячем» под always-200.
+	//  - ErrWebhookInvalid / ErrWebhookUntrustedIP: 4xx — ретраить бессмысленно
+	//    (ЮKassa перестанет долбить неподтверждённый платёж);
+	//  - прочие (временные ошибки ЮKassa/БД): 500 — ЮKassa будет ретраить,
+	//    а алерт в логе уровня error позволит заметить проблему.
+	switch {
+	case errors.Is(err, ErrWebhookInvalid):
+		log.Error().Err(err).Str("ip", remoteIP).Msg("PaymentHandler.Webhook: invalid body (no retry)")
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
+		return
+	case errors.Is(err, ErrWebhookUntrustedIP):
+		log.Error().Err(err).Str("ip", remoteIP).Msg("PaymentHandler.Webhook: untrusted IP (no retry)")
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	default:
+		log.Error().Err(err).Str("ip", remoteIP).Msg("PaymentHandler.Webhook: rejected, YooKassa will retry")
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "internal"})
+		return
+	}
 }
