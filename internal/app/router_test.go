@@ -161,24 +161,38 @@ func TestRouter_ProtectedRoutesRedirect(t *testing.T) {
 	// Маршруты защищены AuthRequired. Без куки JWT должен быть редирект на /auth/login.
 	// Используем новые пути: /teams/new и /games/new вместо /teams/create и /games/create.
 	tests := []struct {
-		name string
-		path string
+		name       string
+		method     string
+		path       string
+		wantStatus int
 	}{
-		{name: "dashboard", path: "/dashboard/"},
-		{name: "profile", path: "/profile/"},
-		{name: "achievements", path: "/achievements/"},
-		{name: "team creation", path: "/teams/new"},
-		{name: "game creation", path: "/games/new"},
+		{name: "dashboard", method: "GET", path: "/dashboard/", wantStatus: http.StatusFound},
+		{name: "profile", method: "GET", path: "/profile/", wantStatus: http.StatusFound},
+		{name: "achievements", method: "GET", path: "/achievements/", wantStatus: http.StatusFound},
+		{name: "team creation", method: "GET", path: "/teams/new", wantStatus: http.StatusFound},
+		{name: "game creation", method: "GET", path: "/games/new", wantStatus: http.StatusFound},
+		// S-46-1 (pass 46): геолокация и Phase-3 маршруты требуют аутентификации
+		// (и прав менеджера игры). Без JWT GET-маршруты редиректят на login,
+		// а POST-маршруты без CSRF-токена отсекаются middleware CSRF (403) раньше,
+		// чем AuthRequired — это тоже защита.
+		{name: "game locations", method: "GET", path: "/games/1/locations", wantStatus: http.StatusFound},
+		{name: "phase3 set route", method: "POST", path: "/games/1/passings/1/route", wantStatus: http.StatusForbidden},
+		{name: "phase3 get route", method: "GET", path: "/games/1/passings/1/route", wantStatus: http.StatusFound},
+		{name: "phase3 start time", method: "POST", path: "/games/1/passings/1/start-time", wantStatus: http.StatusForbidden},
+		{name: "phase3 answer", method: "POST", path: "/games/1/levels/1/teams/1/answer", wantStatus: http.StatusForbidden},
+		{name: "phase3 attempts", method: "GET", path: "/games/1/attempts-per-user", wantStatus: http.StatusFound},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", tt.path, nil)
+			req := httptest.NewRequest(tt.method, tt.path, nil)
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
 
-			assert.Equal(t, http.StatusFound, w.Code)
-			assert.Equal(t, "/auth/login", w.Header().Get("Location"))
+			assert.Equal(t, tt.wantStatus, w.Code)
+			if tt.wantStatus == http.StatusFound {
+				assert.Equal(t, "/auth/login", w.Header().Get("Location"))
+			}
 		})
 	}
 }

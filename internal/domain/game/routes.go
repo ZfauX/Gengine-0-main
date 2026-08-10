@@ -129,11 +129,17 @@ func RegisterRoutes(r *gin.RouterGroup, deps *GameDeps) {
 		protected.POST("/:id/passings/:passing_id/start", passingHandler.StartGame)
 
 		// Фаза 3 (C-1..C-5, pass 45): маршруты, индивидуальный старт, ответы, итоги.
-		protected.POST("/:id/passings/:passing_id/route", passingHandler.SetTeamRoute)
-		protected.GET("/:id/passings/:passing_id/route", passingHandler.GetTeamRoute)
-		protected.POST("/:id/passings/:passing_id/start-time", passingHandler.SetTeamStartTime)
-		protected.POST("/:id/levels/:level_id/teams/:team_id/answer", passingHandler.SetTeamAnswer)
-		protected.GET("/:id/attempts-per-user", passingHandler.AttemptsPerUser)
+		// S-46-1 (pass 46): все эти эндпоинты требуют прав менеджера игры (автор/соавтор),
+		// иначе любой аутентифицированный пользователь мог бы менять маршруты/ответы
+		// чужих команд и читать статистику попыток любой игры.
+		phase3 := protected.Group("/:id", middleware.GameManager(coAuthorSvc))
+		{
+			phase3.POST("/passings/:passing_id/route", passingHandler.SetTeamRoute)
+			phase3.GET("/passings/:passing_id/route", passingHandler.GetTeamRoute)
+			phase3.POST("/passings/:passing_id/start-time", passingHandler.SetTeamStartTime)
+			phase3.POST("/levels/:level_id/teams/:team_id/answer", passingHandler.SetTeamAnswer)
+			phase3.GET("/attempts-per-user", passingHandler.AttemptsPerUser)
+		}
 
 		protected.GET("/:id/apply", passingHandler.ApplyForm)
 
@@ -170,8 +176,10 @@ func RegisterRoutes(r *gin.RouterGroup, deps *GameDeps) {
 		// ============================================================
 		// Обновление позиции игрока (по ID прохождения) — для водителей.
 		protected.POST("/api/passings/:id/location", middleware.CodeSubmissionRateLimit(1*time.Minute, 60), deps.Geolocation.UpdateLocation)
-		// Позиции всех игроков игры (для мониторинга).
-		protected.GET("/:id/locations", deps.Geolocation.LocationsByGame)
+		// Позиции всех игроков игры (для мониторинга). S-46-1 (pass 46): только менеджер
+		// игры видит GPS-координаты — иначе любой аутентифицированный пользователь
+		// может перечислить ID игр и получить live-координаты всех игроков.
+		protected.GET("/:id/locations", middleware.GameManager(coAuthorSvc), deps.Geolocation.LocationsByGame)
 	}
 
 	// API для autocomplete поиска игр

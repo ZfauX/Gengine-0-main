@@ -403,7 +403,16 @@ func (c *Cache) GetOrSetWithCtx(ctx context.Context, key string, ttl time.Durati
 		if err != nil {
 			return nil, err
 		}
-		c.Set(key, val, ttl)
+		// S-46-5 (pass 46): единая семантика ttl==0 с GetOrSet — SetDefault.
+		// Раньше здесь вызывался c.Set(key, val, 0), а по A-5 семантике
+		// ttl=0 означает «никогда не истекает»; GetOrSet же трактовал
+		// ttl=0 как дефолтный TTL. Один и тот же вызов вёл себя по-разному
+		// в зависимости от варианта метода.
+		if ttl == 0 {
+			c.SetDefault(key, val)
+		} else {
+			c.Set(key, val, ttl)
+		}
 		return val, nil
 	})
 	return v, err

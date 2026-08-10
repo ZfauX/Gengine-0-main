@@ -186,7 +186,14 @@ func (s *SSESession) writeLoop() {
 			err := s.write(data)
 			s.mu.Unlock()
 			if err != nil {
-				log.Debug().Err(err).Msg("SSE: writeLoop write error")
+				// S-46-4 (pass 46): при ошибке записи закрываем done-канал —
+				// раньше writeLoop просто выходил, но сессия оставалась
+				// зарегистрированной в SSEManager и продолжала получать
+				// heartbeat-enqueue (утечка для half-open соединений).
+				// Закрытие done заставляет sseConnect выйти и сработать
+				// defer mgr.UnregisterSession.
+				log.Debug().Err(err).Msg("SSE: writeLoop write error, closing session")
+				s.closeOnce.Do(func() { close(s.done) })
 				return
 			}
 		}

@@ -715,19 +715,46 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	})
 
+	// S-46-3 (pass 46): read loop теперь прерывается по wsCtx.Done()/client.Done().
+	// Раньше select с default никогда не блокировался — ctx.Done() наблюдался только
+	// между блокирующими conn.ReadMessage() (до 60с), из-за чего при silent disconnect
+	// или ошибке writePump goroutine висела до таймаута чтения (утечка соединения).
+	// Чтение вынесено в goroutine: она блокируется на ReadMessage и шлёт результат
+	// в канал; основной цикл select'ит между каналом, ctx.Done() и client.Done().
+	type wsReadMsg struct {
+		message []byte
+		err     error
+	}
+	readCh := make(chan wsReadMsg, 1)
+	go func() {
+		for {
+			if err := conn.SetReadDeadline(time.Now().Add(60 * time.Second)); err != nil {
+				log.Debug().Err(err).Str("room_id", roomID).Msg("ChatWS: set read deadline failed")
+			}
+			_, message, err := conn.ReadMessage()
+			select {
+			case readCh <- wsReadMsg{message: message, err: err}:
+			case <-wsCtx.Done():
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
 	for {
 		select {
 		case <-wsCtx.Done():
 			log.Debug().Str("room_id", roomID).Msg("ChatWS: context canceled, stopping read loop")
 			return
-		default:
-			if err := conn.SetReadDeadline(time.Now().Add(60 * time.Second)); err != nil {
-				log.Debug().Err(err).Str("room_id", roomID).Msg("ChatWS: set read deadline failed")
-			}
-			_, message, err := conn.ReadMessage()
-			if err != nil {
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-					log.Debug().Err(err).Str("room_id", roomID).Msg("ChatWS: read error")
+		case <-client.Done():
+			log.Debug().Str("room_id", roomID).Msg("ChatWS: client closed, stopping read loop")
+			return
+		case rmsg := <-readCh:
+			if rmsg.err != nil {
+				if websocket.IsUnexpectedCloseError(rmsg.err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+					log.Debug().Err(rmsg.err).Str("room_id", roomID).Msg("ChatWS: read error")
 				}
 				return
 			}
@@ -735,8 +762,8 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 			var msgData struct {
 				Content string `json:"content"`
 			}
-			if parseErr := json.Unmarshal(message, &msgData); parseErr != nil || msgData.Content == "" {
-				msgData.Content = string(message)
+			if parseErr := json.Unmarshal(rmsg.message, &msgData); parseErr != nil || msgData.Content == "" {
+				msgData.Content = string(rmsg.message)
 			}
 			cleanContent := sanitize.StripHTML(msgData.Content)
 			if cleanContent == "" {
