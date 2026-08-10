@@ -18,6 +18,8 @@ import (
 	"syscall"
 	"time"
 
+	_ "net/http/pprof" // P-1 (pass 48): pprof-эндпоинты /debug/pprof/*
+
 	"gengine-0/internal/app"
 	"gengine-0/internal/config"
 	"gengine-0/internal/db"
@@ -481,6 +483,24 @@ func run() error {
 		// обеспечивает middleware.ContextTimeout (30 сек) на уровне Gin.
 		WriteTimeout: 0,
 		IdleTimeout:  config.ServerIdleTimeout,
+	}
+
+	// P-1 (pass 48): отдельный pprof-сервер (PPROF_ENABLED=true, порт PPROF_PORT).
+	// Не экспонируем pprof на основном порту — включается только для профилирования.
+	if cfg.Server.PprofEnabled {
+		pprofMux := http.NewServeMux()
+		pprofMux.Handle("/debug/pprof/", http.DefaultServeMux)
+		pprofSrv := &http.Server{
+			Addr:        ":" + cfg.Server.PprofPort,
+			Handler:     pprofMux,
+			ReadTimeout: config.ServerReadTimeout,
+		}
+		goSafe(func() {
+			log.Info().Str("port", cfg.Server.PprofPort).Msg("pprof server started")
+			if err := pprofSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Error().Err(err).Msg("Ошибка работы pprof-сервера")
+			}
+		})
 	}
 
 	goSafe(func() {

@@ -510,3 +510,35 @@ func TestCache_GetOrSetWithCtx(t *testing.T) {
 	assert.Equal(t, "computed", val)
 	assert.Equal(t, 1, callCount)
 }
+
+// P-4 (pass 48): бенчмарки кэша — горячий путь Get/GetOrSet.
+func BenchmarkCache_Get(b *testing.B) {
+	c, _ := NewCache(time.Minute, 10*time.Minute)
+	defer c.Close()
+	c.Set("k", "v", time.Minute)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		c.Get("k")
+	}
+}
+
+func BenchmarkCache_GetOrSet_Hit(b *testing.B) {
+	c, _ := NewCache(time.Minute, 10*time.Minute)
+	defer c.Close()
+	c.Set("k", "v", time.Minute)
+	fn := func() (any, error) { return "v", nil }
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = c.GetOrSet("k", time.Minute, fn)
+	}
+}
+
+func BenchmarkCache_GetOrSet_Miss(b *testing.B) {
+	c, _ := NewCache(time.Minute, 10*time.Minute)
+	defer c.Close()
+	fn := func() (any, error) { return "v", nil }
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = c.GetOrSet("bench-miss", time.Minute, fn)
+	}
+}

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"gengine-0/internal/pkg/metrics"
 	"gengine-0/internal/pkg/render"
 
 	"github.com/gin-gonic/gin"
@@ -168,6 +169,7 @@ func (m *SSEManager) RegisterSession(gameID uint, ip string, w http.ResponseWrit
 	m.gameMap[session] = gameID
 	m.totalConns++
 	m.connsPerIP[ip]++
+	metrics.IncSSEConnection() // P-2 (pass 48)
 	return session
 }
 
@@ -238,6 +240,7 @@ func (m *SSEManager) UnregisterSession(session *SSESession) {
 	if m.totalConns > 0 {
 		m.totalConns--
 	}
+	metrics.DecSSEConnection() // P-2 (pass 48)
 	ip := session.remoteIP
 	if count, exists := m.connsPerIP[ip]; exists && count > 0 {
 		if count == 1 {

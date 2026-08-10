@@ -46,9 +46,14 @@ type Config struct {
 
 // ServerConfig содержит параметры HTTP-сервера и логирования.
 type ServerConfig struct {
-	Port              string // порт, на котором слушает сервер (по умолчанию 8080)
-	GinMode           string // режим работы Gin (debug, release, test)
-	BaseURL           string // базовый URL приложения для формирования ссылок
+	Port    string // порт, на котором слушает сервер (по умолчанию 8080)
+	GinMode string // режим работы Gin (debug, release, test)
+	BaseURL string // базовый URL приложения для формирования ссылок
+	// PprofEnabled — включать ли отдельный pprof-сервер (P-1, pass 48).
+	// Не экспонируем pprof на основном порту — только по явному запросу.
+	PprofEnabled bool
+	// PprofPort — порт pprof-сервера (по умолчанию 6060).
+	PprofPort         string
 	MaxBackups        int    // максимальное количество сохраняемых архивов логов
 	LogFilePath       string // путь к файлу логов (по умолчанию "logs/app.log")
 	LogMaxSize        int    // максимальный размер файла лога в МБ (по умолчанию 100)
@@ -211,6 +216,10 @@ func LoadConfig() (*Config, error) {
 	cfg.Server.Port = getEnvOrDefault("PORT", "8080")
 	cfg.Server.GinMode = getEnvOrDefault("GIN_MODE", "release")
 	cfg.Server.BaseURL = getEnvOrDefault("BASE_URL", "http://localhost:"+cfg.Server.Port)
+	// P-1 (pass 48): pprof-сервер включается явно (PPROF_ENABLED=true) и слушает
+	// отдельный порт PPROF_PORT (по умолчанию 6060) — не экспонируем в проде.
+	cfg.Server.PprofEnabled = os.Getenv("PPROF_ENABLED") == "true"
+	cfg.Server.PprofPort = getEnvOrDefault("PPROF_PORT", "6060")
 	cfg.Server.MaxBackups = getEnvAsInt("LOG_MAX_BACKUPS", defaultMaxBackups)
 	cfg.Server.LogFilePath = getEnvOrDefault("LOG_FILE_PATH", "logs/app.log")
 	cfg.Server.LogMaxSize = getEnvAsInt("LOG_MAX_SIZE", defaultLogMaxSizeMB)

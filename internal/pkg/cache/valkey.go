@@ -271,7 +271,14 @@ func (c *ValkeyCache) GetOrSet(key string, ttl time.Duration, fn func() (any, er
 		if err != nil {
 			return nil, err
 		}
-		c.Set(key, val, ttl)
+		// P-3 (pass 48): единая семантика ttl==0 с in-memory Cache (GetOrSet) —
+		// SetDefault, а не «никогда не истекает». Раньше Valkey трактовал ttl=0
+		// как redis.Set(..., 0) = вечная запись, что расходилось с in-memory.
+		if ttl == 0 {
+			c.SetDefault(key, val)
+		} else {
+			c.Set(key, val, ttl)
+		}
 		return val, nil
 	})
 	return v, err
@@ -419,7 +426,12 @@ func (c *ValkeyCache) GetOrSetWithCtx(ctx context.Context, key string, ttl time.
 		if marshalErr != nil {
 			return nil, marshalErr
 		}
-		if setErr := c.client.Set(ctx, key, data, ttl).Err(); setErr != nil {
+		// P-3 (pass 48): единая семантика ttl==0 — SetDefault (как in-memory).
+		ttlToUse := ttl
+		if ttl == 0 {
+			ttlToUse = valkeyDefaultCacheTTL
+		}
+		if setErr := c.client.Set(ctx, key, data, ttlToUse).Err(); setErr != nil {
 			log.Warn().Err(setErr).Str("key", key).Msg("Valkey: GetOrSetWithCtx Set error")
 		}
 		return val, nil

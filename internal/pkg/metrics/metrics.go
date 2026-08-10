@@ -104,6 +104,12 @@ var (
 		Help: "Number of currently active WebSocket connections",
 	})
 
+	// SSEConnections (P-2, pass 48): текущее количество активных SSE-подключений.
+	SSEConnections = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "gengine_sse_connections",
+		Help: "Number of currently active SSE connections",
+	})
+
 	// LevelProgressTotal - общее количество пройденных уровней
 	LevelProgressTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "gengine_level_progress_total",
@@ -206,6 +212,15 @@ func ObserveGameDuration(seconds float64) {
 
 func IncWebSocketConnection() {
 	WebSocketConnections.Inc()
+}
+
+// IncSSEConnection / DecSSEConnection (P-2, pass 48): счётчик SSE-подключений.
+func IncSSEConnection() {
+	SSEConnections.Inc()
+}
+
+func DecSSEConnection() {
+	SSEConnections.Dec()
 }
 
 func DecWebSocketConnection() {
