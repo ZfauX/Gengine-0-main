@@ -142,6 +142,8 @@
 
     <!-- App JS (локально) -->
     <script defer src="/static/js/app.js?v={{.StaticVersion}}"></script>
+    <!-- F-2 (pass 45): WYSIWYG-редактор для описаний -->
+    <script defer src="/static/js/richtext.js?v={{.StaticVersion}}"></script>
 
     <!-- M5 (pass 30): передаём смещение пользователя от UTC (минуты) в cookie.
          Сервер использует его в formatDate/formatDateTime — даты показываются

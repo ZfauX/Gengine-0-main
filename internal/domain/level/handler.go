@@ -3,6 +3,7 @@ package level
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -83,6 +84,7 @@ type LevelHandler struct {
 	hub             *ws.RoomHub
 	cfg             *config.Config
 	authorizer      middleware.GameAuthorizer
+	importService   *ImportService // F-1 (pass 45)
 }
 
 func NewLevelHandler(
@@ -103,6 +105,12 @@ func NewLevelHandler(
 		cfg:             cfg,
 		authorizer:      authorizer,
 	}
+}
+
+// WithImportService внедряет сервис импорта (F-1, pass 45).
+func (h *LevelHandler) WithImportService(s *ImportService) *LevelHandler {
+	h.importService = s
+	return h
 }
 
 // ----- Уровни -----
@@ -287,7 +295,7 @@ func (h *LevelHandler) Create(c *gin.Context) {
 
 	level := &Level{
 		Name:                 sanitize.StripHTML(input.Name),
-		Description:          sanitize.StripHTML(input.Description),
+		Description:          sanitize.SanitizeRichText(input.Description),
 		Position:             input.Position,
 		Type:                 input.Type,
 		ParentID:             input.ParentID,
@@ -443,7 +451,7 @@ func (h *LevelHandler) Update(c *gin.Context) {
 
 	updated := &Level{
 		Name:                 sanitize.StripHTML(input.Name),
-		Description:          sanitize.StripHTML(input.Description),
+		Description:          sanitize.SanitizeRichText(input.Description),
 		Position:             input.Position,
 		Type:                 input.Type,
 		ParentID:             input.ParentID,
@@ -1082,4 +1090,54 @@ func (h *LevelHandler) DeleteAnswer(c *gin.Context) {
 
 	gameID, _ := strconv.Atoi(c.Param("id"))
 	c.Redirect(http.StatusFound, "/games/"+strconv.Itoa(gameID)+"/levels/"+c.Param("level_id")+"/questions/"+c.Param("question_id")+"/answers")
+}
+
+// ImportForm отображает форму импорта уровней из JSON (F-1, pass 45).
+func (h *LevelHandler) ImportForm(c *gin.Context) {
+	gameID, _ := strconv.Atoi(c.Param("id"))
+	if gameID <= 0 {
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
+		return
+	}
+	userID := c.GetUint("userID")
+	ok, err := h.authorizer.IsUserManager(c.Request.Context(), uint(gameID), userID)
+	if err != nil || !ok {
+		render.RenderErrorPage(c, http.StatusForbidden)
+		return
+	}
+	render.Page(c, http.StatusOK, "levels-import.html", gin.H{
+		"Title":         "Импорт уровней",
+		"GameID":        gameID,
+		"csrf":          csrf.GetToken(c),
+		"CurrentUserID": userID,
+	})
+}
+
+// Import обрабатывает загрузку JSON-файла с уровнями.
+func (h *LevelHandler) Import(c *gin.Context) {
+	if h.importService == nil {
+		render.RenderError(c, http.StatusInternalServerError, "Импорт недоступен")
+		return
+	}
+	gameID, _ := strconv.Atoi(c.Param("id"))
+	userID := c.GetUint("userID")
+	if gameID <= 0 {
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
+		return
+	}
+	file, _, err := c.Request.FormFile("file")
+	if err != nil {
+		render.RenderError(c, http.StatusBadRequest, "Не выбран файл")
+		return
+	}
+	defer func() { _ = file.Close() }()
+
+	count, err := h.importService.Import(c.Request.Context(), uint(gameID), userID, file)
+	if err != nil {
+		render.SetFlash(c, "error", render.LocalizeError(c, err.Error()))
+		c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels/import")
+		return
+	}
+	render.SetFlash(c, "success", fmt.Sprintf("Импортировано уровней: %d", count))
+	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/levels")
 }

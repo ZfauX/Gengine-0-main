@@ -22,6 +22,7 @@ func RegisterRoutes(
 	cfg *config.Config,
 	authorizer middleware.GameAuthorizer,
 	authService *user.AuthService,
+	importService *ImportService,
 ) {
 	handler := NewLevelHandler(
 		levelService,
@@ -45,6 +46,10 @@ func RegisterRoutes(
 	protected.GET("/new", handler.NewForm)
 
 	protected.POST("/", handler.Create)
+
+	// F-1 (pass 45): импорт уровней из JSON.
+	protected.GET("/import", handler.ImportForm)
+	protected.POST("/import", handler.Import)
 
 	protected.GET("/:level_id", handler.EditForm)
 

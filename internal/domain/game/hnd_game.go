@@ -360,7 +360,7 @@ func (h *GameHandler) Create(c *gin.Context) {
 
 	createDTO := &CreateGameDTO{
 		Name:                 sanitize.StripHTML(input.Name),
-		Description:          sanitize.StripHTML(input.Description),
+		Description:          sanitize.SanitizeRichText(input.Description),
 		MaxTeamNumber:        input.MaxTeamNumber,
 		Visibility:           input.Visibility,
 		StartsAt:             startsAt,
@@ -565,7 +565,7 @@ func (h *GameHandler) Update(c *gin.Context) {
 
 	updateDTO := &UpdateGameDTO{
 		Name:                 sanitize.StripHTML(input.Name),
-		Description:          sanitize.StripHTML(input.Description),
+		Description:          sanitize.SanitizeRichText(input.Description),
 		MaxTeamNumber:        input.MaxTeamNumber,
 		Visibility:           input.Visibility,
 		StartsAt:             startsAt,

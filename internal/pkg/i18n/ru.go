@@ -933,6 +933,12 @@ var ruMessages = map[string]string{
 	"level.answers_label":         "Ответы:",
 	"level.coordinates_label":     "Координаты:",
 	"level.back_to_level":         "← Назад к уровню",
+	"level.import_title":          "Импорт уровней",
+	"level.import_file_label":     "Файл JSON с уровнями",
+	"level.import_hint":           "Формат: {\"levels\":[{\"name\":\"...\",\"questions\":[{\"text\":\"...\",\"answers\":[{\"code\":\"...\"}]}]}]}",
+	"level.import_button":         "Импортировать",
+	"level.import_cancel":         "Отмена",
+	"level.import_ok":             "Импортировано уровней: %d",
 
 	// ── Questions ──
 	"question.new_title":         "Новый вопрос",
@@ -974,6 +980,8 @@ var ruMessages = map[string]string{
 	"gameplay.hint_label":                "Подсказка: %s",
 	"gameplay.code_placeholder":          "Введите код",
 	"gameplay.submit_button":             "Отправить",
+	"gameplay.tts_button":                "Озвучить задание",
+	"gameplay.tts_stop":                  "Остановить",
 	"gameplay.hint_button":               "💡 Подсказка",
 	"gameplay.upload_file":               "Загрузить файл",
 	"gameplay.upload_progress":           "Загрузка: %d%% (%s / %s)",

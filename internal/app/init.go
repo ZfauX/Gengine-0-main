@@ -91,6 +91,7 @@ type services struct {
 	Level           *level.LevelService
 	Question        *level.QuestionService
 	Answer          *level.AnswerService
+	Import          *level.ImportService // F-1 (pass 45)
 	Team            *team.TeamService
 	Invitation      *team.InvitationService
 	Tournament      *tournament.TournamentService

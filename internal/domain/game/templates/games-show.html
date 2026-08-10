@@ -23,7 +23,8 @@
         {{end}}
 
         <div class="space-y-2 text-sm">
-            <p class="text-gray-700 dark:text-gray-300">{{.Game.Description}}</p>
+            <!-- F-2 (pass 45): richText — безопасный рендер WYSIWYG-описания -->
+            <div class="text-gray-700 dark:text-gray-300 rich-text">{{ richText .Game.Description }}</div>
             <p><span class="font-medium text-gray-600 dark:text-gray-400">{{ T $.Lang "game.show_author" }}</span> {{.Game.Author.Name}}</p>
             {{if .Game.StartsAt}}
             <p><span class="font-medium text-gray-600 dark:text-gray-400">{{ T $.Lang "game.show_start_date" }}</span> {{ formatDateTime $.Lang $.TZOffset .Game.StartsAt }}</p>

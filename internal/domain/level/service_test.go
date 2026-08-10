@@ -3,6 +3,7 @@ package level_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"gengine-0/internal/domain/game"
@@ -489,4 +490,45 @@ func createGame(t *testing.T, db *gorm.DB, authorID uint, name string) *game.Gam
 	require.NoError(t, db.Create(g).Error)
 	db.Model(g).Update("is_draft", false)
 	return g
+}
+
+// F-1 (pass 45): импорт уровней из JSON.
+func TestImportService_Import(t *testing.T) {
+	db := testutil.SetupPostgresDB(t, allModels...)
+	author := createUser(t, db, "import@test.com", "pass")
+	g := createGame(t, db, author.ID, "Import Game")
+	coRepo := game.NewGormCoAuthorRepo(db)
+	svc := level.NewImportService(db, coRepo)
+
+	payload := `{"levels":[{"name":"Уровень 1","position":1,"questions":[{"text":"Код?","hint":"Подсказка","answers":[{"code":"1111"},{"code":"2222"}]}]},{"name":"Уровень 2","questions":[{"text":"Вопрос","answers":[{"code":"AAAA"}]}]}]}`
+
+	count, err := svc.Import(context.Background(), g.ID, author.ID, strings.NewReader(payload))
+	require.NoError(t, err)
+	assert.Equal(t, 2, count)
+
+	var levels []level.Level
+	require.NoError(t, db.Where("game_id = ?", g.ID).Order("position ASC").Find(&levels).Error)
+	require.Len(t, levels, 2)
+	assert.Equal(t, 1, levels[0].Position)
+	assert.Equal(t, 2, levels[1].Position) // автопозиция
+
+	// Вопросы и ответы созданы.
+	repo := level.NewGormLevelRepo(db)
+	full, err := repo.GetFullLevel(context.Background(), levels[0].ID)
+	require.NoError(t, err)
+	require.Len(t, full.Questions, 1)
+	require.Len(t, full.Questions[0].Answers, 2)
+}
+
+func TestImportService_Import_NotAuthor(t *testing.T) {
+	db := testutil.SetupPostgresDB(t, allModels...)
+	author := createUser(t, db, "import2@test.com", "pass")
+	other := createUser(t, db, "other@test.com", "pass")
+	g := createGame(t, db, author.ID, "Import Game 2")
+	coRepo := game.NewGormCoAuthorRepo(db)
+	svc := level.NewImportService(db, coRepo)
+
+	payload := `{"levels":[{"name":"L","questions":[]}]}`
+	_, err := svc.Import(context.Background(), g.ID, other.ID, strings.NewReader(payload))
+	require.Error(t, err)
 }

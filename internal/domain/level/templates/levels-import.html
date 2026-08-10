@@ -1,0 +1,22 @@
+{{define "levels-import.html"}}
+<div class="max-w-3xl mx-auto">
+    <h1 class="page-title">{{ T $.Lang "level.import_title" }}</h1>
+
+    {{if .Error}}<div class="flash flash-error">{{.Error}}</div>{{end}}
+
+    <div class="card space-y-4">
+        <form action="/games/{{.GameID}}/levels/import" method="POST" enctype="multipart/form-data" class="space-y-4">
+            <input type="hidden" name="_csrf" value="{{.csrf}}">
+            <div>
+                <label for="import-file" class="form-label">{{ T $.Lang "level.import_file_label" }}</label>
+                <input type="file" name="file" id="import-file" accept=".json,application/json" required
+                       aria-label="{{ T $.Lang "level.import_file_label" }}"
+                       class="w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
+            </div>
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ T $.Lang "level.import_hint" }}</p>
+            <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "level.import_button" }}</button>
+            <a href="/games/{{.GameID}}/levels" class="btn btn-outline text-sm">{{ T $.Lang "level.import_cancel" }}</a>
+        </form>
+    </div>
+</div>
+{{end}}

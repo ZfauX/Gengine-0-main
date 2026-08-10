@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"gengine-0/internal/pkg/i18n"
+	"gengine-0/internal/pkg/sanitize"
 )
 
 // FuncMap возвращает map с функциями для шаблонов.
@@ -64,6 +65,12 @@ func FuncMap() template.FuncMap {
 		"csrfToken":           csrfToken,
 		"default":             defaultValue,
 		"truncate":            truncate,
+		// richText — F-2 (pass 45): санитизированный rich-text для рендера
+		// (WYSIWYG описаний). Возвращает template.HTML — безопасно, т.к.
+		// значение проходит через bluemonday-политику.
+		"richText": func(s string) template.HTML {
+			return template.HTML(sanitize.SanitizeRichText(s)) //nolint:gosec
+		},
 	}
 }
 

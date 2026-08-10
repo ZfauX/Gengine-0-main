@@ -6,14 +6,25 @@
     <div class="card mb-6">
         <h2 class="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">{{if .Level}}{{.Level.Name}}{{else}}—{{end}}</h2>
 
+        <!-- F-3 (pass 45): озвучивание задания (TTS) -->
+        <div class="flex items-center gap-2 mb-3">
+            <button type="button" id="tts-btn" class="btn btn-outline text-sm min-h-11" aria-label='{{ T $.Lang "gameplay.tts_button" }}'>
+                🔊 {{ T $.Lang "gameplay.tts_button" }}
+            </button>
+            <button type="button" id="tts-stop" class="btn btn-outline text-sm hidden" aria-label='{{ T $.Lang "gameplay.tts_stop" }}'>
+                ⏹ {{ T $.Lang "gameplay.tts_stop" }}
+            </button>
+        </div>
+
         {{if .Level}}{{if .Level.Description}}
-        <p class="text-gray-600 dark:text-gray-400 mb-4">{{.Level.Description}}</p>
+        <!-- F-2 (pass 45): richText — безопасный рендер WYSIWYG-описания -->
+        <div class="rich-text text-gray-600 dark:text-gray-400 mb-4" id="level-description">{{ richText .Level.Description }}</div>
         {{end}}{{end}}
 
         <!-- Вопросы -->
         {{if .Level}}{{range .Level.Questions}}
         <div class="mb-4 last:mb-0">
-            <p class="font-medium text-gray-800 dark:text-gray-100"><span class="font-bold">{{ T $.Lang "gameplay.question_label" }}</span> {{.Text}}</p>
+            <p class="font-medium text-gray-800 dark:text-gray-100"><span class="font-bold">{{ T $.Lang "gameplay.question_label" }}</span> <span class="question-text">{{.Text}}</span></p>
             {{if .Hint}}
             <p class="text-sm text-gray-500 dark:text-gray-400 italic mt-1">{{ TF $.Lang "gameplay.hint_label" .Hint }}</p>
             {{end}}
@@ -589,5 +600,39 @@
             });
         })();
     })();
-</script>
+
+    // F-3 (pass 45): озвучивание задания через Web Speech API (TTS).
+    (function() {
+        var ttsBtn = document.getElementById('tts-btn');
+        var ttsStop = document.getElementById('tts-stop');
+        if (!ttsBtn || !('speechSynthesis' in window)) {
+            if (ttsBtn) ttsBtn.style.display = 'none';
+            return;
+        }
+        function ttsText() {
+            var parts = [];
+            var title = document.querySelector('h1.page-title');
+            var desc = document.getElementById('level-description');
+            if (title) parts.push(title.textContent.trim());
+            if (desc) parts.push(desc.textContent.trim());
+            document.querySelectorAll('.question-text').forEach(function(el) { parts.push(el.textContent.trim()); });
+            return parts.filter(Boolean).join('. ');
+        }
+        ttsBtn.addEventListener('click', function() {
+            if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+            var u = new SpeechSynthesisUtterance(ttsText());
+            u.lang = 'ru-RU';
+            u.rate = 0.95;
+            window.speechSynthesis.speak(u);
+            ttsBtn.classList.add('hidden');
+            ttsStop.classList.remove('hidden');
+            u.onend = function() { ttsBtn.classList.remove('hidden'); ttsStop.classList.add('hidden'); };
+            u.onerror = function() { ttsBtn.classList.remove('hidden'); ttsStop.classList.add('hidden'); };
+        });
+        ttsStop.addEventListener('click', function() {
+            window.speechSynthesis.cancel();
+            ttsBtn.classList.remove('hidden');
+            ttsStop.classList.add('hidden');
+        });
+    })();</script>
 {{end}}

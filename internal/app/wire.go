@@ -93,6 +93,7 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 		wrapLevelService,
 		wrapQuestionService,
 		wrapAnswerService,
+		wrapImportService,
 		wrapAuthService,
 		wrapRefreshTokenService,
 		wrapUserService,

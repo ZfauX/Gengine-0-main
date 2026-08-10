@@ -148,6 +148,7 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	levelService := wrapLevelService(levelRepository, questionRepository, answerRepository, coAuthorService, gameAdminService)
 	questionService := wrapQuestionService(questionRepository, levelRepository, coAuthorService)
 	answerService := wrapAnswerService(answerRepository, questionRepository, levelRepository, coAuthorService)
+	importService := wrapImportService(db, coAuthorService)
 	invitationRepository := repos.Invitation
 	invitationService := wrapInvitationService(invitationRepository, teamRepository, cfg)
 	tournamentRepository := repos.Tournament
@@ -203,6 +204,7 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 		Level:           levelService,
 		Question:        questionService,
 		Answer:          answerService,
+		Import:          importService,
 		Team:            teamService,
 		Invitation:      invitationService,
 		Tournament:      tournamentService,

@@ -64,3 +64,22 @@ func TestSanitizeConsistency(t *testing.T) {
 	input := "<p>Hello <b>World</b></p>"
 	assert.Equal(t, StripHTML(input), string(StripHTMLBytes([]byte(input))))
 }
+
+// F-2 (pass 45): rich-text политика сохраняет форматирование, но удаляет XSS.
+func TestSanitizeRichText_KeepsFormatting(t *testing.T) {
+	in := `<p style="color:red"><b>Жирный</b> и <i>курсив</i></p><table><tr><td>Ячейка</td></tr></table>`
+	out := SanitizeRichText(in)
+	assert.Contains(t, out, "<b>Жирный</b>")
+	assert.Contains(t, out, "<i>курсив</i>")
+	assert.Contains(t, out, "<table>")
+	assert.Contains(t, out, "<td>Ячейка</td>")
+}
+
+func TestSanitizeRichText_RemovesScripts(t *testing.T) {
+	in := `<p onclick="alert(1)">Текст</p><script>alert('xss')</script><a href="javascript:evil()">ссылка</a>`
+	out := SanitizeRichText(in)
+	assert.NotContains(t, out, "<script")
+	assert.NotContains(t, out, "onclick")
+	assert.NotContains(t, out, "javascript:")
+	assert.Contains(t, out, "Текст")
+}

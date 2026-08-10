@@ -105,6 +105,11 @@ func wrapLevelService(levelRepo level.LevelRepository, questionRepo level.Questi
 	return level.NewLevelService(levelRepo, questionRepo, answerRepo, coAuthorSvc, gameAdminSvc)
 }
 
+// wrapImportService — F-1 (pass 45): импорт уровней из JSON.
+func wrapImportService(db *gorm.DB, coAuthorSvc *game.CoAuthorService) *level.ImportService {
+	return level.NewImportService(db, coAuthorSvc)
+}
+
 func wrapQuestionService(questionRepo level.QuestionRepository, levelRepo level.LevelRepository, coAuthorSvc *game.CoAuthorService) *level.QuestionService {
 	return level.NewQuestionService(questionRepo, levelRepo, coAuthorSvc)
 }

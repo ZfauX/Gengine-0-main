@@ -344,3 +344,40 @@ input, textarea, select {
     background: #eff6ff;
   }
 }
+
+/* F-2 (pass 45): rich-text — стили WYSIWYG-контента */
+.rich-text { line-height: 1.6; }
+.rich-text h2, .rich-text h3, .rich-text h4 { font-weight: 600; margin: 0.6em 0 0.3em; }
+.rich-text h2 { font-size: 1.4em; }
+.rich-text h3 { font-size: 1.2em; }
+.rich-text h4 { font-size: 1.05em; }
+.rich-text p { margin: 0.4em 0; }
+.rich-text ul, .rich-text ol { padding-left: 1.4em; margin: 0.4em 0; }
+.rich-text blockquote {
+  border-left: 3px solid #cbd5e1;
+  padding-left: 0.8em;
+  margin: 0.5em 0;
+  color: #64748b;
+}
+.rich-text pre, .rich-text code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+  background: #f1f5f9;
+  border-radius: 0.25rem;
+  padding: 0.1em 0.3em;
+}
+.rich-text table { border-collapse: collapse; margin: 0.5em 0; width: 100%; }
+.rich-text td, .rich-text th {
+  border: 1px solid #cbd5e1;
+  padding: 0.3em 0.5em;
+  text-align: left;
+}
+.rich-text img, .rich-text video { max-width: 100%; height: auto; border-radius: 0.25rem; }
+.dark .rich-text blockquote { border-color: #334155; color: #94a3b8; }
+.dark .rich-text pre, .dark .rich-text code { background: #1e293b; }
+.dark .rich-text td, .dark .rich-text th { border-color: #334155; }
+.richtext-editor:focus { outline: none; }
+.richtext-editor[contenteditable]:empty::before {
+  content: attr(data-placeholder);
+  color: #94a3b8;
+}

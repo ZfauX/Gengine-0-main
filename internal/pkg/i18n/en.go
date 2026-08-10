@@ -913,6 +913,12 @@ var enMessages = map[string]string{
 	"level.answers_label":         "Answers:",
 	"level.coordinates_label":     "Coordinates:",
 	"level.back_to_level":         "← Back to level",
+	"level.import_title":          "Import levels",
+	"level.import_file_label":     "JSON file with levels",
+	"level.import_hint":           "Format: {\"levels\":[{\"name\":\"...\",\"questions\":[{\"text\":\"...\",\"answers\":[{\"code\":\"...\"}]}]}]}",
+	"level.import_button":         "Import",
+	"level.import_cancel":         "Cancel",
+	"level.import_ok":             "Imported levels: %d",
 
 	// ── Questions ──
 	"question.new_title":         "New question",
@@ -972,6 +978,8 @@ var enMessages = map[string]string{
 	"gameplay.hint_label":                "Hint: %s",
 	"gameplay.code_placeholder":          "Enter code",
 	"gameplay.submit_button":             "Submit",
+	"gameplay.tts_button":                "Read task aloud",
+	"gameplay.tts_stop":                  "Stop",
 	"gameplay.hint_button":               "💡 Hint",
 	"gameplay.upload_file":               "Upload file",
 	"gameplay.upload_progress":           "Uploading: %d%% (%s / %s)",
