@@ -2,23 +2,26 @@
 
 **Платформа для создания и проведения городских, полевых и онлайн‑квестов**
 
-Gengine‑0 позволяет авторам проектировать многоуровневые игры с вопросами и кодами, командам — проходить их в реальном времени, а организаторам — следить за прогрессом через мониторинг. Поддерживаются турниры, рейтинги, чат, голосование, галерея фотографий и многое другое.
+Gengine‑0 позволяет авторам проектировать многоуровневые игры с вопросами и кодами, командам — проходить их в реальном времени, а организаторам — следить за прогрессом через мониторинг с живой картой игроков. Поддерживаются турниры, рейтинги, чаты (общий/командный/личный), голосование «чёрный ящик», галерея фотографий, платежи и многое другое.
 
 ---
 
 ## 📋 Возможности
 
-- 🔐 **Аутентификация** — JWT + refresh-токены, OAuth2 (Google, GitHub, Яндекс), WebAuthn/Passkeys, 2FA
-- 🎮 **Конструктор игр** — черновики, публикация, уровни, вопросы, ответы, файловая загрузка
-- 👥 **Команды и турниры** — управление составом, приглашения, турнирные таблицы
+- 🔐 **Аутентификация** — JWT + refresh-токены (ротация с отзывом семейств), OAuth2 (Яндекс, VK), WebAuthn/Passkeys, 2FA (TOTP + backup-коды)
+- 🎮 **Конструктор игр** — черновики, публикация, уровни, вопросы, ответы, файловая загрузка, импорт/экспорт (CSV, Excel, PDF)
+- 👥 **Команды и турниры** — роли (капитан/зам/игрок), группы (основной состав/резерв), приглашения, турнирные таблицы
+- 🗺️ **Геолокация игроков** — отправка координат водителей, карта в мониторинге (Leaflet + live-обновление)
 - 📊 **Мониторинг в реальном времени** — WebSocket + SSE, прогресс команд, чат
+- 💬 **Чаты и комнаты** — общий/капитанский/командный/флудилка/личный/серверный, права участников
 - 🗳️ **Голосование (чёрный ящик)** — автор запускает голосование, участники выбирают лучший ответ
+- 💳 **Платежи** — ЮKassa (создание платежа, IP-аутентифицированный вебхук, статусы, страница платежей)
 - 📸 **Фотогалерея** — загрузка снимков с привязкой к уровням
 - 📄 **Экспорт** — CSV, PDF, Excel, iCal
 - 🌐 **i18n** — Русский и английский языки (256+ строк)
-- 🛡️ **Безопасность** — CSP с nonce, CSRF, rate-limit, httpOnly cookies, структурированные ошибки
+- 🛡️ **Безопасность** — CSP с nonce, CSRF, rate-limit (fail-closed для критичных путей), httpOnly cookies, строгие права доступа (в т.ч. к геоданным и Phase-3 маршрутам)
 - 🎨 **Интерфейс** — Tailwind CSS v4, CSS-переменные, тёмная тема, PWA, Service Worker
-- 📈 **Наблюдаемость** — zerolog, Prometheus, health-check, Sentry
+- 📈 **Наблюдаемость** — zerolog, Prometheus, pprof, health-check, Sentry
 
 ---
 
@@ -29,18 +32,20 @@ Gengine‑0 позволяет авторам проектировать мно�
 | **Язык** | Go 1.25 |
 | **HTTP-фреймворк** | Gin |
 | **ORM** | GORM (PostgreSQL) |
-| **Миграции** | golang-migrate (20 миграций) |
-| **Аутентификация** | JWT, OAuth2, WebAuthn/Passkeys, 2FA (TOTP) |
-| **WebSocket** | Gorilla WebSocket |
-| **SSE** | Server-Sent Events |
-| **Кэш** | In-memory LRU + Valkey (Redis-compatible) |
+| **Миграции** | golang-migrate — 59 индивидуальных + squashed-набор (7 файлов) для свежих БД |
+| **Аутентификация** | JWT, OAuth2 (Яндекс, VK), WebAuthn/Passkeys, 2FA (TOTP) |
+| **WebSocket** | Gorilla WebSocket + RoomHub (комнаты, лимиты, reconnecting-клиент) |
+| **SSE** | Server-Sent Events (уведомления о старте/уровне/подсказке/финише) |
+| **Кэш** | In-memory LRU + Valkey (Redis-compatible), единая TTL-семантика |
+| **Rate-limit** | Глобальный/логин/регистрация/коды/API/SSE; критичные — fail-closed |
 | **CSRF** | gorilla/csrf с глобальным fetch-перехватчиком |
 | **Стилизация** | Tailwind CSS v4 (CSS-first), `@theme`, тёмная тема |
 | **Логирование** | zerolog + lumberjack (ротация) |
-| **Метрики** | Prometheus client_golang |
+| **Метрики** | Prometheus client_golang (+ метрики WS/SSE-подключений) |
+| **Профилирование** | pprof на отдельном порту (PPROF_ENABLED) |
 | **Сборка CSS** | Tailwind CLI v4 (~170ms) |
 | **DI** | google/wire |
-| **Тестирование** | testing + testify + go-sqlmock + goleak |
+| **Тестирование** | testing + testify + go-sqlmock + gomock + Playwright (E2E) |
 
 ---
 
@@ -50,19 +55,19 @@ Gengine‑0 позволяет авторам проектировать мно�
 
 - Go 1.25
 - PostgreSQL 18+
-- Node.js 18+ и npm (только для сборки CSS)
+- Node.js 18+ и npm (сборка CSS, E2E-тесты)
 
 ### Установка и запуск
 
 ```bash
 # 1. Клонирование
-git clone https://github.com/ZfauX/Gengine-0.git
+git clone https://github.com/ZfauX/Gengine-0-main.git
 cd Gengine-0
 
 # 2. Go-зависимости
 go mod tidy
 
-# 3. Node.js-зависимости (для сборки CSS)
+# 3. Node.js-зависимости (CSS + Playwright)
 npm install
 
 # 4. Настройка .env
@@ -72,7 +77,7 @@ cp .env.example .env
 # 5. Сборка CSS (Tailwind v4)
 npm run build:css    # или make css
 
-# 6. Запуск миграций БД
+# 6. Запуск миграций БД (свежая БД применяет squashed-набор автоматически)
 go run ./cmd/server -migrate
 
 # 7. Запуск сервера (dev)
@@ -85,7 +90,8 @@ make build            # CSS + Go binary
 Сервер будет доступен на `http://localhost:8080`.
 - Swagger: `/swagger/index.html`
 - Health: `/healthz`
-- Метрики: `/metrics`
+- Метрики: `/metrics` (только админ + 2FA)
+- pprof: `/debug/pprof/*` на порту `6060` (включается `PPROF_ENABLED=true`)
 
 ---
 
@@ -98,27 +104,43 @@ make build            # CSS + Go binary
 | `make css` | Сборка Tailwind CSS |
 | `make test` | Все тесты с покрытием |
 | `make test-short` | Unit-тесты (без БД) |
-| `make test-integration` | Интеграционные тесты (`-tags=integration`) |
+| `make test-integration` | Интеграционные тесты (`-tags=integration`, требуется PostgreSQL) |
+| `make test-e2e` | Playwright E2E (требует e2e-сервер на `:8081`, см. `.env.e2e`) |
 | `make lint` | `golangci-lint run ./...` |
 | `make swagger` | Генерация Swagger-документации |
 | `go generate ./internal/app/` | Регенерация wire DI (после изменения конструкторов) |
+
+### E2E-тесты (Playwright)
+
+```bash
+# Один раз: установить браузер
+npx playwright install chromium
+
+# Настроить e2e-окружение (см. .env.e2e): БД gengine_e2e, RATE_LIMIT_*=100000,
+# TRUSTED_PROXIES пуст (иначе CSRF-кука станет Secure). Применить миграции:
+#   go run ./cmd/server -migrate  (с env из .env.e2e)
+# Запустить сервер на :8081, затем:
+make test-e2e
+```
+
+Покрытие: регистрация → логин → дашборд, создание команды/игры, профиль, публичные страницы, общий чат, сценарии с двумя пользователями (личный чат). Service Workers блокируются в конфиге Playwright — иначе SW подставляет устаревший CSRF-токен.
 
 ---
 
 ## 🗂️ Структура проекта
 
 ```
-cmd/server/main.go          — точка входа, graceful shutdown
+cmd/server/main.go          — точка входа, graceful shutdown, pprof
 internal/
   app/                      — DI (wire), роутер
   config/                   — env-конфигурация с валидацией
   db/                       — подключение, миграции, admin seed
   domain/                   — бизнес-логика по доменам:
-    {user,game,level,team,tournament,monitor,calendar,social,notification,admin,export}/
+    {user,game,level,team,tournament,monitor,calendar,social,notification,admin,export,payment}/
       model.go              — GORM-модели
       service.go            — бизнес-логика (без HTTP)
       handler.go            — HTTP-хендлеры (gin)
-      routes.go             — маршруты + DI
+      routes.go             — маршруты + middleware
       templates/            — HTML-шаблоны
   pkg/                      — переиспользуемые модули:
     cache/                  — in-memory LRU + Valkey
@@ -126,9 +148,12 @@ internal/
     middleware/             — auth, CSRF, gzip, CSP, rate-limit, bodylimit
     email/                  — SMTP с persistent-очередью
     i18n/                   — интернационализация (256 строк, ru+en)
+    metrics/                — Prometheus-метрики
     render/                 — HTML-рендеринг
     storage/                — файловое хранилище
-migrations/                 — SQL-миграции (20 файлов)
+migrations/                 — SQL-миграции (59 файлов)
+migrations_squashed/        — сгруппированный набор (7 файлов) для свежих БД
+e2e/                        — Playwright-тесты + конфиг
 static/                     — CSS, JS, PWA (manifest.json + sw.js)
 ```
 
@@ -154,11 +179,18 @@ static/                     — CSS, JS, PWA (manifest.json + sw.js)
 ## 🔒 Безопасность
 
 - **Секреты** — все ключи в env, минимальная длина 32 символа, проверка сложности
-- **JWT** — httpOnly cookie, refresh-токены в БД с отзывом
+- **JWT** — httpOnly cookie, refresh-токены в БД с отзывом (семейства)
 - **CSRF** — gorilla/csrf, `X-CSRF-TOKEN` для AJAX, `_csrf` для форм
 - **CSP** — `script-src 'nonce-...'`, `form-action 'self'`, строгие директивы
 - **CORS** — настраивается через `CORS_ORIGINS`
-- **Rate-limit** — глобальный, логин, регистрация, code submission, API
+- **Rate-limit** — глобальный, логин, регистрация, code submission, API, SSE;
+  критичные лимитеры (логин/регистрация/2FA/коды/сброс) работают **fail-closed**
+  при недоступности Valkey — отказ кэша не отключает защиту от брутфорса
+- **Права доступа** — авторизация на геолокацию и Phase-3 маршруты (маршруты команд,
+  время старта, ответы, статистика) через middleware `GameManager`; чат — единая
+  проверка `canJoinRoom`; личные комнаты доступны только двум участникам
+- **Платежи** — вебхук ЮKassa с IP-allowlist + подтверждением статуса через API,
+  классификация ошибок (400/403/500) с алертами
 - **WebAuthn/Passkeys** — FIDO2 аутентификация без пароля
 - **2FA** — TOTP + backup-коды (для `/admin/*`)
 - **Health-check** — мониторинг БД, диска, email-очереди, Valkey, WS Hub
@@ -174,44 +206,92 @@ static/                     — CSS, JS, PWA (manifest.json + sw.js)
 CSP-заголовки — использование nonce вместо unsafe-inline для инлайн-скриптов и стилей. Загрузка внешних ресурсов (CDN) строго контролируется.
 Самоподписанный TLS‑сертификат генерируется только для разработки; для production используйте Let's Encrypt или другой доверенный центр.
 
-📈 Наблюдаемость
-Логирование — все компоненты пишут структурированные логи в JSON с помощью zerolog. Уровни логирования настраиваются через переменную окружения LOG_LEVEL.
-Метрики Prometheus — доступны на /metrics. Содержат счётчики и гистограммы HTTP‑запросов, бизнес-метрики (игры, команды, пользователи, WebSocket-соединения и т.д.).
-Health‑check — эндпоинт /healthz проверяет подключение к базе данных и статус WebSocket-хаба.
+---
 
-📚 API Документация
+## 📈 Наблюдаемость
+
+- **Логирование** — все компоненты пишут структурированные логи в JSON с помощью zerolog. Уровни настраиваются через `LOG_LEVEL`.
+- **Метрики Prometheus** — `/metrics` (защищён: админ + 2FA). Счётчики и гистограммы HTTP‑запросов, бизнес-метрики (игры, команды, пользователи, WebSocket- и SSE-подключения и т.д.).
+- **pprof** — отдельный сервер на `PPROF_PORT` (по умолчанию 6060), включается `PPROF_ENABLED=true`; не экспонируется на основном порту.
+- **Health‑check** — `/healthz` проверяет подключение к БД и статус WebSocket-хаба.
+
+---
+
+## 📚 API Документация
+
 Swagger-документация генерируется автоматически. После запуска сервера доступна по адресу:
-http://localhost:8080/swagger/index.html
+`http://localhost:8080/swagger/index.html`
+
 Для обновления документации выполните:
+```bash
 swag init -g cmd/server/main.go
-Документация в формате JSON доступна по адресу:
-http://localhost:8080/swagger/doc.json
+```
 
-🛠️ Разработка и тестирование
-Запуск линтера
-golangci-lint run
+Документация в формате JSON: `http://localhost:8080/swagger/doc.json`
 
-Запуск интеграционных тестов (с PostgreSQL)
-Требуется настроенная тестовая БД (см. internal/testutil/postgres.go).
-go test -tags=integration ./internal/domain/...
+---
 
-Сборка
+## 🛠️ Разработка и тестирование
+
+**Линтер**
+```bash
+golangci-lint run ./...
+```
+
+**Unit-тесты (без БД)**
+```bash
+go test -short ./...
+```
+
+**Интеграционные тесты (с PostgreSQL)**
+Требуется настроенная тестовая БД (см. `internal/testutil/postgres.go`).
+```bash
+go test -tags=integration ./...
+```
+
+**E2E-тесты (Playwright)** — см. раздел «Команды».
+
+**Бенчмарки**
+```bash
+go test -bench=. ./internal/pkg/cache/... ./internal/pkg/middleware/...
+```
+
+**Профилирование**
+```bash
+PPROF_ENABLED=true go run ./cmd/server
+# затем: go tool pprof http://localhost:6060/debug/pprof/profile
+```
+
+**Сборка**
+```bash
 CGO_ENABLED=0 go build -o gengine.exe -ldflags="-s -w -X main.version=$(git describe --tags --always --dirty) -X main.buildDate=$(date -u '+%Y-%m-%d_%H:%M:%S')" ./cmd/server
+```
 
-Миграция схем бд
+**Миграция схемы БД**
+```bash
 gengine -migrate
+```
 
-Docker
+**Docker**
+```bash
 docker-compose up
+```
 
-🤝 Contributing
+---
+
+## 🤝 Contributing
+
 Мы приветствуем ваши pull request'ы! Пожалуйста, перед отправкой убедитесь, что существующие тесты проходят, и добавляйте новые для своих изменений.
 
-Форкните репозиторий.
-Создайте ветку для своей фичи (git checkout -b feature/amazing).
-Запустите тесты (go test ./...).
-Создайте pull request.
+1. Форкните репозиторий.
+2. Создайте ветку для своей фичи (`git checkout -b feature/amazing`).
+3. Запустите линтер и тесты: `make lint`, `go test -short ./...` (и `go test -tags=integration ./...` при изменении БД-логики).
+4. Создайте pull request.
+
 Подробнее в CONTRIBUTING.md.
 
-📧 Контакты
+---
+
+## 📧 Контакты
+
 Вопросы и предложения: откройте issue в репозитории.
