@@ -1,17 +1,17 @@
 # Gengine-0 ROADMAP — pass 46 и далее
 
-> Статус: **в работе**. Предыдущий ROADMAP (Фазы 0–6) полностью выполнен.
+> Статус: **Фаза 46 выполнена полностью**. Предыдущий ROADMAP (Фазы 0–6) выполнен.
 > Процесс: реализация → линтер (`golangci-lint run ./...`) → тесты (`go test -short ./...`) → коммит.
 
 ---
 
 ## Фаза 46 — Полировка и устойчивость (по итогам аудита)
 
-- [ ] **S-1** Rate-limiter: fail-closed для критичных лимитеров (логин, регистрация, 2FA, коды) при недоступности Valkey; fail-open оставить только для глобального. *(Аудит pass 46: сейчас все fail-open — отказ Redis отключает защиту от брутфорса.)*
-- [ ] **S-2** ChatWS: вынести access-control (личный/командный/капитанский/общий + per-message recheck) из хендлера в `ChatService.CanJoinRoom`, чтобы правила были unit-тестируемы и не расходились между `ChatWS`/`ChatRoomIDs`/`CreateRoom`.
-- [ ] **S-3** Мониторинг WebHook: возвращать 4xx при верификации платежа + алерт на rejected webhooks (сейчас always-200 делает сбои невидимыми).
-- [ ] **S-4** SQL: заменить конкатенацию таблиц в `user/repository.go` (DELETE FROM "+t+") на whitelist-map или GORM per-model.
-- [ ] **S-5** ChatWS hot-path: объединить `IsTeamMemberOrCaptain` + `GetRoomMember` в один запрос (сейчас 2 запроса на каждое сообщение).
+- [x] **S-1** Rate-limiter: fail-closed для критичных лимитеров (логин, регистрация, 2FA, коды) при недоступности Valkey; fail-open оставить только для глобального. — `Init*RateLimiterWithValkeyFailClosed` в `cmd/server/main.go:231-237`, `NewValkeyRateLimiterFailClosed` в `rate_limiter.go`, тест `TestRateLimiter_ValkeyFailClosedVsOpen`.
+- [x] **S-2** ChatWS: access-control вынесен в `canJoinRoom` (единая логика для ChatWS/ChatRoomIDs/CreateRoom) с интерфейсными зависимостями — unit-тесты `TestCanJoinRoom_*` (личный/командный/капитанский/общий).
+- [x] **S-3** Мониторинг WebHook: 4xx при верификации платежа + классификация ошибок (`ErrWebhookInvalid`→400, `ErrWebhookUntrustedIP`→403) — rejected больше не прячется под always-200.
+- [x] **S-4** SQL: конкатенация таблиц в `user/repository.go` заменена на статический whitelist-map (`cleanup []{table,col}` + `HasTable`).
+- [x] **S-5** ChatWS hot-path: `CanSendMessage` — единая проверка права на отправку (один запрос комнаты + LEFT JOIN членства + chat_room_members) вместо `IsTeamMemberOrCaptain`+`GetRoomMember` на каждое сообщение.
 
 ## Фаза 47 — Тестовая база
 
