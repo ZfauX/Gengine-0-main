@@ -282,23 +282,31 @@ func run() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Callback для расчёта результатов при завершении игры
-	onGameFinished := func(ctx context.Context, gameID uint) {
-		if deps.Services.Monitor != nil {
-			if err := deps.Services.Monitor.CalculateResults(ctx, gameID); err != nil {
-				log.Error().Err(err).Uint("game_id", gameID).Msg("onGameFinished: CalculateResults failed")
+	// Callback для расчёта результатов при завершении игры.
+	// DEEP-REVIEW PASS-3 H4: выполняется в ФОНОВОЙ горутине с таймаутом —
+	// раньше CalculateResults + UpdateScoresForGame (advisory lock) + UpdateRatings
+	// блокировали HTTP-запрос игрока, отправившего код на последнем уровне.
+	// M9 (PASS-3): WithoutCancel + WithTimeout — фоновая работа не виснет на lock.
+	onGameFinished := func(reqCtx context.Context, gameID uint) {
+		bgCtx, bgCancel := context.WithTimeout(context.WithoutCancel(reqCtx), 30*time.Second)
+		defer bgCancel()
+		go func() {
+			if deps.Services.Monitor != nil {
+				if err := deps.Services.Monitor.CalculateResults(bgCtx, gameID); err != nil {
+					log.Error().Err(err).Uint("game_id", gameID).Msg("onGameFinished: CalculateResults failed")
+				}
 			}
-		}
-		if deps.Services.Tournament != nil {
-			deps.Services.Tournament.UpdateScoresForGame(ctx, gameID)
-		}
-		// Начисление очков рейтинга игрокам (B3): раньше UpdateRatingsForGame
-		// не вызывался в проде — игроки не получали очки за игры.
-		if deps.Services.Rating != nil {
-			if err := deps.Services.Rating.UpdateRatingsForGame(ctx, gameID); err != nil {
-				log.Error().Err(err).Uint("game_id", gameID).Msg("onGameFinished: UpdateRatingsForGame failed")
+			if deps.Services.Tournament != nil {
+				deps.Services.Tournament.UpdateScoresForGame(bgCtx, gameID)
 			}
-		}
+			// Начисление очков рейтинга игрокам (B3): раньше UpdateRatingsForGame
+			// не вызывался в проде — игроки не получали очки за игры.
+			if deps.Services.Rating != nil {
+				if err := deps.Services.Rating.UpdateRatingsForGame(bgCtx, gameID); err != nil {
+					log.Error().Err(err).Uint("game_id", gameID).Msg("onGameFinished: UpdateRatingsForGame failed")
+				}
+			}
+		}()
 	}
 
 	// Прокидываем колбэк в обычный игровой путь (SubmitCode/AcceptBlackboxAnswer)

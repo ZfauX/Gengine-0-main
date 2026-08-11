@@ -30,8 +30,13 @@ type Level struct {
 	// Update — true означает «пользователь явно изменил чекбокс», поэтому
 	// сервис применяет значение; false (или не установлено) — не трогает.
 	RequiresConfirmationSet bool    `gorm:"-"`
-	Latitude                float64 `form:"latitude"`
-	Longitude               float64 `form:"longitude"`
+	// MinChildrenSet / LocationSet (DEEP-REVIEW PASS-3 M5): сигналы частичного
+	// Update для int/float полей (нет nil-индикатора). Устанавливаются
+	// handler'ом, когда поле явно передано в форме/запросе.
+	MinChildrenSet bool    `gorm:"-"`
+	LocationSet    bool    `gorm:"-"`
+	Latitude       float64 `form:"latitude"`
+	Longitude      float64 `form:"longitude"`
 
 	Questions    []Question `gorm:"foreignKey:LevelID"`
 	MiniGame     *MiniGame  `gorm:"foreignKey:LevelID"`

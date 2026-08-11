@@ -100,6 +100,80 @@ func TestLevelService_Update_PreservesTypeOnPartialPOST(t *testing.T) {
 	assert.Equal(t, level.TypeParallelGroup, result.Type, "тип уровня не должен сбрасываться при частичном POST")
 }
 
+// M5 (PASS-3): частичный POST не сбрасывает ParentID/GroupID/MinChildren/Lat/Lon.
+func TestLevelService_Update_PreservesGraphFieldsOnPartialPOST(t *testing.T) {
+	db := testutil.SetupPostgresDB(t, allModels...)
+	svc := newLevelService(db)
+
+	author := createUser(t, db, "updgraph@test.com", "pass")
+	g := createGame(t, db, author.ID, "Update Graph Game")
+
+	parentID := uint(999)
+	groupID := uint(888)
+	lvl := &level.Level{
+		Name:        "Node",
+		Position:    1,
+		GameID:      g.ID,
+		Type:        level.TypeParallelGroup,
+		ParentID:    &parentID,
+		GroupID:     &groupID,
+		MinChildren: 3,
+		Latitude:    55.75,
+		Longitude:   37.61,
+	}
+	require.NoError(t, db.Create(lvl).Error)
+
+	// Частичный POST — только имя; граф-поля не переданы (nil/Set=false).
+	updated := &level.Level{Name: "Renamed"}
+	require.NoError(t, svc.Update(context.Background(), lvl.ID, updated, author.ID))
+
+	var result level.Level
+	require.NoError(t, db.First(&result, lvl.ID).Error)
+	assert.Equal(t, "Renamed", result.Name)
+	require.NotNil(t, result.ParentID, "ParentID не должен сбрасываться при частичном POST")
+	assert.Equal(t, parentID, *result.ParentID)
+	require.NotNil(t, result.GroupID, "GroupID не должен сбрасываться при частичном POST")
+	assert.Equal(t, groupID, *result.GroupID)
+	assert.Equal(t, 3, result.MinChildren, "MinChildren не должен сбрасываться при частичном POST")
+	assert.Equal(t, 55.75, result.Latitude, "Latitude не должна сбрасываться при частичном POST")
+	assert.Equal(t, 37.61, result.Longitude, "Longitude не должна сбрасываться при частичном POST")
+}
+
+// M5 (PASS-3): явная передача полей с Set-флагами применяется (в т.ч. сброс в 0).
+func TestLevelService_Update_AppliesExplicitGraphFields(t *testing.T) {
+	db := testutil.SetupPostgresDB(t, allModels...)
+	svc := newLevelService(db)
+
+	author := createUser(t, db, "updgraph2@test.com", "pass")
+	g := createGame(t, db, author.ID, "Update Graph 2 Game")
+
+	parentID := uint(777)
+	lvl := &level.Level{Name: "Node", Position: 1, GameID: g.ID, ParentID: &parentID, MinChildren: 2}
+	require.NoError(t, db.Create(lvl).Error)
+
+	// Явная передача: GroupID, MinChildren=5, LocationSet, ParentID не передан.
+	groupID := uint(666)
+	updated := &level.Level{
+		Name:           "Renamed",
+		GroupID:        &groupID,
+		MinChildren:    5,
+		MinChildrenSet: true,
+		Latitude:       10.0,
+		Longitude:      20.0,
+		LocationSet:    true,
+	}
+	require.NoError(t, svc.Update(context.Background(), lvl.ID, updated, author.ID))
+
+	var result level.Level
+	require.NoError(t, db.First(&result, lvl.ID).Error)
+	assert.Equal(t, uint(777), *result.ParentID, "ParentID не передан — должен сохраниться")
+	require.NotNil(t, result.GroupID)
+	assert.Equal(t, groupID, *result.GroupID)
+	assert.Equal(t, 5, result.MinChildren)
+	assert.Equal(t, 10.0, result.Latitude)
+	assert.Equal(t, 20.0, result.Longitude)
+}
+
 func TestLevelService_Duplicate(t *testing.T) {
 	db := testutil.SetupPostgresDB(t, allModels...)
 	svc := newLevelService(db)

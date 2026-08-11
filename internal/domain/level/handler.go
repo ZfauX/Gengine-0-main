@@ -39,6 +39,9 @@ type CreateLevelInput struct {
 }
 
 // UpdateLevelInput используется для обновления уровня.
+// DEEP-REVIEW PASS-3 M5: ParentID/GroupID/MinChildren/Latitude/Longitude —
+// указатели: nil = «не менять» при частичном POST (раньше сбрасывались в 0/nil,
+// разрушая граф уровней — ветвления/группы/координаты).
 type UpdateLevelInput struct {
 	Name        string `form:"name" binding:"omitempty,min=2,max=100"`
 	Description string `form:"description" binding:"max=5000"`
@@ -46,12 +49,12 @@ type UpdateLevelInput struct {
 	Type        string `form:"type" binding:"omitempty,oneof=single checkpoint parallel_group blackbox file_upload"`
 	ParentID    *uint  `form:"parent_id"`
 	GroupID     *uint  `form:"group_id"`
-	MinChildren int    `form:"min_children" binding:"min=0,max=100"`
+	MinChildren *int   `form:"min_children"`
 	// DEEP-REVIEW LOW #29 (pass 46): *bool — nil означает «не менять» при
 	// частичном POST; раньше unchecked checkbox сбрасывал RequiresConfirmation.
-	RequiresConfirmation *bool   `form:"requires_confirmation"`
-	Latitude             float64 `form:"latitude" binding:"omitempty,min=-90,max=90"`
-	Longitude            float64 `form:"longitude" binding:"omitempty,min=-180,max=180"`
+	RequiresConfirmation *bool    `form:"requires_confirmation"`
+	Latitude             *float64 `form:"latitude"`
+	Longitude            *float64 `form:"longitude"`
 }
 
 // CreateQuestionInput используется для создания вопроса.
@@ -430,13 +433,14 @@ func (h *LevelHandler) Update(c *gin.Context) {
 		if input.Type != "" && input.Type != "single" && input.Type != "checkpoint" && input.Type != "parallel_group" && input.Type != "blackbox" && input.Type != "file_upload" {
 			errs.Add("type", errors.New("неверный тип уровня"))
 		}
-		if input.MinChildren < 0 || input.MinChildren > 100 {
+		// M5 (PASS-3): MinChildren/Lat/Lon — указатели (nil = не менять).
+		if input.MinChildren != nil && (*input.MinChildren < 0 || *input.MinChildren > 100) {
 			errs.Add("min_children", errors.New("минимальное количество подуровней должно быть от 0 до 100"))
 		}
-		if input.Latitude != 0 && (input.Latitude < -90 || input.Latitude > 90) {
+		if input.Latitude != nil && (*input.Latitude < -90 || *input.Latitude > 90) {
 			errs.Add("latitude", errors.New("широта должна быть от -90 до 90"))
 		}
-		if input.Longitude != 0 && (input.Longitude < -180 || input.Longitude > 180) {
+		if input.Longitude != nil && (*input.Longitude < -180 || *input.Longitude > 180) {
 			errs.Add("longitude", errors.New("долгота должна быть от -180 до 180"))
 		}
 		if !errs.HasErrors() {
@@ -458,9 +462,19 @@ func (h *LevelHandler) Update(c *gin.Context) {
 		Type:        input.Type,
 		ParentID:    input.ParentID,
 		GroupID:     input.GroupID,
-		MinChildren: input.MinChildren,
-		Latitude:    input.Latitude,
-		Longitude:   input.Longitude,
+	}
+	// M5 (PASS-3): nil = «не менять» — присваиваем только переданные поля.
+	if input.MinChildren != nil {
+		updated.MinChildren = *input.MinChildren
+		updated.MinChildrenSet = true
+	}
+	if input.Latitude != nil {
+		updated.Latitude = *input.Latitude
+		updated.LocationSet = true
+	}
+	if input.Longitude != nil {
+		updated.Longitude = *input.Longitude
+		updated.LocationSet = true
 	}
 	// DEEP-REVIEW LOW #29 (pass 46): nil = «не менять» — сбрасываем только
 	// если пользователь явно изменил чекбокс.

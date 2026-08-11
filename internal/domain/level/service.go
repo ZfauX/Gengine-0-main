@@ -134,11 +134,22 @@ func (s *LevelService) Update(ctx context.Context, levelID uint, updated *Level,
 		// на пустую строку при обновлении только имени/описания.
 		level.Type = updated.Type
 	}
-	level.ParentID = updated.ParentID
-	level.GroupID = updated.GroupID
-	level.MinChildren = updated.MinChildren
-	level.Latitude = updated.Latitude
-	level.Longitude = updated.Longitude
+	// DEEP-REVIEW PASS-3 M5: nil/флаги = «не менять» — не сбрасываем ParentID/
+	// GroupID/MinChildren/Lat/Lon при частичном POST (раньше разрушался граф
+	// уровней: ветвления/группы/координаты обнулялись при update только имени).
+	if updated.ParentID != nil {
+		level.ParentID = updated.ParentID
+	}
+	if updated.GroupID != nil {
+		level.GroupID = updated.GroupID
+	}
+	if updated.MinChildrenSet {
+		level.MinChildren = updated.MinChildren
+	}
+	if updated.LocationSet {
+		level.Latitude = updated.Latitude
+		level.Longitude = updated.Longitude
+	}
 	// DEEP-REVIEW LOW #29 (pass 46): RequiresConfirmation применяем только при
 	// явном изменении (RequiresConfirmationSet) — раньше частичный POST
 	// сбрасывал поле в false.
