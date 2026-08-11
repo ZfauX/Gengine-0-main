@@ -128,7 +128,7 @@ func TestCache_Concurrent(t *testing.T) {
 		go func(uid uint) {
 			defer func() { done <- struct{}{} }()
 			_, _ = c.Get(context.Background(), uid, provider)
-		}(uint(i%5))
+		}(uint(i % 5))
 	}
 	for i := 0; i < 20; i++ {
 		<-done

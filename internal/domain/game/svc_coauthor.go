@@ -53,8 +53,8 @@ var ErrNotOwner = errors.New("только владелец может упра�
 // приложение, тот же, что в middleware) — раньше два независимых кэша с разными
 // TTL и раздельной инвалидацией давали окно неконсистентных прав.
 type CoAuthorService struct {
-	repo     CoAuthorRepository
-	userRepo userRepository
+	repo      CoAuthorRepository
+	userRepo  userRepository
 	roleCache *rolecache.Cache
 }
 

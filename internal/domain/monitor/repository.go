@@ -5,6 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"sync"
+	"time"
 
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/user"
@@ -55,10 +58,38 @@ type BlackboxRepository interface {
 
 // ---------- GORM implementations ----------
 
-type gormChatRepo struct{ db *gorm.DB }
+// chatPermCacheTTL (DEEP-REVIEW PASS-3 P5): короткий TTL кэша права на отправку
+// сообщения — убирает 2-3 запроса на КАЖДОЕ WS-сообщение чата. Права меняются
+// редко (AddRoomMember), задержка применения ≤ TTL приемлема.
+const chatPermCacheTTL = 5 * time.Second
+
+type chatPermEntry struct {
+	allowed      bool
+	memberExists bool
+	expires      time.Time
+}
+
+type gormChatRepo struct {
+	db *gorm.DB
+
+	permCacheMu sync.Mutex
+	permCache   map[string]chatPermEntry
+}
 
 func NewGormChatRepo(db *gorm.DB) ChatRepository {
-	return &gormChatRepo{db: db}
+	return &gormChatRepo{db: db, permCache: make(map[string]chatPermEntry)}
+}
+
+func (r *gormChatRepo) permCacheKey(roomID, userID uint) string {
+	return strconv.FormatUint(uint64(roomID), 10) + ":" + strconv.FormatUint(uint64(userID), 10)
+}
+
+// invalidatePermCache сбрасывает кэш права пользователя в комнате (вызывается
+// при изменении членства/прав).
+func (r *gormChatRepo) invalidatePermCache(roomID, userID uint) {
+	r.permCacheMu.Lock()
+	delete(r.permCache, r.permCacheKey(roomID, userID))
+	r.permCacheMu.Unlock()
 }
 
 func (r *gormChatRepo) GetOrCreateGameRoom(ctx context.Context, gameID uint) (*ChatRoom, error) {
@@ -284,7 +315,7 @@ func (r *gormChatRepo) GetMessagesBefore(ctx context.Context, roomID uint, befor
 // Используем map, а не struct: GORM пропускает zero-value (false) поля struct
 // при Create, и тогда БД применяет default:true — права «выключить» нельзя.
 func (r *gormChatRepo) AddRoomMember(ctx context.Context, roomID, userID uint, canRead, canWrite, canAttach bool) error {
-	return r.db.WithContext(ctx).Table("chat_room_members").
+	err := r.db.WithContext(ctx).Table("chat_room_members").
 		Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "room_id"}, {Name: "user_id"}},
 			DoUpdates: clause.Assignments(map[string]any{"can_read": canRead, "can_write": canWrite, "can_attach": canAttach}),
@@ -296,6 +327,12 @@ func (r *gormChatRepo) AddRoomMember(ctx context.Context, roomID, userID uint, c
 			"can_write":  canWrite,
 			"can_attach": canAttach,
 		}).Error
+	if err != nil {
+		return err
+	}
+	// P5 (PASS-3): права изменились — сбрасываем кэш права на отправку.
+	r.invalidatePermCache(roomID, userID)
+	return nil
 }
 
 // GetRoomMember возвращает членство пользователя в комнате (B-5).
@@ -317,6 +354,30 @@ func (r *gormChatRepo) GetRoomMember(ctx context.Context, roomID, userID uint) (
 // Возвращает (allowed, memberExists, err): memberExists показывает, есть ли запись
 // chat_room_members (для логов), allowed — можно ли писать.
 func (r *gormChatRepo) CanSendMessage(ctx context.Context, roomID uint, teamID *uint, userID uint) (allowed bool, memberExists bool, err error) {
+	// DEEP-REVIEW PASS-3 P5: короткий TTL-кэш (5с) — на горячем пути чата
+	// (каждое WS-сообщение) не делаем 2-3 запроса к БД.
+	now := time.Now()
+	ck := r.permCacheKey(roomID, userID)
+	r.permCacheMu.Lock()
+	if e, ok := r.permCache[ck]; ok && now.Before(e.expires) {
+		r.permCacheMu.Unlock()
+		return e.allowed, e.memberExists, nil
+	}
+	r.permCacheMu.Unlock()
+
+	allowed, memberExists, err = r.canSendMessageDB(ctx, roomID, teamID, userID)
+	if err != nil {
+		return false, false, err
+	}
+
+	r.permCacheMu.Lock()
+	r.permCache[ck] = chatPermEntry{allowed: allowed, memberExists: memberExists, expires: now.Add(chatPermCacheTTL)}
+	r.permCacheMu.Unlock()
+	return allowed, memberExists, nil
+}
+
+// canSendMessageDB — оригинальная логика проверки права на отправку (без кэша).
+func (r *gormChatRepo) canSendMessageDB(ctx context.Context, roomID uint, teamID *uint, userID uint) (allowed bool, memberExists bool, err error) {
 	var room ChatRoom
 	if err := r.db.WithContext(ctx).Where("id = ?", roomID).First(&room).Error; err != nil {
 		return false, false, err
