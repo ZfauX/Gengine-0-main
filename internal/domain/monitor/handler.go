@@ -272,6 +272,43 @@ type MonitorHandler struct {
 	userService         *user.UserService
 	gameService         *game.GameService
 	coAuthorSvc         *game.CoAuthorService
+
+	// chatRooms (IDEA-6): комнаты, подключённые через ChatWS. Колбэк presence
+	// хаба срабатывает для ВСЕХ комнат (включая монитор/логи), поэтому фильтруем:
+	// presence рассылается только в комнаты, помеченные здесь.
+	chatRooms sync.Map // roomID(string) → struct{}
+}
+
+// markChatRoom помечает комнату как чат (вызывается из ChatWS).
+func (h *MonitorHandler) markChatRoom(roomID string) {
+	h.chatRooms.Store(roomID, struct{}{})
+}
+
+// unmarkChatRoom снимает пометку при отключении последнего клиента.
+func (h *MonitorHandler) unmarkChatRoom(roomID string) {
+	h.chatRooms.Delete(roomID)
+}
+
+// setupChatPresence подключает presence-онлайн-индикатор (IDEA-6): при
+// изменении состава чат-комнаты в неё рассылается {type:"presence", count, user_ids}.
+func (h *MonitorHandler) setupChatPresence() {
+	h.hub.SetOnRoomChange(func(roomID string) {
+		if _, ok := h.chatRooms.Load(roomID); !ok {
+			return
+		}
+		count := h.hub.RoomClientCount(roomID)
+		userIDs := h.hub.RoomUserIDs(roomID)
+		payload, err := json.Marshal(gin.H{
+			"type":      "presence",
+			"count":     count,
+			"user_ids":  userIDs,
+			"room_id":   roomID,
+		})
+		if err != nil {
+			return
+		}
+		h.hub.BroadcastToRoom(roomID, payload)
+	})
 }
 
 func NewMonitorHandler(
@@ -625,11 +662,15 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 	// После успешного апгрейда запрещаем дальнейшую запись в ответ
 	c.Abort()
 
-	client := ws.NewClient(conn, roomID, remoteIP)
+	// IDEA-6: помечаем комнату как чат (presence-рассылка) ДО регистрации —
+	// иначе колбэк хаба не знает, что это чат, и пропустит presence.
+	h.markChatRoom(roomID)
+	client := ws.NewClientWithUser(conn, roomID, remoteIP, userID)
 	h.hub.RegisterClient(client)
 	defer func() {
 		h.hub.UnregisterClient(client)
 		client.Close()
+		h.unmarkChatRoom(roomID)
 	}()
 
 	// Create background context for all post-upgrade DB operations

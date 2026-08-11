@@ -33,6 +33,43 @@ type RoomHub struct {
 	maxConnsPerIP int
 	totalConns    int
 	connsPerIP    map[string]int
+
+	// onRoomChange (IDEA-6): вызывается в runLoop после добавления/удаления
+	// клиента из комнаты. Используется для presence-онлайн-индикатора в чате.
+	// Вызов синхронный из runLoop — колбэк должен быть быстрым (без блокировок).
+	onRoomChange func(roomID string)
+}
+
+// SetOnRoomChange регистрирует колбэк изменения состава комнаты (IDEA-6).
+// Вызывается из runLoop после мутации rooms — безопасно читать RoomClientCount.
+func (h *RoomHub) SetOnRoomChange(cb func(roomID string)) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.onRoomChange = cb
+}
+
+// RoomClientCount возвращает число активных клиентов в комнате (IDEA-6).
+func (h *RoomHub) RoomClientCount(roomID string) int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.rooms[roomID])
+}
+
+// RoomUserIDs возвращает уникальные userID активных клиентов комнаты (IDEA-6).
+// Может содержать 0 (клиент без userID). Порядок не гарантирован.
+func (h *RoomHub) RoomUserIDs(roomID string) []uint {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	seen := make(map[uint]bool, len(h.rooms[roomID]))
+	ids := make([]uint, 0, len(h.rooms[roomID]))
+	for client := range h.rooms[roomID] {
+		if client.UserID == 0 || seen[client.UserID] {
+			continue
+		}
+		seen[client.UserID] = true
+		ids = append(ids, client.UserID)
+	}
+	return ids
 }
 
 // NewRoomHub создаёт новый хаб с лимитами по умолчанию.
@@ -163,8 +200,13 @@ func (h *RoomHub) runLoop() {
 				h.rooms[client.RoomID] = make(map[*Client]bool)
 			}
 			h.rooms[client.RoomID][client] = true
+			cb := h.onRoomChange
 			h.mu.Unlock()
 			log.Debug().Str("room", client.RoomID).Str("ip", client.RemoteIP).Msg("WebSocket client registered")
+			// IDEA-6: presence-уведомление после добавления клиента (вне лока).
+			if cb != nil {
+				cb(client.RoomID)
+			}
 
 		case client := <-h.unregister:
 			h.mu.Lock()
@@ -187,8 +229,13 @@ func (h *RoomHub) runLoop() {
 					log.Debug().Str("room", client.RoomID).Msg("Room removed (empty)")
 				}
 			}
+			cb := h.onRoomChange
 			h.mu.Unlock()
 			log.Debug().Str("room", client.RoomID).Str("ip", client.RemoteIP).Msg("WebSocket client unregistered")
+			// IDEA-6: presence-уведомление после удаления клиента (вне лока).
+			if cb != nil {
+				cb(client.RoomID)
+			}
 
 		case msg := <-h.broadcast:
 			if h.isStopped() {

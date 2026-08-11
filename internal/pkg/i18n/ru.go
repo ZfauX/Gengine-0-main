@@ -1262,6 +1262,7 @@ var ruMessages = map[string]string{
 	"gamechat.load_error":        "Ошибка загрузки комнат чата",
 	"gamechat.unknown_user":      "Неизвестный",
 	"gamechat.unread_messages":   "Новые сообщения: %d ↓",
+	"gamechat.online_count":      "Онлайн: %d",
 
 	// ── Monitor ──
 	"monitor.page_title":         "Мониторинг игры (обновляется в реальном времени)",

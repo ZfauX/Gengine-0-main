@@ -1260,6 +1260,7 @@ var enMessages = map[string]string{
 	"gamechat.load_error":        "Failed to load chat rooms",
 	"gamechat.unknown_user":      "Unknown",
 	"gamechat.unread_messages":   "New messages: %d ↓",
+	"gamechat.online_count":      "Online: %d",
 
 	// ── Monitor ──
 	"monitor.page_title":         "Game monitor (real-time updates)",

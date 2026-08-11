@@ -267,6 +267,56 @@ func TestClient_Close_ChannelClosedOnce(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestRoomHub_Presence(t *testing.T) {
+	// IDEA-6: RoomClientCount / RoomUserIDs / onRoomChange callback.
+	hub := NewRoomHub()
+	hub.Run()
+	t.Cleanup(hub.Stop)
+
+	var eventsMu sync.Mutex
+	var events []string
+	hub.SetOnRoomChange(func(roomID string) {
+		eventsMu.Lock()
+		events = append(events, roomID)
+		eventsMu.Unlock()
+	})
+
+	roomID := "room1"
+	c1 := &Client{Send: make(chan []byte, 10), RoomID: roomID, UserID: 7, done: make(chan struct{})}
+	c2 := &Client{Send: make(chan []byte, 10), RoomID: roomID, UserID: 7, done: make(chan struct{})}
+	c3 := &Client{Send: make(chan []byte, 10), RoomID: roomID, UserID: 9, done: make(chan struct{})}
+
+	hub.RegisterClient(c1)
+	hub.RegisterClient(c2)
+	hub.RegisterClient(c3)
+
+	// Ждём регистрации всех.
+	assert.Eventually(t, func() bool {
+		return hub.RoomClientCount(roomID) == 3
+	}, time.Second, 50*time.Millisecond)
+	// Уникальные userID: 7 (два соединения) + 9 → 2.
+	ids := hub.RoomUserIDs(roomID)
+	assert.Len(t, ids, 2)
+
+	// Колбэк вызывался минимум 3 раза для этой комнаты.
+	assert.Eventually(t, func() bool {
+		eventsMu.Lock()
+		defer eventsMu.Unlock()
+		n := 0
+		for _, e := range events {
+			if e == roomID {
+				n++
+			}
+		}
+		return n >= 3
+	}, time.Second, 50*time.Millisecond)
+
+	hub.UnregisterClient(c1)
+	assert.Eventually(t, func() bool {
+		return hub.RoomClientCount(roomID) == 2
+	}, time.Second, 50*time.Millisecond)
+}
+
 func BenchmarkRoomHub_BroadcastToRoom(b *testing.B) {
 	hub := NewRoomHub()
 	hub.Run()

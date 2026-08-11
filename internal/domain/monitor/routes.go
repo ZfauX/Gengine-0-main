@@ -26,6 +26,8 @@ func RegisterRoutes(
 	gameService *game.GameService,
 ) {
 	monitorHandler := NewMonitorHandler(monitorSvc, blackboxVoteService, chatService, hub, userService, gameService, coAuthorSvc)
+	// IDEA-6: онлайн-индикатор в чате — presence-рассылка по WS.
+	monitorHandler.setupChatPresence()
 
 	authRequired := middleware.AuthRequired(authService)
 	gameManager := middleware.GameManager(coAuthorSvc)

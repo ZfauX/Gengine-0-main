@@ -31,6 +31,10 @@ type Client struct {
 	done         chan struct{} // сигнал о завершении всех горутин
 	LastActivity time.Time     // последнее время активности
 
+	// UserID — идентификатор пользователя (для presence-онлайн-индикатора,
+	// IDEA-6). Может быть 0 для неаутентифицированных/тестовых подключений.
+	UserID uint
+
 	// registered защищается hub.mu: true, пока клиент числится в счётчиках
 	// (totalConns/connsPerIP). Позволяет сделать unregister идемпотентным —
 	// и handler, и writePump вызывают UnregisterClient, и без этого флага
@@ -48,6 +52,13 @@ func NewClient(conn *websocket.Conn, roomID, remoteIP string) *Client {
 		done:         make(chan struct{}),
 		LastActivity: time.Now(),
 	}
+}
+
+// WithUserID задаёт userID клиента (IDEA-6, presence-индикатор онлайн).
+func NewClientWithUser(conn *websocket.Conn, roomID, remoteIP string, userID uint) *Client {
+	c := NewClient(conn, roomID, remoteIP)
+	c.UserID = userID
+	return c
 }
 
 // setHub сохраняет ссылку на хаб под мутексом клиента. Поле Hub пишется из
