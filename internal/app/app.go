@@ -96,7 +96,11 @@ func (app *App) SetupRouter() (*gin.Engine, error) {
 		// register/finish аутентифицированы и требуют токен. Без CSRF-защиты
 		// только публичные login/begin и login/finish (WebAuthn challenge сам
 		// привязан к сессии, CSRF здесь невозможен).
-		skip := []string{"/api", "/static", "/uploads", "/ws", "/auth/webauthn/login/begin", "/auth/webauthn/login/finish"}
+		skip := []string{"/api", "/static", "/uploads", "/ws", "/auth/webauthn/login/begin", "/auth/webauthn/login/finish",
+			// DEEP-REVIEW (pass 46): вебхук ЮKassa — server-to-server без CSRF-токена.
+			// Раньше CSRF возвращал 403 до обработчика, и платежи никогда не подтверждались.
+			// Безопасность вебхука обеспечивается IP-allowlist + подтверждением статуса через API.
+			"/payments/webhook"}
 		for _, prefix := range skip {
 			if strings.HasPrefix(c.Request.URL.Path, prefix) {
 				c.Next()

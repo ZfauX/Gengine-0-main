@@ -112,8 +112,10 @@ func RegisterRoutes(
 	protected.GET("/chat/global/room", monitorHandler.GlobalChatRoomID)
 
 	// B-4 (pass 45): комнаты игры — список и создание (менеджер).
-	protected.GET("/games/:id/chat/rooms", monitorHandler.GameRooms)
-	protected.POST("/games/:id/chat/rooms", monitorHandler.CreateRoom)
+	// DEEP-REVIEW (pass 46): GameRooms не проверял права — любой пользователь
+	// мог перечислить комнаты любой игры (IDOR). Добавлен gameManager.
+	protected.GET("/games/:id/chat/rooms", gameManager, monitorHandler.GameRooms)
+	protected.POST("/games/:id/chat/rooms", gameManager, monitorHandler.CreateRoom)
 
 	// B-7 (pass 45): личный чат 1-на-1.
 	protected.GET("/chat/personal/:user_id", monitorHandler.PersonalChat)

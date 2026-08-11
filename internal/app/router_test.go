@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -233,4 +234,24 @@ func TestRouter_CSRFProtection(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	// Проверка наличия csrf токена в теле нестабильна из-за особенностей загрузки шаблонов,
 	// поэтому ограничиваемся статусом.
+}
+
+// DEEP-REVIEW (pass 46): вебхук ЮKassa должен быть исключён из CSRF —
+// server-to-server POST без токена обязан ДОХОДИТЬ до обработчика, а не
+// получать 403 "CSRF token mismatch" (иначе платежи не подтверждаются).
+func TestRouter_PaymentWebhook_NoCSRFToken(t *testing.T) {
+	router, _, cleanup := setupRouterTest(t)
+	defer cleanup()
+
+	body := strings.NewReader("{\"event\":\"payment.succeeded\",\"object\":{\"id\":\"test\"}}")
+	req := httptest.NewRequest(http.MethodPost, "/payments/webhook", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.NotEqual(t, http.StatusForbidden, w.Code,
+		"вебхук не должен блокироваться CSRF (403 CSRF token mismatch)")
+	// Допустимые коды: 200 (принят), 400/500 (прочие ошибки обработки) —
+	// главное, что запрос прошёл CSRF-слой.
+	assert.Contains(t, []int{http.StatusOK, http.StatusBadRequest, http.StatusInternalServerError}, w.Code)
 }

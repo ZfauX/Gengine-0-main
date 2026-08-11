@@ -48,7 +48,12 @@ func NewValkeyClient(host, port, password string, poolSize, minIdleConns, maxRet
 	ctx, cancel := context.WithTimeout(context.Background(), valkeyOpTimeout)
 	defer cancel()
 	if err := client.Ping(ctx).Err(); err != nil {
-		log.Warn().Err(err).Str("addr", addr).Msg("Valkey: failed to connect")
+		// DEEP-REVIEW (pass 46): закрываем клиент перед возвратом nil.
+		// Раньше go-redis оставлял фоновые goroutine (ConnPool.tryDial,
+		// CircuitBreaker.cleanupLoop), которые вечно ретраили подключение
+		// к недоступному Valkey (подтверждено pprof: 33% CPU на tryDial).
+		log.Warn().Err(err).Str("addr", addr).Msg("Valkey: failed to connect, closing client")
+		_ = client.Close()
 		return nil
 	}
 	log.Info().Str("addr", addr).Msg("Valkey: connected successfully")
