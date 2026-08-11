@@ -278,8 +278,8 @@ type MonitorHandler struct {
 	// presence рассылается только в комнаты с ненулевым счётчиком клиентов.
 	// DEEP-REVIEW PASS-3 M3: счётчик вместо bool-флага — при отключении ОДНОГО
 	// клиента комната остаётся помеченной, пока в ней есть другие участники.
-	chatRooms     map[string]int
-	chatRoomsMu   sync.Mutex
+	chatRooms   map[string]int
+	chatRoomsMu sync.Mutex
 }
 
 // markChatRoom инкрементирует счётчик клиентов комнаты (вызывается из ChatWS).
