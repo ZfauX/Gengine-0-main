@@ -131,19 +131,19 @@ func TestAuthService_Login(t *testing.T) {
 	createTestUser(t, db, "login@example.com", "correctpass", "Login User")
 
 	t.Run("успешный логин", func(t *testing.T) {
-		token, err := service.Login(context.Background(), "login@example.com", "correctpass")
+		_, token, err := service.Login(context.Background(), "login@example.com", "correctpass")
 		require.NoError(t, err)
 		assert.NotEmpty(t, token)
 	})
 
 	t.Run("неверный пароль", func(t *testing.T) {
-		_, err := service.Login(context.Background(), "login@example.com", "wrongpass")
+		_, _, err := service.Login(context.Background(), "login@example.com", "wrongpass")
 		assert.Error(t, err)
 		assert.Equal(t, "неверный email или пароль", err.Error())
 	})
 
 	t.Run("неизвестный email", func(t *testing.T) {
-		_, err := service.Login(context.Background(), "unknown@example.com", "anything")
+		_, _, err := service.Login(context.Background(), "unknown@example.com", "anything")
 		assert.Error(t, err)
 		assert.Equal(t, "неверный email или пароль", err.Error())
 	})
@@ -160,13 +160,13 @@ func TestAuthService_LoginLockout(t *testing.T) {
 	user := createTestUser(t, db, "lock@example.com", "correctpass", "Lock")
 
 	for i := 0; i < 5; i++ {
-		_, err := service.Login(context.Background(), "lock@example.com", "wrongpass")
+		_, _, err := service.Login(context.Background(), "lock@example.com", "wrongpass")
 		require.Error(t, err)
 		assert.Equal(t, "неверный email или пароль", err.Error())
 	}
 
 	// Аккаунт заблокирован: даже верный пароль не принимается, ответ generic.
-	_, err := service.Login(context.Background(), "lock@example.com", "correctpass")
+	_, _, err := service.Login(context.Background(), "lock@example.com", "correctpass")
 	assert.Equal(t, "неверный email или пароль", err.Error())
 
 	// В БД выставлена блокировка.

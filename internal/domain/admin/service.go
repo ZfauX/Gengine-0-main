@@ -68,11 +68,11 @@ func (s *BackupService) CreateNow(ctx context.Context) error {
 	filename := fmt.Sprintf("backup_%s.sql", timestamp)
 	filepath := filepath.Join(s.BackupDir, filename)
 
-	// S-3 (pass 41): собственный таймаут для pg_dump — раньше ctx запроса при
-	// disconnect (или отсутствующий deadline) оставлял частичный файл. Свой
-	// дедлайн гарантирует, что дамп либо завершится, либо зафейлится, а
-	// незавершённый файл не попадёт в список бэкапов.
-	dumpCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	// DEEP-REVIEW PASS-2 (#8): собственный таймаут и НЕЗАВИСИМЫЙ контекст —
+	// раньше dumpCtx = WithTimeout(ctx, ...) наследовал клиентский ctx, и
+	// disconnect прерывал pg_dump посреди записи. Background гарантирует, что
+	// дамп завершится, даже если админ закрыл вкладку.
+	dumpCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
 	cmd := exec.CommandContext(dumpCtx, "pg_dump",

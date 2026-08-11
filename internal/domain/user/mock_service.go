@@ -384,6 +384,20 @@ func (mr *MockUserRepositoryMockRecorder) LockAccountWithBackoff(ctx, userID any
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockAccountWithBackoff", reflect.TypeOf((*MockUserRepository)(nil).LockAccountWithBackoff), ctx, userID)
 }
 
+// ResetLoginAttemptsIfNeeded mocks base method.
+func (m *MockUserRepository) ResetLoginAttemptsIfNeeded(ctx context.Context, userID uint) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ResetLoginAttemptsIfNeeded", ctx, userID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ResetLoginAttemptsIfNeeded indicates an expected call of ResetLoginAttemptsIfNeeded.
+func (mr *MockUserRepositoryMockRecorder) ResetLoginAttemptsIfNeeded(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResetLoginAttemptsIfNeeded", reflect.TypeOf((*MockUserRepository)(nil).ResetLoginAttemptsIfNeeded), ctx, userID)
+}
+
 // SearchPaginated mocks base method.
 func (m *MockUserRepository) SearchPaginated(ctx context.Context, query, role string, offset, limit int) ([]User, error) {
 	m.ctrl.T.Helper()

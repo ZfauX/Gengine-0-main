@@ -160,7 +160,7 @@ func (s *AuthService) Register(ctx context.Context, emailStr, password, name str
 	return &user, nil
 }
 
-func (s *AuthService) Login(ctx context.Context, emailStr, password string) (string, error) {
+func (s *AuthService) Login(ctx context.Context, emailStr, password string) (*User, string, error) {
 	user, err := s.userRepo.GetByEmail(ctx, emailStr)
 	if err != nil {
 		if stderrors.Is(err, gorm.ErrRecordNotFound) {
@@ -169,7 +169,7 @@ func (s *AuthService) Login(ctx context.Context, emailStr, password string) (str
 			// иначе тайминг-атака различает «нет пользователя» и «неверный пароль» (S3).
 			bcrypt.CompareHashAndPassword(dummyPasswordHash, []byte(password)) //nolint:errcheck
 		}
-		return "", ErrInvalidCredentials
+		return nil, "", ErrInvalidCredentials
 	}
 
 	// Проверка блокировки аккаунта.
@@ -178,15 +178,15 @@ func (s *AuthService) Login(ctx context.Context, emailStr, password string) (str
 	// существовании аккаунта (oracle) (B2). Реальная причина логируется для ops.
 	if user.LockedUntil != nil && time.Now().Before(*user.LockedUntil) {
 		log.Debug().Uint("user_id", user.ID).Time("locked_until", *user.LockedUntil).Msg("Login: account is locked")
-		return "", ErrInvalidCredentials
+		return nil, "", ErrInvalidCredentials
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
+	if bcryptErr := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); bcryptErr != nil {
 		// Атомарный инкремент счётчика неудачных попыток (без race condition)
-		newAttempts, err := s.userRepo.AtomicIncrementFailedAttempts(ctx, user.ID)
-		if err != nil {
-			log.Error().Err(err).Uint("user_id", user.ID).Msg("Login: atomic increment failed")
-			return "", ErrInternalServer
+		newAttempts, incErr := s.userRepo.AtomicIncrementFailedAttempts(ctx, user.ID)
+		if incErr != nil {
+			log.Error().Err(incErr).Uint("user_id", user.ID).Msg("Login: atomic increment failed")
+			return nil, "", ErrInternalServer
 		}
 
 		if newAttempts >= 5 {
@@ -197,24 +197,32 @@ func (s *AuthService) Login(ctx context.Context, emailStr, password string) (str
 			// DEEP-REVIEW MEDIUM #19 (pass 46): длительность вычисляется ВНУТРИ
 			// SQL по фактическому lock_count (раньше — по устаревшему
 			// user.LockCount: при параллельных попытках обе получали 5 мин).
-			newCount, err := s.userRepo.LockAccountWithBackoff(ctx, user.ID)
-			if err != nil {
-				log.Error().Err(err).Uint("user_id", user.ID).Msg("Login: failed to lock account")
-				return "", ErrInternalServer
+			newCount, lockErr := s.userRepo.LockAccountWithBackoff(ctx, user.ID)
+			if lockErr != nil {
+				log.Error().Err(lockErr).Uint("user_id", user.ID).Msg("Login: failed to lock account")
+				return nil, "", ErrInternalServer
 			}
 			log.Debug().Uint("user_id", user.ID).Int("lock_count", newCount).Msg("Login: account locked with backoff")
 			// Generic-ответ: не раскрываем существование аккаунта (B2).
-			return "", ErrInvalidCredentials
+			return nil, "", ErrInvalidCredentials
 		}
-		return "", ErrInvalidCredentials
+		return nil, "", ErrInvalidCredentials
 	}
 
-	// Успешный вход — безусловный сброс счётчика и backoff-счётчика блокировок
-	if err := s.userRepo.Update(ctx, user.ID, map[string]any{"failed_login_attempts": 0, "locked_until": nil, "lock_count": 0}); err != nil {
+	// Успешный вход — сброс счётчика и backoff-счётчика блокировок.
+	// DEEP-REVIEW PASS-2 (#15): условный сброс (только если были попытки/
+	// блокировка) — раньше писали UPDATE на каждый успешный логин.
+	if resetErr := s.userRepo.ResetLoginAttemptsIfNeeded(ctx, user.ID); resetErr != nil {
 		log.Error().Err(err).Uint("user_id", user.ID).Msg("Login: failed to reset failed_login_attempts")
 	}
 
-	return s.generateJWT(*user)
+	// DEEP-REVIEW PASS-2 (#14): возвращаем user, чтобы handler не делал
+	// повторный GetByEmail для 2FA-проверки.
+	token, err := s.generateJWT(*user)
+	if err != nil {
+		return nil, "", err
+	}
+	return user, token, nil
 }
 
 func (s *AuthService) GenerateJWT(user User) (string, error) {

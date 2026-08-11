@@ -2,15 +2,16 @@
 package game
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
-	apperr "gengine-0/internal/pkg/errors"
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/validation"
 
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
 )
 
 // NoteHandler обрабатывает запросы, связанные с заметками к играм.
@@ -21,6 +22,18 @@ type NoteHandler struct {
 // NewNoteHandler создаёт новый NoteHandler.
 func NewNoteHandler(noteService *NoteService) *NoteHandler {
 	return &NoteHandler{noteService: noteService}
+}
+
+// renderNoteError (DEEP-REVIEW PASS-2 #10): ErrNoteForbidden → 403; прочие
+// ошибки (БД и т.п.) → 500 с общим текстом. Раньше ВСЕ ошибки были 403 с
+// сырым err.Error() — внутренние детали утекали клиенту.
+func renderNoteError(c *gin.Context, err error) {
+	if errors.Is(err, ErrNoteForbidden) {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden"), "code": "forbidden"})
+		return
+	}
+	log.Error().Err(err).Msg("Note handler error")
+	c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": render.Tr(c, "handler.internal_error"), "code": "internal_error"})
 }
 
 // Notes возвращает заметки к игре в формате JSON.
@@ -45,11 +58,7 @@ func (h *NoteHandler) Notes(c *gin.Context) {
 	userID := c.GetUint("userID")
 	notes, err := h.noteService.ListByGame(c.Request.Context(), uint(gameID), userID)
 	if err != nil {
-		appErr := apperr.Forbidden(render.LocalizeError(c, err.Error()))
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		renderNoteError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"notes": notes})
@@ -108,11 +117,7 @@ func (h *NoteHandler) CreateNote(c *gin.Context) {
 
 	note, createErr := h.noteService.Create(c.Request.Context(), uint(gameID), input.LevelID, userID, input.Text)
 	if createErr != nil {
-		appErr := apperr.Forbidden(render.LocalizeError(c, createErr.Error()))
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		renderNoteError(c, createErr)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"note": note})
@@ -139,11 +144,7 @@ func (h *NoteHandler) DeleteNote(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 	if err := h.noteService.Delete(c.Request.Context(), uint(noteID), userID); err != nil {
-		appErr := apperr.Forbidden(render.LocalizeError(c, err.Error()))
-		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-			"error": appErr.Message,
-			"code":  appErr.Code,
-		})
+		renderNoteError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})

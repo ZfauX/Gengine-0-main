@@ -5,6 +5,10 @@ import (
 	"errors"
 )
 
+// ErrNoteForbidden (DEEP-REVIEW PASS-2 #10): нет прав на заметку —
+// хендлер мапит её в 403, прочие ошибки — в 500 (не сырой текст).
+var ErrNoteForbidden = errors.New("нет прав на заметку")
+
 type NoteService struct {
 	repo        NoteRepository
 	coAuthorSvc *CoAuthorService
@@ -20,7 +24,7 @@ func (s *NoteService) ListByGame(ctx context.Context, gameID, userID uint) ([]No
 		return nil, err
 	}
 	if !isManager {
-		return nil, errors.New("только автор или соавтор может видеть заметки")
+		return nil, ErrNoteForbidden
 	}
 	return s.repo.ListByGame(ctx, gameID)
 }
@@ -31,7 +35,7 @@ func (s *NoteService) Create(ctx context.Context, gameID uint, levelID *uint, us
 		return nil, err
 	}
 	if !isManager {
-		return nil, errors.New("только автор или соавтор может создавать заметки")
+		return nil, ErrNoteForbidden
 	}
 	note := Note{GameID: gameID, LevelID: levelID, UserID: userID, Text: text}
 	if err := s.repo.Create(ctx, &note); err != nil {
@@ -50,7 +54,7 @@ func (s *NoteService) Delete(ctx context.Context, noteID, userID uint) error {
 		return err
 	}
 	if note.UserID != userID && !isManager {
-		return errors.New("нет прав на удаление")
+		return ErrNoteForbidden
 	}
 	return s.repo.Delete(ctx, note)
 }

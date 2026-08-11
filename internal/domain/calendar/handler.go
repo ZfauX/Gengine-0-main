@@ -271,6 +271,10 @@ func EscapeICalText(text string) string {
 	text = strings.ReplaceAll(text, `\`, `\\`)
 	text = strings.ReplaceAll(text, ";", `\;`)
 	text = strings.ReplaceAll(text, ",", `\,`)
+	// DEEP-REVIEW PASS-2 (#24): экранируем \r — иначе CR в названии/описании
+	// ломает RFC 5545 (незакрытая строка в iCal).
+	text = strings.ReplaceAll(text, "\r\n", `\n`)
+	text = strings.ReplaceAll(text, "\r", `\n`)
 	text = strings.ReplaceAll(text, "\n", `\n`)
 	return text
 }

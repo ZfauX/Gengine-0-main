@@ -121,6 +121,10 @@ func (m *mockUserRepo) DemoteAdminIfNotLast(ctx context.Context, userID uint) (b
 	return true, nil
 }
 
+func (m *mockUserRepo) ResetLoginAttemptsIfNeeded(ctx context.Context, userID uint) error {
+	return nil
+}
+
 func (m *mockUserRepo) GetGamesView(ctx context.Context, userID uint) (string, error) {
 	return "table", nil
 }

@@ -66,7 +66,7 @@ func setupTestRouter(t *testing.T, db *gorm.DB, cfg *config.Config) *gin.Engine 
 			c.JSON(400, gin.H{"error": "bad request"})
 			return
 		}
-		token, err := authSvc.Login(c.Request.Context(), input.Email, input.Password)
+		_, token, err := authSvc.Login(c.Request.Context(), input.Email, input.Password)
 		if err != nil {
 			c.JSON(401, gin.H{"error": err.Error()})
 			return

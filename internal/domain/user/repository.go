@@ -56,6 +56,9 @@ type UserRepository interface {
 	DashboardTeams(ctx context.Context, userID uint) ([]DashboardTeamRow, error)
 	DashboardInvitations(ctx context.Context, userID uint) ([]DashboardInvitationRow, error)
 	Update(ctx context.Context, id uint, fields map[string]any) error
+	// ResetLoginAttemptsIfNeeded (DEEP-REVIEW PASS-2 #15): условный сброс
+	// счётчиков после успешного входа (только если они ненулевые).
+	ResetLoginAttemptsIfNeeded(ctx context.Context, userID uint) error
 	GetByRole(ctx context.Context, role string) ([]User, error)
 	GetUserRole(ctx context.Context, id uint) (string, error)
 	// GetUsersByNotifyDays — D-1 (pass 45): пользователи, которые хотят
@@ -313,6 +316,15 @@ func (r *gormUserRepo) DashboardInvitations(ctx context.Context, userID uint) ([
 }
 func (r *gormUserRepo) Update(ctx context.Context, id uint, fields map[string]any) error {
 	return r.db.WithContext(ctx).Model(&User{}).Where("id = ?", id).Updates(fields).Error
+}
+
+// ResetLoginAttemptsIfNeeded сбрасывает счётчики после успешного входа ТОЛЬКО
+// если они ненулевые (DEEP-REVIEW PASS-2 #15): раньше успешный вход писал
+// UPDATE безусловно на каждый логин — лишний write на горячем пути.
+func (r *gormUserRepo) ResetLoginAttemptsIfNeeded(ctx context.Context, userID uint) error {
+	return r.db.WithContext(ctx).Model(&User{}).
+		Where("id = ? AND (failed_login_attempts <> 0 OR locked_until IS NOT NULL OR lock_count <> 0)", userID).
+		Updates(map[string]any{"failed_login_attempts": 0, "locked_until": nil, "lock_count": 0}).Error
 }
 
 // GetByRole returns multiple users by role.

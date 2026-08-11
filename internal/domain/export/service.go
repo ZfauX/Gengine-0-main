@@ -76,7 +76,6 @@ func (s *ExportService) ExportGameToCSV(ctx context.Context, gameID uint, w io.W
 	}
 
 	csvWriter := csv.NewWriter(w)
-	defer csvWriter.Flush()
 
 	if err := csvWriter.Write([]string{"level_position", "level_name", "question_text", "hint", "answers"}); err != nil {
 		return fmt.Errorf("ошибка записи CSV-заголовка: %w", err)
@@ -99,7 +98,10 @@ func (s *ExportService) ExportGameToCSV(ctx context.Context, gameID uint, w io.W
 			}
 		}
 	}
-	return nil
+	// DEEP-REVIEW PASS-2 (#17): проверяем ошибку Flush — раньше она глоталась
+	// (частичный CSV выглядел как успех).
+	csvWriter.Flush()
+	return csvWriter.Error()
 }
 
 // ExportTeamResultsToCSV экспортирует результаты конкретной команды в CSV.

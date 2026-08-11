@@ -128,7 +128,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, err := h.authSvc.Login(c.Request.Context(), input.Email, input.Password)
+	// DEEP-REVIEW PASS-2 (#14): Login возвращает user — не делаем повторный GetByEmail.
+	user, token, err := h.authSvc.Login(c.Request.Context(), input.Email, input.Password)
 	if err != nil {
 		render.Page(c, http.StatusUnauthorized, "auth-login.html", gin.H{
 			"Title":  "Вход",
@@ -140,18 +141,6 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	// Check if user has 2FA enabled — require TOTP before issuing tokens
-	user, err := h.userService.GetByEmail(c.Request.Context(), input.Email)
-	if err != nil {
-		// Fail closed: don't issue tokens if we can't confirm 2FA status
-		log.Error().Err(err).Str("email", input.Email).Msg("Login: failed to fetch user for 2FA check")
-		render.Page(c, http.StatusUnauthorized, "auth-login.html", gin.H{
-			"Title":  "Вход",
-			"Errors": validation.FieldErrors{"email": "Неверный email или пароль"},
-			"Error":  "Неверный email или пароль",
-			"csrf":   csrf.GetToken(c),
-		})
-		return
-	}
 	if user != nil && user.TwoFactorEnabled {
 		// Store pending login info in session (no JWT stored — only issued after TOTP)
 		// S-3 (pass 31): pending-шаг 2FA ограничен по времени (10 мин) — иначе

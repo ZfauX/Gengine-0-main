@@ -41,7 +41,12 @@ func NewReviewHandler(reviewService *ReviewService) *ReviewHandler {
 // @Security JWT
 func (h *ReviewHandler) ShowForm(c *gin.Context) {
 	// Параметр маршрута — :id (группа /games/:id/review).
-	gameID, _ := strconv.Atoi(c.Param("id"))
+	// DEEP-REVIEW PASS-2 (#23): не игнорируем Atoi — невалидный id → 400.
+	gameID, parseErr := strconv.Atoi(c.Param("id"))
+	if parseErr != nil || gameID <= 0 {
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
+		return
+	}
 	userID := c.GetUint("userID")
 
 	can, err := h.reviewService.CanReview(c.Request.Context(), uint(gameID), userID)
@@ -75,7 +80,12 @@ func (h *ReviewHandler) ShowForm(c *gin.Context) {
 // @Security JWT
 func (h *ReviewHandler) Create(c *gin.Context) {
 	// Параметр маршрута — :id (группа /games/:id/review).
-	gameID, _ := strconv.Atoi(c.Param("id"))
+	// DEEP-REVIEW PASS-2 (#23): не игнорируем Atoi — невалидный id → 400.
+	gameID, parseErr := strconv.Atoi(c.Param("id"))
+	if parseErr != nil || gameID <= 0 {
+		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_game_id"))
+		return
+	}
 	userID := c.GetUint("userID")
 
 	errs := validation.FieldErrors{}
