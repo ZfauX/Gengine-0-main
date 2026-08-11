@@ -114,20 +114,20 @@
 
 ## 🟡 LOW
 
-| # | Файл | Проблема |
-|---|------|----------|
-| L1 | `monitor/handler.go:773-786` | `load_older` не проходит `sanitize.StripHTML` (начальная история — проходит). |
-| L2 | `monitor/handler.go:726-741` | read-горутина живёт до 60с после выхода основного цикла (read-deadline). |
-| L3 | `websocket/room_hub.go:337-349` | Сообщение может уйти в буфер закрытого клиента (select-семантика). |
-| L4 | `websocket/room_hub.go:254-264` | Окно создания очереди для уже удалённой комнаты (воркер холостой до 30с). |
-| L5 | `middleware/theme.go:70-86` | `themeCacheCleanup` — бесконечная горутина без остановки. |
-| L6 | `email/queue.go:73-83` | `go func(){ wg.Wait() }` может висеть при таймауте Shutdown. |
-| L7 | `admin/service.go:91` | `_ = os.Remove` без логирования. |
-| L8 | `uploads.go` / `local_storage.go` | Нет `EvalSymlinks` — symlink в uploads может обойти границу. |
-| L9 | `uploads.go:88-92` | Файлы-ответы отдаются inline (лучше attachment для answers). |
-| L10 | `security.go:61-70` | CSP: нет `object-src 'none'`, `base-uri 'none'`, `frame-ancestors 'none'`. |
-| L11 | `user/handler.go:156` vs `auth_handler.go:454` | Password binding `min=8` vs валидатор `6..128` — выровнять. |
-| L12 | `profile_handler.go:270-297` | Старый аватар не удаляется (мусор на диске). |
+| # | Файл | Проблема | Статус |
+|---|------|----------|--------|
+| L1 | `monitor/handler.go:773-786` | `load_older` не проходит `sanitize.StripHTML` | ✅ StripHTML в load_older |
+| L2 | `monitor/handler.go:726-741` | read-горутина живёт до 60с после выхода | ✅ `SetReadDeadline(now)` при остановке |
+| L3 | `websocket/room_hub.go:337-349` | Сообщение может уйти в буфер закрытого клиента | Документировано (не паника; select-семантика) |
+| L4 | `websocket/room_hub.go:254-264` | Окно создания очереди для удалённой комнаты | Документировано (воркер до idle-таймера 30с) |
+| L5 | `middleware/theme.go:70-86` | `themeCacheCleanup` — бесконечная горутина | ✅ `StopThemeCacheCleanup` + канал; вызывается в shutdown |
+| L6 | `email/queue.go:73-83` | `go func(){ wg.Wait() }` при таймауте Shutdown | Документировано (допустимо на shutdown) |
+| L7 | `admin/service.go:91` | `_ = os.Remove` без логирования | ✅ логирование ошибки удаления |
+| L8 | `uploads.go` / `local_storage.go` | Нет `EvalSymlinks` | Документировано (нужен локальный доступ к ФС) |
+| L9 | `uploads.go:88-92` | Файлы-ответы inline | ✅ `Content-Disposition: attachment` для answers |
+| L10 | `security.go:61-70` | CSP без object/base/frame-ancestors | ✅ `object-src 'none'`, `base-uri 'none'`, `frame-ancestors 'none'` |
+| L11 | `user/handler.go:156` vs `auth_handler.go:454` | Password min 8 vs 6 | ✅ выровнено 8..128 (Register + ResetPassword) |
+| L12 | `profile_handler.go:270-297` | Старый аватар не удаляется | ✅ `UpdateAvatarPath` возвращает старый путь → Delete |
 
 ---
 
@@ -203,7 +203,7 @@
 
 ## 📊 Приоритеты исправления
 
-> **Статус: закрыто 15 из 17 HIGH/MEDIUM пунктов + P5.** Остались L-пункты, оптимизации P1-P4, P6-P18.
+> **Статус: закрыто 15 из 17 HIGH/MEDIUM + все 8 реализуемых LOW (L1,L2,L5,L7,L9-L12) + P5.** Остались только задокументированные L3/L4/L6/L8 (не требуют правки) и рискованные оптимизации P1-P4, P6-P18.
 
 1. ✅ **H1 (logout refresh revoke)** + **H5 (reuse detection)** — безопасность сессий (H1 фикс; H5 reuse уже был в RefreshAccessToken).
 2. ✅ **H2 (SSE TOCTOU)** — атомарный Acquire в RegisterSession.
