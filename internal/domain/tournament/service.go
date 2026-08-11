@@ -388,10 +388,18 @@ func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint
 	for _, tid := range tournamentIDs {
 		trn, loadErr := s.tournamentRepo.GetByID(ctx, tid)
 		if loadErr != nil {
-			log.Warn().Err(loadErr).Uint("game_id", gameID).Uint("tournament_id", tid).Msg("UpdateScoresForGame: failed to load tournament")
-			return
+			// DEEP-REVIEW PASS-3 M7: сбой загрузки ОДНОГО турнира не должен
+			// прерывать начисление остальным (раньше `return` — игра в 2+
+			// турнирах теряла очки всех при одном сбойном, и кэш не инвалидировался).
+			log.Error().Err(loadErr).Uint("game_id", gameID).Uint("tournament_id", tid).Msg("UpdateScoresForGame: failed to load tournament, skipping")
+			continue
 		}
 		tournaments = append(tournaments, trn)
+	}
+	// Если все турниры сбойные — нечего начислять.
+	if len(tournaments) == 0 {
+		log.Warn().Uint("game_id", gameID).Msg("UpdateScoresForGame: no tournaments loaded")
+		return
 	}
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

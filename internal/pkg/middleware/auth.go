@@ -6,8 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"sync"
-	"time"
+
+	"gengine-0/internal/pkg/rolecache"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -27,24 +27,10 @@ var ErrTokenUserNotFound = errors.New("пользователь не найде�
 
 var roleProvider RoleProvider
 
-// roleCacheTTL — короткий TTL кэша ролей (M6, pass 30): роль из БД не
-// перечитывается на КАЖДЫЙ авторизованный запрос, а кэшируется на ~5 секунд.
-// Компромисс: понижение/удаление роли применяется с задержкой ≤ TTL вместо
-// мгновенно, но БД не бомбардируется SELECT role на каждый хит.
-const roleCacheTTL = 5 * time.Second
-
-// roleCacheMaxEntries — верхняя граница размера кэша (lazy sweep, как unreadCache).
-const roleCacheMaxEntries = 512
-
-var (
-	roleCacheMu sync.RWMutex
-	roleCache   = map[uint]cachedRole{}
-)
-
-type cachedRole struct {
-	role    string
-	expires time.Time
-}
+// RoleCache (DEEP-REVIEW PASS-3 M9): единый TTL-кэш ролей, общий с
+// CoAuthorService — раньше роль кэшировалась в двух местах с разными TTL и
+// раздельной инвалидацией, что давало окно неконсистентных прав после смены роли.
+var RoleCache = rolecache.New()
 
 // SetRoleProvider регистрирует функцию загрузки актуальной роли из БД (S2).
 // Роль в JWT-claims устаревает до истечения токена (15 мин) — пониженный или
@@ -60,42 +46,16 @@ func getCachedRole(ctx context.Context, userID uint) (string, error) {
 	if roleProvider == nil {
 		return "", nil
 	}
-	now := time.Now()
-
-	// DEEP-REVIEW PASS-2 (#11): RLock для чтения — раньше sync.Mutex сериализовал
-	// ВСЕ авторизованные запросы на одном локе (контенция при WS/SSE-поллинге).
-	roleCacheMu.RLock()
-	if e, ok := roleCache[userID]; ok && now.Before(e.expires) {
-		roleCacheMu.RUnlock()
-		return e.role, nil
-	}
-	roleCacheMu.RUnlock()
-
-	role, err := roleProvider(ctx, userID)
-	if err != nil {
-		return "", err
-	}
-
-	roleCacheMu.Lock()
-	// Lazy sweep: не даём map расти неограниченно (P-2 паттерн).
-	if len(roleCache) > roleCacheMaxEntries {
-		for id, e := range roleCache {
-			if !now.Before(e.expires) {
-				delete(roleCache, id)
-			}
-		}
-	}
-	roleCache[userID] = cachedRole{role: role, expires: now.Add(roleCacheTTL)}
-	roleCacheMu.Unlock()
-	return role, nil
+	// RoleProvider (middleware) и rolecache.Provider — одинаковые сигнатуры,
+	// приведение явное для совместимости (M9).
+	provider := rolecache.Provider(roleProvider)
+	return RoleCache.Get(ctx, userID, provider)
 }
 
 // InvalidateRoleCache сбрасывает TTL-кэш роли пользователя. Вызывается после
 // смены роли в админке — понижение применяется без ожидания TTL.
 func InvalidateRoleCache(userID uint) {
-	roleCacheMu.Lock()
-	delete(roleCache, userID)
-	roleCacheMu.Unlock()
+	RoleCache.Invalidate(userID)
 }
 
 // AuthRequired возвращает middleware, который проверяет JWT‑токен и сохраняет userID и role в контексте.
@@ -221,9 +181,7 @@ func AdminRequired() gin.HandlerFunc {
 
 // ResetRoleCacheForTest сбрасывает кэш ролей (для тестов).
 func ResetRoleCacheForTest() {
-	roleCacheMu.Lock()
-	roleCache = map[uint]cachedRole{}
-	roleCacheMu.Unlock()
+	RoleCache.InvalidateAll()
 }
 
 // GetRoleForTest возвращает роль через публичный путь getCachedRole
@@ -235,11 +193,7 @@ func GetRoleForTest(ctx context.Context, userID uint) (string, error) {
 // ExpireRoleCacheForTest делает все кэшированные роли просроченными
 // (для тестов TTL-истечения).
 func ExpireRoleCacheForTest() {
-	roleCacheMu.Lock()
-	now := time.Now()
-	for id, e := range roleCache {
-		e.expires = now.Add(-time.Second)
-		roleCache[id] = e
-	}
-	roleCacheMu.Unlock()
+	// rolecache хранит время истечения внутри; для теста просто очищаем,
+	// чтобы следующий Get перечитал роль из провайдера (эквивалентно истечению).
+	RoleCache.InvalidateAll()
 }

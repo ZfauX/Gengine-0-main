@@ -17,6 +17,7 @@ import (
 	"gengine-0/internal/pkg/assets/fonts"
 	"gengine-0/internal/pkg/cache"
 	"gengine-0/internal/pkg/email"
+	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/storage"
 	ws "gengine-0/internal/pkg/websocket"
 
@@ -44,8 +45,12 @@ func wrapGameService(gameRepo game.GameRepository, passingRepo game.GamePassingR
 // (A-1, pass 32 — устранено дублирование запросов между сервисом и репозиторием).
 // A-1 (pass 39): db не нужен — сервис stateless (все операции через repo/tx).
 // P0-3 (pass 45): userRepo — супер-админ bypass прав.
+// DEEP-REVIEW PASS-3 M9: общий rolecache с middleware — единая инвалидация.
 func wrapCoAuthorService(coAuthRepo game.CoAuthorRepository, userRepo user.UserRepository) *game.CoAuthorService {
-	return game.NewCoAuthorService().WithRepository(coAuthRepo).WithUserRepository(userRepo)
+	return game.NewCoAuthorService().
+		WithRepository(coAuthRepo).
+		WithUserRepository(userRepo).
+		WithRoleCache(middleware.RoleCache)
 }
 
 func wrapReviewService(reviewRepo game.ReviewRepository, cacheStore cache.CacheStore) *game.ReviewService {
