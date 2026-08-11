@@ -269,6 +269,31 @@ func setupTestDB(t *testing.T) *gorm.DB {
 // Тесты
 // =============================================================================
 
+func TestSanitizeHeaderValue(t *testing.T) {
+	// DEEP-REVIEW PASS-2 (#21): CR/LF в user-controlled заголовках (Subject/To)
+	// должны вырезаться, иначе SMTP-инъекция заголовков.
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"без CR/LF", "normal subject", "normal subject"},
+		{"CRLF в начале", "\r\nBcc: attacker@evil.com", "  Bcc: attacker@evil.com"},
+		{"CR в середине", "sub\rject", "sub ject"},
+		{"LF в середине", "sub\nject", "sub ject"},
+		{"только CRLF", "\r\n", "  "},
+		{"пустая строка", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sanitizeHeaderValue(tt.input)
+			assert.Equal(t, tt.want, got)
+			assert.NotContains(t, got, "\r")
+			assert.NotContains(t, got, "\n")
+		})
+	}
+}
+
 func TestSendEmail_Success(t *testing.T) {
 	server := newTestSMTPServer(t)
 	defer server.Close()

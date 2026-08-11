@@ -15,6 +15,11 @@ type NoteRepository interface {
 	GetByID(ctx context.Context, id uint) (*Note, error)
 	Create(ctx context.Context, note *Note) error
 	Delete(ctx context.Context, note *Note) error
+	// LevelBelongsToGame (DEEP-REVIEW PASS-2 #19): true, если уровень levelID
+	// существует и принадлежит игре gameID. Используется для валидации
+	// level_id при создании заметки — иначе заметку можно привязать к чужому
+	// уровню (cross-game reference).
+	LevelBelongsToGame(ctx context.Context, gameID, levelID uint) (bool, error)
 }
 
 type gormNoteRepo struct{ db *gorm.DB }
@@ -46,6 +51,18 @@ func (r *gormNoteRepo) Create(ctx context.Context, note *Note) error {
 
 func (r *gormNoteRepo) Delete(ctx context.Context, note *Note) error {
 	return r.db.WithContext(ctx).Delete(note).Error
+}
+
+func (r *gormNoteRepo) LevelBelongsToGame(ctx context.Context, gameID, levelID uint) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Table("levels").
+		Where("id = ? AND game_id = ?", levelID, gameID).
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 var _ NoteRepository = (*gormNoteRepo)(nil)

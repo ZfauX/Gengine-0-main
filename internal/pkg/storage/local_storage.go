@@ -3,6 +3,8 @@ package storage
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -67,6 +69,19 @@ func validateExtension(ext string) bool {
 	return allowedExtensions[strings.ToLower(ext)]
 }
 
+// randomHex возвращает криптостойкую hex-строку длиной 2*n символов.
+// Используется для nonce в имени сохраняемого файла (DEEP-REVIEW PASS-2 #22):
+// предсказуемое имя {userID}_{unixnano} заменено на случайное, чтобы внешний
+// наблюдатель не мог перечислить/угадать пути чужих файлов.
+func randomHex(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		// Крайне маловероятный fallback — не блокируем запись из-за энтропии.
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b)
+}
+
 func (s *LocalStorage) Save(baseDir string, reader io.Reader, originalName string, userID uint, maxSize int64, allowedMIMETypes []string) (string, error) {
 	// Защита от path traversal на уровне исходного имени
 	if strings.Contains(originalName, "..") || filepath.IsAbs(originalName) {
@@ -118,15 +133,17 @@ func (s *LocalStorage) Save(baseDir string, reader io.Reader, originalName strin
 	}
 	dataReader = io.LimitReader(dataReader, maxSize+1) // +1 чтобы обнаружить превышение
 
-	// Создаём директорию
-	if mkdirErr := os.MkdirAll(baseDir, 0755); mkdirErr != nil {
+	// DEEP-REVIEW PASS-2 (#22): права директории 0700 (не 0755) —
+	// файлы не должны быть доступны другим пользователям системы.
+	if mkdirErr := os.MkdirAll(baseDir, 0700); mkdirErr != nil {
 		return "", fmt.Errorf("не удалось создать директорию для загрузки: %w", mkdirErr)
 	}
 
-	filename := fmt.Sprintf("%d_%d%s", userID, time.Now().UnixNano(), ext)
+	// DEEP-REVIEW PASS-2 (#22): случайный nonce вместо предсказуемого unixnano.
+	filename := fmt.Sprintf("%d_%s%s", userID, randomHex(8), ext)
 	fullPath := filepath.Join(baseDir, filename)
 
-	// Проверка выхода за пределы директории
+	// Проверка выхода за пределы директории (защита от симлинков/подмены).
 	absBase, err := filepath.Abs(baseDir)
 	if err != nil {
 		return "", fmt.Errorf("некорректная базовая директория: %w", err)
@@ -135,11 +152,14 @@ func (s *LocalStorage) Save(baseDir string, reader io.Reader, originalName strin
 	if err != nil {
 		return "", fmt.Errorf("некорректный путь файла: %w", err)
 	}
-	if !strings.HasPrefix(absPath, absBase) {
+	rel, err := filepath.Rel(absBase, absPath)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 		return "", fmt.Errorf("путь файла выходит за пределы директории хранения")
 	}
 
-	dst, createErr := os.Create(fullPath)
+	// DEEP-REVIEW PASS-2 (#22): права файла 0600 (не 0666/os.Create) —
+	// загруженные файлы читает только процесс сервера (c.File).
+	dst, createErr := os.OpenFile(fullPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if createErr != nil {
 		return "", fmt.Errorf("не удалось создать файл")
 	}
@@ -182,31 +202,40 @@ func (s *LocalStorage) Delete(webPath string) error {
 		return nil
 	}
 
-	// webPath — путь, возвращённый Save, либо произвольный абсолютный/относительный путь.
-	// Save возвращает "/" + filepath.ToSlash(fullPath), где fullPath абсолютный:
-	//   - Windows: "/C:/Users/.../file.txt"
-	//   - Unix:    "//tmp/.../file.txt"  (ведущий "/" + уже абсолютный путь)
-	// Снимаем один ведущий "/" только если остаток остаётся абсолютным —
-	// иначе абсолютный Unix-путь вроде "/tmp/x" стал бы относительным и
-	// обошёл бы проверку выхода за пределы директории хранения.
-	relPath := webPath
-	if strings.HasPrefix(webPath, "/") {
-		if stripped := filepath.FromSlash(webPath[1:]); filepath.IsAbs(stripped) {
-			relPath = webPath[1:]
-		}
-	}
-
 	// Path traversal protection: запрещаем ".."
-	if strings.Contains(relPath, "..") {
+	if strings.Contains(webPath, "..") {
 		return fmt.Errorf("путь файла выходит за пределы директории загрузок")
 	}
 
-	// Определяем полный путь к файлу
-	fullPath := filepath.FromSlash(relPath)
+	// webPath — путь, возвращённый Save. Он бывает двух видов:
+	//   1. Веб-путь "/uploads/photos/x.jpg" (прод): это НЕ абсолютный ФС-путь,
+	//      а путь ОТНОСИТЕЛЬНО s.baseDir. Раньше он трактовался как абсолютный
+	//      "/uploads/..." на корне диска, boundary-проверка всегда падала, и
+	//      файлы в проде никогда не удалялись с диска (DEEP-REVIEW #16).
+	//   2. Абсолютный ФС-путь с ведущим "/" ("//tmp/..." на Unix, "/C:/..." на
+	//      Windows) или без него ("C:/...") — из тестов/легаси.
+	// Распознаём по порядку: сначала абсолютный с удвоенным слэшем, затем веб-путь
+	// с префиксом baseName(s.baseDir), затем прочие абсолютные, затем относительные.
+	sl := filepath.ToSlash(webPath)
 
-	// Если путь относительный, присоединяем к базовой директории
-	if !filepath.IsAbs(fullPath) {
-		fullPath = filepath.Join(s.baseDir, fullPath)
+	var fullPath string
+	switch {
+	case strings.HasPrefix(sl, "/") && filepath.IsAbs(filepath.FromSlash(sl[1:])):
+		// "//tmp/..." или "/C:/..." — абсолютный ФС-путь с удвоенным ведущим "/".
+		fullPath = filepath.FromSlash(sl[1:])
+	case s.baseDir != "" && strings.HasPrefix(sl, "/"+filepath.ToSlash(filepath.Base(filepath.Clean(s.baseDir)))+"/"):
+		// Веб-путь "/uploads/photos/x.jpg" — резолвим относительно s.baseDir,
+		// снимая совпадающий префикс базовой директории (иначе было бы
+		// "uploads/uploads/photos/x.jpg").
+		prefix := "/" + filepath.ToSlash(filepath.Base(filepath.Clean(s.baseDir))) + "/"
+		rel := strings.TrimPrefix(sl, prefix)
+		fullPath = filepath.Join(s.baseDir, filepath.FromSlash(rel))
+	case filepath.IsAbs(filepath.FromSlash(sl)):
+		// Абсолютный ФС-путь (Windows "C:/...", Unix "/tmp/...") — легаси/тесты.
+		fullPath = filepath.FromSlash(sl)
+	default:
+		// Относительный путь без ведущего "/" (легаси/веб без префикса).
+		fullPath = filepath.Join(s.baseDir, filepath.FromSlash(sl))
 	}
 
 	// Проверка выхода за пределы директории
@@ -227,9 +256,8 @@ func (s *LocalStorage) Delete(webPath string) error {
 			return fmt.Errorf("путь файла выходит за пределы директории хранения")
 		}
 	}
-	// NB: при baseDir=="" граница не проверяется. Delete вызывается только из
-	// внутренних handler'ов с путями, возвращёнными Save (которые уже прошли
-	// path-traversal защиту на этапе записи), поэтому удаление произвольных
+	// NB: при baseDir=="" граница не проверяется. В проде s.baseDir всегда задаётся
+	// через WithBaseDir (cmd/server/main.go), поэтому произвольное удаление
 	// системных файлов через публичный API невозможно. DEEP-REVIEW PASS-2 #9:
 	// задокументировано как LOW (требует редизайна Delete для приёма baseDir).
 

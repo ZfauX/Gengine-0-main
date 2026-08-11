@@ -66,3 +66,30 @@ func TestNoteService_CreateAndCheckDB(t *testing.T) {
 	assert.Equal(t, int64(1), count)
 	assert.Equal(t, "Find me", created.Text)
 }
+
+func TestNoteService_Create_LevelOwnership(t *testing.T) {
+	db, noteSvc := setupNoteTest(t)
+	author := createUser(t, db, "note_level@test.com", "pass")
+	g := createPublishedGameWithSettings(t, db, author.ID, "Note Level Game")
+	other := createPublishedGameWithSettings(t, db, author.ID, "Other Game")
+	lvl := createLevel(t, db, g.ID, "Level 1", 1)
+
+	t.Run("уровень своей игры разрешён", func(t *testing.T) {
+		note, err := noteSvc.Create(context.Background(), g.ID, &lvl.ID, author.ID, "Note with own level")
+		require.NoError(t, err)
+		require.NotNil(t, note.LevelID)
+		assert.Equal(t, lvl.ID, *note.LevelID)
+	})
+
+	t.Run("уровень чужой игры отклонён", func(t *testing.T) {
+		// DEEP-REVIEW PASS-2 (#19): level_id не принадлежит gameID → ошибка,
+		// заметка не создаётся (cross-game reference запрещена).
+		_, err := noteSvc.Create(context.Background(), other.ID, &lvl.ID, author.ID, "Cross-game note")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, game.ErrNoteInvalidLevel)
+
+		var count int64
+		db.Model(&game.Note{}).Where("game_id = ? AND text = ?", other.ID, "Cross-game note").Count(&count)
+		assert.Equal(t, int64(0), count)
+	})
+}

@@ -1,6 +1,7 @@
 package user
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -384,6 +385,17 @@ func (h *WebAuthnHandler) FinishLogin(c *gin.Context) {
 		wc, wcErr := h.webauthnRepo.GetByCredentialID(c.Request.Context(), rawID)
 		if wcErr != nil {
 			return nil, errors.New("ключ не найден")
+		}
+		// DEEP-REVIEW PASS-2 (#20): при discoverable (resident) credentials
+		// аутентификатор возвращает userHandle, который должен совпадать с
+		// WebAuthnID() владельца ключа (8 байт big-endian от user.ID).
+		// Раньше userHandle игнорировался — для данного rawID мог быть
+		// подставлен чужой handle, что сбивало идентификацию пользователя.
+		if len(userHandle) == 8 {
+			handleID := binary.BigEndian.Uint64(userHandle)
+			if handleID != uint64(wc.UserID) {
+				return nil, errors.New("несоответствие userHandle владельцу ключа")
+			}
 		}
 		foundUser, userErr := h.userRepo.GetByID(c.Request.Context(), wc.UserID)
 		if userErr != nil {

@@ -237,6 +237,18 @@ func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 // @Router /games/{id}/photos/{photo_id} [delete]
 // @Security JWT
 func (h *PhotoHandler) DeletePhoto(c *gin.Context) {
+	// DEEP-REVIEW PASS-2 (#18): game_id из URL должен совпадать с фото.
+	// Раньше он игнорировался — маршрут /games/{id}/photos/{photo_id} мог
+	// удалить фото из другой игры (права проверялись по photo.GameID, так что
+	// это не IDOR, но URL вводил в заблуждение и создавал гонку при audit).
+	gameID, gameParseErr := strconv.Atoi(c.Param("id"))
+	if gameParseErr != nil || gameID <= 0 {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"error": render.Tr(c, "handler.invalid_game_id"),
+			"code":  "bad_request",
+		})
+		return
+	}
 	photoID, err := strconv.Atoi(c.Param("photo_id"))
 	if err != nil || photoID <= 0 {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
@@ -262,6 +274,15 @@ func (h *PhotoHandler) DeletePhoto(c *gin.Context) {
 				"code":  appErr.Code,
 			})
 		}
+		return
+	}
+
+	// Фото принадлежит другой игре — 404 (не показываем, что фото существует).
+	if photo.GameID != uint(gameID) {
+		c.AbortWithStatusJSON(http.StatusNotFound, gin.H{
+			"error": "Фото не найдено",
+			"code":  "not_found",
+		})
 		return
 	}
 

@@ -24,16 +24,22 @@ func NewNoteHandler(noteService *NoteService) *NoteHandler {
 	return &NoteHandler{noteService: noteService}
 }
 
-// renderNoteError (DEEP-REVIEW PASS-2 #10): ErrNoteForbidden → 403; прочие
-// ошибки (БД и т.п.) → 500 с общим текстом. Раньше ВСЕ ошибки были 403 с
-// сырым err.Error() — внутренние детали утекали клиенту.
+// renderNoteError (DEEP-REVIEW PASS-2 #10): ErrNoteForbidden → 403;
+// ErrNoteInvalidLevel → 400 (ошибка клиента); прочие ошибки (БД и т.п.) → 500
+// с общим текстом. Раньше ВСЕ ошибки были 403 с сырым err.Error() —
+// внутренние детали утекали клиенту.
 func renderNoteError(c *gin.Context, err error) {
-	if errors.Is(err, ErrNoteForbidden) {
+	switch {
+	case errors.Is(err, ErrNoteForbidden):
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden"), "code": "forbidden"})
 		return
+	case errors.Is(err, ErrNoteInvalidLevel):
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "Уровень не принадлежит этой игре", "code": "invalid_level"})
+		return
+	default:
+		log.Error().Err(err).Msg("Note handler error")
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": render.Tr(c, "handler.internal_error"), "code": "internal_error"})
 	}
-	log.Error().Err(err).Msg("Note handler error")
-	c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": render.Tr(c, "handler.internal_error"), "code": "internal_error"})
 }
 
 // Notes возвращает заметки к игре в формате JSON.

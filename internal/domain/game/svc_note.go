@@ -29,6 +29,10 @@ func (s *NoteService) ListByGame(ctx context.Context, gameID, userID uint) ([]No
 	return s.repo.ListByGame(ctx, gameID)
 }
 
+// ErrNoteInvalidLevel (DEEP-REVIEW PASS-2 #19): переданный level_id не
+// принадлежит игре — заметку нельзя привязывать к чужому уровню.
+var ErrNoteInvalidLevel = errors.New("уровень не принадлежит игре")
+
 func (s *NoteService) Create(ctx context.Context, gameID uint, levelID *uint, userID uint, text string) (*Note, error) {
 	isManager, err := s.coAuthorSvc.IsUserManager(ctx, gameID, userID)
 	if err != nil {
@@ -36,6 +40,18 @@ func (s *NoteService) Create(ctx context.Context, gameID uint, levelID *uint, us
 	}
 	if !isManager {
 		return nil, ErrNoteForbidden
+	}
+	if levelID != nil {
+		// DEEP-REVIEW PASS-2 (#19): валидируем, что уровень действительно
+		// принадлежит этой игре. Раньше можно было создать заметку со ссылкой
+		// на уровень другой игры (cross-game reference).
+		belongs, lvlErr := s.repo.LevelBelongsToGame(ctx, gameID, *levelID)
+		if lvlErr != nil {
+			return nil, lvlErr
+		}
+		if !belongs {
+			return nil, ErrNoteInvalidLevel
+		}
 	}
 	note := Note{GameID: gameID, LevelID: levelID, UserID: userID, Text: text}
 	if err := s.repo.Create(ctx, &note); err != nil {

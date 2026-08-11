@@ -377,6 +377,16 @@ func (s *EmailService) processRetryJob(ctx context.Context, job retryJob) {
 	}
 }
 
+// sanitizeHeaderValue (DEEP-REVIEW PASS-2 #21): удаляет CR/LF из значения
+// заголовка письма. Subject/To приходят из пользовательского ввода —
+// CRLF-инъекция позволила бы подменить заголовки (Bcc:, Reply-To: и т.п.)
+// или вставить произвольные строки в тело письма.
+func sanitizeHeaderValue(v string) string {
+	v = strings.ReplaceAll(v, "\r", " ")
+	v = strings.ReplaceAll(v, "\n", " ")
+	return v
+}
+
 // SendEmail – экспортируемая функция для синхронной отправки письма (используется в тестах и для обратной совместимости).
 func SendEmail(cfg *config.Config, to, subject, body string) error {
 	if !cfg.SMTP.Enabled {
@@ -386,9 +396,9 @@ func SendEmail(cfg *config.Config, to, subject, body string) error {
 	addr := fmt.Sprintf("%s:%d", cfg.SMTP.Host, cfg.SMTP.Port)
 
 	headers := make(map[string]string)
-	headers["From"] = cfg.SMTP.From
-	headers["To"] = to
-	headers["Subject"] = subject
+	headers["From"] = sanitizeHeaderValue(cfg.SMTP.From)
+	headers["To"] = sanitizeHeaderValue(to)
+	headers["Subject"] = sanitizeHeaderValue(subject)
 	headers["MIME-Version"] = "1.0"
 	headers["Content-Type"] = "text/plain; charset=\"UTF-8\""
 
@@ -597,9 +607,11 @@ func SendBatch(cfg *config.Config, messages []EmailMessage) error {
 
 	for _, msg := range messages {
 		headers := make(map[string]string)
-		headers["From"] = cfg.SMTP.From
-		headers["To"] = msg.To
-		headers["Subject"] = msg.Subject
+		// DEEP-REVIEW PASS-2 (#21): санитизация CR/LF в To/Subject — те же
+		// аргументы, что и в SendEmail (user-controlled значения).
+		headers["From"] = sanitizeHeaderValue(cfg.SMTP.From)
+		headers["To"] = sanitizeHeaderValue(msg.To)
+		headers["Subject"] = sanitizeHeaderValue(msg.Subject)
 		headers["MIME-Version"] = "1.0"
 		headers["Content-Type"] = "text/plain; charset=\"UTF-8\""
 

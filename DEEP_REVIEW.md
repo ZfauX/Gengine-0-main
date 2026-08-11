@@ -67,30 +67,30 @@
 |---|------|----------|------|
 | 6 | `internal/domain/notification/routes.go:143-166` | `PUT /api/notifications/settings` full-replaces (bool без *bool) — частичное обновление выключает остальные каналы | ✅ merge через *bool |
 | 7 | `internal/domain/admin/handler.go:363-387` | ToggleAdmin last-admin TOCTOU (два демоушена → 0 админов) | ✅ атомарный `DemoteAdminIfNotLast` |
-| 8 | `internal/domain/admin/handler.go:786-793` | CreateBackup блокирует HTTP до 10 мин + ctx от клиента (дисконнект прерывает дамп) | Фоновая задача с независимым ctx |
-| 9 | `internal/pkg/storage/local_storage.go:217-229` | `Delete` пропускает boundary-check при `baseDir==""` → риск удаления произвольного файла | Задокументировано LOW (Delete только из handler с путями Save) |
-| 10 | `internal/domain/game/hnd_note.go:48,111,142` | Все ошибки → 403 + сырой текст (5xx как 403, утечка деталей) | Только sentinel-права → 403 |
+| 8 | `internal/domain/admin/handler.go:786-793` | CreateBackup блокирует HTTP до 10 мин + ctx от клиента (дисконнект прерывает дамп) | ✅ фоновая задача с независимым `context.Background()` |
+| 9 | `internal/pkg/storage/local_storage.go:217-229` | `Delete` пропускает boundary-check при `baseDir==""` → риск удаления произвольного файла | ✅ закрыто рефакторингом #16: в проде s.baseDir всегда задан, Delete резолвит веб-путь только внутри него |
+| 10 | `internal/domain/game/hnd_note.go:48,111,142` | Все ошибки → 403 + сырой текст (5xx как 403, утечка деталей) | ✅ sentinel `ErrNoteForbidden` → 403; прочие → 500 с общим текстом; `ErrNoteInvalidLevel` → 400 |
 | 11 | `internal/pkg/middleware/auth.go:39-89` | Роль-кэш на `sync.Mutex` — контенция на каждом авторизованном запросе | ✅ `sync.RWMutex` (RLock на хит) |
 | 12 | `internal/domain/game/svc_play.go:753-770` + `tournament/service.go:533-547` | Кэш через `GetOrSetWithCtx`+type-assert не хитится с Valkey (JSON→`[]any`), game settings и лидерборд каждый раз читают БД | ✅ cacheGetJSON + SetWithCtx |
 | 13 | `internal/domain/tournament/handler.go:37-44` | `points_for_*` без верхней границы (переполнение int в лидерборде) | ✅ max=100000 |
-| 14 | `internal/domain/user/auth_handler.go:131,143` | Login делает дублирующий SELECT пользователя (для 2FA-проверки) | Вернуть *User из Login |
-| 15 | `internal/domain/user/service.go:163-218` | Успешный login пишет UPDATE (сброс попыток) всегда | Условный `WHERE failed<>0 OR locked IS NOT NULL` |
+| 14 | `internal/domain/user/auth_handler.go:131,143` | Login делает дублирующий SELECT пользователя (для 2FA-проверки) | ✅ `Login` возвращает `(*User, string, error)` |
+| 15 | `internal/domain/user/service.go:163-218` | Успешный login пишет UPDATE (сброс попыток) всегда | ✅ `ResetLoginAttemptsIfNeeded` — условный `WHERE failed<>0 OR locked IS NOT NULL` |
 
 ---
 
 ## ⚪ LOW / NIT
 
-| # | Файл | Проблема |
-|---|------|----------|
-| 16 | `internal/pkg/storage/local_storage.go:177` | `Save` возвращает `//abs/...` при абсолютном baseDir (двойной слэш) |
-| 17 | `internal/domain/export/service.go:79,178,304` | Ошибки `csvWriter.Flush()` глотаются |
-| 18 | `internal/domain/game/hnd_photo.go:239-305` | `DeletePhoto` игнорирует game_id из URL (контракт, не IDOR) |
-| 19 | `internal/domain/game/svc_note.go:36` | `Create` не проверяет, что LevelID принадлежит gameID |
-| 20 | `internal/domain/user/webauthn_handler.go:380-398` | discoverableHandler не сверяет userHandle с user |
-| 21 | `internal/pkg/email/email.go:396-400` | SMTP-заголовки без CRLF-санитизации (латентная инъекция) |
-| 22 | `internal/pkg/storage/local_storage.go:122-126` | Файлы 0644/0755 + предсказуемые имена `{userID}_{unixnano}` |
-| 23 | `internal/domain/game/hnd_review.go:44,78` | Игнорируемые `strconv.Atoi` → 403 вместо 400 |
-| 24 | `internal/domain/calendar/handler.go:274` | `EscapeICalText` не экранирует `\r` |
+| # | Файл | Проблема | Фикс |
+|---|------|----------|------|
+| 16 | `internal/pkg/storage/local_storage.go:177` | `Save` возвращает `//abs/...` при абсолютном baseDir (двойной слэш); Delete трактовал веб-путь `/uploads/...` как абсолютный → файлы не удалялись | ✅ рефакторинг Save/Delete: единый web-path roundtrip, Delete резолвит относительно s.baseDir, тест |
+| 17 | `internal/domain/export/service.go:79,178,304` | Ошибки `csvWriter.Flush()` глотаются | ✅ явный `Flush()` + `Error()`-проверка |
+| 18 | `internal/domain/game/hnd_photo.go:239-305` | `DeletePhoto` игнорирует game_id из URL (контракт, не IDOR) | ✅ проверка `photo.GameID == gameID` → иначе 404 |
+| 19 | `internal/domain/game/svc_note.go:36` | `Create` не проверяет, что LevelID принадлежит gameID | ✅ `LevelBelongsToGame()` + sentinel `ErrNoteInvalidLevel` → 400, тест |
+| 20 | `internal/domain/user/webauthn_handler.go:380-398` | discoverableHandler не сверяет userHandle с user | ✅ матчинг 8-байт big-endian handle с `wc.UserID` |
+| 21 | `internal/pkg/email/email.go:396-400` | SMTP-заголовки без CRLF-санитизации (латентная инъекция) | ✅ `sanitizeHeaderValue` (CR/LF → пробел) в SendEmail + SendBatch, тест |
+| 22 | `internal/pkg/storage/local_storage.go:122-126` | Файлы 0644/0755 + предсказуемые имена `{userID}_{unixnano}` | ✅ 0700/0600 + `randomHex(8)` nonce |
+| 23 | `internal/domain/game/hnd_review.go:44,78` | Игнорируемые `strconv.Atoi` → 403 вместо 400 | ✅ проверка Atoi → 400 |
+| 24 | `internal/domain/calendar/handler.go:274` | `EscapeICalText` не экранирует `\r` | ✅ CR/CRLF → `\n` |
 
 ---
 
@@ -141,11 +141,13 @@
 
 ## 🎯 Рекомендации (что чинить первым)
 
-1. **Гранулярные права на Phase-3/import/export** (#3) — самый опасный пробел (observer пишет контент).
-2. **Valkey-совместимый кэш settings/leaderboard** (#12) — реальный прод с Valkey.
-3. **WebAuthn `VerificationRequired` + clone-reject** (#4).
-4. **RWMutex role-cache** (#11) + **убрать дублирующий SELECT в Login** (#14).
-5. **ToggleAdmin TOCTOU + CreateBackup фоновая** (#7, #8).
+> **Статус: все пункты PASS-2 закрыты.** Топ-5 ниже уже исправлены; остаются только идеи на будущее (кодовая база/UX).
+
+1. ✅ **Гранулярные права на Phase-3/import/export** (#3).
+2. ✅ **Valkey-совместимый кэш settings/leaderboard** (#12).
+3. ✅ **WebAuthn `VerificationRequired` + clone-reject** (#4).
+4. ✅ **RWMutex role-cache** (#11) + **убран дублирующий SELECT в Login** (#14).
+5. ✅ **ToggleAdmin TOCTOU + CreateBackup фоновая** (#7, #8).
 
 ---
 

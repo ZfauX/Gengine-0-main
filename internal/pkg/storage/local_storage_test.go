@@ -143,6 +143,24 @@ func TestLocalStorage_Delete(t *testing.T) {
 		_, err = os.Stat(outsideFileName)
 		assert.NoError(t, err, "файл не должен быть удалён")
 	})
+
+	t.Run("DEEP-REVIEW #16: Delete резолвит web-path '/base/x' в s.baseDir", func(t *testing.T) {
+		// Сценарий продакшена: Save("uploads/photos", ...) возвращает "/uploads/photos/x.jpg".
+		// Delete должен интерпретировать это как ВЕБ-путь относительно s.baseDir,
+		// а не как абсолютный ФС-путь "/uploads/..." на корне диска.
+		prod := NewLocalStorage().WithBaseDir(tmpDir)
+
+		// Создаём файл напрямую в tmpDir/photos/ (как Save сделал бы физически).
+		fullPath := filepath.Join(tmpDir, "photos", "roundtrip.jpg")
+		require.NoError(t, os.MkdirAll(filepath.Dir(fullPath), 0700))
+		require.NoError(t, os.WriteFile(fullPath, []byte("x"), 0600))
+
+		webPath := "/" + filepath.Base(tmpDir) + "/photos/roundtrip.jpg"
+		err := prod.Delete(webPath)
+		require.NoError(t, err)
+		_, err = os.Stat(fullPath)
+		assert.True(t, os.IsNotExist(err), "файл должен быть удалён по веб-пути")
+	})
 }
 
 func TestLocalStorage_Save_Security_PathTraversal(t *testing.T) {
