@@ -68,6 +68,23 @@ func csvSafe(s string) string {
 	return s
 }
 
+// unescapeCSVAnswer (DEEP-REVIEW PASS-4 M1): снимает экранирующий ' добавленный
+// csvSafe при экспорте. Без этого backup/restore менял код ответа "=42" на "'=42".
+func unescapeCSVAnswer(s string) string {
+	if s == "" || s[0] != '\'' {
+		return s
+	}
+	rest := strings.TrimLeft(s[1:], " \t")
+	if rest == "" {
+		return s
+	}
+	switch rest[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return s[1:]
+	}
+	return s
+}
+
 // ExportGameToCSV записывает все уровни, вопросы и ответы игры в CSV-формате.
 func (s *ExportService) ExportGameToCSV(ctx context.Context, gameID uint, w io.Writer) error {
 	_, levels, err := s.exportRepo.GetGameWithLevels(ctx, gameID)
@@ -281,6 +298,10 @@ func (s *ExportService) ImportGameFromCSV(ctx context.Context, gameID uint, r io
 					if code == "" {
 						continue
 					}
+					// M1 (PASS-4): снять экранирующий ' из csvSafe (экспорт
+					// ставит '=42, чтобы Excel не считал формулой). Иначе
+					// backup/restore молча меняет код ответа на '=42.
+					code = unescapeCSVAnswer(code)
 					answer := level.Answer{
 						QuestionID: question.ID,
 						Code:       code,

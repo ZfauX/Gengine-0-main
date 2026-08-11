@@ -347,9 +347,9 @@ func (s *PaymentService) verifyWebhookAuth(authHeader string) (bool, error) {
 
 // HandleWebhook обрабатывает уведомление от ЮKassa.
 // Аутентификация (DEEP-REVIEW PASS-4 H1):
-//   1. Optional Basic-подпись (если заголовок есть и неверен — отклонить);
-//   2. IP-allowlist ЮKassa (основной фильтр, по документации ЮKassa);
-//   3. подтверждение статуса через API + verifyRemoteAmount (финальная защита).
+//  1. Optional Basic-подпись (если заголовок есть и неверен — отклонить);
+//  2. IP-allowlist ЮKassa (основной фильтр, по документации ЮKassa);
+//  3. подтверждение статуса через API + verifyRemoteAmount (финальная защита).
 func (s *PaymentService) HandleWebhook(ctx context.Context, remoteIP, authHeader string, rawBody []byte) error {
 	if !s.Enabled() {
 		return fmt.Errorf("платежи не настроены")

@@ -404,6 +404,10 @@ func (s *NotificationService) sendWebPush(ctx context.Context, userID uint, n *N
 func (s *NotificationService) sendWebSocketNotification(ctx context.Context, userID uint, notification *Notification) {
 	roomID := fmt.Sprintf("user:%d", userID)
 
+	// M7 (PASS-4): unread-count не должен зависеть от request-ctx — при отмене
+	// запроса getUnreadCount вернул бы 0 и закэшировал его на 30с. WS-путь
+	// использует безотменяемый контекст (как push-воркеры).
+	wsCtx := context.WithoutCancel(ctx)
 	notificationData := map[string]any{
 		"type":         string(notification.Type),
 		"id":           notification.ID,
@@ -411,7 +415,7 @@ func (s *NotificationService) sendWebSocketNotification(ctx context.Context, use
 		"body":         notification.Body,
 		"link":         notification.Link,
 		"created_at":   notification.CreatedAt.Format(time.RFC3339),
-		"unread_count": s.getUnreadCount(ctx, userID),
+		"unread_count": s.getUnreadCount(wsCtx, userID),
 	}
 
 	data, err := json.Marshal(notificationData)

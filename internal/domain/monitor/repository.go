@@ -63,6 +63,10 @@ type BlackboxRepository interface {
 // редко (AddRoomMember), задержка применения ≤ TTL приемлема.
 const chatPermCacheTTL = 5 * time.Second
 
+// chatPermCacheMaxEntries (DEEP-REVIEW PASS-4 M8): верхняя граница размера кэша —
+// lazy sweep при превышении, чтобы map не росла бесконечно (медленная утечка).
+const chatPermCacheMaxEntries = 10000
+
 type chatPermEntry struct {
 	allowed      bool
 	memberExists bool
@@ -90,6 +94,20 @@ func (r *gormChatRepo) invalidatePermCache(roomID, userID uint) {
 	r.permCacheMu.Lock()
 	delete(r.permCache, r.permCacheKey(roomID, userID))
 	r.permCacheMu.Unlock()
+}
+
+// sweepPermCache (M8): удаляет истёкшие записи при превышении размера.
+// Вызывается под permCacheMu.
+func (r *gormChatRepo) sweepPermCache() {
+	if len(r.permCache) <= chatPermCacheMaxEntries {
+		return
+	}
+	now := time.Now()
+	for k, e := range r.permCache {
+		if now.After(e.expires) {
+			delete(r.permCache, k)
+		}
+	}
 }
 
 func (r *gormChatRepo) GetOrCreateGameRoom(ctx context.Context, gameID uint) (*ChatRoom, error) {
@@ -371,6 +389,7 @@ func (r *gormChatRepo) CanSendMessage(ctx context.Context, roomID uint, teamID *
 	}
 
 	r.permCacheMu.Lock()
+	r.sweepPermCache()
 	r.permCache[ck] = chatPermEntry{allowed: allowed, memberExists: memberExists, expires: now.Add(chatPermCacheTTL)}
 	r.permCacheMu.Unlock()
 	return allowed, memberExists, nil
@@ -524,12 +543,23 @@ func (r *gormBlackboxRepo) GetCaptainEmailsByGame(ctx context.Context, gameID ui
 	return captains, err
 }
 
-// IsTeamMember проверяет членство пользователя в команде.
+// IsTeamMember проверяет членство пользователя в команде (включая капитана —
+// DEEP-REVIEW PASS-4 M10: раньше капитан, не входящий в team_members, не мог
+// голосовать; в чате это учтено в IsTeamMemberOrCaptain).
 func (r *gormBlackboxRepo) IsTeamMember(ctx context.Context, teamID, userID uint) (bool, error) {
-	var memberCount int64
+	var count int64
 	if err := r.db.WithContext(ctx).Table("team_members").
-		Where("team_id = ? AND user_id = ?", teamID, userID).Count(&memberCount).Error; err != nil {
+		Where("team_id = ? AND user_id = ?", teamID, userID).Count(&count).Error; err != nil {
 		return false, err
 	}
-	return memberCount > 0, nil
+	if count > 0 {
+		return true, nil
+	}
+	// Капитан может не быть в team_members.
+	var captainCount int64
+	if err := r.db.WithContext(ctx).Table("teams").
+		Where("id = ? AND captain_id = ?", teamID, userID).Count(&captainCount).Error; err != nil {
+		return false, err
+	}
+	return captainCount > 0, nil
 }

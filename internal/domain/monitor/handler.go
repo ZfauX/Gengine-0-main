@@ -1126,8 +1126,11 @@ func (h *MonitorHandler) CreateRoom(c *gin.Context) {
 	}
 
 	name := strings.TrimSpace(c.PostForm("name"))
-	if name == "" {
-		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "имя комнаты обязательно", "code": "invalid_name"})
+	// M4 (PASS-4): имя комнаты санитизируется и ограничено по длине —
+	// deferred stored-XSS (имя попадает в JSON GameRooms и будущие рендеры).
+	name = sanitize.StripHTML(name)
+	if vErr := validation.ValidateString("Имя комнаты", name, 1, 100); vErr != nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": vErr.Error(), "code": "invalid_name"})
 		return
 	}
 	gameID := req.ID

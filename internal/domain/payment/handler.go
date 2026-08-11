@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 
@@ -84,7 +85,11 @@ func (h *PaymentHandler) Create(c *gin.Context) {
 	description := c.PostForm("description")
 	metadata := c.PostForm("metadata")
 
-	if parseErr != nil || amount < PaymentMinRubles || amount > PaymentMaxRubles {
+	// M3 (PASS-4): NaN/Inf проходят обычные сравнения — явно отклоняем.
+	// strconv.ParseFloat("NaN") не возвращает ошибку, а rublesToKopecks(NaN)
+	// дал бы math.MinInt64 (отрицательная запись в БД).
+	if parseErr != nil || math.IsNaN(amount) || math.IsInf(amount, 0) ||
+		amount < PaymentMinRubles || amount > PaymentMaxRubles {
 		render.SetFlash(c, "error", fmt.Sprintf("Сумма должна быть от %.0f до %.0f рублей", PaymentMinRubles, PaymentMaxRubles))
 		c.Redirect(http.StatusFound, "/payments")
 		return

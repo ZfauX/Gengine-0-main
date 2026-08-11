@@ -4,6 +4,7 @@ package user
 import (
 	"context"
 	"errors"
+	"fmt"
 )
 
 // ErrEmailTaken — email уже занят другим пользователем.
@@ -75,7 +76,12 @@ func (s *ProfileService) GetGamesView(ctx context.Context, userID uint) (string,
 }
 
 // SaveGamesView сохраняет предпочтение вида списка игр.
+// M6 (PASS-4): allowlist — раньше сохранялась любая строка (>10 символов давала
+// 500 на каждый запрос, self-DoS; произвольное значение в varchar(10)).
 func (s *ProfileService) SaveGamesView(ctx context.Context, userID uint, view string) error {
+	if view != "table" && view != "cards" {
+		return fmt.Errorf("недопустимое значение вида списка игр")
+	}
 	return s.repo.SaveGamesView(ctx, userID, view)
 }
 

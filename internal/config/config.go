@@ -56,7 +56,7 @@ type ServerConfig struct {
 	PprofPort string
 	// PprofBind — адрес привязки pprof-сервера (DEEP-REVIEW PASS-4 H2).
 	// По умолчанию 127.0.0.1 — pprof не должен быть доступен извне без auth.
-	PprofBind string
+	PprofBind         string
 	MaxBackups        int    // максимальное количество сохраняемых архивов логов
 	LogFilePath       string // путь к файлу логов (по умолчанию "logs/app.log")
 	LogMaxSize        int    // максимальный размер файла лога в МБ (по умолчанию 100)
