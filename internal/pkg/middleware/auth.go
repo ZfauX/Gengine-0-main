@@ -175,9 +175,11 @@ func OptionalAuth(parser TokenParser) gin.HandlerFunc {
 						c.Next()
 						return
 					}
-					if currentRole != "" {
-						role = currentRole
-					}
+					// DEEP-REVIEW HIGH #11 (pass 46): всегда берём роль из БД,
+					// даже если она пустая. Раньше пустая роль в БД (повреждённые/
+					// мигрированные данные) сохраняла роль из JWT-claim — пониженный
+					// админ мог остаться админом на optional-auth маршрутах.
+					role = currentRole
 				}
 				c.Set("userID", userID)
 				c.Set("role", role)

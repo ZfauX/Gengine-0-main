@@ -61,12 +61,12 @@
 | 7 | `internal/domain/payment/service.go:162-191` | Платёж создан в ЮKassa, но не сохранён в БД при сбое → повторная попытка создаёт второй платёж | ✅ Запись `pending` с `PaymentID="local-"+idemKey` ДО API + retry по идемпотентному ключу |
 | 8 | `internal/db/migrate.go:65-119` | При запуске из другой CWD (systemd/Docker/cron) миграции **молча пропускаются** (`return nil`) — сервер стартует на немгрированной схеме | ✅ Явная ошибка вместо `return nil` + сообщение с абсолютным путём |
 | 9 | `internal/domain/game/hnd_gameplay.go:276-279` | Подсказка попадает в URL (`?hint=...`) → история браузера, Referer, логи доступа | ✅ Только flash «n» (читается хендлером), URL без hint |
-| 10 | `internal/domain/game/hnd_geolocation.go:56-66` | `UpdateLocation` не проверяет статус прохождения (finished/disqualified могут слать GPS); `Accuracy` не валидируется | Проверять статус + диапазон accuracy |
-| 11 | `internal/pkg/middleware/auth.go:178-181` | `OptionalAuth` сохраняет роль из JWT, если роль в БД пустая — пониженный админ остаётся админом на optional-auth роутах | Всегда перезаписывать роль |
+| 10 | `internal/domain/game/hnd_geolocation.go:56-66` | `UpdateLocation` не проверяет статус прохождения (finished/disqualified могут слать GPS); `Accuracy` не валидируется | ✅ статус started/testing + accuracy 0-10000 |
+| 11 | `internal/pkg/middleware/auth.go:178-181` | `OptionalAuth` сохраняет роль из JWT, если роль в БД пустая — пониженный админ остаётся админом на optional-auth роутах | ✅ всегда берём роль из БД |
 | 12 | `internal/domain/tournament/service.go:498-511` | Кэш лидерборда никогда не хитится с Valkey (тип `[]TournamentResult` не переживает JSON round-trip) | Явная маршализация или кэш только для in-memory |
 | 13 | `internal/pkg/websocket/room_hub.go:66-104,131-145` + `hnd_sse.go:332-348` | TOCTOU в лимитах соединений: `CanAccept` и `incConnection` — не под одним lock | Проверка+инкремент в `RegisterClient` под одним мьютексом |
-| 14 | `internal/domain/game/svc_monitor.go:87-130` | Кэшированный `[]TeamProgress` возвращается по ссылке — мутация портит кэш | Возвращать копию |
-| 15 | `internal/domain/game/svc_monitor.go:231-234` | Отрицательная общая длительность при рассинхроне таймстампов | Кламп к 0 |
+| 14 | `internal/domain/game/svc_monitor.go:87-130` | Кэшированный `[]TeamProgress` возвращается по ссылке — мутация портит кэш | ✅ `copyTeamProgress` |
+| 15 | `internal/domain/game/svc_monitor.go:231-234` | Отрицательная общая длительность при рассинхроне таймстампов | ✅ кламп к 0 |
 
 ---
 
@@ -75,10 +75,10 @@
 | # | Файл | Проблема |
 |---|------|----------|
 | 16 | `internal/pkg/cache/cache.go:166-173` | `Set(key, ttl=0)` после `ttl>0` оставляет ключ в `ttlKeys` навсегда |
-| 17 | `internal/domain/game/svc_passing.go:77-122` | Нет проверки `visibility`/публикации; pending-заявки не считаются в лимит команд |
+| 17 | `internal/domain/game/svc_passing.go:77-122` | Нет проверки `visibility`/публикации; pending-заявки не считаются в лимит команд | ✅ public + pending в лимите |
 | 18 | `internal/pkg/websocket/room_hub.go:199-203` | Drop-on-full для медленных клиентов молча теряет сообщения без отключения |
-| 19 | `internal/domain/user/service.go:186-208` | Backoff использует устаревший `LockCount` при параллельных неудачных попытках |
-| 20 | `internal/db/migrate.go:84-96` | При ошибке `getCurrentVersion` возвращает 0 → выбирается squashed-набор для существующей БД |
+| 19 | `internal/domain/user/service.go:186-208` | Backoff использует устаревший `LockCount` при параллельных неудачных попытках | ✅ backoff в SQL по факт. lock_count |
+| 20 | `internal/db/migrate.go:84-96` | При ошибке `getCurrentVersion` возвращает 0 → выбирается squashed-набор для существующей БД | ✅ ошибка вместо 0 |
 | 21 | `internal/config/config.go:349-372` | `YKASSA_WEBHOOK_KEY` загружен, но не используется (нет проверки подписи) |
 | 22 | `internal/config/config.go:599-616` | `getEnvAsInt`/`getEnvAsDuration` молча фолбэчат при ошибке парсинга даже в STRICT_CONFIG | ✅ warn-лог при ошибке парсинга |
 | 23 | `internal/domain/game/hnd_sse.go:151-174` | `RegisterSession` не проверяет `m.stopped` — конкурентный вызов после `Stop()` нарушает контракт WaitGroup |

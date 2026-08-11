@@ -194,15 +194,15 @@ func (s *AuthService) Login(ctx context.Context, emailStr, password string) (str
 			// растёт с каждой последовательной блокировкой (5, 10, 20, ... мин,
 			// до 24ч). Атомарный инкремент lock_count (S-4 pass 32) — без гонки
 			// между параллельными неверными попытками.
-			now := time.Now()
-			duration := backoffDuration(user.LockCount)
-			lockedUntil := now.Add(duration)
-			newCount, err := s.userRepo.AtomicLockAccount(ctx, user.ID, lockedUntil)
+			// DEEP-REVIEW MEDIUM #19 (pass 46): длительность вычисляется ВНУТРИ
+			// SQL по фактическому lock_count (раньше — по устаревшему
+			// user.LockCount: при параллельных попытках обе получали 5 мин).
+			newCount, err := s.userRepo.LockAccountWithBackoff(ctx, user.ID)
 			if err != nil {
 				log.Error().Err(err).Uint("user_id", user.ID).Msg("Login: failed to lock account")
 				return "", ErrInternalServer
 			}
-			log.Debug().Uint("user_id", user.ID).Int("lock_count", newCount).Dur("duration", duration).Msg("Login: account locked with backoff")
+			log.Debug().Uint("user_id", user.ID).Int("lock_count", newCount).Msg("Login: account locked with backoff")
 			// Generic-ответ: не раскрываем существование аккаунта (B2).
 			return "", ErrInvalidCredentials
 		}

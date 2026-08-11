@@ -52,10 +52,23 @@ func (h *GeolocationHandler) UpdateLocation(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid coordinates"})
 		return
 	}
+	// DEEP-REVIEW HIGH #10 (pass 46): Accuracy должна быть разумной
+	// (метры). Отрицательные или абсурдные значения отклоняем.
+	if input.Accuracy < 0 || input.Accuracy > 10000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid accuracy"})
+		return
+	}
 
 	// Членство: пользователь должен быть в команде прохождения.
 	passing, err := h.passingRepo.GetByID(c.Request.Context(), uint(passingID))
 	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
+		return
+	}
+	// DEEP-REVIEW HIGH #10 (pass 46): позицию можно слать только пока игра
+	// активна (started/testing). Завершённые/дисквалифицированные прохождения
+	// больше не принимают GPS (раньше участник мог слать координаты вечно).
+	if passing.Status != StatusStarted && passing.Status != StatusTesting {
 		c.JSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
 		return
 	}

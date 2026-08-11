@@ -86,7 +86,9 @@ type TeamProgress struct {
 // P-3 (pass 39): thread-safe LRU — Get() сам промоутит элемент, ручные лок/evict не нужны.
 func (s *MonitorService) GetOrFetchSnapshot(ctx context.Context, gameID uint) ([]TeamProgress, error) {
 	if cached, ok := s.cache.Get(gameID); ok && time.Since(cached.timestamp) < s.cacheTTL {
-		return cached.data, nil
+		// DEEP-REVIEW MEDIUM #14 (pass 46): возвращаем копию — мутация
+		// результата вызывающим не должна портить кэш.
+		return copyTeamProgress(cached.data), nil
 	}
 
 	// Используем singleflight для группировки одновременных запросов
@@ -126,7 +128,19 @@ func (s *MonitorService) GetOrFetchSnapshot(ctx context.Context, gameID uint) ([
 	if !ok {
 		return nil, fmt.Errorf("unexpected type for result")
 	}
-	return teamProgress, nil
+	// DEEP-REVIEW MEDIUM #14 (pass 46): копия на выходе singleflight.
+	return copyTeamProgress(teamProgress), nil
+}
+
+// copyTeamProgress возвращает копию слайса TeamProgress, чтобы вызывающий не
+// мог мутировать кэшированные данные (DEEP-REVIEW MEDIUM #14).
+func copyTeamProgress(src []TeamProgress) []TeamProgress {
+	if src == nil {
+		return nil
+	}
+	dst := make([]TeamProgress, len(src))
+	copy(dst, src)
+	return dst
 }
 
 // GetOrFetchSnapshotJSON возвращает JSON-представление снапшота, кэшируя
@@ -230,6 +244,12 @@ func (s *MonitorService) GameSnapshot(ctx context.Context, gameID uint) ([]TeamP
 		var totalDuration time.Duration
 		if a.FirstStarted != nil && a.LastFinished != nil {
 			totalDuration = a.LastFinished.Sub(*a.FirstStarted) + time.Duration(a.TotalPenalty)*time.Second
+		}
+		// DEEP-REVIEW MEDIUM #15 (pass 46): при рассинхроне таймстампов
+		// (clock skew, пропущенный уровень) длительность может быть
+		// отрицательной — клампим к 0, чтобы не показывать мусор.
+		if totalDuration < 0 {
+			totalDuration = 0
 		}
 		tp.TotalTime = util.FormatDuration(totalDuration)
 

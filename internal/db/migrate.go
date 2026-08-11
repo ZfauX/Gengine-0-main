@@ -29,15 +29,17 @@ func hasAppliedMigrations(gdb *gorm.DB) bool {
 }
 
 // getCurrentVersion возвращает текущую версию миграций из schema_migrations.
-func getCurrentVersion(gdb *gorm.DB) uint {
+// DEEP-REVIEW MEDIUM #20 (pass 46): при ошибке БД возвращаем ошибку, а не 0 —
+// раньше 0 заставлял MigrateFromDir выбрать squashed-набор для существующей
+// индивидуальной БД при транзиентном сбое запроса.
+func getCurrentVersion(gdb *gorm.DB) (uint, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	var version int
 	if err := gdb.WithContext(ctx).Raw("SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1").Scan(&version).Error; err != nil {
-		log.Warn().Err(err).Msg("getCurrentVersion: failed to query schema_migrations")
-		return 0
+		return 0, fmt.Errorf("getCurrentVersion: failed to query schema_migrations: %w", err)
 	}
-	return uint(version)
+	return uint(version), nil
 }
 
 // RunMigrations — канонический runner миграций (A-M5, pass 34). Для свежей БД
@@ -82,7 +84,12 @@ func MigrateFromDir(gdb *gorm.DB, migrationsDir string) error {
 
 	if migrationsDir == "" {
 		if hasAppliedMigrations(gdb) {
-			currentVersion := getCurrentVersion(gdb)
+			currentVersion, verErr := getCurrentVersion(gdb)
+			if verErr != nil {
+				// DEEP-REVIEW MEDIUM #20 (pass 46): не угадываем директорию при
+				// сбое БД — возвращаем ошибку (раньше 0 → squashed для инд. БД).
+				return fmt.Errorf("не удалось определить текущую версию миграций: %w", verErr)
+			}
 			if currentVersion <= maxSquashedVersion {
 				migrationsDir = "migrations_squashed"
 				log.Info().Uint("version", currentVersion).Msg("БД из squashed-набора — применяем сгруппированные миграции")

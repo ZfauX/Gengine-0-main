@@ -354,6 +354,21 @@ func (mr *MockUserRepositoryMockRecorder) ListPaginated(ctx, role, offset, limit
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListPaginated", reflect.TypeOf((*MockUserRepository)(nil).ListPaginated), ctx, role, offset, limit)
 }
 
+// LockAccountWithBackoff mocks base method.
+func (m *MockUserRepository) LockAccountWithBackoff(ctx context.Context, userID uint) (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LockAccountWithBackoff", ctx, userID)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LockAccountWithBackoff indicates an expected call of LockAccountWithBackoff.
+func (mr *MockUserRepositoryMockRecorder) LockAccountWithBackoff(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LockAccountWithBackoff", reflect.TypeOf((*MockUserRepository)(nil).LockAccountWithBackoff), ctx, userID)
+}
+
 // SearchPaginated mocks base method.
 func (m *MockUserRepository) SearchPaginated(ctx context.Context, query, role string, offset, limit int) ([]User, error) {
 	m.ctrl.T.Helper()

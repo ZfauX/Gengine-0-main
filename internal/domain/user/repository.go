@@ -83,6 +83,12 @@ type UserRepository interface {
 	// возвращает новое значение lock_count + установленный locked_until.
 	AtomicLockAccount(ctx context.Context, userID uint, lockedUntil time.Time) (int, error)
 
+	// LockAccountWithBackoff атомарно блокирует аккаунт, вычисляя длительность
+	// backoff ВНУТРИ SQL по фактическому lock_count (DEEP-REVIEW MEDIUM #19):
+	// раньше длительность считалась из устаревшего user.LockCount — при
+	// параллельных неверных попытках обе получали одинаковый (короткий) backoff.
+	LockAccountWithBackoff(ctx context.Context, userID uint) (int, error)
+
 	// ListByIDs возвращает пользователей по списку ID (A-M2, pass 34: для
 	// notify-чтений GameAdminService вместо raw s.db).
 	ListByIDs(ctx context.Context, ids []uint) ([]User, error)
@@ -495,6 +501,26 @@ func (r *gormUserRepo) AtomicLockAccount(ctx context.Context, userID uint, locke
 			    failed_login_attempts = 0
 			WHERE id = ?
 			RETURNING lock_count`, lockedUntil, userID).
+		Scan(&newCount).Error
+	if err != nil {
+		return 0, err
+	}
+	return newCount, nil
+}
+
+// LockAccountWithBackoff атомарно блокирует аккаунт, вычисляя длительность
+// блокировки ВНУТРИ SQL по фактическому (новому) lock_count
+// (DEEP-REVIEW MEDIUM #19, pass 46). Формула повторяет backoffDuration:
+// min(5 * 2^(lock_count-1), 1440) минут.
+func (r *gormUserRepo) LockAccountWithBackoff(ctx context.Context, userID uint) (int, error) {
+	var newCount int
+	err := r.db.WithContext(ctx).
+		Raw(`UPDATE users
+			SET lock_count = lock_count + 1,
+			    locked_until = now() + (LEAST(5 * POWER(2, lock_count), 1440) || ' minutes')::interval,
+			    failed_login_attempts = 0
+			WHERE id = ?
+			RETURNING lock_count`, userID).
 		Scan(&newCount).Error
 	if err != nil {
 		return 0, err

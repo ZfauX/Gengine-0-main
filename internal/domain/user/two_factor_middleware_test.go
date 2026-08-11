@@ -113,6 +113,10 @@ func (m *mockUserRepo) AtomicLockAccount(ctx context.Context, userID uint, locke
 	return 0, nil
 }
 
+func (m *mockUserRepo) LockAccountWithBackoff(ctx context.Context, userID uint) (int, error) {
+	return 0, nil
+}
+
 func (m *mockUserRepo) GetGamesView(ctx context.Context, userID uint) (string, error) {
 	return "table", nil
 }

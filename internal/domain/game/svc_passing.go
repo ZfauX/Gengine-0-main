@@ -90,6 +90,12 @@ func (s *GamePassingService) Apply(ctx context.Context, gameID, teamID, userID u
 		if game.IsDraft {
 			return errors.New("нельзя подать заявку на черновик")
 		}
+		// DEEP-REVIEW MEDIUM #17 (pass 46): подача заявки доступна только на
+		// опубликованную (public) игру. Раньше проверялся только IsDraft —
+		// на ограниченную/черновую игру можно было подать заявку.
+		if game.Visibility != "public" {
+			return errors.New("игра не опубликована")
+		}
 		// S6: Проверка дедлайна регистрации
 		if game.RegistrationDeadline != nil && game.RegistrationDeadline.Before(time.Now()) {
 			return ErrApplicationClosed
@@ -97,8 +103,12 @@ func (s *GamePassingService) Apply(ctx context.Context, gameID, teamID, userID u
 		if game.StartsAt != nil && game.StartsAt.Before(time.Now()) {
 			return errors.New("игра уже началась")
 		}
+		// DEEP-REVIEW MEDIUM #17 (pass 46): лимит команд учитывает и pending-заявки,
+		// иначе их можно было накопить бесконечно сверх MaxTeamNumber.
 		var acceptedCount int64
-		if err := tx.Model(&GamePassing{}).Where("game_id = ? AND status IN (?, ?)", gameID, StatusAccepted, StatusStarted).Count(&acceptedCount).Error; err != nil {
+		if err := tx.Model(&GamePassing{}).
+			Where("game_id = ? AND status IN (?, ?, ?)", gameID, StatusPending, StatusAccepted, StatusStarted).
+			Count(&acceptedCount).Error; err != nil {
 			return err
 		}
 		if int(acceptedCount) >= game.MaxTeamNumber {
