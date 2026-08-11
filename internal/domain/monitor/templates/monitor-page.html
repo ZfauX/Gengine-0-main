@@ -10,6 +10,16 @@
     </div>
 
     <div class="card">
+        <!-- IDEA-12: сводный прогресс прохождения игры (общий % по всем командам) -->
+        <div id="overall-progress" class="mb-5 hidden">
+            <div class="flex items-center justify-between mb-1.5">
+                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ T $.Lang "monitor.overall_progress" }}</span>
+                <span id="overall-progress-label" class="text-sm font-bold text-gray-800 dark:text-gray-100">0%</span>
+            </div>
+            <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+                <div id="overall-progress-bar" class="bg-blue-600 h-3 rounded-full transition-all duration-500" style="width:0%"></div>
+            </div>
+        </div>
         <div id="teams-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <!-- C1: skeleton-заглушка — видна до первого снапшота (данные приходят
                  по WebSocket/SSE, начальное состояние пустое) -->
@@ -54,6 +64,8 @@
         const wsUrl = `${wsProtocol}//${location.host}/games/${gameID}/monitor/ws`;
         let wsClient = null;
         let teamsData = [];
+        // IDEA-12: кэш карточек команд на уровне скрипта (diff-обновление + сводный прогресс).
+        let existingCards = {};
         const MAX_RECONNECT_ATTEMPTS = 5;
         const POLL_INTERVAL = 10000;
 
@@ -175,7 +187,7 @@
             // при новых снапшотах пересобираем только её содержимое. Это не
             // сбрасывает фокус/скролл и не повторяет fade-in на каждый тик.
             // C1: при первом реальном снапшоте убираем skeleton-заглушку.
-            const existing = {};
+            const existing = existingCards;
             teamsContainer.querySelectorAll('.monitor-team-card').forEach(c => { existing[c.dataset.teamId] = c; });
             const seen = new Set();
 
@@ -243,6 +255,38 @@
             Object.keys(existing).forEach(id => {
                 if (!seen.has(id)) existing[id].remove();
             });
+
+            updateOverallProgress();
+        }
+
+        // IDEA-12: сводный прогресс игры — средний % завершённых уровней по всем
+        // командам (+ финишировавшие). Рисует общий прогресс-бар сверху списка.
+        function updateOverallProgress() {
+            const wrap = document.getElementById('overall-progress');
+            if (!wrap) return;
+            const bar = document.getElementById('overall-progress-bar');
+            const label = document.getElementById('overall-progress-label');
+            const ids = Object.keys(existingCards);
+            if (!ids.length) { wrap.classList.add('hidden'); return; }
+
+            let sum = 0, finished = 0, levelsTotal = 0, levelsDone = 0;
+            ids.forEach(id => {
+                const teamObj = teamsData && teamsData.find ? teamsData.find(function(t) { return String(t.team_id) === id; }) : null;
+                const tl = teamObj ? (teamObj.total_levels || 0) : 0;
+                const cl = teamObj ? (teamObj.completed_levels || 0) : 0;
+                sum += tl > 0 ? (cl / tl * 100) : 0;
+                if (teamObj && teamObj.finished) finished++;
+                levelsTotal += tl;
+                levelsDone += cl;
+            });
+            const avg = ids.length ? sum / ids.length : 0;
+            const pct = Math.round(avg);
+            if (bar) bar.style.width = pct + '%';
+            if (label) {
+                label.textContent = pct + '% · ' + levelsDone + '/' + levelsTotal +
+                    (finished ? ' · 🏁 ' + finished : '');
+            }
+            wrap.classList.remove('hidden');
         }
 
         // Обработка уведомления о старте игры

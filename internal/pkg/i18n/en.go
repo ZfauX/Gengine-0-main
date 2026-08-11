@@ -1288,6 +1288,7 @@ var enMessages = map[string]string{
 	"monitor.disqualify":         "Disqualify",
 	"monitor.suspicious":         "⚠️ Suspicious activity",
 	"monitor.levels_count":       "%d/%d",
+	"monitor.overall_progress":   "Overall game progress",
 	"monitor.current_level":      "#%d",
 	"monitor.disqualify_confirm": "Disqualify team? The captain will receive an email notification.",
 	"monitor.game_started":       "started the game!",

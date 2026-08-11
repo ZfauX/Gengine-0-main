@@ -1290,6 +1290,7 @@ var ruMessages = map[string]string{
 	"monitor.disqualify":         "Дисквалифицировать",
 	"monitor.suspicious":         "⚠️ Подозрительная активность",
 	"monitor.levels_count":       "%d/%d",
+	"monitor.overall_progress":   "Общий прогресс игры",
 	"monitor.current_level":      "#%d",
 	"monitor.disqualify_confirm": "Дисквалифицировать команду? Капитан получит уведомление по email.",
 	"monitor.game_started":       "начала игру!",
