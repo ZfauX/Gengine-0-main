@@ -96,9 +96,9 @@
 - **Файл**: `internal/pkg/middleware/auth.go:34-49, 95-99` + `internal/domain/game/svc_coauthor.go:56-74`.
 - **Фикс**: ✅ новый `internal/pkg/rolecache` — единый кэш (TTL 5с), общий для middleware и CoAuthorService (DI через `WithRoleCache`), одна инвалидация; 6 юнит-тестов.
 
-### M10. Платёж без min-порога, float64-арифметика
+### M10. Платёж без min-порога, float64-арифметика ✅ ИСПРАВЛЕНО
 - **Файл**: `internal/domain/payment/handler.go:65-73, service.go:321-338`.
-- **Фикс**: деньги в копейках (int64), min/max-пороги, привязка к товару.
+- **Фикс**: ✅ `Payment.AmountKopecks` int64 (миграция 000063 + backfill); `verifyRemoteAmount` — точное сравнение копеек («0.29» ≠ 28 копеек); хелперы kopecks↔строки; пороги 50-100000 ₽; UI через `AmountRubles`; тесты.
 
 ### M11. `GetGameplayData` тянет полный граф уровня с правильными кодами 🔍 ✅ ИСПРАВЛЕНО (+регрессия)
 - **Файл**: `internal/domain/game/svc_play.go:795` → `repository.go:502-516` (Preload `Level.Questions.Answers`).
@@ -203,7 +203,7 @@
 
 ## 📊 Приоритеты исправления
 
-> **Статус: закрыто 14 из 17 HIGH/MEDIUM пунктов + P5.** Остались M10 (деньги в копейках), L-пункты, оптимизации P1-P4, P6-P18.
+> **Статус: закрыто 15 из 17 HIGH/MEDIUM пунктов + P5.** Остались L-пункты, оптимизации P1-P4, P6-P18.
 
 1. ✅ **H1 (logout refresh revoke)** + **H5 (reuse detection)** — безопасность сессий (H1 фикс; H5 reuse уже был в RefreshAccessToken).
 2. ✅ **H2 (SSE TOCTOU)** — атомарный Acquire в RegisterSession.
@@ -215,7 +215,8 @@
 8. ✅ **M5 (LevelService.Update partial)** — целостность графа уровней.
 9. ✅ **M2 (WebAuthn сессии)**, **M6 (sentinel voting)**, **M8 (ExtendTTL)**, **M12 (InitFirstLevel)**.
 10. ✅ **M7** (турнир продолжает при сбое одного), **M9** (единый rolecache), **P5** (кэш прав чата).
-11. ⏳ **M10** (деньги в копейках), **P1** (границы транзакции SubmitCode), **P3** (UpdateProfile Count), **P4** (unread-счётчик в WS), **P6** (ON CONFLICT для комнат).
+11. ✅ **M10** (деньги в копейках — int64, точная верификация, пороги).
+12. ⏳ **P1** (границы транзакции SubmitCode), **P3** (UpdateProfile Count), **P4** (unread-счётчик в WS), **P6** (ON CONFLICT для комнат), L-пункты.
 
 ---
 
