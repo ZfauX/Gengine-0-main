@@ -179,17 +179,18 @@
 
 ## 📊 Приоритеты исправления
 
-1. ✅ **H1** — вебхук ЮKassa (регрессия платежей!) — сделать Basic опциональным.
-2. ✅ **H2** — pprof на loopback.
-3. **H3** — requireModerate в ExportResultsExcel.
-4. **H4** — маршрут капитана (убрать gameManager).
-5. **H5** — фоновый CreateBackup + random-суффикс.
-6. **M1** — strip `'` при импорте CSV.
-7. **M3** — NaN/Inf + rate-limit на payments/create.
-8. **M4** — санитизация комнат.
-9. **M7** — WithoutCancel для unread.
-10. **M8** — sweep permCache.
-11. **M10** — капитан в голосовании.
+1. ✅ **H1** — вебхук ЮKassa (регрессия платежей!) — Basic сделан опциональным (IP+API-подтверждение).
+2. ✅ **H2** — pprof на loopback (PPROF_BIND).
+3. ✅ **H3** — requireModerate в ExportResultsExcel.
+4. ✅ **H4** — маршрут капитана (убрать gameManager).
+5. ✅ **H5** — фоновый CreateBackup + random-суффикс + backupMu.
+6. ✅ **M1** — strip `'` при импорте CSV.
+7. ✅ **M3** — NaN/Inf + reject на payments/create.
+8. ✅ **M4** — санитизация комнат.
+9. ✅ **M7** — WithoutCancel для unread.
+10. ✅ **M8** — sweep permCache.
+11. ✅ **M10** — капитан в голосовании.
+12. ⏳ **M2** (лимиты импорта CSV), **M5** (личный чат — дизайн), **M9** (ics cache host), **M11** (кэш статистики профиля), L-пункты, P3-P10.
 
 ---
 
