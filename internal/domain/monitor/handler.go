@@ -299,10 +299,10 @@ func (h *MonitorHandler) setupChatPresence() {
 		count := h.hub.RoomClientCount(roomID)
 		userIDs := h.hub.RoomUserIDs(roomID)
 		payload, err := json.Marshal(gin.H{
-			"type":      "presence",
-			"count":     count,
-			"user_ids":  userIDs,
-			"room_id":   roomID,
+			"type":     "presence",
+			"count":    count,
+			"user_ids": userIDs,
+			"room_id":  roomID,
 		})
 		if err != nil {
 			return

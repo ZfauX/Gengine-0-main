@@ -54,7 +54,7 @@ func NewClient(conn *websocket.Conn, roomID, remoteIP string) *Client {
 	}
 }
 
-// WithUserID задаёт userID клиента (IDEA-6, presence-индикатор онлайн).
+// NewClientWithUser создаёт клиента с userID (IDEA-6, presence-онлайн-индикатор).
 func NewClientWithUser(conn *websocket.Conn, roomID, remoteIP string, userID uint) *Client {
 	c := NewClient(conn, roomID, remoteIP)
 	c.UserID = userID

@@ -164,6 +164,11 @@ func (m *mockGameRepo) CountPublished(ctx context.Context) (int64, error) {
 	return args.Get(0).(int64), args.Error(1)
 }
 
+func (m *mockGameRepo) CountGamesByAuthor(ctx context.Context, authorID uint) (int64, error) {
+	args := m.Called(ctx, authorID)
+	return args.Get(0).(int64), args.Error(1)
+}
+
 func (m *mockGameRepo) AdminListGames(ctx context.Context, query, status string, offset, limit int) ([]game.Game, int64, error) {
 	args := m.Called(ctx, query, status, offset, limit)
 	if args.Get(0) == nil {
