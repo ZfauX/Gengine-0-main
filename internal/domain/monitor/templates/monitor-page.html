@@ -346,15 +346,55 @@
         var mapLayer = null;
         var isLeafletReady = typeof L !== 'undefined';
 
+        // IDEA-9: тёмная карта — CartoDB dark_all при dark-теме (согласованность
+        // с интерфейсом), стандартные OSM-тайлы — в светлой.
+        function isDarkTheme() {
+            return document.documentElement.classList.contains('dark');
+        }
+
+        function mapTileURL() {
+            if (isDarkTheme()) {
+                return 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+            }
+            return 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+        }
+
+        function mapAttribution() {
+            return isDarkTheme() ? '© OpenStreetMap © CARTO' : '© OpenStreetMap';
+        }
+
+        function replaceMapLayer() {
+            if (!driverMap) return;
+            if (mapLayer) {
+                driverMap.removeLayer(mapLayer);
+                mapLayer = null;
+            }
+            mapLayer = L.tileLayer(mapTileURL(), {
+                maxZoom: 19,
+                subdomains: 'abcd',
+                attribution: mapAttribution()
+            });
+            mapLayer.addTo(driverMap);
+        }
+
         function initDriverMap() {
             if (!isLeafletReady || !document.getElementById('driver-map')) return;
             if (driverMap) return;
             driverMap = L.map('driver-map').setView([55.7558, 37.6173], 10);
-            mapLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 19,
-                attribution: '© OpenStreetMap'
+            replaceMapLayer();
+        }
+
+        // При переключении темы (в т.ч. автосмене) перерисовываем подложку.
+        if (typeof window.addEventListener === 'function') {
+            // themeToggle и themeToggleMobile — оба меняют класс на <html>.
+            ['themeToggle', 'themeToggleMobile'].forEach(function(id) {
+                var btn = document.getElementById(id);
+                if (btn) {
+                    btn.addEventListener('click', function() {
+                        setTimeout(replaceMapLayer, 50);
+                    });
+                }
             });
-            mapLayer.addTo(driverMap);
         }
 
         function loadLocations() {
