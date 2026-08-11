@@ -135,7 +135,11 @@ func (h *GameHandler) List(c *gin.Context) {
 		DateTo:   c.Query("date_to"),
 		ViewerID: userID,
 	}
-	if authorIDStr := c.Query("author_id"); authorIDStr != "" {
+	// IDEA-10: «Мои игры» — author_id выставляется в текущего пользователя.
+	if c.Query("mine") == "1" && userID != 0 {
+		uid := userID
+		filter.AuthorID = &uid
+	} else if authorIDStr := c.Query("author_id"); authorIDStr != "" {
 		if id, idParseErr := strconv.Atoi(authorIDStr); idParseErr == nil {
 			uid := uint(id)
 			filter.AuthorID = &uid
@@ -156,6 +160,7 @@ func (h *GameHandler) List(c *gin.Context) {
 		"Games":         games,
 		"CurrentUserID": userID,
 		"Filter":        filter,
+		"FilterMine":    c.Query("mine") == "1",
 		"Page":          page,
 		"PerPage":       perPage,
 		"TotalPages":    totalPages,

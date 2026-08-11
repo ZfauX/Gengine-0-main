@@ -37,6 +37,17 @@
             <input type="date" name="date_to" id="date_to" value="{{.Filter.DateTo}}"
                    class="w-full rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
         </div>
+        {{if .CurrentUserID}}
+        <div class="flex-1 min-w-[140px] flex items-end">
+            <!-- IDEA-10: фильтр «только мои игры» -->
+            <label class="inline-flex items-center gap-2 cursor-pointer pb-2 select-none">
+                <input type="checkbox" name="mine" value="1" id="filter-mine"
+                       class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                       {{if .FilterMine}}checked{{end}}>
+                <span class="text-sm text-gray-700 dark:text-gray-300">{{ T $.Lang "games.filter_mine" }}</span>
+            </label>
+        </div>
+        {{end}}
         <div class="flex gap-2 items-center">
             <button type="submit" class="btn btn-primary text-sm">{{ T $.Lang "games.filter_submit" }}</button>
             <a href="/games" class="btn btn-outline text-sm">{{ T $.Lang "games.filter_reset" }}</a>
@@ -162,12 +173,13 @@
     <!-- Пагинация -->
     {{if gt .TotalPages 1}}
     <div class="flex items-center justify-between mt-6">
+        {{$mine := ""}}{{if .FilterMine}}{{$mine = "&mine=1"}}{{end}}
         <div class="flex-1 flex justify-between sm:hidden">
             {{if gt .Page 1}}
-                <a href="?page={{.PrevPage}}&status={{$.Filter.Status}}&search={{$.Filter.Search | urlquery}}&date_from={{$.Filter.DateFrom | urlquery}}&date_to={{$.Filter.DateTo | urlquery}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_prev" }}</a>
+                <a href="?page={{.PrevPage}}&status={{$.Filter.Status}}&search={{$.Filter.Search | urlquery}}&date_from={{$.Filter.DateFrom | urlquery}}&date_to={{$.Filter.DateTo | urlquery}}{{$mine}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_prev" }}</a>
             {{end}}
             {{if lt .Page .TotalPages}}
-                <a href="?page={{.NextPage}}&status={{$.Filter.Status}}&search={{$.Filter.Search | urlquery}}&date_from={{$.Filter.DateFrom | urlquery}}&date_to={{$.Filter.DateTo | urlquery}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_next" }}</a>
+                <a href="?page={{.NextPage}}&status={{$.Filter.Status}}&search={{$.Filter.Search | urlquery}}&date_from={{$.Filter.DateFrom | urlquery}}&date_to={{$.Filter.DateTo | urlquery}}{{$mine}}" class="btn btn-outline text-sm">{{ T $.Lang "games.pagination_next" }}</a>
             {{end}}
         </div>
         <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
@@ -177,11 +189,11 @@
             </p>
             <nav class="inline-flex gap-1" aria-label='{{ T $.Lang "common.pagination" }}'>
                 {{if gt .Page 1}}
-                    <a href="?page={{.PrevPage}}&status={{$.Filter.Status}}&search={{$.Filter.Search | urlquery}}&date_from={{$.Filter.DateFrom | urlquery}}&date_to={{$.Filter.DateTo | urlquery}}" class="btn btn-outline text-sm px-3 py-1" aria-label="{{ T $.Lang "games.pagination_prev" }}">←</a>
+                    <a href="?page={{.PrevPage}}&status={{$.Filter.Status}}&search={{$.Filter.Search | urlquery}}&date_from={{$.Filter.DateFrom | urlquery}}&date_to={{$.Filter.DateTo | urlquery}}{{$mine}}" class="btn btn-outline text-sm px-3 py-1" aria-label="{{ T $.Lang "games.pagination_prev" }}">←</a>
                 {{end}}
                 <span class="px-3 py-1 text-sm text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded-md">{{.Page}}</span>
                 {{if lt .Page .TotalPages}}
-                    <a href="?page={{.NextPage}}&status={{$.Filter.Status}}&search={{$.Filter.Search | urlquery}}&date_from={{$.Filter.DateFrom | urlquery}}&date_to={{$.Filter.DateTo | urlquery}}" class="btn btn-outline text-sm px-3 py-1" aria-label="{{ T $.Lang "games.pagination_next" }}">→</a>
+                    <a href="?page={{.NextPage}}&status={{$.Filter.Status}}&search={{$.Filter.Search | urlquery}}&date_from={{$.Filter.DateFrom | urlquery}}&date_to={{$.Filter.DateTo | urlquery}}{{$mine}}" class="btn btn-outline text-sm px-3 py-1" aria-label="{{ T $.Lang "games.pagination_next" }}">→</a>
                 {{end}}
             </nav>
         </div>

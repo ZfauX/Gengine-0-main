@@ -747,6 +747,7 @@ var ruMessages = map[string]string{
 	"games.filter_published":          "Опубликованные",
 	"games.filter_date_from":          "Дата начала (с)",
 	"games.filter_date_to":            "Дата начала (по)",
+	"games.filter_mine":               "Мои игры",
 	"games.filter_search_placeholder": "Поиск по названию",
 	"games.filter_submit":             "Найти",
 	"games.filter_reset":              "Сбросить",

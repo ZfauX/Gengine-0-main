@@ -726,6 +726,7 @@ var enMessages = map[string]string{
 	"games.filter_published":          "Published",
 	"games.filter_date_from":          "Start date (from)",
 	"games.filter_date_to":            "Start date (to)",
+	"games.filter_mine":               "My games",
 	"games.filter_search_placeholder": "Search by name",
 	"games.filter_submit":             "Search",
 	"games.filter_reset":              "Reset",
