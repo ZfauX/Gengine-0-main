@@ -468,7 +468,9 @@ func (s *ExportService) ExportStatisticsToPDF(ctx context.Context, gameID uint, 
 
 		for _, lp := range p.Progresses {
 			levelTime := ""
-			if lp.FinishedAt != nil {
+			// L4 (PASS-4): guard на нулевой StartedAt — иначе FinishedAt.Sub(zero)
+			// даёт ~17000 лет (0001-01-01) в отчёте.
+			if lp.FinishedAt != nil && !lp.StartedAt.IsZero() {
 				d := lp.FinishedAt.Sub(lp.StartedAt)
 				levelTime = util.FormatDuration(d)
 			}

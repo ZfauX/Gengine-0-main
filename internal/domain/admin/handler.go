@@ -445,11 +445,17 @@ func (h *AdminHandler) DeleteUser(c *gin.Context) {
 
 	// Удалённый пользователь не должен сохранять валидные refresh-токены (T-M1):
 	// иначе украденный токен продолжает работать до истечения.
-	if err := h.refreshTokenRepo.RevokeAllForUser(c.Request.Context(), req.ID); err != nil {
-		log.Error().Err(err).Uint("user_id", req.ID).Msg("DeleteUser: failed to revoke refresh tokens")
+	// L1 (PASS-4): nil-проверка (в ToggleAdmin она есть).
+	if h.refreshTokenRepo != nil {
+		if err := h.refreshTokenRepo.RevokeAllForUser(c.Request.Context(), req.ID); err != nil {
+			log.Error().Err(err).Uint("user_id", req.ID).Msg("DeleteUser: failed to revoke refresh tokens")
+		}
 	}
 
-	h.auditService.Log(adminID, "delete_user", "user", req.ID, "")
+	// L2 (PASS-4): nil-проверка auditService.
+	if h.auditService != nil {
+		h.auditService.Log(adminID, "delete_user", "user", req.ID, "")
+	}
 	c.Redirect(http.StatusFound, "/admin/users")
 }
 

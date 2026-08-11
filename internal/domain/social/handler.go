@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
+	"gorm.io/gorm"
 )
 
 // ---------- Входные структуры для валидации ----------
@@ -67,8 +68,16 @@ func (h *FollowHandler) Follow(c *gin.Context) {
 	}
 
 	if _, err := h.userService.GetByID(c.Request.Context(), req.ID); err != nil {
-		appErr := apperrors.NotFound("пользователь не найден")
-		c.AbortWithStatusJSON(appErr.HTTPStatus, appErr)
+		// L8 (PASS-4): не маскировать 5xx под 404 — только реальный
+		// not-found получает 404, внутренние ошибки — 500.
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			appErr := apperrors.NotFound("пользователь не найден")
+			c.AbortWithStatusJSON(appErr.HTTPStatus, appErr)
+			return
+		}
+		log.Error().Err(err).Uint("user_id", req.ID).Msg("Follow: failed to load target user")
+		appErr := apperrors.Wrap(err, "Follow: failed to load target user")
+		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
 		return
 	}
 

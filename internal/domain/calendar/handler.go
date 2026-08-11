@@ -15,6 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/singleflight"
 )
 
 const defaultEventDuration = 2 * time.Hour
@@ -33,6 +34,10 @@ type CalendarHandler struct {
 	// опрашивается; данные меняются редко (при публикации/удалении игры).
 	cacheMu sync.Mutex
 	cache   map[string]calendarCacheEntry
+
+	// sfGroup (DEEP-REVIEW PASS-4 P3): singleflight для месяцев — при промахе
+	// кэша все параллельные запросы не бьют в БД одновременно (cache stampede).
+	sfGroup singleflight.Group
 }
 
 type calendarCacheEntry struct {
@@ -116,10 +121,24 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 	h.cacheMu.Unlock()
 
 	ctx := c.Request.Context()
-	games, err := h.gameRepo.ListByDateRange(ctx, startOfMonth, endOfMonth)
-	if err != nil {
-		log.Error().Err(err).Int("year", req.Year).Int("month", req.Month).Msg("CalendarData: failed to list games")
-		appErr := apperrors.Wrap(err, "CalendarHandler")
+	// P3 (PASS-4): singleflight — при кэш-промахе один запрос к БД, остальные ждут.
+	sfKey := "month:" + cacheKey
+	gamesVal, sfErr, _ := h.sfGroup.Do(sfKey, func() (any, error) {
+		return h.gameRepo.ListByDateRange(ctx, startOfMonth, endOfMonth)
+	})
+	if sfErr != nil {
+		log.Error().Err(sfErr).Int("year", req.Year).Int("month", req.Month).Msg("CalendarData: failed to list games")
+		appErr := apperrors.Wrap(sfErr, "CalendarHandler")
+		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
+			"error": appErr.Message,
+			"code":  appErr.Code,
+		})
+		return
+	}
+	games, ok := gamesVal.([]game.Game)
+	if !ok {
+		log.Error().Msg("CalendarData: unexpected singleflight result type")
+		appErr := apperrors.Wrap(fmt.Errorf("неожиданный тип результата"), "CalendarHandler")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,

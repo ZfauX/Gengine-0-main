@@ -524,8 +524,13 @@ func (h *ExportHandler) ExportTeamResultsCSV(c *gin.Context) {
 
 	// L-1 (pass 37): соавтор (manager) тоже может экспортировать результаты —
 	// раньше только капитан или автор (isAuthor по AuthorID).
+	// L9 (PASS-4): ошибка проверки прав — 500, а не молчаливый 403.
 	isManager := false
-	if mgr, mgrErr := h.gameService.IsUserManager(c.Request.Context(), gameID, userID); mgrErr == nil && mgr {
+	if mgr, mgrErr := h.gameService.IsUserManager(c.Request.Context(), gameID, userID); mgrErr != nil {
+		log.Error().Err(mgrErr).Uint("game_id", gameID).Uint("user_id", userID).Msg("ExportTeamResultsCSV: manager check failed")
+		render.RenderErrorPage(c, http.StatusInternalServerError)
+		return
+	} else if mgr {
 		isManager = true
 	}
 
