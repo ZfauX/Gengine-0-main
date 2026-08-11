@@ -116,6 +116,30 @@ func (m *SSEManager) CanAccept(ip string) bool {
 	return true
 }
 
+// Acquire (DEEP-REVIEW PASS-3 H2): атомарно проверяет лимиты и инкрементирует
+// счётчики под одним lock. Раньше CanAccept и RegisterSession были раздельными —
+// два конкурентных SSE-подключения могли оба пройти CanAccept и превысить
+// лимиты (тот же TOCTOU, что исправлен в RoomHub через Acquire).
+// Возвращает false, если лимит превышен или менеджер остановлен.
+func (m *SSEManager) Acquire(ip string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.stopped {
+		return false
+	}
+	if m.maxTotalConns > 0 && m.totalConns >= m.maxTotalConns {
+		log.Warn().Int("total", m.totalConns).Int("limit", m.maxTotalConns).Msg("SSE: total connections limit reached")
+		return false
+	}
+	if m.maxConnsPerIP > 0 && m.connsPerIP[ip] >= m.maxConnsPerIP {
+		log.Warn().Str("ip", ip).Int("count", m.connsPerIP[ip]).Int("limit", m.maxConnsPerIP).Msg("SSE: per-IP limit reached")
+		return false
+	}
+	m.totalConns++
+	m.connsPerIP[ip]++
+	return true
+}
+
 // Stop останавливает менеджер и закрывает все сессии.
 func (m *SSEManager) Stop() {
 	m.stopOnce.Do(func() {
@@ -147,7 +171,9 @@ func toJSON(v any) string {
 	return string(data)
 }
 
-// RegisterSession добавляет новое SSE-подключение для игры
+// RegisterSession добавляет новое SSE-подключение для игры.
+// Возвращает nil, если менеджер остановлен или лимит соединений превышен
+// (DEEP-REVIEW PASS-3 H2 — лимиты проверяются атомарно внутри).
 func (m *SSEManager) RegisterSession(gameID uint, ip string, w http.ResponseWriter, flush http.Flusher) *SSESession {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -155,6 +181,13 @@ func (m *SSEManager) RegisterSession(gameID uint, ip string, w http.ResponseWrit
 	// DEEP-REVIEW (pass 46): после Stop() новые сессии не регистрируем —
 	// иначе writeLoop-горутина не попадёт под wg.Wait() (нарушение контракта).
 	if m.stopped {
+		return nil
+	}
+
+	// DEEP-REVIEW PASS-3 H2: атомарная проверка лимитов ВНУТРИ регистрации.
+	// Раньше проверка была в CanAccept (отдельный lock) — два конкурентных
+	// подключения могли оба пройти её и превысить лимиты.
+	if !m.acquireNoLock(ip) {
 		return nil
 	}
 
@@ -173,10 +206,26 @@ func (m *SSEManager) RegisterSession(gameID uint, ip string, w http.ResponseWrit
 		m.gameMap = make(map[*SSESession]uint)
 	}
 	m.gameMap[session] = gameID
-	m.totalConns++
-	m.connsPerIP[ip]++
 	metrics.IncSSEConnection() // P-2 (pass 48)
 	return session
+}
+
+// acquireNoLock инкрементирует счётчики соединений. Вызывается ТОЛЬКО под
+// m.mu (из RegisterSession) — проверка лимитов происходит в Acquire и здесь
+// не дублируется (H2). Если бы Acquire был уже вызван до апгрейда, двойного
+// инкремента не будет, т.к. sseConnect теперь полагается только на этот путь.
+func (m *SSEManager) acquireNoLock(ip string) bool {
+	if m.maxTotalConns > 0 && m.totalConns >= m.maxTotalConns {
+		log.Warn().Int("total", m.totalConns).Int("limit", m.maxTotalConns).Msg("SSE: total connections limit reached")
+		return false
+	}
+	if m.maxConnsPerIP > 0 && m.connsPerIP[ip] >= m.maxConnsPerIP {
+		log.Warn().Str("ip", ip).Int("count", m.connsPerIP[ip]).Int("limit", m.maxConnsPerIP).Msg("SSE: per-IP limit reached")
+		return false
+	}
+	m.totalConns++
+	m.connsPerIP[ip]++
+	return true
 }
 
 // writeLoop пишет события из канала в SSE-соединение (P-M2).
@@ -338,6 +387,10 @@ func sseConnect(mgr *SSEManager, c *gin.Context, gameID uint) {
 		return
 	}
 
+	// DEEP-REVIEW PASS-3 H2: атомарная проверка лимитов + инкремент под одним
+	// lock (раньше CanAccept и RegisterSession были раздельными — TOCTOU).
+	// CanAccept оставляем только как ранний reject до апгрейда (не инкрементирует),
+	// финальную проверку делает RegisterSession под m.mu.
 	if !mgr.CanAccept(c.ClientIP()) {
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": "слишком много SSE-соединений"})
 		return
@@ -355,6 +408,13 @@ func sseConnect(mgr *SSEManager, c *gin.Context, gameID uint) {
 	c.Abort()
 
 	session := mgr.RegisterSession(gameID, c.ClientIP(), w, flusher)
+	if session == nil {
+		// Лимит превышен или менеджер остановлен — соединение не зарегистрировано.
+		// После апгрейда заголовков вернуть JSON нельзя (chunked уже начат),
+		// просто закрываем соединение.
+		log.Warn().Str("ip", c.ClientIP()).Msg("SSE: connection rejected (limit/stopped)")
+		return
+	}
 	defer mgr.UnregisterSession(session)
 
 	// Соединение закрывается по session.done (при отключении клиента) или

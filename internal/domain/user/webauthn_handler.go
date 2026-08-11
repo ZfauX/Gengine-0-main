@@ -468,7 +468,7 @@ func (h *WebAuthnHandler) FinishLogin(c *gin.Context) {
 	deviceID := c.GetHeader("X-Device-ID")
 	refreshToken, err := h.authSvc.GenerateRefreshToken(c.Request.Context(), *waUserTyped.user, deviceID, clientFingerprint(c))
 	if err == nil {
-		setSecureCookie(c, "refresh_token", refreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/auth/refresh")
+		setSecureCookie(c, "refresh_token", refreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/")
 	} else {
 		log.Error().Err(err).Msg("FinishLogin: failed to generate refresh token")
 	}

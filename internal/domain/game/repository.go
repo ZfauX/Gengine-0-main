@@ -217,11 +217,17 @@ func (r *gormGameRepo) ListUpcomingByDays(ctx context.Context, days int) ([]Game
 }
 
 func (r *gormGameRepo) GetPassingByUser(ctx context.Context, gameID, userID uint) (*GamePassing, error) {
+	// DEEP-REVIEW PASS-3 H3: капитан может НЕ быть в team_members (helpers.go:
+	// «капитан может не быть в team_members» — CheckTeamMembership это учитывает).
+	// Раньше JOIN team_members находил только участников; капитан команды не
+	// получал командные комнаты, хотя canJoinRoom ему их разрешал. Также
+	// добавлен StatusTesting (тестирующий модератор).
 	var passing GamePassing
 	err := r.db.WithContext(ctx).
-		Joins("JOIN team_members ON team_members.team_id = game_passings.team_id").
-		Where("game_passings.game_id = ? AND game_passings.status IN (?,?) AND team_members.user_id = ?",
-			gameID, StatusAccepted, StatusStarted, userID).
+		Joins("JOIN teams ON teams.id = game_passings.team_id").
+		Joins("LEFT JOIN team_members ON team_members.team_id = teams.id").
+		Where("game_passings.game_id = ? AND game_passings.status IN (?,?,?) AND (team_members.user_id = ? OR teams.captain_id = ?)",
+			gameID, StatusAccepted, StatusStarted, StatusTesting, userID, userID).
 		Order("game_passings.id ASC").
 		First(&passing).Error
 	if err != nil {

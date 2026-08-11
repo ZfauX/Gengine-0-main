@@ -162,7 +162,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		deviceID := c.GetHeader("X-Device-ID")
 		refreshToken, err := h.authSvc.GenerateRefreshToken(c.Request.Context(), *user, deviceID, clientFingerprint(c))
 		if err == nil {
-			setSecureCookie(c, "refresh_token", refreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/auth/refresh")
+			setSecureCookie(c, "refresh_token", refreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/")
 		} else {
 			log.Error().Err(err).Msg("Login: failed to generate refresh token")
 		}
@@ -293,7 +293,7 @@ func (h *AuthHandler) TwoFALoginVerify(c *gin.Context) {
 	deviceID := c.GetHeader("X-Device-ID")
 	refreshToken, err := h.authSvc.GenerateRefreshToken(c.Request.Context(), *user, deviceID, clientFingerprint(c))
 	if err == nil {
-		setSecureCookie(c, "refresh_token", refreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/auth/refresh")
+		setSecureCookie(c, "refresh_token", refreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/")
 	} else {
 		log.Error().Err(err).Uint("user_id", user.ID).Msg("TwoFALoginVerify: failed to generate refresh token")
 	}
@@ -347,7 +347,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	}
 
 	setSecureCookie(c, "jwt", accessToken, int(h.cfg.JWT.AccessExpiry.Seconds()), "/")
-	setSecureCookie(c, "refresh_token", newRefreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/auth/refresh")
+	setSecureCookie(c, "refresh_token", newRefreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/")
 
 	c.JSON(http.StatusOK, gin.H{
 		"access_token": accessToken,
@@ -374,7 +374,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		}
 	}
 	setSecureCookie(c, "jwt", "", -1, "/")
-	setSecureCookie(c, "refresh_token", "", -1, "/auth/refresh")
+	setSecureCookie(c, "refresh_token", "", -1, "/")
 	clear2FASessionFlag(c)
 	c.Redirect(http.StatusFound, "/")
 }
@@ -403,7 +403,7 @@ func (h *AuthHandler) LogoutAll(c *gin.Context) {
 		h.authSvc.RevokeJWT(c.Request.Context(), jwtCookie)
 	}
 	setSecureCookie(c, "jwt", "", -1, "/")
-	setSecureCookie(c, "refresh_token", "", -1, "/auth/refresh")
+	setSecureCookie(c, "refresh_token", "", -1, "/")
 	clear2FASessionFlag(c)
 	c.Redirect(http.StatusFound, "/")
 }
@@ -686,7 +686,7 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 		}
 		// Clear JWT cookie after password reset to force re-login
 		setSecureCookie(c, "jwt", "", -1, "/")
-		setSecureCookie(c, "refresh_token", "", -1, "/auth/refresh")
+		setSecureCookie(c, "refresh_token", "", -1, "/")
 	}
 
 	if userID != 0 {
@@ -899,7 +899,7 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 	deviceID := c.GetHeader("X-Device-ID")
 	refreshToken, err := h.authSvc.GenerateRefreshToken(c.Request.Context(), *user, deviceID, clientFingerprint(c))
 	if err == nil {
-		setSecureCookie(c, "refresh_token", refreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/auth/refresh")
+		setSecureCookie(c, "refresh_token", refreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/")
 	} else {
 		log.Error().Err(err).Msg("OAuthCallback: failed to generate refresh token")
 	}

@@ -417,7 +417,7 @@ func (h *ProfileHandler) ChangePassword(c *gin.Context) {
 		h.authSvc.RevokeJWT(c.Request.Context(), jwtCookie)
 	}
 	setSecureCookie(c, "jwt", "", -1, "/")
-	setSecureCookie(c, "refresh_token", "", -1, "/auth/refresh")
+	setSecureCookie(c, "refresh_token", "", -1, "/")
 
 	c.Redirect(http.StatusFound, "/profile")
 }
