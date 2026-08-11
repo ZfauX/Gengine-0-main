@@ -83,18 +83,18 @@
 - **Проблема**: `switch err.Error()` вместо `errors.Is` — хрупко.
 - **Фикс**: ✅ sentinel `ErrVotingAlreadyActive`/`ErrVotingAlreadyHeld`; StartVoting и Vote через `errors.Is`.
 
-### M7. Турнир: сбой одного турнира прерывает начисление остальным
+### M7. Турнир: сбой одного турнира прерывает начисление остальным ✅ ИСПРАВЛЕНО
 - **Файл**: `internal/domain/tournament/service.go:387-395`.
-- **Фикс**: логировать и продолжать; инвалидировать кэш всех загруженных.
+- **Фикс**: ✅ логировать и пропустить сбойный турнир; продолжать с остальными; guard «нет турниров».
 
 ### M8. `Cache.ExtendTTL(key, 0)` мгновенно протухает бессрочный ключ 🔍 ✅ ИСПРАВЛЕНО
 - **Файл**: `internal/pkg/cache/cache.go:366-376`.
 - **Проблема**: `ttl==0` в Set = «бессрочно», а в ExtendTTL = «протухло сейчас». В проде ExtendTTL не вызывается (только тесты), но семантика непоследовательна.
 - **Фикс**: ✅ `ttl==0` → «без истечения» (согласовано с Set), тест `TestCache_ExtendTTL_ZeroIsForever`.
 
-### M9. Роль кэшируется в двух местах с разными TTL (5с/15с) и раздельной инвалидацией
+### M9. Роль кэшируется в двух местах с разными TTL (5с/15с) и раздельной инвалидацией ✅ ИСПРАВЛЕНО
 - **Файл**: `internal/pkg/middleware/auth.go:34-49, 95-99` + `internal/domain/game/svc_coauthor.go:56-74`.
-- **Фикс**: единый role-provider или общий InvalidateRoleCache.
+- **Фикс**: ✅ новый `internal/pkg/rolecache` — единый кэш (TTL 5с), общий для middleware и CoAuthorService (DI через `WithRoleCache`), одна инвалидация; 6 юнит-тестов.
 
 ### M10. Платёж без min-порога, float64-арифметика
 - **Файл**: `internal/domain/payment/handler.go:65-73, service.go:321-338`.
@@ -140,7 +140,7 @@
 | P2 | `game/repository.go:502-516` | Light-граф уровня для геймплея (без Answers.Code) — см. M11. | Низкий. |
 | P3 | `profile_repository.go:64-92` | UpdateProfile: убрать `Count(email)` — достаточно обработки 23505 (unique violation). 3 запроса → 1. | Низкий. |
 | P4 | `notification/service.go:404-424` | Передавать инкрементированный unread-счётчик в WS-payload вместо `getUnreadCount` на каждое уведомление. | Низкий. |
-| P5 | `monitor/repository.go:319-352` | Кэшировать `CanSendMessage` на 5-10с (chat:perm:room:user) — убрать 2-3 запроса на каждое WS-сообщение. | Низкий (задержка прав до TTL). |
+| P5 | `monitor/repository.go:319-352` | ✅ Кэш `CanSendMessage` на 5с (chat:perm:room:user) — убраны 2-3 запроса на каждое WS-сообщение; инвалидация при AddRoomMember. | Низкий (задержка прав до TTL). |
 | P6 | `monitor/repository.go:64-186` | GetOrCreate*Room через `INSERT ... ON CONFLICT DO NOTHING RETURNING id` (нужен уникальный индекс). | Средний (DDL). |
 
 ### MEDIUM
@@ -203,7 +203,7 @@
 
 ## 📊 Приоритеты исправления
 
-> **Статус: закрыто 12 из 17 HIGH/MEDIUM пунктов.** Остались M7 (турнир), M9 (role-cache), M10 (деньги в копейках), L-пункты, оптимизации P1-P18.
+> **Статус: закрыто 14 из 17 HIGH/MEDIUM пунктов + P5.** Остались M10 (деньги в копейках), L-пункты, оптимизации P1-P4, P6-P18.
 
 1. ✅ **H1 (logout refresh revoke)** + **H5 (reuse detection)** — безопасность сессий (H1 фикс; H5 reuse уже был в RefreshAccessToken).
 2. ✅ **H2 (SSE TOCTOU)** — атомарный Acquire в RegisterSession.
@@ -214,7 +214,8 @@
 7. ✅ **H4 (onGameFinished в фон)** — латентность + устойчивость (30s timeout).
 8. ✅ **M5 (LevelService.Update partial)** — целостность графа уровней.
 9. ✅ **M2 (WebAuthn сессии)**, **M6 (sentinel voting)**, **M8 (ExtendTTL)**, **M12 (InitFirstLevel)**.
-10. ⏳ **M7** (турнир частичное начисление), **M9** (единый role-cache), **M10** (деньги в копейках), **P1** (границы транзакции SubmitCode), **P5** (кэш прав чата).
+10. ✅ **M7** (турнир продолжает при сбое одного), **M9** (единый rolecache), **P5** (кэш прав чата).
+11. ⏳ **M10** (деньги в копейках), **P1** (границы транзакции SubmitCode), **P3** (UpdateProfile Count), **P4** (unread-счётчик в WS), **P6** (ON CONFLICT для комнат).
 
 ---
 
