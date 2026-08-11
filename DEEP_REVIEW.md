@@ -39,10 +39,10 @@
 - **Эффект**: капитан (не в team_members) не получит командные комнаты в `ChatRoomIDs`, хотя `canJoinRoom` ему их разрешает.
 - **Фикс**: ✅ `LEFT JOIN teams` + `OR teams.captain_id = ?` + добавлен `StatusTesting`.
 
-### H4. `onGameFinished` исполняется синхронно в HTTP-запросе игрока
+### H4. `onGameFinished` исполняется синхронно в HTTP-запросе игрока ✅ ИСПРАВЛЕНО
 - **Файл**: `cmd/server/main.go:286-302`, `internal/domain/game/svc_play.go:200-202`.
 - **Проблема**: после коммита транзакции в SubmitCode вызывается `CalculateResults` + `UpdateScoresForGame` (advisory lock) + `UpdateRatingsForGame` — всё в горутине HTTP-запроса. Игрок платит латентностью за серию блокирующих транзакций.
-- **Фикс**: фоновый запуск (worker/pool) + `context.WithTimeout(WithoutCancel(ctx), 30s)`.
+- **Фикс**: ✅ колбэк запускается в фоновой горутине с `context.WithTimeout(WithoutCancel(ctx), 30s)` — HTTP-ответ игрока не блокируется, фоновая работа не виснет на lock.
 
 ### H5. Refresh-токены без детекции reuse 🔍(требует верификации)
 - **Файл**: `internal/domain/user/service.go` (RefreshAccessToken), `auth_handler.go:323-356`.
@@ -58,10 +58,10 @@
 - **Проблема**: нет проверки `Authorization: Basic <WebhookKey>`; единственный фильтр — `isYooKassaIP(remoteIP)`. При `TRUSTED_PROXIES=""` это безопасно, но при прокси/широком trust — подделка X-Forwarded-For.
 - **Фикс**: ✅ `verifyWebhookAuth` (Basic ShopID:WebhookKey, fallback SecretKey) до обработки; 401-маппинг; тесты.
 
-### M2. WebAuthn-сессии не привязаны к userID
+### M2. WebAuthn-сессии не привязаны к userID ✅ ИСПРАВЛЕНО
 - **Файл**: `internal/domain/user/webauthn_handler.go:187-195, 328-334`.
 - **Проблема**: глобальные ключи `webauthn_registration`/`webauthn_login` — сессия «прилипает» между аккаунтами на том же браузере.
-- **Фикс**: ключи вида `webauthn_registration:{userID}`, очистка при finish/logout.
+- **Фикс**: ✅ ключи регистрации вида `webauthn_registration:{userID}` + `_name`.
 
 ### M3. Presence чата: `unmarkChatRoom` снимает флаг при отключении одного клиента 🔍 ✅ ИСПРАВЛЕНО
 - **Файл**: `internal/domain/monitor/handler.go:283-290, 667-674`.
@@ -73,24 +73,24 @@
 - **Проблема**: запросы прав не отменяются при дисконнекте.
 - **Фикс**: ✅ ctx (из `c.Request.Context()`) прокинут в сигнатуру `canJoinRoom`, все 5 вызовов обновлены, тесты.
 
-### M5. LevelService.Update: partial-update сбрасывает ParentID/GroupID/MinChildren/координаты
+### M5. LevelService.Update: partial-update сбрасывает ParentID/GroupID/MinChildren/координаты ✅ ИСПРАВЛЕНО
 - **Файл**: `internal/domain/level/service.go:137-147`.
 - **Проблема**: для Position/Type/RequiresConfirmation есть guard'ы, а ParentID/GroupID/MinChildren/Lat/Lon присваиваются безусловно — частичный POST разрушает граф уровней.
-- **Фикс**: pointer/Set-флаги для всех optional-полей.
+- **Фикс**: ✅ `UpdateLevelInput` → pointer-поля; `MinChildrenSet`/`LocationSet` флаги в модели; тесты (partial + explicit).
 
-### M6. StartVoting сравнивает `err.Error()` со строками
+### M6. StartVoting сравнивает `err.Error()` со строками ✅ ИСПРАВЛЕНО
 - **Файл**: `internal/domain/monitor/handler.go:1299-1302`.
 - **Проблема**: `switch err.Error()` вместо `errors.Is` — хрупко.
-- **Фикс**: sentinel-ошибки.
+- **Фикс**: ✅ sentinel `ErrVotingAlreadyActive`/`ErrVotingAlreadyHeld`; StartVoting и Vote через `errors.Is`.
 
 ### M7. Турнир: сбой одного турнира прерывает начисление остальным
 - **Файл**: `internal/domain/tournament/service.go:387-395`.
 - **Фикс**: логировать и продолжать; инвалидировать кэш всех загруженных.
 
-### M8. `Cache.ExtendTTL(key, 0)` мгновенно протухает бессрочный ключ 🔍
+### M8. `Cache.ExtendTTL(key, 0)` мгновенно протухает бессрочный ключ 🔍 ✅ ИСПРАВЛЕНО
 - **Файл**: `internal/pkg/cache/cache.go:366-376`.
 - **Проблема**: `ttl==0` в Set = «бессрочно», а в ExtendTTL = «протухло сейчас». В проде ExtendTTL не вызывается (только тесты), но семантика непоследовательна.
-- **Фикс**: `ttl==0` → no-op или снять expires.
+- **Фикс**: ✅ `ttl==0` → «без истечения» (согласовано с Set), тест `TestCache_ExtendTTL_ZeroIsForever`.
 
 ### M9. Роль кэшируется в двух местах с разными TTL (5с/15с) и раздельной инвалидацией
 - **Файл**: `internal/pkg/middleware/auth.go:34-49, 95-99` + `internal/domain/game/svc_coauthor.go:56-74`.
@@ -100,14 +100,15 @@
 - **Файл**: `internal/domain/payment/handler.go:65-73, service.go:321-338`.
 - **Фикс**: деньги в копейках (int64), min/max-пороги, привязка к товару.
 
-### M11. `GetGameplayData` тянет полный граф уровня с правильными кодами 🔍
+### M11. `GetGameplayData` тянет полный граф уровня с правильными кодами 🔍 ✅ ИСПРАВЛЕНО (+регрессия)
 - **Файл**: `internal/domain/game/svc_play.go:795` → `repository.go:502-516` (Preload `Level.Questions.Answers`).
-- **Проблема**: на каждый вход в геймплей грузятся все ответы с `Code` правильных ответов. В HTML не утекает (шаблон рендерит только Text/Hint), но это лишняя нагрузка и риск утечки при будущих JSON API.
-- **Фикс**: light-метод для read-path (Select без Code); полный граф только для SubmitCodeWithTx.
+- **Проблема**: на каждый вход в геймплей грузятся все ответы с `Code` правильных ответов. В HTML не утекает (шаблон рендерит только Text/Hint), но это лишняя нагрузка и риск утечки кодов при будущих JSON API.
+- **Дополнительно (важно!)**: с A-3 pass 36 `GetCurrentProgressWithLevel` вообще не грузил `Questions` — **вопросы уровня не отображались игроку** (пустой `.Level.Questions`). 
+- **Фикс**: ✅ `Preload("Level.Questions", Select text/hint)` — вопросы отображаются, правильные коды (`Answers.Code`) не грузятся в геймплее; полный граф остаётся только в `SubmitCodeWithTx` (ленивый Preload). sqlmock-тест обновлён.
 
-### M12. `dbTransaction` (InitFirstLevel): мёртвая проверка + лишний COUNT
+### M12. `dbTransaction` (InitFirstLevel): мёртвая проверка + лишний COUNT ✅ ИСПРАВЛЕНО
 - **Файл**: `internal/domain/game/svc_progress.go:70-90`.
-- **Фикс**: `errors.Is(err, gorm.ErrRecordNotFound)` → ErrNoLevels; убрать бесполезный COUNT.
+- **Фикс**: ✅ `errors.Is(err, gorm.ErrRecordNotFound)` → ErrNoLevels; убран бесполезный COUNT.
 
 ---
 
@@ -202,16 +203,18 @@
 
 ## 📊 Приоритеты исправления
 
-1. **H1 (logout refresh revoke)** + **H5 (reuse detection)** — безопасность сессий.
-2. **H2 (SSE TOCTOU)** — атомарный Acquire, как в RoomHub.
-3. **H3 (GetPassingByUser капитан/testing)** — рассинхрон прав.
-4. **M1 (подпись вебхука)** — доверие платёжного контура.
-5. **M3 (presence unmark)** — счётчик клиентов.
-6. **M11/P2 (light-граф геймплея)** — нагрузка + риск утечки кодов.
-7. **P1 (границы транзакции SubmitCode)** — латентность игрока.
-8. **H4 (onGameFinished в фон)** — латентность + устойчивость.
-9. **M5 (LevelService.Update partial)** — целостность графа уровней.
-10. **P5 (кэш прав чата)** — QPS на активных чатах.
+> **Статус: закрыто 12 из 17 HIGH/MEDIUM пунктов.** Остались M7 (турнир), M9 (role-cache), M10 (деньги в копейках), L-пункты, оптимизации P1-P18.
+
+1. ✅ **H1 (logout refresh revoke)** + **H5 (reuse detection)** — безопасность сессий (H1 фикс; H5 reuse уже был в RefreshAccessToken).
+2. ✅ **H2 (SSE TOCTOU)** — атомарный Acquire в RegisterSession.
+3. ✅ **H3 (GetPassingByUser капитан/testing)** — рассинхрон прав.
+4. ✅ **M1 (подпись вебхука)** — доверие платёжного контура.
+5. ✅ **M3 (presence unmark)** — счётчик клиентов.
+6. ✅ **M11/P2 (light-граф геймплея)** — нагрузка + регрессия с невидимыми вопросами.
+7. ✅ **H4 (onGameFinished в фон)** — латентность + устойчивость (30s timeout).
+8. ✅ **M5 (LevelService.Update partial)** — целостность графа уровней.
+9. ✅ **M2 (WebAuthn сессии)**, **M6 (sentinel voting)**, **M8 (ExtendTTL)**, **M12 (InitFirstLevel)**.
+10. ⏳ **M7** (турнир частичное начисление), **M9** (единый role-cache), **M10** (деньги в копейках), **P1** (границы транзакции SubmitCode), **P5** (кэш прав чата).
 
 ---
 
