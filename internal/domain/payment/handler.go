@@ -4,6 +4,7 @@ package payment
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -57,17 +58,34 @@ func (h *PaymentHandler) Index(c *gin.Context) {
 // @Param description formData string false "Описание"
 // @Success 302 {string} string "Редирект на ЮKassa"
 // @Router /payments/create [post]
+// PaymentMinRubles / PaymentMaxRubles (DEEP-REVIEW PASS-3 M10): пороги суммы
+// платежа. Раньше принималась любая сумма > 0 (до 0.01) — при будущей привязке
+// к привилегиям минимальная оплата дала бы привилегию даром.
+const (
+	PaymentMinRubles = 50.0
+	PaymentMaxRubles = 100000.0
+)
+
+// Create создаёт платёж и редиректит на confirmation_url.
+// @Summary Создание платежа
+// @Tags payments
+// @Accept x-www-form-urlencoded
+// @Param amount formData float64 true "Сумма (рубли)"
+// @Param description formData string false "Описание"
+// @Success 302 {string} string "Редирект на ЮKassa"
+// @Router /payments/create [post]
 // @Security JWT
 func (h *PaymentHandler) Create(c *gin.Context) {
 	userID := c.GetUint("userID")
 	// DEEP-REVIEW LOW #30 (pass 46): не игнорируем ошибку ParseFloat —
 	// невалидная сумма теперь явно отклоняется.
+	// M10 (PASS-3): рубли из формы → копейки (int64) на входе в сервис.
 	amount, parseErr := strconv.ParseFloat(c.PostForm("amount"), 64)
 	description := c.PostForm("description")
 	metadata := c.PostForm("metadata")
 
-	if parseErr != nil || amount <= 0 {
-		render.SetFlash(c, "error", "Некорректная сумма")
+	if parseErr != nil || amount < PaymentMinRubles || amount > PaymentMaxRubles {
+		render.SetFlash(c, "error", fmt.Sprintf("Сумма должна быть от %.0f до %.0f рублей", PaymentMinRubles, PaymentMaxRubles))
 		c.Redirect(http.StatusFound, "/payments")
 		return
 	}
@@ -77,7 +95,7 @@ func (h *PaymentHandler) Create(c *gin.Context) {
 		return
 	}
 
-	_, confirmURL, err := h.svc.CreatePayment(c.Request.Context(), userID, amount, description, metadata)
+	_, confirmURL, err := h.svc.CreatePayment(c.Request.Context(), userID, rublesToKopecks(amount), description, metadata)
 	if err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Float64("amount", amount).Msg("PaymentHandler.Create: failed")
 		render.SetFlash(c, "error", "Не удалось создать платёж")

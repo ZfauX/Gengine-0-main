@@ -61,14 +61,15 @@ func TestWebhookErrorClassification(t *testing.T) {
 	}
 }
 
-// DEEP-REVIEW (pass 46): верификация суммы/валюты вебхука.
+// DEEP-REVIEW (pass 46) + M10 (PASS-3): верификация суммы/валюты вебхука.
+// Теперь суммы в КОПЕЙКАХ и сравнение ТОЧНОЕ (без float64-допуска).
 func TestVerifyRemoteAmount(t *testing.T) {
 	svc := &PaymentService{}
 
 	// Совпадает.
 	ok, err := svc.verifyRemoteAmount(
 		map[string]any{"amount": map[string]any{"value": "100.00", "currency": "RUB"}},
-		&Payment{Amount: 100, Currency: "RUB"},
+		&Payment{AmountKopecks: 10000, Currency: "RUB"},
 	)
 	require.NoError(t, err)
 	assert.True(t, ok)
@@ -76,7 +77,7 @@ func TestVerifyRemoteAmount(t *testing.T) {
 	// Несовпадение суммы — отклонить.
 	ok, err = svc.verifyRemoteAmount(
 		map[string]any{"amount": map[string]any{"value": "50.00", "currency": "RUB"}},
-		&Payment{Amount: 100, Currency: "RUB"},
+		&Payment{AmountKopecks: 10000, Currency: "RUB"},
 	)
 	require.NoError(t, err)
 	assert.False(t, ok)
@@ -84,14 +85,65 @@ func TestVerifyRemoteAmount(t *testing.T) {
 	// Несовпадение валюты — отклонить.
 	ok, err = svc.verifyRemoteAmount(
 		map[string]any{"amount": map[string]any{"value": "100.00", "currency": "USD"}},
-		&Payment{Amount: 100, Currency: "RUB"},
+		&Payment{AmountKopecks: 10000, Currency: "RUB"},
 	)
 	require.NoError(t, err)
 	assert.False(t, ok)
 
+	// M10: «0.29» должно парситься точно в 29 копеек (float64 дал бы 28).
+	ok, err = svc.verifyRemoteAmount(
+		map[string]any{"amount": map[string]any{"value": "0.29", "currency": "RUB"}},
+		&Payment{AmountKopecks: 29, Currency: "RUB"},
+	)
+	require.NoError(t, err)
+	assert.True(t, ok, "0.29 рубля == 29 копеек (точное сравнение)")
+
 	// Отсутствие amount — ошибка.
-	_, err = svc.verifyRemoteAmount(map[string]any{}, &Payment{Amount: 100, Currency: "RUB"})
+	_, err = svc.verifyRemoteAmount(map[string]any{}, &Payment{AmountKopecks: 10000, Currency: "RUB"})
 	require.Error(t, err)
+}
+
+// M10: преобразования копеек ↔ строки.
+func TestKopecksConversions(t *testing.T) {
+	cases := []struct {
+		kopecks int64
+		want    string
+	}{
+		{0, "0.00"},
+		{1, "0.01"},
+		{99, "0.99"},
+		{100, "1.00"},
+		{10000, "100.00"},
+		{10001, "100.01"},
+		{-1, "-0.01"},
+		{-10001, "-100.01"},
+	}
+	for _, tc := range cases {
+		got := kopecksToRublesString(tc.kopecks)
+		assert.Equal(t, tc.want, got, "kopecksToRublesString(%d)", tc.kopecks)
+
+		parsed, err := rublesStringToKopecks(tc.want)
+		require.NoError(t, err)
+		assert.Equal(t, tc.kopecks, parsed, "roundtrip %s", tc.want)
+	}
+
+	// Дробная часть без ведущего нуля: «100.5» → 10050.
+	k, err := rublesStringToKopecks("100.5")
+	require.NoError(t, err)
+	assert.Equal(t, int64(10050), k)
+
+	// Больше 2 знаков — ошибка.
+	_, err = rublesStringToKopecks("1.234")
+	require.Error(t, err)
+
+	// Целые рубли без точки.
+	k, err = rublesStringToKopecks("50")
+	require.NoError(t, err)
+	assert.Equal(t, int64(5000), k)
+
+	// rublesToKopecks из формы.
+	assert.Equal(t, int64(10000), rublesToKopecks(100.0))
+	assert.Equal(t, int64(29), rublesToKopecks(0.29))
 }
 
 // M1 (PASS-3): верификация Authorization (Basic ShopID:WebhookKey) вебхука.
@@ -148,7 +200,7 @@ func TestNotifyPaymentSucceeded(t *testing.T) {
 		stub := &stubNotifier{}
 		svc := &PaymentService{notifier: stub}
 
-		svc.notifyPaymentSucceeded(context.Background(), &Payment{ID: 1, UserID: 42, Amount: 100, Currency: "RUB"})
+		svc.notifyPaymentSucceeded(context.Background(), &Payment{ID: 1, UserID: 42, AmountKopecks: 10000, Currency: "RUB"})
 
 		require.Len(t, stub.calls, 1)
 		assert.Equal(t, "42:info:Платёж подтверждён", stub.calls[0])
@@ -156,7 +208,7 @@ func TestNotifyPaymentSucceeded(t *testing.T) {
 
 	t.Run("notifier nil — ничего не делаем", func(t *testing.T) {
 		svc := &PaymentService{}
-		svc.notifyPaymentSucceeded(context.Background(), &Payment{ID: 1, UserID: 42, Amount: 100, Currency: "RUB"})
+		svc.notifyPaymentSucceeded(context.Background(), &Payment{ID: 1, UserID: 42, AmountKopecks: 10000, Currency: "RUB"})
 		// Никакого panic — просто no-op.
 	})
 

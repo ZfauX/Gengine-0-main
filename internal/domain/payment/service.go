@@ -82,6 +82,74 @@ func newIdempotencyKey() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
+// kopecksToRublesString (M10): 10000 копеек → "100.00" (формат ЮKassa).
+// Целочисленная арифметика — без погрешностей float64.
+func kopecksToRublesString(kopecks int64) string {
+	negative := kopecks < 0
+	if negative {
+		kopecks = -kopecks
+	}
+	whole := kopecks / 100
+	frac := kopecks % 100
+	if negative {
+		return fmt.Sprintf("-%d.%02d", whole, frac)
+	}
+	return fmt.Sprintf("%d.%02d", whole, frac)
+}
+
+// rublesToKopecks (M10): рубли (float64 из формы) → копейки с округлением.
+// Используется ТОЛЬКО на входе из user-интерфейса (форма amount в рублях);
+// внутри системы все суммы — int64-копейки.
+func rublesToKopecks(rubles float64) int64 {
+	return int64(math.Round(rubles * 100))
+}
+
+// rublesStringToKopecks (M10): «100.00» → 10000 копеек. Строго: парсим целую
+// и дробную часть без float64 (иначе «0.29» → 28 копеек из-за бинарного
+// представления). Допускаются 1-2 знака после точки.
+func rublesStringToKopecks(s string) (int64, error) {
+	neg := false
+	if strings.HasPrefix(s, "-") {
+		neg = true
+		s = s[1:]
+	}
+	whole, frac, ok := strings.Cut(s, ".")
+	if !ok {
+		// Без дробной части — целые рубли.
+		w, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			return 0, err
+		}
+		if neg {
+			w = -w
+		}
+		return w * 100, nil
+	}
+	w, err := strconv.ParseInt(whole, 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	// Дробная часть: до 2 знаков, недостающие — дополняем нулями.
+	switch len(frac) {
+	case 0:
+		frac = "00"
+	case 1:
+		frac += "0"
+	case 2:
+	default:
+		return 0, fmt.Errorf("too many decimal places: %q", frac)
+	}
+	f, err := strconv.ParseInt(frac, 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	result := w*100 + f
+	if neg {
+		result = -result
+	}
+	return result, nil
+}
+
 // isYooKassaIP проверяет, что запрос пришёл с IP ЮKassa.
 func isYooKassaIP(ip string) bool {
 	parsed := net.ParseIP(ip)
@@ -101,10 +169,12 @@ func isYooKassaIP(ip string) bool {
 }
 
 // yooKassaCreatePayment — запрос к ЮKassa на создание платежа.
-func (s *PaymentService) yooKassaCreatePayment(ctx context.Context, amount float64, currency, description, returnURL, idempotencyKey string) (map[string]any, error) {
+// DEEP-REVIEW PASS-3 M10: amountKopecks (int64) → строка «рубли.копейки».
+func (s *PaymentService) yooKassaCreatePayment(ctx context.Context, amountKopecks int64, currency, description, returnURL, idempotencyKey string) (map[string]any, error) {
 	payload := map[string]any{
 		"amount": map[string]any{
-			"value":    fmt.Sprintf("%.2f", amount),
+			// «100.00» из 10000 копеек; точное целочисленное преобразование.
+			"value":    kopecksToRublesString(amountKopecks),
 			"currency": currency,
 		},
 		"capture":     true,
@@ -166,12 +236,13 @@ func (s *PaymentService) yooKassaGetPayment(ctx context.Context, paymentID strin
 }
 
 // CreatePayment создаёт платёж и возвращает URL подтверждения.
+// DEEP-REVIEW PASS-3 M10: amountKopecks (int64) — денежная арифметика без float64.
 // DEEP-REVIEW HIGH #7 (pass 46): запись сохраняется в БД ДО вызова ЮKassa с
 // временным PaymentID="local-"+idemKey. Если вызов API упадёт, повторный
 // CreatePayment с тем же idempotency-ключом вернёт СУЩЕСТВУЮЩУЮ запись —
 // второй платёж в ЮKassa не создаётся (раньше БД-запись терялась и при
 // retry создавался дубликат платежа).
-func (s *PaymentService) CreatePayment(ctx context.Context, userID uint, amount float64, description, metadata string) (*Payment, string, error) {
+func (s *PaymentService) CreatePayment(ctx context.Context, userID uint, amountKopecks int64, description, metadata string) (*Payment, string, error) {
 	if !s.Enabled() {
 		return nil, "", fmt.Errorf("платежи не настроены")
 	}
@@ -197,7 +268,7 @@ func (s *PaymentService) CreatePayment(ctx context.Context, userID uint, amount 
 		UserID:         userID,
 		PaymentID:      "local-" + idemKey,
 		IdempotencyKey: idemKey,
-		Amount:         amount,
+		AmountKopecks:  amountKopecks,
 		Currency:       currency,
 		Description:    description,
 		Status:         StatusPending,
@@ -208,7 +279,7 @@ func (s *PaymentService) CreatePayment(ctx context.Context, userID uint, amount 
 	}
 
 	// 2. Создаём платёж в ЮKassa (идемпотентность по ключу).
-	result, err := s.yooKassaCreatePayment(ctx, amount, currency, description, returnURL, idemKey)
+	result, err := s.yooKassaCreatePayment(ctx, amountKopecks, currency, description, returnURL, idemKey)
 	if err != nil {
 		log.Error().Err(err).Uint("payment", p.ID).Msg("CreatePayment: YooKassa call failed, leaving pending record for retry")
 		return nil, "", err
@@ -321,7 +392,7 @@ func (s *PaymentService) HandleWebhook(ctx context.Context, remoteIP, authHeader
 		if !amountOK {
 			log.Error().
 				Uint("payment", local.ID).
-				Float64("local_amount", local.Amount).
+				Int64("local_amount_kopecks", local.AmountKopecks).
 				Str("currency", local.Currency).
 				Interface("remote_amount", remote["amount"]).
 				Msg("webhook: amount/currency mismatch, rejecting")
@@ -330,7 +401,7 @@ func (s *PaymentService) HandleWebhook(ctx context.Context, remoteIP, authHeader
 		if err := s.repo.UpdateStatus(ctx, local.ID, StatusSucceeded); err != nil {
 			return err
 		}
-		log.Info().Uint("payment", local.ID).Uint("user_id", local.UserID).Float64("amount", local.Amount).Msg("payment succeeded")
+		log.Info().Uint("payment", local.ID).Uint("user_id", local.UserID).Int64("amount_kopecks", local.AmountKopecks).Msg("payment succeeded")
 		s.notifyPaymentSucceeded(ctx, local)
 	case "canceled":
 		if err := s.repo.UpdateStatus(ctx, local.ID, StatusCanceled); err != nil {
@@ -350,14 +421,15 @@ func (s *PaymentService) notifyPaymentSucceeded(ctx context.Context, local *Paym
 		return
 	}
 	title := "Платёж подтверждён"
-	body := fmt.Sprintf("Сумма %.2f %s", local.Amount, local.Currency)
+	body := fmt.Sprintf("Сумма %s %s", kopecksToRublesString(local.AmountKopecks), local.Currency)
 	if err := s.notifier.Create(ctx, local.UserID, notification.NotificationTypeInfo, title, body, "/payments"); err != nil {
 		log.Warn().Err(err).Uint("user_id", local.UserID).Uint("payment", local.ID).Msg("payment succeeded: notification create failed")
 	}
 }
 
 // verifyRemoteAmount сверяет сумму/валюту из ответа ЮKassa с локальной записью.
-// Допускает расхождение не более 1 копейки (арифметика float64).
+// DEEP-REVIEW PASS-3 M10: строку «100.00» парсим в копейки и сравниваем ТОЧНО
+// (int64) — без float64-допуска, который позволял расхождение ~1 копейки.
 func (s *PaymentService) verifyRemoteAmount(remote map[string]any, local *Payment) (bool, error) {
 	amountRaw, ok := remote["amount"].(map[string]any)
 	if !ok {
@@ -366,15 +438,15 @@ func (s *PaymentService) verifyRemoteAmount(remote map[string]any, local *Paymen
 	valueStr, _ := amountRaw["value"].(string)
 	currency, _ := amountRaw["currency"].(string)
 
-	remoteAmount, err := strconv.ParseFloat(valueStr, 64)
+	remoteKopecks, err := rublesStringToKopecks(valueStr)
 	if err != nil {
 		return false, fmt.Errorf("webhook: invalid remote amount %q", valueStr)
 	}
 	if currency != local.Currency {
 		return false, nil
 	}
-	// Допуск 0.01 (копейка) — ЮKassa отдаёт «100.00», float64-арифметика.
-	return math.Abs(remoteAmount-local.Amount) < 0.011, nil
+	// Точное целочисленное сравнение копеек.
+	return remoteKopecks == local.AmountKopecks, nil
 }
 
 // ListByUser возвращает платежи пользователя.
