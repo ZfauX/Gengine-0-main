@@ -26,6 +26,8 @@ type TournamentGameRepository interface {
 	ListGames(ctx context.Context, tournamentID uint) ([]game.Game, error)
 	GetAvailableGames(ctx context.Context, tournamentID, authorID uint) ([]game.Game, error)
 	FindByGameID(ctx context.Context, gameID uint) (*TournamentGame, error)
+	// FindTournamentIDsByGameID — все турниры игры (DEEP-REVIEW, pass 46).
+	FindTournamentIDsByGameID(ctx context.Context, gameID uint) ([]uint, error)
 	ListFinishedPassings(ctx context.Context, gameID uint, status game.GamePassingStatus) ([]game.GamePassing, error)
 }
 
@@ -136,10 +138,23 @@ func (r *gormTournamentGameRepo) FindByGameID(ctx context.Context, gameID uint) 
 	}
 	return &tg, nil
 }
+
+// FindTournamentIDsByGameID возвращает ID ВСЕХ турниров, в которых участвует игра
+// (DEEP-REVIEW, pass 46): раньше FindByGameID возвращал только первый турнир,
+// поэтому игра в 2+ турнирах начисляла очки только в один.
+func (r *gormTournamentGameRepo) FindTournamentIDsByGameID(ctx context.Context, gameID uint) ([]uint, error) {
+	var ids []uint
+	err := r.db.WithContext(ctx).Model(&TournamentGame{}).
+		Where("game_id = ?", gameID).
+		Pluck("tournament_id", &ids).Error
+	return ids, err
+}
 func (r *gormTournamentGameRepo) ListFinishedPassings(ctx context.Context, gameID uint, status game.GamePassingStatus) ([]game.GamePassing, error) {
 	var passings []game.GamePassing
-	// Только ещё не начисленные прохождения — идемпотентность UpdateScoresForGame.
-	err := r.db.WithContext(ctx).Where("game_id = ? AND status = ? AND tournament_scored = false", gameID, status).Find(&passings).Error
+	// DEEP-REVIEW (pass 46): фильтр по массиву tournament_scored_ids больше
+	// не применяется здесь — сервис сам выбирает прохождения с учётом
+	// конкретного турнира (NOT tournament_id = ANY(tournament_scored_ids)).
+	err := r.db.WithContext(ctx).Where("game_id = ? AND status = ?", gameID, status).Find(&passings).Error
 	return passings, err
 }
 

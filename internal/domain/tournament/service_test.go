@@ -177,7 +177,8 @@ func TestTournamentService_UpdateScoresForGame(t *testing.T) {
 
 	var storedP1 game.GamePassing
 	require.NoError(t, db.First(&storedP1, p1.ID).Error)
-	assert.True(t, storedP1.TournamentScored)
+	// DEEP-REVIEW (pass 46): вместо булева флага — массив начисленных турниров.
+	assert.Contains(t, storedP1.TournamentScoredIDs, int64(trn.ID))
 	assert.Equal(t, 10, storedP1.TournamentPoints)
 
 	// Идемпотентность: второй вызов не удваивает.
@@ -222,4 +223,49 @@ func TestTournamentService_RemoveGame(t *testing.T) {
 	var count int64
 	require.NoError(t, db.Model(&tournament.TournamentResult{}).Where("team_id = ?", tm1.ID).Count(&count).Error)
 	assert.Equal(t, int64(0), count)
+}
+
+// DEEP-REVIEW (pass 46): игра в 2 турнирах получает очки в ОБОИХ.
+func TestTournamentService_UpdateScoresForGame_MultiTournament(t *testing.T) {
+	db := setupTournamentDB(t)
+	teamSvc := newTeamService(db)
+	svc := newTournamentService(db, teamSvc)
+	ctx := context.Background()
+
+	author := createTournamentUser(t, db, "multi@test.com")
+	trnA := &tournament.Tournament{Name: "A", AuthorID: author.ID, PointsForFirst: 10, PointsForParticipation: 2}
+	trnB := &tournament.Tournament{Name: "B", AuthorID: author.ID, PointsForFirst: 20, PointsForParticipation: 3}
+	require.NoError(t, svc.Create(ctx, trnA))
+	require.NoError(t, svc.Create(ctx, trnB))
+
+	g := createTournamentGame(t, db, author.ID, "G-Multi")
+	require.NoError(t, svc.AddGame(ctx, trnA.ID, g.ID, author.ID))
+	require.NoError(t, svc.AddGame(ctx, trnB.ID, g.ID, author.ID))
+
+	tm1, _ := teamSvc.CreateTeam(ctx, "TM", author.ID)
+	require.NoError(t, db.Create(&tournament.TournamentTeam{TournamentID: trnA.ID, TeamID: tm1.ID}).Error)
+	require.NoError(t, db.Create(&tournament.TournamentTeam{TournamentID: trnB.ID, TeamID: tm1.ID}).Error)
+
+	p1 := &game.GamePassing{GameID: g.ID, TeamID: tm1.ID, Status: game.StatusFinished, Place: intPtr(1)}
+	require.NoError(t, db.Create(p1).Error)
+
+	// Начисляем очки: сначала турнир A, затем B.
+	svc.UpdateScoresForGame(ctx, g.ID)
+
+	var rA tournament.TournamentResult
+	require.NoError(t, db.Where("tournament_id = ? AND team_id = ?", trnA.ID, tm1.ID).First(&rA).Error)
+	assert.Equal(t, 10, rA.Score, "турнир A должен получить очки")
+
+	svc.UpdateScoresForGame(ctx, g.ID)
+
+	var rB tournament.TournamentResult
+	require.NoError(t, db.Where("tournament_id = ? AND team_id = ?", trnB.ID, tm1.ID).First(&rB).Error)
+	assert.Equal(t, 20, rB.Score, "турнир B должен получить очки (раньше терялись)")
+
+	// Идемпотентность: третий вызов не удваивает.
+	svc.UpdateScoresForGame(ctx, g.ID)
+	require.NoError(t, db.Where("tournament_id = ? AND team_id = ?", trnA.ID, tm1.ID).First(&rA).Error)
+	assert.Equal(t, 10, rA.Score)
+	require.NoError(t, db.Where("tournament_id = ? AND team_id = ?", trnB.ID, tm1.ID).First(&rB).Error)
+	assert.Equal(t, 20, rB.Score)
 }

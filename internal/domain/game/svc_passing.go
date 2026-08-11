@@ -84,7 +84,7 @@ func (s *GamePassingService) Apply(ctx context.Context, gameID, teamID, userID u
 			return ErrNotCaptain
 		}
 		var game Game
-		if err := tx.First(&game, gameID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&game, gameID).Error; err != nil {
 			return err
 		}
 		if game.IsDraft {

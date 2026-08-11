@@ -428,9 +428,16 @@ func (s *InvitationService) AcceptInvitation(ctx context.Context, invitationID, 
 	if res.RowsAffected == 0 {
 		return errors.New("приглашение уже обработано")
 	}
-	// ON CONFLICT DO NOTHING защищает от дубликата team_members.
-	if execErr := tx.Exec("INSERT INTO team_members (team_id, user_id) VALUES (?, ?) ON CONFLICT DO NOTHING", inv.TeamID, userID).Error; execErr != nil {
-		return execErr
+	// ON CONFLICT (user_id) DO NOTHING защищает от дубликата team_members И
+	// от нарушения уникального индекса «один игрок в одной команде» (000061).
+	// DEEP-REVIEW (pass 46): если RowsAffected==0 — конкурентная вставка в другую
+	// команду выиграла гонку, возвращаем понятную ошибку.
+	ins := tx.Exec("INSERT INTO team_members (team_id, user_id) VALUES (?, ?) ON CONFLICT (user_id) DO NOTHING", inv.TeamID, userID)
+	if ins.Error != nil {
+		return ins.Error
+	}
+	if ins.RowsAffected == 0 {
+		return ErrAlreadyInOtherTeam
 	}
 
 	if commitErr := tx.Commit().Error; commitErr != nil {

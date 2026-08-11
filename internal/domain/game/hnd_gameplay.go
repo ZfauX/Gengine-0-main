@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -273,9 +272,13 @@ func (h *GameplayHandler) UseHint(c *gin.Context) {
 		return
 	}
 	if hintText != "" {
-		render.SetFlash(c, "gameplay_hint", hintText)
-		// H1: hint передаём и query-параметром — JS-ветка тоста по ?hint= заработает.
-		c.Redirect(http.StatusFound, "/game/"+c.Param("passing_id")+"?hint="+url.QueryEscape(hintText))
+		// DEEP-REVIEW (pass 46): hint передаём ТОЛЬКО через flash (ключ "n"),
+		// а не через ?hint= в URL. Раньше подсказка попадала в query-строку →
+		// история браузера, Referer, логи доступа/proxy (утечка для игр, где
+		// подсказки — элемент счёта). render.GetFlash(c, "n") уже читается
+		// хендлером и рендерится в шаблоне.
+		render.SetFlash(c, "n", hintText)
+		c.Redirect(http.StatusFound, "/game/"+c.Param("passing_id"))
 		return
 	}
 	c.Redirect(http.StatusFound, "/game/"+c.Param("passing_id"))

@@ -31,8 +31,10 @@ type Team struct {
 
 // TeamMember — join-сущность участника команды (A-2/A-3, pass 45).
 type TeamMember struct {
-	TeamID    uint      `gorm:"primaryKey"`
-	UserID    uint      `gorm:"primaryKey"`
+	TeamID uint `gorm:"primaryKey"`
+	// DEEP-REVIEW (pass 46): уникальный индекс на user_id гарантирует
+	// «игрок в одной команде» (A-5) на уровне БД — см. миграцию 000061.
+	UserID    uint      `gorm:"primaryKey;uniqueIndex:idx_team_members_user_unique"`
 	User      user.User `gorm:"foreignKey:UserID"`
 	Role      string    `gorm:"default:'member'"` // member | deputy
 	GroupType string    `gorm:"default:'main'"`   // main | reserve

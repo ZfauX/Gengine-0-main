@@ -197,9 +197,19 @@ func (r *gormTeamRepo) SearchPaginated(ctx context.Context, query string, offset
 }
 func (r *gormTeamRepo) AddMember(ctx context.Context, teamID, userID uint) error {
 	// C-9: ON CONFLICT DO NOTHING — два параллельных AddMember не дадут дубликат.
-	return r.db.WithContext(ctx).Exec(
-		"INSERT INTO team_members (team_id, user_id) VALUES (?, ?) ON CONFLICT DO NOTHING", teamID, userID,
-	).Error
+	// DEEP-REVIEW (pass 46): ON CONFLICT (user_id) — уникальный индекс
+	// idx_team_members_user_unique (000061) гарантирует «игрок в одной команде».
+	// Если вставка не выполнилась (RowsAffected==0) — игрок уже в другой команде.
+	res := r.db.WithContext(ctx).Exec(
+		"INSERT INTO team_members (team_id, user_id) VALUES (?, ?) ON CONFLICT (user_id) DO NOTHING", teamID, userID,
+	)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrAlreadyInOtherTeam
+	}
+	return nil
 }
 func (r *gormTeamRepo) RemoveMember(ctx context.Context, teamID, userID uint) error {
 	return r.db.WithContext(ctx).Exec("DELETE FROM team_members WHERE team_id = ? AND user_id = ?", teamID, userID).Error

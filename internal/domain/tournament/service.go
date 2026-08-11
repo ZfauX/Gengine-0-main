@@ -209,9 +209,14 @@ func (s *TournamentService) RemoveGame(ctx context.Context, tournamentID, gameID
 		// G4: ограничиваем командами ЭТОГО турнира — сброс для всех прохождений
 		// игры затронул бы команды других турниров и привёл бы к двойному
 		// начислению очков, если игра участвует в нескольких турнирах.
+		// DEEP-REVIEW (pass 46): удаляем именно tournament_id из массива
+		// начислений (tournament_scored_ids), а не сбрасываем весь флаг.
 		if err = tx.Model(&game.GamePassing{}).
 			Where("game_id = ? AND team_id IN (SELECT team_id FROM tournament_teams WHERE tournament_id = ?)", gameID, tournamentID).
-			Updates(map[string]any{"tournament_scored": false, "tournament_points": 0}).Error; err != nil {
+			Updates(map[string]any{
+				"tournament_scored_ids": gorm.Expr("array_remove(tournament_scored_ids, ?)", int64(tournamentID)),
+				"tournament_points":     0,
+			}).Error; err != nil {
 			return err
 		}
 
@@ -362,16 +367,26 @@ func (s *TournamentService) CanApply(ctx context.Context, tournamentID, userID u
 // ---------- Подсчёт очков ----------
 
 func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint) {
-	tg, err := s.tournamentGameRepo.FindByGameID(ctx, gameID)
+	// DEEP-REVIEW (pass 46): раньше FindByGameID возвращал только ПЕРВЫЙ турнир
+	// игры — игра в 2+ турнирах начисляла очки только в один. Теперь берём все.
+	tournamentIDs, err := s.tournamentGameRepo.FindTournamentIDsByGameID(ctx, gameID)
 	if err != nil {
-		// C-M8: не глотаем молча — ops должны видеть сбои начисления.
 		log.Warn().Err(err).Uint("game_id", gameID).Msg("UpdateScoresForGame: game not in tournament")
 		return
 	}
-	tournament, err := s.tournamentRepo.GetByID(ctx, tg.TournamentID)
-	if err != nil {
-		log.Warn().Err(err).Uint("game_id", gameID).Uint("tournament_id", tg.TournamentID).Msg("UpdateScoresForGame: failed to load tournament")
+	if len(tournamentIDs) == 0 {
+		log.Warn().Uint("game_id", gameID).Msg("UpdateScoresForGame: game not in any tournament")
 		return
+	}
+
+	tournaments := make([]*Tournament, 0, len(tournamentIDs))
+	for _, tid := range tournamentIDs {
+		trn, loadErr := s.tournamentRepo.GetByID(ctx, tid)
+		if loadErr != nil {
+			log.Warn().Err(loadErr).Uint("game_id", gameID).Uint("tournament_id", tid).Msg("UpdateScoresForGame: failed to load tournament")
+			return
+		}
+		tournaments = append(tournaments, trn)
 	}
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -381,106 +396,10 @@ func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint
 			return fmt.Errorf("pg_advisory_xact_lock: %w", lockErr)
 		}
 
-		// Читаем только ещё не начисленные прохождения ВНУТРИ транзакции после
-		// блокировки — второй вызов увидит уже помеченные tournament_scored=true.
-		var passings []game.GamePassing
-		if passErr := tx.Where("game_id = ? AND status = ? AND tournament_scored = false",
-			gameID, game.StatusFinished).Find(&passings).Error; passErr != nil {
-			return passErr
-		}
-		if len(passings) == 0 {
-			return nil
-		}
-
-		teamIDs := make([]uint, len(passings))
-		for i, p := range passings {
-			teamIDs[i] = p.TeamID
-		}
-
-		// Читаем турнирные команды ВНУТРИ транзакции через tx — репозиторий
-		// использует внешний r.db (отдельное соединение без search_path в схеме).
-		var tournamentTeams []TournamentTeam
-		if teamsErr := tx.Where("tournament_id = ? AND team_id IN ?", tournament.ID, teamIDs).Find(&tournamentTeams).Error; teamsErr != nil {
-			log.Error().Err(teamsErr).Uint("tournament_id", tournament.ID).Msg("UpdateScoresForGame: failed to get tournament teams")
-			return teamsErr
-		}
-		inTournament := make(map[uint]bool)
-		for _, tt := range tournamentTeams {
-			inTournament[tt.TeamID] = true
-		}
-
-		scoredIDs := make([]uint, 0, len(passings))
-		// Собираем дельты (не аккумулированные значения) — UpsertMany
-		// инкрементирует существующую строку через EXCLUDED (M9, pass 30).
-		deltaResults := make([]TournamentResult, 0, len(passings))
-		// P-1 (pass 37): точки за места собираем в map, затем один batch UPDATE
-		// (CASE id) — раньше был N+1 построчных UPDATE внутри транзакции с
-		// advisory lock (игра со 100 командами = 100 UPDATE).
-		pointsByPassing := make(map[uint]int, len(passings))
-		for _, p := range passings {
-			if !inTournament[p.TeamID] {
-				continue
-			}
-
-			points := tournament.PointsForParticipation
-			if p.Place != nil {
-				switch *p.Place {
-				case 1:
-					points = tournament.PointsForFirst
-				case 2:
-					points = tournament.PointsForSecond
-				case 3:
-					points = tournament.PointsForThird
-				}
-			}
-
-			deltaResults = append(deltaResults, TournamentResult{
-				TournamentID: tournament.ID,
-				TeamID:       p.TeamID,
-				Score:        points,
-				GamesPlayed:  1,
-			})
-			// Сохраняем точное значение начисленных очков для точного списания (C-M2).
-			pointsByPassing[p.ID] = points
-			scoredIDs = append(scoredIDs, p.ID)
-		}
-
-		// Batch UPDATE tournament_points (P-1, pass 37): один запрос на все
-		// прохождения вместо N построчных.
-		if len(pointsByPassing) > 0 {
-			passingIDs := make([]uint, 0, len(pointsByPassing))
-			cases := make([]string, 0, len(pointsByPassing))
-			args := make([]any, 0, len(pointsByPassing)*2)
-			for id, pts := range pointsByPassing {
-				cases = append(cases, "WHEN ? THEN ?")
-				args = append(args, id, pts)
-				passingIDs = append(passingIDs, id)
-			}
-			idPlaceholders := util.JoinPlaceholders(len(passingIDs))
-			q := fmt.Sprintf(
-				"UPDATE game_passings SET tournament_points = CASE id %s ELSE tournament_points END WHERE id IN (%s)",
-				strings.Join(cases, " "),
-				idPlaceholders,
-			)
-			args = append(args, util.ToAnySlice(passingIDs)...)
-			if ptsErr := tx.Exec(q, args...).Error; ptsErr != nil {
-				return ptsErr
-			}
-		}
-
-		// Единый батч-upsert вместо построчного Save (M9, pass 30).
-		if len(deltaResults) > 0 {
-			if upsErr := s.tournamentResultRepo.UpsertMany(tx, deltaResults); upsErr != nil {
-				return upsErr
-			}
-		}
-
-		// Помечаем прохождения начисленными в той же транзакции (идемпотентность).
-		if len(scoredIDs) > 0 {
-			if markErr := tx.Model(&game.GamePassing{}).
-				Where("id IN ?", scoredIDs).
-				Update("tournament_scored", true).Error; markErr != nil {
-				return markErr
+		// Начисляем очки каждому турниру игры (в одной транзакции — атомарно).
+		for _, tournament := range tournaments {
+			if scoreErr := s.scoreTournamentInTx(tx, tournament, gameID); scoreErr != nil {
+				return scoreErr
 			}
 		}
 		return nil
@@ -489,10 +408,126 @@ func (s *TournamentService) UpdateScoresForGame(ctx context.Context, gameID uint
 		log.Error().Err(err).Uint("game_id", gameID).Msg("UpdateScoresForGame: transaction failed")
 		return
 	}
-	// F-5 (pass 31): инвалидируем кэш лидерборда турнира.
+	// F-5 (pass 31): инвалидируем кэш лидербордов всех турниров игры.
 	if s.cache != nil {
-		s.cache.DeleteWithCtx(ctx, fmt.Sprintf("tournament:leaderboard:%d", tg.TournamentID))
+		for _, tid := range tournamentIDs {
+			s.cache.DeleteWithCtx(ctx, fmt.Sprintf("tournament:leaderboard:%d", tid))
+		}
 	}
+}
+
+// scoreTournamentInTx начисляет очки одного турнира за прохождение игры.
+// Вызывается внутри транзакции UpdateScoresForGame (под advisory lock на игру).
+func (s *TournamentService) scoreTournamentInTx(tx *gorm.DB, tournament *Tournament, gameID uint) error {
+	// Читаем только ещё не начисленные прохождения ВНУТРИ транзакции после
+	// блокировки — второй вызов увидит уже добавленные в tournament_scored_ids.
+	// DEEP-REVIEW (pass 46): проверяем НЕ содержат ли начисления ЭТОТ турнир
+	// (NOT tournament_id = ANY(...)) — игра в 2+ турнирах начисляется каждому.
+	var passings []game.GamePassing
+	if passErr := tx.Where(
+		"game_id = ? AND status = ? AND NOT (? = ANY(tournament_scored_ids))",
+		gameID, game.StatusFinished, int64(tournament.ID),
+	).Find(&passings).Error; passErr != nil {
+		return passErr
+	}
+	if len(passings) == 0 {
+		return nil
+	}
+
+	teamIDs := make([]uint, len(passings))
+	for i, p := range passings {
+		teamIDs[i] = p.TeamID
+	}
+
+	// Читаем турнирные команды ВНУТРИ транзакции через tx — репозиторий
+	// использует внешний r.db (отдельное соединение без search_path в схеме).
+	var tournamentTeams []TournamentTeam
+	if teamsErr := tx.Where("tournament_id = ? AND team_id IN ?", tournament.ID, teamIDs).Find(&tournamentTeams).Error; teamsErr != nil {
+		log.Error().Err(teamsErr).Uint("tournament_id", tournament.ID).Msg("UpdateScoresForGame: failed to get tournament teams")
+		return teamsErr
+	}
+	inTournament := make(map[uint]bool)
+	for _, tt := range tournamentTeams {
+		inTournament[tt.TeamID] = true
+	}
+
+	scoredIDs := make([]uint, 0, len(passings))
+	// Собираем дельты (не аккумулированные значения) — UpsertMany
+	// инкрементирует существующую строку через EXCLUDED (M9, pass 30).
+	deltaResults := make([]TournamentResult, 0, len(passings))
+	// P-1 (pass 37): точки за места собираем в map, затем один batch UPDATE
+	// (CASE id) — раньше был N+1 построчных UPDATE внутри транзакции с
+	// advisory lock (игра со 100 командами = 100 UPDATE).
+	pointsByPassing := make(map[uint]int, len(passings))
+	for _, p := range passings {
+		if !inTournament[p.TeamID] {
+			continue
+		}
+
+		points := tournament.PointsForParticipation
+		if p.Place != nil {
+			switch *p.Place {
+			case 1:
+				points = tournament.PointsForFirst
+			case 2:
+				points = tournament.PointsForSecond
+			case 3:
+				points = tournament.PointsForThird
+			}
+		}
+
+		deltaResults = append(deltaResults, TournamentResult{
+			TournamentID: tournament.ID,
+			TeamID:       p.TeamID,
+			Score:        points,
+			GamesPlayed:  1,
+		})
+		// Сохраняем точное значение начисленных очков для точного списания (C-M2).
+		pointsByPassing[p.ID] = points
+		scoredIDs = append(scoredIDs, p.ID)
+	}
+
+	// Batch UPDATE tournament_points (P-1, pass 37): один запрос на все
+	// прохождения вместо N построчных.
+	if len(pointsByPassing) > 0 {
+		passingIDs := make([]uint, 0, len(pointsByPassing))
+		cases := make([]string, 0, len(pointsByPassing))
+		args := make([]any, 0, len(pointsByPassing)*2)
+		for id, pts := range pointsByPassing {
+			cases = append(cases, "WHEN ? THEN ?")
+			args = append(args, id, pts)
+			passingIDs = append(passingIDs, id)
+		}
+		idPlaceholders := util.JoinPlaceholders(len(passingIDs))
+		q := fmt.Sprintf(
+			"UPDATE game_passings SET tournament_points = CASE id %s ELSE tournament_points END WHERE id IN (%s)",
+			strings.Join(cases, " "),
+			idPlaceholders,
+		)
+		args = append(args, util.ToAnySlice(passingIDs)...)
+		if ptsErr := tx.Exec(q, args...).Error; ptsErr != nil {
+			return ptsErr
+		}
+	}
+
+	// Единый батч-upsert вместо построчного Save (M9, pass 30).
+	if len(deltaResults) > 0 {
+		if upsErr := s.tournamentResultRepo.UpsertMany(tx, deltaResults); upsErr != nil {
+			return upsErr
+		}
+	}
+
+	// Помечаем прохождения начисленными для ЭТОГО турнира в той же транзакции
+	// (идемпотентность). DEEP-REVIEW (pass 46): добавляем tournament_id в массив
+	// tournament_scored_ids, а не ставим общий булев флаг.
+	if len(scoredIDs) > 0 {
+		if markErr := tx.Model(&game.GamePassing{}).
+			Where("id IN ?", scoredIDs).
+			Update("tournament_scored_ids", gorm.Expr("array_append(tournament_scored_ids, ?)", int64(tournament.ID))).Error; markErr != nil {
+			return markErr
+		}
+	}
+	return nil
 }
 
 func (s *TournamentService) GetLeaderboard(ctx context.Context, tournamentID uint) ([]TournamentResult, error) {

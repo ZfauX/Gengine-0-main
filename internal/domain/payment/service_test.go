@@ -6,6 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // G-3 (pass 45): проверка IP-allowlist ЮKassa.
@@ -51,4 +54,37 @@ func TestWebhookErrorClassification(t *testing.T) {
 	if errors.Is(err3, ErrWebhookInvalid) || errors.Is(err3, ErrWebhookUntrustedIP) {
 		t.Error("transient error should not match sentinel errors")
 	}
+}
+
+// DEEP-REVIEW (pass 46): верификация суммы/валюты вебхука.
+func TestVerifyRemoteAmount(t *testing.T) {
+	svc := &PaymentService{}
+
+	// Совпадает.
+	ok, err := svc.verifyRemoteAmount(
+		map[string]any{"amount": map[string]any{"value": "100.00", "currency": "RUB"}},
+		&Payment{Amount: 100, Currency: "RUB"},
+	)
+	require.NoError(t, err)
+	assert.True(t, ok)
+
+	// Несовпадение суммы — отклонить.
+	ok, err = svc.verifyRemoteAmount(
+		map[string]any{"amount": map[string]any{"value": "50.00", "currency": "RUB"}},
+		&Payment{Amount: 100, Currency: "RUB"},
+	)
+	require.NoError(t, err)
+	assert.False(t, ok)
+
+	// Несовпадение валюты — отклонить.
+	ok, err = svc.verifyRemoteAmount(
+		map[string]any{"amount": map[string]any{"value": "100.00", "currency": "USD"}},
+		&Payment{Amount: 100, Currency: "RUB"},
+	)
+	require.NoError(t, err)
+	assert.False(t, ok)
+
+	// Отсутствие amount — ошибка.
+	_, err = svc.verifyRemoteAmount(map[string]any{}, &Payment{Amount: 100, Currency: "RUB"})
+	require.Error(t, err)
 }

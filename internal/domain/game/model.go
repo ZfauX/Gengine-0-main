@@ -8,6 +8,7 @@ import (
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/user"
 
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -91,9 +92,10 @@ type GamePassing struct {
 	Status         GamePassingStatus `gorm:"default:'pending';index:idx_game_passings_status"`
 	ResultDuration *time.Duration    `gorm:"type:bigint"`
 	Place          *int
-	// TournamentScored — очки турнира за это прохождение уже начислены
-	// (защита от двойного начисления при повторном вызове UpdateScoresForGame).
-	TournamentScored bool `gorm:"column:tournament_scored;default:false"`
+	// DEEP-REVIEW (pass 46): мультитурнирный скоринг. Вместо булева флага
+	// храним массив tournament_id, которым уже начислены очки за это
+	// прохождение. Игра в 2+ турнирах больше не теряет очки во втором.
+	TournamentScoredIDs pq.Int64Array `gorm:"column:tournament_scored_ids;type:bigint[];default:'{}'"`
 	// TournamentPoints — точное значение начисленных турнирных очков (C-M2):
 	// RemoveGame списывает именно его, а не пересчитывает по текущему месту.
 	TournamentPoints int `gorm:"column:tournament_points;default:0"`

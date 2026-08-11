@@ -74,11 +74,11 @@ func MigrateFromDir(gdb *gorm.DB, migrationsDir string) error {
 	}
 
 	// maxSquashedVersion — последняя версия в squashed-наборе. Squashed —
-	// «слепок» базовой схемы + tail (000007), покрывающий 000024-000059.
+	// «слепок» базовой схемы + tail (000008), покрывающий 000024-000061.
 	// БД с версией <= maxSquashedVersion создана через squashed и продолжает
 	// применяться squashed-набором (новые tail-версии догоняют схему).
 	// БД с большей версией создана через индивидуальные миграции (migrations/).
-	const maxSquashedVersion = 7
+	const maxSquashedVersion = 8
 
 	if migrationsDir == "" {
 		if hasAppliedMigrations(gdb) {
@@ -106,15 +106,17 @@ func MigrateFromDir(gdb *gorm.DB, migrationsDir string) error {
 			migrationsDir = "migrations"
 			// Повторная проверка existence
 			if _, statErr2 := os.Stat(migrationsDir); os.IsNotExist(statErr2) {
-				log.Warn().Str("dir", migrationsDir).Msg("Папки с миграциями нет, создаём пустую")
-				if mkdirErr2 := os.MkdirAll(migrationsDir, 0755); mkdirErr2 != nil {
-					return fmt.Errorf("не удалось создать папку миграций: %w", mkdirErr2)
-				}
-				return nil
+				// DEEP-REVIEW (pass 46): раньше здесь создавалась пустая папка и
+				// возвращался nil — миграции МОЛЧА пропускались, и сервер стартовал
+				// на немгрированной схеме (типично при запуске из другой CWD:
+				// systemd, Docker, cron). Теперь это явная ошибка.
+				abs, _ := filepath.Abs(migrationsDir)
+				return fmt.Errorf("папка миграций не найдена: %s (проверьте рабочую директорию — запустите сервер из корня проекта или укажите MIGRATIONS_DIR)", abs)
 			}
 		} else {
-			log.Warn().Str("dir", migrationsDir).Msg("Папка миграций создана, но файлы отсутствуют")
-			return nil
+			// DEEP-REVIEW (pass 46): аналогично — не создаём пустую папку молча.
+			abs, _ := filepath.Abs(migrationsDir)
+			return fmt.Errorf("папка миграций не найдена: %s (запустите сервер из корня проекта)", abs)
 		}
 	}
 

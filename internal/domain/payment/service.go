@@ -10,8 +10,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	"gengine-0/internal/config"
@@ -228,6 +230,22 @@ func (s *PaymentService) HandleWebhook(ctx context.Context, remoteIP string, raw
 	// Приводим к нашему статусу.
 	switch status {
 	case "succeeded":
+		// DEEP-REVIEW (pass 46): верифицируем сумму и валюту из API против
+		// локальной записи. Раньше статус подтверждался, но не сумма —
+		// partially-captured/несовпадающий платёж мог быть помечен succeeded.
+		amountOK, amountErr := s.verifyRemoteAmount(remote, local)
+		if amountErr != nil {
+			return amountErr
+		}
+		if !amountOK {
+			log.Error().
+				Uint("payment", local.ID).
+				Float64("local_amount", local.Amount).
+				Str("currency", local.Currency).
+				Interface("remote_amount", remote["amount"]).
+				Msg("webhook: amount/currency mismatch, rejecting")
+			return fmt.Errorf("webhook: amount/currency mismatch for payment %s", paymentID)
+		}
 		if err := s.repo.UpdateStatus(ctx, local.ID, StatusSucceeded); err != nil {
 			return err
 		}
@@ -240,6 +258,27 @@ func (s *PaymentService) HandleWebhook(ctx context.Context, remoteIP string, raw
 		// waiting_for_capture / pending — без изменений.
 	}
 	return nil
+}
+
+// verifyRemoteAmount сверяет сумму/валюту из ответа ЮKassa с локальной записью.
+// Допускает расхождение не более 1 копейки (арифметика float64).
+func (s *PaymentService) verifyRemoteAmount(remote map[string]any, local *Payment) (bool, error) {
+	amountRaw, ok := remote["amount"].(map[string]any)
+	if !ok {
+		return false, fmt.Errorf("webhook: missing amount in remote payment")
+	}
+	valueStr, _ := amountRaw["value"].(string)
+	currency, _ := amountRaw["currency"].(string)
+
+	remoteAmount, err := strconv.ParseFloat(valueStr, 64)
+	if err != nil {
+		return false, fmt.Errorf("webhook: invalid remote amount %q", valueStr)
+	}
+	if currency != local.Currency {
+		return false, nil
+	}
+	// Допуск 0.01 (копейка) — ЮKassa отдаёт «100.00», float64-арифметика.
+	return math.Abs(remoteAmount-local.Amount) < 0.011, nil
 }
 
 // ListByUser возвращает платежи пользователя.
