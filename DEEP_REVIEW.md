@@ -22,22 +22,22 @@
 
 ## 🔴 HIGH (подтверждены эмпирически)
 
-### H1. Logout не отзывает refresh-токен серверно 🔍
+### H1. Logout не отзывает refresh-токен серверно 🔍 ✅ ИСПРАВЛЕНО
 - **Файл**: `internal/domain/user/auth_handler.go:365-380`, кука `Path=/auth/refresh` (165, 296, 350).
 - **Проблема**: refresh-кука имеет `Path=/auth/refresh`, поэтому браузер НЕ отправляет её на `POST /auth/logout`. `c.Cookie("refresh_token")` → пусто → `RevokeRefreshToken` не вызывается. Запись в БД остаётся валидной до TTL.
 - **Эксплойт**: украденный refresh-токен продолжает работать после «выхода» жертвы.
-- **Фикс**: серверный revoke по userID при logout (не зависящий от cookie), либо кука `Path=/`, либо детекция reuse (см. H4-security).
+- **Фикс**: ✅ кука `Path=/` во всех 9 местах установки/очистки — браузер теперь шлёт её в `/auth/logout`, `RevokeRefreshToken` срабатывает.
 
-### H2. SSE-менеджер: TOCTOU лимитов (CanAccept → RegisterSession) 🔍
+### H2. SSE-менеджер: TOCTOU лимитов (CanAccept → RegisterSession) 🔍 ✅ ИСПРАВЛЕНО
 - **Файл**: `internal/domain/game/hnd_sse.go:101-117, 150-180, 341, 357`.
 - **Проблема**: `CanAccept(ip)` проверяет лимиты под локом и отпускает его; `RegisterSession` инкрементирует `totalConns`/`connsPerIP` без повторной проверки. Два конкурентных SSE-подключения могут превысить лимиты. Ровно та же гонка уже исправлена в RoomHub через атомарный `Acquire()` (room_hub.go).
-- **Фикс**: перенести проверку лимитов внутрь `RegisterSession` (атомарно), `CanAccept` оставить для раннего reject, как в RoomHub.
+- **Фикс**: ✅ атомарная проверка лимитов ВНУТРИ `RegisterSession` (`acquireNoLock` под m.mu); `CanAccept` оставлен как ранний reject; sseConnect обрабатывает nil-сессию.
 
-### H3. `GetPassingByUser` не находит прохождение капитана и `StatusTesting` 🔍
+### H3. `GetPassingByUser` не находит прохождение капитана и `StatusTesting` 🔍 ✅ ИСПРАВЛЕНО
 - **Файл**: `internal/domain/game/repository.go:219-231`.
 - **Проблема**: запрос только через `JOIN team_members ... user_id = ?` и статусы `(accepted, started)`. А `helpers.go:37` явно: «капитан может не быть в team_members» — `CheckTeamMembership` это учитывает, репозиторий — нет. Плюс нет `StatusTesting`.
 - **Эффект**: капитан (не в team_members) не получит командные комнаты в `ChatRoomIDs`, хотя `canJoinRoom` ему их разрешает.
-- **Фикс**: `OR teams.captain_id = ?` (JOIN teams) + добавить `StatusTesting`.
+- **Фикс**: ✅ `LEFT JOIN teams` + `OR teams.captain_id = ?` + добавлен `StatusTesting`.
 
 ### H4. `onGameFinished` исполняется синхронно в HTTP-запросе игрока
 - **Файл**: `cmd/server/main.go:286-302`, `internal/domain/game/svc_play.go:200-202`.
@@ -53,25 +53,25 @@
 
 ## 🟠 MEDIUM
 
-### M1. Webhook ЮKassa: подпись не проверяется, защита = IP-allowlist 🔍
+### M1. Webhook ЮKassa: подпись не проверяется, защита = IP-allowlist 🔍 ✅ ИСПРАВЛЕНО
 - **Файл**: `internal/domain/payment/service.go:83-99, 221+`, `routes.go:22`.
 - **Проблема**: нет проверки `Authorization: Basic <WebhookKey>`; единственный фильтр — `isYooKassaIP(remoteIP)`. При `TRUSTED_PROXIES=""` это безопасно, но при прокси/широком trust — подделка X-Forwarded-For.
-- **Фикс**: верифицировать подпись вебхука; rate-limit + idempotency по payment_id; документировать TRUSTED_PROXIES.
+- **Фикс**: ✅ `verifyWebhookAuth` (Basic ShopID:WebhookKey, fallback SecretKey) до обработки; 401-маппинг; тесты.
 
 ### M2. WebAuthn-сессии не привязаны к userID
 - **Файл**: `internal/domain/user/webauthn_handler.go:187-195, 328-334`.
 - **Проблема**: глобальные ключи `webauthn_registration`/`webauthn_login` — сессия «прилипает» между аккаунтами на том же браузере.
 - **Фикс**: ключи вида `webauthn_registration:{userID}`, очистка при finish/logout.
 
-### M3. Presence чата: `unmarkChatRoom` снимает флаг при отключении одного клиента 🔍
+### M3. Presence чата: `unmarkChatRoom` снимает флаг при отключении одного клиента 🔍 ✅ ИСПРАВЛЕНО
 - **Файл**: `internal/domain/monitor/handler.go:283-290, 667-674`.
 - **Проблема**: метка на комнату без счётчика. Клиент A отключается → `unmarkChatRoom(roomID)` удалит метку, хотя B ещё в комнате; presence пропадает.
-- **Фикс**: счётчик клиентов на комнату (или проверять `RoomClientCount` в колбэке).
+- **Фикс**: ✅ счётчик клиентов на комнату (map[string]int + mutex), unmark только при нуле.
 
-### M4. `canJoinRoom` использует `context.Background()` 🔍
+### M4. `canJoinRoom` использует `context.Background()` 🔍 ✅ ИСПРАВЛЕНО
 - **Файл**: `internal/domain/monitor/handler.go:868, 882, 886, 890, 897`.
 - **Проблема**: запросы прав не отменяются при дисконнекте.
-- **Фикс**: передавать ctx в сигнатуру `canJoinRoom`.
+- **Фикс**: ✅ ctx (из `c.Request.Context()`) прокинут в сигнатуру `canJoinRoom`, все 5 вызовов обновлены, тесты.
 
 ### M5. LevelService.Update: partial-update сбрасывает ParentID/GroupID/MinChildren/координаты
 - **Файл**: `internal/domain/level/service.go:137-147`.
