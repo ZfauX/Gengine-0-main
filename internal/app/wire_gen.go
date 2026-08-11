@@ -158,7 +158,9 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	geolocationService := wrapGeolocationService(geolocationRepository)
 	geolocationHandler := wrapGeolocationHandler(geolocationService, gamePassingRepository, gameRepository)
 	paymentRepository := repos.Payment
-	paymentService := wrapPaymentService(cfg, paymentRepository)
+	notificationRepository := repos.Notification
+	notificationService := wrapNotificationService(notificationRepository, hub, sseManager, cfg)
+	paymentService := wrapPaymentService(cfg, paymentRepository, notificationService)
 	paymentHandler := wrapPaymentHandler(paymentService)
 	invitationRepository := repos.Invitation
 	invitationService := wrapInvitationService(invitationRepository, teamRepository, cfg)
@@ -167,8 +169,6 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	tournamentTeamRepository := repos.TournTeam
 	tournamentResultRepository := repos.TournResult
 	tournamentService := wrapTournamentService(db, tournamentRepository, tournamentGameRepository, tournamentTeamRepository, tournamentResultRepository, teamService, cfg, appCache)
-	notificationRepository := repos.Notification
-	notificationService := wrapNotificationService(notificationRepository, hub, sseManager, cfg)
 	exportRepository := repos.Export
 	exportService, err := wrapExportService(exportRepository, db)
 	if err != nil {

@@ -123,8 +123,9 @@ func wrapGeolocationHandler(geoService *game.GeolocationService, passingRepo gam
 }
 
 // wrapPaymentService — G-1..G-3 (pass 45): платежи ЮKassa.
-func wrapPaymentService(cfg *config.Config, paymentRepo payment.PaymentRepository) *payment.PaymentService {
-	return payment.NewPaymentService(cfg.Payments, paymentRepo)
+// IDEA-7: внедряем notificationService для уведомления о подтверждении платежа.
+func wrapPaymentService(cfg *config.Config, paymentRepo payment.PaymentRepository, notificationSvc *notification.NotificationService) *payment.PaymentService {
+	return payment.NewPaymentService(cfg.Payments, paymentRepo).WithNotificationService(notificationSvc)
 }
 
 // wrapPaymentHandler — G-1..G-3 (pass 45): HTTP-обработчики платежей.

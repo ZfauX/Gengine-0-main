@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"gengine-0/internal/config"
+	"gengine-0/internal/domain/notification"
 
 	"github.com/rs/zerolog/log"
 )
@@ -38,6 +39,17 @@ type PaymentService struct {
 	cfg    config.PaymentConfig
 	repo   PaymentRepository
 	client *http.Client
+
+	// notifier (IDEA-7): опциональный сервис уведомлений — при успешной оплате
+	// пользователю создаётся уведомление «Платёж подтверждён». Настраивается
+	// через WithNotificationService; nil — уведомления не шлются.
+	notifier PaymentNotifier
+}
+
+// PaymentNotifier — минимальный контракт для создания уведомления пользователю
+// (избегаем жёсткой зависимости payment→notification).
+type PaymentNotifier interface {
+	Create(ctx context.Context, userID uint, ntype notification.NotificationType, title, body, link string) error
 }
 
 func NewPaymentService(cfg config.PaymentConfig, repo PaymentRepository) *PaymentService {
@@ -46,6 +58,12 @@ func NewPaymentService(cfg config.PaymentConfig, repo PaymentRepository) *Paymen
 		repo:   repo,
 		client: &http.Client{Timeout: 15 * time.Second},
 	}
+}
+
+// WithNotificationService внедряет сервис уведомлений (IDEA-7).
+func (s *PaymentService) WithNotificationService(notifier PaymentNotifier) *PaymentService {
+	s.notifier = notifier
+	return s
 }
 
 // Enabled возвращает true, если платёжная функция настроена.
@@ -273,6 +291,7 @@ func (s *PaymentService) HandleWebhook(ctx context.Context, remoteIP string, raw
 			return err
 		}
 		log.Info().Uint("payment", local.ID).Uint("user_id", local.UserID).Float64("amount", local.Amount).Msg("payment succeeded")
+		s.notifyPaymentSucceeded(ctx, local)
 	case "canceled":
 		if err := s.repo.UpdateStatus(ctx, local.ID, StatusCanceled); err != nil {
 			return err
@@ -281,6 +300,20 @@ func (s *PaymentService) HandleWebhook(ctx context.Context, remoteIP string, raw
 		// waiting_for_capture / pending — без изменений.
 	}
 	return nil
+}
+
+// notifyPaymentSucceeded (IDEA-7): уведомляем пользователя о подтверждении
+// платежа (WebSocket + Web Push + запись в центре уведомлений). Ошибка не
+// роняет вебхук — сам платёж уже подтверждён, уведомление не критично.
+func (s *PaymentService) notifyPaymentSucceeded(ctx context.Context, local *Payment) {
+	if s.notifier == nil {
+		return
+	}
+	title := "Платёж подтверждён"
+	body := fmt.Sprintf("Сумма %.2f %s", local.Amount, local.Currency)
+	if err := s.notifier.Create(ctx, local.UserID, notification.NotificationTypeInfo, title, body, "/payments"); err != nil {
+		log.Warn().Err(err).Uint("user_id", local.UserID).Uint("payment", local.ID).Msg("payment succeeded: notification create failed")
+	}
 }
 
 // verifyRemoteAmount сверяет сумму/валюту из ответа ЮKassa с локальной записью.

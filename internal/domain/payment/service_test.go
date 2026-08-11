@@ -3,9 +3,13 @@
 package payment
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
+
+	"gengine-0/internal/config"
+	"gengine-0/internal/domain/notification"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -87,4 +91,39 @@ func TestVerifyRemoteAmount(t *testing.T) {
 	// Отсутствие amount — ошибка.
 	_, err = svc.verifyRemoteAmount(map[string]any{}, &Payment{Amount: 100, Currency: "RUB"})
 	require.Error(t, err)
+}
+
+// stubNotifier — записывает вызовы Create для теста уведомлений.
+type stubNotifier struct {
+	calls []string
+}
+
+func (s *stubNotifier) Create(ctx context.Context, userID uint, ntype notification.NotificationType, title, body, link string) error {
+	s.calls = append(s.calls, fmt.Sprintf("%d:%s:%s", userID, ntype, title))
+	return nil
+}
+
+// IDEA-7: при подтверждении платежа создаётся уведомление пользователю.
+func TestNotifyPaymentSucceeded(t *testing.T) {
+	t.Run("notifier внедрён — уведомление создаётся", func(t *testing.T) {
+		stub := &stubNotifier{}
+		svc := &PaymentService{notifier: stub}
+
+		svc.notifyPaymentSucceeded(context.Background(), &Payment{ID: 1, UserID: 42, Amount: 100, Currency: "RUB"})
+
+		require.Len(t, stub.calls, 1)
+		assert.Equal(t, "42:info:Платёж подтверждён", stub.calls[0])
+	})
+
+	t.Run("notifier nil — ничего не делаем", func(t *testing.T) {
+		svc := &PaymentService{}
+		svc.notifyPaymentSucceeded(context.Background(), &Payment{ID: 1, UserID: 42, Amount: 100, Currency: "RUB"})
+		// Никакого panic — просто no-op.
+	})
+
+	t.Run("WithNotificationService внедряет notifier", func(t *testing.T) {
+		stub := &stubNotifier{}
+		svc := NewPaymentService(config.PaymentConfig{}, nil).WithNotificationService(stub)
+		assert.NotNil(t, svc.notifier)
+	})
 }
