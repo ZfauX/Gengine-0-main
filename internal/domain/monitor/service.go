@@ -404,6 +404,11 @@ func (s *ChatService) GetMessages(ctx context.Context, roomID uint, limit int) (
 	return s.chatRepo.GetMessages(ctx, roomID, limit)
 }
 
+// GetMessagesBefore (IDEA-11): ленивая подгрузка старой истории чата.
+func (s *ChatService) GetMessagesBefore(ctx context.Context, roomID uint, beforeID uint, limit int) ([]ChatMessage, error) {
+	return s.chatRepo.GetMessagesBefore(ctx, roomID, beforeID, limit)
+}
+
 func (s *ChatService) GetByID(ctx context.Context, roomID uint) (*ChatRoom, error) {
 	return s.chatRepo.GetByID(ctx, roomID)
 }

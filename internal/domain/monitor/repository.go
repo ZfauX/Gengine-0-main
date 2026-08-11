@@ -24,6 +24,8 @@ type ChatRepository interface {
 	IsTeamMemberOrCaptain(ctx context.Context, teamID, userID uint) (bool, error)
 	SaveMessage(ctx context.Context, roomID, userID uint, content string) (*ChatMessage, error)
 	GetMessages(ctx context.Context, roomID uint, limit int) ([]ChatMessage, error)
+	// IDEA-11: ленивая подгрузка старой истории (before_id).
+	GetMessagesBefore(ctx context.Context, roomID uint, beforeID uint, limit int) ([]ChatMessage, error)
 	GetMessageByID(ctx context.Context, messageID uint) (*ChatMessage, error)
 	// B-1/B-5 (pass 45): членство в комнате.
 	AddRoomMember(ctx context.Context, roomID, userID uint, canRead, canWrite, canAttach bool) error
@@ -247,6 +249,31 @@ func (r *gormChatRepo) GetMessages(ctx context.Context, roomID uint, limit int) 
 		return nil, err
 	}
 	// reverse slice
+	for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
+		msgs[i], msgs[j] = msgs[j], msgs[i]
+	}
+	return msgs, nil
+}
+
+// GetMessagesBefore (IDEA-11): возвращает до limit сообщений СТАРШЕ beforeID
+// (в порядке возрастания created_at). Используется для ленивой подгрузки
+// истории («загрузить ранее») — без повторной загрузки уже показанных.
+func (r *gormChatRepo) GetMessagesBefore(ctx context.Context, roomID uint, beforeID uint, limit int) ([]ChatMessage, error) {
+	if beforeID == 0 {
+		return r.GetMessages(ctx, roomID, limit)
+	}
+	var msgs []ChatMessage
+	err := r.db.WithContext(ctx).Preload("User", func(db *gorm.DB) *gorm.DB {
+		return db.Select("id, name, avatar_path")
+	}).
+		Where("room_id = ? AND id < ?", roomID, beforeID).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&msgs).Error
+	if err != nil {
+		return nil, err
+	}
+	// reverse slice — возвращаем от старых к новым.
 	for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
 		msgs[i], msgs[j] = msgs[j], msgs[i]
 	}

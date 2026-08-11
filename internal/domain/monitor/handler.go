@@ -756,11 +756,39 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 				return
 			}
 			// Client sends JSON: {"type":"message","room_id":...,"content":"..."}
-			var msgData struct {
-				Content string `json:"content"`
+			// или {"type":"load_older","before_id":N} (IDEA-11: ленивая история).
+			var wsIn struct {
+				Type     string `json:"type"`
+				Content  string `json:"content"`
+				BeforeID uint   `json:"before_id"`
 			}
-			if parseErr := json.Unmarshal(rmsg.message, &msgData); parseErr != nil || msgData.Content == "" {
-				msgData.Content = string(rmsg.message)
+			if parseErr := json.Unmarshal(rmsg.message, &wsIn); parseErr != nil {
+				// Legacy: сырой текст без JSON — считаем содержанием сообщения.
+				wsIn.Type = "message"
+				wsIn.Content = string(rmsg.message)
+			}
+
+			// IDEA-11: клиент просит старые сообщения (прокрутка вверх).
+			if wsIn.Type == "load_older" {
+				older, olderErr := h.chatService.GetMessagesBefore(wsCtx, uint(roomIDUint), wsIn.BeforeID, 50)
+				if olderErr != nil {
+					log.Error().Err(olderErr).Str("room_id", roomID).Msg("ChatWS: load_older failed")
+					continue
+				}
+				payload, marshalErr := json.Marshal(gin.H{"type": "history_older", "messages": older})
+				if marshalErr == nil {
+					select {
+					case client.Send <- payload:
+					default:
+						log.Warn().Str("room_id", roomID).Msg("ChatWS: client buffer full, dropping older history")
+					}
+				}
+				continue
+			}
+
+			msgData := wsIn
+			if msgData.Content == "" {
+				continue
 			}
 			cleanContent := sanitize.StripHTML(msgData.Content)
 			if cleanContent == "" {

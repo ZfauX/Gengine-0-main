@@ -1264,6 +1264,7 @@ var enMessages = map[string]string{
 	"gamechat.unknown_user":      "Unknown",
 	"gamechat.unread_messages":   "New messages: %d ↓",
 	"gamechat.online_count":      "Online: %d",
+	"gamechat.load_older":        "Load older",
 
 	// ── Monitor ──
 	"monitor.page_title":         "Game monitor (real-time updates)",

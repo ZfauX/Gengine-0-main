@@ -1266,6 +1266,7 @@ var ruMessages = map[string]string{
 	"gamechat.unknown_user":      "Неизвестный",
 	"gamechat.unread_messages":   "Новые сообщения: %d ↓",
 	"gamechat.online_count":      "Онлайн: %d",
+	"gamechat.load_older":        "Загрузить ранее",
 
 	// ── Monitor ──
 	"monitor.page_title":         "Мониторинг игры (обновляется в реальном времени)",

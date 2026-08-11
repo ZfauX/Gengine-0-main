@@ -36,6 +36,11 @@
         <!-- Область сообщений -->
         <div class="relative">
             <div id="chat-messages" role="log" aria-live="polite" aria-relevant="additions" class="h-96 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-800 mb-3">
+                <!-- IDEA-11: кнопка «загрузить ранее» — видна при прокрутке вверх -->
+                <div class="text-center mb-2">
+                    <button id="load-older-btn" type="button" class="hidden btn btn-outline text-xs"
+                            aria-label="{{ T $.Lang "gamechat.load_older" }}">{{ T $.Lang "gamechat.load_older" }}</button>
+                </div>
                 <!-- C1: skeleton-заглушка до загрузки истории -->
                 <div id="chat-skeleton" class="space-y-3" aria-hidden="true">
                     <div class="skeleton h-4 w-1/2"></div>
@@ -218,6 +223,26 @@
                                 chatMessages.setAttribute('aria-live', 'polite');
                                 // UX-M4 (pass 34): после загрузки истории прокручиваем вниз.
                                 chatMessages.scrollTop = chatMessages.scrollHeight;
+                                updateLoadOlderButton();
+                            } else if (data.type === 'history_older') {
+                                // IDEA-11: ленивая подгрузка старой истории —
+                                // вставляем ПЕРЕД текущими сообщениями, сохраняя скролл.
+                                const list = Array.isArray(data.messages) ? data.messages : [];
+                                if (!list.length) { hideLoadOlderButton(); return; }
+                                chatMessages.setAttribute('aria-live', 'off');
+                                const prevHeight = chatMessages.scrollHeight;
+                                // Вставляем каждое сообщение в начало (в обратном порядке, чтобы
+                                // порядок был правильным: messages приходит от старых к новым).
+                                list.slice().reverse().forEach(msg => {
+                                    const id = msg.id || msg.ID || '';
+                                    if (id) renderedIds.add(id);
+                                    const div = buildMessageEl(msg);
+                                    chatMessages.insertBefore(div, chatMessages.firstChild);
+                                });
+                                chatMessages.setAttribute('aria-live', 'polite');
+                                // Сохраняем видимую позицию: корректируем scrollTop на добавленную высоту.
+                                chatMessages.scrollTop = chatMessages.scrollHeight - prevHeight;
+                                updateLoadOlderButton();
                             } else if (data.type === 'message') {
                                 const msg = data.message;
                                 const msgId = msg.id || msg.ID || '';
@@ -281,13 +306,22 @@
             );
         }
 
-        function renderMessage(msg) {
+        // IDEA-11: кнопка «загрузить ранее» + ленивая подгрузка истории.
+        const loadOlderBtn = document.getElementById('load-older-btn');
+        let oldestVisibleID = null;
+
+        function buildMessageEl(msg) {
             const div = document.createElement('div');
             div.className = 'chat-message py-1';
             const time = msg.created_at || msg.CreatedAt ? new Date(msg.created_at || msg.CreatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
             const author = (msg.User && msg.User.Name) || msg.user_name || (msg.user && msg.user.name) || '{{ T $.Lang "gamechat.unknown_user" }}';
             div.innerHTML = `<span class="font-semibold text-gray-800 dark:text-gray-100">${escapeHtml(author)}:</span> ${escapeHtml(msg.Content || msg.content || msg.text)} <span class="text-xs text-gray-500">(${time})</span>`;
             div.dataset.msgId = msg.id || msg.ID || '';
+            return div;
+        }
+
+        function renderMessage(msg) {
+            const div = buildMessageEl(msg);
             chatMessages.appendChild(div);
             // U-6: авто-скролл только если пользователь уже у низа — иначе
             // новые сообщения не дёргают читающего выше.
@@ -300,6 +334,43 @@
                 // счётчик непрочитанных вместо принудительного скролла.
                 bumpUnreadBadge();
             }
+        }
+
+        function oldestMsgID() {
+            const msgs = chatMessages.querySelectorAll('.chat-message');
+            for (let i = 0; i < msgs.length; i++) {
+                const id = msgs[i].dataset.msgId;
+                if (id && id.indexOf('local-') !== 0) return id;
+            }
+            return null;
+        }
+
+        function updateLoadOlderButton() {
+            if (!loadOlderBtn) return;
+            oldestVisibleID = oldestMsgID();
+            loadOlderBtn.classList.toggle('hidden', !oldestVisibleID);
+        }
+
+        function hideLoadOlderButton() {
+            if (loadOlderBtn) loadOlderBtn.classList.add('hidden');
+        }
+
+        if (loadOlderBtn) {
+            loadOlderBtn.addEventListener('click', function() {
+                const bid = oldestMsgID();
+                if (!bid || !chat || !chat.isOpen()) return;
+                // Блокируем повторные клики до ответа сервера.
+                loadOlderBtn.disabled = true;
+                chat.send(JSON.stringify({ type: 'load_older', before_id: parseInt(bid, 10) || 0 }));
+                setTimeout(function() { loadOlderBtn.disabled = false; }, 500);
+            });
+        }
+
+        // Показываем кнопку «загрузить ранее» при прокрутке к верху.
+        if (chatMessages) {
+            chatMessages.addEventListener('scroll', function() {
+                if (chatMessages.scrollTop < 60) updateLoadOlderButton();
+            });
         }
 
         // UX-6 (pass 35): счётчик непрочитанных сообщений в чате.
