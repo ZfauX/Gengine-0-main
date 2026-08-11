@@ -89,6 +89,11 @@ func (h *uploadsHandler) Serve(c *gin.Context) {
 	// S-3 (pass 33): nosniff — браузер не должен «угадывать» Content-Type
 	// (защита от polyglot-файлов, загруженных как текст/картинка).
 	c.Header("X-Content-Type-Options", "nosniff")
+	// L9 (PASS-3): файлы-ответы команд (answers) отдаются как attachment —
+	// PDF/текст не открывается inline (меньше поверхность для stored-content).
+	if category == "answers" {
+		c.Header("Content-Disposition", "attachment")
+	}
 	c.File(fullPath)
 }
 

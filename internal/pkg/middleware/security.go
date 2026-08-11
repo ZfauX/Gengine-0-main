@@ -67,7 +67,11 @@ func setCSPHeaders(c *gin.Context, nonce string, forceHSTS bool) {
 		"img-src 'self' data: https:; " +
 		"connect-src 'self' ws: wss:; " +
 		"form-action 'self'; " +
-		"frame-src 'self' https://www.google.com https://www.youtube.com https://player.vimeo.com https://rutube.ru;"
+		"frame-src 'self' https://www.google.com https://www.youtube.com https://player.vimeo.com https://rutube.ru; " +
+		// L10 (PASS-3): закрываем плагины, base-URI и фрейминг нашего сайта.
+		"object-src 'none'; " +
+		"base-uri 'none'; " +
+		"frame-ancestors 'none';"
 
 	c.Header("Content-Security-Policy", csp)
 	c.Header("X-Frame-Options", "DENY")

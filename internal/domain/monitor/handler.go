@@ -768,9 +768,13 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 		select {
 		case <-wsCtx.Done():
 			log.Debug().Str("room_id", roomID).Msg("ChatWS: context canceled, stopping read loop")
+			// L2 (PASS-3): прерываем блокирующий ReadMessage немедленно —
+			// иначе read-горутина спит до read-deadline (60с).
+			_ = conn.SetReadDeadline(time.Now())
 			return
 		case <-client.Done():
 			log.Debug().Str("room_id", roomID).Msg("ChatWS: client closed, stopping read loop")
+			_ = conn.SetReadDeadline(time.Now())
 			return
 		case rmsg := <-readCh:
 			if rmsg.err != nil {
@@ -798,6 +802,14 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 				if olderErr != nil {
 					log.Error().Err(olderErr).Str("room_id", roomID).Msg("ChatWS: load_older failed")
 					continue
+				}
+				// L1 (PASS-3): санитизация как у начальной истории — user-контент
+				// не должен уходить в DOM без StripHTML.
+				for i := range older {
+					older[i].Content = sanitize.StripHTML(older[i].Content)
+					if older[i].User.Name != "" {
+						older[i].User.Name = sanitize.StripHTML(older[i].User.Name)
+					}
 				}
 				payload, marshalErr := json.Marshal(gin.H{"type": "history_older", "messages": older})
 				if marshalErr == nil {

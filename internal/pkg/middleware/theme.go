@@ -67,19 +67,37 @@ func InvalidateThemeCache(userID uint) {
 }
 
 // themeCacheCleanup периодически вычищает истёкшие записи (предотвращает рост памяти).
+// L5 (PASS-3): горутина завершается по themeCacheStopCh (graceful shutdown) —
+// раньше `for { time.Sleep(5min) }` жила вечно.
+var themeCacheStopCh chan struct{}
+
+// StopThemeCacheCleanup останавливает фоновую горутину очистки кэша темы.
+func StopThemeCacheCleanup() {
+	themeCacheOnc.Do(func() {}) // гарантируем, что инициализация уже прошла
+	if themeCacheStopCh != nil {
+		close(themeCacheStopCh)
+		themeCacheStopCh = nil
+	}
+}
+
 func themeCacheCleanup() {
 	themeCacheOnc.Do(func() {
+		themeCacheStopCh = make(chan struct{})
 		go func() {
 			for {
-				time.Sleep(5 * time.Minute)
-				now := time.Now()
-				themeCacheMu.Lock()
-				for uid, e := range themeCache {
-					if now.After(e.expires) {
-						delete(themeCache, uid)
+				select {
+				case <-themeCacheStopCh:
+					return
+				case <-time.After(5 * time.Minute):
+					now := time.Now()
+					themeCacheMu.Lock()
+					for uid, e := range themeCache {
+						if now.After(e.expires) {
+							delete(themeCache, uid)
+						}
 					}
+					themeCacheMu.Unlock()
 				}
-				themeCacheMu.Unlock()
 			}
 		}()
 	})

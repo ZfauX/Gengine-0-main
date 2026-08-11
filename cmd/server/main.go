@@ -588,6 +588,9 @@ func run() error {
 	hub.Stop()
 	log.Info().Msg("WebSocket-хаб остановлен")
 
+	// 5.0 Останавливаем фоновую очистку кэша темы (L5, PASS-3).
+	middleware.StopThemeCacheCleanup()
+
 	// 5.1 Останавливаем дебаунс-диспетчер снапшотов (S3) — до закрытия БД.
 	if snapshotDispatcher != nil {
 		snapshotDispatcher.Close()

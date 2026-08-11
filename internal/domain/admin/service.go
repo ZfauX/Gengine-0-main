@@ -87,8 +87,11 @@ func (s *BackupService) CreateNow(ctx context.Context) error {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		// Чистим частичный файл (timeout/abort).
-		_ = os.Remove(filepath)
+		// Чистим частичный файл (timeout/abort). L7 (PASS-3): логируем ошибку
+		// удаления — иначе сироты на диске не видны.
+		if rmErr := os.Remove(filepath); rmErr != nil {
+			log.Warn().Err(rmErr).Str("file", filepath).Msg("Backup: failed to remove partial dump on pg_dump error")
+		}
 		return fmt.Errorf("pg_dump failed: %w, output: %s", err, string(output))
 	}
 

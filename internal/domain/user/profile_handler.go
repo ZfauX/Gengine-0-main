@@ -280,7 +280,8 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 
 	log.Info().Uint("user_id", userID).Str("path", webPath).Msg("UploadAvatar: file saved")
 
-	if err := h.userSvc.UpdateAvatarPath(c.Request.Context(), userID, webPath); err != nil {
+	oldPath, err := h.userSvc.UpdateAvatarPath(c.Request.Context(), userID, webPath)
+	if err != nil {
 		log.Error().Err(err).Uint("user", userID).Msg("UploadAvatar: failed to update avatar_path")
 		if delErr := h.storage.Delete(webPath); delErr != nil {
 			log.Error().Err(delErr).Str("path", webPath).Msg("UploadAvatar: failed to delete uploaded file")
@@ -291,6 +292,14 @@ func (h *ProfileHandler) UploadAvatar(c *gin.Context) {
 			"code":  appErr.Code,
 		})
 		return
+	}
+
+	// L12 (PASS-3): удаляем старый аватар (не оставляем мусор на диске).
+	// Пропускаем, если пути нет (первый аватар) или совпадает с новым.
+	if oldPath != "" && oldPath != webPath {
+		if delErr := h.storage.Delete(oldPath); delErr != nil {
+			log.Warn().Err(delErr).Str("path", oldPath).Uint("user_id", userID).Msg("UploadAvatar: failed to delete old avatar")
+		}
 	}
 
 	log.Info().Uint("user_id", userID).Str("path", webPath).Msg("UploadAvatar: avatar updated successfully")

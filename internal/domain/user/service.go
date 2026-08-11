@@ -540,10 +540,20 @@ func (s *UserService) UpdateProfile(ctx context.Context, id uint, name, emailStr
 	return s.userRepo.Update(ctx, id, fields)
 }
 
-func (s *UserService) UpdateAvatarPath(ctx context.Context, id uint, avatarPath string) error {
-	return s.userRepo.Update(ctx, id, map[string]any{
+// UpdateAvatarPath обновляет путь аватара. Возвращает ПРЕЖНИЙ путь (L12, PASS-3)
+// — хендлер удаляет старый файл, чтобы не копить мусор на диске.
+func (s *UserService) UpdateAvatarPath(ctx context.Context, id uint, avatarPath string) (string, error) {
+	user, getErr := s.userRepo.GetByID(ctx, id)
+	if getErr != nil {
+		return "", getErr
+	}
+	oldPath := user.AvatarPath
+	if err := s.userRepo.Update(ctx, id, map[string]any{
 		"avatar_path": avatarPath,
-	})
+	}); err != nil {
+		return "", err
+	}
+	return oldPath, nil
 }
 
 func (s *UserService) ChangePassword(ctx context.Context, id uint, oldPassword, newPassword string) error {

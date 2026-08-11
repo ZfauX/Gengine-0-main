@@ -451,7 +451,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	if err := c.ShouldBind(&input); err != nil {
 		errs.Add("name", validation.ValidateString("Имя", input.Name, 1, 128))
 		errs.Add("email", validation.ValidateString("Email", input.Email, 1, 255))
-		errs.Add("password", validation.ValidateString("Пароль", input.Password, 6, 128))
+		// L11 (PASS-3): выровнено с binding min=8 и ValidatePasswordStrength.
+		errs.Add("password", validation.ValidateString("Пароль", input.Password, 8, 128))
 		if !errs.HasErrors() {
 			errs.Add("form", fmt.Errorf("некорректные данные: %v", err))
 		}
@@ -637,7 +638,8 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	var input ResetInput
 	errs := validation.FieldErrors{}
 	if err := c.ShouldBind(&input); err != nil {
-		errs.Add("password", validation.ValidateString("Пароль", input.Password, 6, 128))
+		// L11 (PASS-3): выровнено с binding min=8 и ValidatePasswordStrength.
+		errs.Add("password", validation.ValidateString("Пароль", input.Password, 8, 128))
 		if !errs.HasErrors() {
 			errs.Add("form", fmt.Errorf("некорректные данные: %v", err))
 		}
