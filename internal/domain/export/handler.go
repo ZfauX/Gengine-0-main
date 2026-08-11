@@ -439,6 +439,12 @@ func (h *ExportHandler) ExportResultsExcel(c *gin.Context) {
 	if !h.checkGameAccess(c, gameID) {
 		return
 	}
+	// DEEP-REVIEW PASS-4 H3: экспорт данных ВСЕХ команд требует модератора —
+	// раньше только checkGameAccess (IsUserManager пропускает observer),
+	// и observer мог выгрузить place/team/time/attempts всех команд через Excel.
+	if !h.requireModerate(c, gameID) {
+		return
+	}
 
 	var buf bytes.Buffer
 	if err := h.exportService.ExportResultsToExcel(c.Request.Context(), gameID, &buf); err != nil {

@@ -53,7 +53,10 @@ type ServerConfig struct {
 	// Не экспонируем pprof на основном порту — только по явному запросу.
 	PprofEnabled bool
 	// PprofPort — порт pprof-сервера (по умолчанию 6060).
-	PprofPort         string
+	PprofPort string
+	// PprofBind — адрес привязки pprof-сервера (DEEP-REVIEW PASS-4 H2).
+	// По умолчанию 127.0.0.1 — pprof не должен быть доступен извне без auth.
+	PprofBind string
 	MaxBackups        int    // максимальное количество сохраняемых архивов логов
 	LogFilePath       string // путь к файлу логов (по умолчанию "logs/app.log")
 	LogMaxSize        int    // максимальный размер файла лога в МБ (по умолчанию 100)
@@ -220,6 +223,9 @@ func LoadConfig() (*Config, error) {
 	// отдельный порт PPROF_PORT (по умолчанию 6060) — не экспонируем в проде.
 	cfg.Server.PprofEnabled = os.Getenv("PPROF_ENABLED") == "true"
 	cfg.Server.PprofPort = getEnvOrDefault("PPROF_PORT", "6060")
+	// H2 (PASS-4): по умолчанию pprof слушает ТОЛЬКО loopback — для внешнего
+	// доступа (внутренняя сеть) явно задать PPROF_BIND.
+	cfg.Server.PprofBind = getEnvOrDefault("PPROF_BIND", "127.0.0.1")
 	cfg.Server.MaxBackups = getEnvAsInt("LOG_MAX_BACKUPS", defaultMaxBackups)
 	cfg.Server.LogFilePath = getEnvOrDefault("LOG_FILE_PATH", "logs/app.log")
 	cfg.Server.LogMaxSize = getEnvAsInt("LOG_MAX_SIZE", defaultLogMaxSizeMB)

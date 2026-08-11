@@ -146,7 +146,8 @@ func TestKopecksConversions(t *testing.T) {
 	assert.Equal(t, int64(29), rublesToKopecks(0.29))
 }
 
-// M1 (PASS-3): верификация Authorization (Basic ShopID:WebhookKey) вебхука.
+// H1 (PASS-4): верификация Authorization (Basic ShopID:WebhookKey) вебхука.
+// ЮKassa НЕ шлёт Basic — заголовок опционален; если есть и неверен → отклоняем.
 func TestVerifyWebhookAuth(t *testing.T) {
 	svc := NewPaymentService(config.PaymentConfig{
 		ShopID:     "shop_123",
@@ -159,28 +160,43 @@ func TestVerifyWebhookAuth(t *testing.T) {
 	}
 
 	t.Run("валидный WebhookKey", func(t *testing.T) {
-		require.NoError(t, svc.verifyWebhookAuth(mkAuth("shop_123", "hookkey")))
+		ok, err := svc.verifyWebhookAuth(mkAuth("shop_123", "hookkey"))
+		require.NoError(t, err)
+		assert.True(t, ok)
 	})
-	t.Run("пустой заголовок", func(t *testing.T) {
-		require.ErrorIs(t, svc.verifyWebhookAuth(""), ErrWebhookUnauthorized)
+	t.Run("пустой заголовок = легитимный вебхук ЮKassa", func(t *testing.T) {
+		// По документации ЮKassa вебхуки приходят БЕЗ Basic — пропускаем.
+		ok, err := svc.verifyWebhookAuth("")
+		require.NoError(t, err)
+		assert.True(t, ok)
 	})
 	t.Run("не Basic", func(t *testing.T) {
-		require.ErrorIs(t, svc.verifyWebhookAuth("Bearer xyz"), ErrWebhookUnauthorized)
+		ok, err := svc.verifyWebhookAuth("Bearer xyz")
+		require.ErrorIs(t, err, ErrWebhookUnauthorized)
+		assert.False(t, ok)
 	})
 	t.Run("неверный пароль", func(t *testing.T) {
-		require.ErrorIs(t, svc.verifyWebhookAuth(mkAuth("shop_123", "wrong")), ErrWebhookUnauthorized)
+		ok, err := svc.verifyWebhookAuth(mkAuth("shop_123", "wrong"))
+		require.ErrorIs(t, err, ErrWebhookUnauthorized)
+		assert.False(t, ok)
 	})
 	t.Run("неверный shopId", func(t *testing.T) {
-		require.ErrorIs(t, svc.verifyWebhookAuth(mkAuth("other", "hookkey")), ErrWebhookUnauthorized)
+		ok, err := svc.verifyWebhookAuth(mkAuth("other", "hookkey"))
+		require.ErrorIs(t, err, ErrWebhookUnauthorized)
+		assert.False(t, ok)
 	})
 	t.Run("битый base64", func(t *testing.T) {
-		require.ErrorIs(t, svc.verifyWebhookAuth("Basic !!!"), ErrWebhookUnauthorized)
+		ok, err := svc.verifyWebhookAuth("Basic !!!")
+		require.ErrorIs(t, err, ErrWebhookUnauthorized)
+		assert.False(t, ok)
 	})
 
 	// Если WebhookKey не задан — используем SecretKey.
 	svcNoHook := NewPaymentService(config.PaymentConfig{ShopID: "shop_123", SecretKey: "secret"}, nil)
 	t.Run("fallback на SecretKey", func(t *testing.T) {
-		require.NoError(t, svcNoHook.verifyWebhookAuth(mkAuth("shop_123", "secret")))
+		ok, err := svcNoHook.verifyWebhookAuth(mkAuth("shop_123", "secret"))
+		require.NoError(t, err)
+		assert.True(t, ok)
 	})
 }
 

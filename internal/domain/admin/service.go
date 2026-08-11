@@ -3,11 +3,14 @@ package admin
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"gengine-0/internal/config"
@@ -15,6 +18,15 @@ import (
 
 	"github.com/rs/zerolog/log"
 )
+
+// randomHex (DEEP-REVIEW PASS-4 H5): крипто-нонс для имён файлов бекапов.
+func randomHex(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b)
+}
 
 // ---------- BackupService ----------
 
@@ -28,6 +40,10 @@ type BackupService struct {
 	dbUser     string
 	dbPassword string
 	dbName     string
+
+	// backupMu (DEEP-REVIEW PASS-4 H5): сериализует CreateNow — повторный клик
+	// во время дампа не запускает конкурирующий pg_dump.
+	backupMu sync.Mutex
 }
 
 // NewBackupService создаёт новый BackupService.
@@ -52,6 +68,24 @@ func NewBackupService(
 	}
 }
 
+// CreateNowAsync запускает CreateNow в фоновой горутине (DEEP-REVIEW PASS-4 H5):
+// HTTP-ответ не ждёт pg_dump до 10 мин; повторный вызов во время дампа
+// не стартует конкурирующий процесс (backupMu). Ошибка логируется.
+func (s *BackupService) CreateNowAsync(reqCtx context.Context) error {
+	// Non-blocking: если дамп уже идёт — отвечаем «уже запущен».
+	if !s.backupMu.TryLock() {
+		return fmt.Errorf("создание бекапа уже выполняется")
+	}
+	go func() {
+		defer s.backupMu.Unlock()
+		// Независимый контекст — дисконнект админа не прерывает дамп.
+		if err := s.CreateNow(context.WithoutCancel(reqCtx)); err != nil {
+			log.Error().Err(err).Msg("CreateBackup (async): failed")
+		}
+	}()
+	return nil
+}
+
 // CreateNow выполняет pg_dump и сохраняет файл.
 func (s *BackupService) CreateNow(ctx context.Context) error {
 	if err := os.MkdirAll(s.BackupDir, 0755); err != nil {
@@ -62,10 +96,11 @@ func (s *BackupService) CreateNow(ctx context.Context) error {
 		return fmt.Errorf("pg_dump не найден в PATH: %w — убедитесь, что PostgreSQL установлен и pg_dump доступен", err)
 	}
 
-	// Точность до миллисекунды + короткий случайный суффикс — два бекапа в одну
-	// секунду не перезапишут друг друга (C9).
+	// DEEP-REVIEW PASS-4 H5: ms-таймстамп недостаточно — два клика в одну ms
+	// перезаписывали файл. Добавлен крипто-нонс (4 байта hex) как в storage.
 	timestamp := time.Now().Format("20060102_150405.000")
-	filename := fmt.Sprintf("backup_%s.sql", timestamp)
+	nonce := randomHex(4)
+	filename := fmt.Sprintf("backup_%s_%s.sql", timestamp, nonce)
 	filepath := filepath.Join(s.BackupDir, filename)
 
 	// DEEP-REVIEW PASS-2 (#8): собственный таймаут и НЕЗАВИСИМЫЙ контекст —

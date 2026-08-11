@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -495,16 +496,19 @@ func run() error {
 
 	// P-1 (pass 48): отдельный pprof-сервер (PPROF_ENABLED=true, порт PPROF_PORT).
 	// Не экспонируем pprof на основном порту — включается только для профилирования.
+	// DEEP-REVIEW PASS-4 H2: по умолчанию привязан к 127.0.0.1 (PPROF_BIND) —
+	// без auth pprof не должен быть доступен извне (дамп памяти = секреты).
 	if cfg.Server.PprofEnabled {
 		pprofMux := http.NewServeMux()
 		pprofMux.Handle("/debug/pprof/", http.DefaultServeMux)
+		addr := net.JoinHostPort(cfg.Server.PprofBind, cfg.Server.PprofPort)
 		pprofSrv := &http.Server{
-			Addr:        ":" + cfg.Server.PprofPort,
+			Addr:        addr,
 			Handler:     pprofMux,
 			ReadTimeout: config.ServerReadTimeout,
 		}
 		goSafe(func() {
-			log.Info().Str("port", cfg.Server.PprofPort).Msg("pprof server started")
+			log.Info().Str("addr", addr).Msg("pprof server started (loopback by default)")
 			if err := pprofSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Error().Err(err).Msg("Ошибка работы pprof-сервера")
 			}

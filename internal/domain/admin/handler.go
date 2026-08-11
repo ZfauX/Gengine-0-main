@@ -785,11 +785,16 @@ func (h *AdminHandler) ListBackups(c *gin.Context) {
 // @Router /admin/backups/create [post]
 // @Security JWT
 func (h *AdminHandler) CreateBackup(c *gin.Context) {
-	if err := h.backupService.CreateNow(c.Request.Context()); err != nil {
+	// DEEP-REVIEW PASS-4 H5: CreateNow выполняет pg_dump (до 10 мин) —
+	// запускаем в фоновой горутине с независимым ctx (не блокируем HTTP-ответ,
+	// повторный клик не создаёт конкурирующий дамп через общий пул).
+	// Параллельные CreateNow сериализуются внутри BackupService (backupMu).
+	if err := h.backupService.CreateNowAsync(c.Request.Context()); err != nil {
 		log.Error().Err(err).Msg("CreateBackup failed")
 		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
+	render.SetFlash(c, "success", "Создание бекапа запущено в фоне")
 	c.Redirect(http.StatusFound, "/admin/backups")
 }
 

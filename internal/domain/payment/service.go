@@ -307,49 +307,62 @@ func (s *PaymentService) CreatePayment(ctx context.Context, userID uint, amountK
 	return p, confirmationURL, nil
 }
 
-// verifyWebhookAuth проверяет Authorization заголовок вебхука ЮKassa.
-// ЮKassa шлёт HTTP Basic Auth: username = ShopID, password = WebhookKey
-// (или SecretKey, если WebhookKey не задан). Это второй слой доверия поверх
-// IP-allowlist — при подделке X-Forwarded-For (широкий TRUSTED_PROXIES)
-// запрос без корректной подписи будет отклонён (DEEP-REVIEW PASS-3 M1).
-func (s *PaymentService) verifyWebhookAuth(authHeader string) error {
+// verifyWebhookAuth проверяет Authorization заголовок вебхука ЮKassa, ЕСЛИ он
+// присутствует (DEEP-REVIEW PASS-4 H1).
+//
+// ⚠️ ВАЖНО: по официальной документации ЮKassa («Notification authentication»)
+// легитимные вебхуки аутентифицируются ТОЛЬКО по IP-адресам (yooKassaIPRanges)
+// и проверке статуса объекта через API — ЮKassa НЕ отправляет Basic-заголовок
+// в вебхуках. Поэтому эта проверка ОПЦИОНАЛЬНАЯ: если заголовок есть — сверяем
+// (защита от подделки при широком TRUSTED_PROXIES); если его нет — пропускаем,
+// полагаясь на IP-allowlist + yooKassaGetPayment + verifyRemoteAmount.
+// Возвращает false, если заголовок ПРИСУТСТВУЕТ, но неверен (это попытка
+// подделки), и true в остальных случаях (заголовка нет / заголовок верный).
+func (s *PaymentService) verifyWebhookAuth(authHeader string) (bool, error) {
 	if authHeader == "" {
-		return ErrWebhookUnauthorized
+		// Заголовка нет — легитимный вебхук ЮKassa (IP-allowlist ниже).
+		return true, nil
 	}
 	const prefix = "Basic "
 	if !strings.HasPrefix(authHeader, prefix) {
-		return ErrWebhookUnauthorized
+		return false, fmt.Errorf("%w: not basic", ErrWebhookUnauthorized)
 	}
 	decoded, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(authHeader, prefix))
 	if err != nil {
-		return fmt.Errorf("%w: bad base64", ErrWebhookUnauthorized)
+		return false, fmt.Errorf("%w: bad base64", ErrWebhookUnauthorized)
 	}
 	user, pass, ok := strings.Cut(string(decoded), ":")
 	if !ok {
-		return fmt.Errorf("%w: bad format", ErrWebhookUnauthorized)
+		return false, fmt.Errorf("%w: bad format", ErrWebhookUnauthorized)
 	}
 	expectedPass := s.cfg.WebhookKey
 	if expectedPass == "" {
 		expectedPass = s.cfg.SecretKey
 	}
 	if user != s.cfg.ShopID || pass != expectedPass {
-		return ErrWebhookUnauthorized
+		return false, ErrWebhookUnauthorized
 	}
-	return nil
+	return true, nil
 }
 
 // HandleWebhook обрабатывает уведомление от ЮKassa.
-// Аутентификация: Authorization (Basic ShopID:WebhookKey) + IP-allowlist ЮKassa
-// + подтверждение статуса через API.
+// Аутентификация (DEEP-REVIEW PASS-4 H1):
+//   1. Optional Basic-подпись (если заголовок есть и неверен — отклонить);
+//   2. IP-allowlist ЮKassa (основной фильтр, по документации ЮKassa);
+//   3. подтверждение статуса через API + verifyRemoteAmount (финальная защита).
 func (s *PaymentService) HandleWebhook(ctx context.Context, remoteIP, authHeader string, rawBody []byte) error {
 	if !s.Enabled() {
 		return fmt.Errorf("платежи не настроены")
 	}
-	// M1 (PASS-3): подпись вебхука проверяется ДО обработки — даже при
-	// компрометации IP-фильтра (широкий TRUSTED_PROXIES) запрос без ключа
-	// отклоняется без исходящих HTTP-запросов к api.yookassa.ru.
-	if err := s.verifyWebhookAuth(authHeader); err != nil {
-		return err
+	// H1 (PASS-4): ЮKassa НЕ шлёт Basic в вебхуках — проверяем только если
+	// заголовок ПРИСУТСТВУЕТ (защита от подделки при широком TRUSTED_PROXIES).
+	// Пустой заголовок = легитимный вебхук (полагаемся на IP-allowlist ниже).
+	authOK, authErr := s.verifyWebhookAuth(authHeader)
+	if authErr != nil {
+		return authErr
+	}
+	if !authOK {
+		return ErrWebhookUnauthorized
 	}
 	if !isYooKassaIP(remoteIP) {
 		return fmt.Errorf("%w: %s", ErrWebhookUntrustedIP, remoteIP)

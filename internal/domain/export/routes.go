@@ -33,10 +33,12 @@ func RegisterRoutes(
 		csvGroup.GET("/export", exportHandler.ExportGameCSV)
 
 		csvGroup.GET("/export-results", exportHandler.ExportResultsCSV)
-
-		// E1: endpoint существовал в handler, но маршрут не был зарегистрирован.
-		csvGroup.GET("/teams/:team_id/export-results", exportHandler.ExportTeamResultsCSV)
 	}
+
+	// H4 (PASS-4): /teams/:team_id/export-results НЕ под gameManager — доступ
+	// должен быть у капитана команды (UX-1, pass 36), а не только у менеджера.
+	// Хендлер ExportTeamResultsCSV сам проверяет капитанство/права.
+	protected.GET("/teams/:team_id/export-results", exportHandler.ExportTeamResultsCSV)
 
 	pdfGroup := protected.Group("")
 	pdfGroup.Use(gameManager)
