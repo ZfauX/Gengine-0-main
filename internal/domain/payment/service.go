@@ -148,7 +148,8 @@ func rublesStringToKopecks(s string) (int64, error) {
 		return 0, err
 	}
 	// L1 (PASS-5): проверка до умножения — w*100 не должно переполняться.
-	if w > (math.MaxInt64-f)/100 || w < (math.MinInt64-f)/100 {
+	// f≤99 не влияет на границу; MinInt64-f отдельно не проверяем (переполнение).
+	if w > math.MaxInt64/100 || w < math.MinInt64/100 {
 		return 0, fmt.Errorf("сумма слишком велика: %q", whole)
 	}
 	result := w*100 + f
