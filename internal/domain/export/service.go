@@ -217,7 +217,14 @@ func (s *ExportService) ExportTeamResultsToCSV(ctx context.Context, gameID, team
 }
 
 // ImportGameFromCSV парсит CSV и создаёт уровни/вопросы/ответы для указанной игры.
+// DEEP-REVIEW PASS-4 M2: лимит записей (5000) и валидация позиций (1..10000) —
+// раньше произвольный CSV мог создать тысячи уровней в одной транзакции
+// (долгий lock) и обойти лимиты обычного flow создания.
 func (s *ExportService) ImportGameFromCSV(ctx context.Context, gameID uint, r io.Reader) error {
+	const (
+		maxImportRecords  = 5000
+		maxImportPosition = 10000
+	)
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		reader := csv.NewReader(r)
 
@@ -232,6 +239,7 @@ func (s *ExportService) ImportGameFromCSV(ctx context.Context, gameID uint, r io
 
 		levelMap := make(map[int]*level.Level)
 
+		records := 0
 		for {
 			record, err := reader.Read()
 			if err == io.EOF {
@@ -243,10 +251,19 @@ func (s *ExportService) ImportGameFromCSV(ctx context.Context, gameID uint, r io
 			if len(record) < 5 {
 				continue
 			}
+			records++
+			if records > maxImportRecords {
+				return fmt.Errorf("слишком много записей в CSV (максимум %d)", maxImportRecords)
+			}
 
 			pos, err := strconv.Atoi(record[0])
 			if err != nil {
 				return fmt.Errorf("неверная позиция уровня: %s", record[0])
+			}
+			// M2: валидация диапазона — отрицательные/нулевые/огромные позиции
+			// не должны создавать уровни в обход обычного flow.
+			if pos < 1 || pos > maxImportPosition {
+				return fmt.Errorf("недопустимая позиция уровня: %d", pos)
 			}
 			levelName := record[1]
 			questionText := record[2]

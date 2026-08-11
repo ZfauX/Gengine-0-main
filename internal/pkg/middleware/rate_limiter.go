@@ -377,6 +377,23 @@ func OAuthRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 	}
 }
 
+// PersonalChatRateLimit (DEEP-REVIEW PASS-4 M5): per-IP лимит на создание
+// личного чата — раньше любой аутентифицированный мог создавать комнаты
+// с любым user_id без ограничений (спам-вектор, PII-перечисление).
+func PersonalChatRateLimit(window time.Duration, limit int) gin.HandlerFunc {
+	rl := NewRateLimiter(window, limit)
+	return func(c *gin.Context) {
+		ip := c.ClientIP()
+		result := rl.Allow("personal_chat:" + ip)
+		setRateLimitHeaders(c, result)
+		if !result.Allowed {
+			respondRateLimitError(c, ErrRateLimitLogin, result)
+			return
+		}
+		c.Next()
+	}
+}
+
 var oauthRateLimiter *RateLimiter
 
 func InitOAuthRateLimiter(window time.Duration, limit int) {

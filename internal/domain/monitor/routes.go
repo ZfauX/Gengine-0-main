@@ -120,7 +120,9 @@ func RegisterRoutes(
 	protected.POST("/games/:id/chat/rooms", gameManager, monitorHandler.CreateRoom)
 
 	// B-7 (pass 45): личный чат 1-на-1.
-	protected.GET("/chat/personal/:user_id", monitorHandler.PersonalChat)
+	// M5 (PASS-4): rate-limit — раньше любой аутентифицированный создавал
+	// комнаты с любым user_id без ограничений (спам/PII-перечисление).
+	protected.GET("/chat/personal/:user_id", middleware.PersonalChatRateLimit(1*time.Minute, 30), monitorHandler.PersonalChat)
 
 	// @Summary ID комнат чата
 	// @Description Возвращает ID общей и командной комнат чата для игры (для инициализации WebSocket)

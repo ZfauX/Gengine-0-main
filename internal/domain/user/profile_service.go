@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
+	"time"
 )
 
 // ErrEmailTaken — email уже занят другим пользователем.
@@ -29,20 +31,67 @@ type RecentGame struct {
 
 // ProfileService отвечает за статистику и данные публичного профиля.
 // A-2 (pass 35): данные через ProfileRepository, а не raw *gorm.DB.
+// DEEP-REVIEW PASS-4 M11: статистика кэшируется на 60с (счётчики меняются
+// редко — только при финише игры); публичный профиль просматривается часто.
 type ProfileService struct {
 	repo ProfileRepository
+
+	statsMu    sync.Mutex
+	statsCache map[uint]statsCacheEntry
 }
+
+type statsCacheEntry struct {
+	stats   UserStats
+	expires time.Time
+}
+
+// statsCacheTTL — время жизни кэша статистики профиля.
+const statsCacheTTL = 60 * time.Second
 
 // NewProfileService создаёт новый ProfileService.
 func NewProfileService(repo ProfileRepository) *ProfileService {
-	return &ProfileService{repo: repo}
+	return &ProfileService{repo: repo, statsCache: make(map[uint]statsCacheEntry)}
 }
 
-// GetPublicProfileStats загружает статистику пользователя.
+// GetPublicProfileStats загружает статистику пользователя (с TTL-кэшем, M11).
 // PF-3 (pass 29): 3 COUNT + rating ранее были 4 round-trip; теперь один
 // запрос с агрегатами через подзапросы.
 func (s *ProfileService) GetPublicProfileStats(ctx context.Context, userID uint) (*UserStats, error) {
-	return s.repo.GetPublicProfileStats(ctx, userID)
+	now := time.Now()
+	s.statsMu.Lock()
+	if e, ok := s.statsCache[userID]; ok && now.Before(e.expires) {
+		stats := e.stats
+		s.statsMu.Unlock()
+		return &stats, nil
+	}
+	s.statsMu.Unlock()
+
+	stats, err := s.repo.GetPublicProfileStats(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	s.statsMu.Lock()
+	// Lazy sweep: не даём map расти неограниченно.
+	if len(s.statsCache) > 512 {
+		for id, e := range s.statsCache {
+			if !now.After(e.expires) {
+				continue
+			}
+			delete(s.statsCache, id)
+		}
+	}
+	s.statsCache[userID] = statsCacheEntry{stats: *stats, expires: now.Add(statsCacheTTL)}
+	s.statsMu.Unlock()
+	return stats, nil
+}
+
+// InvalidateProfileStats сбрасывает кэш статистики пользователя (вызывается
+// при завершении игры/обновлении рейтинга, чтобы счётчики не были устаревшими).
+func (s *ProfileService) InvalidateProfileStats(userID uint) {
+	s.statsMu.Lock()
+	delete(s.statsCache, userID)
+	s.statsMu.Unlock()
 }
 
 // IsFollowing проверяет, подписан ли пользователь на другого.

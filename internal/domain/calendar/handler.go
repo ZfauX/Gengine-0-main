@@ -184,7 +184,13 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 func (h *CalendarHandler) CalendarICal(c *gin.Context) {
 	// P-6 (pass 39): собранный .ics кэшируем на 5 мин — Google/Apple опрашивают
 	// endpoint регулярно, а полногодовой запрос с Preload дорогой.
-	const icsCacheKey = "ics"
+	// DEEP-REVIEW PASS-4 M9: ключ включает host — тело содержит URL с Host,
+	// при multi-domain/прокси первый запрос не должен кэшировать чужой host.
+	hostKey := h.baseURL
+	if hostKey == "" {
+		hostKey = SanitizeHost(c.Request.Host)
+	}
+	icsCacheKey := "ics:" + hostKey
 	h.cacheMu.Lock()
 	if e, ok := h.cache[icsCacheKey]; ok && time.Now().Before(e.expires) {
 		ics := e.data
@@ -249,7 +255,7 @@ func (h *CalendarHandler) CalendarICal(c *gin.Context) {
 
 	sb.WriteString("END:VCALENDAR\r\n")
 
-	// Сохраняем в кэш.
+	// Сохраняем в кэш (ключ с host — M9).
 	h.cacheMu.Lock()
 	h.cache[icsCacheKey] = calendarCacheEntry{data: []byte(sb.String()), expires: time.Now().Add(calendarCacheTTL)}
 	h.cacheMu.Unlock()
