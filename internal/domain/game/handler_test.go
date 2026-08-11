@@ -185,6 +185,11 @@ func (m *MockGameService) GetUserGamesView(ctx context.Context, userID uint) str
 	return "table"
 }
 
+func (m *MockGameService) CountGamesByAuthor(ctx context.Context, authorID uint) (int64, error) {
+	args := m.Called(ctx, authorID)
+	return args.Get(0).(int64), args.Error(1)
+}
+
 func (m *MockGameService) SaveSettings(ctx context.Context, gameID uint, settings GameSetting) (*GameSetting, error) {
 	args := m.Called(ctx, gameID, settings)
 	if args.Get(0) == nil {

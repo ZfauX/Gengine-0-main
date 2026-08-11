@@ -830,6 +830,12 @@ var ruMessages = map[string]string{
 
 	// ── Game New ──
 	"game.new_title":                    "Новая игра",
+	"game.onboarding_title":             "Добро пожаловать, автор! 🎉",
+	"game.onboarding_subtitle":          "Создание первой игры — это 4 простых шага. Вот что дальше:",
+	"game.onboarding_step1":             "Заполните форму и создайте черновик игры.",
+	"game.onboarding_step2":             "Добавьте уровни, вопросы и ответы на странице игры.",
+	"game.onboarding_step3":             "Проверьте игру в тестовом режиме, затем опубликуйте.",
+	"game.onboarding_step4":             "Пригласите команды и следите за ходом игры в мониторинге.",
 	"game.new_wizard_title":             "Новая игра",
 	"game.new_step_basic":               "Основные данные",
 	"game.new_step_basic_title":         "Основные данные",

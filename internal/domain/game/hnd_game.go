@@ -267,9 +267,17 @@ func (h *GameHandler) Show(c *gin.Context) {
 // @Router /games/new [get]
 // @Security JWT
 func (h *GameHandler) NewForm(c *gin.Context) {
+	// IDEA-13: онбординг для авторов — подсказки при создании ПЕРВОЙ игры.
+	showOnboarding := false
+	if userID := c.GetUint("userID"); userID != 0 {
+		if count, err := h.gameService.CountGamesByAuthor(c.Request.Context(), userID); err == nil && count == 0 {
+			showOnboarding = true
+		}
+	}
 	render.Page(c, http.StatusOK, "games-new.html", gin.H{
-		"csrf":  csrf.GetToken(c),
-		"Title": "Создание игры",
+		"csrf":           csrf.GetToken(c),
+		"Title":          "Создание игры",
+		"ShowOnboarding": showOnboarding,
 		"Breadcrumbs": []map[string]string{
 			{"name": "nav.home", "url": "/"},
 			{"name": "nav.games", "url": "/games"},

@@ -24,6 +24,8 @@ type GameServiceInterface interface {
 	GetSettingsWithDefaults(ctx context.Context, gameID uint) (*GameSetting, error)
 	SaveSettings(ctx context.Context, gameID uint, settings GameSetting) (*GameSetting, error)
 	GetUserGamesView(ctx context.Context, userID uint) string
+	// CountGamesByAuthor (IDEA-13): количество игр автора — онбординг первой игры.
+	CountGamesByAuthor(ctx context.Context, authorID uint) (int64, error)
 }
 
 type CoAuthorServiceInterface interface {

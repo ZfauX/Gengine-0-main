@@ -6,6 +6,36 @@
     <div class="flash flash-error">{{.Error}}</div>
     {{end}}
 
+    {{if .ShowOnboarding}}
+    <!-- IDEA-13: онбординг для авторов — подсказки при создании первой игры.
+         Dismiss-кнопка прячет карточку (не cookie — просто скрытие на странице). -->
+    <div id="onboarding-card" class="card mb-6 border-blue-300 dark:border-blue-800">
+        <div class="flex items-start justify-between mb-2">
+            <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100">{{ T $.Lang "game.onboarding_title" }}</h2>
+            <button type="button" id="onboarding-dismiss" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" aria-label="{{ T $.Lang "common.close" }}">✕</button>
+        </div>
+        <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">{{ T $.Lang "game.onboarding_subtitle" }}</p>
+        <ol class="space-y-3 text-sm text-gray-700 dark:text-gray-300">
+            <li class="flex items-start gap-3">
+                <span class="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 flex items-center justify-center text-xs font-bold">1</span>
+                <span>{{ T $.Lang "game.onboarding_step1" }}</span>
+            </li>
+            <li class="flex items-start gap-3">
+                <span class="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 flex items-center justify-center text-xs font-bold">2</span>
+                <span>{{ T $.Lang "game.onboarding_step2" }}</span>
+            </li>
+            <li class="flex items-start gap-3">
+                <span class="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 flex items-center justify-center text-xs font-bold">3</span>
+                <span>{{ T $.Lang "game.onboarding_step3" }}</span>
+            </li>
+            <li class="flex items-start gap-3">
+                <span class="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 flex items-center justify-center text-xs font-bold">4</span>
+                <span>{{ T $.Lang "game.onboarding_step4" }}</span>
+            </li>
+        </ol>
+    </div>
+    {{end}}
+
     <form action="/games/new" method="POST" enctype="multipart/form-data" class="card space-y-4">
         <input type="hidden" name="_csrf" value="{{.csrf}}">
 
@@ -179,6 +209,15 @@
                 preview.classList.remove('hidden');
             };
             reader.readAsDataURL(file);
+        }
+
+        // IDEA-13: скрытие онбординг-карточки (R1: addEventListener, не inline onclick).
+        const onboardingDismiss = document.getElementById('onboarding-dismiss');
+        if (onboardingDismiss) {
+            onboardingDismiss.addEventListener('click', function() {
+                const card = document.getElementById('onboarding-card');
+                if (card) card.classList.add('hidden');
+            });
         }
     })();
 </script>

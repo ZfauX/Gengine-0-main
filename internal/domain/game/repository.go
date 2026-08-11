@@ -41,6 +41,8 @@ type GameRepository interface {
 	CountActivePassings(ctx context.Context, gameID uint) (int64, error)
 	CountLevelsByGame(ctx context.Context, gameID uint) (int64, error)
 	CountPublished(ctx context.Context) (int64, error)
+	// CountGamesByAuthor (IDEA-13): количество игр автора (онбординг первой игры).
+	CountGamesByAuthor(ctx context.Context, authorID uint) (int64, error)
 	// CountPassingsInStatuses — количество прохождений игры в указанных статусах
 	// (A-H2, pass 33: заменил raw Count в svc_play.ProcessSnapshot).
 	CountPassingsInStatuses(ctx context.Context, gameID uint, statuses []GamePassingStatus) (int64, error)
@@ -376,6 +378,14 @@ func (r *gormGameRepo) CountLevelsByGame(ctx context.Context, gameID uint) (int6
 func (r *gormGameRepo) CountPublished(ctx context.Context) (int64, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Model(&Game{}).Where("is_draft = false").Count(&count).Error
+	return count, err
+}
+
+// CountGamesByAuthor (IDEA-13): количество игр, созданных автором. Используется
+// для онбординга — показываем подсказки при создании ПЕРВОЙ игры.
+func (r *gormGameRepo) CountGamesByAuthor(ctx context.Context, authorID uint) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&Game{}).Where("author_id = ?", authorID).Count(&count).Error
 	return count, err
 }
 

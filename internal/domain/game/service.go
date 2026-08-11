@@ -439,4 +439,10 @@ func (s *GameService) ListFilteredPaginated(ctx context.Context, filter GameFilt
 	return s.listingService.ListFilteredPaginated(ctx, filter, sort, page, perPage)
 }
 
+// CountGamesByAuthor (IDEA-13): количество игр автора — для онбординга
+// (показать подсказки при создании первой игры).
+func (s *GameService) CountGamesByAuthor(ctx context.Context, authorID uint) (int64, error) {
+	return s.gameRepo.CountGamesByAuthor(ctx, authorID)
+}
+
 // GetUserGamesView возвращает предпочтение вида списка игр (U-3): сервер

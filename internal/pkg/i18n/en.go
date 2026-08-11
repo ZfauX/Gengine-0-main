@@ -809,6 +809,12 @@ var enMessages = map[string]string{
 
 	// ── Game New ──
 	"game.new_title":                    "New game",
+	"game.onboarding_title":             "Welcome, author! 🎉",
+	"game.onboarding_subtitle":          "Creating your first game is easy — 4 steps:",
+	"game.onboarding_step1":             "Fill in the form and create a draft game.",
+	"game.onboarding_step2":             "Add levels, questions and answers on the game page.",
+	"game.onboarding_step3":             "Test the game in test mode, then publish it.",
+	"game.onboarding_step4":             "Invite teams and track progress in monitoring.",
 	"game.new_wizard_title":             "New game",
 	"game.new_step_basic":               "Basic info",
 	"game.new_step_basic_title":         "Basic info",
