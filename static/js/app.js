@@ -481,6 +481,72 @@ function initPushSubscription() {
 }
 
 // =============================================================================
+// UX-PWA (IDEA-8): установка как PWA (beforeinstallprompt).
+// Браузер (Chrome/Edge) сам показывает мини-инфобар, но мы даём явную кнопку
+// в шапке — появляется, когда приложение можно установить (criteria met).
+// =============================================================================
+function initPWAInstall() {
+    var deferredPrompt = null;
+
+    // Кнопка в layout (существует только если в шаблоне добавлена).
+    function findInstallBtn() {
+        return document.getElementById('installAppBtn') ||
+               document.getElementById('installAppBtnMobile');
+    }
+
+    function showInstallButtons() {
+        var btn = findInstallBtn();
+        if (btn) btn.classList.remove('hidden');
+    }
+
+    function hideInstallButtons() {
+        var btn = findInstallBtn();
+        if (btn) btn.classList.add('hidden');
+    }
+
+    // Стандарт для Chromium: событие всплывает, когда можно установить.
+    window.addEventListener('beforeinstallprompt', function(e) {
+        // preventDefault() скрывает встроенный мини-инфобар — показываем свою кнопку.
+        e.preventDefault();
+        deferredPrompt = e;
+        showInstallButtons();
+    });
+
+    // Пользователь уже установил/не может установить — прячем кнопку.
+    window.addEventListener('appinstalled', function() {
+        deferredPrompt = null;
+        hideInstallButtons();
+        if (typeof window.showToast === 'function') {
+            window.showToast(tI18n('pwa-installed', 'Приложение установлено!'), 'success', 4000);
+        }
+    });
+
+    // Клик по кнопке — вызываем нативный промпт.
+    document.addEventListener('click', function(ev) {
+        var target = ev.target.closest && ev.target.closest('#installAppBtn, #installAppBtnMobile');
+        if (!target || !deferredPrompt) return;
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then(function(choiceResult) {
+            if (choiceResult.outcome === 'accepted') {
+                if (typeof window.showToast === 'function') {
+                    window.showToast(tI18n('pwa-installed', 'Приложение установлено!'), 'success', 4000);
+                }
+            }
+            // Промпт можно использовать один раз.
+            deferredPrompt = null;
+            hideInstallButtons();
+        }).catch(function() {
+            deferredPrompt = null;
+        });
+    });
+
+    // Скрываем кнопку, если в режиме standalone (уже установлено).
+    if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) {
+        hideInstallButtons();
+    }
+}
+
+// =============================================================================
 // Init on DOM ready
 // =============================================================================
 document.addEventListener('DOMContentLoaded', function() {
@@ -489,4 +555,5 @@ document.addEventListener('DOMContentLoaded', function() {
     initConfirmDialogs();
     initOfflineDetector();
     initPushSubscription();
+    initPWAInstall();
 });

@@ -377,6 +377,8 @@ var enMessages = map[string]string{
 	"nav.all_notifications": "All notifications",
 	"nav.new_game":          "New game",
 	"nav.edit_game":         "Edit game",
+	"nav.install_app":       "Install app",
+	"pwa-installed":         "App installed!",
 	"nav.new_team":          "New team",
 	"nav.change_captain":    "Change captain",
 	"nav.tournaments":       "Tournaments",

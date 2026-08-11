@@ -399,6 +399,8 @@ var ruMessages = map[string]string{
 	"nav.all_notifications": "Все уведомления",
 	"nav.new_game":          "Новая игра",
 	"nav.edit_game":         "Редактирование игры",
+	"nav.install_app":       "Установить приложение",
+	"pwa-installed":         "Приложение установлено!",
 	"nav.new_team":          "Создание команды",
 	"nav.change_captain":    "Смена капитана",
 	"nav.tournaments":       "Турниры",
