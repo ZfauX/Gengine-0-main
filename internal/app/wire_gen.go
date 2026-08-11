@@ -136,7 +136,7 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	gameService := wrapGameService(gameRepository, gamePassingRepository, coAuthorService, reviewService, monitorService, photoService, hub, cfg, localStorage, appCache, userRepository, ratingService)
 	attemptService := game.NewAttemptService()
 	sseManager := game.NewSSEManager()
-	gamePlayService := wrapGamePlayService(db, gameRepository, gamePassingRepository, attemptService, monitorService, hub, coAuthorService, sseManager)
+	gamePlayService := wrapGamePlayService(db, gameRepository, gamePassingRepository, attemptService, monitorService, hub, coAuthorService, sseManager, appCache)
 	teamRepository := repos.Team
 	gameAdminService := wrapGameAdminService(db, teamRepository, userRepository, coAuthorService, cfg, sseManager)
 	teamService := wrapTeamService(teamRepository, userRepository)

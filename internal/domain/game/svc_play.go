@@ -12,6 +12,7 @@ import (
 
 	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/team"
+	"gengine-0/internal/pkg/cache"
 	"gengine-0/internal/pkg/metrics"
 	ws "gengine-0/internal/pkg/websocket"
 
@@ -64,6 +65,9 @@ type GamePlayService struct {
 	hub         *ws.RoomHub
 	coAuthorSvc *CoAuthorService
 	sseMgr      *SSEManager
+	// cache (DEEP-REVIEW P5, pass 46): кэш статичных настроек игры.
+	// Если nil — настройки читаются из БД каждый раз.
+	cache cache.CacheStore
 	// snapshotDispatcher дебаунсит пересчёт снапшота мониторинга (S3).
 	// Если nil — пересчёт выполняется синхронно (fallback для тестов).
 	snapshotDispatcher *SnapshotDispatcher
@@ -108,6 +112,12 @@ func NewGamePlayService(
 // WithSSEManager устанавливает SSE-менеджер для broadcast-уведомлений.
 func (s *GamePlayService) WithSSEManager(sseMgr *SSEManager) *GamePlayService {
 	s.sseMgr = sseMgr
+	return s
+}
+
+// WithCache устанавливает кэш для статичных настроек игры (DEEP-REVIEW P5).
+func (s *GamePlayService) WithCache(c cache.CacheStore) *GamePlayService {
+	s.cache = c
 	return s
 }
 
@@ -749,6 +759,26 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 	var g errgroup.Group
 
 	g.Go(func() error {
+		// DEEP-REVIEW P5 (pass 46): настройки игры статичны — кэшируем на 60с.
+		// Раньше каждый заход на gameplay-страницу и каждая подсказка читали БД.
+		if s.cache != nil {
+			cacheKey := fmt.Sprintf("game:settings:%d", passing.GameID)
+			if v, err := s.cache.GetOrSetWithCtx(ctx, cacheKey, 60*time.Second, func() (any, error) {
+				gs, err := s.gameRepo.GetGameSettingByGameID(ctx, passing.GameID)
+				if err != nil {
+					return nil, err
+				}
+				if gs == nil {
+					return defaultGameSetting(passing.GameID), nil
+				}
+				return gs, nil
+			}); err == nil {
+				if gs, ok := v.(*GameSetting); ok {
+					settings = *gs
+					return nil
+				}
+			}
+		}
 		// A-2 (pass 41): gs вместо s — раньше локальная s shadowing'ила receiver.
 		gs, err := s.gameRepo.GetGameSettingByGameID(ctx, passing.GameID)
 		if err != nil {

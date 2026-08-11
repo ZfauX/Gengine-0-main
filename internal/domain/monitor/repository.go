@@ -224,7 +224,11 @@ func (r *gormChatRepo) IsTeamMemberOrCaptain(ctx context.Context, teamID, userID
 // GetMessageByID возвращает сообщение с прелоадом автора.
 func (r *gormChatRepo) GetMessageByID(ctx context.Context, messageID uint) (*ChatMessage, error) {
 	var msg ChatMessage
-	if err := r.db.WithContext(ctx).Preload("User").First(&msg, messageID).Error; err != nil {
+	// DEEP-REVIEW (pass 46): Preload только id/name/avatar_path — раньше тянули
+	// полные строки users (включая password_hash, email) на каждое сообщение.
+	if err := r.db.WithContext(ctx).Preload("User", func(db *gorm.DB) *gorm.DB {
+		return db.Select("id, name, avatar_path")
+	}).First(&msg, messageID).Error; err != nil {
 		return nil, err
 	}
 	return &msg, nil
@@ -232,7 +236,9 @@ func (r *gormChatRepo) GetMessageByID(ctx context.Context, messageID uint) (*Cha
 
 func (r *gormChatRepo) GetMessages(ctx context.Context, roomID uint, limit int) ([]ChatMessage, error) {
 	var msgs []ChatMessage
-	err := r.db.WithContext(ctx).Preload("User").
+	err := r.db.WithContext(ctx).Preload("User", func(db *gorm.DB) *gorm.DB {
+		return db.Select("id, name, avatar_path")
+	}).
 		Where("room_id = ?", roomID).
 		Order("created_at DESC").
 		Limit(limit).
@@ -276,10 +282,10 @@ func (r *gormChatRepo) GetRoomMember(ctx context.Context, roomID, userID uint) (
 }
 
 // CanSendMessage проверяет право на отправку сообщения за минимальное число
-// запросов (S-46-5, pass 46):
-//   - если teamID != nil: пользователь должен быть участником команды или капитаном
-//     (одним LEFT JOIN на team_members + teams вместо двух отдельных COUNT/First);
-//   - затем, если для комнаты есть запись chat_room_members — требуется can_write.
+// запросов (S-46-5, pass 46; DEEP-REVIEW P2, pass 46):
+//   - один запрос комнаты;
+//   - для командных комнат — один запрос членства (LEFT JOIN team_members + teams);
+//   - один запрос chat_room_members (can_write).
 //
 // Возвращает (allowed, memberExists, err): memberExists показывает, есть ли запись
 // chat_room_members (для логов), allowed — можно ли писать.
@@ -289,13 +295,19 @@ func (r *gormChatRepo) CanSendMessage(ctx context.Context, roomID uint, teamID *
 		return false, false, err
 	}
 
-	// Проверка членства в команде (только для командных комнат).
+	// Проверка членства в команде (только для командных комнат) — один запрос
+	// с LEFT JOIN team_members + teams вместо COUNT + First.
 	if teamID != nil && room.TeamID != nil {
-		ok, err := r.IsTeamMemberOrCaptain(ctx, *room.TeamID, userID)
-		if err != nil {
+		var res struct{ Member bool }
+		if err := r.db.WithContext(ctx).Raw(`
+			SELECT EXISTS(
+				SELECT 1 FROM teams t
+				LEFT JOIN team_members tm ON tm.team_id = t.id
+				WHERE t.id = ? AND (tm.user_id = ? OR t.captain_id = ?)
+			) AS member`, *room.TeamID, userID, userID).Scan(&res).Error; err != nil {
 			return false, false, err
 		}
-		if !ok {
+		if !res.Member {
 			return false, false, nil
 		}
 	}

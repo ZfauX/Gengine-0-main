@@ -167,6 +167,11 @@ func (c *Cache) Set(key string, value any, ttl time.Duration) {
 	if ttl != 0 {
 		expires = time.Now().Add(ttl)
 		c.ttlKeys[key] = true
+	} else {
+		// DEEP-REVIEW (pass 46): ttl=0 (запись без истечения) — убираем ключ
+		// из ttlKeys. Раньше запись с ttl=0 после ttl>0 оставляла ключ в
+		// ttlKeys навсегда (утечка map'ы, ключ не вычищался sweep'ом).
+		delete(c.ttlKeys, key)
 	}
 	c.lru.Add(key, cacheItem{value: value, expires: expires})
 	c.trackPrefix(key)

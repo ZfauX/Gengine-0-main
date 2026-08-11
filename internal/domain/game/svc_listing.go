@@ -52,9 +52,11 @@ func (s *GameListingService) listingCacheKey(ctx context.Context, filter GameFil
 	}
 	// PF3: версия листинга в ключе — при инвалидации меняем один ключ
 	// games:list:version (O(1)) вместо DeleteByPrefix (Valkey SCAN+DEL).
+	// DEEP-REVIEW P1 (pass 46): ViewerID включён в ключ — авторизованные
+	// пользователи видят свои/публичные игры и не смешиваются в кэше.
 	version := s.listingVersion(ctx)
-	return fmt.Sprintf("games:list:v%d:%d:%d:%s:%s:%s:%s:%d:%s:%s",
-		version, page, perPage, filter.Status, filter.Search, filter.DateFrom, filter.DateTo, authorID, field, order)
+	return fmt.Sprintf("games:list:v%d:%d:%d:%d:%s:%s:%s:%s:%d:%s:%s",
+		version, filter.ViewerID, page, perPage, filter.Status, filter.Search, filter.DateFrom, filter.DateTo, authorID, field, order)
 }
 
 // listingVersion возвращает текущую версию анонимного листинга.
@@ -72,17 +74,16 @@ func (s *GameListingService) listingVersion(ctx context.Context) int64 {
 // Анонимный листинг (ViewerID == 0) кэшируется на 30с (P3).
 func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter GameFilter, sort *GameSort, page, perPage int) ([]Game, int64, error) {
 	cacheKey := ""
-	if filter.ViewerID == 0 {
-		// Perf (pass 25): кэшируем только листинг без поиска/даты — иначе каждый
-		// уникальный поисковый запрос создаёт ключ, фрагментируя LRU/Valkey.
-		// F-1 (pass 35): кэшируем только первую страницу (самую горячую) —
-		// ключи page 2+ с perPage/sort-комбинациями копили бы сотни записей.
-		if page == 1 && filter.Search == "" && filter.DateFrom == "" && filter.DateTo == "" {
-			cacheKey = s.listingCacheKey(ctx, filter, sort, page, perPage)
-			var entry listingCacheEntry
-			if cacheGetJSON(s.cache, ctx, cacheKey, &entry) {
-				return entry.Games, entry.Total, nil
-			}
+	// DEEP-REVIEW P1 (pass 46): кэшируем и авторизованный листинг (раньше только
+	// анонимный — каждый залогиненный заход на /games бил в PostgreSQL).
+	// Ключ включает ViewerID (listingCacheKey), поэтому «мои/публичные» игры
+	// не смешиваются между пользователями. Как и раньше — только page 1 без
+	// поиска/даты (самые горячие ключи), чтобы не фрагментировать кэш.
+	if page == 1 && filter.Search == "" && filter.DateFrom == "" && filter.DateTo == "" {
+		cacheKey = s.listingCacheKey(ctx, filter, sort, page, perPage)
+		var entry listingCacheEntry
+		if cacheGetJSON(s.cache, ctx, cacheKey, &entry) {
+			return entry.Games, entry.Total, nil
 		}
 	}
 

@@ -152,6 +152,12 @@ func (m *SSEManager) RegisterSession(gameID uint, ip string, w http.ResponseWrit
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// DEEP-REVIEW (pass 46): после Stop() новые сессии не регистрируем —
+	// иначе writeLoop-горутина не попадёт под wg.Wait() (нарушение контракта).
+	if m.stopped {
+		return nil
+	}
+
 	session := &SSESession{
 		w:        w,
 		flush:    flush,
@@ -212,6 +218,9 @@ func (s *SSESession) enqueue(data []byte) {
 
 // UnregisterSession удаляет SSE-подключение
 func (m *SSEManager) UnregisterSession(session *SSESession) {
+	if session == nil {
+		return // DEEP-REVIEW (pass 46): RegisterSession вернул nil после Stop().
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

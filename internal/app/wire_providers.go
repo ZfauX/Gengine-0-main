@@ -23,8 +23,9 @@ import (
 	"gorm.io/gorm"
 )
 
-func wrapGamePlayService(db *gorm.DB, gameRepo game.GameRepository, passingRepo game.GamePassingRepository, attemptSvc *game.AttemptService, monitorSvc *game.MonitorService, hub *ws.RoomHub, coAuthorSvc *game.CoAuthorService, sseMgr *game.SSEManager) *game.GamePlayService {
-	return game.NewGamePlayService(db, attemptSvc, monitorSvc, hub, coAuthorSvc).WithRepository(gameRepo).WithPassingRepository(passingRepo).WithSSEManager(sseMgr)
+func wrapGamePlayService(db *gorm.DB, gameRepo game.GameRepository, passingRepo game.GamePassingRepository, attemptSvc *game.AttemptService, monitorSvc *game.MonitorService, hub *ws.RoomHub, coAuthorSvc *game.CoAuthorService, sseMgr *game.SSEManager, appCache cache.CacheStore) *game.GamePlayService {
+	// DEEP-REVIEW P5 (pass 46): кэш настроек игры.
+	return game.NewGamePlayService(db, attemptSvc, monitorSvc, hub, coAuthorSvc).WithRepository(gameRepo).WithPassingRepository(passingRepo).WithSSEManager(sseMgr).WithCache(appCache)
 }
 
 func wrapGameAdminService(db *gorm.DB, teamRepo team.TeamRepository, userRepo user.UserRepository, coAuthorSvc *game.CoAuthorService, cfg *config.Config, sseMgr *game.SSEManager) *game.GameAdminService {

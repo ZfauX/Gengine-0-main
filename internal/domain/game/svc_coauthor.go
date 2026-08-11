@@ -4,6 +4,8 @@ package game
 import (
 	"context"
 	"errors"
+	"sync"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -50,7 +52,26 @@ var ErrNotOwner = errors.New("только владелец может упра�
 type CoAuthorService struct {
 	repo     CoAuthorRepository
 	userRepo userRepository
+
+	// roleCache (DEEP-REVIEW P4, pass 46): кэш ролей для isSuperAdmin —
+	// раньше каждый IsUserManager/WS-connect делал GetUserRole (лишний запрос
+	// на каждое WebSocket/SSE-подключение, ChatRoomIDs, CreateRoom и т.д.).
+	roleCache   map[uint]cachedRoleEntry
+	roleCacheMu sync.Mutex
 }
+
+// cachedRoleEntry — запись кэша роли с TTL.
+type cachedRoleEntry struct {
+	role    string
+	expires time.Time
+}
+
+// roleCacheTTL — время жизни кэша роли (понижение роли применяется через TTL;
+// для немедленного сброса используется InvalidateRoleCache).
+const roleCacheTTL = 15 * time.Second
+
+// roleCacheMaxEntries — верхняя граница map ролей (lazy sweep, P-2 паттерн).
+const roleCacheMaxEntries = 10000
 
 // userRepository — минимальный контракт, нужный для проверки роли (избегаем
 // циклической зависимости game→user).
@@ -59,7 +80,7 @@ type userRepository interface {
 }
 
 func NewCoAuthorService() *CoAuthorService {
-	return &CoAuthorService{}
+	return &CoAuthorService{roleCache: make(map[uint]cachedRoleEntry)}
 }
 
 // WithRepository внедряет репозиторий соавторов (A-1, pass 32): устраняет
@@ -77,13 +98,52 @@ func (s *CoAuthorService) WithUserRepository(repo userRepository) *CoAuthorServi
 }
 
 // isSuperAdmin проверяет, что пользователь — админ инсталляции (роль "admin").
-// Супер-админ имеет права на всё (P0-3).
+// Супер-админ имеет права на всё (P0-3). DEEP-REVIEW P4: роль кэшируется на
+// roleCacheTTL — раньше каждый вызов делал GetUserRole (лишний запрос на
+// каждое WS/SSE-подключение и проверку прав менеджера).
 func (s *CoAuthorService) isSuperAdmin(ctx context.Context, userID uint) bool {
 	if s.userRepo == nil {
 		return false
 	}
-	role, err := s.userRepo.GetUserRole(ctx, userID)
+	role, err := s.cachedRole(ctx, userID)
 	return err == nil && role == "admin"
+}
+
+// cachedRole возвращает роль из БД с коротким TTL-кэшем (аналог middleware roleCache).
+func (s *CoAuthorService) cachedRole(ctx context.Context, userID uint) (string, error) {
+	now := time.Now()
+
+	s.roleCacheMu.Lock()
+	if e, ok := s.roleCache[userID]; ok && now.Before(e.expires) {
+		s.roleCacheMu.Unlock()
+		return e.role, nil
+	}
+	s.roleCacheMu.Unlock()
+
+	role, err := s.userRepo.GetUserRole(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+
+	s.roleCacheMu.Lock()
+	// Lazy sweep: не даём map расти неограниченно.
+	if len(s.roleCache) > roleCacheMaxEntries {
+		for id, e := range s.roleCache {
+			if !now.Before(e.expires) {
+				delete(s.roleCache, id)
+			}
+		}
+	}
+	s.roleCache[userID] = cachedRoleEntry{role: role, expires: now.Add(roleCacheTTL)}
+	s.roleCacheMu.Unlock()
+	return role, nil
+}
+
+// InvalidateRoleCache сбрасывает кэш роли пользователя (вызывается после смены роли).
+func (s *CoAuthorService) InvalidateRoleCache(userID uint) {
+	s.roleCacheMu.Lock()
+	delete(s.roleCache, userID)
+	s.roleCacheMu.Unlock()
 }
 
 // IsUserManager проверяет, является ли пользователь автором или соавтором игры.

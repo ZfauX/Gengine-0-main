@@ -80,12 +80,27 @@ func (h *RoomHub) CanAccept(ip string) bool {
 	return true
 }
 
-// incConnection увеличивает счётчики при регистрации клиента.
-func (h *RoomHub) incConnection(ip string) {
+// Acquire атомарно проверяет лимиты и инкрементирует счётчики под одним lock
+// (DEEP-REVIEW, pass 46): раньше CanAccept и incConnection были раздельными —
+// два конкурентных handshake могли оба пройти CanAccept и превысить лимиты.
+// Возвращает false, если лимит превышен или хаб остановлен.
+func (h *RoomHub) Acquire(ip string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if h.stopped {
+		return false
+	}
+	if h.maxTotalConns > 0 && h.totalConns >= h.maxTotalConns {
+		log.Warn().Int("total", h.totalConns).Int("limit", h.maxTotalConns).Msg("WebSocket: total connections limit reached")
+		return false
+	}
+	if h.maxConnsPerIP > 0 && h.connsPerIP[ip] >= h.maxConnsPerIP {
+		log.Warn().Str("ip", ip).Int("count", h.connsPerIP[ip]).Int("limit", h.maxConnsPerIP).Msg("WebSocket: per-IP limit reached")
+		return false
+	}
 	h.totalConns++
 	h.connsPerIP[ip]++
+	return true
 }
 
 // decConnectionNoLock уменьшает счётчики при отписке клиента.
@@ -134,7 +149,13 @@ func (h *RoomHub) runLoop() {
 				client.Close()
 				continue
 			}
-			h.incConnection(client.RemoteIP)
+			// DEEP-REVIEW (pass 46): атомарная проверка+инкремент лимитов —
+			// вместо раздельных CanAccept+incConnection (TOCTOU).
+			if !h.Acquire(client.RemoteIP) {
+				log.Warn().Str("ip", client.RemoteIP).Msg("RoomHub: connection rejected (limit reached)")
+				client.Close()
+				continue
+			}
 			h.mu.Lock()
 			client.setHub(h)
 			client.registered = true

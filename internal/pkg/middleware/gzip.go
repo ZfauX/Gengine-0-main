@@ -64,10 +64,20 @@ func GzipMiddleware() gin.HandlerFunc {
 			strings.Contains(c.Request.URL.Path, "/monitor") ||
 			strings.Contains(c.Request.URL.Path, "/stream") ||
 			strings.Contains(c.Request.URL.Path, "/sse") ||
-			strings.HasPrefix(c.Request.URL.Path, "/static/") ||
 			strings.HasPrefix(c.Request.URL.Path, "/uploads/") {
 			c.Next()
 			return
+		}
+
+		// DEEP-REVIEW P6 (pass 46): /static/ больше не исключается целиком —
+		// JS/CSS (4+3 файла) сжимаются gzip (экономия ~60-70% трафика).
+		// Уже-сжатые форматы (изображения, шрифты, медиа, wasm) пропускаем,
+		// чтобы не тратить CPU на бесполезное сжатие.
+		if strings.HasPrefix(c.Request.URL.Path, "/static/") {
+			if isAlreadyCompressedExt(c.Request.URL.Path) {
+				c.Next()
+				return
+			}
 		}
 
 		// Потоковое сжатие: не буферизируем весь ответ в памяти
@@ -87,5 +97,21 @@ func GzipMiddleware() gin.HandlerFunc {
 		c.Writer = gzWriter
 
 		c.Next()
+	}
+}
+
+// isAlreadyCompressedExt возвращает true для форматов, которые не стоит
+// сжимать gzip (уже сжаты или плохо сжимаются) — изображения, шрифты,
+// медиа, WebAssembly (DEEP-REVIEW P6, pass 46).
+func isAlreadyCompressedExt(path string) bool {
+	ext := strings.ToLower(path[strings.LastIndex(path, ".")+1:])
+	switch ext {
+	case "png", "jpg", "jpeg", "gif", "webp", "svg", "ico",
+		"woff", "woff2", "ttf", "otf", "eot",
+		"mp4", "webm", "mp3", "ogg", "wav", "zip", "gz",
+		"wasm":
+		return true
+	default:
+		return false
 	}
 }
