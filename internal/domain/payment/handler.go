@@ -103,7 +103,9 @@ func (h *PaymentHandler) Create(c *gin.Context) {
 func (h *PaymentHandler) Webhook(c *gin.Context) {
 	body, _ := io.ReadAll(io.LimitReader(c.Request.Body, 2*1024*1024))
 	remoteIP := c.ClientIP()
-	err := h.svc.HandleWebhook(c.Request.Context(), remoteIP, body)
+	// M1 (PASS-3): Authorization (Basic ShopID:WebhookKey) — подпись вебхука.
+	authHeader := c.GetHeader("Authorization")
+	err := h.svc.HandleWebhook(c.Request.Context(), remoteIP, authHeader, body)
 	if err == nil {
 		c.Status(http.StatusOK)
 		return
@@ -112,9 +114,14 @@ func (h *PaymentHandler) Webhook(c *gin.Context) {
 	// S-46-3 (pass 46): rejected webhooks больше не «прячем» под always-200.
 	//  - ErrWebhookInvalid / ErrWebhookUntrustedIP: 4xx — ретраить бессмысленно
 	//    (ЮKassa перестанет долбить неподтверждённый платёж);
+	//  - ErrWebhookUnauthorized (M1): 401 — нет/неверная подпись;
 	//  - прочие (временные ошибки ЮKassa/БД): 500 — ЮKassa будет ретраить,
 	//    а алерт в логе уровня error позволит заметить проблему.
 	switch {
+	case errors.Is(err, ErrWebhookUnauthorized):
+		log.Error().Err(err).Str("ip", remoteIP).Msg("PaymentHandler.Webhook: unauthorized (bad signature)")
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
 	case errors.Is(err, ErrWebhookInvalid):
 		log.Error().Err(err).Str("ip", remoteIP).Msg("PaymentHandler.Webhook: invalid body (no retry)")
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid body"})

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"gengine-0/internal/config"
@@ -234,11 +236,49 @@ func (s *PaymentService) CreatePayment(ctx context.Context, userID uint, amount 
 	return p, confirmationURL, nil
 }
 
+// verifyWebhookAuth проверяет Authorization заголовок вебхука ЮKassa.
+// ЮKassa шлёт HTTP Basic Auth: username = ShopID, password = WebhookKey
+// (или SecretKey, если WebhookKey не задан). Это второй слой доверия поверх
+// IP-allowlist — при подделке X-Forwarded-For (широкий TRUSTED_PROXIES)
+// запрос без корректной подписи будет отклонён (DEEP-REVIEW PASS-3 M1).
+func (s *PaymentService) verifyWebhookAuth(authHeader string) error {
+	if authHeader == "" {
+		return ErrWebhookUnauthorized
+	}
+	const prefix = "Basic "
+	if !strings.HasPrefix(authHeader, prefix) {
+		return ErrWebhookUnauthorized
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(authHeader, prefix))
+	if err != nil {
+		return fmt.Errorf("%w: bad base64", ErrWebhookUnauthorized)
+	}
+	user, pass, ok := strings.Cut(string(decoded), ":")
+	if !ok {
+		return fmt.Errorf("%w: bad format", ErrWebhookUnauthorized)
+	}
+	expectedPass := s.cfg.WebhookKey
+	if expectedPass == "" {
+		expectedPass = s.cfg.SecretKey
+	}
+	if user != s.cfg.ShopID || pass != expectedPass {
+		return ErrWebhookUnauthorized
+	}
+	return nil
+}
+
 // HandleWebhook обрабатывает уведомление от ЮKassa.
-// Аутентификация: IP-allowlist ЮKassa + подтверждение статуса через API.
-func (s *PaymentService) HandleWebhook(ctx context.Context, remoteIP string, rawBody []byte) error {
+// Аутентификация: Authorization (Basic ShopID:WebhookKey) + IP-allowlist ЮKassa
+// + подтверждение статуса через API.
+func (s *PaymentService) HandleWebhook(ctx context.Context, remoteIP, authHeader string, rawBody []byte) error {
 	if !s.Enabled() {
 		return fmt.Errorf("платежи не настроены")
+	}
+	// M1 (PASS-3): подпись вебхука проверяется ДО обработки — даже при
+	// компрометации IP-фильтра (широкий TRUSTED_PROXIES) запрос без ключа
+	// отклоняется без исходящих HTTP-запросов к api.yookassa.ru.
+	if err := s.verifyWebhookAuth(authHeader); err != nil {
+		return err
 	}
 	if !isYooKassaIP(remoteIP) {
 		return fmt.Errorf("%w: %s", ErrWebhookUntrustedIP, remoteIP)

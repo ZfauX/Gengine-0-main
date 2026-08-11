@@ -3,6 +3,7 @@
 // Позволяет хендлеру вернуть корректный HTTP-статус:
 //   - ErrWebhookInvalid — 400: тело/платёж некорректен (ретраить бессмысленно);
 //   - ErrWebhookUntrustedIP — 403: запрос не с IP ЮKassa;
+//   - ErrWebhookUnauthorized — 401: неверный Authorization (подпись вебхука, M1);
 //   - прочие ошибки — 500: временные (ЮKassa/БД), ЮKassa будет ретраить.
 package payment
 
@@ -13,4 +14,6 @@ var (
 	ErrWebhookInvalid = errors.New("webhook: invalid body")
 	// ErrWebhookUntrustedIP — запрос пришёл не с IP-адресов ЮKassa.
 	ErrWebhookUntrustedIP = errors.New("webhook from untrusted IP")
+	// ErrWebhookUnauthorized — неверный Authorization (DEEP-REVIEW PASS-3 M1).
+	ErrWebhookUnauthorized = errors.New("webhook: unauthorized")
 )

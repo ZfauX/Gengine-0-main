@@ -4,6 +4,7 @@ package payment
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"testing"
@@ -91,6 +92,44 @@ func TestVerifyRemoteAmount(t *testing.T) {
 	// Отсутствие amount — ошибка.
 	_, err = svc.verifyRemoteAmount(map[string]any{}, &Payment{Amount: 100, Currency: "RUB"})
 	require.Error(t, err)
+}
+
+// M1 (PASS-3): верификация Authorization (Basic ShopID:WebhookKey) вебхука.
+func TestVerifyWebhookAuth(t *testing.T) {
+	svc := NewPaymentService(config.PaymentConfig{
+		ShopID:     "shop_123",
+		SecretKey:  "secret",
+		WebhookKey: "hookkey",
+	}, nil)
+
+	mkAuth := func(user, pass string) string {
+		return "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+pass))
+	}
+
+	t.Run("валидный WebhookKey", func(t *testing.T) {
+		require.NoError(t, svc.verifyWebhookAuth(mkAuth("shop_123", "hookkey")))
+	})
+	t.Run("пустой заголовок", func(t *testing.T) {
+		require.ErrorIs(t, svc.verifyWebhookAuth(""), ErrWebhookUnauthorized)
+	})
+	t.Run("не Basic", func(t *testing.T) {
+		require.ErrorIs(t, svc.verifyWebhookAuth("Bearer xyz"), ErrWebhookUnauthorized)
+	})
+	t.Run("неверный пароль", func(t *testing.T) {
+		require.ErrorIs(t, svc.verifyWebhookAuth(mkAuth("shop_123", "wrong")), ErrWebhookUnauthorized)
+	})
+	t.Run("неверный shopId", func(t *testing.T) {
+		require.ErrorIs(t, svc.verifyWebhookAuth(mkAuth("other", "hookkey")), ErrWebhookUnauthorized)
+	})
+	t.Run("битый base64", func(t *testing.T) {
+		require.ErrorIs(t, svc.verifyWebhookAuth("Basic !!!"), ErrWebhookUnauthorized)
+	})
+
+	// Если WebhookKey не задан — используем SecretKey.
+	svcNoHook := NewPaymentService(config.PaymentConfig{ShopID: "shop_123", SecretKey: "secret"}, nil)
+	t.Run("fallback на SecretKey", func(t *testing.T) {
+		require.NoError(t, svcNoHook.verifyWebhookAuth(mkAuth("shop_123", "secret")))
+	})
 }
 
 // stubNotifier — записывает вызовы Create для теста уведомлений.
