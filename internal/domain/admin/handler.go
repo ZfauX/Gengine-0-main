@@ -361,16 +361,17 @@ func (h *AdminHandler) ToggleAdmin(c *gin.Context) {
 	}
 
 	if u.Role == "admin" {
-		// S-45-4 (pass 45): нельзя разжаловать ПОСЛЕДНЕГО админа — иначе админ-панель,
-		// /metrics, /swagger, /debug/pprof (AdminRequired) становятся недоступными.
-		admins, countErr := h.userRepo.CountByRole(ctx, "admin")
-		if countErr != nil {
-			log.Error().Err(countErr).Msg("ToggleAdmin: failed to count admins")
+		// DEEP-REVIEW PASS-2 (#7): атомарный демоушен — нельзя разжаловать
+		// ПОСЛЕДНЕГО админа (иначе /admin, /metrics, /swagger станут
+		// недоступны). Раньше CountByRole + Update были раздельными → TOCTOU.
+		demoted, demoteErr := h.userRepo.DemoteAdminIfNotLast(ctx, u.ID)
+		if demoteErr != nil {
+			log.Error().Err(demoteErr).Msg("ToggleAdmin: failed to demote admin")
 			render.SetFlash(c, "error", i18n.T("admin.user_role_update_error"))
 			c.Redirect(http.StatusFound, "/admin/users")
 			return
 		}
-		if admins <= 1 {
+		if !demoted {
 			render.SetFlash(c, "error", i18n.T("admin.last_admin_error"))
 			c.Redirect(http.StatusFound, "/admin/users")
 			return
@@ -378,12 +379,12 @@ func (h *AdminHandler) ToggleAdmin(c *gin.Context) {
 		u.Role = "user"
 	} else {
 		u.Role = "admin"
-	}
-	if err := h.userRepo.Update(ctx, u.ID, map[string]any{"role": u.Role}); err != nil {
-		log.Error().Err(err).Uint("user", u.ID).Msg("ToggleAdmin: failed to update role")
-		render.SetFlash(c, "error", i18n.T("admin.user_role_update_error"))
-		c.Redirect(http.StatusFound, "/admin/users")
-		return
+		if err := h.userRepo.Update(ctx, u.ID, map[string]any{"role": u.Role}); err != nil {
+			log.Error().Err(err).Uint("user", u.ID).Msg("ToggleAdmin: failed to update role")
+			render.SetFlash(c, "error", i18n.T("admin.user_role_update_error"))
+			c.Redirect(http.StatusFound, "/admin/users")
+			return
+		}
 	}
 
 	// Revoke all refresh tokens so the role change takes effect on next re-login

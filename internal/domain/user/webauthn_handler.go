@@ -79,7 +79,10 @@ func NewWebAuthnHandler(
 		RPID:          rpID,
 		RPOrigins:     rpOrigins,
 		AuthenticatorSelection: protocol.AuthenticatorSelection{
-			UserVerification: protocol.VerificationPreferred,
+			// DEEP-REVIEW PASS-2 (#4): VerificationRequired — passkey-login только
+			// после локальной верификации (PIN/биометрия). Раньше preferred —
+			// доступ с разблокированного устройства без проверки.
+			UserVerification: protocol.VerificationRequired,
 		},
 		AttestationPreference: protocol.PreferDirectAttestation,
 	}
@@ -404,8 +407,13 @@ func (h *WebAuthnHandler) FinishLogin(c *gin.Context) {
 		return
 	}
 
+	// DEEP-REVIEW PASS-2 (#4): clone-warning = признак клонированного
+	// аутентификатора (sign-count регрессия). Раньше только логировали и
+	// выдавали JWT — теперь отказываем и не выдаём токен.
 	if credential.Authenticator.CloneWarning {
-		log.Warn().Bytes("credential_id", credential.ID).Msg("FinishLogin: clone warning detected")
+		log.Error().Bytes("credential_id", credential.ID).Msg("FinishLogin: clone warning detected, rejecting")
+		c.JSON(http.StatusForbidden, gin.H{"error": "Аутентификатор скомпрометирован, перерегистрируйте ключ"})
+		return
 	}
 
 	waUserTyped, waOK := waUser.(*WebAuthnUser)

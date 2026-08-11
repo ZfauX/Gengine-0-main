@@ -73,6 +73,10 @@ type UserRepository interface {
 	ListPaginated(ctx context.Context, role string, offset, limit int) ([]User, error)
 	SearchPaginated(ctx context.Context, query, role string, offset, limit int) ([]User, error)
 	Delete(ctx context.Context, id uint) error
+	// DemoteAdminIfNotLast атомарно разжаловывает админа, только если он НЕ
+	// последний (DEEP-REVIEW PASS-2 #7): UPDATE с подзапросом count в одном
+	// операторе — закрывает TOCTOU между CountByRole и Update.
+	DemoteAdminIfNotLast(ctx context.Context, userID uint) (bool, error)
 
 	// AtomicIncrementFailedAttempts атомарно инкрементирует failed_login_attempts
 	// и возвращает новое значение.
@@ -372,6 +376,22 @@ func (r *gormUserRepo) CountByRole(ctx context.Context, role string) (int64, err
 	}
 	err := query.Count(&count).Error
 	return count, err
+}
+
+// DemoteAdminIfNotLast атомарно разжаловывает админа, только если он НЕ последний.
+// DEEP-REVIEW PASS-2 (#7): раньше CountByRole + Update были раздельными — два
+// параллельных демоушена могли оба увидеть admins==2 и оставить 0 админов.
+func (r *gormUserRepo) DemoteAdminIfNotLast(ctx context.Context, userID uint) (bool, error) {
+	var updatedID uint
+	err := r.db.WithContext(ctx).Raw(`
+		UPDATE users SET role = 'user'
+		WHERE id = ? AND role = 'admin'
+		  AND (SELECT count(*) FROM users WHERE role = 'admin') > 1
+		RETURNING id`, userID).Scan(&updatedID).Error
+	if err != nil {
+		return false, err
+	}
+	return updatedID != 0, nil
 }
 
 func (r *gormUserRepo) List(ctx context.Context, role string) ([]User, error) {

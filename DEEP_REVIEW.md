@@ -45,19 +45,19 @@
   - `SetTeamAnswer`/`SetTeamRoute`/`SetTeamStartTime` для любой команды (порча игрового процесса);
   - импортировать CSV, перезаписывающий вопросы/ответы опубликованной игры;
   - экспортировать `ExportResultsCSV`/`ExportStatisticsPDF` со всеми командами.
-- **Фикс**: в этих хендлерах проверять гранулярные права (`HasPermission(RoleContentEditor)` для записи, `RoleModerator` для экспорта всех команд), по образцу `UploadPhoto` (проверяет `RoleUploadMedia`).
+- **Статус**: ✅ **Исправлено** — Phase-3 (SetTeamRoute/StartTime/Answer) требуют `RoleContentEditor`, CSV-import — `RoleContentEditor`, экспорт всех команд (ExportResultsCSV/StatisticsPDF) — `RoleModerator`. Helper `requireEditContent`/`requireModerate`.
 
 ### 4. WebAuthn: userVerification=preferred + игнорирование clone-warning
 
 - **Файл**: `internal/domain/user/webauthn_handler.go:81-83,407-409`
 - **Проблема**: passkey-login без локальной верификации устройства (PIN/биометрия) — доступ при разблокированном устройстве; `CloneWarning` (признак клонированного аутентификатора) только логируется, JWT всё равно выдаётся.
-- **Фикс**: `VerificationRequired` + отказ (403) при CloneWarning, пометка credential как скомпрометированной.
+- **Статус**: ✅ **Исправлено** — `VerificationRequired`; CloneWarning → 403 без JWT.
 
 ### 5. WebAuthn: нет rate-limit на публичный login/begin-finish
 
 - **Файл**: `internal/domain/user/routes.go:96-97`
 - **Проблема**: `/auth/webauthn/login/begin|finish` публичные, CSRF-exempt, без лимитера — флуд пишет сессии и грузит CPU.
-- **Фикс**: добавить `LoginRateLimit` (как на парольный логин).
+- **Статус**: ✅ **Исправлено** — `LoginRateLimit(1m, 10)` на begin/finish.
 
 ---
 
@@ -65,14 +65,14 @@
 
 | # | Файл | Проблема | Фикс |
 |---|------|----------|------|
-| 6 | `internal/domain/notification/routes.go:143-166` | `PUT /api/notifications/settings` full-replaces (bool без *bool) — частичное обновление выключает остальные каналы | `*bool` как в POST-версии |
-| 7 | `internal/domain/admin/handler.go:363-387` | ToggleAdmin last-admin TOCTOU (два демоушена → 0 админов) | `SELECT ... FOR UPDATE` в транзакции |
+| 6 | `internal/domain/notification/routes.go:143-166` | `PUT /api/notifications/settings` full-replaces (bool без *bool) — частичное обновление выключает остальные каналы | ✅ merge через *bool |
+| 7 | `internal/domain/admin/handler.go:363-387` | ToggleAdmin last-admin TOCTOU (два демоушена → 0 админов) | ✅ атомарный `DemoteAdminIfNotLast` |
 | 8 | `internal/domain/admin/handler.go:786-793` | CreateBackup блокирует HTTP до 10 мин + ctx от клиента (дисконнект прерывает дамп) | Фоновая задача с независимым ctx |
-| 9 | `internal/pkg/storage/local_storage.go:217-229` | `Delete` пропускает boundary-check при `baseDir==""` → риск удаления произвольного файла | Guard для пустого baseDir |
+| 9 | `internal/pkg/storage/local_storage.go:217-229` | `Delete` пропускает boundary-check при `baseDir==""` → риск удаления произвольного файла | Задокументировано LOW (Delete только из handler с путями Save) |
 | 10 | `internal/domain/game/hnd_note.go:48,111,142` | Все ошибки → 403 + сырой текст (5xx как 403, утечка деталей) | Только sentinel-права → 403 |
-| 11 | `internal/pkg/middleware/auth.go:39-89` | Роль-кэш на `sync.Mutex` — контенция на каждом авторизованном запросе | `sync.RWMutex`/шардирование |
-| 12 | `internal/domain/game/svc_play.go:753-770` + `tournament/service.go:533-547` | Кэш через `GetOrSetWithCtx`+type-assert не хитится с Valkey (JSON→`[]any`), game settings и лидерборд каждый раз читают БД | `cacheGetJSON`/typed-bytes helper |
-| 13 | `internal/domain/tournament/handler.go:37-44` | `points_for_*` без верхней границы (переполнение int в лидерборде) | clamp до разумного максимума |
+| 11 | `internal/pkg/middleware/auth.go:39-89` | Роль-кэш на `sync.Mutex` — контенция на каждом авторизованном запросе | ✅ `sync.RWMutex` (RLock на хит) |
+| 12 | `internal/domain/game/svc_play.go:753-770` + `tournament/service.go:533-547` | Кэш через `GetOrSetWithCtx`+type-assert не хитится с Valkey (JSON→`[]any`), game settings и лидерборд каждый раз читают БД | ✅ cacheGetJSON + SetWithCtx |
+| 13 | `internal/domain/tournament/handler.go:37-44` | `points_for_*` без верхней границы (переполнение int в лидерборде) | ✅ max=100000 |
 | 14 | `internal/domain/user/auth_handler.go:131,143` | Login делает дублирующий SELECT пользователя (для 2FA-проверки) | Вернуть *User из Login |
 | 15 | `internal/domain/user/service.go:163-218` | Успешный login пишет UPDATE (сброс попыток) всегда | Условный `WHERE failed<>0 OR locked IS NOT NULL` |
 

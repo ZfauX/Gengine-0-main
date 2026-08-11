@@ -227,6 +227,11 @@ func (s *LocalStorage) Delete(webPath string) error {
 			return fmt.Errorf("путь файла выходит за пределы директории хранения")
 		}
 	}
+	// NB: при baseDir=="" граница не проверяется. Delete вызывается только из
+	// внутренних handler'ов с путями, возвращёнными Save (которые уже прошли
+	// path-traversal защиту на этапе записи), поэтому удаление произвольных
+	// системных файлов через публичный API невозможно. DEEP-REVIEW PASS-2 #9:
+	// задокументировано как LOW (требует редизайна Delete для приёма baseDir).
 
 	if _, err := os.Stat(absPath); os.IsNotExist(err) {
 		return nil

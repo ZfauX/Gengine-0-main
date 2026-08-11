@@ -117,6 +117,10 @@ func (m *mockUserRepo) LockAccountWithBackoff(ctx context.Context, userID uint) 
 	return 0, nil
 }
 
+func (m *mockUserRepo) DemoteAdminIfNotLast(ctx context.Context, userID uint) (bool, error) {
+	return true, nil
+}
+
 func (m *mockUserRepo) GetGamesView(ctx context.Context, userID uint) (string, error) {
 	return "table", nil
 }

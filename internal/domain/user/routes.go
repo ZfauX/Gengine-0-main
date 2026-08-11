@@ -93,8 +93,10 @@ func RegisterRoutes(
 		authGroup.POST("/webauthn/register/finish", middleware.AuthRequired(authSvc), webauthnHandler.FinishRegistration)
 
 		// WebAuthn login (public)
-		authGroup.POST("/webauthn/login/begin", webauthnHandler.BeginLogin)
-		authGroup.POST("/webauthn/login/finish", webauthnHandler.FinishLogin)
+		// DEEP-REVIEW PASS-2 (#5): rate-limit на публичные begin/finish —
+		// раньше флуд begin писал сессии и грузил CPU (публичный, CSRF-exempt).
+		authGroup.POST("/webauthn/login/begin", middleware.LoginRateLimit(1*time.Minute, 10), webauthnHandler.BeginLogin)
+		authGroup.POST("/webauthn/login/finish", middleware.LoginRateLimit(1*time.Minute, 10), webauthnHandler.FinishLogin)
 	}
 
 	// Profile routes — require auth

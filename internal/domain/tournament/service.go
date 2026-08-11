@@ -3,6 +3,7 @@ package tournament
 
 import (
 	"context"
+	"encoding/json"
 	stderrors "errors"
 	"fmt"
 	"strings"
@@ -544,17 +545,35 @@ func pointsForPlace(t *Tournament, p game.GamePassing) int {
 }
 
 func (s *TournamentService) GetLeaderboard(ctx context.Context, tournamentID uint) ([]TournamentResult, error) {
-	// F-5 (pass 31): лидерборд кэшируется на 30с — на каждой загрузке
-	// страницы турнира пере-запрос был избыточен (player-лидерборд уже кэширован).
+	// F-5 (pass 31): лидерборд кэшируется на 30с.
+	// DEEP-REVIEW PASS-2 (#12): раньше GetOrSetWithCtx + type-assert НЕ хитился
+	// с Valkey (JSON → []map[string]any). Теперь — через GetWithCtx с
+	// JSON-fallback, как cacheGetJSON в game-сервисе.
 	if s.cache != nil {
 		key := fmt.Sprintf("tournament:leaderboard:%d", tournamentID)
-		if v, err := s.cache.GetOrSetWithCtx(ctx, key, 30*time.Second, func() (any, error) {
-			return s.tournamentResultRepo.GetLeaderboard(ctx, tournamentID)
-		}); err == nil {
-			if results, ok := v.([]TournamentResult); ok {
-				return results, nil
+		var cached []TournamentResult
+		if v, ok := s.cache.GetWithCtx(ctx, key); ok {
+			// In-memory: значение уже типизировано.
+			if res, ok := v.([]TournamentResult); ok {
+				return res, nil
+			}
+			// Valkey: JSON-строка/байты → unmarshal.
+			if raw, ok := v.([]byte); ok {
+				if err := json.Unmarshal(raw, &cached); err == nil {
+					return cached, nil
+				}
+			} else if raw, ok := v.(string); ok {
+				if err := json.Unmarshal([]byte(raw), &cached); err == nil {
+					return cached, nil
+				}
 			}
 		}
+		results, err := s.tournamentResultRepo.GetLeaderboard(ctx, tournamentID)
+		if err != nil {
+			return nil, err
+		}
+		s.cache.SetWithCtx(ctx, key, results, 30*time.Second)
+		return results, nil
 	}
 	return s.tournamentResultRepo.GetLeaderboard(ctx, tournamentID)
 }

@@ -34,23 +34,25 @@ type TournamentGameIDRequest struct {
 }
 
 // CreateTournamentInput используется для создания турнира.
+// DEEP-REVIEW PASS-2 (#13): points ограничены сверху (100k) — иначе
+// накопление в tournament_results.score переполняет int.
 type CreateTournamentInput struct {
 	Name                   string `form:"name" binding:"required,min=2,max=200"`
 	Description            string `form:"description" binding:"max=5000"`
-	PointsForFirst         int    `form:"points_for_first" binding:"min=0"`
-	PointsForSecond        int    `form:"points_for_second" binding:"min=0"`
-	PointsForThird         int    `form:"points_for_third" binding:"min=0"`
-	PointsForParticipation int    `form:"points_for_participation" binding:"min=0"`
+	PointsForFirst         int    `form:"points_for_first" binding:"min=0,max=100000"`
+	PointsForSecond        int    `form:"points_for_second" binding:"min=0,max=100000"`
+	PointsForThird         int    `form:"points_for_third" binding:"min=0,max=100000"`
+	PointsForParticipation int    `form:"points_for_participation" binding:"min=0,max=100000"`
 }
 
 // UpdateTournamentInput используется для обновления турнира.
 type UpdateTournamentInput struct {
 	Name                   string `form:"name" binding:"omitempty,min=2,max=200"`
 	Description            string `form:"description" binding:"max=5000"`
-	PointsForFirst         int    `form:"points_for_first" binding:"min=0"`
-	PointsForSecond        int    `form:"points_for_second" binding:"min=0"`
-	PointsForThird         int    `form:"points_for_third" binding:"min=0"`
-	PointsForParticipation int    `form:"points_for_participation" binding:"min=0"`
+	PointsForFirst         int    `form:"points_for_first" binding:"min=0,max=100000"`
+	PointsForSecond        int    `form:"points_for_second" binding:"min=0,max=100000"`
+	PointsForThird         int    `form:"points_for_third" binding:"min=0,max=100000"`
+	PointsForParticipation int    `form:"points_for_participation" binding:"min=0,max=100000"`
 }
 
 // AddGameInput используется для добавления игры в турнир.

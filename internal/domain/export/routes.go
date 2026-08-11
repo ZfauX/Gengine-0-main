@@ -19,7 +19,7 @@ func RegisterRoutes(
 	coAuthorSvc *game.CoAuthorService,
 	authService *user.AuthService,
 ) error {
-	exportHandler := NewExportHandler(exportService, gameService, store)
+	exportHandler := NewExportHandler(exportService, gameService, coAuthorSvc, store)
 
 	authRequired := middleware.AuthRequired(authService)
 	gameManager := middleware.GameManager(coAuthorSvc)

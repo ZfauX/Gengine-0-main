@@ -189,6 +189,21 @@ func (mr *MockUserRepositoryMockRecorder) Delete(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockUserRepository)(nil).Delete), ctx, id)
 }
 
+// DemoteAdminIfNotLast mocks base method.
+func (m *MockUserRepository) DemoteAdminIfNotLast(ctx context.Context, userID uint) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DemoteAdminIfNotLast", ctx, userID)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DemoteAdminIfNotLast indicates an expected call of DemoteAdminIfNotLast.
+func (mr *MockUserRepositoryMockRecorder) DemoteAdminIfNotLast(ctx, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DemoteAdminIfNotLast", reflect.TypeOf((*MockUserRepository)(nil).DemoteAdminIfNotLast), ctx, userID)
+}
+
 // GetByEmail mocks base method.
 func (m *MockUserRepository) GetByEmail(ctx context.Context, email string) (*User, error) {
 	m.ctrl.T.Helper()

@@ -37,7 +37,7 @@ const roleCacheTTL = 5 * time.Second
 const roleCacheMaxEntries = 512
 
 var (
-	roleCacheMu sync.Mutex
+	roleCacheMu sync.RWMutex
 	roleCache   = map[uint]cachedRole{}
 )
 
@@ -62,12 +62,14 @@ func getCachedRole(ctx context.Context, userID uint) (string, error) {
 	}
 	now := time.Now()
 
-	roleCacheMu.Lock()
+	// DEEP-REVIEW PASS-2 (#11): RLock для чтения — раньше sync.Mutex сериализовал
+	// ВСЕ авторизованные запросы на одном локе (контенция при WS/SSE-поллинге).
+	roleCacheMu.RLock()
 	if e, ok := roleCache[userID]; ok && now.Before(e.expires) {
-		roleCacheMu.Unlock()
+		roleCacheMu.RUnlock()
 		return e.role, nil
 	}
-	roleCacheMu.Unlock()
+	roleCacheMu.RUnlock()
 
 	role, err := roleProvider(ctx, userID)
 	if err != nil {

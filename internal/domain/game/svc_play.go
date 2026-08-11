@@ -748,25 +748,30 @@ func (s *GamePlayService) GetGameplayData(ctx context.Context, passingID uint) (
 	var g errgroup.Group
 
 	g.Go(func() error {
-		// DEEP-REVIEW P5 (pass 46): настройки игры статичны — кэшируем на 60с.
-		// Раньше каждый заход на gameplay-страницу и каждая подсказка читали БД.
+		// DEEP-REVIEW P5 (pass 46) + PASS-2 (#12): настройки игры статичны —
+		// кэшируем на 60с через cacheGetJSON (работает и с in-memory, и с
+		// Valkey; раньше GetOrSetWithCtx+type-assert с Valkey не хитился).
 		if s.cache != nil {
 			cacheKey := fmt.Sprintf("game:settings:%d", passing.GameID)
-			if v, err := s.cache.GetOrSetWithCtx(ctx, cacheKey, 60*time.Second, func() (any, error) {
-				gs, err := s.gameRepo.GetGameSettingByGameID(ctx, passing.GameID)
-				if err != nil {
-					return nil, err
-				}
-				if gs == nil {
-					return defaultGameSetting(passing.GameID), nil
-				}
-				return gs, nil
-			}); err == nil {
-				if gs, ok := v.(*GameSetting); ok {
-					settings = *gs
-					return nil
-				}
+			var cachedGameSetting *GameSetting
+			if cacheGetJSON(s.cache, ctx, cacheKey, &cachedGameSetting) && cachedGameSetting != nil {
+				settings = *cachedGameSetting
+				return nil
 			}
+			gs, err := s.gameRepo.GetGameSettingByGameID(ctx, passing.GameID)
+			if err != nil {
+				if !errors.Is(err, gorm.ErrRecordNotFound) {
+					log.Error().Err(err).Uint("game_id", passing.GameID).Msg("GetGameplayData: failed to load settings, using defaults")
+				}
+				settings = *defaultGameSetting(passing.GameID)
+				return nil
+			}
+			if gs == nil {
+				gs = defaultGameSetting(passing.GameID)
+			}
+			settings = *gs
+			s.cache.SetWithCtx(ctx, cacheKey, gs, 60*time.Second)
+			return nil
 		}
 		// A-2 (pass 41): gs вместо s — раньше локальная s shadowing'ила receiver.
 		gs, err := s.gameRepo.GetGameSettingByGameID(ctx, passing.GameID)

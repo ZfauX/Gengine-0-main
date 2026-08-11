@@ -140,8 +140,21 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, service *Notificatio
 				return
 			}
 
-			var settings Settings
-			if err := c.ShouldBindJSON(&settings); err != nil {
+			// DEEP-REVIEW PASS-2 (#6): раньше PUT full-replace — клиент, приславший
+			// только изменённые флаги, обнулял все остальные каналы. Теперь merge:
+			// начинаем с текущих настроек и применяем только переданные *bool-поля.
+			var input struct {
+				EmailEnabled             *bool `json:"email_enabled"`
+				BrowserEnabled           *bool `json:"browser_enabled"`
+				PushEnabled              *bool `json:"push_enabled"`
+				EmailGameStarted         *bool `json:"email_game_started"`
+				EmailLevelCompleted      *bool `json:"email_level_completed"`
+				EmailApplicationAccepted *bool `json:"email_application_accepted"`
+				EmailApplicationRejected *bool `json:"email_application_rejected"`
+				EmailTimeWarning         *bool `json:"email_time_warning"`
+				EmailTimeExpired         *bool `json:"email_time_expired"`
+			}
+			if err := c.ShouldBindJSON(&input); err != nil {
 				log.Warn().Err(err).Ctx(c.Request.Context()).Msg("notification settings invalid JSON")
 				c.JSON(http.StatusBadRequest, gin.H{
 					"error": "Неверный формат данных",
@@ -150,7 +163,44 @@ func RegisterRoutes(r *gin.RouterGroup, cfg *config.Config, service *Notificatio
 				return
 			}
 
-			if err := service.SaveSettings(c.Request.Context(), userID, &settings); err != nil {
+			settings, err := service.GetSettings(c.Request.Context(), userID)
+			if err != nil {
+				log.Error().Err(err).Uint("user_id", userID).Msg("Failed to load notification settings")
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": render.Tr(c, "handler.internal_error"),
+					"code":  "internal_error",
+				})
+				return
+			}
+			if input.EmailEnabled != nil {
+				settings.EmailEnabled = *input.EmailEnabled
+			}
+			if input.BrowserEnabled != nil {
+				settings.BrowserEnabled = *input.BrowserEnabled
+			}
+			if input.PushEnabled != nil {
+				settings.PushEnabled = *input.PushEnabled
+			}
+			if input.EmailGameStarted != nil {
+				settings.EmailGameStarted = *input.EmailGameStarted
+			}
+			if input.EmailLevelCompleted != nil {
+				settings.EmailLevelCompleted = *input.EmailLevelCompleted
+			}
+			if input.EmailApplicationAccepted != nil {
+				settings.EmailApplicationAccepted = *input.EmailApplicationAccepted
+			}
+			if input.EmailApplicationRejected != nil {
+				settings.EmailApplicationRejected = *input.EmailApplicationRejected
+			}
+			if input.EmailTimeWarning != nil {
+				settings.EmailTimeWarning = *input.EmailTimeWarning
+			}
+			if input.EmailTimeExpired != nil {
+				settings.EmailTimeExpired = *input.EmailTimeExpired
+			}
+
+			if err := service.SaveSettings(c.Request.Context(), userID, settings); err != nil {
 				log.Error().Err(err).Uint("user_id", userID).Msg("Failed to save notification settings")
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"error": render.Tr(c, "handler.internal_error"),

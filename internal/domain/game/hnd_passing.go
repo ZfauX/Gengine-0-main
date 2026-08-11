@@ -364,6 +364,11 @@ func (h *PassingHandler) SetTeamRoute(c *gin.Context) {
 		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_data"))
 		return
 	}
+	// DEEP-REVIEW PASS-2 (#3): observer (read-only соавтор) не должен менять
+	// маршруты команд — требуется право редактирования контента.
+	if !h.requireEditContent(c, uint(req.GameID)) {
+		return
+	}
 	if err := h.passingService.SetTeamRoute(c.Request.Context(), uint(req.PassingID), req.LevelIDs); err != nil {
 		log.Error().Err(err).Int("passing_id", req.PassingID).Msg("SetTeamRoute: failed")
 		render.RenderError(c, http.StatusInternalServerError, render.LocalizeError(c, err.Error()))
@@ -393,10 +398,15 @@ func (h *PassingHandler) GetTeamRoute(c *gin.Context) {
 // SetTeamStartTime задаёт индивидуальное время старта команды (C-3).
 func (h *PassingHandler) SetTeamStartTime(c *gin.Context) {
 	var req struct {
+		GameID    int `uri:"id" binding:"required"`
 		PassingID int `uri:"passing_id" binding:"required"`
 	}
 	if err := c.ShouldBindUri(&req); err != nil {
 		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_id"))
+		return
+	}
+	// DEEP-REVIEW PASS-2 (#3): observer не меняет время старта команд.
+	if !h.requireEditContent(c, uint(req.GameID)) {
 		return
 	}
 	startTimeStr := c.PostForm("start_time")
@@ -426,6 +436,10 @@ func (h *PassingHandler) SetTeamAnswer(c *gin.Context) {
 	}
 	if err := c.ShouldBindUri(&req); err != nil {
 		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_id"))
+		return
+	}
+	// DEEP-REVIEW PASS-2 (#3): observer не может подделывать ответы команд.
+	if !h.requireEditContent(c, uint(req.GameID)) {
 		return
 	}
 	code := c.PostForm("code")
@@ -458,4 +472,23 @@ func (h *PassingHandler) AttemptsPerUser(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"attempts_per_user": rows})
+}
+
+// requireEditContent проверяет право соавтора на редактирование контента игры
+// (DEEP-REVIEW PASS-2 #3): IsUserManager пропускает observer (read-only), а
+// Phase-3 операции (маршруты, время старта, ответы) требуют RoleContentEditor.
+// Возвращает false и пишет 403, если права нет.
+func (h *PassingHandler) requireEditContent(c *gin.Context, gameID uint) bool {
+	userID := c.GetUint("userID")
+	ok, err := h.coAuthorSvc.HasPermission(c.Request.Context(), gameID, userID, RoleContentEditor)
+	if err != nil {
+		log.Error().Err(err).Uint("game_id", gameID).Uint("user_id", userID).Msg("requireEditContent: permission check error")
+		render.RenderErrorPage(c, http.StatusInternalServerError)
+		return false
+	}
+	if !ok {
+		render.RenderErrorPage(c, http.StatusForbidden)
+		return false
+	}
+	return true
 }

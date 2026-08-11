@@ -24,6 +24,7 @@ const importMaxFileSize = 10 * 1024 * 1024
 type ExportHandler struct {
 	exportService *ExportService
 	gameService   *game.GameService
+	coAuthorSvc   *game.CoAuthorService // DEEP-REVIEW PASS-2 (#3): гранулярные права
 	storage       storage.FileStorage
 }
 
@@ -31,11 +32,13 @@ type ExportHandler struct {
 func NewExportHandler(
 	exportService *ExportService,
 	gameService *game.GameService,
+	coAuthorSvc *game.CoAuthorService,
 	storage storage.FileStorage,
 ) *ExportHandler {
 	return &ExportHandler{
 		exportService: exportService,
 		gameService:   gameService,
+		coAuthorSvc:   coAuthorSvc,
 		storage:       storage,
 	}
 }
@@ -49,6 +52,24 @@ func (h *ExportHandler) checkGameAccess(c *gin.Context, gameID uint) bool {
 	ok, err := h.gameService.IsUserManager(c.Request.Context(), gameID, userID)
 	if err != nil || !ok {
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
+		return false
+	}
+	return true
+}
+
+// requireModerate проверяет право модерации игры (DEEP-REVIEW PASS-2 #3):
+// экспорт данных ВСЕХ команд (результаты, статистика) доступен автору/модератору,
+// а не observer (read-only) — тот видит только свою команду через ExportTeamResultsCSV.
+func (h *ExportHandler) requireModerate(c *gin.Context, gameID uint) bool {
+	userID := c.GetUint("userID")
+	ok, err := h.coAuthorSvc.HasPermission(c.Request.Context(), gameID, userID, game.RoleModerator)
+	if err != nil {
+		log.Error().Err(err).Uint("game_id", gameID).Msg("requireModerate: permission check error")
+		render.RenderErrorPage(c, http.StatusInternalServerError)
+		return false
+	}
+	if !ok {
+		render.RenderErrorPage(c, http.StatusForbidden)
 		return false
 	}
 	return true
@@ -156,6 +177,19 @@ func (h *ExportHandler) ImportGame(c *gin.Context) {
 	if !h.checkGameAccess(c, gameID) {
 		return
 	}
+	// DEEP-REVIEW PASS-2 (#3): CSV-импорт перезаписывает уровни/вопросы/ответы —
+	// observer (read-only) не должен иметь права импорта. Требуется RoleContentEditor.
+	userID := c.GetUint("userID")
+	canEdit, permErr := h.coAuthorSvc.HasPermission(c.Request.Context(), gameID, userID, game.RoleContentEditor)
+	if permErr != nil {
+		log.Error().Err(permErr).Uint("game_id", gameID).Msg("ImportGame: permission check error")
+		render.RenderErrorPage(c, http.StatusInternalServerError)
+		return
+	}
+	if !canEdit {
+		render.RenderErrorPage(c, http.StatusForbidden)
+		return
+	}
 
 	// E2: ограничиваем тело запроса ДО multipart-разбора — иначе при
 	// отсутствующем/завышенном Content-Length FormFile загрузит весь файл
@@ -249,6 +283,10 @@ func (h *ExportHandler) ExportResultsCSV(c *gin.Context) {
 	if !h.checkGameAccess(c, gameID) {
 		return
 	}
+	// DEEP-REVIEW PASS-2 (#3): данные всех команд — только модератор/автор.
+	if !h.requireModerate(c, gameID) {
+		return
+	}
 
 	var buf bytes.Buffer
 	if err := h.exportService.ExportResultsToCSV(c.Request.Context(), gameID, &buf); err != nil {
@@ -319,6 +357,10 @@ func (h *ExportHandler) ExportStatisticsPDF(c *gin.Context) {
 	}
 
 	if !h.checkGameAccess(c, gameID) {
+		return
+	}
+	// DEEP-REVIEW PASS-2 (#3): статистика всех команд — только модератор/автор.
+	if !h.requireModerate(c, gameID) {
 		return
 	}
 
