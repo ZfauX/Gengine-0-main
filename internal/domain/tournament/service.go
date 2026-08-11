@@ -181,7 +181,11 @@ func (s *TournamentService) RemoveGame(ctx context.Context, tournamentID, gameID
 			points := make([]int, 0, len(passings))
 			for _, p := range passings {
 				teamIDs = append(teamIDs, p.TeamID)
-				points = append(points, p.TournamentPoints)
+				// DEEP-REVIEW PASS-2 (HIGH): раньше списывали p.TournamentPoints —
+				// общую колонку, которая при мультитурнирности перезаписывается
+				// последним начисленным турниром (ошибка списания для 2+ турниров).
+				// Теперь пересчитываем очки по правилам удаляемого турнира.
+				points = append(points, pointsForPlace(t, p))
 			}
 
 			// F-3 (pass 31): batch списание вместо построчного Save/Delete —
@@ -464,17 +468,7 @@ func (s *TournamentService) scoreTournamentInTx(tx *gorm.DB, tournament *Tournam
 			continue
 		}
 
-		points := tournament.PointsForParticipation
-		if p.Place != nil {
-			switch *p.Place {
-			case 1:
-				points = tournament.PointsForFirst
-			case 2:
-				points = tournament.PointsForSecond
-			case 3:
-				points = tournament.PointsForThird
-			}
-		}
+		points := pointsForPlace(tournament, p)
 
 		deltaResults = append(deltaResults, TournamentResult{
 			TournamentID: tournament.ID,
@@ -528,6 +522,25 @@ func (s *TournamentService) scoreTournamentInTx(tx *gorm.DB, tournament *Tournam
 		}
 	}
 	return nil
+}
+
+// pointsForPlace возвращает очки за место по правилам турнира
+// (DEEP-REVIEW PASS-2): единая формула для начисления (scoreTournamentInTx)
+// и списания (RemoveGame). Раньше RemoveGame брал общую колонку
+// game_passings.tournament_points, которая при 2+ турнирах перезаписывалась.
+func pointsForPlace(t *Tournament, p game.GamePassing) int {
+	points := t.PointsForParticipation
+	if p.Place != nil {
+		switch *p.Place {
+		case 1:
+			points = t.PointsForFirst
+		case 2:
+			points = t.PointsForSecond
+		case 3:
+			points = t.PointsForThird
+		}
+	}
+	return points
 }
 
 func (s *TournamentService) GetLeaderboard(ctx context.Context, tournamentID uint) ([]TournamentResult, error) {

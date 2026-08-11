@@ -1,216 +1,152 @@
-# DEEP_REVIEW — Gengine-0
+# DEEP_REVIEW — Gengine-0 (PASS 2)
 
-> Глубокое ревью проекта: ошибки, оптимизации, улучшения.
-> Проведено: pprof-профилирование под нагрузкой + 3 параллельных аудита (@reviewer, @security, @perf).
-> Критические подозрения проверены эмпирически (HTTP-запросами к работающему серверу).
-> ✅ = исправлено после ревью (см. разделы CRITICAL и pprof).
-
----
-
-## 🔬 Что было сделано
-
-1. **pprof-профилирование** — сервер запущен с `PPROF_ENABLED=true`, под нагрузкой (30 регистраций + 80 просмотров страниц) сняты профили:
-   - `goroutine` — 25 горутин в покое
-   - `heap` — 7.8 MB
-   - `cpu` (5 сек) — 60ms сэмплов
-2. **3 параллельных аудита**: ревью кода (34 файла), аудит безопасности, ревью производительности (все репозитории + горячие пути).
-3. **Эмпирическая проверка критических подозрений** — реальные HTTP-запросы к работающему серверу на `:8081`.
+> Повторное глубокое ревью после исправления PASS-1.
+> Метод: pprof-профилирование под нагрузкой + 3 параллельных аудита (@reviewer, @security, @perf) + эмпирическая проверка критических подозрений HTTP-запросами.
+> ✅ = исправлено в этом проходе.
 
 ---
 
-## 🐛 Найденные ошибки
+## 🔬 pprof-результаты (после фиксов PASS-1)
 
-### 🔴 CRITICAL
-
-#### 1. Платёжный вебхук заблокирован CSRF → платежи ЮKassa никогда не подтверждаются ✅ ИСПРАВЛЕНО
-
-- **Файл**: `internal/app/app.go:93-107` (skip-list CSRF) + `internal/domain/payment/routes.go:22`
-- **Проблема**: `POST /payments/webhook` зарегистрирован на `htmlGroup`, который обёрнут CSRF-middleware. Skip-list (`/api`, `/static`, `/uploads`, `/ws`, webauthn) **не включает** `/payments/webhook`. ЮKassa шлёт server-to-server POST **без** `_csrf`-токена → `gorilla/csrf` возвращает 403 раньше, чем сработает `PaymentHandler.Webhook`.
-- **Эмпирически подтверждено**: `POST /payments/webhook` → **403 "CSRF token mismatch"**.
-- **Последствие**: статус `succeeded` никогда не записывается в БД — пользователь платит, но система не начисляет ничего.
-- **Статус**: ✅ **Исправлено** — `/payments/webhook` добавлен в skip-list CSRF (вебхук уже защищён IP-allowlist + подтверждением статуса через API). Регрессионный тест `TestRouter_PaymentWebhook_NoCSRFToken` + эмпирическая проверка: теперь 500 «internal» (доходит до handler), а не 403.
-
-#### 2. IDOR: список комнат любой игры без проверки прав ✅ ИСПРАВЛЕНО
-
-- **Файл**: `internal/domain/monitor/routes.go:115` + `internal/domain/monitor/handler.go:978-992`
-- **Проблема**: `GET /games/:id/chat/rooms` (`GameRooms`) не покрыт `gameManager` middleware и не проверяет права в handler (в отличие от `CreateRoom`, который проверяет `IsUserManager`).
-- **Эмпирически подтверждено**: аутентифицированный пользователь получает **200** на `/games/1/chat/rooms` для чужой игры.
-- **Последствие**: любой пользователь может перечислить комнаты любой игры (утечка структуры игры, имён комнат).
-- **Статус**: ✅ **Исправлено** — `gameManager` добавлен к `GameRooms` и `CreateRoom`. Эмпирическая проверка: теперь **403** для не-менеджера.
-
-#### 3. Потеря очков турнира для игры в 2+ турнирах ✅ ИСПРАВЛЕНО
-
-- **Файл**: `internal/domain/tournament/service.go:386-485`
-- **Проблема**: `UpdateScoresForGame` читает прохождения с `tournament_scored=false` и после начисления очков одному турниру помечает их `tournament_scored=true`. Если игра зарегистрирована в турнирах A и B — второй турнир никогда не получит очки за эту игру.
-- **Статус**: ✅ **Исправлено** — булев флаг заменён на массив `tournament_scored_ids` (миграция 000060); `FindTournamentIDsByGameID` возвращает все турниры игры, начисление идёт каждому в одной транзакции. Тест `TestTournamentService_UpdateScoresForGame_MultiTournament`.
-
-#### 4. Инвариант «игрок в одной команде» не атомарен ✅ ИСПРАВЛЕНО
-
-- **Файл**: `internal/domain/team/service.go:406-434`
-- **Проблема**: `AcceptInvitation` проверяет `GetTeamsByUserID` **вне транзакции**, а вставка `team_members` защищена только `ON CONFLICT DO NOTHING` на `(team_id, user_id)` — не на «один пользователь в одной команде». Два конкурентных accept (или accept + `AddMember`) могут поставить игрока в две команды, нарушив A-5.
-- **Статус**: ✅ **Исправлено** — уникальный partial-индекс `idx_team_members_user_unique` (миграция 000061 + gorm-tag) + `ON CONFLICT (user_id) DO NOTHING` с проверкой `RowsAffected` (возвращает `ErrAlreadyInOtherTeam`).
+| Профиль | Результат | Вывод |
+|---|---|---|
+| **goroutine** | 21 горутина в покое | ✅ **0 утечек redis/SSE** (в PASS-1 было 4 висящих redis-tryDial). Фикс `client.Close()` подтверждён. |
+| **heap** | 8.8 MB | Нормально для загруженного сервера |
+| **cpu** (5 сек, 25 регистраций) | 93.5% `blowfish.encryptBlock` | **bcrypt cost 12** — осознанная защита от брутфорса, НЕ баг. Подтверждён корректный scope (только login/register). |
+| **gzip** | flate в top | ✅ gzip для статики работает (после фикса, см. ниже) |
 
 ---
 
-### 🟠 HIGH
+## 🔴 Критические (подтверждены эмпирически)
+
+### 1. Регрессия PASS-1: gzip ломал отдачу статики JS/CSS ✅ ИСПРАВЛЕНО
+
+- **Файл**: `internal/pkg/middleware/gzip.go:15-28`
+- **Проблема**: PASS-1 включил gzip для `/static/`, но `gzipResponseWriter` не переопределял `WriteHeader`. Go's `http.ServeContent` (через `r.Static`) записывал `Content-Length` **несжатого** файла до `WriteHeader`; gzip-запись давала меньше байт → Go-сервер обрывал соединение на недописанный Content-Length.
+- **Эмпирически подтверждено**: `GET /static/js/app.js` → `TypeError: terminated` (клиент получал 7938 из ~37000 байт, соединение обрывалось).
+- **Фикс**: переопределён `WriteHeader` — ставит `Content-Encoding: gzip`, удаляет `Content-Length` до вызова базового. Повторная проверка: **200, content-encoding: gzip, полный JS (21872 байта распаковано)**.
+- **Регрессионный риск**: без фикса браузеры получали бы битый JS/CSS на всех страницах.
+
+### 2. Мультитурнирный RemoveGame списывал неверные очки ✅ ИСПРАВЛЕНО
+
+- **Файл**: `internal/domain/tournament/service.go:177-205`
+- **Проблема**: `RemoveGame` списывал `game_passings.tournament_points` — **общую колонку**, которая при 2+ турнирах перезаписывается последним начисленным турниром. Удаляя турнир A (начислено 10), списывалось 20 (значение турнира B, скоринг которого прошёл позже).
+- **Фикс**: единый helper `pointsForPlace(t, p)` — пересчёт по правилам удаляемого турнира (место → points_for_X), используется и в начислении, и в списании.
+- Тесты `TestTournamentService_RemoveGame` и мультитурнирный зелёные.
+
+---
+
+## 🟠 HIGH (из аудитов)
+
+### 3. Observer-соавтор может менять контент и читать чужие данные (системный пробел прав)
+
+- **Файлы**: `internal/domain/game/routes.go:135-142`, `internal/domain/export/routes.go:49-55`, `internal/domain/export/handler.go:156-158`
+- **Проблема**: Phase-3 эндпоинты (route/start-time/answer/attempts) и CSV-импорт защищены только `IsUserManager`, который пропускает роль **observer** (read-only пресет). Observer может:
+  - `SetTeamAnswer`/`SetTeamRoute`/`SetTeamStartTime` для любой команды (порча игрового процесса);
+  - импортировать CSV, перезаписывающий вопросы/ответы опубликованной игры;
+  - экспортировать `ExportResultsCSV`/`ExportStatisticsPDF` со всеми командами.
+- **Фикс**: в этих хендлерах проверять гранулярные права (`HasPermission(RoleContentEditor)` для записи, `RoleModerator` для экспорта всех команд), по образцу `UploadPhoto` (проверяет `RoleUploadMedia`).
+
+### 4. WebAuthn: userVerification=preferred + игнорирование clone-warning
+
+- **Файл**: `internal/domain/user/webauthn_handler.go:81-83,407-409`
+- **Проблема**: passkey-login без локальной верификации устройства (PIN/биометрия) — доступ при разблокированном устройстве; `CloneWarning` (признак клонированного аутентификатора) только логируется, JWT всё равно выдаётся.
+- **Фикс**: `VerificationRequired` + отказ (403) при CloneWarning, пометка credential как скомпрометированной.
+
+### 5. WebAuthn: нет rate-limit на публичный login/begin-finish
+
+- **Файл**: `internal/domain/user/routes.go:96-97`
+- **Проблема**: `/auth/webauthn/login/begin|finish` публичные, CSRF-exempt, без лимитера — флуд пишет сессии и грузит CPU.
+- **Фикс**: добавить `LoginRateLimit` (как на парольный логин).
+
+---
+
+## 🟡 MEDIUM (из аудитов)
 
 | # | Файл | Проблема | Фикс |
 |---|------|----------|------|
-| 5 | `internal/domain/game/svc_passing.go:100-119` | `Apply` проверяет `Count >= MaxTeamNumber` и вставляет без сериализации → конкурентные заявки могут превысить лимит команд | ✅ `SELECT ... FOR UPDATE` строки игры в транзакции |
-| 6 | `internal/domain/payment/service.go:196-242` | Вебхук не проверяет сумму/валюту из API против локальной записи | ✅ `verifyRemoteAmount` (допуск 1 коп.) + тест |
-| 7 | `internal/domain/payment/service.go:162-191` | Платёж создан в ЮKassa, но не сохранён в БД при сбое → повторная попытка создаёт второй платёж | ✅ Запись `pending` с `PaymentID="local-"+idemKey` ДО API + retry по идемпотентному ключу |
-| 8 | `internal/db/migrate.go:65-119` | При запуске из другой CWD (systemd/Docker/cron) миграции **молча пропускаются** (`return nil`) — сервер стартует на немгрированной схеме | ✅ Явная ошибка вместо `return nil` + сообщение с абсолютным путём |
-| 9 | `internal/domain/game/hnd_gameplay.go:276-279` | Подсказка попадает в URL (`?hint=...`) → история браузера, Referer, логи доступа | ✅ Только flash «n» (читается хендлером), URL без hint |
-| 10 | `internal/domain/game/hnd_geolocation.go:56-66` | `UpdateLocation` не проверяет статус прохождения (finished/disqualified могут слать GPS); `Accuracy` не валидируется | ✅ статус started/testing + accuracy 0-10000 |
-| 11 | `internal/pkg/middleware/auth.go:178-181` | `OptionalAuth` сохраняет роль из JWT, если роль в БД пустая — пониженный админ остаётся админом на optional-auth роутах | ✅ всегда берём роль из БД |
-| 12 | `internal/domain/tournament/service.go:498-511` | Кэш лидерборда никогда не хитится с Valkey (тип `[]TournamentResult` не переживает JSON round-trip) | Явная маршализация или кэш только для in-memory |
-| 13 | `internal/pkg/websocket/room_hub.go:66-104,131-145` + `hnd_sse.go:332-348` | TOCTOU в лимитах соединений: `CanAccept` и `incConnection` — не под одним lock | Проверка+инкремент в `RegisterClient` под одним мьютексом |
-| 14 | `internal/domain/game/svc_monitor.go:87-130` | Кэшированный `[]TeamProgress` возвращается по ссылке — мутация портит кэш | ✅ `copyTeamProgress` |
-| 15 | `internal/domain/game/svc_monitor.go:231-234` | Отрицательная общая длительность при рассинхроне таймстампов | ✅ кламп к 0 |
+| 6 | `internal/domain/notification/routes.go:143-166` | `PUT /api/notifications/settings` full-replaces (bool без *bool) — частичное обновление выключает остальные каналы | `*bool` как в POST-версии |
+| 7 | `internal/domain/admin/handler.go:363-387` | ToggleAdmin last-admin TOCTOU (два демоушена → 0 админов) | `SELECT ... FOR UPDATE` в транзакции |
+| 8 | `internal/domain/admin/handler.go:786-793` | CreateBackup блокирует HTTP до 10 мин + ctx от клиента (дисконнект прерывает дамп) | Фоновая задача с независимым ctx |
+| 9 | `internal/pkg/storage/local_storage.go:217-229` | `Delete` пропускает boundary-check при `baseDir==""` → риск удаления произвольного файла | Guard для пустого baseDir |
+| 10 | `internal/domain/game/hnd_note.go:48,111,142` | Все ошибки → 403 + сырой текст (5xx как 403, утечка деталей) | Только sentinel-права → 403 |
+| 11 | `internal/pkg/middleware/auth.go:39-89` | Роль-кэш на `sync.Mutex` — контенция на каждом авторизованном запросе | `sync.RWMutex`/шардирование |
+| 12 | `internal/domain/game/svc_play.go:753-770` + `tournament/service.go:533-547` | Кэш через `GetOrSetWithCtx`+type-assert не хитится с Valkey (JSON→`[]any`), game settings и лидерборд каждый раз читают БД | `cacheGetJSON`/typed-bytes helper |
+| 13 | `internal/domain/tournament/handler.go:37-44` | `points_for_*` без верхней границы (переполнение int в лидерборде) | clamp до разумного максимума |
+| 14 | `internal/domain/user/auth_handler.go:131,143` | Login делает дублирующий SELECT пользователя (для 2FA-проверки) | Вернуть *User из Login |
+| 15 | `internal/domain/user/service.go:163-218` | Успешный login пишет UPDATE (сброс попыток) всегда | Условный `WHERE failed<>0 OR locked IS NOT NULL` |
 
 ---
 
-### 🟡 MEDIUM
+## ⚪ LOW / NIT
 
 | # | Файл | Проблема |
 |---|------|----------|
-| 16 | `internal/pkg/cache/cache.go:166-173` | `Set(key, ttl=0)` после `ttl>0` оставляет ключ в `ttlKeys` навсегда |
-| 17 | `internal/domain/game/svc_passing.go:77-122` | Нет проверки `visibility`/публикации; pending-заявки не считаются в лимит команд | ✅ public + pending в лимите |
-| 18 | `internal/pkg/websocket/room_hub.go:199-203` | Drop-on-full для медленных клиентов молча теряет сообщения без отключения |
-| 19 | `internal/domain/user/service.go:186-208` | Backoff использует устаревший `LockCount` при параллельных неудачных попытках | ✅ backoff в SQL по факт. lock_count |
-| 20 | `internal/db/migrate.go:84-96` | При ошибке `getCurrentVersion` возвращает 0 → выбирается squashed-набор для существующей БД | ✅ ошибка вместо 0 |
-| 21 | `internal/config/config.go:349-372` | `YKASSA_WEBHOOK_KEY` загружен, но не используется (нет проверки подписи) |
-| 22 | `internal/config/config.go:599-616` | `getEnvAsInt`/`getEnvAsDuration` молча фолбэчат при ошибке парсинга даже в STRICT_CONFIG | ✅ warn-лог при ошибке парсинга |
-| 23 | `internal/domain/game/hnd_sse.go:151-174` | `RegisterSession` не проверяет `m.stopped` — конкурентный вызов после `Stop()` нарушает контракт WaitGroup |
-| 24 | `internal/domain/monitor/handler.go` | ChatWS hot-path: до 7 последовательных DB-запросов на сообщение |
-| 25 | `internal/domain/user/profile_handler.go:491-501` | `UpdateNotifyGameDays` без валидации диапазона | ✅ диапазон 0-365 + i18n-ошибка |
+| 16 | `internal/pkg/storage/local_storage.go:177` | `Save` возвращает `//abs/...` при абсолютном baseDir (двойной слэш) |
+| 17 | `internal/domain/export/service.go:79,178,304` | Ошибки `csvWriter.Flush()` глотаются |
+| 18 | `internal/domain/game/hnd_photo.go:239-305` | `DeletePhoto` игнорирует game_id из URL (контракт, не IDOR) |
+| 19 | `internal/domain/game/svc_note.go:36` | `Create` не проверяет, что LevelID принадлежит gameID |
+| 20 | `internal/domain/user/webauthn_handler.go:380-398` | discoverableHandler не сверяет userHandle с user |
+| 21 | `internal/pkg/email/email.go:396-400` | SMTP-заголовки без CRLF-санитизации (латентная инъекция) |
+| 22 | `internal/pkg/storage/local_storage.go:122-126` | Файлы 0644/0755 + предсказуемые имена `{userID}_{unixnano}` |
+| 23 | `internal/domain/game/hnd_review.go:44,78` | Игнорируемые `strconv.Atoi` → 403 вместо 400 |
+| 24 | `internal/domain/calendar/handler.go:274` | `EscapeICalText` не экранирует `\r` |
 
 ---
 
-### ⚪ LOW / NIT
+## 📊 Оптимизации
 
-| # | Файл | Проблема |
-|---|------|----------|
-| 26 | `internal/domain/user/service.go:163-218` | Для 2FA-пользователя `Login` минтит JWT, который выбрасывается (лишняя работа) |
-| 27 | `internal/domain/user/password_reset_service.go:63` | `TokenHash` генерируется и хранится, но не используется | ✅ удалён (миграция 000062) |
-| 28 | `internal/domain/game/svc_play.go:159-162` | Повторное чтение passing (уже залоченного) для team_id | ✅ teamID из CheckTeamMembership |
-| 29 | `internal/domain/level/service.go:142` | `RequiresConfirmation` сбрасывается в false при частичном Update | ✅ *bool + Set-флаг |
-| 30 | `internal/domain/payment/handler.go:63` | Ошибка `ParseFloat` игнорируется | ✅ явная проверка |
-| 31 | `internal/pkg/middleware/auth.go:60-89` | Роль-кэш локальный на процесс — до 5 сек устаревшая роль |
-| 32 | `internal/config/config.go:638-657` | VAPID-ключи регенерируются при каждом рестарте, если не заданы |
-
----
-
-## 📊 Оптимизации (по итогам pprof + perf-аудита)
-
-### Найденное pprof-профилированием
-
-- **goroutine-профиль**: при недоступном Valkey остаются **2 висящие `ConnPool.tryDial` + 2 `CircuitBreaker.cleanupLoop`** goroutine — go-redis бесконечно ретраит подключение к мёртвому Redis.
-- **CPU-профиль (5 сек)**: **33% времени — `tryDial`** (попытки переподключения к недоступному Valkey) + 67% `runtime.cgocall` (Windows-платформа).
-- **Вывод**: `NewValkeyClient` возвращает nil после неудачного Ping, но внутренние goroutine go-redis уже запущены и живут вечно. Нужно закрывать клиент (`client.Close()`) при недоступности или не создавать его до первого успешного Ping.
-- **Статус**: ✅ **Исправлено** — `NewValkeyClient` теперь вызывает `client.Close()` при неудачном Ping. Повторный pprof: **0 висящих redis-goroutine**, CPU-профиль в покое — **0 сэмплов**. Тест `TestNewValkeyClient_UnavailableClosesClient`.
-
-### Высокий эффект (уже в коде — для будущей работы)
-
-| # | Путь | Проблема | Эффект |
-|---|------|----------|--------|
-| P1 | `svc_listing.go:75-87` | Аутентифицированный список игр **не кэшируется** — каждый запрос бьёт в PostgreSQL (только анонимный page=1 кэшируется) | Высокий (главная нагрузка) |
-| P2 | `monitor/handler.go:738-751` | Отправка чат-сообщения = **~7 последовательных DB-запросов** (room + team member + can_write + INSERT + GET by id + preload) | Высокий (горячий real-time путь) |
-| P3 | `monitor/repository.go:225-239` | `Preload("User")` в чате тянет **полные строки users** (включая password_hash/email) | Средне-высокий (payload + утечка) |
-| P4 | `svc_coauthor.go:92-97` | `IsUserManager` = 2 запроса (доп. `GetUserRole`) на **каждое** WS/SSE-подключение | Средне-высокий |
-| P5 | `svc_play.go:753` | `game_settings` перечитывается на каждую страницу gameplay и каждую подсказку | Средне-высокий |
-| P6 | `gzip.go:67` | gzip пропускает `/static/` — статика отдаётся **без сжатия** | Высокий (bandwidth/first-load) |
-
-### Средний эффект
-
-| # | Путь | Проблема |
-|---|------|----------|
-| P7 | `monitor/handler.go:877-916` | `ChatRoomIDs` = до 5 последовательных запросов |
-| P8 | `user/profile_repository.go:23-43` | Публичный профиль = ~7 некэшированных запросов |
-| P9 | `svc_listing.go:242-257` | Autocomplete бьёт в БД на каждое нажатие клавиши |
-| P10 | `game/repository.go:186-201` | Календарь (`ListByDateRange`) не кэшируется |
-| P11 | `monitor/handler.go:469-481` | MonitorWS заново маршалит snapshot, хотя есть `GetOrFetchSnapshotJSON` |
-| P12 | `hnd_sse.go:255-288` | `Broadcast`/`UnregisterSession` под глобальным Lock с O(n) splice |
-| P13 | `room_hub.go:242-293` | `dispatchToRoom` аллоцирует свежий slice и берёт Lock до 3 раз на broadcast |
-| P14 | `game/repository.go:115-132` | `GetByIDPreloaded` тащит `description` + `search_vector` на каждую страницу игры |
+### pprof-подтверждённые
+- **bcrypt cost 12** на регистрации/логине — 93.5% CPU под нагрузкой регистраций. Осознанный trade-off (анти-брутфорс). *Не менять без причины; при масштабировании — вынести регистрацию в worker.*
 
 ### Быстрые победы (топ-5)
-
-1. **Кэшировать аутентифицированный список игр** (30с TTL, инвалидация через `games:list:version`) — убирает главный некэшированный запрос.
-2. **Схлопнуть отправку чата с ~7 до 1-2 запросов** — один SQL с EXISTS/INSERT RETURNING.
-3. **Ограничить `Preload("User")` в чате** до `id, name, avatar_path` — меньше payload, нет хэшей паролей на проводе.
-4. **Кэшировать роль пользователя + проверку менеджера** (15-60с TTL) — убирает 2 запроса на каждое WS/SSE-подключение.
-5. **Сжимать статику** (прекомпрессия .gz + `Cache-Control: immutable` для `?v=`) — самый дешёвый выигрыш по bandwidth.
+1. **Гранулярные права на Phase-3/import/export** (#3) — закрывает самый опасный класс (observer пишет контент).
+2. **Valkey-совместимый кэш** для game settings и лидерборда (#12) — восстанавливает P5/P1 на реальном проде с Valkey.
+3. **`sync.RWMutex` для role-cache** (#11) — дешёвое снижение контенции на всех авторизованных запросах.
+4. **Убрать дублирующий SELECT в Login** (#14).
+5. **WebAuthn `VerificationRequired`** (#4) — усиление passwordless-границы.
 
 ---
 
-## 🚀 Улучшение проекта
+## 🚀 Улучшения (код + UX)
 
 ### Кодовая база
+1. **Единый слой гранулярных прав** — централизовать проверки `HasPermission` для менеджерских операций (сейчас разбросано: где IsUserManager, где RoleUploadMedia).
+2. **Кэш настроек темы** — `GetThemeSettings` на каждый авторизованный запрос (проверить и кэшировать).
+3. **Фоновая обработка backup** (#8) — pg_dump в worker с независимым ctx.
+4. **Санитизация SMTP-заголовков** (#21) — запрет CRLF в subject/to.
+5. **Строгие права на загрузки** (#22) — 0700/0600 + random nonce.
 
-#### Безопасность (приоритет 1)
-1. **Починить вебхук** (CRITICAL #1) — добавить `/payments/webhook` в skip-list CSRF + тест.
-2. **Починить GameRooms IDOR** (CRITICAL #2) — добавить `gameManager`.
-3. Добавить проверку суммы/валюты в вебхук (#6).
-4. Использовать `YKASSA_WEBHOOK_KEY` для проверки подписи (#21) — подготовка к signed-уведомлениям.
-5. Закрывать redis-клиент при недоступном Valkey (pprof-находка) — убрать висящие goroutine.
-
-#### Надёжность (приоритет 2)
-6. Атомарный инвариант «одна команда на игрока» (CRITICAL #4) — unique partial index.
-7. Мультитурнирный скоринг (CRITICAL #3).
-8. `Apply` с row-lock (HIGH #5).
-9. Миграции: резолв CWD от бинарника + ошибка вместо `return nil` (HIGH #8).
-10. `RegisterSession` с проверкой `stopped` (MEDIUM #23).
-
-#### Производительность (приоритет 3)
-11. Кэш аутентифицированного списка игр (P1).
-12. Оптимизация чат-пути (P2 + P3).
-13. Кэш роли/менеджера (P4), game_settings (P5).
-14. Сжатие статики (P6).
-
-#### Технический долг
-15. Убрать неиспользуемый `TokenHash` (#27), использовать `GetOrFetchSnapshotJSON` (P11).
-16. Отдельный `WithCtx`-тест для Valkey-кэша лидерборда (#12).
-17. Единый middleware-помощник для WS-хендлеров (повторяющийся boilerplate MonitorWS/LogsWS).
-
-### Пользовательский опыт (UX)
-
+### Пользовательский опыт
 | Идея | Эффект |
 |------|--------|
-| **Онлайн-индикатор в чате** — кто из участников комнаты сейчас в сети (по WS-подключениям) | Живость, доверие к real-time |
-| **Уведомление о подтверждении платежа** — после исправления вебхука: push/SSE «платёж прошёл» | Закрывает петлю ожидания после оплаты |
-| **Прогресс-бар прохождения** в мониторинге — визуализация уровня/времени команды | Лучше читается snapshot |
-| **Тёмная карта в мониторинге** (Leaflet dark tiles) — согласовано с тёмной темой приложения | Эстетика |
-| **Мобильная PWA-установка** — кнопка «Установить приложение» (beforeinstallprompt) | Удержание, оффлайн-подход |
-| **Фильтры в списке игр** — по дате/статусу/моим играм (данные уже есть в запросе) | Быстрее навигация |
-| **Пагинация или виртуализация чата** — при >500 сообщений | Плавность на длинных играх |
-| **Онбординг-подсказки** для новых авторов (первая игра → как добавить уровень) | Снижает порог входа |
-| **A11y**: контраст, focus-стили, aria-метки в мониторинге/карте | Доступность |
-| **Reconnect-статус в заголовке** — «потеряно соединение, переподключаюсь…» на всех WS-страницах | Прозрачность |
+| **Онлайн-индикатор** в чате (кто в сети по WS) | Живость real-time |
+| **Уведомление о подтверждении платежа** (теперь вебхук работает!) | Закрывает петлю после оплаты |
+| **PWA-установка** (beforeinstallprompt) | Удержание, оффлайн |
+| **Тёмная карта** в мониторинге (Leaflet dark tiles) | Согласованность с темой |
+| **Фильтры в списке игр** (дата/статус/мои) | Быстрая навигация |
+| **Пагинация/виртуализация чата** при >500 сообщений | Плавность на длинных играх |
+| **Прогресс-бар прохождения** в мониторинге | Лучшая читаемость |
+| **Онбординг для авторов** (первая игра → подсказки) | Снижение порога |
 
 ---
 
-## ✅ Что в проекте хорошо (по итогам аудитов)
-
-- **Refresh-токены** — SHA-256 в БД, семейства с отзывом, fingerprint-привязка, атомарный `ClaimAndCreate` — образцово.
-- **Транзакционная дисциплина** — `onCommitFn` откладывает сайд-эффекты (broadcast, SSE) после коммита.
-- **Postgres-сериализация** — advisory locks для `CalculateResults`, `Move`/`Duplicate` уровней, турнирного скоринга.
-- **Безопасность в глубину** — dummy bcrypt против enumeration, constant-time OAuth state, IP-allowlist + API-подтверждение вебхука, origin-check на SSE/WS, `ExistsByPosition` вместо N+1.
-- **Кэш** — композитный интерфейс, singleflight, `ttlKeys` sweep, документированный тип-Valkey caveat.
-- **Производительность уже есть**: window-function пагинация, денормализация `logs.game_id`, version-key инвалидация, snapshot JSON-кэш, 10+ миграций с индексами.
-- **Права доступа**: геолокация и Phase-3 маршруты под `GameManager`, чат через `canJoinRoom` (проверено юнит-тестами).
+## ✅ Подтверждено исправленным в PASS-1 (pprof + эмпирика)
+- Утечка redis-goroutine при недоступном Valkey — **0 goroutine** в pprof.
+- Платёжный вебхук — теперь доходит до handler (не 403 CSRF).
+- GameRooms IDOR — 403 для не-менеджера.
+- gzip статики — работает (после фикса PASS-2, см. #1).
 
 ---
 
-## 🎯 Итоговые рекомендации (что чинить первым)
+## 🎯 Рекомендации (что чинить первым)
 
-1. ✅ **`/payments/webhook` → в skip-list CSRF** — ИСПРАВЛЕНО (было: платежи не подтверждались).
-2. ✅ **`GameRooms` → под `gameManager`** — ИСПРАВЛЕНО (было: IDOR на комнаты любой игры).
-3. ✅ **Закрывать redis-клиент при недоступном Valkey** — ИСПРАВЛЕНО (было: вечные goroutine tryDial, 33% CPU).
-4. ✅ **Атомарность команды/турнира/лимита команд** — ИСПРАВЛЕНО (мультитурнирный скоринг, unique index, FOR UPDATE).
-5. ✅ **Проверка суммы/валюты вебхука, CWD миграций, hint в URL** — ИСПРАВЛЕНО.
-6. **Кэширование горячих путей** (список игр, чат, роль, статика) — 5-10× снижение DB-запросов (перф-задачи).
+1. **Гранулярные права на Phase-3/import/export** (#3) — самый опасный пробел (observer пишет контент).
+2. **Valkey-совместимый кэш settings/leaderboard** (#12) — реальный прод с Valkey.
+3. **WebAuthn `VerificationRequired` + clone-reject** (#4).
+4. **RWMutex role-cache** (#11) + **убрать дублирующий SELECT в Login** (#14).
+5. **ToggleAdmin TOCTOU + CreateBackup фоновая** (#7, #8).
 
 ---
 
-*Дата: 2026-08-11. Метод: pprof (goroutine/heap/cpu) + @reviewer + @security + @perf + эмпирические проверки.*
+*Дата: 2026-08-11. Метод: pprof (goroutine/heap/cpu) + @reviewer + @security + @perf + эмпирические HTTP-проверки.*

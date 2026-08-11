@@ -27,6 +27,21 @@ func (w *gzipResponseWriter) Write(b []byte) (int, error) {
 	return w.writer.Write(b)
 }
 
+// WriteHeader (DEEP-REVIEW PASS-2): ставим Content-Encoding ДО вызова базового
+// WriteHeader и удаляем Content-Length. Раньше http.ServeContent (r.Static)
+// записывал Content-Length несжатого файла, а gzip-запись давала меньше байт —
+// Go-сервер обрывал соединение на недописанный Content-Length (клиент получал
+// corrupt/truncated JS/CSS). Это была регрессия pass-1 (gzip для /static/).
+func (w *gzipResponseWriter) WriteHeader(code int) {
+	if !w.written {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Vary", "Accept-Encoding")
+		w.Header().Del("Content-Length")
+		w.written = true
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
 func (w *gzipResponseWriter) WriteString(s string) (int, error) {
 	if !w.written {
 		w.Header().Set("Content-Encoding", "gzip")
