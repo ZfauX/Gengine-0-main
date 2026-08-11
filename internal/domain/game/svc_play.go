@@ -154,22 +154,11 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 			return progressErr
 		}
 
-		// 2. Проверяем членство в команде (возвращает gameID — без повторного load passing)
-		gameID, checkErr := CheckTeamMembership(tx, passingID, userID)
+		// 2. Проверяем членство в команде (возвращает gameID+teamID — без повторного load passing)
+		gameID, teamID, checkErr := CheckTeamMembership(tx, passingID, userID)
 		if checkErr != nil {
 			return checkErr
 		}
-
-		// C-4 (pass 45): teamID для персонального ответа уровня.
-		// S-46-2 (pass 46): ошибка загрузки team_id не должна глотаться — при сбое БД
-		// teamID остался бы 0 и персональный ответ уровня сохранился бы с team_id=0,
-		// молча портя данные основной игровой механики.
-		var teamID uint
-		var passing TeamPassingTeamID
-		if err := tx.Table("game_passings").Select("team_id").Where("id = ?", passingID).Scan(&passing).Error; err != nil {
-			return fmt.Errorf("load passing team: %w", err)
-		}
-		teamID = passing.TeamID
 
 		// 3. Отправляем код через attemptService с передачей tx
 		att, success, submitErr := s.attemptSvc.SubmitCodeWithTx(ctx, tx, progress, code, teamID)
@@ -238,7 +227,7 @@ func (s *GamePlayService) SubmitFile(ctx context.Context, passingID, userID uint
 			return progressErr
 		}
 
-		gid, checkErr := CheckTeamMembership(tx, passingID, userID)
+		gid, _, checkErr := CheckTeamMembership(tx, passingID, userID)
 		if checkErr != nil {
 			return checkErr
 		}
@@ -292,7 +281,7 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (
 			return progressErr
 		}
 
-		gid, checkErr := CheckTeamMembership(tx, passingID, userID)
+		gid, _, checkErr := CheckTeamMembership(tx, passingID, userID)
 		if checkErr != nil {
 			return checkErr
 		}

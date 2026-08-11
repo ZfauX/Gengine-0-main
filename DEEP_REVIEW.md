@@ -58,7 +58,7 @@
 |---|------|----------|------|
 | 5 | `internal/domain/game/svc_passing.go:100-119` | `Apply` проверяет `Count >= MaxTeamNumber` и вставляет без сериализации → конкурентные заявки могут превысить лимит команд | ✅ `SELECT ... FOR UPDATE` строки игры в транзакции |
 | 6 | `internal/domain/payment/service.go:196-242` | Вебхук не проверяет сумму/валюту из API против локальной записи | ✅ `verifyRemoteAmount` (допуск 1 коп.) + тест |
-| 7 | `internal/domain/payment/service.go:162-191` | Платёж создан в ЮKassa, но не сохранён в БД при сбое → повторная попытка создаёт второй платёж | Сохранять локальную запись `pending` до вызова API, ключевать идемпотентность |
+| 7 | `internal/domain/payment/service.go:162-191` | Платёж создан в ЮKassa, но не сохранён в БД при сбое → повторная попытка создаёт второй платёж | ✅ Запись `pending` с `PaymentID="local-"+idemKey` ДО API + retry по идемпотентному ключу |
 | 8 | `internal/db/migrate.go:65-119` | При запуске из другой CWD (systemd/Docker/cron) миграции **молча пропускаются** (`return nil`) — сервер стартует на немгрированной схеме | ✅ Явная ошибка вместо `return nil` + сообщение с абсолютным путём |
 | 9 | `internal/domain/game/hnd_gameplay.go:276-279` | Подсказка попадает в URL (`?hint=...`) → история браузера, Referer, логи доступа | ✅ Только flash «n» (читается хендлером), URL без hint |
 | 10 | `internal/domain/game/hnd_geolocation.go:56-66` | `UpdateLocation` не проверяет статус прохождения (finished/disqualified могут слать GPS); `Accuracy` не валидируется | Проверять статус + диапазон accuracy |
@@ -80,10 +80,10 @@
 | 19 | `internal/domain/user/service.go:186-208` | Backoff использует устаревший `LockCount` при параллельных неудачных попытках |
 | 20 | `internal/db/migrate.go:84-96` | При ошибке `getCurrentVersion` возвращает 0 → выбирается squashed-набор для существующей БД |
 | 21 | `internal/config/config.go:349-372` | `YKASSA_WEBHOOK_KEY` загружен, но не используется (нет проверки подписи) |
-| 22 | `internal/config/config.go:599-616` | `getEnvAsInt`/`getEnvAsDuration` молча фолбэчат при ошибке парсинга даже в STRICT_CONFIG |
+| 22 | `internal/config/config.go:599-616` | `getEnvAsInt`/`getEnvAsDuration` молча фолбэчат при ошибке парсинга даже в STRICT_CONFIG | ✅ warn-лог при ошибке парсинга |
 | 23 | `internal/domain/game/hnd_sse.go:151-174` | `RegisterSession` не проверяет `m.stopped` — конкурентный вызов после `Stop()` нарушает контракт WaitGroup |
 | 24 | `internal/domain/monitor/handler.go` | ChatWS hot-path: до 7 последовательных DB-запросов на сообщение |
-| 25 | `internal/domain/user/profile_handler.go:491-501` | `UpdateNotifyGameDays` без валидации диапазона |
+| 25 | `internal/domain/user/profile_handler.go:491-501` | `UpdateNotifyGameDays` без валидации диапазона | ✅ диапазон 0-365 + i18n-ошибка |
 
 ---
 
@@ -92,10 +92,10 @@
 | # | Файл | Проблема |
 |---|------|----------|
 | 26 | `internal/domain/user/service.go:163-218` | Для 2FA-пользователя `Login` минтит JWT, который выбрасывается (лишняя работа) |
-| 27 | `internal/domain/user/password_reset_service.go:63` | `TokenHash` генерируется и хранится, но не используется |
-| 28 | `internal/domain/game/svc_play.go:159-162` | Повторное чтение passing (уже залоченного) для team_id |
-| 29 | `internal/domain/level/service.go:142` | `RequiresConfirmation` сбрасывается в false при частичном Update |
-| 30 | `internal/domain/payment/handler.go:63` | Ошибка `ParseFloat` игнорируется |
+| 27 | `internal/domain/user/password_reset_service.go:63` | `TokenHash` генерируется и хранится, но не используется | ✅ удалён (миграция 000062) |
+| 28 | `internal/domain/game/svc_play.go:159-162` | Повторное чтение passing (уже залоченного) для team_id | ✅ teamID из CheckTeamMembership |
+| 29 | `internal/domain/level/service.go:142` | `RequiresConfirmation` сбрасывается в false при частичном Update | ✅ *bool + Set-флаг |
+| 30 | `internal/domain/payment/handler.go:63` | Ошибка `ParseFloat` игнорируется | ✅ явная проверка |
 | 31 | `internal/pkg/middleware/auth.go:60-89` | Роль-кэш локальный на процесс — до 5 сек устаревшая роль |
 | 32 | `internal/config/config.go:638-657` | VAPID-ключи регенерируются при каждом рестарте, если не заданы |
 

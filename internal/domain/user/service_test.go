@@ -3,8 +3,6 @@ package user
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -90,12 +88,6 @@ func createTestUser(t *testing.T, db *gorm.DB, email, password, name string) *Us
 	}
 	require.NoError(t, db.Create(user).Error)
 	return user
-}
-
-// hashToken возвращает SHA-256 хеш строки токена (как в репозиториях).
-func hashToken(token string) string {
-	hash := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(hash[:])
 }
 
 // =============================================================================
@@ -510,7 +502,6 @@ func TestPasswordResetService_ResetPassword(t *testing.T) {
 		expiredToken := &PasswordResetToken{
 			UserID:    user.ID,
 			ResetCode: hashResetCode("expired-code-123"),
-			TokenHash: hashToken("expiredtoken"),
 			ExpiresAt: time.Now().Add(-time.Hour),
 		}
 		require.NoError(t, passResetRepo.CreateToken(context.Background(), expiredToken))

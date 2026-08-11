@@ -40,14 +40,16 @@ type CreateLevelInput struct {
 
 // UpdateLevelInput используется для обновления уровня.
 type UpdateLevelInput struct {
-	Name                 string  `form:"name" binding:"omitempty,min=2,max=100"`
-	Description          string  `form:"description" binding:"max=5000"`
-	Position             int     `form:"position" binding:"min=0"`
-	Type                 string  `form:"type" binding:"omitempty,oneof=single checkpoint parallel_group blackbox file_upload"`
-	ParentID             *uint   `form:"parent_id"`
-	GroupID              *uint   `form:"group_id"`
-	MinChildren          int     `form:"min_children" binding:"min=0,max=100"`
-	RequiresConfirmation bool    `form:"requires_confirmation"`
+	Name        string `form:"name" binding:"omitempty,min=2,max=100"`
+	Description string `form:"description" binding:"max=5000"`
+	Position    int    `form:"position" binding:"min=0"`
+	Type        string `form:"type" binding:"omitempty,oneof=single checkpoint parallel_group blackbox file_upload"`
+	ParentID    *uint  `form:"parent_id"`
+	GroupID     *uint  `form:"group_id"`
+	MinChildren int    `form:"min_children" binding:"min=0,max=100"`
+	// DEEP-REVIEW LOW #29 (pass 46): *bool — nil означает «не менять» при
+	// частичном POST; раньше unchecked checkbox сбрасывал RequiresConfirmation.
+	RequiresConfirmation *bool   `form:"requires_confirmation"`
 	Latitude             float64 `form:"latitude" binding:"omitempty,min=-90,max=90"`
 	Longitude            float64 `form:"longitude" binding:"omitempty,min=-180,max=180"`
 }
@@ -450,16 +452,21 @@ func (h *LevelHandler) Update(c *gin.Context) {
 	}
 
 	updated := &Level{
-		Name:                 sanitize.StripHTML(input.Name),
-		Description:          sanitize.SanitizeRichText(input.Description),
-		Position:             input.Position,
-		Type:                 input.Type,
-		ParentID:             input.ParentID,
-		GroupID:              input.GroupID,
-		MinChildren:          input.MinChildren,
-		RequiresConfirmation: input.RequiresConfirmation,
-		Latitude:             input.Latitude,
-		Longitude:            input.Longitude,
+		Name:        sanitize.StripHTML(input.Name),
+		Description: sanitize.SanitizeRichText(input.Description),
+		Position:    input.Position,
+		Type:        input.Type,
+		ParentID:    input.ParentID,
+		GroupID:     input.GroupID,
+		MinChildren: input.MinChildren,
+		Latitude:    input.Latitude,
+		Longitude:   input.Longitude,
+	}
+	// DEEP-REVIEW LOW #29 (pass 46): nil = «не менять» — сбрасываем только
+	// если пользователь явно изменил чекбокс.
+	if input.RequiresConfirmation != nil {
+		updated.RequiresConfirmation = *input.RequiresConfirmation
+		updated.RequiresConfirmationSet = true
 	}
 
 	if err := h.levelService.Update(c.Request.Context(), uint(levelID), updated, userID); err != nil {

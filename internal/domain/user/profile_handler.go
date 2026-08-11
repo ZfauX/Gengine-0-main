@@ -492,6 +492,15 @@ func (h *ProfileHandler) UpdateNotifyGameDays(c *gin.Context) {
 	userID := c.GetUint("userID")
 	days, _ := strconv.Atoi(c.PostForm("notify_game_days"))
 
+	// DEEP-REVIEW MEDIUM #25 (pass 46): валидация диапазона.
+	// Допустимы 0 (никогда) и значения из селекта (1/7/14/30); отрицательные
+	// и завышенные значения отклоняем, чтобы не мусорить в БД.
+	if days < 0 || days > 365 {
+		render.SetFlash(c, "error", render.Tr(c, "profile.invalid_notify_days"))
+		c.Redirect(http.StatusFound, "/profile")
+		return
+	}
+
 	if err := h.profileSvc.SaveNotifyGameDays(c.Request.Context(), userID, days); err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Msg("UpdateNotifyGameDays: failed to save")
 		render.RenderErrorPage(c, http.StatusInternalServerError)

@@ -44,8 +44,6 @@ func (s *PasswordResetService) GenerateToken(ctx context.Context, user User) (st
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("не удалось сгенерировать токен: %w", err)
 	}
-	rawToken := hex.EncodeToString(b)
-	hash := sha256.Sum256([]byte(rawToken))
 
 	codeBytes := make([]byte, 16)
 	if _, err := rand.Read(codeBytes); err != nil {
@@ -60,7 +58,6 @@ func (s *PasswordResetService) GenerateToken(ctx context.Context, user User) (st
 	token := PasswordResetToken{
 		UserID:    user.ID,
 		ResetCode: hex.EncodeToString(resetCodeHash[:]),
-		TokenHash: hex.EncodeToString(hash[:]),
 		ExpiresAt: time.Now().Add(passwordResetExpiry),
 	}
 	if err := s.passResetRepo.CreateToken(ctx, &token); err != nil {

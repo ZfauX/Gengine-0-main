@@ -146,6 +146,11 @@ func (s *PaymentService) yooKassaGetPayment(ctx context.Context, paymentID strin
 }
 
 // CreatePayment создаёт платёж и возвращает URL подтверждения.
+// DEEP-REVIEW HIGH #7 (pass 46): запись сохраняется в БД ДО вызова ЮKassa с
+// временным PaymentID="local-"+idemKey. Если вызов API упадёт, повторный
+// CreatePayment с тем же idempotency-ключом вернёт СУЩЕСТВУЮЩУЮ запись —
+// второй платёж в ЮKassa не создаётся (раньше БД-запись терялась и при
+// retry создавался дубликат платежа).
 func (s *PaymentService) CreatePayment(ctx context.Context, userID uint, amount float64, description, metadata string) (*Payment, string, error) {
 	if !s.Enabled() {
 		return nil, "", fmt.Errorf("платежи не настроены")
@@ -155,14 +160,37 @@ func (s *PaymentService) CreatePayment(ctx context.Context, userID uint, amount 
 		return nil, "", err
 	}
 
+	// Retry после сбоя БД/API: запись уже существует — возвращаем её.
+	if existing, findErr := s.repo.GetByIdempotencyKey(ctx, idemKey); findErr == nil && existing != nil {
+		log.Info().Uint("payment", existing.ID).Uint("user_id", existing.UserID).Msg("CreatePayment: returning existing pending payment (idempotency)")
+		return existing, existing.ConfirmationURL, nil
+	}
+
 	currency := s.cfg.Currency
 	if currency == "" {
 		currency = "RUB"
 	}
 	returnURL := s.cfg.ReturnURL
 
+	// 1. Сохраняем запись pending ДО вызова API.
+	p := &Payment{
+		UserID:         userID,
+		PaymentID:      "local-" + idemKey,
+		IdempotencyKey: idemKey,
+		Amount:         amount,
+		Currency:       currency,
+		Description:    description,
+		Status:         StatusPending,
+		Metadata:       metadata,
+	}
+	if createErr := s.repo.Create(ctx, p); createErr != nil {
+		return nil, "", createErr
+	}
+
+	// 2. Создаём платёж в ЮKassa (идемпотентность по ключу).
 	result, err := s.yooKassaCreatePayment(ctx, amount, currency, description, returnURL, idemKey)
 	if err != nil {
+		log.Error().Err(err).Uint("payment", p.ID).Msg("CreatePayment: YooKassa call failed, leaving pending record for retry")
 		return nil, "", err
 	}
 
@@ -176,20 +204,15 @@ func (s *PaymentService) CreatePayment(ctx context.Context, userID uint, amount 
 		status = StatusPending
 	}
 
-	p := &Payment{
-		UserID:          userID,
-		PaymentID:       paymentID,
-		IdempotencyKey:  idemKey,
-		Amount:          amount,
-		Currency:        currency,
-		Description:     description,
-		Status:          status,
-		ConfirmationURL: confirmationURL,
-		Metadata:        metadata,
+	// 3. Обновляем запись реальным payment_id/статусом/URL.
+	if err := s.repo.UpdateAfterCreate(ctx, p.ID, paymentID, status, confirmationURL); err != nil {
+		// Не критично для возврата — запись останется с local- id, но
+		// webhook подтвердит по payment_id из ЮKassa.
+		log.Error().Err(err).Uint("payment", p.ID).Str("payment_id", paymentID).Msg("CreatePayment: failed to update record with real payment id")
 	}
-	if err := s.repo.Create(ctx, p); err != nil {
-		return nil, "", err
-	}
+	p.PaymentID = paymentID
+	p.Status = status
+	p.ConfirmationURL = confirmationURL
 	return p, confirmationURL, nil
 }
 

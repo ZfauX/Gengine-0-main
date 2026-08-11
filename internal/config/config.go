@@ -600,6 +600,10 @@ func getEnvAsDuration(key string, fallback time.Duration) time.Duration {
 	if value, ok := os.LookupEnv(key); ok {
 		if d, err := time.ParseDuration(value); err == nil {
 			return d
+		} else {
+			// DEEP-REVIEW MEDIUM #22 (pass 46): раньше ошибка парсинга молча
+			// скрывалась fallback'ом — неправильное значение оставалось незамеченным.
+			log.Warn().Err(err).Str("env", key).Str("value", value).Msg("неверный формат duration, используется fallback")
 		}
 	}
 	return fallback
@@ -610,6 +614,9 @@ func getEnvAsInt(key string, fallback int) int {
 	if value, ok := os.LookupEnv(key); ok {
 		if intValue, err := strconv.Atoi(value); err == nil {
 			return intValue
+		} else {
+			// DEEP-REVIEW MEDIUM #22 (pass 46).
+			log.Warn().Err(err).Str("env", key).Str("value", value).Msg("неверный формат числа, используется fallback")
 		}
 	}
 	return fallback

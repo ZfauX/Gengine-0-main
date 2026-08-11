@@ -139,7 +139,12 @@ func (s *LevelService) Update(ctx context.Context, levelID uint, updated *Level,
 	level.MinChildren = updated.MinChildren
 	level.Latitude = updated.Latitude
 	level.Longitude = updated.Longitude
-	level.RequiresConfirmation = updated.RequiresConfirmation
+	// DEEP-REVIEW LOW #29 (pass 46): RequiresConfirmation применяем только при
+	// явном изменении (RequiresConfirmationSet) — раньше частичный POST
+	// сбрасывал поле в false.
+	if updated.RequiresConfirmationSet {
+		level.RequiresConfirmation = updated.RequiresConfirmation
+	}
 	return s.levelRepo.Update(ctx, level)
 }
 

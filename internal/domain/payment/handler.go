@@ -60,11 +60,13 @@ func (h *PaymentHandler) Index(c *gin.Context) {
 // @Security JWT
 func (h *PaymentHandler) Create(c *gin.Context) {
 	userID := c.GetUint("userID")
-	amount, _ := strconv.ParseFloat(c.PostForm("amount"), 64)
+	// DEEP-REVIEW LOW #30 (pass 46): не игнорируем ошибку ParseFloat —
+	// невалидная сумма теперь явно отклоняется.
+	amount, parseErr := strconv.ParseFloat(c.PostForm("amount"), 64)
 	description := c.PostForm("description")
 	metadata := c.PostForm("metadata")
 
-	if amount <= 0 {
+	if parseErr != nil || amount <= 0 {
 		render.SetFlash(c, "error", "Некорректная сумма")
 		c.Redirect(http.StatusFound, "/payments")
 		return

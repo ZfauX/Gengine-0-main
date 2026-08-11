@@ -466,20 +466,19 @@ func (h *MonitorHandler) MonitorWS(c *gin.Context) {
 	h.hub.RegisterClient(client)
 	c.Abort()
 
-	snapshot, err := h.monitorService.GetOrFetchSnapshot(c.Request.Context(), req.ID)
+	// DEEP-REVIEW P11 (pass 46): GetOrFetchSnapshotJSON — сервис уже кэширует
+	// готовый JSON (поллер сериализует раз в 5с); раньше здесь вызывался
+	// GetOrFetchSnapshot + json.Marshal на каждое WS-подключение.
+	snapshotJSON, err := h.monitorService.GetOrFetchSnapshotJSON(c.Request.Context(), req.ID)
 	if err != nil {
 		log.Error().Err(err).Uint("game_id", req.ID).Msg("MonitorWS: failed to get snapshot")
 	} else {
-		if data, err := json.Marshal(snapshot); err == nil {
-			// Неблокирующая отправка: если буфер клиента переполнен (write pump ещё не
-			// стартовал или клиент медленный) — дропаем снапшот, не блокируя хендлер (M4).
-			select {
-			case client.Send <- data:
-			default:
-				log.Warn().Str("game_id", gameID).Msg("MonitorWS: client buffer full, dropping snapshot")
-			}
-		} else {
-			log.Error().Err(err).Uint("game_id", req.ID).Msg("MonitorWS: failed to marshal snapshot")
+		// Неблокирующая отправка: если буфер клиента переполнен (write pump ещё не
+		// стартовал или клиент медленный) — дропаем снапшот, не блокируя хендлер (M4).
+		select {
+		case client.Send <- snapshotJSON:
+		default:
+			log.Warn().Str("game_id", gameID).Msg("MonitorWS: client buffer full, dropping snapshot")
 		}
 	}
 

@@ -240,19 +240,37 @@ type AutocompleteItem struct {
 
 // AutocompleteSearch возвращает до limit опубликованных публичных игр по запросу
 // (full-text + ILIKE fallback). Используется /api/search/games (C1 — без *gorm.DB в хендлере).
+// DEEP-REVIEW P9 (pass 46): результат кэшируется на 60с — раньше каждое
+// нажатие клавиши в поиске било в БД.
 func (s *GameListingService) AutocompleteSearch(ctx context.Context, query string, limit int) ([]AutocompleteItem, error) {
 	if limit <= 0 || limit > 20 {
 		limit = 10
 	}
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "" {
+		return []AutocompleteItem{}, nil
+	}
+	cacheKey := "games:autocomplete:" + q
+	var cached []AutocompleteItem
+	if s.cache != nil && cacheGetJSON(s.cache, ctx, cacheKey, &cached) {
+		if len(cached) > limit {
+			cached = cached[:limit]
+		}
+		return cached, nil
+	}
+
 	// A-H4 (pass 33): поиск перенесён в репозиторий (Autocomplete) — без
 	// Model(ctx) в сервисе.
-	games, err := s.gameRepo.Autocomplete(ctx, query, limit)
+	games, err := s.gameRepo.Autocomplete(ctx, q, limit)
 	if err != nil {
 		return nil, err
 	}
 	items := make([]AutocompleteItem, 0, len(games))
 	for _, g := range games {
 		items = append(items, AutocompleteItem{ID: g.ID, Name: g.Name})
+	}
+	if s.cache != nil {
+		s.cache.SetWithCtx(ctx, cacheKey, items, 60*time.Second)
 	}
 	return items, nil
 }

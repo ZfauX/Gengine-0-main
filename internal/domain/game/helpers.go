@@ -20,30 +20,30 @@ type TeamPassingTeamID struct {
 // связанной с прохождением. Используется внутри транзакций.
 // Возвращает gameID прохождения (Perf: избавляет от повторного load passing
 // в вызывающих кодах).
-func CheckTeamMembership(tx *gorm.DB, passingID, userID uint) (uint, error) {
+func CheckTeamMembership(tx *gorm.DB, passingID, userID uint) (gameID, teamID uint, err error) {
 	var passing GamePassing
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&passing, passingID).Error; err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 
 	var count int64
 	if err := tx.Table("team_members").Where("team_id = ? AND user_id = ?", passing.TeamID, userID).Count(&count).Error; err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	if count > 0 {
-		return passing.GameID, nil
+		return passing.GameID, passing.TeamID, nil
 	}
 
 	// Проверяем капитана (капитан может не быть в team_members)
 	var team team.Team
 	if err := tx.First(&team, passing.TeamID).Error; err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	if team.CaptainID == userID {
-		return passing.GameID, nil
+		return passing.GameID, passing.TeamID, nil
 	}
 
-	return 0, errors.New("вы не являетесь участником этой команды")
+	return 0, 0, errors.New("вы не являетесь участником этой команды")
 }
 
 // finishPassingProgress завершает все незавершённые прогрессы прохождения

@@ -676,6 +676,7 @@ var ruMessages = map[string]string{
 	"profile.avatar_type_error":     "Выберите файл изображения (JPEG/PNG)",
 	"profile.avatar_size_error":     "Изображение не должно превышать 2 МБ",
 	"profile.settings_saved":        "Настройки сохранены",
+	"profile.invalid_notify_days":   "Некорректный период напоминаний",
 	"profile.settings_save_error":   "Ошибка сохранения",
 
 	// ── Theme settings ──

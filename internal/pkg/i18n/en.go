@@ -655,6 +655,7 @@ var enMessages = map[string]string{
 	"profile.avatar_type_error":     "Choose an image file (JPEG/PNG)",
 	"profile.avatar_size_error":     "Image must not exceed 2 MB",
 	"profile.settings_saved":        "Settings saved",
+	"profile.invalid_notify_days":   "Invalid reminder period",
 	"profile.settings_save_error":   "Save error",
 
 	// ── Theme settings ──

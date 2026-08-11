@@ -15,6 +15,9 @@ type PaymentRepository interface {
 	GetByIdempotencyKey(ctx context.Context, key string) (*Payment, error)
 	ListByUser(ctx context.Context, userID uint, limit int) ([]Payment, error)
 	UpdateStatus(ctx context.Context, id uint, status string) error
+	// UpdateAfterCreate обновляет платёж после успешного ответа ЮKassa
+	// (реальный payment_id, статус, URL подтверждения). DEEP-REVIEW HIGH #7.
+	UpdateAfterCreate(ctx context.Context, id uint, paymentID, status, confirmationURL string) error
 }
 
 type gormPaymentRepo struct{ db *gorm.DB }
@@ -65,4 +68,12 @@ func (r *gormPaymentRepo) ListByUser(ctx context.Context, userID uint, limit int
 
 func (r *gormPaymentRepo) UpdateStatus(ctx context.Context, id uint, status string) error {
 	return r.db.WithContext(ctx).Model(&Payment{}).Where("id = ?", id).Update("status", status).Error
+}
+
+func (r *gormPaymentRepo) UpdateAfterCreate(ctx context.Context, id uint, paymentID, status, confirmationURL string) error {
+	return r.db.WithContext(ctx).Model(&Payment{}).Where("id = ?", id).Updates(map[string]any{
+		"payment_id":       paymentID,
+		"status":           status,
+		"confirmation_url": confirmationURL,
+	}).Error
 }

@@ -17,17 +17,21 @@ const (
 // Level представляет собой один уровень (задание) в игре.
 type Level struct {
 	gorm.Model
-	GameID               uint    `gorm:"not null;uniqueIndex:idx_game_position"`
-	Name                 string  `gorm:"not null" form:"name"`
-	Description          string  `form:"description"`
-	Position             int     `gorm:"default:0;uniqueIndex:idx_game_position" form:"position"`
-	Type                 string  `gorm:"default:single" form:"type"`
-	ParentID             *uint   `gorm:"index:idx_levels_parent"`
-	GroupID              *uint   `gorm:"index:idx_levels_group"`
-	MinChildren          int     `gorm:"default:0"`
-	RequiresConfirmation bool    `gorm:"default:false" form:"requires_confirmation"`
-	Latitude             float64 `form:"latitude"`
-	Longitude            float64 `form:"longitude"`
+	GameID               uint   `gorm:"not null;uniqueIndex:idx_game_position"`
+	Name                 string `gorm:"not null" form:"name"`
+	Description          string `form:"description"`
+	Position             int    `gorm:"default:0;uniqueIndex:idx_game_position" form:"position"`
+	Type                 string `gorm:"default:single" form:"type"`
+	ParentID             *uint  `gorm:"index:idx_levels_parent"`
+	GroupID              *uint  `gorm:"index:idx_levels_group"`
+	MinChildren          int    `gorm:"default:0"`
+	RequiresConfirmation bool   `gorm:"default:false" form:"requires_confirmation"`
+	// RequiresConfirmationSet (DEEP-REVIEW LOW #29, pass 46): сигнал частичного
+	// Update — true означает «пользователь явно изменил чекбокс», поэтому
+	// сервис применяет значение; false (или не установлено) — не трогает.
+	RequiresConfirmationSet bool    `gorm:"-"`
+	Latitude                float64 `form:"latitude"`
+	Longitude               float64 `form:"longitude"`
 
 	Questions    []Question `gorm:"foreignKey:LevelID"`
 	MiniGame     *MiniGame  `gorm:"foreignKey:LevelID"`

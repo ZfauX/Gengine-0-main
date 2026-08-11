@@ -104,7 +104,6 @@ type PasswordResetToken struct {
 	ID        uint           `gorm:"primaryKey"`
 	UserID    uint           `gorm:"not null;index:idx_password_reset_user"`
 	ResetCode string         `gorm:"uniqueIndex;not null"` // одноразовый код в URL сброса
-	TokenHash string         `gorm:"uniqueIndex;not null"` // SHA256 хеш токена
 	ExpiresAt time.Time      `gorm:"not null"`
 	UsedAt    *time.Time     `gorm:"index:idx_password_reset_used"`
 	UpdatedAt time.Time      `gorm:"autoUpdateTime"`
