@@ -190,6 +190,27 @@ func TestCache_ExtendTTL(t *testing.T) {
 	assert.False(t, extended)
 }
 
+// M8 (PASS-3): ExtendTTL(key, 0) = «без истечения», а не «протух сейчас».
+func TestCache_ExtendTTL_ZeroIsForever(t *testing.T) {
+	t.Parallel()
+	c := NewCacheWithLRU(time.Minute, 10*time.Minute, 100)
+	defer c.Close()
+
+	// Ключ с TTL, продлеваем на 0 → бессрочный.
+	c.Set("k", "v", 100*time.Millisecond)
+	assert.True(t, c.ExtendTTL("k", 0))
+
+	// Ждём дольше исходного TTL — ключ должен остаться.
+	time.Sleep(200 * time.Millisecond)
+	_, ok := c.Get("k")
+	assert.True(t, ok, "ExtendTTL(0) должен делать ключ бессрочным, а не протухшим")
+
+	// Бессрочный ключ + ExtendTTL(0) — по-прежнему доступен.
+	assert.True(t, c.ExtendTTL("k", 0))
+	_, ok = c.Get("k")
+	assert.True(t, ok)
+}
+
 func TestCache_ConcurrentAccess(t *testing.T) {
 	t.Parallel()
 	c, _ := NewCache(time.Minute, 10*time.Minute)

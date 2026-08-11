@@ -68,19 +68,17 @@ func (s *LevelProgressService) InitFirstLevelWithTx(ctx context.Context, tx *gor
 
 // dbTransaction — общий метод инициализации первого уровня с переданным *gorm.DB.
 func (s *LevelProgressService) dbTransaction(ctx context.Context, db *gorm.DB, gamePassingID uint) error {
-	var count int64
-	if err := db.WithContext(ctx).Model(&LevelProgress{}).Where("game_passing_id = ?", gamePassingID).Count(&count).Error; err != nil {
-		return err
-	}
-
+	// DEEP-REVIEW PASS-3 M12: убран бесполезный Count (результат отбрасывался)
+	// и мёртвая проверка firstLevel.ID == 0 (First возвращает ErrRecordNotFound,
+	// а не zero-value) — теперь отсутствие уровней маппится в ErrNoLevels.
 	var firstLevel level.Level
 	if err := db.WithContext(ctx).Where("game_id = (SELECT game_id FROM game_passings WHERE id = ?)", gamePassingID).Order("position ASC").Limit(1).First(&firstLevel).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrNoLevels
+		}
 		return err
 	}
 
-	if firstLevel.ID == 0 {
-		return ErrNoLevels
-	}
 	progress := &LevelProgress{
 		GamePassingID: gamePassingID,
 		LevelID:       firstLevel.ID,

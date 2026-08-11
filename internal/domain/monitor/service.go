@@ -26,6 +26,10 @@ var (
 	ErrInvalidOption   = errors.New("недопустимый вариант ответа")
 	ErrVoteAlreadyCast = errors.New("ваш голос уже учтён")
 	ErrAccessDenied    = errors.New("доступ запрещён")
+	// ErrVotingAlreadyActive / ErrVotingAlreadyHeld (DEEP-REVIEW PASS-3 M6):
+	// sentinel-ошибки вместо сравнения err.Error() со строками в handler.
+	ErrVotingAlreadyActive = errors.New("голосование уже активно")
+	ErrVotingAlreadyHeld   = errors.New("голосование уже было проведено")
 )
 
 type BlackboxVoteService struct {
@@ -74,9 +78,9 @@ func (s *BlackboxVoteService) StartVoting(ctx context.Context, gamePassingID, le
 	session, err := s.blackboxRepo.GetSessionByPassingAndLevel(ctx, gamePassingID, levelID)
 	if err == nil {
 		if session.IsOpen {
-			return errors.New("голосование уже активно")
+			return ErrVotingAlreadyActive
 		}
-		return errors.New("голосование уже было проведено")
+		return ErrVotingAlreadyHeld
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
@@ -95,9 +99,9 @@ func (s *BlackboxVoteService) StartVoting(ctx context.Context, gamePassingID, le
 			existing, rErr := s.blackboxRepo.GetSessionByPassingAndLevel(ctx, gamePassingID, levelID)
 			if rErr == nil {
 				if existing.IsOpen {
-					return errors.New("голосование уже активно")
+					return ErrVotingAlreadyActive
 				}
-				return errors.New("голосование уже было проведено")
+				return ErrVotingAlreadyHeld
 			}
 		}
 		return err

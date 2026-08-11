@@ -370,7 +370,16 @@ func (c *Cache) ExtendTTL(key string, ttl time.Duration) bool {
 	if !ok {
 		return false
 	}
-	item.expires = time.Now().Add(ttl)
+	// DEEP-REVIEW PASS-3 M8: единая семантика ttl с Set — ttl==0 = «без
+	// истечения» (expires=zero), ttl<0 = мгновенно протухший. Раньше
+	// ExtendTTL(key, 0) ставил expires≈now и бессрочный ключ протухал сразу.
+	if ttl == 0 {
+		item.expires = time.Time{}
+		delete(c.ttlKeys, key)
+	} else {
+		item.expires = time.Now().Add(ttl)
+		c.ttlKeys[key] = true
+	}
 	c.lru.Add(key, item)
 	return true
 }

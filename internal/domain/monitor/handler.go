@@ -1322,11 +1322,11 @@ func (h *MonitorHandler) StartVoting(c *gin.Context) {
 
 	userID := c.GetUint("userID")
 	if err := h.blackboxVoteService.StartVoting(c.Request.Context(), input.PassingID, input.LevelID, userID); err != nil {
-		switch err.Error() {
-		case "голосование уже активно", "голосование уже было проведено":
+		// DEEP-REVIEW PASS-3 M6: errors.Is вместо сравнения err.Error() со строками.
+		if errors.Is(err, ErrVotingAlreadyActive) || errors.Is(err, ErrVotingAlreadyHeld) {
 			appErr := apperrors.BadRequest(render.LocalizeError(c, err.Error()))
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
-		default:
+		} else {
 			log.Error().Err(err).Uint("passing_id", input.PassingID).Uint("level_id", input.LevelID).Uint("user_id", userID).Msg("StartVoting: failed to start voting")
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": render.Tr(c, "handler.internal_error"), "code": "internal_error"})
 		}
@@ -1396,11 +1396,11 @@ func (h *MonitorHandler) Vote(c *gin.Context) {
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
 			return
 		}
-		switch err.Error() {
-		case ErrVotingClosed.Error(), ErrInvalidOption.Error(), ErrVoteAlreadyCast.Error():
+		// DEEP-REVIEW PASS-3 M6: errors.Is вместо switch err.Error().
+		if errors.Is(err, ErrVotingClosed) || errors.Is(err, ErrInvalidOption) || errors.Is(err, ErrVoteAlreadyCast) {
 			appErr := apperrors.BadRequest(render.LocalizeError(c, err.Error()))
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
-		default:
+		} else {
 			log.Error().Err(err).Uint("session_id", input.SessionID).Uint("team_id", input.TeamID).Str("option", cleanOption).Msg("Vote: failed to vote")
 			appErr := apperrors.Wrap(err, "MonitorHandler")
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{"error": appErr.Message, "code": appErr.Code})
