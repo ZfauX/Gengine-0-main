@@ -507,11 +507,18 @@ func (r *gormGamePassingRepo) GetByIDWithTeam(ctx context.Context, id uint) (*Ga
 
 // GetCurrentProgressWithLevel загружает текущий (незавершённый) прогресс
 // уровня вместе с лёгким уровнем (A-3, pass 36).
+// DEEP-REVIEW PASS-3 M11: включает Questions (текст/подсказки), НО БЕЗ Answers
+// (правильных кодов). Раньше Select не включал вопросы вовсе — страница
+// геймплея рендерила пустой список `.Level.Questions`; полный граф с Code
+// нужен только SubmitCodeWithTx (грузит его лениво через Preload).
 func (r *gormGamePassingRepo) GetCurrentProgressWithLevel(ctx context.Context, passingID uint) (*LevelProgress, error) {
 	var progress LevelProgress
 	err := r.db.WithContext(ctx).
 		Preload("Level", func(db *gorm.DB) *gorm.DB {
 			return db.Select("id, game_id, name, description, type, hint, position")
+		}).
+		Preload("Level.Questions", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id, level_id, text, hint")
 		}).
 		Where("game_passing_id = ? AND finished_at IS NULL", passingID).
 		First(&progress).Error

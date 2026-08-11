@@ -44,12 +44,18 @@ func TestGormGamePassingRepo_GetCurrentProgressWithLevel(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id, game_id, name, description, type, hint, position FROM "levels" WHERE "levels"."id" = $1 AND "levels"."deleted_at" IS NULL`)).
 		WithArgs(uint(3)).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "game_id", "name", "description", "type", "hint", "position"}).AddRow(3, 1, "Уровень", "описание", "code", "подсказка", 1))
+	// M11 (PASS-3): Preload Questions (текст/подсказки, БЕЗ Answers.Code).
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id, level_id, text, hint FROM "questions" WHERE "questions"."level_id" = $1 AND "questions"."deleted_at" IS NULL`)).
+		WithArgs(uint(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "level_id", "text", "hint"}).AddRow(9, 3, "Вопрос 1", "подсказка"))
 
 	progress, err := repo.GetCurrentProgressWithLevel(context.Background(), 5)
 	require.NoError(t, err)
 	require.NotNil(t, progress)
 	require.Equal(t, uint(77), progress.ID)
 	require.Equal(t, "Уровень", progress.Level.Name)
+	require.Len(t, progress.Level.Questions, 1, "вопросы уровня должны загружаться (M11)")
+	require.Equal(t, "Вопрос 1", progress.Level.Questions[0].Text)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

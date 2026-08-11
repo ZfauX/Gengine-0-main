@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -24,6 +25,18 @@ import (
 
 const webauthnSessionKey = "webauthn_registration"
 const webauthnLoginSessionKey = "webauthn_login"
+
+// webauthnRegKey / webauthnRegNameKey (DEEP-REVIEW PASS-3 M2): session-ключи
+// регистрации привязаны к userID — раньше глобальный ключ «прилипал» между
+// аккаунтами на том же браузере (user A начинает регистрацию, user B завершает
+// по чужому challenge).
+func webauthnRegKey(userID uint) string {
+	return webauthnSessionKey + fmt.Sprintf(":%d", userID)
+}
+
+func webauthnRegNameKey(userID uint) string {
+	return webauthnSessionKey + fmt.Sprintf(":%d", userID) + "_name"
+}
 
 type WebAuthnHandler struct {
 	cfg          *config.Config
@@ -184,9 +197,10 @@ func (h *WebAuthnHandler) BeginRegistration(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": render.Tr(c, "handler.internal_error")})
 		return
 	}
-	sess.Set(webauthnSessionKey, string(sessionDataJSON))
+	// M2 (PASS-3): ключ привязан к userID — сессия не «переезжает» между аккаунтами.
+	sess.Set(webauthnRegKey(userID), string(sessionDataJSON))
 	if input.Name != "" {
-		sess.Set(webauthnSessionKey+"_name", input.Name)
+		sess.Set(webauthnRegNameKey(userID), input.Name)
 	}
 	if err := sess.Save(); err != nil {
 		log.Error().Err(err).Msg("BeginRegistration: failed to save session")
@@ -216,7 +230,8 @@ func (h *WebAuthnHandler) FinishRegistration(c *gin.Context) {
 	}
 
 	sess := sessions.Default(c)
-	sessionDataStr := sess.Get(webauthnSessionKey)
+	// M2 (PASS-3): ключ привязан к userID.
+	sessionDataStr := sess.Get(webauthnRegKey(userID))
 	if sessionDataStr == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Сессия не найдена. Начните регистрацию заново."})
 		return
@@ -234,10 +249,10 @@ func (h *WebAuthnHandler) FinishRegistration(c *gin.Context) {
 		return
 	}
 
-	credName, _ := sess.Get(webauthnSessionKey + "_name").(string)
+	credName, _ := sess.Get(webauthnRegNameKey(userID)).(string)
 
-	sess.Delete(webauthnSessionKey)
-	sess.Delete(webauthnSessionKey + "_name")
+	sess.Delete(webauthnRegKey(userID))
+	sess.Delete(webauthnRegNameKey(userID))
 	if saveErr := sess.Save(); saveErr != nil {
 		log.Error().Err(saveErr).Msg("FinishRegistration: failed to clear session")
 	}
