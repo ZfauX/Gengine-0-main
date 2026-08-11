@@ -29,7 +29,7 @@ type Level struct {
 	// RequiresConfirmationSet (DEEP-REVIEW LOW #29, pass 46): сигнал частичного
 	// Update — true означает «пользователь явно изменил чекбокс», поэтому
 	// сервис применяет значение; false (или не установлено) — не трогает.
-	RequiresConfirmationSet bool    `gorm:"-"`
+	RequiresConfirmationSet bool `gorm:"-"`
 	// MinChildrenSet / LocationSet (DEEP-REVIEW PASS-3 M5): сигналы частичного
 	// Update для int/float полей (нет nil-индикатора). Устанавливаются
 	// handler'ом, когда поле явно передано в форме/запросе.

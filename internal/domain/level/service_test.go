@@ -108,11 +108,16 @@ func TestLevelService_Update_PreservesGraphFieldsOnPartialPOST(t *testing.T) {
 	author := createUser(t, db, "updgraph@test.com", "pass")
 	g := createGame(t, db, author.ID, "Update Graph Game")
 
-	parentID := uint(999)
-	groupID := uint(888)
+	// Реальные Parent/Group уровни — FK-ограничение требует их существования.
+	parent := &level.Level{Name: "Parent", Position: 1, GameID: g.ID}
+	require.NoError(t, db.Create(parent).Error)
+	group := &level.Level{Name: "Group", Position: 2, GameID: g.ID}
+	require.NoError(t, db.Create(group).Error)
+	parentID, groupID := parent.ID, group.ID
+
 	lvl := &level.Level{
 		Name:        "Node",
-		Position:    1,
+		Position:    3,
 		GameID:      g.ID,
 		Type:        level.TypeParallelGroup,
 		ParentID:    &parentID,
@@ -147,12 +152,16 @@ func TestLevelService_Update_AppliesExplicitGraphFields(t *testing.T) {
 	author := createUser(t, db, "updgraph2@test.com", "pass")
 	g := createGame(t, db, author.ID, "Update Graph 2 Game")
 
-	parentID := uint(777)
-	lvl := &level.Level{Name: "Node", Position: 1, GameID: g.ID, ParentID: &parentID, MinChildren: 2}
+	parent := &level.Level{Name: "Parent", Position: 1, GameID: g.ID}
+	require.NoError(t, db.Create(parent).Error)
+	parentID := parent.ID
+	lvl := &level.Level{Name: "Node", Position: 2, GameID: g.ID, ParentID: &parentID, MinChildren: 2}
 	require.NoError(t, db.Create(lvl).Error)
 
 	// Явная передача: GroupID, MinChildren=5, LocationSet, ParentID не передан.
-	groupID := uint(666)
+	group := &level.Level{Name: "Group", Position: 3, GameID: g.ID}
+	require.NoError(t, db.Create(group).Error)
+	groupID := group.ID
 	updated := &level.Level{
 		Name:           "Renamed",
 		GroupID:        &groupID,
@@ -166,7 +175,7 @@ func TestLevelService_Update_AppliesExplicitGraphFields(t *testing.T) {
 
 	var result level.Level
 	require.NoError(t, db.First(&result, lvl.ID).Error)
-	assert.Equal(t, uint(777), *result.ParentID, "ParentID не передан — должен сохраниться")
+	assert.Equal(t, parentID, *result.ParentID, "ParentID не передан — должен сохраниться")
 	require.NotNil(t, result.GroupID)
 	assert.Equal(t, groupID, *result.GroupID)
 	assert.Equal(t, 5, result.MinChildren)
