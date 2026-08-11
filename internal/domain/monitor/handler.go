@@ -275,25 +275,48 @@ type MonitorHandler struct {
 
 	// chatRooms (IDEA-6): комнаты, подключённые через ChatWS. Колбэк presence
 	// хаба срабатывает для ВСЕХ комнат (включая монитор/логи), поэтому фильтруем:
-	// presence рассылается только в комнаты, помеченные здесь.
-	chatRooms sync.Map // roomID(string) → struct{}
+	// presence рассылается только в комнаты с ненулевым счётчиком клиентов.
+	// DEEP-REVIEW PASS-3 M3: счётчик вместо bool-флага — при отключении ОДНОГО
+	// клиента комната остаётся помеченной, пока в ней есть другие участники.
+	chatRooms     map[string]int
+	chatRoomsMu   sync.Mutex
 }
 
-// markChatRoom помечает комнату как чат (вызывается из ChatWS).
+// markChatRoom инкрементирует счётчик клиентов комнаты (вызывается из ChatWS).
 func (h *MonitorHandler) markChatRoom(roomID string) {
-	h.chatRooms.Store(roomID, struct{}{})
+	h.chatRoomsMu.Lock()
+	if h.chatRooms == nil {
+		h.chatRooms = make(map[string]int)
+	}
+	h.chatRooms[roomID]++
+	h.chatRoomsMu.Unlock()
 }
 
-// unmarkChatRoom снимает пометку при отключении последнего клиента.
+// unmarkChatRoom декрементирует счётчик; удаляет пометку только при нуле.
 func (h *MonitorHandler) unmarkChatRoom(roomID string) {
-	h.chatRooms.Delete(roomID)
+	h.chatRoomsMu.Lock()
+	if h.chatRooms != nil {
+		if h.chatRooms[roomID] <= 1 {
+			delete(h.chatRooms, roomID)
+		} else {
+			h.chatRooms[roomID]--
+		}
+	}
+	h.chatRoomsMu.Unlock()
+}
+
+// isChatRoom проверяет, есть ли активные клиенты в чат-комнате.
+func (h *MonitorHandler) isChatRoom(roomID string) bool {
+	h.chatRoomsMu.Lock()
+	defer h.chatRoomsMu.Unlock()
+	return h.chatRooms != nil && h.chatRooms[roomID] > 0
 }
 
 // setupChatPresence подключает presence-онлайн-индикатор (IDEA-6): при
 // изменении состава чат-комнаты в неё рассылается {type:"presence", count, user_ids}.
 func (h *MonitorHandler) setupChatPresence() {
 	h.hub.SetOnRoomChange(func(roomID string) {
-		if _, ok := h.chatRooms.Load(roomID); !ok {
+		if !h.isChatRoom(roomID) {
 			return
 		}
 		count := h.hub.RoomClientCount(roomID)
@@ -637,7 +660,8 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 	// S-46-2 (pass 46): проверка доступа к комнате вынесена в canJoinRoom —
 	// единая логика для ChatWS и других точек входа (персональная/командная/
 	// капитанская/общая комнаты), чтобы правила не расходились и были тестируемы.
-	ok, canErr := canJoinRoom(chatRoom, userID, chatAccessDeps{
+	// M4 (PASS-3): ctx из запроса — отменяется при дисконнекте до апгрейда.
+	ok, canErr := canJoinRoom(c.Request.Context(), chatRoom, userID, chatAccessDeps{
 		IsTeamMemberOrCaptain: h.chatService.IsTeamMemberOrCaptain,
 		GetPassingByUser:      h.gameService.GetPassingByUser,
 		IsTeamCaptain:         h.gameService.IsTeamCaptain,
@@ -845,13 +869,15 @@ type chatAccessDeps struct {
 }
 
 // canJoinRoom проверяет право пользователя подключиться к комнате чата
-// (S-46-2, pass 46). Единая логика для ChatWS и других точек входа:
+// (S-46-2, pass 46; DEEP-REVIEW PASS-3 M4: ctx прокидывается из ChatWS —
+// раньше context.Background() не отменял запросы прав при дисконнекте).
+// Единая логика для ChatWS и других точек входа:
 //   - personal: только два участника (User1ID/User2ID);
 //   - командная (TeamID != nil): участник или капитан;
 //   - «только капитаны»: капитан команды, участвующей в игре;
 //   - остальные игровые комнаты: менеджер игры или участник прохождения;
 //   - серверная/глобальная: любой аутентифицированный.
-func canJoinRoom(room *ChatRoom, userID uint, deps chatAccessDeps) (bool, error) {
+func canJoinRoom(ctx context.Context, room *ChatRoom, userID uint, deps chatAccessDeps) (bool, error) {
 	// B-7 (pass 45): личная комната — доступ только двум участникам.
 	if room.RoomType == RoomTypePersonal {
 		if room.User1ID == nil || room.User2ID == nil ||
@@ -865,7 +891,7 @@ func canJoinRoom(room *ChatRoom, userID uint, deps chatAccessDeps) (bool, error)
 	// (GameID+TeamID+PassingID), поэтому проверка GameID-first ловила бы и командные
 	// комнаты. Сначала проверяем членство в команде.
 	if room.TeamID != nil {
-		ok, memberErr := deps.IsTeamMemberOrCaptain(context.Background(), *room.TeamID, userID)
+		ok, memberErr := deps.IsTeamMemberOrCaptain(ctx, *room.TeamID, userID)
 		if memberErr != nil {
 			return false, memberErr
 		}
@@ -879,22 +905,22 @@ func canJoinRoom(room *ChatRoom, userID uint, deps chatAccessDeps) (bool, error)
 
 	// B-2 (pass 45): комната «только капитаны» — доступ только капитанам команд.
 	if room.RoomType == RoomTypeGameCaptains {
-		passing, findErr := deps.GetPassingByUser(context.Background(), *room.GameID, userID)
+		passing, findErr := deps.GetPassingByUser(ctx, *room.GameID, userID)
 		if findErr != nil {
 			return false, nil
 		}
-		return deps.IsTeamCaptain(context.Background(), passing.TeamID, userID)
+		return deps.IsTeamCaptain(ctx, passing.TeamID, userID)
 	}
 
 	// Общая комната игры: менеджер или участник прохождения.
-	isManager, mgrErr := deps.IsUserManager(context.Background(), *room.GameID, userID)
+	isManager, mgrErr := deps.IsUserManager(ctx, *room.GameID, userID)
 	if mgrErr != nil {
 		return false, mgrErr
 	}
 	if isManager {
 		return true, nil
 	}
-	if _, findErr := deps.GetPassingByUser(context.Background(), *room.GameID, userID); findErr != nil {
+	if _, findErr := deps.GetPassingByUser(ctx, *room.GameID, userID); findErr != nil {
 		return false, nil
 	}
 	return true, nil

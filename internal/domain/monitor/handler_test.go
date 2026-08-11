@@ -23,12 +23,12 @@ func TestCanJoinRoom_Personal(t *testing.T) {
 	deps := chatAccessDeps{}
 
 	// Участник — допускается.
-	ok, err := canJoinRoom(room, u1, deps)
+	ok, err := canJoinRoom(context.Background(), room, u1, deps)
 	require.NoError(t, err)
 	assert.True(t, ok)
 
 	// Чужой — нет.
-	ok, err = canJoinRoom(room, 99, deps)
+	ok, err = canJoinRoom(context.Background(), room, 99, deps)
 	require.NoError(t, err)
 	assert.False(t, ok)
 }
@@ -38,7 +38,7 @@ func TestCanJoinRoom_TeamRoom(t *testing.T) {
 	room := &ChatRoom{RoomType: RoomTypeTeamGeneral, TeamID: &teamID}
 
 	// Участник команды.
-	ok, err := canJoinRoom(room, 5, chatAccessDeps{
+	ok, err := canJoinRoom(context.Background(), room, 5, chatAccessDeps{
 		IsTeamMemberOrCaptain: func(_ context.Context, tid, uid uint) (bool, error) {
 			return tid == 10 && uid == 5, nil
 		},
@@ -47,14 +47,14 @@ func TestCanJoinRoom_TeamRoom(t *testing.T) {
 	assert.True(t, ok)
 
 	// Не участник.
-	ok, err = canJoinRoom(room, 6, chatAccessDeps{
+	ok, err = canJoinRoom(context.Background(), room, 6, chatAccessDeps{
 		IsTeamMemberOrCaptain: func(_ context.Context, _, _ uint) (bool, error) { return false, nil },
 	})
 	require.NoError(t, err)
 	assert.False(t, ok)
 
 	// Ошибка проверки — пробрасывается.
-	_, err = canJoinRoom(room, 5, chatAccessDeps{
+	_, err = canJoinRoom(context.Background(), room, 5, chatAccessDeps{
 		IsTeamMemberOrCaptain: func(_ context.Context, _, _ uint) (bool, error) {
 			return false, errors.New("db down")
 		},
@@ -79,17 +79,17 @@ func TestCanJoinRoom_CaptainsRoom(t *testing.T) {
 	}
 
 	// Капитан — да.
-	ok, err := canJoinRoom(room, 3, deps)
+	ok, err := canJoinRoom(context.Background(), room, 3, deps)
 	require.NoError(t, err)
 	assert.True(t, ok)
 
 	// Не капитан — нет.
-	ok, err = canJoinRoom(room, 4, deps)
+	ok, err = canJoinRoom(context.Background(), room, 4, deps)
 	require.NoError(t, err)
 	assert.False(t, ok)
 
 	// Не участник игры — нет.
-	ok, err = canJoinRoom(room, 4, chatAccessDeps{
+	ok, err = canJoinRoom(context.Background(), room, 4, chatAccessDeps{
 		GetPassingByUser: func(_ context.Context, _, _ uint) (*game.GamePassing, error) {
 			return nil, errors.New("not found")
 		},
@@ -103,14 +103,14 @@ func TestCanJoinRoom_GeneralGameRoom(t *testing.T) {
 	room := &ChatRoom{RoomType: RoomTypeGameGeneral, GameID: &gameID}
 
 	// Менеджер — да.
-	ok, err := canJoinRoom(room, 1, chatAccessDeps{
+	ok, err := canJoinRoom(context.Background(), room, 1, chatAccessDeps{
 		IsUserManager: func(_ context.Context, _, uid uint) (bool, error) { return uid == 1, nil },
 	})
 	require.NoError(t, err)
 	assert.True(t, ok)
 
 	// Участник прохождения — да.
-	ok, err = canJoinRoom(room, 2, chatAccessDeps{
+	ok, err = canJoinRoom(context.Background(), room, 2, chatAccessDeps{
 		IsUserManager: func(_ context.Context, _, _ uint) (bool, error) { return false, nil },
 		GetPassingByUser: func(_ context.Context, _, _ uint) (*game.GamePassing, error) {
 			return &game.GamePassing{}, nil
@@ -120,7 +120,7 @@ func TestCanJoinRoom_GeneralGameRoom(t *testing.T) {
 	assert.True(t, ok)
 
 	// Посторонний — нет.
-	ok, err = canJoinRoom(room, 3, chatAccessDeps{
+	ok, err = canJoinRoom(context.Background(), room, 3, chatAccessDeps{
 		IsUserManager: func(_ context.Context, _, _ uint) (bool, error) { return false, nil },
 		GetPassingByUser: func(_ context.Context, _, _ uint) (*game.GamePassing, error) {
 			return nil, errors.New("not found")
@@ -132,7 +132,7 @@ func TestCanJoinRoom_GeneralGameRoom(t *testing.T) {
 
 func TestCanJoinRoom_ServerRoom(t *testing.T) {
 	room := &ChatRoom{RoomType: RoomTypeServer}
-	ok, err := canJoinRoom(room, 42, chatAccessDeps{})
+	ok, err := canJoinRoom(context.Background(), room, 42, chatAccessDeps{})
 	require.NoError(t, err)
 	assert.True(t, ok, "серверный чат доступен любому аутентифицированному")
 }
