@@ -51,11 +51,12 @@ type GamePassingServiceInterface interface {
 	UpdateStatus(ctx context.Context, passingID uint, status GamePassingStatus, userID uint) error
 	StartGame(ctx context.Context, passingID, userID uint) error
 	GetTeamsByCaptain(ctx context.Context, userID uint) ([]team.Team, error)
-	// Фаза 3 (C-1..C-5, pass 45).
-	SetTeamRoute(ctx context.Context, passingID uint, levelIDs []uint) error
+	// Фаза 3 (C-1..C-5, pass 45). DEEP-REVIEW PASS-5 H3: gameID передаётся
+	// для проверки принадлежности passing/level игре (cross-game IDOR).
+	SetTeamRoute(ctx context.Context, gameID, passingID uint, levelIDs []uint) error
 	GetTeamRoute(ctx context.Context, passingID uint) ([]GamePassingLevel, error)
-	SetTeamStartTime(ctx context.Context, passingID uint, startTime *time.Time) error
-	SetTeamAnswer(ctx context.Context, levelID, teamID uint, code, hint string) error
+	SetTeamStartTime(ctx context.Context, gameID, passingID uint, startTime *time.Time) error
+	SetTeamAnswer(ctx context.Context, gameID, levelID, teamID uint, code, hint string) error
 	GetTeamAnswer(ctx context.Context, levelID, teamID uint) (*LevelTeamAnswer, error)
 	GetAttemptsPerUser(ctx context.Context, gameID uint) ([]AttemptPerUser, error)
 }

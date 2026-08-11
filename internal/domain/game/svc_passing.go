@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/team"
 	ws "gengine-0/internal/pkg/websocket"
 
@@ -31,6 +32,9 @@ var (
 	ErrCannotStartGame     = errors.New("только капитан или автор/модератор может начать игру")
 	ErrPassingNotActive    = errors.New("игра ещё не принята или уже началась")
 	ErrNotCaptainOrManager = errors.New("только капитан или модератор может менять статус заявки")
+	// DEEP-REVIEW PASS-5 H3: cross-game IDOR в Phase-3.
+	ErrPassingNotInGame = errors.New("прохождение не принадлежит этой игре")
+	ErrLevelNotInGame   = errors.New("уровень не принадлежит этой игре")
 )
 
 type GamePassingService struct {
@@ -151,7 +155,16 @@ func (s *GamePassingService) ListTestPassings(ctx context.Context, gameID uint, 
 
 // SetTeamRoute назначает маршрут команды (порядок уровней) (C-1/C-2).
 // Требует права менеджера игры или супер-админа (проверяет вызывающий хендлер).
-func (s *GamePassingService) SetTeamRoute(ctx context.Context, passingID uint, levelIDs []uint) error {
+// DEEP-REVIEW PASS-5 H3: проверяем, что passing принадлежит gameID —
+// раньше модератор игры A мог менять маршрут команды игры B (cross-game IDOR).
+func (s *GamePassingService) SetTeamRoute(ctx context.Context, gameID, passingID uint, levelIDs []uint) error {
+	passing, err := s.repo.GetByID(ctx, passingID)
+	if err != nil {
+		return err
+	}
+	if passing.GameID != gameID {
+		return ErrPassingNotInGame
+	}
 	return s.repo.SetTeamRoute(ctx, passingID, levelIDs)
 }
 
@@ -161,12 +174,28 @@ func (s *GamePassingService) GetTeamRoute(ctx context.Context, passingID uint) (
 }
 
 // SetTeamStartTime задаёт индивидуальное время старта команды (C-3).
-func (s *GamePassingService) SetTeamStartTime(ctx context.Context, passingID uint, startTime *time.Time) error {
+// DEEP-REVIEW PASS-5 H3: проверка принадлежности passing игре.
+func (s *GamePassingService) SetTeamStartTime(ctx context.Context, gameID, passingID uint, startTime *time.Time) error {
+	passing, err := s.repo.GetByID(ctx, passingID)
+	if err != nil {
+		return err
+	}
+	if passing.GameID != gameID {
+		return ErrPassingNotInGame
+	}
 	return s.repo.SetPassingStartTime(ctx, passingID, startTime)
 }
 
 // SetTeamAnswer задаёт персональный ответ уровня для команды (C-4).
-func (s *GamePassingService) SetTeamAnswer(ctx context.Context, levelID, teamID uint, code, hint string) error {
+// DEEP-REVIEW PASS-5 H3: проверка, что level принадлежит gameID.
+func (s *GamePassingService) SetTeamAnswer(ctx context.Context, gameID, levelID, teamID uint, code, hint string) error {
+	var lvl level.Level
+	if err := s.db.WithContext(ctx).Where("id = ? AND game_id = ?", levelID, gameID).First(&lvl).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrLevelNotInGame
+		}
+		return err
+	}
 	return s.repo.SetTeamAnswer(ctx, levelID, teamID, code, hint)
 }
 

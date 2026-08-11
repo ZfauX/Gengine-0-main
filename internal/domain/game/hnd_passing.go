@@ -2,6 +2,7 @@
 package game
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -369,8 +370,12 @@ func (h *PassingHandler) SetTeamRoute(c *gin.Context) {
 	if !h.requireEditContent(c, uint(req.GameID)) {
 		return
 	}
-	if err := h.passingService.SetTeamRoute(c.Request.Context(), uint(req.PassingID), req.LevelIDs); err != nil {
+	if err := h.passingService.SetTeamRoute(c.Request.Context(), uint(req.GameID), uint(req.PassingID), req.LevelIDs); err != nil {
 		log.Error().Err(err).Int("passing_id", req.PassingID).Msg("SetTeamRoute: failed")
+		if errors.Is(err, ErrPassingNotInGame) {
+			render.RenderError(c, http.StatusForbidden, render.Tr(c, "handler.forbidden"))
+			return
+		}
 		render.RenderError(c, http.StatusInternalServerError, render.LocalizeError(c, err.Error()))
 		return
 	}
@@ -419,8 +424,12 @@ func (h *PassingHandler) SetTeamStartTime(c *gin.Context) {
 			return
 		}
 	}
-	if err := h.passingService.SetTeamStartTime(c.Request.Context(), uint(req.PassingID), startTime); err != nil {
+	if err := h.passingService.SetTeamStartTime(c.Request.Context(), uint(req.GameID), uint(req.PassingID), startTime); err != nil {
 		log.Error().Err(err).Int("passing_id", req.PassingID).Msg("SetTeamStartTime: failed")
+		if errors.Is(err, ErrPassingNotInGame) {
+			render.RenderError(c, http.StatusForbidden, render.Tr(c, "handler.forbidden"))
+			return
+		}
 		render.RenderError(c, http.StatusInternalServerError, render.LocalizeError(c, err.Error()))
 		return
 	}
@@ -448,8 +457,12 @@ func (h *PassingHandler) SetTeamAnswer(c *gin.Context) {
 		render.RenderError(c, http.StatusBadRequest, "Укажите код ответа")
 		return
 	}
-	if err := h.passingService.SetTeamAnswer(c.Request.Context(), uint(req.LevelID), uint(req.TeamID), code, hint); err != nil {
+	if err := h.passingService.SetTeamAnswer(c.Request.Context(), uint(req.GameID), uint(req.LevelID), uint(req.TeamID), code, hint); err != nil {
 		log.Error().Err(err).Int("level_id", req.LevelID).Int("team_id", req.TeamID).Msg("SetTeamAnswer: failed")
+		if errors.Is(err, ErrLevelNotInGame) {
+			render.RenderError(c, http.StatusForbidden, render.Tr(c, "handler.forbidden"))
+			return
+		}
 		render.RenderError(c, http.StatusInternalServerError, render.LocalizeError(c, err.Error()))
 		return
 	}

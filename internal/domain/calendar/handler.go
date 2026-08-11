@@ -2,6 +2,7 @@
 package calendar
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -121,10 +122,13 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 	h.cacheMu.Unlock()
 
 	ctx := c.Request.Context()
-	// P3 (PASS-4): singleflight — при кэш-промахе один запрос к БД, остальные ждут.
+	// P3/PASS-5 M2: singleflight — при кэш-промахе один запрос к БД, остальные
+	// ждут. Внутри замыкания используем WithoutCancel — иначе отмена ПЕРВОГО
+	// запроса (клиент ушёл) роняет всех ожидающих (все получают 500).
+	sfCtx := context.WithoutCancel(ctx)
 	sfKey := "month:" + cacheKey
 	gamesVal, sfErr, _ := h.sfGroup.Do(sfKey, func() (any, error) {
-		return h.gameRepo.ListByDateRange(ctx, startOfMonth, endOfMonth)
+		return h.gameRepo.ListByDateRange(sfCtx, startOfMonth, endOfMonth)
 	})
 	if sfErr != nil {
 		log.Error().Err(sfErr).Int("year", req.Year).Int("month", req.Month).Msg("CalendarData: failed to list games")

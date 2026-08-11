@@ -77,6 +77,12 @@ func (s *BackupService) CreateNowAsync(reqCtx context.Context) error {
 		return fmt.Errorf("создание бекапа уже выполняется")
 	}
 	go func() {
+		// L5 (PASS-5): recover — паника в фоновой горутине не должна ронять процесс.
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().Interface("panic", r).Msg("CreateBackup (async): panic recovered")
+			}
+		}()
 		defer s.backupMu.Unlock()
 		// Независимый контекст — дисконнект админа не прерывает дамп.
 		if err := s.CreateNow(context.WithoutCancel(reqCtx)); err != nil {

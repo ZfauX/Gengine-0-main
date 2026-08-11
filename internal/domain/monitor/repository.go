@@ -78,6 +78,9 @@ type gormChatRepo struct {
 
 	permCacheMu sync.Mutex
 	permCache   map[string]chatPermEntry
+	// lastSweep (PASS-5 M1): sweep не чаще 1 раза в секунду — при переполнении
+	// кэша каждый промах не платит O(n) под локом на горячем пути чата.
+	lastSweep time.Time
 }
 
 func NewGormChatRepo(db *gorm.DB) ChatRepository {
@@ -96,13 +99,18 @@ func (r *gormChatRepo) invalidatePermCache(roomID, userID uint) {
 	r.permCacheMu.Unlock()
 }
 
-// sweepPermCache (M8): удаляет истёкшие записи при превышении размера.
-// Вызывается под permCacheMu.
+// sweepPermCache (M8/PASS-4, M1/PASS-5): удаляет истёкшие записи при
+// превышении размера, но НЕ чаще 1 раза в секунду — иначе каждый кэш-промах
+// при переполненной map платит O(n) под блокировкой (горячий путь чата).
 func (r *gormChatRepo) sweepPermCache() {
 	if len(r.permCache) <= chatPermCacheMaxEntries {
 		return
 	}
 	now := time.Now()
+	if now.Sub(r.lastSweep) < time.Second {
+		return
+	}
+	r.lastSweep = now
 	for k, e := range r.permCache {
 		if now.After(e.expires) {
 			delete(r.permCache, k)

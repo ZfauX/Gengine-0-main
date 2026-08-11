@@ -86,8 +86,10 @@ func (s *ProfileService) GetPublicProfileStats(ctx context.Context, userID uint)
 	return stats, nil
 }
 
-// InvalidateProfileStats сбрасывает кэш статистики пользователя (вызывается
-// при завершении игры/обновлении рейтинга, чтобы счётчики не были устаревшими).
+// InvalidateProfileStats сбрасывает кэш статистики пользователя.
+// NOTE (PASS-5 M1): сейчас не вызывается из game-домена (нет DI-связи) —
+// используется осознанный TTL 60с; метод оставлен как точка интеграции,
+// если понадобится мгновенная инвалидация при финише игры/обновлении рейтинга.
 func (s *ProfileService) InvalidateProfileStats(userID uint) {
 	s.statsMu.Lock()
 	delete(s.statsCache, userID)

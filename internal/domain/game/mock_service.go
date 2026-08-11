@@ -575,45 +575,45 @@ func (mr *MockGamePassingServiceInterfaceMockRecorder) ListTestPassings(ctx, gam
 }
 
 // SetTeamAnswer mocks base method.
-func (m *MockGamePassingServiceInterface) SetTeamAnswer(ctx context.Context, levelID, teamID uint, code, hint string) error {
+func (m *MockGamePassingServiceInterface) SetTeamAnswer(ctx context.Context, gameID, levelID, teamID uint, code, hint string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SetTeamAnswer", ctx, levelID, teamID, code, hint)
+	ret := m.ctrl.Call(m, "SetTeamAnswer", ctx, gameID, levelID, teamID, code, hint)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // SetTeamAnswer indicates an expected call of SetTeamAnswer.
-func (mr *MockGamePassingServiceInterfaceMockRecorder) SetTeamAnswer(ctx, levelID, teamID, code, hint any) *gomock.Call {
+func (mr *MockGamePassingServiceInterfaceMockRecorder) SetTeamAnswer(ctx, gameID, levelID, teamID, code, hint any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetTeamAnswer", reflect.TypeOf((*MockGamePassingServiceInterface)(nil).SetTeamAnswer), ctx, levelID, teamID, code, hint)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetTeamAnswer", reflect.TypeOf((*MockGamePassingServiceInterface)(nil).SetTeamAnswer), ctx, gameID, levelID, teamID, code, hint)
 }
 
 // SetTeamRoute mocks base method.
-func (m *MockGamePassingServiceInterface) SetTeamRoute(ctx context.Context, passingID uint, levelIDs []uint) error {
+func (m *MockGamePassingServiceInterface) SetTeamRoute(ctx context.Context, gameID, passingID uint, levelIDs []uint) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SetTeamRoute", ctx, passingID, levelIDs)
+	ret := m.ctrl.Call(m, "SetTeamRoute", ctx, gameID, passingID, levelIDs)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // SetTeamRoute indicates an expected call of SetTeamRoute.
-func (mr *MockGamePassingServiceInterfaceMockRecorder) SetTeamRoute(ctx, passingID, levelIDs any) *gomock.Call {
+func (mr *MockGamePassingServiceInterfaceMockRecorder) SetTeamRoute(ctx, gameID, passingID, levelIDs any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetTeamRoute", reflect.TypeOf((*MockGamePassingServiceInterface)(nil).SetTeamRoute), ctx, passingID, levelIDs)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetTeamRoute", reflect.TypeOf((*MockGamePassingServiceInterface)(nil).SetTeamRoute), ctx, gameID, passingID, levelIDs)
 }
 
 // SetTeamStartTime mocks base method.
-func (m *MockGamePassingServiceInterface) SetTeamStartTime(ctx context.Context, passingID uint, startTime *time.Time) error {
+func (m *MockGamePassingServiceInterface) SetTeamStartTime(ctx context.Context, gameID, passingID uint, startTime *time.Time) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SetTeamStartTime", ctx, passingID, startTime)
+	ret := m.ctrl.Call(m, "SetTeamStartTime", ctx, gameID, passingID, startTime)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // SetTeamStartTime indicates an expected call of SetTeamStartTime.
-func (mr *MockGamePassingServiceInterfaceMockRecorder) SetTeamStartTime(ctx, passingID, startTime any) *gomock.Call {
+func (mr *MockGamePassingServiceInterfaceMockRecorder) SetTeamStartTime(ctx, gameID, passingID, startTime any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetTeamStartTime", reflect.TypeOf((*MockGamePassingServiceInterface)(nil).SetTeamStartTime), ctx, passingID, startTime)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetTeamStartTime", reflect.TypeOf((*MockGamePassingServiceInterface)(nil).SetTeamStartTime), ctx, gameID, passingID, startTime)
 }
 
 // StartGame mocks base method.

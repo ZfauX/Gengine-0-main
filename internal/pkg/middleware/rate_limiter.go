@@ -377,14 +377,19 @@ func OAuthRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 	}
 }
 
-// PersonalChatRateLimit (DEEP-REVIEW PASS-4 M5): per-IP лимит на создание
-// личного чата — раньше любой аутентифицированный мог создавать комнаты
-// с любым user_id без ограничений (спам-вектор, PII-перечисление).
+// PersonalChatRateLimit (DEEP-REVIEW PASS-4 M5 / PASS-5 M3): per-USER лимит на
+// создание личного чата. Раньше ключ был per-IP — за reverse-proxy без
+// TRUSTED_PROXIES все пользователи делили один бюджет (429 для всех), и
+// аутентифицированный атакующий обходил ротацией IP. Действие аутентифицировано —
+// лимитируем по userID.
 func PersonalChatRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 	rl := NewRateLimiter(window, limit)
 	return func(c *gin.Context) {
-		ip := c.ClientIP()
-		result := rl.Allow("personal_chat:" + ip)
+		userID := c.GetUint("userID")
+		if userID == 0 {
+			userID = 0 // аноним — общий бюджет (не должно быть, маршрут под AuthRequired)
+		}
+		result := rl.Allow(fmt.Sprintf("personal_chat:%d", userID))
 		setRateLimitHeaders(c, result)
 		if !result.Allowed {
 			respondRateLimitError(c, ErrRateLimitLogin, result)

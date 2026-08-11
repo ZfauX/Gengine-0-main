@@ -13,6 +13,10 @@ type PaymentRepository interface {
 	GetByID(ctx context.Context, id uint) (*Payment, error)
 	GetByPaymentID(ctx context.Context, paymentID string) (*Payment, error)
 	GetByIdempotencyKey(ctx context.Context, key string) (*Payment, error)
+	// GetPendingByUserAndAmount (DEEP-REVIEW PASS-5 H1): незакрытый pending-платёж
+	// пользователя на ту же сумму — переиспользуется при ретрае вместо создания
+	// дубликата (раньше идемпотентность не работала: ключ генерировался заново).
+	GetPendingByUserAndAmount(ctx context.Context, userID uint, amountKopecks int64) (*Payment, error)
 	ListByUser(ctx context.Context, userID uint, limit int) ([]Payment, error)
 	UpdateStatus(ctx context.Context, id uint, status string) error
 	// UpdateAfterCreate обновляет платёж после успешного ответа ЮKassa
@@ -51,6 +55,18 @@ func (r *gormPaymentRepo) GetByPaymentID(ctx context.Context, paymentID string) 
 func (r *gormPaymentRepo) GetByIdempotencyKey(ctx context.Context, key string) (*Payment, error) {
 	var p Payment
 	err := r.db.WithContext(ctx).Where("idempotency_key = ?", key).First(&p).Error
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+func (r *gormPaymentRepo) GetPendingByUserAndAmount(ctx context.Context, userID uint, amountKopecks int64) (*Payment, error) {
+	var p Payment
+	err := r.db.WithContext(ctx).
+		Where("user_id = ? AND amount_kopecks = ? AND status = ?", userID, amountKopecks, StatusPending).
+		Order("created_at DESC").
+		First(&p).Error
 	if err != nil {
 		return nil, err
 	}

@@ -293,16 +293,18 @@ func (s *GameService) GetByID(ctx context.Context, id uint, viewerID uint, isAdm
 	// Кэш-промах: singleflight на загрузку из БД (P2) — при стампеде на
 	// «горячую» игру только один запрос выполняет полный preload, остальные
 	// ждут результат. CanViewGame проверяется вне singleflight (per-viewer).
+	// PASS-5 M2: WithoutCancel — отмена ПЕРВОГО запроса не роняет остальных.
+	sfCtx := context.WithoutCancel(ctx)
 	val, sfErr, _ := s.sg.Do(cacheKey, func() (any, error) {
-		if game, ok := cacheGetGame(s.cache, ctx, cacheKey); ok {
+		if game, ok := cacheGetGame(s.cache, sfCtx, cacheKey); ok {
 			return game, nil
 		}
-		game, err := s.crudService.GetByID(ctx, id)
+		game, err := s.crudService.GetByID(sfCtx, id)
 		if err != nil {
 			return nil, err
 		}
 		if !game.IsDraft {
-			s.cache.SetWithCtx(ctx, cacheKey, game, 5*time.Minute)
+			s.cache.SetWithCtx(sfCtx, cacheKey, game, 5*time.Minute)
 		}
 		return game, nil
 	})
