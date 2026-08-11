@@ -480,7 +480,7 @@ func (h *PassingHandler) AttemptsPerUser(c *gin.Context) {
 // Возвращает false и пишет 403, если права нет.
 func (h *PassingHandler) requireEditContent(c *gin.Context, gameID uint) bool {
 	userID := c.GetUint("userID")
-	ok, err := h.coAuthorSvc.HasPermission(c.Request.Context(), gameID, userID, RoleContentEditor)
+	ok, err := h.coAuthorSvc.CanEditContent(c.Request.Context(), gameID, userID)
 	if err != nil {
 		log.Error().Err(err).Uint("game_id", gameID).Uint("user_id", userID).Msg("requireEditContent: permission check error")
 		render.RenderErrorPage(c, http.StatusInternalServerError)

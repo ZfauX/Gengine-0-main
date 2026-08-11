@@ -218,6 +218,11 @@ func (m *MockCoAuthorService) CanEditContent(ctx context.Context, gameID, userID
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *MockCoAuthorService) CanUploadMedia(ctx context.Context, gameID, userID uint) (bool, error) {
+	args := m.Called(ctx, gameID, userID)
+	return args.Bool(0), args.Error(1)
+}
+
 func (m *MockCoAuthorService) Add(ctx context.Context, gameID, newCoAuthorID, ownerID uint, role string, permissions []string) error {
 	args := m.Called(ctx, gameID, newCoAuthorID, ownerID, role, permissions)
 	return args.Error(0)

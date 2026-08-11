@@ -306,6 +306,21 @@ func (mr *MockCoAuthorServiceInterfaceMockRecorder) CanEditContent(ctx, gameID, 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CanEditContent", reflect.TypeOf((*MockCoAuthorServiceInterface)(nil).CanEditContent), ctx, gameID, userID)
 }
 
+// CanUploadMedia mocks base method.
+func (m *MockCoAuthorServiceInterface) CanUploadMedia(ctx context.Context, gameID, userID uint) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CanUploadMedia", ctx, gameID, userID)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CanUploadMedia indicates an expected call of CanUploadMedia.
+func (mr *MockCoAuthorServiceInterfaceMockRecorder) CanUploadMedia(ctx, gameID, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CanUploadMedia", reflect.TypeOf((*MockCoAuthorServiceInterface)(nil).CanUploadMedia), ctx, gameID, userID)
+}
+
 // CanModerateGame mocks base method.
 func (m *MockCoAuthorServiceInterface) CanModerateGame(ctx context.Context, gameID, userID uint) (bool, error) {
 	m.ctrl.T.Helper()

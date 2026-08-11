@@ -269,6 +269,23 @@ func (s *CoAuthorService) CanEditContent(ctx context.Context, gameID, userID uin
 	return s.HasPermission(ctx, gameID, userID, RoleContentEditor)
 }
 
+// CanUploadMedia — удобный метод для проверки права на загрузку медиа
+// (фото/обложки). Семантический слой гранулярных прав (DEEP-REVIEW IDEA-1):
+// вызовы не должны ходить через строковые Role* константы напрямую.
+func (s *CoAuthorService) CanUploadMedia(ctx context.Context, gameID, userID uint) (bool, error) {
+	return s.HasPermission(ctx, gameID, userID, RoleUploadMedia)
+}
+
+// CanModerateGameTx — транзакционный вариант CanModerateGame.
+func (s *CoAuthorService) CanModerateGameTx(ctx context.Context, tx *gorm.DB, gameID, userID uint) (bool, error) {
+	return s.HasPermissionTx(ctx, tx, gameID, userID, RoleModerator)
+}
+
+// CanEditContentTx — транзакционный вариант CanEditContent.
+func (s *CoAuthorService) CanEditContentTx(ctx context.Context, tx *gorm.DB, gameID, userID uint) (bool, error) {
+	return s.HasPermissionTx(ctx, tx, gameID, userID, RoleContentEditor)
+}
+
 // Add добавляет нового соавтора или восстанавливает удалённого.
 // A-1 (pass 45): role — пресет, permissions — выборочные права (jsonb).
 func (s *CoAuthorService) Add(ctx context.Context, gameID, newCoAuthorID, ownerID uint, role string, permissions []string) error {

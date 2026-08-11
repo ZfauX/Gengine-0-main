@@ -62,7 +62,7 @@ func (h *ExportHandler) checkGameAccess(c *gin.Context, gameID uint) bool {
 // а не observer (read-only) — тот видит только свою команду через ExportTeamResultsCSV.
 func (h *ExportHandler) requireModerate(c *gin.Context, gameID uint) bool {
 	userID := c.GetUint("userID")
-	ok, err := h.coAuthorSvc.HasPermission(c.Request.Context(), gameID, userID, game.RoleModerator)
+	ok, err := h.coAuthorSvc.CanModerateGame(c.Request.Context(), gameID, userID)
 	if err != nil {
 		log.Error().Err(err).Uint("game_id", gameID).Msg("requireModerate: permission check error")
 		render.RenderErrorPage(c, http.StatusInternalServerError)
@@ -180,7 +180,7 @@ func (h *ExportHandler) ImportGame(c *gin.Context) {
 	// DEEP-REVIEW PASS-2 (#3): CSV-импорт перезаписывает уровни/вопросы/ответы —
 	// observer (read-only) не должен иметь права импорта. Требуется RoleContentEditor.
 	userID := c.GetUint("userID")
-	canEdit, permErr := h.coAuthorSvc.HasPermission(c.Request.Context(), gameID, userID, game.RoleContentEditor)
+	canEdit, permErr := h.coAuthorSvc.CanEditContent(c.Request.Context(), gameID, userID)
 	if permErr != nil {
 		log.Error().Err(permErr).Uint("game_id", gameID).Msg("ImportGame: permission check error")
 		render.RenderErrorPage(c, http.StatusInternalServerError)

@@ -139,7 +139,7 @@ func (h *PhotoHandler) UploadPhoto(c *gin.Context) {
 	// #1: загрузка фото — только соавтор с правом upload_media (A-1, pass 45)
 	// или админ. Раньше любой менеджер мог заливать, без учёта выборочных прав.
 	if !middleware.IsAdmin(c) {
-		ok, mErr := h.coAuthorSvc.HasPermission(c.Request.Context(), uint(gameID), userID, RoleUploadMedia)
+		ok, mErr := h.coAuthorSvc.CanUploadMedia(c.Request.Context(), uint(gameID), userID)
 		if mErr != nil {
 			log.Error().Err(mErr).Int("game_id", gameID).Msg("UploadPhoto: failed to check permission")
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "internal error", "code": "internal"})
@@ -289,7 +289,7 @@ func (h *PhotoHandler) DeletePhoto(c *gin.Context) {
 	isOwner := photo.UserID == userID
 	// G5: удаление чужого фото требует роли content_editor/moderator —
 	// observer не должен модеррировать галерею.
-	canModerate, err := h.coAuthorSvc.HasPermission(c.Request.Context(), photo.GameID, userID, RoleContentEditor)
+	canModerate, err := h.coAuthorSvc.CanEditContent(c.Request.Context(), photo.GameID, userID)
 	if err != nil {
 		log.Error().Err(err).Int("photo_id", photoID).Msg("DeletePhoto: failed to check permission")
 		appErr := apperr.Wrap(err, "PhotoHandler")

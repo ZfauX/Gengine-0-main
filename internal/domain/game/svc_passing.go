@@ -201,7 +201,7 @@ func (s *GamePassingService) UpdateStatus(ctx context.Context, passingID uint, s
 		currentStatus = passing.Status
 
 		// passing.Game загружен через JOIN
-		ok, err := s.coAuthor.HasPermissionTx(ctx, tx, passing.GameID, userID, RoleModerator)
+		ok, err := s.coAuthor.CanModerateGameTx(ctx, tx, passing.GameID, userID)
 		if err != nil {
 			return err
 		}
