@@ -183,6 +183,11 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 			return nil, stderrors.New("не удалось получить email от VK")
 		}
 		externalID = extraString(token.Extra("user_id"))
+		// L4 (PASS-6): VK user_id может отсутствовать в токене → externalID пуст
+		// (коллизии unique (provider, external_id), связка «чужой аккаунт»).
+		if externalID == "" {
+			return nil, stderrors.New("не удалось получить user_id от VK")
+		}
 
 		// S-42-5 (pass 42): QueryEscape — user_id приходит от провайдера в токене,
 		// но невалидированная конкатенация в URL — плохая практика (defense-in-depth).

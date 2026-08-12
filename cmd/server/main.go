@@ -601,6 +601,13 @@ func run() error {
 		log.Info().Msg("Снапшот-диспетчер остановлен")
 	}
 
+	// 5.2 Дожидаемся активного фонового pg_dump (L10, PASS-6) — иначе процесс
+	// убивает дамп посреди записи.
+	if deps.Services.Backup != nil {
+		deps.Services.Backup.WaitForBackups()
+		log.Info().Msg("Фоновые бекапы завершены")
+	}
+
 	// 6. Отменяем контекст фоновых задач
 	cancel()
 

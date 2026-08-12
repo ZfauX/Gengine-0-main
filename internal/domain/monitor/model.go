@@ -38,12 +38,12 @@ type ChatRoom struct {
 	// B-1 (pass 45): владелец комнаты (автор игры/команды или создатель личной).
 	OwnerID *uint `gorm:"index:idx_chat_rooms_owner"`
 	// B-7 (pass 45): личный чат 1-на-1 (User1ID < User2ID).
-	User1ID  *uint            `gorm:"index:idx_chat_rooms_users"`
-	User2ID  *uint            `gorm:"index:idx_chat_rooms_users"`
+	User1ID *uint `gorm:"index:idx_chat_rooms_users"`
+	User2ID *uint `gorm:"index:idx_chat_rooms_users"`
 	// Accepted (DEEP-REVIEW PASS-6 M7): для личных комнат — согласие получателя
 	// (User2ID) на переписку. Инициатор (OwnerID) может писать сразу, получатель —
 	// только после явного принятия (закрывает спам-вектор без взаимной подписки).
-	Accepted bool `gorm:"default:false"`
+	Accepted bool             `gorm:"default:false"`
 	Messages []ChatMessage    `gorm:"foreignKey:RoomID"`
 	Members  []ChatRoomMember `gorm:"foreignKey:RoomID"`
 }

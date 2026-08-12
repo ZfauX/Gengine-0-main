@@ -106,9 +106,10 @@ func (r *gormChatRepo) invalidatePermCache(roomID, userID uint) {
 	r.permCacheMu.Unlock()
 }
 
-// sweepPermCache (M8/PASS-4, M1/PASS-5): удаляет истёкшие записи при
-// превышении размера, но НЕ чаще 1 раза в секунду — иначе каждый кэш-промах
-// при переполненной map платит O(n) под блокировкой (горячий путь чата).
+// sweepPermCache (M8/PASS-4, M1/PASS-5, L6/PASS-6): удаляет истёкшие записи
+// при превышении размера, но НЕ чаще 1 раза в секунду. Если после удаления
+// истёкших размер ВСЁ ЕЩЁ превышает cap (всплеск свежих записей) — удаляем
+// лишние, чтобы map не росла бесконечно (старые по времени истечения).
 func (r *gormChatRepo) sweepPermCache() {
 	if len(r.permCache) <= chatPermCacheMaxEntries {
 		return
@@ -122,6 +123,21 @@ func (r *gormChatRepo) sweepPermCache() {
 		if now.After(e.expires) {
 			delete(r.permCache, k)
 		}
+	}
+	// L6: принудительный cap — удаляем до размера max (самые скорые к истечению).
+	for len(r.permCache) > chatPermCacheMaxEntries {
+		var oldestKey string
+		var oldestExp time.Time
+		first := true
+		for k, e := range r.permCache {
+			if first || e.expires.Before(oldestExp) {
+				oldestKey, oldestExp, first = k, e.expires, false
+			}
+		}
+		if first {
+			break
+		}
+		delete(r.permCache, oldestKey)
 	}
 }
 

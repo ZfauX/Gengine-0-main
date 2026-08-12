@@ -44,6 +44,17 @@ type BackupService struct {
 	// backupMu (DEEP-REVIEW PASS-4 H5): сериализует CreateNow — повторный клик
 	// во время дампа не запускает конкурирующий pg_dump.
 	backupMu sync.Mutex
+
+	// backupWG (DEEP-REVIEW PASS-6 L10): фоновые дампы отслеживаются — при
+	// shutdown сервер ждёт завершения активного pg_dump (иначе процесс убивает
+	// дамп посреди записи).
+	backupWG sync.WaitGroup
+}
+
+// WaitForBackups (L10): ожидает завершения активных фоновых дампов
+// (вызывается при graceful shutdown).
+func (s *BackupService) WaitForBackups() {
+	s.backupWG.Wait()
 }
 
 // NewBackupService создаёт новый BackupService.
@@ -76,6 +87,7 @@ func (s *BackupService) CreateNowAsync(reqCtx context.Context) error {
 	if !s.backupMu.TryLock() {
 		return fmt.Errorf("создание бекапа уже выполняется")
 	}
+	s.backupWG.Add(1) // L10 (PASS-6): отслеживаем фоновый дамп
 	go func() {
 		// L5 (PASS-5): recover — паника в фоновой горутине не должна ронять процесс.
 		defer func() {
@@ -84,6 +96,7 @@ func (s *BackupService) CreateNowAsync(reqCtx context.Context) error {
 			}
 		}()
 		defer s.backupMu.Unlock()
+		defer s.backupWG.Done() // L10 (PASS-6)
 		// Независимый контекст — дисконнект админа не прерывает дамп.
 		if err := s.CreateNow(context.WithoutCancel(reqCtx)); err != nil {
 			log.Error().Err(err).Msg("CreateBackup (async): failed")

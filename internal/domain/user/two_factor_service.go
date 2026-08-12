@@ -222,7 +222,6 @@ func (s *TwoFactorService) Enable2FA(user *User) error {
 
 	log.Info().
 		Str("user_id", fmt.Sprintf("%d", user.ID)).
-		Str("email", user.Email).
 		Msg("2FA enabled for user")
 
 	return nil
@@ -236,7 +235,6 @@ func (s *TwoFactorService) Disable2FA(user *User) {
 
 	log.Info().
 		Str("user_id", fmt.Sprintf("%d", user.ID)).
-		Str("email", user.Email).
 		Msg("2FA disabled for user")
 }
 

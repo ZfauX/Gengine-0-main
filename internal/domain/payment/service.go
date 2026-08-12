@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -147,9 +148,10 @@ func rublesStringToKopecks(s string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	// L1 (PASS-5): проверка до умножения — w*100 не должно переполняться.
-	// f≤99 не влияет на границу; MinInt64-f отдельно не проверяем (переполнение).
-	if w > math.MaxInt64/100 || w < math.MinInt64/100 {
+	// L1 (PASS-5, доработано в PASS-6): точная граница w*100+f. Раньше проверка
+	// w*100 была грубой — при w==MaxInt64/100 и f>=8 (или w==MinInt64/100 и f>0)
+	// сумма переполнялась до отрицательного значения.
+	if w > (math.MaxInt64-f)/100 || w < (math.MinInt64+f)/100 {
 		return 0, fmt.Errorf("сумма слишком велика: %q", whole)
 	}
 	result := w*100 + f
@@ -389,7 +391,11 @@ func (s *PaymentService) verifyWebhookAuth(authHeader string) (bool, error) {
 	if expectedPass == "" {
 		expectedPass = s.cfg.SecretKey
 	}
-	if user != s.cfg.ShopID || pass != expectedPass {
+	// L2 (PASS-6): constant-time сравнение — при неверном Basic не раскрываем
+	//, какой именно компонент (user/pass) не совпал по таймингу.
+	userOK := subtle.ConstantTimeCompare([]byte(user), []byte(s.cfg.ShopID)) == 1
+	passOK := subtle.ConstantTimeCompare([]byte(pass), []byte(expectedPass)) == 1
+	if !userOK || !passOK {
 		return false, ErrWebhookUnauthorized
 	}
 	return true, nil

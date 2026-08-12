@@ -180,8 +180,9 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 	}
 	h.cacheMu.Lock()
 	h.cache[cacheKey] = calendarCacheEntry{data: body, expires: time.Now().Add(calendarCacheTTL)}
-	// F-1 (pass 34): evict просроченные записи — иначе map растёт с каждым
-	// (year, month, tzOffset) навсегда (медленная утечка памяти).
+	// F-1 (pass 34) + L13 (PASS-6): evict просроченные записи — иначе map
+	// растёт с каждым (year, month, tzOffset) навсегда. При свежем всплеске
+	// (>512 живых записей) принудительно урезаем до cap (самые старые).
 	const calendarCacheMax = 512
 	if len(h.cache) > calendarCacheMax {
 		now := time.Now()
@@ -189,6 +190,20 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 			if now.After(e.expires) {
 				delete(h.cache, k)
 			}
+		}
+		for len(h.cache) > calendarCacheMax {
+			var oldestKey string
+			var oldestExp time.Time
+			first := true
+			for k, e := range h.cache {
+				if first || e.expires.Before(oldestExp) {
+					oldestKey, oldestExp, first = k, e.expires, false
+				}
+			}
+			if first {
+				break
+			}
+			delete(h.cache, oldestKey)
 		}
 	}
 	h.cacheMu.Unlock()
