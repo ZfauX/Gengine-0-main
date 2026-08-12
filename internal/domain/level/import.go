@@ -104,15 +104,17 @@ func (s *ImportService) Import(ctx context.Context, gameID, userID uint, r io.Re
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		seenPos := make(map[int]bool, len(payload.Levels))
 		for _, il := range payload.Levels {
-			// M6: валидация позиции — не создаём уровни с отрицательными/нулевыми
-			// позициями и не допускаем дубликаты позиций в рамках импорта.
-			if il.Position < 1 {
+			// M6: валидация позиции — отрицательные запрещены; 0 = автопозиция
+			// (max+1, как раньше); дубликаты позиций в рамках импорта запрещены.
+			if il.Position < 0 {
 				return fmt.Errorf("недопустимая позиция уровня: %d", il.Position)
 			}
-			if seenPos[il.Position] {
-				return fmt.Errorf("дубликат позиции уровня: %d", il.Position)
+			if il.Position > 0 {
+				if seenPos[il.Position] {
+					return fmt.Errorf("дубликат позиции уровня: %d", il.Position)
+				}
+				seenPos[il.Position] = true
 			}
-			seenPos[il.Position] = true
 
 			// M6: allowlist типа уровня.
 			if il.Type != "" && !validLevelType(il.Type) {
@@ -130,6 +132,13 @@ func (s *ImportService) Import(ctx context.Context, gameID, userID uint, r io.Re
 			}
 			if lvl.Type == "" {
 				lvl.Type = "single"
+			}
+			if lvl.Position == 0 {
+				var maxPos int
+				if scanErr := tx.Table("levels").Where("game_id = ?", gameID).Select("COALESCE(MAX(position), 0)").Scan(&maxPos).Error; scanErr != nil {
+					return scanErr
+				}
+				lvl.Position = maxPos + 1
 			}
 			if createErr := tx.Create(lvl).Error; createErr != nil {
 				return fmt.Errorf("создание уровня %q: %w", il.Name, createErr)

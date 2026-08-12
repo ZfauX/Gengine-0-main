@@ -38,6 +38,11 @@ type ProfileService struct {
 
 	statsMu    sync.Mutex
 	statsCache map[uint]statsCacheEntry
+
+	// gamesCache (PASS-5 P3): кэш последних игр (60с) — данные меняются только
+	// при публикации; профиль-страница делает лишний запрос на каждый просмотр.
+	gamesMu    sync.Mutex
+	gamesCache map[uint]gamesCacheEntry
 }
 
 type statsCacheEntry struct {
@@ -45,12 +50,17 @@ type statsCacheEntry struct {
 	expires time.Time
 }
 
-// statsCacheTTL — время жизни кэша статистики профиля.
+type gamesCacheEntry struct {
+	games   []RecentGame
+	expires time.Time
+}
+
+// statsCacheTTL — время жизни кэша статистики профиля и последних игр.
 const statsCacheTTL = 60 * time.Second
 
 // NewProfileService создаёт новый ProfileService.
 func NewProfileService(repo ProfileRepository) *ProfileService {
-	return &ProfileService{repo: repo, statsCache: make(map[uint]statsCacheEntry)}
+	return &ProfileService{repo: repo, statsCache: make(map[uint]statsCacheEntry), gamesCache: make(map[uint]gamesCacheEntry)}
 }
 
 // GetPublicProfileStats загружает статистику пользователя (с TTL-кэшем, M11).
@@ -101,9 +111,33 @@ func (s *ProfileService) IsFollowing(ctx context.Context, followerID, authorID u
 	return s.repo.IsFollowing(ctx, followerID, authorID)
 }
 
-// GetRecentGames загружает последние игры автора.
+// GetRecentGames загружает последние игры автора (с TTL-кэшем, PASS-5 P3).
 func (s *ProfileService) GetRecentGames(ctx context.Context, authorID uint) ([]RecentGame, error) {
-	return s.repo.GetRecentGames(ctx, authorID)
+	now := time.Now()
+	s.gamesMu.Lock()
+	if e, ok := s.gamesCache[authorID]; ok && now.Before(e.expires) {
+		games := e.games
+		s.gamesMu.Unlock()
+		return games, nil
+	}
+	s.gamesMu.Unlock()
+
+	games, err := s.repo.GetRecentGames(ctx, authorID)
+	if err != nil {
+		return nil, err
+	}
+
+	s.gamesMu.Lock()
+	if len(s.gamesCache) > 512 {
+		for id, e := range s.gamesCache {
+			if now.After(e.expires) {
+				delete(s.gamesCache, id)
+			}
+		}
+	}
+	s.gamesCache[authorID] = gamesCacheEntry{games: games, expires: now.Add(statsCacheTTL)}
+	s.gamesMu.Unlock()
+	return games, nil
 }
 
 // UpdateProfile обновляет имя и email пользователя.

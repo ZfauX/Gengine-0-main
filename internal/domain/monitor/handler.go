@@ -1166,6 +1166,17 @@ func (h *MonitorHandler) PersonalChat(c *gin.Context) {
 		render.RenderError(c, http.StatusBadRequest, "некорректный собеседник")
 		return
 	}
+	// L6 (PASS-5): не создаём комнату на НЕСУЩЕСТВУЮЩЕГО пользователя —
+	// раньше любой ID создавал мусорную строку в chat_rooms.
+	if _, uErr := h.userService.GetByID(c.Request.Context(), uint(otherID)); uErr != nil {
+		if errors.Is(uErr, gorm.ErrRecordNotFound) {
+			render.RenderError(c, http.StatusNotFound, "собеседник не найден")
+			return
+		}
+		log.Error().Err(uErr).Int("other_id", otherID).Msg("PersonalChat: failed to load target user")
+		render.RenderErrorPage(c, http.StatusInternalServerError)
+		return
+	}
 	room, err := h.chatService.GetOrCreatePersonalRoom(c.Request.Context(), userID, uint(otherID))
 	if err != nil {
 		log.Error().Err(err).Int("other_id", otherID).Uint("user_id", userID).Msg("PersonalChat: failed to get/create room")

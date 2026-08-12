@@ -50,7 +50,7 @@ func NewExportService(
 // EscapeAnswerCodesForTest / UnescapeAnswerCodesForTest — экспортируемые
 // обёртки для тестов round-trip (M5, PASS-5).
 func EscapeAnswerCodesForTest(codes []string) string { return escapeAnswerCodes(codes) }
-func UnescapeAnswerCodesForTest(s string) []string  { return unescapeAnswerCodes(s) }
+func UnescapeAnswerCodesForTest(s string) []string   { return unescapeAnswerCodes(s) }
 
 // csvSafe нейтрализует CSV/Excel formula injection (S-3, pass 36): значения,
 // начинающиеся с =, +, -, @, \t, \r (даже после ведущих пробелов — L-1, pass 37),
@@ -76,7 +76,7 @@ func csvSafe(s string) string {
 // escapeAnswerCodes (DEEP-REVIEW PASS-5 M5+L2): экранирует разделитель "|",
 // backslash и РЕАЛЬНЫЕ апострофы (удвоением) внутри кодов, чтобы round-trip
 // не ломал: "a|b" → два ответа; "'=42" (реальный апостроф) не путался с
-// экранированием csvSafe. Формат: "\|", "\\", "''".
+// экранированием csvSafe. Формат: "\|", "\\", "”".
 func escapeAnswerCodes(codes []string) string {
 	escaped := make([]string, len(codes))
 	for i, c := range codes {
@@ -89,7 +89,7 @@ func escapeAnswerCodes(codes []string) string {
 }
 
 // unescapeAnswerCodes (M5+L2): обратное преобразование — снимает один
-// csvSafe-' (формульный), затем разворачивает "''"→"'", "\|"→"|", "\\"→"\".
+// csvSafe-' (формульный), затем разворачивает "”"→"'", "\|"→"|", "\\"→"\".
 func unescapeAnswerCodes(s string) []string {
 	if s == "" {
 		return nil
@@ -301,8 +301,10 @@ func (s *ExportService) ImportGameFromCSV(ctx context.Context, gameID uint, r io
 			if err != nil {
 				return fmt.Errorf("ошибка чтения строки: %w", err)
 			}
+			// L7 (PASS-5): строка с <5 полями — не молчаливый пропуск (данные
+			// терялись незаметно), а явная ошибка.
 			if len(record) < 5 {
-				continue
+				return fmt.Errorf("недостаточно полей в строке %d (нужно 5)", records+1)
 			}
 			records++
 			if records > maxImportRecords {
@@ -352,6 +354,8 @@ func (s *ExportService) ImportGameFromCSV(ctx context.Context, gameID uint, r io
 				levelMap[pos] = lvl
 			}
 
+			// P2 (PASS-5): батч-вставка вопросов/ответов уровня вместо
+			// построчных INSERT (раньше 5000 записей → ~30k round-trip, 10-20с).
 			question := level.Question{
 				LevelID: lvl.ID,
 				Text:    questionText,
@@ -366,13 +370,14 @@ func (s *ExportService) ImportGameFromCSV(ctx context.Context, gameID uint, r io
 				// раньше Split("|") ломал коды с разделителем, а unescapeCSVAnswer
 				// портил реальный апостроф "'=42".
 				codes := unescapeAnswerCodes(answersStr)
-				for _, code := range codes {
-					answer := level.Answer{
-						QuestionID: question.ID,
-						Code:       code,
+				if len(codes) > 0 {
+					answers := make([]level.Answer, 0, len(codes))
+					for _, code := range codes {
+						answers = append(answers, level.Answer{QuestionID: question.ID, Code: code})
 					}
-					if err := tx.Create(&answer).Error; err != nil {
-						return fmt.Errorf("не удалось создать ответ: %w", err)
+					// Один мульти-INSERT вместо N отдельных (P2).
+					if err := tx.CreateInBatches(answers, 200).Error; err != nil {
+						return fmt.Errorf("не удалось создать ответы: %w", err)
 					}
 				}
 			}
