@@ -41,8 +41,8 @@ type ProfileService struct {
 
 	// gamesCache (PASS-5 P3): кэш последних игр (60с) — данные меняются только
 	// при публикации; профиль-страница делает лишний запрос на каждый просмотр.
-	gamesMu       sync.Mutex
-	gamesCache    map[uint]gamesCacheEntry
+	gamesMu        sync.Mutex
+	gamesCache     map[uint]gamesCacheEntry
 	gamesLastSweep time.Time
 }
 
