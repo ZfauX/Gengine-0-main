@@ -99,6 +99,11 @@ type GamePassing struct {
 	// TournamentPoints — точное значение начисленных турнирных очков (C-M2):
 	// RemoveGame списывает именно его, а не пересчитывает по текущему месту.
 	TournamentPoints int `gorm:"column:tournament_points;default:0"`
+	// TournamentScoredPoints (DEEP-REVIEW PASS-6 M4): параллельный массив
+	// начисленных очков по индексу соответствует tournament_scored_ids.
+	// Позволяет RemoveGame списать ТОЧНО начисленное значение, даже если
+	// автор турнира изменил PointsFor* между финишем и удалением игры.
+	TournamentScoredPoints pq.Int64Array `gorm:"column:tournament_scored_points;type:bigint[];default:'{}'"`
 	// StartTime — C-3 (pass 45): индивидуальное время старта команды (NULL = общее).
 	StartTime      *time.Time
 	Game           Game                        `gorm:"foreignKey:GameID"`

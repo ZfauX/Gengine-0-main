@@ -187,11 +187,12 @@ func (s *TournamentService) RemoveGame(ctx context.Context, tournamentID, gameID
 			points := make([]int, 0, len(passings))
 			for _, p := range passings {
 				teamIDs = append(teamIDs, p.TeamID)
-				// DEEP-REVIEW PASS-2 (HIGH): раньше списывали p.TournamentPoints —
-				// общую колонку, которая при мультитурнирности перезаписывается
-				// последним начисленным турниром (ошибка списания для 2+ турниров).
-				// Теперь пересчитываем очки по правилам удаляемого турнира.
-				points = append(points, pointsForPlace(t, p))
+				// M4 (PASS-6): списываем ТОЧНО начисленное значение из
+				// tournament_scored_points (индекс = позиции tournament_id в
+				// tournament_scored_ids). Раньше пересчитывали по ТЕКУЩЕЙ
+				// конфигурации — изменение PointsFor* между финишем и удалением
+				// давало «фантомные» очки.
+				points = append(points, scoredPointsForTournament(p, tournamentID))
 			}
 
 			// F-3 (pass 31): batch списание вместо построчного Save/Delete —
@@ -499,22 +500,41 @@ func (s *TournamentService) scoreTournamentInTx(tx *gorm.DB, tournament *Tournam
 	// прохождения вместо N построчных.
 	if len(pointsByPassing) > 0 {
 		passingIDs := make([]uint, 0, len(pointsByPassing))
-		cases := make([]string, 0, len(pointsByPassing))
+		pointsCases := make([]string, 0, len(pointsByPassing))
 		args := make([]any, 0, len(pointsByPassing)*2)
 		for id, pts := range pointsByPassing {
-			cases = append(cases, "WHEN ? THEN ?")
+			pointsCases = append(pointsCases, "WHEN ? THEN ?")
 			args = append(args, id, pts)
 			passingIDs = append(passingIDs, id)
 		}
 		idPlaceholders := util.JoinPlaceholders(len(passingIDs))
 		q := fmt.Sprintf(
 			"UPDATE game_passings SET tournament_points = CASE id %s ELSE tournament_points END WHERE id IN (%s)",
-			strings.Join(cases, " "),
+			strings.Join(pointsCases, " "),
 			idPlaceholders,
 		)
 		args = append(args, util.ToAnySlice(passingIDs)...)
 		if ptsErr := tx.Exec(q, args...).Error; ptsErr != nil {
 			return ptsErr
+		}
+
+		// M4 (PASS-6): отдельный batch — добавляем начисленные очки в
+		// tournament_scored_points (параллельно scored_ids) для точного
+		// списания при RemoveGame.
+		pointsArgs := make([]any, 0, len(pointsByPassing)*2)
+		pointsCases2 := make([]string, 0, len(pointsByPassing))
+		for id, pts := range pointsByPassing {
+			pointsCases2 = append(pointsCases2, "WHEN ? THEN ?")
+			pointsArgs = append(pointsArgs, id, pts)
+		}
+		q2 := fmt.Sprintf(
+			"UPDATE game_passings SET tournament_scored_points = array_append(tournament_scored_points, CASE id %s ELSE 0 END) WHERE id IN (%s)",
+			strings.Join(pointsCases2, " "),
+			idPlaceholders,
+		)
+		pointsArgs = append(pointsArgs, util.ToAnySlice(passingIDs)...)
+		if ptsErr2 := tx.Exec(q2, pointsArgs...).Error; ptsErr2 != nil {
+			return ptsErr2
 		}
 	}
 
@@ -526,8 +546,8 @@ func (s *TournamentService) scoreTournamentInTx(tx *gorm.DB, tournament *Tournam
 	}
 
 	// Помечаем прохождения начисленными для ЭТОГО турнира в той же транзакции
-	// (идемпотентность). DEEP-REVIEW (pass 46): добавляем tournament_id в массив
-	// tournament_scored_ids, а не ставим общий булев флаг.
+	// (идемпотентность). tournament_scored_points уже добавлен в batch UPDATE
+	// выше (M4, PASS-6) — здесь только scored_ids.
 	if len(scoredIDs) > 0 {
 		if markErr := tx.Model(&game.GamePassing{}).
 			Where("id IN ?", scoredIDs).
@@ -555,6 +575,26 @@ func pointsForPlace(t *Tournament, p game.GamePassing) int {
 		}
 	}
 	return points
+}
+
+// scoredPointsForTournament (DEEP-REVIEW PASS-6 M4): возвращает ТОЧНО
+// начисленное количество очков за прохождение в указанном турнире.
+// Значение берётся из tournament_scored_points по индексу tournament_id
+// в tournament_scored_ids (параллельные массивы, заполняются при начислении).
+// Fallback: если данных нет (старые записи до миграции 000065) — пересчёт
+// по текущей конфигурации (pointsForPlace).
+func scoredPointsForTournament(p game.GamePassing, tournamentID uint) int {
+	for i, tid := range p.TournamentScoredIDs {
+		if uint64(tid) == uint64(tournamentID) {
+			if i < len(p.TournamentScoredPoints) {
+				return int(p.TournamentScoredPoints[i])
+			}
+			// Массив очков короче (запись до миграции) — неизвестно; безопасно
+			// вернуть 0 (не списываем больше, чем начислено).
+			return 0
+		}
+	}
+	return 0
 }
 
 func (s *TournamentService) GetLeaderboard(ctx context.Context, tournamentID uint) ([]TournamentResult, error) {
