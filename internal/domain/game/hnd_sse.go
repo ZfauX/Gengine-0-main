@@ -313,15 +313,18 @@ func (m *SSEManager) UnregisterSession(session *SSESession) {
 func (m *SSEManager) Broadcast(gameID uint, eventType string, data any) {
 	// Захватываем mu ДО wg.Add, чтобы не конфликтовать с Stop() (wg.Wait).
 	// Проверяем stopped — после Stop() новые Broadcast не регистрируются.
-	m.mu.Lock()
+	// P-M1 (PASS-8): RLock вместо Lock — broadcast'и РАЗНЫХ игр больше не
+	// сериализуются друг с другом (только чтение sessions + копирование);
+	// записи (register/unregister/Stop) по-прежнему взаимоисключаются с чтением.
+	m.mu.RLock()
 	if m.stopped {
-		m.mu.Unlock()
+		m.mu.RUnlock()
 		return
 	}
 	m.wg.Add(1)
 	sessions := make([]*SSESession, len(m.sessions[gameID]))
 	copy(sessions, m.sessions[gameID])
-	m.mu.Unlock()
+	m.mu.RUnlock()
 	defer m.wg.Done()
 
 	payload := map[string]any{

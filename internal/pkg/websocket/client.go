@@ -180,32 +180,50 @@ func HandleWebSocketWithContext(ctx context.Context, client *Client) {
 	// Ограничение размера входящих сообщений (32KB)
 	client.Conn.SetReadLimit(32 * 1024)
 
-	// Цикл чтения с поддержкой отмены контекста
+	// M1 (PASS-8): read loop в отдельной горутине с каналом (паттерн ChatWS).
+	// Раньше select с default наблюдал ctx.Done()/client.done только между
+	// блокирующими ReadMessage() (до 60с по read-deadline) — при тихом обрыве
+	// соединения горутины жили до таймаута чтения. Теперь выход немедленный.
+	type wsReadMsg struct {
+		err error
+	}
+	readCh := make(chan wsReadMsg, 1)
+	go func() {
+		for {
+			if err := client.Conn.SetReadDeadline(time.Now().Add(websocketReadDeadline)); err != nil {
+				log.Debug().Err(err).Str("client_id", client.ID).Msg("HandleWebSocket: set read deadline failed")
+			}
+			_, _, err := client.Conn.ReadMessage()
+			select {
+			case readCh <- wsReadMsg{err: err}:
+			case <-ctx.Done():
+				return
+			}
+			if err != nil {
+				return
+			}
+			client.RecordActivity()
+		}
+	}()
+
 	for {
 		select {
 		case <-ctx.Done():
 			log.Debug().Str("client_id", client.ID).Msg("HandleWebSocketWithContext: context canceled, stopping read loop")
+			_ = client.Conn.SetReadDeadline(time.Now())
 			return
 		case <-client.done:
 			log.Debug().Str("client_id", client.ID).Msg("HandleWebSocketWithContext: client closed")
+			_ = client.Conn.SetReadDeadline(time.Now())
 			return
-		default:
-		}
-
-		// ReadMessage будет ждать до readTimeout, затем вернёт ошибку,
-		// что позволит циклу проверить ctx.Done()
-		if err := client.Conn.SetReadDeadline(time.Now().Add(websocketReadDeadline)); err != nil {
-			log.Debug().Err(err).Str("client_id", client.ID).Msg("HandleWebSocket: set read deadline failed")
-		}
-		_, _, err := client.Conn.ReadMessage()
-		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Error().Err(err).Str("client_id", client.ID).Msg("HandleWebSocketWithContext: read error")
+		case rmsg := <-readCh:
+			if rmsg.err != nil {
+				if websocket.IsUnexpectedCloseError(rmsg.err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+					log.Error().Err(rmsg.err).Str("client_id", client.ID).Msg("HandleWebSocketWithContext: read error")
+				}
+				return
 			}
-			return
 		}
-		// Обновляем активность при чтении сообщения
-		client.RecordActivity()
 	}
 }
 

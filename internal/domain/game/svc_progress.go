@@ -543,9 +543,8 @@ func checkAutoStartGamesImpl(db *gorm.DB, ctx context.Context) {
 				}
 				return err
 			}
-			if firstLevel.ID == 0 {
-				return ErrNoLevels
-			}
+			// L2 (PASS-8): проверка firstLevel.ID == 0 недостижима — GORM
+			// с Limit(1) уже возвращает ErrRecordNotFound при отсутствии строк.
 
 			now := time.Now()
 			// P-2 (pass 38): создаём прогрессы пачкой (CreateInBatches) с явным

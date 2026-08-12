@@ -139,7 +139,8 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	gamePlayService := wrapGamePlayService(db, gameRepository, gamePassingRepository, attemptService, monitorService, hub, coAuthorService, sseManager, appCache)
 	teamRepository := repos.Team
 	gameAdminService := wrapGameAdminService(db, teamRepository, userRepository, coAuthorService, cfg, sseManager)
-	teamService := wrapTeamService(teamRepository, userRepository)
+	chatRepository := repos.Chat
+	teamService := wrapTeamService(teamRepository, userRepository, chatRepository)
 	levelProgressRepository := repos.LevelProgress
 	levelProgressService := wrapLevelProgressService(db, levelProgressRepository, sseManager, gameService)
 	gamePassingService := wrapGamePassingService(db, gamePassingRepository, teamService, coAuthorService, levelProgressService, hub, monitorService, sseManager)
@@ -176,7 +177,6 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	}
 	followRepository := repos.Follow
 	followService := wrapFollowService(followRepository)
-	chatRepository := repos.Chat
 	chatService := wrapChatService(chatRepository)
 	blackboxRepository := repos.Blackbox
 	blackboxVoteService := wrapBlackboxVoteService(blackboxRepository, coAuthorService, db, cfg)

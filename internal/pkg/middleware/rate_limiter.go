@@ -358,16 +358,48 @@ func LoginRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 // OAuthRateLimit — отдельный бюджет для OAuth redirect/callback (S-44-2, pass 44):
 // раньше OAuth делил ключ "login:"+ip с парольным логином — спам редиректами
 // блокировал и парольный вход с того же IP. Свой ключ развязывает бюджеты.
-// A-02 (pass 45): используем СВОЙ лимитер — раньше код брал loginRateLimiter,
-// и переданный limit=10 игнорировался (применялся login-лимит 5).
+// A-02 (pass 45) + S-M1 (PASS-8): создаём СВОЙ инстанс с переданными
+// window/limit на каждый вызов — раньше брался глобальный oauthRateLimiter,
+// инициализированный с RateLimitLoginRequests (5), и переданный limit
+// (например 10) игнорировался (мёртвый параметр).
 func OAuthRateLimit(window time.Duration, limit int) gin.HandlerFunc {
-	rl := oauthRateLimiter
-	if rl == nil {
-		rl = NewRateLimiter(window, limit)
-	}
+	rl := NewRateLimiter(window, limit)
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
 		result := rl.Allow("oauth:" + ip)
+		setRateLimitHeaders(c, result)
+		if !result.Allowed {
+			respondRateLimitError(c, ErrRateLimitLogin, result)
+			return
+		}
+		c.Next()
+	}
+}
+
+// SearchRateLimit (S-M1, PASS-8): отдельный бюджет для публичного поиска
+// пользователей — раньше /api/users/search делил login:<ip> лимитер с парольным
+// входом (5/5мин), и спам дешёвым поиском блокировал вход всем за NAT.
+func SearchRateLimit(window time.Duration, limit int) gin.HandlerFunc {
+	rl := NewRateLimiter(window, limit)
+	return func(c *gin.Context) {
+		ip := c.ClientIP()
+		result := rl.Allow("search:" + ip)
+		setRateLimitHeaders(c, result)
+		if !result.Allowed {
+			respondRateLimitError(c, ErrRateLimitAPI, result)
+			return
+		}
+		c.Next()
+	}
+}
+
+// WebAuthnRateLimit (S-M1, PASS-8): отдельный бюджет для публичных WebAuthn
+// begin/finish — раньше делил login:<ip> бюджет (спам begin блокировал вход).
+func WebAuthnRateLimit(window time.Duration, limit int) gin.HandlerFunc {
+	rl := NewRateLimiter(window, limit)
+	return func(c *gin.Context) {
+		ip := c.ClientIP()
+		result := rl.Allow("webauthn:" + ip)
 		setRateLimitHeaders(c, result)
 		if !result.Allowed {
 			respondRateLimitError(c, ErrRateLimitLogin, result)

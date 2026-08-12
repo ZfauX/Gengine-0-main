@@ -214,5 +214,11 @@
 ## 📋 Статус
 
 - 3 аудита: ✅ проведены; HIGH/MEDIUM findings — ✅ эмпирически проверены (H1-H3, S-H2, S-M1, P-H1, P-M1).
-- Исправлений в этом проходе: **0** (ревью-проход; список фиксов — в приоритетах выше).
+- **Исправлено в этом проходе (после ревью): 18/18 findings** ✅
+  - H1 tie-break, H2 CSV Flush, H3 DeleteByPrefix race, S-H2 AllowStyles, S-M1 rate-limit бюджеты,
+    M1 WS read-loop, M2 perm-cache инвалидация (wire), M3 VK email, M4 unique-индексы (миграция 000067),
+    M5 клампинг длительности, P-H1 games-view кэш, P-H2 full-preview кэш, P-M1 SSE RLock, P-M2 roomClients кэш,
+    P-M4 LIMIT, P-L1 i18n fast-path, P-L3 token bucket, L1/L2/L3.
+  - Бонус: найден и исправлен предсуществующий флаки-баг `SkipLevelTest` (HasPermission без tx внутри транзакции → HasPermissionTx).
+  - Проверки: build ✅, test-short ✅, test-integration ✅, golangci-lint ✅ (0 issues), E2E 14/14 ✅.
 - Ограничения: аудиторы упёрлись в лимит шагов — не покрыты admin-домен, часть game svc_*, team/tournament/payment полностью, полная инвентаризация шаблонов на XSS, IDOR game/level-маршрутов.

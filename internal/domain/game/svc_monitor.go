@@ -311,7 +311,18 @@ func (s *MonitorService) CalculateResults(ctx context.Context, gameID uint) erro
 		durationMap := make(map[uint]time.Duration)
 		for _, pr := range progresses {
 			if pr.FinishedAt != nil {
-				durationMap[pr.GamePassingID] += pr.FinishedAt.Sub(pr.StartedAt) + time.Duration(pr.PenaltySeconds)*time.Second
+				// M5 (PASS-8): клампим каждую составляющую к >=0 (единая семантика
+				// с GameSnapshot, DEEP-REVIEW MEDIUM #15). Раньше clock-skew
+				// (FinishedAt раньше StartedAt) давал отрицательную сумму в БД.
+				d := pr.FinishedAt.Sub(pr.StartedAt)
+				if d < 0 {
+					d = 0
+				}
+				penalty := time.Duration(pr.PenaltySeconds) * time.Second
+				if penalty < 0 {
+					penalty = 0
+				}
+				durationMap[pr.GamePassingID] += d + penalty
 			}
 		}
 

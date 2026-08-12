@@ -301,7 +301,11 @@ func (s *BlackboxVoteService) CloseVoting(ctx context.Context, sessionID, userID
 		sort.Strings(options)
 		for _, option := range options {
 			count := results[option]
-			if count >= maxVotes {
+			// H1 (PASS-8): строгое > — при равенстве голосов первый
+			// лексикографически вариант остаётся победителем (как обещает
+			// комментарий выше). Раньше `>=` перезаписывал победителя на
+			// последний вариант при ничьей.
+			if count > maxVotes {
 				maxVotes = count
 				winner = option
 			}

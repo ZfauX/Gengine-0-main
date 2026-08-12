@@ -97,14 +97,22 @@ var (
 	monitorPollersMu sync.Mutex
 )
 
-// wsMessageLimiter — простой per-connection token bucket для WS-сообщений.
-// Защищает от спама через один сокет (нет глобального состояния, GC-safe).
+// wsMessageLimiter — per-connection token bucket для WS-сообщений (P-L3, PASS-8).
+// Классический bucket O(1): храним число токенов и время последнего refill,
+// а не переписываем слайс времен на каждое сообщение (раньше O(n) по окну).
 type wsMessageLimiter struct {
-	mu    sync.Mutex
-	limit int
-	// Скользящее окно: храним времена последних сообщений.
+	mu sync.Mutex
+	// limit — ёмкость корзины (макс. сообщений за window).
+	limit  int
 	window time.Duration
-	times  []time.Time
+	// tokens — доступные токены (не более limit).
+	tokens float64
+	// lastRefill — время последнего пополнения токенов.
+	lastRefill time.Time
+}
+
+func newWSMessageLimiter(limit int, window time.Duration) *wsMessageLimiter {
+	return &wsMessageLimiter{limit: limit, window: window, tokens: float64(limit), lastRefill: time.Now()}
 }
 
 // Allow возвращает true, если сообщение можно принять.
@@ -113,21 +121,21 @@ func (l *wsMessageLimiter) Allow() bool {
 	defer l.mu.Unlock()
 
 	now := time.Now()
-	cutoff := now.Add(-l.window)
-
-	// Отбрасываем записи старше окна.
-	kept := l.times[:0]
-	for _, t := range l.times {
-		if t.After(cutoff) {
-			kept = append(kept, t)
+	// Пополняем токены пропорционально прошедшему времени (rate = limit/window).
+	elapsed := now.Sub(l.lastRefill)
+	if elapsed > 0 {
+		rate := float64(l.limit) / float64(l.window)
+		l.tokens += rate * float64(elapsed)
+		if l.tokens > float64(l.limit) {
+			l.tokens = float64(l.limit)
 		}
+		l.lastRefill = now
 	}
-	l.times = kept
 
-	if len(l.times) >= l.limit {
+	if l.tokens < 1 {
 		return false
 	}
-	l.times = append(l.times, now)
+	l.tokens--
 	return true
 }
 
@@ -728,7 +736,7 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 
 	// M5: per-connection rate limit — не более 10 сообщений за 5 секунд
 	// (token bucket, защита от спама/DoS через один сокет).
-	msgLimiter := &wsMessageLimiter{limit: 10, window: 5 * time.Second}
+	msgLimiter := newWSMessageLimiter(10, 5*time.Second)
 
 	// Set read deadline and pong handler to prevent goroutine leaks on client disconnect
 	conn.SetReadLimit(32 * 1024)

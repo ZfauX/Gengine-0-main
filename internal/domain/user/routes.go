@@ -95,8 +95,10 @@ func RegisterRoutes(
 		// WebAuthn login (public)
 		// DEEP-REVIEW PASS-2 (#5): rate-limit на публичные begin/finish —
 		// раньше флуд begin писал сессии и грузил CPU (публичный, CSRF-exempt).
-		authGroup.POST("/webauthn/login/begin", middleware.LoginRateLimit(1*time.Minute, 10), webauthnHandler.BeginLogin)
-		authGroup.POST("/webauthn/login/finish", middleware.LoginRateLimit(1*time.Minute, 10), webauthnHandler.FinishLogin)
+		// S-M1 (PASS-8): отдельный бюджет — раньше делил login:<ip> (спам begin
+		// блокировал парольный вход всем за NAT).
+		authGroup.POST("/webauthn/login/begin", middleware.WebAuthnRateLimit(1*time.Minute, 10), webauthnHandler.BeginLogin)
+		authGroup.POST("/webauthn/login/finish", middleware.WebAuthnRateLimit(1*time.Minute, 10), webauthnHandler.FinishLogin)
 	}
 
 	// Profile routes — require auth
@@ -150,7 +152,8 @@ func RegisterRoutes(
 	{
 		// #9: публичный поиск пользователей — dedicated per-IP лимитер.
 		// M16 (pass 30): используем DI-репозиторий вместо NewGormUserRepo(db).
-		apiR.GET("/users/search", middleware.LoginRateLimit(time.Minute, 20), SearchUsersAPI(userRepo))
+		// S-M1 (PASS-8): SearchRateLimit — отдельный бюджет, не делит login:<ip>.
+		apiR.GET("/users/search", middleware.SearchRateLimit(time.Minute, 20), SearchUsersAPI(userRepo))
 	}
 
 	// Предпочтения пользователя (серверная персонализация)

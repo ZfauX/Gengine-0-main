@@ -54,6 +54,12 @@ func (t *Translator) T(lang Lang, key string) string {
 }
 
 func (t *Translator) TF(lang Lang, key string, args ...any) string {
+	// P-L1 (PASS-8): fast-path без fmt.Sprintf — TF вызывается в шаблонах
+	// тысячи раз на страницу; Sprintf с 0-1 аргументом — дорогой рефлексивный
+	// механизм вместо конкатенации.
+	if len(args) == 0 {
+		return t.T(lang, key)
+	}
 	return fmt.Sprintf(t.T(lang, key), args...)
 }
 

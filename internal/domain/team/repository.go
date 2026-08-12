@@ -385,7 +385,9 @@ func (r *gormInvitationRepo) ListByTeam(ctx context.Context, teamID uint) ([]Inv
 }
 func (r *gormInvitationRepo) ListPendingByUser(ctx context.Context, userID uint) ([]Invitation, error) {
 	var invs []Invitation
-	err := r.db.WithContext(ctx).Preload("Team").Where("user_id = ? AND status = ?", userID, InvitationPending).Find(&invs).Error
+	// P-M4 (PASS-8): защитный LIMIT — у пользователя не может быть неограниченно
+	// много pending-приглашений; раньше unbounded Find грузил всё в память.
+	err := r.db.WithContext(ctx).Preload("Team").Where("user_id = ? AND status = ?", userID, InvitationPending).Limit(500).Find(&invs).Error
 	return invs, err
 }
 func (r *gormInvitationRepo) UpdateStatus(ctx context.Context, id uint, status InvitationStatus) error {

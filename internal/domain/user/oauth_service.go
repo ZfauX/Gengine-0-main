@@ -178,7 +178,9 @@ func (s *OAuthService) Authenticate(ctx context.Context, provider, code, state s
 		}
 	case "vk":
 		// VK возвращает email в токене, получаем имя через users.get
-		emailStr, _ = token.Extra("email").(string)
+		// M3 (PASS-8): email через extraString — VK может вернуть не строку
+		// (число/массив), раньше type-assertion молча терял значение.
+		emailStr = extraString(token.Extra("email"))
 		if emailStr == "" {
 			return nil, stderrors.New("не удалось получить email от VK")
 		}

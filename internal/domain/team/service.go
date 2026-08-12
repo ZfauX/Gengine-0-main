@@ -22,9 +22,21 @@ type TeamService struct {
 	// P0-3 (pass 45): userRepo для проверки супер-админа инсталляции.
 	userRepo TeamUserRepository
 
+	// M2 (PASS-8): необязательный инвалидатор perm-кэша чата при изменении
+	// членства команды (реализуется monitor.ChatRepository через wire).
+	// Определён как локальный интерфейс, чтобы team не зависел от monitor.
+	permInvalidator TeamPermCacheInvalidator
+
 	// P-45-3 (pass 45): throttle метрики «всего участников» — не чаще 1/мин.
 	membersMetricMu   sync.Mutex
 	membersMetricNext time.Time
+}
+
+// TeamPermCacheInvalidator (M2, PASS-8): контракт сброса кэша прав чата для
+// комнат команды. Реализация — monitor.ChatRepository (внедряется через wire),
+// интерфейс объявлен здесь, чтобы не создавать циклическую зависимость.
+type TeamPermCacheInvalidator interface {
+	InvalidateTeamPermCache(ctx context.Context, teamID uint) error
 }
 
 // TeamUserRepository — минимальный контракт для проверки роли (избегаем
@@ -60,6 +72,25 @@ func NewTeamService(teamRepo TeamRepository) *TeamService {
 func (s *TeamService) WithUserRepository(repo TeamUserRepository) *TeamService {
 	s.userRepo = repo
 	return s
+}
+
+// WithPermCacheInvalidator внедряет инвалидатор perm-кэша чата (M2, PASS-8).
+// Вызывается при изменении членства команды, чтобы исключённые участники не
+// могли писать в командные чаты до истечения TTL кэша.
+func (s *TeamService) WithPermCacheInvalidator(inv TeamPermCacheInvalidator) *TeamService {
+	s.permInvalidator = inv
+	return s
+}
+
+// invalidateTeamPermCaches сбрасывает perm-кэш чата всех комнат команды
+// (M2, PASS-8). Ошибка не роняет операцию членства — кэш протухнет сам по TTL.
+func (s *TeamService) invalidateTeamPermCaches(ctx context.Context, teamID uint) {
+	if s.permInvalidator == nil {
+		return
+	}
+	if err := s.permInvalidator.InvalidateTeamPermCache(ctx, teamID); err != nil {
+		log.Warn().Err(err).Uint("team_id", teamID).Msg("team: failed to invalidate chat perm cache")
+	}
 }
 
 // isSuperAdmin проверяет, что пользователь — админ инсталляции.
@@ -201,6 +232,8 @@ func (s *TeamService) RemoveMember(ctx context.Context, teamID, memberID, actorI
 		return err
 	}
 	s.updateTeamMembersTotal(ctx)
+	// M2 (PASS-8): исключённый не должен писать в командные чаты до TTL кэша.
+	s.invalidateTeamPermCaches(ctx, teamID)
 	return nil
 }
 
@@ -219,6 +252,8 @@ func (s *TeamService) LeaveMember(ctx context.Context, teamID, userID uint) erro
 		return err
 	}
 	s.updateTeamMembersTotal(ctx)
+	// M2 (PASS-8): вышедший участник не должен писать в командные чаты.
+	s.invalidateTeamPermCaches(ctx, teamID)
 	return nil
 }
 

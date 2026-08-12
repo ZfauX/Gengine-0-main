@@ -330,7 +330,8 @@ func (r *gormUserRepo) ResetLoginAttemptsIfNeeded(ctx context.Context, userID ui
 // GetByRole returns multiple users by role.
 func (r *gormUserRepo) GetByRole(ctx context.Context, role string) ([]User, error) {
 	var users []User
-	err := r.db.WithContext(ctx).Where("role = ?", role).Find(&users).Error
+	// P-M4 (PASS-8): защитный LIMIT — не грузить всех пользователей роли.
+	err := r.db.WithContext(ctx).Where("role = ?", role).Limit(1000).Find(&users).Error
 	return users, err
 }
 
@@ -412,7 +413,8 @@ func (r *gormUserRepo) List(ctx context.Context, role string) ([]User, error) {
 	if role != "" {
 		query = query.Where("role = ?", role)
 	}
-	err := query.Find(&users).Error
+	// P-M4 (PASS-8): защитный LIMIT — не грузить всю таблицу users.
+	err := query.Limit(1000).Find(&users).Error
 	return users, err
 }
 

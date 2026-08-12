@@ -296,7 +296,9 @@ func TestBlackboxVoteService_StartVoteAndClose(t *testing.T) {
 
 	winner, err := voteSvc.CloseVoting(context.Background(), 1, author.ID)
 	require.NoError(t, err)
-	assert.Contains(t, []string{"optA", "optB"}, winner)
+	// H1 (PASS-8): при равенстве голосов побеждает лексикографически ПЕРВЫЙ
+	// вариант (optA < optB). Раньше `>=` отдавал optB.
+	assert.Equal(t, "optA", winner)
 }
 
 func TestBlackboxVoteService_DuplicateVote(t *testing.T) {

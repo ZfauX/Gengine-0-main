@@ -204,13 +204,11 @@ func (s *GamePlayService) SubmitCode(ctx context.Context, passingID, userID uint
 	// Отправляем обновления ПОСЛЕ коммита транзакции.
 	// Тяжёлый пересчёт снапшота и результатов — в дебаунс-воркере (S3).
 	// В тестах воркер не установлен → синхронный fallback.
-	if result != nil && result.Attempt != nil {
-		if result.GameID != 0 {
-			s.broadcastLevelComplete(savedGameID, passingID, savedLevelID)
-		}
-		if result.GameID != 0 {
-			s.scheduleSnapshot(result.GameID)
-		}
+	if result != nil && result.Attempt != nil && result.GameID != 0 {
+		// L1 (PASS-8): дублированное условие убрано — оба действия зависят
+		// от одного флага GameID != 0.
+		s.broadcastLevelComplete(savedGameID, passingID, savedLevelID)
+		s.scheduleSnapshot(result.GameID)
 	}
 
 	return result, nil
@@ -632,7 +630,12 @@ func (s *GamePlayService) SkipLevelTest(ctx context.Context, passingID, userID u
 			return ErrTestingOnly
 		}
 
-		ok, permErr := s.coAuthorSvc.HasPermission(ctx, passing.GameID, userID, RoleModerator)
+		// PASS-8: используем tx-вариант HasPermissionTx — раньше HasPermission
+		// с внешним ctx шёл на другое соединение пула (вне транзакции), что
+		// давало флаки «record not found» в изолированных схемах тестов и
+		// потенциально неконсистентное чтение в проде (вне транзакционного
+		// снапшота).
+		ok, permErr := s.coAuthorSvc.HasPermissionTx(ctx, tx, passing.GameID, userID, RoleModerator)
 		if permErr != nil {
 			return fmt.Errorf("ошибка проверки прав: %w", permErr)
 		}

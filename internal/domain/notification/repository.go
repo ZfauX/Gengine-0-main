@@ -132,7 +132,8 @@ func (r *gormNotificationRepo) DeleteOldRead(ctx context.Context, cutoff time.Ti
 
 func (r *gormNotificationRepo) ListPushSubscriptions(ctx context.Context, userID uint) ([]user.PushSubscription, error) {
 	var subs []user.PushSubscription
-	err := r.db.WithContext(ctx).Where("user_id = ?", userID).Find(&subs).Error
+	// P-M4 (PASS-8): защитный LIMIT — подписок на push у пользователя немного.
+	err := r.db.WithContext(ctx).Where("user_id = ?", userID).Limit(100).Find(&subs).Error
 	return subs, err
 }
 

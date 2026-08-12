@@ -83,3 +83,16 @@ func TestSanitizeRichText_RemovesScripts(t *testing.T) {
 	assert.NotContains(t, out, "javascript:")
 	assert.Contains(t, out, "Текст")
 }
+
+// S-H2 (PASS-8): опасные CSS-свойства в style-атрибуте удаляются (AllowStyles
+// с whitelist), а безопасные — сохраняются. Раньше сырой style пропускался.
+func TestSanitizeRichText_RemovesDangerousCSS(t *testing.T) {
+	in := `<p style="color:red">Безопасно</p><div style="position:fixed;z-index:9999;top:0;left:0;width:100%;height:100%;background:#fff">Оверлей</div><span style="background:url(https://evil.example/track)">Трекинг</span>`
+	out := SanitizeRichText(in)
+	// Безопасное свойство сохраняется (bluemonday нормализует пробел после `:`).
+	assert.Contains(t, out, "color: red")
+	// Опасные свойства удаляются (позиционирование/фон-URL).
+	assert.NotContains(t, out, "position:fixed")
+	assert.NotContains(t, out, "z-index")
+	assert.NotContains(t, out, "url(")
+}

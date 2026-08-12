@@ -239,13 +239,17 @@ func (c *Cache) DeleteByPrefix(prefix string) {
 	}
 
 	c.prefixLock.Lock()
-	delete(c.prefixKeys, prefix)
+	// H3 (PASS-8): НЕ удаляем всю запись prefixKeys[prefix] — между копированием
+	// ключей (RLock выше) и этой секцией конкурентный Set мог добавить НОВЫЙ
+	// ключ в prefixKeys[prefix]; delete всей записи стёр бы его трекинг, и ключ
+	// остался бы в LRU навсегда без инвалидации (stale-кэш). Достаточно удалить
+	// каждый СТАРЫЙ ключ из всех его префиксов через keyPrefixes.
 	for _, key := range keysCopy {
 		if keyPrefixes, ok := c.keyPrefixes[key]; ok {
-			delete(keyPrefixes, prefix)
-			if len(keyPrefixes) == 0 {
-				delete(c.keyPrefixes, key)
+			for p := range keyPrefixes {
+				delete(c.prefixKeys[p], key)
 			}
+			delete(c.keyPrefixes, key)
 		}
 	}
 	c.prefixLock.Unlock()

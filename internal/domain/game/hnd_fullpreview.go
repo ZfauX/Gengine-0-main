@@ -2,9 +2,12 @@
 package game
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
+	"sync"
+	"time"
 
 	"gengine-0/internal/domain/level"
 	apperr "gengine-0/internal/pkg/errors"
@@ -20,7 +23,23 @@ import (
 type FullPreviewHandler struct {
 	gameService  GameServiceInterface
 	levelService *level.LevelService
+
+	// previewCache (P-H2, PASS-8): короткий TTL-кэш (10с) списка уровней с
+	// вопросами/ответами для предпросмотра. ListWithQuestions грузит весь граф
+	// (Levels→Questions→Answers) — тысячи строк на запрос; автор/соавтор часто
+	// открывает предпросмотр повторно при редактировании. Устаревание ≤10с
+	// приемлемо (данные меняются редко, при сохранении правок).
+	previewMu    sync.Mutex
+	previewCache map[uint]previewCacheEntry
 }
+
+type previewCacheEntry struct {
+	levels  []level.Level
+	expires time.Time
+}
+
+// previewCacheTTL — время жизни кэша предпросмотра.
+const previewCacheTTL = 10 * time.Second
 
 // NewFullPreviewHandler создаёт новый FullPreviewHandler.
 func NewFullPreviewHandler(
@@ -30,6 +49,7 @@ func NewFullPreviewHandler(
 	return &FullPreviewHandler{
 		gameService:  gameService,
 		levelService: levelService,
+		previewCache: make(map[uint]previewCacheEntry),
 	}
 }
 
@@ -87,7 +107,7 @@ func (h *FullPreviewHandler) FullPreview(c *gin.Context) {
 		return
 	}
 
-	levels, err := h.levelService.ListWithQuestions(c.Request.Context(), uint(gameID))
+	levels, err := h.getPreviewLevels(c.Request.Context(), uint(gameID))
 	if err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Msg("FullPreview: failed to load levels")
 		appErr := apperr.Wrap(err, "FullPreview: failed to load levels")
@@ -124,4 +144,28 @@ func (h *FullPreviewHandler) FullPreview(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": result})
+}
+
+// getPreviewLevels (P-H2, PASS-8): загрузка уровней с вопросами/ответами
+// для предпросмотра с коротким TTL-кэшем. Сырые уровни (включая коды ответов)
+// живут только в памяти сервера; клиенту коды уходят только при isManager
+// (фильтрация ниже в FullPreview).
+func (h *FullPreviewHandler) getPreviewLevels(ctx context.Context, gameID uint) ([]level.Level, error) {
+	now := time.Now()
+	h.previewMu.Lock()
+	if e, ok := h.previewCache[gameID]; ok && now.Before(e.expires) {
+		h.previewMu.Unlock()
+		return e.levels, nil
+	}
+	h.previewMu.Unlock()
+
+	levels, err := h.levelService.ListWithQuestions(ctx, gameID)
+	if err != nil {
+		return nil, err
+	}
+
+	h.previewMu.Lock()
+	h.previewCache[gameID] = previewCacheEntry{levels: levels, expires: now.Add(previewCacheTTL)}
+	h.previewMu.Unlock()
+	return levels, nil
 }

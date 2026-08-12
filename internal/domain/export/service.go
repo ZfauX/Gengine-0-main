@@ -250,7 +250,6 @@ func (s *ExportService) ExportTeamResultsToCSV(ctx context.Context, gameID, team
 
 	// Записываем в CSV
 	csvWriter := csv.NewWriter(w)
-	defer csvWriter.Flush()
 
 	if err := csvWriter.Write([]string{"Уровень", "Статус", "Начало", "Завершение", "Попытки", "Штраф (сек)"}); err != nil {
 		return fmt.Errorf("ошибка записи CSV-заголовка: %w", err)
@@ -269,7 +268,10 @@ func (s *ExportService) ExportTeamResultsToCSV(ctx context.Context, gameID, team
 		}
 	}
 
-	return nil
+	// H2 (PASS-8): проверяем ошибку Flush (единый паттерн с ExportGameToCSV) —
+	// раньше defer-флуш глотал ошибку и клиент получал «успех» с неполным файлом.
+	csvWriter.Flush()
+	return csvWriter.Error()
 }
 
 // ImportGameFromCSV парсит CSV и создаёт уровни/вопросы/ответы для указанной игры.
@@ -397,7 +399,6 @@ func (s *ExportService) ExportResultsToCSV(ctx context.Context, gameID uint, w i
 	}
 
 	csvWriter := csv.NewWriter(w)
-	defer csvWriter.Flush()
 
 	if err := csvWriter.Write([]string{"Место", "Команда", "Общее время", "Попыток"}); err != nil {
 		return fmt.Errorf("ошибка записи CSV-заголовка: %w", err)
@@ -425,7 +426,9 @@ func (s *ExportService) ExportResultsToCSV(ctx context.Context, gameID uint, w i
 			return fmt.Errorf("ошибка записи CSV-строки: %w", err)
 		}
 	}
-	return nil
+	// H2 (PASS-8): проверяем ошибку Flush (единый паттерн с ExportGameToCSV).
+	csvWriter.Flush()
+	return csvWriter.Error()
 }
 
 // ExportGameToPDF генерирует PDF-файл со всеми уровнями, вопросами и ответами игры.

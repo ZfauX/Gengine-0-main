@@ -100,8 +100,8 @@ func wrapTournamentService(db *gorm.DB, tournamentRepo tournament.TournamentRepo
 	return tournament.NewTournamentService(db, tournamentRepo, tournamentGameRepo, tournamentTeamRepo, tournamentResultRepo, teamService, cfg).WithCache(cacheStore)
 }
 
-func wrapTeamService(teamRepo team.TeamRepository, userRepo user.UserRepository) *team.TeamService {
-	return team.NewTeamService(teamRepo).WithUserRepository(userRepo)
+func wrapTeamService(teamRepo team.TeamRepository, userRepo user.UserRepository, chatRepo monitor.ChatRepository) *team.TeamService {
+	return team.NewTeamService(teamRepo).WithUserRepository(userRepo).WithPermCacheInvalidator(chatRepo)
 }
 
 func wrapInvitationService(invRepo team.InvitationRepository, teamRepo team.TeamRepository, cfg *config.Config) *team.InvitationService {

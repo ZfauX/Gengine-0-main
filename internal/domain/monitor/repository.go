@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -51,6 +52,11 @@ type ChatRepository interface {
 	// комнаты. WS-соединение загружает комнату один раз при подключении —
 	// если получатель принял чат ПОСЛЕ открытия сокета, стейт устаревает.
 	GetAcceptedStatus(ctx context.Context, roomID uint) (bool, error)
+	// InvalidateTeamPermCache (M2, PASS-8): сбрасывает perm-кэш права на
+	// отправку для ВСЕХ комнат команды (вызывается при изменении членства —
+	// удалении участника/смене капитана). Раньше кэш жил до TTL 5с, и
+	// исключённый из команды продолжал писать в чат до 5 секунд.
+	InvalidateTeamPermCache(ctx context.Context, teamID uint) error
 }
 
 // BlackboxRepository определяет контракт для работы с голосованиями.
@@ -556,6 +562,32 @@ func (r *gormChatRepo) GetAcceptedStatus(ctx context.Context, roomID uint) (bool
 		return false, err
 	}
 	return accepted, nil
+}
+
+// InvalidateTeamPermCache (M2, PASS-8): сбрасывает perm-кэш всех комнат команды.
+// Вызывается TeamService при изменении членства (RemoveMember/LeaveMember/смена
+// капитана) — иначе исключённый участник продолжал писать в чат до TTL (5с).
+func (r *gormChatRepo) InvalidateTeamPermCache(ctx context.Context, teamID uint) error {
+	var roomIDs []uint
+	if err := r.db.WithContext(ctx).Model(&ChatRoom{}).
+		Where("team_id = ?", teamID).
+		Pluck("id", &roomIDs).Error; err != nil {
+		return err
+	}
+	if len(roomIDs) == 0 {
+		return nil
+	}
+	r.permCacheMu.Lock()
+	for _, roomID := range roomIDs {
+		prefix := strconv.FormatUint(uint64(roomID), 10) + ":"
+		for k := range r.permCache {
+			if strings.HasPrefix(k, prefix) {
+				delete(r.permCache, k)
+			}
+		}
+	}
+	r.permCacheMu.Unlock()
+	return nil
 }
 
 type gormBlackboxRepo struct{ db *gorm.DB }

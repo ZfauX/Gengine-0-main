@@ -47,6 +47,12 @@ type ProfileService struct {
 	gamesCache     map[uint]gamesCacheEntry
 	gamesLastSweep time.Time
 
+	// gamesViewCache (P-H1, PASS-8): кэш предпочтения вида списка игр (60с).
+	// Раньше GetGamesView делал отдельный SELECT на каждый просмотр /games —
+	// самый горячий авторизованный маршрут. Значение меняется редко (SaveGamesView).
+	gamesViewMu    sync.Mutex
+	gamesViewCache map[uint]gamesViewCacheEntry
+
 	// sfGroup (PASS-6 P5): singleflight для stats/games — на TTL-истечении
 	// популярного профиля не все запросы бьют в БД одновременно (stampede).
 	sfGroup singleflight.Group
@@ -62,12 +68,23 @@ type gamesCacheEntry struct {
 	expires time.Time
 }
 
+// gamesViewCacheEntry (P-H1, PASS-8): значение + TTL.
+type gamesViewCacheEntry struct {
+	view    string
+	expires time.Time
+}
+
 // statsCacheTTL — время жизни кэша статистики профиля и последних игр.
 const statsCacheTTL = 60 * time.Second
 
 // NewProfileService создаёт новый ProfileService.
 func NewProfileService(repo ProfileRepository) *ProfileService {
-	return &ProfileService{repo: repo, statsCache: make(map[uint]statsCacheEntry), gamesCache: make(map[uint]gamesCacheEntry)}
+	return &ProfileService{
+		repo:           repo,
+		statsCache:     make(map[uint]statsCacheEntry),
+		gamesCache:     make(map[uint]gamesCacheEntry),
+		gamesViewCache: make(map[uint]gamesViewCacheEntry),
+	}
 }
 
 // GetPublicProfileStats загружает статистику пользователя (с TTL-кэшем, M11).
@@ -188,8 +205,24 @@ func (s *ProfileService) SaveThemeSettings(ctx context.Context, userID uint, ts 
 }
 
 // GetGamesView возвращает сохранённое предпочтение вида списка игр.
+// P-H1 (PASS-8): TTL-кэш 60с — раньше отдельный SELECT на каждый просмотр /games.
 func (s *ProfileService) GetGamesView(ctx context.Context, userID uint) (string, error) {
-	return s.repo.GetGamesView(ctx, userID)
+	now := time.Now()
+	s.gamesViewMu.Lock()
+	if e, ok := s.gamesViewCache[userID]; ok && now.Before(e.expires) {
+		s.gamesViewMu.Unlock()
+		return e.view, nil
+	}
+	s.gamesViewMu.Unlock()
+
+	view, err := s.repo.GetGamesView(ctx, userID)
+	if err != nil {
+		return "table", err
+	}
+	s.gamesViewMu.Lock()
+	s.gamesViewCache[userID] = gamesViewCacheEntry{view: view, expires: now.Add(statsCacheTTL)}
+	s.gamesViewMu.Unlock()
+	return view, nil
 }
 
 // SaveGamesView сохраняет предпочтение вида списка игр.
@@ -199,7 +232,14 @@ func (s *ProfileService) SaveGamesView(ctx context.Context, userID uint, view st
 	if view != "table" && view != "cards" {
 		return fmt.Errorf("недопустимое значение вида списка игр")
 	}
-	return s.repo.SaveGamesView(ctx, userID, view)
+	if err := s.repo.SaveGamesView(ctx, userID, view); err != nil {
+		return err
+	}
+	// P-H1 (PASS-8): инвалидируем кэш при сохранении.
+	s.gamesViewMu.Lock()
+	delete(s.gamesViewCache, userID)
+	s.gamesViewMu.Unlock()
+	return nil
 }
 
 // GetNotifyGameDays возвращает период уведомлений о предстоящих играх (D-1).

@@ -21,6 +21,12 @@ type RoomHub struct {
 	wg         sync.WaitGroup
 	stopped    bool
 
+	// roomClients (P-M2, PASS-8): кэш слайса клиентов комнаты для рассылки.
+	// dispatchToRoom больше не аллоцирует слайс на КАЖДОЕ сообщение чата.
+	// Инвалидируется (delete) при любой мутации комнаты (register/unregister/
+	// удаление закрытого клиента/удаление пустой комнаты).
+	roomClients map[string][]*Client
+
 	// P-7 (pass 39): per-room очереди и воркеры — рассылка в одной комнате
 	// не блокирует рассылку в других (раньше runLoop сериализовал все
 	// broadcast'ы одной горутиной; на больших комнатах это тормозило
@@ -76,6 +82,7 @@ func (h *RoomHub) RoomUserIDs(roomID string) []uint {
 func NewRoomHub() *RoomHub {
 	return &RoomHub{
 		rooms:         make(map[string]map[*Client]bool),
+		roomClients:   make(map[string][]*Client),
 		register:      make(chan *Client), // unbuffered — синхронная регистрация
 		unregister:    make(chan *Client, hubChanCapacity),
 		broadcast:     make(chan *Message, hubChanCapacity),
@@ -200,6 +207,8 @@ func (h *RoomHub) runLoop() {
 				h.rooms[client.RoomID] = make(map[*Client]bool)
 			}
 			h.rooms[client.RoomID][client] = true
+			// P-M2 (PASS-8): состав комнаты изменился — сбрасываем кэш слайса.
+			delete(h.roomClients, client.RoomID)
 			cb := h.onRoomChange
 			h.mu.Unlock()
 			log.Debug().Str("room", client.RoomID).Str("ip", client.RemoteIP).Msg("WebSocket client registered")
@@ -220,6 +229,8 @@ func (h *RoomHub) runLoop() {
 			h.decConnectionNoLock(client.RemoteIP)
 			if room, ok := h.rooms[client.RoomID]; ok {
 				delete(room, client)
+				// P-M2 (PASS-8): состав изменился — сбрасываем кэш слайса.
+				delete(h.roomClients, client.RoomID)
 				if len(room) == 0 {
 					delete(h.rooms, client.RoomID)
 					// C-1 (pass 40): очередь НЕ закрываем (иначе broadcast может
@@ -279,6 +290,18 @@ func (h *RoomHub) runLoop() {
 // (при Stop) или по idle-таймеру, если комната удалена (нет утечки).
 func (h *RoomHub) roomWorker(roomID string, queue chan *Message) {
 	defer h.roomWorkersWg.Done()
+
+	// L3 (PASS-8): между созданием очереди (в runLoop под Lock) и стартом
+	// воркера комната могла быть удалена (гонка broadcast/удаление). Раньше
+	// воркер жил до idle-таймера (30с) впустую — выходим сразу.
+	h.mu.RLock()
+	_, exists := h.rooms[roomID]
+	h.mu.RUnlock()
+	if !exists {
+		log.Debug().Str("room", roomID).Msg("RoomHub: room worker exiting (room removed before start)")
+		return
+	}
+
 	idleTicker := time.NewTicker(30 * time.Second)
 	defer idleTicker.Stop()
 
@@ -306,7 +329,9 @@ func (h *RoomHub) roomWorker(roomID string, queue chan *Message) {
 	}
 }
 
-// dispatchToRoom копирует клиентов комнаты и рассылает сообщение без удержания лока.
+// dispatchToRoom копирует клиентов комнаты (из кэша слайса, P-M2) и рассылает
+// сообщение без удержания лока. Слайс кэшируется при register/unregister и
+// пересобирается только после удаления закрытых клиентов.
 func (h *RoomHub) dispatchToRoom(roomID string, data []byte) {
 	h.mu.RLock()
 	room, ok := h.rooms[roomID]
@@ -314,15 +339,23 @@ func (h *RoomHub) dispatchToRoom(roomID string, data []byte) {
 		h.mu.RUnlock()
 		return
 	}
-	// Собираем клиентов в слайс (меньше аллокаций, чем map[*Client]bool)
-	clients := make([]*Client, 0, len(room))
-	for client := range room {
-		clients = append(clients, client)
+	clients := h.roomClients[roomID]
+	if clients == nil {
+		// Кэша нет (первая рассылка после мутации) — собираем слайс.
+		clients = make([]*Client, 0, len(room))
+		for client := range room {
+			clients = append(clients, client)
+		}
+		h.roomClients[roomID] = clients
 	}
+	// Копируем заголовок слайса, чтобы итерация шла по снимку; элементы
+	// слайса не мутируются, поэтому безопасно читать без лока после RUnlock.
+	snapshot := clients[:len(clients):len(clients)]
 	h.mu.RUnlock()
 
+	removed := false
 	// Рассылка БЕЗ удержания лока
-	for _, client := range clients {
+	for _, client := range snapshot {
 		if client.IsClosed() {
 			// Удаляем из оригинальной map под локом
 			h.mu.Lock()
@@ -331,6 +364,7 @@ func (h *RoomHub) dispatchToRoom(roomID string, data []byte) {
 				continue
 			}
 			delete(h.rooms[roomID], client)
+			removed = true
 			h.mu.Unlock()
 			continue
 		}
@@ -343,15 +377,20 @@ func (h *RoomHub) dispatchToRoom(roomID string, data []byte) {
 				continue
 			}
 			delete(h.rooms[roomID], client)
+			removed = true
 			h.mu.Unlock()
 		default:
 			log.Debug().Str("room", roomID).Msg("broadcast: client buffer full, dropping message")
 		}
 	}
-	// Перечитываем комнату под lock — локальная room могла стать stale
 	h.mu.Lock()
+	if removed {
+		// Кэш слайса стал stale (удалили закрытых клиентов) — сбрасываем.
+		delete(h.roomClients, roomID)
+	}
 	if current, exists := h.rooms[roomID]; exists && len(current) == 0 {
 		delete(h.rooms, roomID)
+		delete(h.roomClients, roomID)
 		// C-1 (pass 40): очередь НЕ закрываем (send-on-closed panic);
 		// воркер завершится по idle-таймеру.
 		delete(h.roomQueues, roomID)
