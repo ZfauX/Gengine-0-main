@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 // ErrEmailTaken — email уже занят другим пользователем.
@@ -44,6 +46,10 @@ type ProfileService struct {
 	gamesMu        sync.Mutex
 	gamesCache     map[uint]gamesCacheEntry
 	gamesLastSweep time.Time
+
+	// sfGroup (PASS-6 P5): singleflight для stats/games — на TTL-истечении
+	// популярного профиля не все запросы бьют в БД одновременно (stampede).
+	sfGroup singleflight.Group
 }
 
 type statsCacheEntry struct {
@@ -77,9 +83,18 @@ func (s *ProfileService) GetPublicProfileStats(ctx context.Context, userID uint)
 	}
 	s.statsMu.Unlock()
 
-	stats, err := s.repo.GetPublicProfileStats(ctx, userID)
-	if err != nil {
-		return nil, err
+	// P5 (PASS-6): singleflight — на TTL-истечении только один запрос к БД.
+	sfCtx := context.WithoutCancel(ctx)
+	sfKey := fmt.Sprintf("stats:%d", userID)
+	val, sfErr, _ := s.sfGroup.Do(sfKey, func() (any, error) {
+		return s.repo.GetPublicProfileStats(sfCtx, userID)
+	})
+	if sfErr != nil {
+		return nil, sfErr
+	}
+	stats, ok := val.(*UserStats)
+	if !ok {
+		return nil, fmt.Errorf("profile: unexpected stats type")
 	}
 
 	s.statsMu.Lock()
@@ -125,9 +140,18 @@ func (s *ProfileService) GetRecentGames(ctx context.Context, authorID uint) ([]R
 	}
 	s.gamesMu.Unlock()
 
-	games, err := s.repo.GetRecentGames(ctx, authorID)
-	if err != nil {
-		return nil, err
+	// P5 (PASS-6): singleflight для games.
+	sfCtx := context.WithoutCancel(ctx)
+	sfKey := fmt.Sprintf("games:%d", authorID)
+	val, sfErr, _ := s.sfGroup.Do(sfKey, func() (any, error) {
+		return s.repo.GetRecentGames(sfCtx, authorID)
+	})
+	if sfErr != nil {
+		return nil, sfErr
+	}
+	games, ok := val.([]RecentGame)
+	if !ok {
+		return nil, fmt.Errorf("profile: unexpected games type")
 	}
 
 	s.gamesMu.Lock()

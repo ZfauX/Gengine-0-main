@@ -117,7 +117,9 @@ func RegisterRoutes(
 	// DEEP-REVIEW (pass 46): GameRooms не проверял права — любой пользователь
 	// мог перечислить комнаты любой игры (IDOR). Добавлен gameManager.
 	protected.GET("/games/:id/chat/rooms", gameManager, monitorHandler.GameRooms)
-	protected.POST("/games/:id/chat/rooms", gameManager, monitorHandler.CreateRoom)
+	// L7 (PASS-6): rate-limit на создание комнат — менеджер не плодит
+	// неограниченное число комнат (спам/мусор).
+	protected.POST("/games/:id/chat/rooms", gameManager, middleware.CreateRoomRateLimit(1*time.Minute, 20), monitorHandler.CreateRoom)
 
 	// B-7 (pass 45): личный чат 1-на-1.
 	// M5 (PASS-4): rate-limit — раньше любой аутентифицированный создавал

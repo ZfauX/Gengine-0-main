@@ -188,8 +188,11 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 
 	// Add flash message from session — поддерживаем разные ключи (error/success/flash/...)
 	// Хендлеры ставят SetFlash(c, "error"|"success"|"gameplay_error"|"gameplay_hint", msg).
+	// P7 (PASS-6): сессия открывается ОДИН раз — раньше каждый GetFlash делал
+	// sessions.Default(c) (парсинг cookie на каждый ключ).
+	session := sessions.Default(c)
 	for _, key := range []string{"error", "success", "flash", "gameplay_error", "gameplay_hint"} {
-		if flash := GetFlash(c, key); flash != "" {
+		if flash := getFlashFromSession(session, key); flash != "" {
 			data["Flash"] = flash
 			switch key {
 			case "error", "gameplay_error":
@@ -391,6 +394,13 @@ func SetFlash(c *gin.Context, key, value string) {
 // GetFlash читает и удаляет flash-сообщение из сессии.
 func GetFlash(c *gin.Context, key string) string {
 	session := sessions.Default(c)
+	return getFlashFromSession(session, key)
+}
+
+// getFlashFromSession (P7, PASS-6): читает и удаляет flash из УЖЕ открытой
+// сессии — для циклов по нескольким ключам (render.Page) не парсим cookie
+// на каждый ключ.
+func getFlashFromSession(session sessions.Session, key string) string {
 	val, ok := session.Get(key).(string)
 	if !ok {
 		return ""

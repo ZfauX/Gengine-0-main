@@ -399,6 +399,22 @@ func PersonalChatRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 	}
 }
 
+// CreateRoomRateLimit (DEEP-REVIEW PASS-6 L7): per-USER лимит на создание
+// комнат чата — менеджер не должен плодить неограниченное число комнат.
+func CreateRoomRateLimit(window time.Duration, limit int) gin.HandlerFunc {
+	rl := NewRateLimiter(window, limit)
+	return func(c *gin.Context) {
+		userID := c.GetUint("userID")
+		result := rl.Allow(fmt.Sprintf("create_room:%d", userID))
+		setRateLimitHeaders(c, result)
+		if !result.Allowed {
+			respondRateLimitError(c, ErrRateLimitLogin, result)
+			return
+		}
+		c.Next()
+	}
+}
+
 var oauthRateLimiter *RateLimiter
 
 func InitOAuthRateLimiter(window time.Duration, limit int) {
