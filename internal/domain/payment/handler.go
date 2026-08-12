@@ -138,6 +138,8 @@ func (h *PaymentHandler) Webhook(c *gin.Context) {
 	//  - ErrWebhookInvalid / ErrWebhookUntrustedIP: 4xx — ретраить бессмысленно
 	//    (ЮKassa перестанет долбить неподтверждённый платёж);
 	//  - ErrWebhookUnauthorized (M1): 401 — нет/неверная подпись;
+	//  - ErrWebhookEventMismatch / ErrWebhookAmountMismatch (L3, PASS-5): 409 —
+	//    несовпадение event/суммы, ретраить бессмысленно (иначе 500 → вечные ретраи);
 	//  - прочие (временные ошибки ЮKassa/БД): 500 — ЮKassa будет ретраить,
 	//    а алерт в логе уровня error позволит заметить проблему.
 	switch {
@@ -152,6 +154,10 @@ func (h *PaymentHandler) Webhook(c *gin.Context) {
 	case errors.Is(err, ErrWebhookUntrustedIP):
 		log.Error().Err(err).Str("ip", remoteIP).Msg("PaymentHandler.Webhook: untrusted IP (no retry)")
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	case errors.Is(err, ErrWebhookEventMismatch), errors.Is(err, ErrWebhookAmountMismatch):
+		log.Error().Err(err).Str("ip", remoteIP).Msg("PaymentHandler.Webhook: event/amount mismatch (no retry)")
+		c.AbortWithStatusJSON(http.StatusConflict, gin.H{"error": "mismatch"})
 		return
 	default:
 		log.Error().Err(err).Str("ip", remoteIP).Msg("PaymentHandler.Webhook: rejected, YooKassa will retry")

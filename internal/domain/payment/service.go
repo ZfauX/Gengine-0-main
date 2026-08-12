@@ -342,6 +342,21 @@ func (s *PaymentService) createAtYooKassa(ctx context.Context, p *Payment, descr
 	return p, confirmationURL, nil
 }
 
+// webhookEventStatus (L3, PASS-5): маппит event из тела вебхука на ожидаемый
+// статус API. Пустая строка — неизвестный event (не проверяем).
+func webhookEventStatus(event string) string {
+	switch event {
+	case "payment.succeeded":
+		return "succeeded"
+	case "payment.canceled":
+		return "canceled"
+	case "payment.waiting_for_capture":
+		return "waiting_for_capture"
+	default:
+		return ""
+	}
+}
+
 // verifyWebhookAuth проверяет Authorization заголовок вебхука ЮKassa, ЕСЛИ он
 // присутствует (DEEP-REVIEW PASS-4 H1).
 //
@@ -422,6 +437,12 @@ func (s *PaymentService) HandleWebhook(ctx context.Context, remoteIP, authHeader
 	}
 	status, _ := remote["status"].(string)
 
+	// L3 (PASS-5): сверяем event из тела вебхука с фактическим статусом из API.
+	// Несовпадение = подделка/устаревшее уведомление — отклоняем (4xx, без ретраев).
+	if expected := webhookEventStatus(notif.Event); expected != "" && expected != status {
+		return fmt.Errorf("%w: event=%q but API status=%q", ErrWebhookEventMismatch, notif.Event, status)
+	}
+
 	local, err := s.repo.GetByPaymentID(ctx, paymentID)
 	if err != nil {
 		return fmt.Errorf("webhook: payment not found: %w", err)
@@ -444,7 +465,9 @@ func (s *PaymentService) HandleWebhook(ctx context.Context, remoteIP, authHeader
 				Str("currency", local.Currency).
 				Interface("remote_amount", remote["amount"]).
 				Msg("webhook: amount/currency mismatch, rejecting")
-			return fmt.Errorf("webhook: amount/currency mismatch for payment %s", paymentID)
+			// L3 (PASS-5): sentinel → handler вернёт 4xx, ЮKassa перестанет
+			// ретраить (раньше 500 → вечные ретраи + флуд API/логов).
+			return fmt.Errorf("%w: payment %s", ErrWebhookAmountMismatch, paymentID)
 		}
 		if err := s.repo.UpdateStatus(ctx, local.ID, StatusSucceeded); err != nil {
 			return err
