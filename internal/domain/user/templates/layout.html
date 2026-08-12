@@ -343,7 +343,15 @@
                             if (!options.headers.has('X-CSRF-TOKEN')) options.headers.set('X-CSRF-TOKEN', token);
                         } else {
                             var headers = Object.assign({}, options.headers || {});
-                            if (!headers['X-CSRF-TOKEN'] && !headers['x-csrf-token']) {
+                            // PASS-7: проверка заголовка CSRF без учёта регистра ключа.
+                            // Раньше ловились только `X-CSRF-TOKEN` и `x-csrf-token`,
+                            // а `X-CSRF-Token` (верблюжий регистр — chat-global.html)
+                            // проходил мимо: добавлялся ВТОРОЙ токен → gorilla/csrf
+                            // видел `token, token` → 403 «CSRF token mismatch».
+                            var hasCsrf = Object.keys(headers).some(function(k) {
+                                return k.toLowerCase() === 'x-csrf-token';
+                            });
+                            if (!hasCsrf) {
                                 headers['X-CSRF-TOKEN'] = token;
                             }
                             options.headers = headers;

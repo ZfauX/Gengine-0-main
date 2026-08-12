@@ -79,7 +79,31 @@
 - `go test -short ./...` ✅
 - `go test -tags=integration ./internal/domain/...` ✅
 - `golangci-lint run ./...` ✅ (0 issues)
+- `make build` (CSS + ldflags) ✅
+- E2E (Playwright, :8081, БД gengine_e2e) — 14/14 ✅
 - Новые тесты: monitor H1, tournament H2, level L5, payment L6 — ✅
+
+## 🐛 Найдено при настройке E2E (закрытые хвосты)
+
+### E1. CSRF-дублирование заголовка `X-CSRF-Token` (критично для fetch-форм) 🔍✅
+- **Файл**: `internal/domain/user/templates/layout.html` (глобальный fetch-перехватчик).
+- **Проблема**: проверка наличия CSRF-заголовка ловила только `X-CSRF-TOKEN` и `x-csrf-token`, но НЕ `X-CSRF-Token` (верблюжий регистр — использует chat-global.html). В результате добавлялся ВТОРОЙ токен: `X-CSRF-Token: token, token` → gorilla/csrf → 403 «CSRF token mismatch». Ломало accept личного чата (и любой fetch с `X-CSRF-Token`).
+- **Фикс**: ✅ регистронезависимая проверка ключей (`toLowerCase() === 'x-csrf-token'`).
+- **Валидация**: E2E `personal chat: recipient accepts consent` — accept возвращает 200.
+
+### E2. Inline-скрипт чата падал до загрузки app.js (defer) 🔍✅
+- **Файл**: `internal/domain/monitor/templates/chat-global.html`.
+- **Проблема**: app.js подключён с `defer`, а inline-скрипт чата выполнялся сразу при парсинге — `window.createReconnectingWebSocket is not a function` → кнопка «Принять» и отправка сообщений не работали у реальных пользователей (в layout.html для initWebSocket уже использовался DOMContentLoaded, а chat-global.html — нет).
+- **Фикс**: ✅ инициализация на `DOMContentLoaded` (с fallback `readyState !== 'loading'`).
+- **Валидация**: E2E-тесты двух пользователей — 3/3 ✅.
+
+### E3. `APP_ENV_FILE` для изолированного env E2E 🔍✅
+- **Файл**: `cmd/server/main.go`.
+- **Проблема**: godotenv.Load() читал только `.env`; при E2E-запуске отсутствующие в `.env.e2e` ключи (TLS_*, TRUSTED_PROXIES) подхватывались из `.env` → `secure=true` → CSRF-кука Secure → формы по HTTP получали 403.
+- **Фикс**: ✅ поддержка `APP_ENV_FILE` (по умолчанию `.env`); E2E запускается с `APP_ENV_FILE=.env.e2e`.
+
+### E4. `DEEP_REVIEW.md` — битая кодировка 🔍✅
+- Корневой файл был в CP866; перекодирован в UTF-8.
 
 ## 🔬 pprof-результаты (PASS 7)
 

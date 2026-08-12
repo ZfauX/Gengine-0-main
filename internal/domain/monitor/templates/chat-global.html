@@ -37,6 +37,12 @@
 
 <script nonce="{{.csp_nonce}}">
 (function() {
+    // PASS-7: app.js подключён с `defer` — createReconnectingWebSocket и
+    // showToast определены только ПОСЛЕ парсинга документа. Inline-скрипт
+    // чата выполнялся сразу и падал на строке создания WS → кнопка «Принять»
+    // и отправка сообщений не работали. Инициализируем на DOMContentLoaded
+    // (как initWebSocket в layout.html), с fallback, если событие уже прошло.
+    function initChat() {
     const container = document.querySelector('[data-room-id]');
     if (!container) return;
 
@@ -143,6 +149,13 @@
                 }
             });
         });
+    }
+    } // end initChat
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initChat);
+    } else {
+        initChat();
     }
 })();
 </script>

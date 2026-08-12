@@ -75,11 +75,19 @@ func run() error {
 	migrateFlag := flag.Bool("migrate", false, "Применить миграции и выйти")
 	flag.Parse()
 
-	if err := godotenv.Load(); err != nil {
+	// Загрузка env-файла: по умолчанию `.env`, но можно переопределить через
+	// APP_ENV_FILE (например `APP_ENV_FILE=.env.e2e`). Без этого E2E-сервер
+	// подхватывал из `.env` отсутствующие в .env.e2e ключи (TLS_*, TRUSTED_PROXIES),
+	// что форсировало Secure-куку CSRF и ломало формы по HTTP (403).
+	envFile := os.Getenv("APP_ENV_FILE")
+	if envFile == "" {
+		envFile = ".env"
+	}
+	if err := godotenv.Load(envFile); err != nil {
 		if !os.IsNotExist(err) {
-			return fmt.Errorf("failed to load .env file: %w", err)
+			return fmt.Errorf("failed to load %s: %w", envFile, err)
 		}
-		log.Info().Msg(".env file not found, using only system environment variables")
+		log.Info().Str("file", envFile).Msg("env file not found, using only system environment variables")
 	}
 
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
