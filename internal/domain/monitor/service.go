@@ -406,6 +406,12 @@ func (s *ChatService) DeleteRoom(ctx context.Context, roomID uint) error {
 	return s.chatRepo.DeleteRoom(ctx, roomID)
 }
 
+// AcceptPersonalRoom (DEEP-REVIEW PASS-6 M7): получатель даёт согласие на
+// личный чат. Возвращает false, если комната не личная или userID не получатель.
+func (s *ChatService) AcceptPersonalRoom(ctx context.Context, roomID, userID uint) (bool, error) {
+	return s.chatRepo.AcceptPersonalRoom(ctx, roomID, userID)
+}
+
 func (s *ChatService) SaveMessage(ctx context.Context, roomID, userID uint, content string) (*ChatMessage, error) {
 	return s.chatRepo.SaveMessage(ctx, roomID, userID, content)
 }

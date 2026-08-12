@@ -43,6 +43,10 @@ type ChatRepository interface {
 	// DeleteRoom (PASS-6 P4): удаление комнаты (используется для отката при
 	// создании личного чата с несуществующим собеседником).
 	DeleteRoom(ctx context.Context, roomID uint) error
+	// AcceptPersonalRoom (DEEP-REVIEW PASS-6 M7): получатель (userID) даёт
+	// согласие на личный чат. Возвращает false, если userID не участник
+	// комнаты или комната не личная.
+	AcceptPersonalRoom(ctx context.Context, roomID, userID uint) (bool, error)
 }
 
 // BlackboxRepository определяет контракт для работы с голосованиями.
@@ -464,7 +468,8 @@ func (r *gormChatRepo) ListRoomsByGame(ctx context.Context, gameID uint) ([]Chat
 // Возвращает created=true, если комната была создана этим вызовом
 // (DEEP-REVIEW PASS-6 P4: позволяет хендлеру проверить существование
 // собеседника ТОЛЬКО при создании, не тратя лишний GetByID на каждую страницу).
-func (r *gormChatRepo) GetOrCreatePersonalRoom(ctx context.Context, userA, userB uint) (*ChatRoom, bool, error) {
+func (r *gormChatRepo) GetOrCreatePersonalRoom(ctx context.Context, initiatorID, otherID uint) (*ChatRoom, bool, error) {
+	userA, userB := initiatorID, otherID
 	if userA > userB {
 		userA, userB = userB, userA
 	}
@@ -483,6 +488,10 @@ func (r *gormChatRepo) GetOrCreatePersonalRoom(ctx context.Context, userA, userB
 		RoomType: RoomTypePersonal,
 		User1ID:  &userA,
 		User2ID:  &userB,
+		// M7 (PASS-6): инициатор (создатель) — OwnerID; согласие получателя
+		// (User2ID) изначально не дано — он должен принять переписку.
+		OwnerID:  &initiatorID,
+		Accepted: false,
 	}
 	if createErr := r.db.WithContext(ctx).Create(&room).Error; createErr != nil {
 		if err := r.db.WithContext(ctx).
@@ -499,6 +508,17 @@ func (r *gormChatRepo) GetOrCreatePersonalRoom(ctx context.Context, userA, userB
 // собеседником; soft-delete — сообщения сохраняются, комната скрывается).
 func (r *gormChatRepo) DeleteRoom(ctx context.Context, roomID uint) error {
 	return r.db.WithContext(ctx).Delete(&ChatRoom{}, roomID).Error
+}
+
+// AcceptPersonalRoom (M7): согласие получателя на личный чат.
+func (r *gormChatRepo) AcceptPersonalRoom(ctx context.Context, roomID, userID uint) (bool, error) {
+	res := r.db.WithContext(ctx).Model(&ChatRoom{}).
+		Where("id = ? AND room_type = ? AND user2_id = ?", roomID, RoomTypePersonal, userID).
+		Update("accepted", true)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
 }
 
 type gormBlackboxRepo struct{ db *gorm.DB }

@@ -3,6 +3,14 @@
     <h1 class="page-title">{{ T $.Lang "gamechat.global_title" }}</h1>
 
     <div class="card">
+        <!-- M7 (PASS-6): согласие на личный чат — получатель должен принять
+             переписку; до этого ввод и отправка заблокированы -->
+        {{if .IsRecipientPending}}
+        <div id="consent-banner" class="mb-3 p-3 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-700 rounded-lg text-sm text-yellow-800 dark:text-yellow-200 flex flex-wrap items-center gap-2">
+            <span>{{ T $.Lang "gamechat.consent_pending" }}</span>
+            <button id="accept-chat-btn" type="button" class="btn btn-primary text-xs">{{ T $.Lang "gamechat.consent_accept" }}</button>
+        </div>
+        {{end}}
         <!-- Область сообщений -->
         <div class="relative">
             <div id="chat-messages" role="log" aria-live="polite" aria-relevant="additions" class="h-96 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-800 mb-3">
@@ -18,8 +26,8 @@
         <div class="flex flex-wrap items-center gap-2">
             <label for="chat-input" class="sr-only">{{ T $.Lang "gamechat.input_placeholder" }}</label>
             <input type="text" id="chat-input" placeholder="{{ T $.Lang "gamechat.input_placeholder" }}"
-                   class="flex-1 min-w-0 rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2">
-            <button id="send-btn" class="btn btn-primary text-sm whitespace-nowrap">{{ T $.Lang "gamechat.send_button" }}</button>
+                   class="flex-1 min-w-0 rounded-md border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2" {{if .IsRecipientPending}}disabled{{end}}>
+            <button id="send-btn" class="btn btn-primary text-sm whitespace-nowrap" {{if .IsRecipientPending}}disabled{{end}}>{{ T $.Lang "gamechat.send_button" }}</button>
         </div>
 
         <!-- Статус подключения -->
@@ -102,6 +110,40 @@
 
     sendBtn.addEventListener('click', sendMessage);
     chatInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') sendMessage(); });
+
+    // M7 (PASS-6): кнопка «Принять» — согласие на личный чат.
+    const acceptBtn = document.getElementById('accept-chat-btn');
+    if (acceptBtn) {
+        acceptBtn.addEventListener('click', function() {
+            const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+            const csrf = csrfMeta ? csrfMeta.getAttribute('content') : '';
+            const form = new FormData();
+            form.append('room_id', roomID);
+            fetch('/chat/personal/accept', {
+                method: 'POST',
+                body: form,
+                headers: { 'X-CSRF-Token': csrf }
+            })
+            .then(function(r) {
+                if (!r.ok) throw new Error('accept failed');
+                const banner = document.getElementById('consent-banner');
+                if (banner) banner.classList.add('hidden');
+                chatInput.disabled = false;
+                sendBtn.disabled = false;
+                if (typeof window.showToast === 'function') {
+                    window.showToast('{{ T $.Lang "gamechat.consent_accepted" }}', 'success', 4000);
+                }
+                // Переподключаем WS — теперь сервер разрешит отправку.
+                window.location.reload();
+            })
+            .catch(function(err) {
+                console.error('Chat: accept consent error:', err);
+                if (typeof window.showToast === 'function') {
+                    window.showToast('{{ T $.Lang "gamechat.consent_error" }}', 'error', 4000);
+                }
+            });
+        });
+    }
 })();
 </script>
 {{end}}

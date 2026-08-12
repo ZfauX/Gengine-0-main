@@ -844,6 +844,14 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 				log.Error().Err(permErr).Str("room_id", roomID).Uint("user_id", userID).Msg("ChatWS: send permission check error")
 				return
 			}
+			// M7 (PASS-6): личный чат — получатель пишет только после явного
+			// согласия (Accepted). Инициатор (OwnerID) может писать сразу.
+			if chatRoom.RoomType == RoomTypePersonal && !chatRoom.Accepted {
+				if chatRoom.OwnerID == nil || *chatRoom.OwnerID != userID {
+					log.Warn().Uint("room_id", uint(roomIDUint)).Uint("user_id", userID).Msg("ChatWS: personal chat not accepted by recipient, skipping message")
+					continue
+				}
+			}
 			if !allowed && chatRoom.TeamID != nil && !memberExists {
 				log.Warn().Uint("team_id", *chatRoom.TeamID).Uint("user_id", userID).Msg("ChatWS: member removed from team, closing socket")
 				return
@@ -1195,7 +1203,39 @@ func (h *MonitorHandler) PersonalChat(c *gin.Context) {
 		"RoomID":        room.ID,
 		"CurrentUserID": userID,
 		"csrf":          csrf.GetToken(c),
+		// M7 (PASS-6): флаг согласия — фронт показывает кнопку «Принять»,
+		// если текущий пользователь — получатель и согласие ещё не дано.
+		"IsRecipientPending": room.RoomType == RoomTypePersonal && !room.Accepted &&
+			(room.OwnerID == nil || *room.OwnerID != userID),
 	})
+}
+
+// AcceptPersonalChat даёт согласие на личный чат (M7, PASS-6).
+// @Summary Принять личный чат
+// @Tags monitor
+// @Accept x-www-form-urlencoded
+// @Param room_id formData uint true "ID личной комнаты"
+// @Success 200 {object} map[string]interface{} "Согласие дано"
+// @Failure 403 {object} map[string]interface{} "handler.forbidden"
+// @Security JWT
+func (h *MonitorHandler) AcceptPersonalChat(c *gin.Context) {
+	userID := c.GetUint("userID")
+	roomID, err := strconv.ParseUint(c.PostForm("room_id"), 10, 64)
+	if err != nil || roomID == 0 {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "некорректный ID комнаты", "code": "invalid_room"})
+		return
+	}
+	ok, err := h.chatService.AcceptPersonalRoom(c.Request.Context(), uint(roomID), userID)
+	if err != nil {
+		log.Error().Err(err).Uint("room_id", uint(roomID)).Uint("user_id", userID).Msg("AcceptPersonalChat: failed")
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": render.Tr(c, "handler.internal_error"), "code": "internal"})
+		return
+	}
+	if !ok {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden"), "code": "forbidden"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
 // ListLogs отображает HTML-страницу с историей логов игры.

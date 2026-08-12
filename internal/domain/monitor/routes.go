@@ -126,6 +126,9 @@ func RegisterRoutes(
 	// комнаты с любым user_id без ограничений (спам/PII-перечисление).
 	protected.GET("/chat/personal/:user_id", middleware.PersonalChatRateLimit(1*time.Minute, 30), monitorHandler.PersonalChat)
 
+	// M7 (PASS-6): согласие получателя на личный чат (accept/block).
+	protected.POST("/chat/personal/accept", middleware.PersonalChatRateLimit(1*time.Minute, 30), monitorHandler.AcceptPersonalChat)
+
 	// @Summary ID комнат чата
 	// @Description Возвращает ID общей и командной комнат чата для игры (для инициализации WebSocket)
 	// @Tags monitor

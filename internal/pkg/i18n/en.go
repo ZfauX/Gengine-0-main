@@ -1271,6 +1271,10 @@ var enMessages = map[string]string{
 	"gamechat.unread_messages":   "New messages: %d ↓",
 	"gamechat.online_count":      "Online: %d",
 	"gamechat.load_older":        "Load older",
+	"gamechat.consent_pending":   "This user invited you to a private chat. Accept?",
+	"gamechat.consent_accept":    "Accept",
+	"gamechat.consent_accepted":  "Private chat accepted",
+	"gamechat.consent_error":     "Could not accept the chat. Try again later.",
 
 	// ── Monitor ──
 	"monitor.page_title":         "Game monitor (real-time updates)",

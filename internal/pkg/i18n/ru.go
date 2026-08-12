@@ -1273,6 +1273,10 @@ var ruMessages = map[string]string{
 	"gamechat.unread_messages":   "Новые сообщения: %d ↓",
 	"gamechat.online_count":      "Онлайн: %d",
 	"gamechat.load_older":        "Загрузить ранее",
+	"gamechat.consent_pending":   "Этот пользователь пригласил вас в личный чат. Принять переписку?",
+	"gamechat.consent_accept":    "Принять",
+	"gamechat.consent_accepted":  "Согласие на личный чат дано",
+	"gamechat.consent_error":     "Не удалось принять переписку. Попробуйте позже.",
 
 	// ── Monitor ──
 	"monitor.page_title":         "Мониторинг игры (обновляется в реальном времени)",
