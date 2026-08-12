@@ -154,8 +154,8 @@
 1. ✅ **H1** (payment TOCTOU — unique index 000064), **H2** (chat_rooms race — unique index 000064).
 2. ✅ **M3** (CloseVoting 403/500), **M5** (webhook WithoutCancel), **M6** (succeeded idempotent).
 3. ✅ **M1** (RecentGames копия), **H1-perf** (ICS singleflight), **H2-perf** (sweep 1/с).
-4. ⏳ → ✅ Закрыто далее: **M2** (JSON import advisory lock), **M9** (граница позиции), **P4** (PersonalChat создание-only), **P5** (singleflight stats/games), **P7** (flash session once), **L7** (CreateRoom rate-limit), **L8** (хвостовые пробелы), **L11** (OrderIndex MAX+1); **M8** снят (каскад answers подтверждён).
-5. ⏳ Осталось задокументировать: **M4** (начисленные очки турнира), **M7** (согласие на личный чат), **P3** (батч вопросов CSV — рискованный), L1-L6, L9, L10, L12, L13, P6, P8-P14.
+4. ⏳ → ✅ Закрыто далее: **M2** (JSON import advisory lock), **M4** (точное списание очков — миграция 000065), **M7** (согласие на личный чат — миграция 000066 + UI), **M9** (граница позиции), **P4** (PersonalChat создание-only), **P5** (singleflight stats/games), **P7** (flash session once), **L1** (overflow), **L2** (constant-time), **L3** (PII), **L4** (VK user_id), **L6** (permCache cap), **L7** (CreateRoom rate-limit), **L8** (хвостовые пробелы), **L10** (backup WaitGroup), **L11** (OrderIndex), **L13** (calendar cap); **L5/L12** сняты (Close идемпотентен, 32 делит 2^64); **L9** задокументирован.
+5. ⏳ Осталось задокументировать: **P3** (батч вопросов CSV — рискованный), **L9** (ChatRoomIDs chatty — рефакторинг репозитория), P6, P8-P14.
 
 ---
 
