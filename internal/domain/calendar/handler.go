@@ -227,11 +227,26 @@ func (h *CalendarHandler) CalendarICal(c *gin.Context) {
 	startRange := now
 	endRange := now.AddDate(1, 0, 0) // 1 год вперёд
 
-	ctx := c.Request.Context()
-	games, err := h.gameRepo.ListByDateRange(ctx, startRange, endRange)
-	if err != nil {
-		log.Error().Err(err).Msg("CalendarICal: failed to list games")
-		appErr := apperrors.Wrap(err, "CalendarHandler")
+	// H1 (PASS-6): singleflight для ICS — Google/Apple синхронно тянут URL;
+	// при истечении кэша не должно быть N параллельных полногодовых запросов.
+	// WithoutCancel — отмена первого запроса не роняет остальных.
+	sfCtx := context.WithoutCancel(c.Request.Context())
+	gamesVal, sfErr, _ := h.sfGroup.Do("ics:"+icsCacheKey, func() (any, error) {
+		return h.gameRepo.ListByDateRange(sfCtx, startRange, endRange)
+	})
+	if sfErr != nil {
+		log.Error().Err(sfErr).Msg("CalendarICal: failed to list games")
+		appErr := apperrors.Wrap(sfErr, "CalendarHandler")
+		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
+			"error": appErr.Message,
+			"code":  appErr.Code,
+		})
+		return
+	}
+	games, ok := gamesVal.([]game.Game)
+	if !ok {
+		log.Error().Msg("CalendarICal: unexpected singleflight result type")
+		appErr := apperrors.Wrap(fmt.Errorf("неожиданный тип результата"), "CalendarHandler")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,

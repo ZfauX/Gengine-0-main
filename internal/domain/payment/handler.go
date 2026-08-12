@@ -3,6 +3,7 @@
 package payment
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -128,7 +129,10 @@ func (h *PaymentHandler) Webhook(c *gin.Context) {
 	remoteIP := c.ClientIP()
 	// M1 (PASS-3): Authorization (Basic ShopID:WebhookKey) — подпись вебхука.
 	authHeader := c.GetHeader("Authorization")
-	err := h.svc.HandleWebhook(c.Request.Context(), remoteIP, authHeader, body)
+	// M5 (PASS-6): server-to-server вебхук не должен обрываться при disconnect
+	// клиента ЮKassa — иначе платёж останется pending, а notify потеряется.
+	whCtx := context.WithoutCancel(c.Request.Context())
+	err := h.svc.HandleWebhook(whCtx, remoteIP, authHeader, body)
 	if err == nil {
 		c.Status(http.StatusOK)
 		return

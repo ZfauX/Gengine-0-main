@@ -1501,7 +1501,17 @@ func (h *MonitorHandler) CloseVoting(c *gin.Context) {
 	winner, err := h.blackboxVoteService.CloseVoting(c.Request.Context(), req.SessionID, userID)
 	if err != nil {
 		log.Error().Err(err).Uint("session_id", req.SessionID).Uint("user_id", userID).Msg("CloseVoting: failed to close voting")
-		appErr := apperrors.Forbidden(render.LocalizeError(c, err.Error()))
+		// M3 (PASS-6): только «нет прав» → 403; прочие (БД/сеть) → 500.
+		// Раньше любая ошибка (в т.ч. 5xx) маппилась в 403.
+		if strings.Contains(err.Error(), "только автор или модератор") {
+			appErr := apperrors.Forbidden(render.LocalizeError(c, err.Error()))
+			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
+				"error": appErr.Message,
+				"code":  appErr.Code,
+			})
+			return
+		}
+		appErr := apperrors.Wrap(err, "MonitorHandler")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 			"error": appErr.Message,
 			"code":  appErr.Code,

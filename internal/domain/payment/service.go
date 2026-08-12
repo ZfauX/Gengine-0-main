@@ -469,11 +469,16 @@ func (s *PaymentService) HandleWebhook(ctx context.Context, remoteIP, authHeader
 			// ретраить (раньше 500 → вечные ретраи + флуд API/логов).
 			return fmt.Errorf("%w: payment %s", ErrWebhookAmountMismatch, paymentID)
 		}
+		// M6 (PASS-6): идемпотентность succeeded — повторный webhook не должен
+		// слать дубликат уведомления (раньше notify безусловно).
+		alreadySucceeded := local.Status == StatusSucceeded
 		if err := s.repo.UpdateStatus(ctx, local.ID, StatusSucceeded); err != nil {
 			return err
 		}
 		log.Info().Uint("payment", local.ID).Uint("user_id", local.UserID).Int64("amount_kopecks", local.AmountKopecks).Msg("payment succeeded")
-		s.notifyPaymentSucceeded(ctx, local)
+		if !alreadySucceeded {
+			s.notifyPaymentSucceeded(ctx, local)
+		}
 	case "canceled":
 		if err := s.repo.UpdateStatus(ctx, local.ID, StatusCanceled); err != nil {
 			return err

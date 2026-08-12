@@ -41,8 +41,9 @@ type ProfileService struct {
 
 	// gamesCache (PASS-5 P3): кэш последних игр (60с) — данные меняются только
 	// при публикации; профиль-страница делает лишний запрос на каждый просмотр.
-	gamesMu    sync.Mutex
-	gamesCache map[uint]gamesCacheEntry
+	gamesMu       sync.Mutex
+	gamesCache    map[uint]gamesCacheEntry
+	gamesLastSweep time.Time
 }
 
 type statsCacheEntry struct {
@@ -116,7 +117,9 @@ func (s *ProfileService) GetRecentGames(ctx context.Context, authorID uint) ([]R
 	now := time.Now()
 	s.gamesMu.Lock()
 	if e, ok := s.gamesCache[authorID]; ok && now.Before(e.expires) {
-		games := e.games
+		// M1 (PASS-6): возвращаем КОПИЮ — consumer мог бы мутировать слайс
+		// кэша (data race на общем slice).
+		games := append([]RecentGame(nil), e.games...)
 		s.gamesMu.Unlock()
 		return games, nil
 	}
@@ -128,10 +131,15 @@ func (s *ProfileService) GetRecentGames(ctx context.Context, authorID uint) ([]R
 	}
 
 	s.gamesMu.Lock()
+	// H2 (PASS-6): sweep не чаще 1/с — при активном сайте map не платит O(n)
+	// под блокировкой на каждый промах.
 	if len(s.gamesCache) > 512 {
-		for id, e := range s.gamesCache {
-			if now.After(e.expires) {
-				delete(s.gamesCache, id)
+		if now.Sub(s.gamesLastSweep) >= time.Second {
+			s.gamesLastSweep = now
+			for id, e := range s.gamesCache {
+				if now.After(e.expires) {
+					delete(s.gamesCache, id)
+				}
 			}
 		}
 	}
