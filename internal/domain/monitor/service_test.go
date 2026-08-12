@@ -630,6 +630,69 @@ func TestChatService_PersonalRoom(t *testing.T) {
 	assert.Equal(t, room.ID, room2.ID)
 }
 
+// H1 (PASS-7): согласие на личный чат даёт ПОЛУЧАТЕЛЬ, независимо от порядка ID.
+// Раньше AcceptPersonalRoom требовал user2_id (больший ID) — при инициаторе с
+// большим ID получатель был user1_id и не мог принять, а инициатор (user2)
+// мог принять сам себя (обход консента).
+func TestChatService_PersonalRoomAcceptConsent(t *testing.T) {
+	db := testutil.SetupPostgresDB(t,
+		&monitor.ChatRoom{}, &monitor.ChatMessage{}, &monitor.ChatRoomMember{},
+		&game.Game{}, &game.GamePassing{}, &game.GameSetting{},
+		&game.LevelProgress{}, &game.Attempt{},
+		&monitor.BlackboxVotingSession{}, &monitor.BlackboxVote{},
+		&game.Log{},
+		&level.Level{},
+		&team.Team{},
+		&user.User{},
+	)
+	chatRepo := monitor.NewGormChatRepo(db)
+	cs := monitor.NewChatService(chatRepo)
+
+	lowID := createUser(t, db, "accept-low@test.com", "pass")
+	highID := createUser(t, db, "accept-high@test.com", "pass")
+	// Гарантируем lowID < highID (БД выдаёт возрастающие ID).
+	require.Less(t, lowID.ID, highID.ID)
+
+	// 1) Инициатор с МЕНЬШИМ ID → получатель (highID) = user2_id (старое поведение работало).
+	roomLow, _, err := cs.GetOrCreatePersonalRoom(context.Background(), lowID.ID, highID.ID)
+	require.NoError(t, err)
+	// Получатель принимает — ок.
+	ok, err := cs.AcceptPersonalRoom(context.Background(), roomLow.ID, highID.ID)
+	require.NoError(t, err)
+	assert.True(t, ok, "recipient with higher ID must be able to accept")
+	accepted, err := cs.GetAcceptedStatus(context.Background(), roomLow.ID)
+	require.NoError(t, err)
+	assert.True(t, accepted)
+
+	// 2) Отдельная пара, инициатор с БОЛЬШИМ ID → получатель (lowID2) = user1_id
+	// (старое поведение ломалось). Разные пользователи: GetOrCreatePersonalRoom
+	// идемпотентен для одной пары.
+	low2 := createUser(t, db, "accept-low2@test.com", "pass")
+	high2 := createUser(t, db, "accept-high2@test.com", "pass")
+	require.Less(t, low2.ID, high2.ID)
+	roomHigh, _, err := cs.GetOrCreatePersonalRoom(context.Background(), high2.ID, low2.ID)
+	require.NoError(t, err)
+	// Получатель с меньшим ID принимает — теперь ок.
+	ok, err = cs.AcceptPersonalRoom(context.Background(), roomHigh.ID, low2.ID)
+	require.NoError(t, err)
+	assert.True(t, ok, "recipient with lower ID must be able to accept (user1)")
+	accepted, err = cs.GetAcceptedStatus(context.Background(), roomHigh.ID)
+	require.NoError(t, err)
+	assert.True(t, accepted)
+
+	// 3) Инициатор НЕ может принять сам себя (обход консента).
+	// Тот же чат (инициатор high2): он не получатель — Accept должен быть false.
+	ok, err = cs.AcceptPersonalRoom(context.Background(), roomHigh.ID, high2.ID)
+	require.NoError(t, err)
+	assert.False(t, ok, "initiator must not be able to accept own request")
+
+	// 4) Не-участник не может принять.
+	outsider := createUser(t, db, "accept-out@test.com", "pass")
+	ok, err = cs.AcceptPersonalRoom(context.Background(), roomHigh.ID, outsider.ID)
+	require.NoError(t, err)
+	assert.False(t, ok, "outsider must not be able to accept")
+}
+
 // S-46-5 (pass 46): единая проверка права на отправку сообщения в чате.
 func TestChatService_CanSendMessage(t *testing.T) {
 	db := testutil.SetupPostgresDB(t,

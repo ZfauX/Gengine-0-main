@@ -155,8 +155,13 @@ func (h *TwoFactorHandler) Verify(c *gin.Context) {
 	}
 
 	// Session fixation protection: перевыпускаем JWT с новым jti.
-	// Cookie store не поддерживает session.Regenerate(), поэтому выдаём новый access-токен
-	// — старые (перехваченные до 2FA) становятся невалидны через jti blacklist.
+	// Cookie store не поддерживает session.Regenerate(), поэтому выдаём новый
+	// access-токен. M4 (PASS-7): старый pre-2FA JWT отзываем через jti blacklist —
+	// раньше он оставался валидным до истечения (комментарий обещал, но RevokeJWT
+	// не вызывался) и работал на не-2FA-защищённых авторизованных маршрутах.
+	if oldToken, err := c.Cookie("jwt"); err == nil && oldToken != "" {
+		h.authService.RevokeJWT(c.Request.Context(), oldToken)
+	}
 	if userObj, err := h.userRepo.GetByID(c.Request.Context(), userID); err == nil {
 		if newToken, jwtErr := h.authService.GenerateJWT(*userObj); jwtErr == nil {
 			setSecureCookie(c, "jwt", newToken, int(h.jwtAccessExpiry.Seconds()), "/")

@@ -475,14 +475,17 @@ func (s *PaymentService) HandleWebhook(ctx context.Context, remoteIP, authHeader
 			// ретраить (раньше 500 → вечные ретраи + флуд API/логов).
 			return fmt.Errorf("%w: payment %s", ErrWebhookAmountMismatch, paymentID)
 		}
-		// M6 (PASS-6): идемпотентность succeeded — повторный webhook не должен
-		// слать дубликат уведомления (раньше notify безусловно).
-		alreadySucceeded := local.Status == StatusSucceeded
-		if err := s.repo.UpdateStatus(ctx, local.ID, StatusSucceeded); err != nil {
+		// M6 (PASS-6) + L6 (PASS-7): идемпотентность succeeded. Раньше проверка
+		// `alreadySucceeded` читалась из локальной копии — два параллельных
+		// webhook'а оба видели pending и слали дубликат уведомления.
+		// Теперь переход атомарный (UPDATE WHERE status <> 'succeeded'):
+		// only один вызов получает RowsAffected>0 и уведомляет.
+		transitioned, err := s.repo.MarkSucceededIfPending(ctx, local.ID)
+		if err != nil {
 			return err
 		}
 		log.Info().Uint("payment", local.ID).Uint("user_id", local.UserID).Int64("amount_kopecks", local.AmountKopecks).Msg("payment succeeded")
-		if !alreadySucceeded {
+		if transitioned {
 			s.notifyPaymentSucceeded(ctx, local)
 		}
 	case "canceled":

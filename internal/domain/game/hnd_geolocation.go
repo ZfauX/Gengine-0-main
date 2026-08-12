@@ -3,6 +3,7 @@
 package game
 
 import (
+	"math"
 	"net/http"
 	"strconv"
 
@@ -47,7 +48,14 @@ func (h *GeolocationHandler) UpdateLocation(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
 		return
 	}
-	// Валидация координат.
+	// Валидация координат. L4 (PASS-7): NaN/Inf проходят обычные сравнения —
+	// math.IsNaN/IsInf отклоняют их (как в payment handler PASS-4 M3).
+	if math.IsNaN(input.Lat) || math.IsInf(input.Lat, 0) ||
+		math.IsNaN(input.Lng) || math.IsInf(input.Lng, 0) ||
+		math.IsNaN(input.Accuracy) || math.IsInf(input.Accuracy, 0) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid coordinates"})
+		return
+	}
 	if input.Lat < -90 || input.Lat > 90 || input.Lng < -180 || input.Lng > 180 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid coordinates"})
 		return

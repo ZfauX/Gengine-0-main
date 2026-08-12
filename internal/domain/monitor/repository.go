@@ -47,6 +47,10 @@ type ChatRepository interface {
 	// согласие на личный чат. Возвращает false, если userID не участник
 	// комнаты или комната не личная.
 	AcceptPersonalRoom(ctx context.Context, roomID, userID uint) (bool, error)
+	// GetAcceptedStatus (M2, PASS-7): свежее значение Accepted для личной
+	// комнаты. WS-соединение загружает комнату один раз при подключении —
+	// если получатель принял чат ПОСЛЕ открытия сокета, стейт устаревает.
+	GetAcceptedStatus(ctx context.Context, roomID uint) (bool, error)
 }
 
 // BlackboxRepository определяет контракт для работы с голосованиями.
@@ -526,15 +530,32 @@ func (r *gormChatRepo) DeleteRoom(ctx context.Context, roomID uint) error {
 	return r.db.WithContext(ctx).Delete(&ChatRoom{}, roomID).Error
 }
 
-// AcceptPersonalRoom (M7): согласие получателя на личный чат.
+// AcceptPersonalRoom (M7, PASS-6; H1, PASS-7): согласие на личный чат даёт
+// ПОЛУЧАТЕЛЬ — участник, не являющийся владельцем (OwnerID). Раньше условие
+// было по user2_id, но GetOrCreatePersonalRoom нормализует пару (user1=min,
+// user2=max), поэтому получатель может быть и user1, а владелец — user2
+// (инициатор с большим ID мог бы принять сам себя — обход консента).
 func (r *gormChatRepo) AcceptPersonalRoom(ctx context.Context, roomID, userID uint) (bool, error) {
 	res := r.db.WithContext(ctx).Model(&ChatRoom{}).
-		Where("id = ? AND room_type = ? AND user2_id = ?", roomID, RoomTypePersonal, userID).
+		Where("id = ? AND room_type = ? AND (owner_id IS NULL OR owner_id <> ?) AND (user1_id = ? OR user2_id = ?)",
+			roomID, RoomTypePersonal, userID, userID, userID).
 		Update("accepted", true)
 	if res.Error != nil {
 		return false, res.Error
 	}
 	return res.RowsAffected > 0, nil
+}
+
+// GetAcceptedStatus (M2, PASS-7): SELECT только accepted для личной комнаты.
+func (r *gormChatRepo) GetAcceptedStatus(ctx context.Context, roomID uint) (bool, error) {
+	var accepted bool
+	err := r.db.WithContext(ctx).Model(&ChatRoom{}).
+		Where("id = ? AND room_type = ?", roomID, RoomTypePersonal).
+		Select("accepted").Scan(&accepted).Error
+	if err != nil {
+		return false, err
+	}
+	return accepted, nil
 }
 
 type gormBlackboxRepo struct{ db *gorm.DB }

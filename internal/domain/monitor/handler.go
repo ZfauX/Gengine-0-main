@@ -846,10 +846,18 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 			}
 			// M7 (PASS-6): личный чат — получатель пишет только после явного
 			// согласия (Accepted). Инициатор (OwnerID) может писать сразу.
+			// M2 (PASS-7): Accepted перечитывается из БД — получатель мог
+			// принять чат через HTTP ПОСЛЕ открытия сокета, и chatRoom.Accepted
+			// устарел бы (получатель не смог бы писать до переподключения).
 			if chatRoom.RoomType == RoomTypePersonal && !chatRoom.Accepted {
 				if chatRoom.OwnerID == nil || *chatRoom.OwnerID != userID {
-					log.Warn().Uint("room_id", uint(roomIDUint)).Uint("user_id", userID).Msg("ChatWS: personal chat not accepted by recipient, skipping message")
-					continue
+					accepted, accErr := h.chatService.GetAcceptedStatus(wsCtx, uint(roomIDUint))
+					if accErr != nil {
+						log.Error().Err(accErr).Uint("room_id", uint(roomIDUint)).Msg("ChatWS: accepted status check failed")
+					} else if !accepted {
+						log.Warn().Uint("room_id", uint(roomIDUint)).Uint("user_id", userID).Msg("ChatWS: personal chat not accepted by recipient, skipping message")
+						continue
+					}
 				}
 			}
 			if !allowed && chatRoom.TeamID != nil && !memberExists {
@@ -1186,10 +1194,10 @@ func (h *MonitorHandler) PersonalChat(c *gin.Context) {
 	}
 	if created {
 		if _, uErr := h.userService.GetByID(c.Request.Context(), uint(otherID)); uErr != nil {
-			// Комната только что создана, но собеседник не существует — откатываем
-			// (уникальный индекс 000064 не дал бы создать, но страхуемся).
-			_ = h.chatService.DeleteRoom(c.Request.Context(), room.ID)
+			// L7 (PASS-7): откатываем комнату ТОЛЬКО при RecordNotFound —
+			// транзиентная ошибка БД не должна удалять созданную комнату.
 			if errors.Is(uErr, gorm.ErrRecordNotFound) {
+				_ = h.chatService.DeleteRoom(c.Request.Context(), room.ID)
 				render.RenderError(c, http.StatusNotFound, "собеседник не найден")
 				return
 			}

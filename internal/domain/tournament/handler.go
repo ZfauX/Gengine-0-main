@@ -157,10 +157,18 @@ func (h *TournamentHandler) Show(c *gin.Context) {
 	// всем, анонимный пользователь уходил в login→403.
 	isOwner := userID != 0 && t.AuthorID == userID
 
-	teams, err := h.teamService.GetMyTeams(c.Request.Context(), userID)
-	if err != nil {
-		log.Error().Err(err).Uint("user_id", userID).Msg("TournamentHandler.Show: failed to get teams")
-		teams = []team.Team{}
+	// M1 (PASS-7): GetMyTeams выполняется только для авторизованных —
+	// шаблон использует UserTeams лишь внутри блока CanApply (заявка),
+	// а аноним (userID=0) не может подать заявку. Раньше — лишний SQL
+	// на каждый публичный просмотр турнира.
+	teams := []team.Team{}
+	if userID != 0 {
+		got, err := h.teamService.GetMyTeams(c.Request.Context(), userID)
+		if err != nil {
+			log.Error().Err(err).Uint("user_id", userID).Msg("TournamentHandler.Show: failed to get teams")
+		} else {
+			teams = got
+		}
 	}
 
 	render.Page(c, http.StatusOK, "tournaments-show.html", gin.H{

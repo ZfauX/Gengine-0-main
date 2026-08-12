@@ -222,11 +222,18 @@ func (s *TournamentService) RemoveGame(ctx context.Context, tournamentID, gameID
 		// начислению очков, если игра участвует в нескольких турнирах.
 		// DEEP-REVIEW (pass 46): удаляем именно tournament_id из массива
 		// начислений (tournament_scored_ids), а не сбрасываем весь флаг.
+		// H2 (PASS-7): scored_points удаляется ПО ПОЗИЦИИ (параллельный массив) —
+		// иначе после remove→add→finish индексы разъезжаются и списывается старое
+		// значение. array_remove по значению очка нельзя (два турнира с 10 очками).
+		pointsRemoveExpr := `(SELECT array_agg(pp.points ORDER BY pp.ord)
+			FROM unnest(tournament_scored_points) WITH ORDINALITY AS pp(points, ord)
+			WHERE pp.ord <> (SELECT o.ord FROM unnest(tournament_scored_ids) WITH ORDINALITY AS o(id, ord) WHERE o.id = ?))`
 		if err = tx.Model(&game.GamePassing{}).
 			Where("game_id = ? AND team_id IN (SELECT team_id FROM tournament_teams WHERE tournament_id = ?)", gameID, tournamentID).
 			Updates(map[string]any{
-				"tournament_scored_ids": gorm.Expr("array_remove(tournament_scored_ids, ?)", int64(tournamentID)),
-				"tournament_points":     0,
+				"tournament_scored_ids":    gorm.Expr("array_remove(tournament_scored_ids, ?)", int64(tournamentID)),
+				"tournament_scored_points": gorm.Expr(pointsRemoveExpr, int64(tournamentID)),
+				"tournament_points":        0,
 			}).Error; err != nil {
 			return err
 		}

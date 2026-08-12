@@ -269,3 +269,51 @@ func TestTournamentService_UpdateScoresForGame_MultiTournament(t *testing.T) {
 	require.NoError(t, db.Where("tournament_id = ? AND team_id = ?", trnB.ID, tm1.ID).First(&rB).Error)
 	assert.Equal(t, 20, rB.Score)
 }
+
+// H2 (PASS-7): RemoveGame из одного турнира удаляет элемент из ОБОИХ
+// параллельных массивов (scored_ids и scored_points) по ПОЗИЦИИ. Раньше
+// удалялся только id, scored_points оставался — индексы разъезжались, и
+// повторное начисление/списание использовало устаревшее значение очков.
+func TestTournamentService_RemoveGame_MultiTournamentParallelArrays(t *testing.T) {
+	db := setupTournamentDB(t)
+	teamSvc := newTeamService(db)
+	svc := newTournamentService(db, teamSvc)
+	ctx := context.Background()
+
+	author := createTournamentUser(t, db, "h2@test.com")
+	// Очки первого места: в A=10, в B=20 — значения РАЗНЫЕ, чтобы ловить
+	// удаление по значению (array_remove(20) не должен удалить очки B).
+	trnA := &tournament.Tournament{Name: "A", AuthorID: author.ID, PointsForFirst: 10, PointsForParticipation: 2}
+	trnB := &tournament.Tournament{Name: "B", AuthorID: author.ID, PointsForFirst: 20, PointsForParticipation: 3}
+	require.NoError(t, svc.Create(ctx, trnA))
+	require.NoError(t, svc.Create(ctx, trnB))
+
+	g := createTournamentGame(t, db, author.ID, "G-H2")
+	require.NoError(t, svc.AddGame(ctx, trnA.ID, g.ID, author.ID))
+	require.NoError(t, svc.AddGame(ctx, trnB.ID, g.ID, author.ID))
+
+	tm1, _ := teamSvc.CreateTeam(ctx, "H2", author.ID)
+	require.NoError(t, db.Create(&tournament.TournamentTeam{TournamentID: trnA.ID, TeamID: tm1.ID}).Error)
+	require.NoError(t, db.Create(&tournament.TournamentTeam{TournamentID: trnB.ID, TeamID: tm1.ID}).Error)
+
+	p1 := &game.GamePassing{GameID: g.ID, TeamID: tm1.ID, Status: game.StatusFinished, Place: intPtr(1)}
+	require.NoError(t, db.Create(p1).Error)
+
+	svc.UpdateScoresForGame(ctx, g.ID)
+	svc.UpdateScoresForGame(ctx, g.ID)
+
+	var pAfter game.GamePassing
+	require.NoError(t, db.First(&pAfter, p1.ID).Error)
+	require.Len(t, pAfter.TournamentScoredIDs, 2, "оба турнира начислены")
+	require.Len(t, pAfter.TournamentScoredPoints, 2, "оба параллельных массива заполнены")
+
+	// Удаляем игру из турнира A — из обоих массивов уходит первый элемент.
+	require.NoError(t, svc.RemoveGame(ctx, trnA.ID, g.ID, author.ID))
+
+	var pRem game.GamePassing
+	require.NoError(t, db.First(&pRem, p1.ID).Error)
+	require.Len(t, pRem.TournamentScoredIDs, 1, "id турнира A удалён из массива")
+	require.Len(t, pRem.TournamentScoredPoints, 1, "очки турнира A удалены из параллельного массива")
+	require.Equal(t, int64(trnB.ID), pRem.TournamentScoredIDs[0])
+	require.Equal(t, int64(20), pRem.TournamentScoredPoints[0], "оставшиеся очки принадлежат турниру B (20), а не A (10)")
+}

@@ -412,6 +412,12 @@ func (s *ChatService) AcceptPersonalRoom(ctx context.Context, roomID, userID uin
 	return s.chatRepo.AcceptPersonalRoom(ctx, roomID, userID)
 }
 
+// GetAcceptedStatus (M2, PASS-7): свежее значение Accepted личной комнаты
+// (WS держит стейт с момента подключения — нужно перечитывать).
+func (s *ChatService) GetAcceptedStatus(ctx context.Context, roomID uint) (bool, error) {
+	return s.chatRepo.GetAcceptedStatus(ctx, roomID)
+}
+
 func (s *ChatService) SaveMessage(ctx context.Context, roomID, userID uint, content string) (*ChatMessage, error) {
 	return s.chatRepo.SaveMessage(ctx, roomID, userID, content)
 }

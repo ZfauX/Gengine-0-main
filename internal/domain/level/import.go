@@ -150,6 +150,11 @@ func (s *ImportService) Import(ctx context.Context, gameID, userID uint, r io.Re
 				if scanErr := tx.Table("levels").Where("game_id = ?", gameID).Select("COALESCE(MAX(position), 0)").Scan(&maxPos).Error; scanErr != nil {
 					return scanErr
 				}
+				// L5 (PASS-7): автопозиция не должна превышать верхнюю границу —
+				// иначе импорт создаёт уровень с позицией 10001+ (обход M9).
+				if maxPos+1 > maxImportPosition {
+					return fmt.Errorf("нельзя автоматически назначить позицию: в игре уже %d уровней", maxPos)
+				}
 				lvl.Position = maxPos + 1
 			}
 			if createErr := tx.Create(lvl).Error; createErr != nil {

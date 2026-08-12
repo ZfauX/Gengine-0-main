@@ -615,3 +615,30 @@ func TestImportService_Import_NotAuthor(t *testing.T) {
 	_, err := svc.Import(context.Background(), g.ID, other.ID, strings.NewReader(payload))
 	require.Error(t, err)
 }
+
+// L5 (PASS-7): автопозиция не превышает maxImportPosition — иначе импорт
+// создаёт уровень с позицией 10001+ (обход лимита M9).
+func TestImportService_Import_AutoPositionCap(t *testing.T) {
+	db := testutil.SetupPostgresDB(t, allModels...)
+	author := createUser(t, db, "import-cap@test.com", "pass")
+	g := createGame(t, db, author.ID, "Import Cap Game")
+	coRepo := game.NewGormCoAuthorRepo(db)
+	svc := level.NewImportService(db, coRepo)
+
+	// Заполняем игру до предела maxImportPosition уровнями (см. import.go, M9).
+	const maxImportPosition = 10000
+	for i := 1; i <= maxImportPosition; i++ {
+		l := &level.Level{GameID: g.ID, Name: "Cap", Type: "single", Position: i}
+		require.NoError(t, db.Create(l).Error)
+	}
+
+	// Импорт уровня без позиции → автопозиция = maxImportPosition+1 > лимита.
+	payload := `{"levels":[{"name":"Overflow","questions":[]}]}`
+	_, err := svc.Import(context.Background(), g.ID, author.ID, strings.NewReader(payload))
+	require.Error(t, err, "auto position exceeding maxImportPosition must fail")
+
+	// Уровней по-прежнему ровно 10000 — транзакция откатилась, лишнего нет.
+	var total int64
+	require.NoError(t, db.Model(&level.Level{}).Where("game_id = ?", g.ID).Count(&total).Error)
+	assert.Equal(t, int64(maxImportPosition), total)
+}

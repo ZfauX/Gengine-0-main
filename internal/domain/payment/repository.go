@@ -19,6 +19,9 @@ type PaymentRepository interface {
 	GetPendingByUserAndAmount(ctx context.Context, userID uint, amountKopecks int64) (*Payment, error)
 	ListByUser(ctx context.Context, userID uint, limit int) ([]Payment, error)
 	UpdateStatus(ctx context.Context, id uint, status string) error
+	// MarkSucceededIfPending (L6, PASS-7): атомарный переход pending→succeeded
+	// (UPDATE WHERE status <> 'succeeded'); true, если переход совершён этим вызовом.
+	MarkSucceededIfPending(ctx context.Context, id uint) (bool, error)
 	// UpdateAfterCreate обновляет платёж после успешного ответа ЮKassa
 	// (реальный payment_id, статус, URL подтверждения). DEEP-REVIEW HIGH #7.
 	UpdateAfterCreate(ctx context.Context, id uint, paymentID, status, confirmationURL string) error
@@ -84,6 +87,20 @@ func (r *gormPaymentRepo) ListByUser(ctx context.Context, userID uint, limit int
 
 func (r *gormPaymentRepo) UpdateStatus(ctx context.Context, id uint, status string) error {
 	return r.db.WithContext(ctx).Model(&Payment{}).Where("id = ?", id).Update("status", status).Error
+}
+
+// MarkSucceededIfPending (L6, PASS-7): атомарный переход в succeeded —
+// только если платёж ещё не succeeded. RowsAffected>0 означает, что именно
+// ЭТОТ вызов совершил переход (устраняет гонку двух параллельных webhook'ов,
+// где оба читали pending и слали дубликат уведомления).
+func (r *gormPaymentRepo) MarkSucceededIfPending(ctx context.Context, id uint) (bool, error) {
+	res := r.db.WithContext(ctx).Model(&Payment{}).
+		Where("id = ? AND status <> ?", id, StatusSucceeded).
+		Update("status", StatusSucceeded)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
 }
 
 func (r *gormPaymentRepo) UpdateAfterCreate(ctx context.Context, id uint, paymentID, status, confirmationURL string) error {
