@@ -47,6 +47,11 @@ func NewExportService(
 	}, nil
 }
 
+// EscapeAnswerCodesForTest / UnescapeAnswerCodesForTest — экспортируемые
+// обёртки для тестов round-trip (M5, PASS-5).
+func EscapeAnswerCodesForTest(codes []string) string { return escapeAnswerCodes(codes) }
+func UnescapeAnswerCodesForTest(s string) []string  { return unescapeAnswerCodes(s) }
+
 // csvSafe нейтрализует CSV/Excel formula injection (S-3, pass 36): значения,
 // начинающиеся с =, +, -, @, \t, \r (даже после ведущих пробелов — L-1, pass 37),
 // интерпретируются Excel/LibreOffice как формулы. Апостроф-префикс запрещает
@@ -68,21 +73,67 @@ func csvSafe(s string) string {
 	return s
 }
 
-// unescapeCSVAnswer (DEEP-REVIEW PASS-4 M1): снимает экранирующий ' добавленный
-// csvSafe при экспорте. Без этого backup/restore менял код ответа "=42" на "'=42".
-func unescapeCSVAnswer(s string) string {
-	if s == "" || s[0] != '\'' {
-		return s
+// escapeAnswerCodes (DEEP-REVIEW PASS-5 M5+L2): экранирует разделитель "|",
+// backslash и РЕАЛЬНЫЕ апострофы (удвоением) внутри кодов, чтобы round-trip
+// не ломал: "a|b" → два ответа; "'=42" (реальный апостроф) не путался с
+// экранированием csvSafe. Формат: "\|", "\\", "''".
+func escapeAnswerCodes(codes []string) string {
+	escaped := make([]string, len(codes))
+	for i, c := range codes {
+		c = strings.ReplaceAll(c, `\`, `\\`)
+		c = strings.ReplaceAll(c, "|", `\|`)
+		c = strings.ReplaceAll(c, "'", `''`)
+		escaped[i] = c
 	}
-	rest := strings.TrimLeft(s[1:], " \t")
-	if rest == "" {
-		return s
+	return strings.Join(escaped, "|")
+}
+
+// unescapeAnswerCodes (M5+L2): обратное преобразование — снимает один
+// csvSafe-' (формульный), затем разворачивает "''"→"'", "\|"→"|", "\\"→"\".
+func unescapeAnswerCodes(s string) []string {
+	if s == "" {
+		return nil
 	}
-	switch rest[0] {
-	case '=', '+', '-', '@', '\t', '\r':
-		return s[1:]
+	parts := []string{}
+	var cur strings.Builder
+	for i := 0; i < len(s); i++ {
+		switch {
+		case s[i] == '\\' && i+1 < len(s) && s[i+1] == '|':
+			cur.WriteByte('|')
+			i++
+		case s[i] == '\\' && i+1 < len(s) && s[i+1] == '\\':
+			cur.WriteByte('\\')
+			i++
+		case s[i] == '|':
+			parts = append(parts, cur.String())
+			cur.Reset()
+		default:
+			cur.WriteByte(s[i])
+		}
 	}
-	return s
+	parts = append(parts, cur.String())
+
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		// Снимаем ОДИН csvSafe-апостроф (добавлен к формульным символам).
+		if strings.HasPrefix(p, "'") && len(p) > 1 {
+			rest := strings.TrimLeft(p[1:], " \t")
+			if rest != "" {
+				switch rest[0] {
+				case '=', '+', '-', '@', '\t', '\r':
+					p = p[1:]
+				}
+			}
+		}
+		// Разворачиваем удвоенные апострофы обратно в реальные.
+		p = strings.ReplaceAll(p, "''", "'")
+		result = append(result, p)
+	}
+	return result
 }
 
 // ExportGameToCSV записывает все уровни, вопросы и ответы игры в CSV-формате.
@@ -109,7 +160,9 @@ func (s *ExportService) ExportGameToCSV(ctx context.Context, gameID uint, w io.W
 				csvSafe(lvl.Name),
 				csvSafe(q.Text),
 				csvSafe(q.Hint),
-				csvSafe(strings.Join(answerCodes, "|")),
+				// M5 (PASS-5): экранируем "|" внутри кодов — round-trip не ломает
+				// ответы с разделителем; csvSafe защищает от formula-injection.
+				csvSafe(escapeAnswerCodes(answerCodes)),
 			}); err != nil {
 				return fmt.Errorf("ошибка записи CSV-строки: %w", err)
 			}
@@ -309,16 +362,11 @@ func (s *ExportService) ImportGameFromCSV(ctx context.Context, gameID uint, r io
 			}
 
 			if answersStr != "" {
-				codes := strings.Split(answersStr, "|")
+				// M5 (PASS-5): разэкранирование "|" и "\\" + снятие csvSafe-' —
+				// раньше Split("|") ломал коды с разделителем, а unescapeCSVAnswer
+				// портил реальный апостроф "'=42".
+				codes := unescapeAnswerCodes(answersStr)
 				for _, code := range codes {
-					code = strings.TrimSpace(code)
-					if code == "" {
-						continue
-					}
-					// M1 (PASS-4): снять экранирующий ' из csvSafe (экспорт
-					// ставит '=42, чтобы Excel не считал формулой). Иначе
-					// backup/restore молча меняет код ответа на '=42.
-					code = unescapeCSVAnswer(code)
 					answer := level.Answer{
 						QuestionID: question.ID,
 						Code:       code,

@@ -174,3 +174,21 @@ func TestExportGameToExcel_NoLevels(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, bytes.HasPrefix(buf.Bytes(), []byte("PK\x03\x04")))
 }
+
+// M5 (PASS-5): escape/unescape кодов ответов — round-trip не ломает "|", "\\"
+// и реальный апостроф "'=42" (L2).
+func TestAnswerCodesRoundTrip(t *testing.T) {
+	cases := [][]string{
+		{"=42"},
+		{"a|b"},
+		{`a\|b`, `c|d`},
+		{`'=42`, `@foo`},
+		{`path\to\file`},
+		{"простой код"},
+	}
+	for _, codes := range cases {
+		encoded := export.EscapeAnswerCodesForTest(codes)
+		decoded := export.UnescapeAnswerCodesForTest(encoded)
+		assert.Equal(t, codes, decoded, "round-trip %v", codes)
+	}
+}
