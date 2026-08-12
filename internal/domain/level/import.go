@@ -103,6 +103,12 @@ func (s *ImportService) Import(ctx context.Context, gameID, userID uint, r io.Re
 
 	count := 0
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// M2 (PASS-6): advisory lock на игру — автопозиция MAX+1 не должна
+		// гоняться между параллельными импортами (иначе дубликаты позиций).
+		if lockErr := tx.Exec("SELECT pg_advisory_xact_lock(?)", int64(gameID)).Error; lockErr != nil {
+			return fmt.Errorf("pg_advisory_xact_lock: %w", lockErr)
+		}
+
 		seenPos := make(map[int]bool, len(payload.Levels))
 		for _, il := range payload.Levels {
 			// M6: валидация позиции — отрицательные запрещены; 0 = автопозиция

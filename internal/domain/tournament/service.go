@@ -119,8 +119,13 @@ func (s *TournamentService) AddGame(ctx context.Context, tournamentID, gameID, u
 		if count > 0 {
 			return ErrGameAlreadyInTournament
 		}
+		// L11 (PASS-6): OrderIndex = MAX+1, а не COUNT(*) — после RemoveGame
+		// индексы дырявые, и COUNT мог совпасть с существующим OrderIndex.
 		var order int64
-		if err := tx.Model(&TournamentGame{}).Where("tournament_id = ?", tournamentID).Count(&order).Error; err != nil {
+		if err := tx.Model(&TournamentGame{}).
+			Where("tournament_id = ?", tournamentID).
+			Select("COALESCE(MAX(order_index), 0) + 1").
+			Scan(&order).Error; err != nil {
 			return err
 		}
 		tg := TournamentGame{

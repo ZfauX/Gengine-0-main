@@ -115,7 +115,10 @@ func unescapeAnswerCodes(s string) []string {
 
 	result := make([]string, 0, len(parts))
 	for _, p := range parts {
-		p = strings.TrimSpace(p)
+		// L8 (PASS-6): TrimSpace терял значимые хвостовые пробелы в кодах
+		// ответов ("=42  " → "=42"). Убираем только ведущие (артефакты
+		// csvSafe), хвостовые сохраняем.
+		p = strings.TrimLeft(p, " \t")
 		if p == "" {
 			continue
 		}
