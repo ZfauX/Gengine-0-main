@@ -396,8 +396,14 @@ func (s *ChatService) ListRoomsByGame(ctx context.Context, gameID uint) ([]ChatR
 }
 
 // GetOrCreatePersonalRoom возвращает/создаёт личный чат 1-на-1 (B-7).
-func (s *ChatService) GetOrCreatePersonalRoom(ctx context.Context, userA, userB uint) (*ChatRoom, error) {
+func (s *ChatService) GetOrCreatePersonalRoom(ctx context.Context, userA, userB uint) (*ChatRoom, bool, error) {
 	return s.chatRepo.GetOrCreatePersonalRoom(ctx, userA, userB)
+}
+
+// DeleteRoom удаляет комнату (PASS-6 P4: откат при создании личного чата
+// с несуществующим собеседником).
+func (s *ChatService) DeleteRoom(ctx context.Context, roomID uint) error {
+	return s.chatRepo.DeleteRoom(ctx, roomID)
 }
 
 func (s *ChatService) SaveMessage(ctx context.Context, roomID, userID uint, content string) (*ChatMessage, error) {

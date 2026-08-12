@@ -39,7 +39,10 @@ type ChatRepository interface {
 	CreateRoom(ctx context.Context, room *ChatRoom) error
 	ListRoomsByGame(ctx context.Context, gameID uint) ([]ChatRoom, error)
 	// B-7 (pass 45): личный чат 1-на-1.
-	GetOrCreatePersonalRoom(ctx context.Context, userA, userB uint) (*ChatRoom, error)
+	GetOrCreatePersonalRoom(ctx context.Context, userA, userB uint) (*ChatRoom, bool, error)
+	// DeleteRoom (PASS-6 P4): удаление комнаты (используется для отката при
+	// создании личного чата с несуществующим собеседником).
+	DeleteRoom(ctx context.Context, roomID uint) error
 }
 
 // BlackboxRepository определяет контракт для работы с голосованиями.
@@ -456,7 +459,12 @@ func (r *gormChatRepo) ListRoomsByGame(ctx context.Context, gameID uint) ([]Chat
 
 // GetOrCreatePersonalRoom возвращает/создаёт личный чат 1-на-1 (B-7, pass 45).
 // Пара userA<userB нормализуется — комната уникальна независимо от порядка.
-func (r *gormChatRepo) GetOrCreatePersonalRoom(ctx context.Context, userA, userB uint) (*ChatRoom, error) {
+// GetOrCreatePersonalRoom возвращает/создаёт личный чат 1-на-1 (B-7, pass 45).
+// Пара userA<userB нормализуется — комната уникальна независимо от порядка.
+// Возвращает created=true, если комната была создана этим вызовом
+// (DEEP-REVIEW PASS-6 P4: позволяет хендлеру проверить существование
+// собеседника ТОЛЬКО при создании, не тратя лишний GetByID на каждую страницу).
+func (r *gormChatRepo) GetOrCreatePersonalRoom(ctx context.Context, userA, userB uint) (*ChatRoom, bool, error) {
 	if userA > userB {
 		userA, userB = userB, userA
 	}
@@ -465,10 +473,10 @@ func (r *gormChatRepo) GetOrCreatePersonalRoom(ctx context.Context, userA, userB
 		Where("room_type = ? AND user1_id = ? AND user2_id = ?", RoomTypePersonal, userA, userB).
 		First(&room).Error
 	if err == nil {
-		return &room, nil
+		return &room, false, nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
+		return nil, false, err
 	}
 	room = ChatRoom{
 		Name:     "Личный чат",
@@ -480,11 +488,17 @@ func (r *gormChatRepo) GetOrCreatePersonalRoom(ctx context.Context, userA, userB
 		if err := r.db.WithContext(ctx).
 			Where("room_type = ? AND user1_id = ? AND user2_id = ?", RoomTypePersonal, userA, userB).
 			First(&room).Error; err != nil {
-			return nil, fmt.Errorf("failed to get or create personal chat room: %w", err)
+			return nil, false, fmt.Errorf("failed to get or create personal chat room: %w", err)
 		}
-		return &room, nil
+		return &room, false, nil
 	}
-	return &room, nil
+	return &room, true, nil
+}
+
+// DeleteRoom удаляет комнату (PASS-6 P4: откат при создании с несуществующим
+// собеседником; soft-delete — сообщения сохраняются, комната скрывается).
+func (r *gormChatRepo) DeleteRoom(ctx context.Context, roomID uint) error {
+	return r.db.WithContext(ctx).Delete(&ChatRoom{}, roomID).Error
 }
 
 type gormBlackboxRepo struct{ db *gorm.DB }

@@ -48,6 +48,7 @@ const (
 	maxImportLevels             = 5000
 	maxImportQuestionsPerLevel  = 200
 	maxImportAnswersPerQuestion = 100
+	maxImportPosition           = 10000 // M9: верхняя граница позиции (как CSV)
 )
 
 // validLevelType — allowlist типов уровня (M6).
@@ -108,6 +109,11 @@ func (s *ImportService) Import(ctx context.Context, gameID, userID uint, r io.Re
 			// (max+1, как раньше); дубликаты позиций в рамках импорта запрещены.
 			if il.Position < 0 {
 				return fmt.Errorf("недопустимая позиция уровня: %d", il.Position)
+			}
+			// M9 (PASS-6): верхняя граница позиции — асимметрия с CSV-импортом,
+			// где pos ≤ 10000. Позиция 2^31-1 ломала бы сортировку/пагинацию.
+			if il.Position > maxImportPosition {
+				return fmt.Errorf("недопустимая позиция уровня: %d (максимум %d)", il.Position, maxImportPosition)
 			}
 			if il.Position > 0 {
 				if seenPos[il.Position] {

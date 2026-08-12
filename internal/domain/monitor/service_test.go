@@ -616,15 +616,17 @@ func TestChatService_PersonalRoom(t *testing.T) {
 	u1 := createUser(t, db, "p1@test.com", "pass")
 	u2 := createUser(t, db, "p2@test.com", "pass")
 
-	room, err := cs.GetOrCreatePersonalRoom(context.Background(), u1.ID, u2.ID)
+	room, created, err := cs.GetOrCreatePersonalRoom(context.Background(), u1.ID, u2.ID)
 	require.NoError(t, err)
+	assert.True(t, created)
 	assert.Equal(t, monitor.RoomTypePersonal, room.RoomType)
 	require.NotNil(t, room.User1ID)
 	require.NotNil(t, room.User2ID)
 
-	// Порядок не важен — та же комната.
-	room2, err := cs.GetOrCreatePersonalRoom(context.Background(), u2.ID, u1.ID)
+	// Порядок не важен — та же комната, created=false.
+	room2, created2, err := cs.GetOrCreatePersonalRoom(context.Background(), u2.ID, u1.ID)
 	require.NoError(t, err)
+	assert.False(t, created2)
 	assert.Equal(t, room.ID, room2.ID)
 }
 

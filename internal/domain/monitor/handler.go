@@ -1166,22 +1166,29 @@ func (h *MonitorHandler) PersonalChat(c *gin.Context) {
 		render.RenderError(c, http.StatusBadRequest, "некорректный собеседник")
 		return
 	}
-	// L6 (PASS-5): не создаём комнату на НЕСУЩЕСТВУЮЩЕГО пользователя —
-	// раньше любой ID создавал мусорную строку в chat_rooms.
-	if _, uErr := h.userService.GetByID(c.Request.Context(), uint(otherID)); uErr != nil {
-		if errors.Is(uErr, gorm.ErrRecordNotFound) {
-			render.RenderError(c, http.StatusNotFound, "собеседник не найден")
-			return
-		}
-		log.Error().Err(uErr).Int("other_id", otherID).Msg("PersonalChat: failed to load target user")
-		render.RenderErrorPage(c, http.StatusInternalServerError)
-		return
-	}
-	room, err := h.chatService.GetOrCreatePersonalRoom(c.Request.Context(), userID, uint(otherID))
+	// P4 (PASS-6): проверяем существование собеседника ТОЛЬКО при создании
+	// комнаты — на повторных открытиях лишний GetByID не делается (FK
+	// user1_id/user2_id гарантирует существование уже созданной комнаты).
+	// L6 (PASS-5): не создаём комнату на НЕСУЩЕСТВУЮЩЕГО пользователя.
+	room, created, err := h.chatService.GetOrCreatePersonalRoom(c.Request.Context(), userID, uint(otherID))
 	if err != nil {
 		log.Error().Err(err).Int("other_id", otherID).Uint("user_id", userID).Msg("PersonalChat: failed to get/create room")
 		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
+	}
+	if created {
+		if _, uErr := h.userService.GetByID(c.Request.Context(), uint(otherID)); uErr != nil {
+			// Комната только что создана, но собеседник не существует — откатываем
+			// (уникальный индекс 000064 не дал бы создать, но страхуемся).
+			_ = h.chatService.DeleteRoom(c.Request.Context(), room.ID)
+			if errors.Is(uErr, gorm.ErrRecordNotFound) {
+				render.RenderError(c, http.StatusNotFound, "собеседник не найден")
+				return
+			}
+			log.Error().Err(uErr).Int("other_id", otherID).Msg("PersonalChat: failed to load target user")
+			render.RenderErrorPage(c, http.StatusInternalServerError)
+			return
+		}
 	}
 	render.Page(c, http.StatusOK, "chat-global.html", gin.H{
 		"Title":         "Личный чат",
