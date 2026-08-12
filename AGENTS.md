@@ -17,12 +17,23 @@ go generate ./...   # re-run google/wire DI codegen (needed after constructor ch
 
 E2E-тесты (Playwright, `e2e/`):
 - Сервер для E2E запускается на `:8081` с БД `gengine_e2e` (см. `.env.e2e`; не коммитится).
-- Лимиты rate-limiter в E2E подняты (`RATE_LIMIT_*=100000`), `TRUSTED_PROXIES` пуст — иначе
-  CSRF-кука станет Secure, а регистрация упрётся в дефолтный лимит 3/10мин из routes.go.
+- **Запуск сервера E2E**: `APP_ENV_FILE=.env.e2e go run ./cmd/server` (или `APP_ENV_FILE=.env.e2e ./gengine`) — переменная
+  окружения указывает серверу, какой env-файл читать. Без неё main.go читает `.env` по умолчанию, и E2E-сервер
+  подхватывает из `.env` ключи, которых нет в `.env.e2e` (`TLS_CERT_FILE`, `TRUSTED_PROXIES`) — это форсирует
+  Secure-флаг CSRF-куки и ломает все HTML-формы по HTTP (403 «CSRF token mismatch»).
+- Лимиты rate-limiter в E2E подняты (`RATE_LIMIT_*=100000`), `TRUSTED_PROXIES` пуст, `FORCE_SECURE_COOKIE=false` —
+  иначе CSRF-кука станет Secure, а регистрация упрётся в дефолтный лимит 3/10мин из routes.go.
 - Первый запуск: `npm install`, `npx playwright install chromium`, применить миграции к `gengine_e2e`
   (`go run ./cmd/server -migrate` с env из `.env.e2e`), запустить сервер, затем `make test-e2e`.
 - Service Workers блокируются в playwright.config.ts (`serviceWorkers: 'block'`) — SW кэширует
   HTML-страницы и подставляет устаревший CSRF-токен.
+- Known E2E-ловушки (исправлены PASS-7):
+  - Глобальный fetch-перехватчик в `layout.html` проверяет CSRF-заголовок регистронезависимо (`toLowerCase()`);
+    иначе `X-CSRF-Token` (верблюжий регистр) дублировал токен → 403.
+  - Inline-скрипт `chat-global.html` инициализируется на `DOMContentLoaded` — app.js подключён с `defer`,
+    `createReconnectingWebSocket` определён только после парсинга документа.
+- CI: `.github/workflows/ci.yml` — jobs `unit` (lint + `-short`), `integration` (PostgreSQL service),
+  `e2e` (PostgreSQL service + Playwright + сервер на :8081 с `APP_ENV_FILE=.env.e2e`).
 
 After changing any constructor signature in `internal/domain/*/service.go`, run:
 ```bash

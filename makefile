@@ -82,7 +82,7 @@ install-tools:
 # Команда для CI (полная проверка)
 # Проверка синхронизации ключей i18n (ru/en)
 i18n-check:
-	$(GO) test ./internal/pkg/i18n/ -run "TestAllKeysHave" -count=1
+	$(GO) test ./internal/pkg/i18n/ -run "TestAllUsedKeysExistInBothDictionaries" -count=1
 
 # Скан уязвимостей зависимостей (требует govulncheck: go install golang.org/x/vuln/cmd/govulncheck@latest)
 vuln-check:

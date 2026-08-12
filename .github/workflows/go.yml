@@ -145,6 +145,127 @@ jobs:
       - name: Build
         run: go build -race ./...
 
+  test-e2e:
+    name: E2E Tests (Playwright)
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: gengine
+          POSTGRES_PASSWORD: gengine
+          POSTGRES_DB: gengine
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci || npm install
+
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Create e2e database (gengine_e2e)
+        env:
+          PGPASSWORD: gengine
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+          psql -h localhost -U gengine -d gengine -v ON_ERROR_STOP=1 -c "CREATE DATABASE gengine_e2e;"
+
+      - name: Create .env.e2e
+        # APP_ENV_FILE указывает серверу читать .env.e2e, а не .env:
+        # иначе из .env подхватываются TLS_*/TRUSTED_PROXIES → CSRF-кука Secure → 403 на HTTP.
+        run: |
+          cat > .env.e2e <<'EOF'
+          PORT=8081
+          SERVER_BASE_URL=http://localhost:8081
+          GIN_MODE=release
+          DB_HOST=localhost
+          DB_PORT=5432
+          DB_USER=gengine
+          DB_PASSWORD=gengine
+          DB_NAME=gengine_e2e
+          DB_SSLMODE=disable
+          JWT_SECRET=ci-jwt-secret-0123456789abcdef0123456789abcdef
+          SESSION_SECRET=ci-session-secret-0123456789abcdef0123456789abcdef
+          ADMIN_EMAIL=admin@e2e.test
+          ADMIN_PASSWORD=AdminE2E123456!
+          SMTP_ENABLED=false
+          VALKEY_HOST=
+          VALKEY_PORT=
+          WEBAUTHN_RPID=localhost
+          FORCE_SECURE_COOKIE=false
+          RATE_LIMIT_GLOBAL=100000
+          RATE_LIMIT_LOGIN=100000
+          RATE_LIMIT_REGISTRATION=100000
+          RATE_LIMIT_CODE_SUBMISSION=100000
+          RATE_LIMIT_SSE=100000
+          RATE_LIMIT_API=100000
+          RATE_LIMIT_PASSWORD_RESET=100000
+          EOF
+
+      - name: Build server binary
+        run: go build -o gengine ./cmd/server
+
+      - name: Run migrations (gengine_e2e)
+        env:
+          APP_ENV_FILE: .env.e2e
+        run: ./gengine -migrate
+
+      - name: Start server on :8081
+        env:
+          APP_ENV_FILE: .env.e2e
+        run: |
+          nohup ./gengine > e2e-server.log 2>&1 &
+          echo "server pid: $!"
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8081/ > /dev/null 2>&1; then
+              echo "server is up (attempt $i)"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "server failed to start" >&2
+          cat e2e-server.log >&2 || true
+          exit 1
+
+      - name: Run Playwright E2E
+        run: npx playwright test
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
+
   docker:
     name: Docker Image
     runs-on: ubuntu-latest
