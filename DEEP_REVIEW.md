@@ -154,7 +154,8 @@
 1. ✅ **H1** (payment TOCTOU — unique index 000064), **H2** (chat_rooms race — unique index 000064).
 2. ✅ **M3** (CloseVoting 403/500), **M5** (webhook WithoutCancel), **M6** (succeeded idempotent).
 3. ✅ **M1** (RecentGames копия), **H1-perf** (ICS singleflight), **H2-perf** (sweep 1/с).
-4. ⏳ На будущее: **M2/M4/M7/M8/M9**, **P3/P4/P5**, L-пункты, DDL-индексы (P6).
+4. ⏳ → ✅ Закрыто далее: **M2** (JSON import advisory lock), **M9** (граница позиции), **P4** (PersonalChat создание-only), **P5** (singleflight stats/games), **P7** (flash session once), **L7** (CreateRoom rate-limit), **L8** (хвостовые пробелы), **L11** (OrderIndex MAX+1); **M8** снят (каскад answers подтверждён).
+5. ⏳ Осталось задокументировать: **M4** (начисленные очки турнира), **M7** (согласие на личный чат), **P3** (батч вопросов CSV — рискованный), L1-L6, L9, L10, L12, L13, P6, P8-P14.
 
 ---
 
