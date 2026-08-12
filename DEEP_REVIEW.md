@@ -144,7 +144,7 @@
 1. ✅ **H1** (идемпотентность платежей), **H2** (fallback payment_id), **H3** (cross-game IDOR).
 2. ✅ **M1** (export observer), **M3** (personal chat per-user), **M4** (payments rate-limit), **M2** (singleflight ctx), **M7** (sweep 1/с).
 3. ✅ **L1** (kopecks overflow), **L5** (backup recover).
-4. ⏳ На будущее: **M5** (`|` в кодах), **M6** (JSON-import лимиты), **L3** (webhook replay/4xx), **P2** (батч), **P3** (RecentGames кэш).
+4. ⏳ → ✅ На будущее закрыто: **M5** (`|` в кодах — escape/unescape + тест), **M6** (JSON-import лимиты + автопозиция), **L3** (webhook event↔status + mismatch 409), **L6** (личный чат — проверка собеседника), **L7** (импорт не молчит), **P2** (батч ответов), **P3** (RecentGames кэш).
 
 ---
 
