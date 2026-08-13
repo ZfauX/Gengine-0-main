@@ -123,7 +123,10 @@ func TestTournamentService_Leaderboard(t *testing.T) {
 	require.NoError(t, svc.Create(context.Background(), trn))
 
 	tm1, _ := teamSvc.CreateTeam(context.Background(), "T1", author.ID)
-	tm2, _ := teamSvc.CreateTeam(context.Background(), "T2", author.ID)
+	// PASS-9 (reviewer #6): один пользователь не может быть капитаном двух команд —
+	// второй капитан создаётся отдельным пользователем.
+	cap2 := createTournamentUser(t, db, "lb-cap2@test.com")
+	tm2, _ := teamSvc.CreateTeam(context.Background(), "T2", cap2.ID)
 
 	db.Create(&tournament.TournamentResult{TournamentID: trn.ID, TeamID: tm1.ID, Score: 12, GamesPlayed: 2})
 	db.Create(&tournament.TournamentResult{TournamentID: trn.ID, TeamID: tm2.ID, Score: 8, GamesPlayed: 2})
@@ -157,7 +160,9 @@ func TestTournamentService_UpdateScoresForGame(t *testing.T) {
 	require.NoError(t, svc.AddGame(ctx, trn.ID, g.ID, author.ID))
 
 	tm1, _ := teamSvc.CreateTeam(ctx, "T1", author.ID)
-	tm2, _ := teamSvc.CreateTeam(ctx, "T2", author.ID)
+	// PASS-9 (reviewer #6): разные капитаны для двух команд.
+	cap2 := createTournamentUser(t, db, "score-cap2@test.com")
+	tm2, _ := teamSvc.CreateTeam(ctx, "T2", cap2.ID)
 	require.NoError(t, db.Create(&tournament.TournamentTeam{TournamentID: trn.ID, TeamID: tm1.ID}).Error)
 	require.NoError(t, db.Create(&tournament.TournamentTeam{TournamentID: trn.ID, TeamID: tm2.ID}).Error)
 
@@ -187,8 +192,10 @@ func TestTournamentService_UpdateScoresForGame(t *testing.T) {
 	assert.Equal(t, 10, r1.Score)
 }
 
-// TestTournamentService_RemoveGame: списывает точное начисленное значение
-// (tournament_points), а не пересчитывает по текущему месту (T-H1 / C-M2).
+// TestTournamentService_RemoveGame: удаление игры, если очки НЕ начислены,
+// работает; после начисления очков автору ЗАПРЕЩЕНО (PASS-9 security HIGH #1:
+// автор мог обнулить чужие очки перед закрытием турнира), админу — можно.
+// Повторный AddGame той же игры невозможен (uniqueIndex + soft-delete).
 func TestTournamentService_RemoveGame(t *testing.T) {
 	db := setupTournamentDB(t)
 	teamSvc := newTeamService(db)
@@ -202,24 +209,32 @@ func TestTournamentService_RemoveGame(t *testing.T) {
 	}
 	require.NoError(t, svc.Create(ctx, trn))
 
-	g := createTournamentGame(t, db, author.ID, "G1")
-	require.NoError(t, svc.AddGame(ctx, trn.ID, g.ID, author.ID))
+	// Игра 1: удаление ДО начисления — допустимо.
+	g1 := createTournamentGame(t, db, author.ID, "G1")
+	require.NoError(t, svc.AddGame(ctx, trn.ID, g1.ID, author.ID))
+	require.NoError(t, svc.RemoveGame(ctx, trn.ID, g1.ID, author.ID, false))
+
+	// Игра 2: после начисления очков автору запрещено, админу — можно.
+	g2 := createTournamentGame(t, db, author.ID, "G2")
+	require.NoError(t, svc.AddGame(ctx, trn.ID, g2.ID, author.ID))
 
 	tm1, _ := teamSvc.CreateTeam(ctx, "T1", author.ID)
 	require.NoError(t, db.Create(&tournament.TournamentTeam{TournamentID: trn.ID, TeamID: tm1.ID}).Error)
 
-	p1 := &game.GamePassing{GameID: g.ID, TeamID: tm1.ID, Status: game.StatusFinished, Place: intPtr(1)}
+	p1 := &game.GamePassing{GameID: g2.ID, TeamID: tm1.ID, Status: game.StatusFinished, Place: intPtr(1)}
 	require.NoError(t, db.Create(p1).Error)
-
-	svc.UpdateScoresForGame(ctx, g.ID)
+	svc.UpdateScoresForGame(ctx, g2.ID)
 
 	var r1 tournament.TournamentResult
 	require.NoError(t, db.Where("team_id = ?", tm1.ID).First(&r1).Error)
 	assert.Equal(t, 10, r1.Score)
 
-	require.NoError(t, svc.RemoveGame(ctx, trn.ID, g.ID, author.ID))
+	// Автору после начисления удаление ЗАПРЕЩЕНО (PASS-9 security HIGH #1).
+	require.Error(t, svc.RemoveGame(ctx, trn.ID, g2.ID, author.ID, false))
 
-	// После удаления единственной игры результат удалён.
+	// Админу разрешено (поддержка/исправление) — очки списываются.
+	require.NoError(t, svc.RemoveGame(ctx, trn.ID, g2.ID, author.ID, true))
+
 	var count int64
 	require.NoError(t, db.Model(&tournament.TournamentResult{}).Where("team_id = ?", tm1.ID).Count(&count).Error)
 	assert.Equal(t, int64(0), count)
@@ -307,8 +322,9 @@ func TestTournamentService_RemoveGame_MultiTournamentParallelArrays(t *testing.T
 	require.Len(t, pAfter.TournamentScoredIDs, 2, "оба турнира начислены")
 	require.Len(t, pAfter.TournamentScoredPoints, 2, "оба параллельных массива заполнены")
 
-	// Удаляем игру из турнира A — из обоих массивов уходит первый элемент.
-	require.NoError(t, svc.RemoveGame(ctx, trnA.ID, g.ID, author.ID))
+	// Удаляем игру из турнира A (как админ — автору запрещено после начисления,
+	// PASS-9 security HIGH #1) — из обоих массивов уходит первый элемент.
+	require.NoError(t, svc.RemoveGame(ctx, trnA.ID, g.ID, author.ID, true))
 
 	var pRem game.GamePassing
 	require.NoError(t, db.First(&pRem, p1.ID).Error)

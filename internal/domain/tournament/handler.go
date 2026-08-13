@@ -9,6 +9,7 @@ import (
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/team"
+	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/sanitize"
 	"gengine-0/internal/pkg/validation"
@@ -508,7 +509,7 @@ func (h *TournamentHandler) RemoveGame(c *gin.Context) {
 	}
 	userID := c.GetUint("userID")
 
-	if err := h.tournamentService.RemoveGame(c.Request.Context(), req.ID, req.GameID, userID); err != nil {
+	if err := h.tournamentService.RemoveGame(c.Request.Context(), req.ID, req.GameID, userID, middleware.IsAdmin(c)); err != nil {
 		log.Error().Err(err).Uint("tournament_id", req.ID).Uint("game_id", req.GameID).Uint("user_id", userID).Msg("TournamentHandler.RemoveGame: failed to remove game")
 		render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, err.Error()))
 		return

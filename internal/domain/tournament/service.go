@@ -164,16 +164,31 @@ func (s *TournamentService) AddGame(ctx context.Context, tournamentID, gameID, u
 	})
 }
 
-func (s *TournamentService) RemoveGame(ctx context.Context, tournamentID, gameID, userID uint) error {
+func (s *TournamentService) RemoveGame(ctx context.Context, tournamentID, gameID, userID uint, isAdmin bool) error {
 	t, err := s.tournamentRepo.GetByID(ctx, tournamentID)
 	if err != nil {
 		return err
 	}
-	if t.AuthorID != userID {
+	if t.AuthorID != userID && !isAdmin {
 		return ErrTournamentRemoveForbidden
 	}
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// PASS-9 (security HIGH #1): запрещаем автору удаление игры, если очки
+		// за неё УЖЕ начислены — иначе remove→add→finish бесконечно накручивает
+		// очки (автор списывает чужие и пере-начисляет свои). Глобальный админ
+		// может (исправление ошибок/поддержка).
+		var scoredCount int64
+		if err = tx.Model(&game.GamePassing{}).
+			Where("game_id = ? AND team_id IN (SELECT team_id FROM tournament_teams WHERE tournament_id = ?)", gameID, tournamentID).
+			Where("? = ANY(tournament_scored_ids)", int64(tournamentID)).
+			Count(&scoredCount).Error; err != nil {
+			return err
+		}
+		if scoredCount > 0 && !isAdmin {
+			return fmt.Errorf("нельзя удалить игру из турнира: очки уже начислены")
+		}
+
 		// Get all finished passings for this game — read inside the transaction
 		var passings []game.GamePassing
 		if err = tx.Where("game_id = ? AND status = ?", gameID, game.StatusFinished).Find(&passings).Error; err != nil {
@@ -228,13 +243,27 @@ func (s *TournamentService) RemoveGame(ctx context.Context, tournamentID, gameID
 		pointsRemoveExpr := `(SELECT array_agg(pp.points ORDER BY pp.ord)
 			FROM unnest(tournament_scored_points) WITH ORDINALITY AS pp(points, ord)
 			WHERE pp.ord <> (SELECT o.ord FROM unnest(tournament_scored_ids) WITH ORDINALITY AS o(id, ord) WHERE o.id = ?))`
+		// Reviewer #3 (PASS-9): tournament_points обнуляем только если в массиве
+		// НЕ осталось начислений других турниров. Раньше безусловный `= 0`
+		// затирал очки, начисленные вторым турниром той же игры.
+		// Обнуление происходит в Go после обновления массивов.
 		if err = tx.Model(&game.GamePassing{}).
 			Where("game_id = ? AND team_id IN (SELECT team_id FROM tournament_teams WHERE tournament_id = ?)", gameID, tournamentID).
 			Updates(map[string]any{
 				"tournament_scored_ids":    gorm.Expr("array_remove(tournament_scored_ids, ?)", int64(tournamentID)),
 				"tournament_scored_points": gorm.Expr(pointsRemoveExpr, int64(tournamentID)),
-				"tournament_points":        0,
 			}).Error; err != nil {
+			return err
+		}
+		// tournament_points = сумма оставшихся tournament_scored_points.
+		if err = tx.Exec(`
+			UPDATE game_passings
+			SET tournament_points = COALESCE((
+				SELECT SUM(pp.points)
+				FROM unnest(tournament_scored_points) WITH ORDINALITY AS pp(points, ord)
+			), 0)
+			WHERE game_id = ? AND team_id IN (SELECT team_id FROM tournament_teams WHERE tournament_id = ?)
+		`, gameID, tournamentID).Error; err != nil {
 			return err
 		}
 

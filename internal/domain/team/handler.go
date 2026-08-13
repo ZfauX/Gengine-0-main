@@ -615,9 +615,10 @@ func (h *InvitationHandler) Create(c *gin.Context) {
 	// Валидация ID пользователя
 	if err := validation.ValidatePositiveUint("ID пользователя", input.UserID); err != nil {
 		errs.Add("user_id", err)
-		render.Page(c, http.StatusBadRequest, "teams-add_member.html", gin.H{
-			"Title":  "Добавить участника",
-			"GameID": c.Param("game_id"),
+		// PASS-9 (reviewer #5): правильный шаблон создания приглашения —
+		// раньше copy-paste рендерил форму добавления участника.
+		render.Page(c, http.StatusBadRequest, "invitations-new.html", gin.H{
+			"Title":  "Пригласить участника",
 			"TeamID": req.TeamID,
 			"Error":  errs.Error(),
 			"Errors": errs,

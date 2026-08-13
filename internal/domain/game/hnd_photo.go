@@ -75,7 +75,18 @@ func (h *PhotoHandler) PhotosPage(c *gin.Context) {
 		}
 		return
 	}
-	if game.IsDraft && !isAdmin {
+	// PASS-9 (reviewer HIGH #1): isManager вычисляется ДО проверки IsDraft —
+	// иначе автор/соавтор черновика получал 404 (проверялся только глобальный
+	// isAdmin), хотя GetByID уже подтвердил права менеджера.
+	isManager, err := h.coAuthorSvc.IsUserManager(c.Request.Context(), uint(gameID), userID)
+	if err != nil {
+		log.Error().Err(err).Int("game_id", gameID).Msg("PhotoHandler.PhotosPage: failed to check manager")
+		isManager = false
+	}
+	if isAdmin {
+		isManager = true
+	}
+	if game.IsDraft && !isManager {
 		render.RenderErrorPage(c, http.StatusNotFound)
 		return
 	}
@@ -86,14 +97,6 @@ func (h *PhotoHandler) PhotosPage(c *gin.Context) {
 		if err != nil {
 			log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.PhotosPage: failed to list photos")
 		}
-	}
-	isManager, err := h.coAuthorSvc.IsUserManager(c.Request.Context(), uint(gameID), userID)
-	if err != nil {
-		log.Error().Err(err).Int("game_id", gameID).Msg("PhotoHandler.PhotosPage: failed to check manager")
-		isManager = false
-	}
-	if isAdmin {
-		isManager = true
 	}
 
 	render.Page(c, http.StatusOK, "games-photos.html", gin.H{

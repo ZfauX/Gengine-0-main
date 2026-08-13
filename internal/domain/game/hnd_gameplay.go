@@ -261,7 +261,22 @@ func (h *GameplayHandler) UseHint(c *gin.Context) {
 		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_passing_id"))
 		return
 	}
-	hintText, hintErr := h.gamePlaySvc.UseHint(c.Request.Context(), uint(passingID), c.GetUint("userID"))
+	userID := c.GetUint("userID")
+
+	// PASS-9 (security HIGH #2): проверяем членство ДО сервиса (как SubmitCode) —
+	// раньше при ошибке членства хендлер попадал в renderGameplayError, который
+	// рендерил данные уровня (текст вопроса и ПРАВИЛЬНЫЕ ОТВЕТЫ при
+	// HideAnswers=false) для любого аутентифицированного пользователя, перебиравшего passing_id.
+	if isMember, memErr := h.isUserInPassing(c.Request.Context(), uint(passingID), userID); memErr != nil {
+		log.Error().Err(memErr).Int("passing_id", passingID).Msg("Gameplay.UseHint: failed to check passing membership")
+		render.RenderErrorPage(c, http.StatusInternalServerError)
+		return
+	} else if !isMember {
+		render.RenderErrorPage(c, http.StatusForbidden)
+		return
+	}
+
+	hintText, hintErr := h.gamePlaySvc.UseHint(c.Request.Context(), uint(passingID), userID)
 	if hintErr != nil {
 		// Машинно-читаемый код для клиента (UX16): клиент не должен определять
 		// тип ошибки по локализованному тексту.

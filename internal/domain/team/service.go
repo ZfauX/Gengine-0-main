@@ -129,11 +129,21 @@ func (s *TeamService) GetTeamsByCaptain(ctx context.Context, captainID uint) ([]
 }
 
 func (s *TeamService) CreateTeam(ctx context.Context, name string, captainID uint) (*Team, error) {
+	// PASS-9 (reviewer #6): капитан не может состоять в другой команде —
+	// раньше пользователь мог стать капитаном двух команд, обходя A-5
+	// (уникальный индекс team_members.user_id).
+	inOther, err := s.userInOtherTeam(ctx, captainID, 0)
+	if err != nil {
+		return nil, err
+	}
+	if inOther {
+		return nil, ErrAlreadyInOtherTeam
+	}
 	team := &Team{
 		Name:      name,
 		CaptainID: captainID,
 	}
-	err := s.teamRepo.Create(ctx, team)
+	err = s.teamRepo.Create(ctx, team)
 	if err == nil {
 		metrics.IncTeamsTotal()
 	}
@@ -317,6 +327,13 @@ func (s *TeamService) ChangeCaptain(ctx context.Context, teamID, newCaptainID, a
 		if !isMember {
 			return ErrNewCaptainNotMember
 		}
+	}
+	// PASS-9 (reviewer #6): новый капитан не должен состоять в ДРУГОЙ команде
+	// (исключая текущую) — иначе пользователь становится капитаном двух команд.
+	if inOther, err := s.userInOtherTeam(ctx, newCaptainID, teamID); err != nil {
+		return err
+	} else if inOther {
+		return ErrAlreadyInOtherTeam
 	}
 	return s.teamRepo.ChangeCaptain(ctx, teamID, newCaptainID)
 }

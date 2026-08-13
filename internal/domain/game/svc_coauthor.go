@@ -275,12 +275,15 @@ func (s *CoAuthorService) Add(ctx context.Context, gameID, newCoAuthorID, ownerI
 	if authorID == newCoAuthorID {
 		return errors.New("владелец уже имеет полный доступ")
 	}
+	// PASS-9 (reviewer #9): дефолт роли ДО расчёта пресета — раньше при
+	// пустой роли PresetPermissions("") давал [PermRead], и content_editor
+	// терял право edit_content.
+	if role == "" {
+		role = RoleContentEditor
+	}
 	// Если permissions не заданы — берём пресет роли (A-1).
 	if len(permissions) == 0 {
 		permissions = PresetPermissions(role)
-	}
-	if role == "" {
-		role = RoleContentEditor
 	}
 
 	// Проверяем, есть ли запись (включая мягко удалённые)

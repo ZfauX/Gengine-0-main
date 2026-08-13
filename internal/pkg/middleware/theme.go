@@ -71,13 +71,22 @@ func InvalidateThemeCache(userID uint) {
 // раньше `for { time.Sleep(5min) }` жила вечно.
 var themeCacheStopCh chan struct{}
 
+// themeStopOnce (PASS-9 reviewer HIGH #2): канал закрывается ровно один раз —
+// раньше StopThemeCacheCleanup читал `!= nil` и закрывал без мьютекса: два
+// вызова (две горутины) давали panic «close of closed channel».
+var themeStopOnce sync.Once
+
 // StopThemeCacheCleanup останавливает фоновую горутину очистки кэша темы.
 func StopThemeCacheCleanup() {
 	themeCacheOnc.Do(func() {}) // гарантируем, что инициализация уже прошла
-	if themeCacheStopCh != nil {
-		close(themeCacheStopCh)
-		themeCacheStopCh = nil
-	}
+	themeStopOnce.Do(func() {
+		themeCacheMu.Lock()
+		if themeCacheStopCh != nil {
+			close(themeCacheStopCh)
+			themeCacheStopCh = nil
+		}
+		themeCacheMu.Unlock()
+	})
 }
 
 func themeCacheCleanup() {

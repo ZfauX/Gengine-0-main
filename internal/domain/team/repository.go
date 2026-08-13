@@ -138,7 +138,8 @@ func (r *gormTeamRepo) GetTeamsByUserID(ctx context.Context, userID uint) ([]Tea
 	return teams, err
 }
 
-// ListAllTeams возвращает все активные команды (с капитаном для отображения).
+// ListAllTeams возвращает активные команды (с капитаном для отображения).
+// perf #3 (PASS-9): LIMIT — не грузить все команды в память на вкладке «Команды».
 func (r *gormTeamRepo) ListAllTeams(ctx context.Context) ([]Team, error) {
 	var teams []Team
 	err := r.db.WithContext(ctx).
@@ -146,6 +147,7 @@ func (r *gormTeamRepo) ListAllTeams(ctx context.Context) ([]Team, error) {
 			return db.Select("id, name, avatar_path")
 		}).
 		Order("created_at DESC").
+		Limit(200).
 		Find(&teams).Error
 	return teams, err
 }
@@ -182,13 +184,19 @@ func (r *gormTeamRepo) CountSearch(ctx context.Context, query string) (int64, er
 }
 func (r *gormTeamRepo) ListAllPaginated(ctx context.Context, offset, limit int) ([]Team, error) {
 	var teams []Team
-	err := r.db.WithContext(ctx).Preload("Captain").Offset(offset).Limit(limit).Order("id DESC").Find(&teams).Error
+	// perf #4 (PASS-9): Select только безопасных колонок капитана — раньше
+	// Preload("Captain") тянул password_hash/email в память.
+	err := r.db.WithContext(ctx).
+		Preload("Captain", func(db *gorm.DB) *gorm.DB { return db.Select("id, name, avatar_path") }).
+		Offset(offset).Limit(limit).Order("id DESC").Find(&teams).Error
 	return teams, err
 }
 func (r *gormTeamRepo) SearchPaginated(ctx context.Context, query string, offset, limit int) ([]Team, error) {
 	var teams []Team
 	like := sqlutil.BuildLikePattern(query)
-	err := r.db.WithContext(ctx).Preload("Captain").
+	// perf #4 (PASS-9): Select только безопасных колонок капитана.
+	err := r.db.WithContext(ctx).
+		Preload("Captain", func(db *gorm.DB) *gorm.DB { return db.Select("id, name, avatar_path") }).
 		Joins("LEFT JOIN users ON users.id = teams.captain_id").
 		Where("teams.name ILIKE ? OR users.name ILIKE ?", like, like).
 		Offset(offset).Limit(limit).Order("id DESC").
