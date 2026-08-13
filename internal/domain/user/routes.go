@@ -109,7 +109,7 @@ func RegisterRoutes(
 	{
 		profileGroup.GET("/", profileHandler.Show)
 
-		profileGroup.POST("/avatar", profileHandler.UploadAvatar)
+		profileGroup.POST("/avatar", middleware.UploadRateLimit(5*time.Minute, 20), profileHandler.UploadAvatar)
 
 		profileGroup.POST("/update", profileHandler.UpdateProfile)
 

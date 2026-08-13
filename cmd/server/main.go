@@ -44,6 +44,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -237,13 +238,16 @@ func run() error {
 	// realtimeBus (MULTI-INSTANCE PASS-12): cross-instance real-time шина.
 	// nil, если Valkey недоступен — WebSocket/SSE работают локально.
 	var realtimeBus realtimebus.Bus
+	// valkeyClient (LOW, PASS-13): общий клиент для сессий/лимитеров/шины —
+	// сохраняем ссылку, чтобы корректно закрыть при shutdown.
+	var valkeyClient *redis.Client
 	// SessionStore (PASS-11, session fixation): server-side store — Valkey если
 	// доступен, иначе in-memory. В cookie только session ID; данные на сервере.
 	sessionSecret := []byte(cfg.Session.Secret)
 	sessionEncKey := sha256.Sum256([]byte(cfg.Session.Secret + ":enc"))
 	var sessionStore *sessionstore.ServerStore
 	if cfg.Valkey.Host != "" {
-		valkeyClient := cache.NewValkeyClient(cfg.Valkey.Host, cfg.Valkey.Port, cfg.Valkey.Password, cfg.Valkey.PoolSize, cfg.Valkey.MinIdleConns, cfg.Valkey.MaxRetries)
+		valkeyClient = cache.NewValkeyClient(cfg.Valkey.Host, cfg.Valkey.Port, cfg.Valkey.Password, cfg.Valkey.PoolSize, cfg.Valkey.MinIdleConns, cfg.Valkey.MaxRetries)
 		if valkeyClient != nil {
 			useValkey = true
 			// PASS-11: server-side session store в Valkey (multi-instance).
@@ -256,11 +260,14 @@ func run() error {
 			// ЭТОГО инстанса (anti-эхо при рассылке).
 			realtimeBus = realtimebus.NewValkeyBus(valkeyClient)
 			hub.SetPubSub(realtimeBus, instanceID)
-			// Глобальный/SSE/API — fail-open: при outage Valkey сайт остаётся доступен
-			// (их задача — защита от флуда, а не от подбора учётных данных).
-			middleware.InitGlobalRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitGlobalRequests)
-			middleware.InitSSERateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitSSE)
-			middleware.InitAPIRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitAPI)
+			// Глобальный/SSE/API — in-memory (M7, PASS-13): эти лимитеры защищают
+			// от флуда ОДНОГО инстанса; распределённый флуд за балансировщиком —
+			// задача nginx/LB. Раньше каждый запрос делал round-trip INCR в Valkey
+			// (главный вкладчик в 55% cgocall по pprof). Критичные лимитеры
+			// (логин/2FA/коды/сброс) остаются в Valkey fail-closed.
+			middleware.InitGlobalRateLimiter(rateLimitWindow, cfg.Server.RateLimitGlobalRequests)
+			middleware.InitSSERateLimiter(rateLimitWindow, cfg.Server.RateLimitSSE)
+			middleware.InitAPIRateLimiter(rateLimitWindow, cfg.Server.RateLimitAPI)
 			// Критичные лимитеры (логин, регистрация, 2FA/коды, сброс пароля, OAuth) —
 			// fail-closed (S-46-1, pass 46): при outage Valkey запросы отклоняются,
 			// иначе брутфорс-защита отключается вместе с кэшем.
@@ -269,6 +276,8 @@ func run() error {
 			middleware.InitCodeSubmissionRateLimiterWithValkeyFailClosed(valkeyClient, rateLimitWindow, cfg.Server.RateLimitCodeSubmission)
 			middleware.InitPasswordResetRateLimiterWithValkeyFailClosed(valkeyClient, rateLimitWindow, cfg.Server.RateLimitPasswordReset)
 			middleware.InitOAuthRateLimiterWithValkeyFailClosed(valkeyClient, rateLimitWindow, cfg.Server.RateLimitLoginRequests)
+			// M6 (PASS-13): per-user лимит загрузок (аватары, фото) — общий в Valkey.
+			middleware.InitUploadRateLimiter(rateLimitWindow, cfg.Server.RateLimitUploadRequests)
 		} else {
 			log.Warn().Msg("Valkey configured but unavailable, falling back to in-memory rate limiters")
 		}
@@ -282,6 +291,8 @@ func run() error {
 		middleware.InitAPIRateLimiter(rateLimitWindow, cfg.Server.RateLimitAPI)
 		middleware.InitPasswordResetRateLimiter(rateLimitWindow, cfg.Server.RateLimitPasswordReset)
 		middleware.InitOAuthRateLimiter(rateLimitWindow, cfg.Server.RateLimitLoginRequests)
+		// M6 (PASS-13): per-user лимит загрузок (in-memory fallback).
+		middleware.InitUploadRateLimiter(rateLimitWindow, cfg.Server.RateLimitUploadRequests)
 		// PASS-11: без Valkey — in-memory server-side сессии (single-instance).
 		// Сессии теряются при рестарте — пользователь входит заново (приемлемо).
 		sessionStore = sessionstore.NewInMemoryStore(sessionSecret, sessionEncKey[:])
@@ -331,15 +342,23 @@ func run() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// bgWg отслеживает фоновые горутины для корректного завершения.
+	// Должен быть объявлен ДО onGameFinished (тот добавляет в него горутины).
+	var bgWg sync.WaitGroup
+
 	// Callback для расчёта результатов при завершении игры.
 	// DEEP-REVIEW PASS-3 H4: выполняется в ФОНОВОЙ горутине с таймаутом —
 	// раньше CalculateResults + UpdateScoresForGame (advisory lock) + UpdateRatings
 	// блокировали HTTP-запрос игрока, отправившего код на последнем уровне.
 	// M9 (PASS-3): WithoutCancel + WithTimeout — фоновая работа не виснет на lock.
+	// H1 (PASS-13): горутина добавляется в bgWg — shutdown ждёт её до закрытия БД
+	// (раньше WithoutCancel переживал shutdown и мог выполнять SQL после sqlDB.Close()).
 	onGameFinished := func(reqCtx context.Context, gameID uint) {
 		bgCtx, bgCancel := context.WithTimeout(context.WithoutCancel(reqCtx), 30*time.Second)
 		defer bgCancel()
+		bgWg.Add(1)
 		go func() {
+			defer bgWg.Done()
 			if deps.Services.Monitor != nil {
 				if err := deps.Services.Monitor.CalculateResults(bgCtx, gameID); err != nil {
 					log.Error().Err(err).Uint("game_id", gameID).Msg("onGameFinished: CalculateResults failed")
@@ -377,9 +396,6 @@ func run() error {
 		})
 		deps.Services.GamePlay.WithSnapshotDispatcher(snapshotDispatcher)
 	}
-
-	// bgWg отслеживает фоновые горутины для корректного завершения.
-	var bgWg sync.WaitGroup
 
 	// goSafe запускает горутину с recover.
 	goSafe := func(fn func()) {
@@ -546,11 +562,12 @@ func run() error {
 	// Не экспонируем pprof на основном порту — включается только для профилирования.
 	// DEEP-REVIEW PASS-4 H2: по умолчанию привязан к 127.0.0.1 (PPROF_BIND) —
 	// без auth pprof не должен быть доступен извне (дамп памяти = секреты).
+	var pprofSrv *http.Server
 	if cfg.Server.PprofEnabled {
 		pprofMux := http.NewServeMux()
 		pprofMux.Handle("/debug/pprof/", http.DefaultServeMux)
 		addr := net.JoinHostPort(cfg.Server.PprofBind, cfg.Server.PprofPort)
-		pprofSrv := &http.Server{
+		pprofSrv = &http.Server{
 			Addr:        addr,
 			Handler:     pprofMux,
 			ReadTimeout: config.ServerReadTimeout,
@@ -636,6 +653,16 @@ func run() error {
 	}
 	log.Info().Msg("HTTP-сервер остановлен")
 
+	// 4.1 Останавливаем pprof-сервер (LOW, PASS-13): раньше не включался в
+	// graceful shutdown — процесс просто завершался с активным сервером.
+	if pprofSrv != nil {
+		if err := pprofSrv.Shutdown(shutdownCtx); err != nil {
+			log.Warn().Err(err).Msg("Ошибка при завершении pprof-сервера")
+		} else {
+			log.Info().Msg("pprof-сервер остановлен")
+		}
+	}
+
 	// 5. Останавливаем WebSocket-хаб (после HTTP — ни один хендлер не использует хаб)
 	hub.Stop()
 	log.Info().Msg("WebSocket-хаб остановлен")
@@ -671,6 +698,21 @@ func run() error {
 			log.Warn().Err(err).Msg("Ошибка закрытия кэша")
 		} else {
 			log.Info().Msg("Кэш закрыт")
+		}
+	}
+
+	// 7.1. Останавливаем cross-instance pub/sub шину и закрываем общий Valkey-клиент
+	// (LOW, PASS-13): раньше realtimeBus и valkeyClient не закрывались —
+	// pubsub-горутины и пул Redis-соединений жили до выхода процесса.
+	if realtimeBus != nil {
+		realtimeBus.Close()
+		log.Info().Msg("Realtime bus closed")
+	}
+	if valkeyClient != nil {
+		if closeErr := valkeyClient.Close(); closeErr != nil {
+			log.Warn().Err(closeErr).Msg("Ошибка закрытия Valkey-клиента")
+		} else {
+			log.Info().Msg("Valkey client closed")
 		}
 	}
 

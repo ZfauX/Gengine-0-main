@@ -157,7 +157,7 @@ func RegisterRoutes(r *gin.RouterGroup, deps *GameDeps) {
 
 		protected.GET("/:id/photos", photoHandler.PhotosPage)
 
-		protected.POST("/:id/photos", photoHandler.UploadPhoto)
+		protected.POST("/:id/photos", middleware.UploadRateLimit(5*time.Minute, 20), photoHandler.UploadPhoto)
 
 		protected.DELETE("/:id/photos/:photo_id", photoHandler.DeletePhoto)
 

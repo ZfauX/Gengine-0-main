@@ -19,6 +19,7 @@ const (
 	SSERateLimit            = 10
 	APIRateLimit            = 60
 	PasswordResetRateLimit  = 5
+	UploadRateLimit         = 20
 	EmailQueueWorkers       = 5
 	EmailQueueInterval      = 10 * time.Second
 	EmailQueueBatchSize     = 10

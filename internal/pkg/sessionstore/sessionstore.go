@@ -29,6 +29,7 @@ import (
 	"github.com/gorilla/securecookie"
 	"github.com/gorilla/sessions"
 	"github.com/redis/go-redis/v9"
+	"github.com/rs/zerolog/log"
 )
 
 // sessionTTL — срок жизни сессии (по умолчанию 24ч).
@@ -272,7 +273,10 @@ func (s *ServerStore) SetGorillaOptions(o sessions.Options) {
 	s.opts = &o
 }
 
-// New создаёт новую сессию (с новым ID).
+// New создаёт новую сессию. ID НЕ генерируется сразу (M5, PASS-13): для
+// невалидной/отсутствующей куки Get вернёт сессию с пустым ID, и запись в
+// backend появится ТОЛЬКО при реальном Save (когда приложение что-то записало).
+// Иначе каждая попытка с мусорной кукой создавала бы новую запись с TTL 24ч.
 func (s *ServerStore) New(_ *http.Request, name string) (*sessions.Session, error) {
 	sess := sessions.NewSession(s, name)
 	sess.Options = s.opts
@@ -280,7 +284,6 @@ func (s *ServerStore) New(_ *http.Request, name string) (*sessions.Session, erro
 		sess.Options = &sessions.Options{Path: "/", MaxAge: int(sessionTTL.Seconds()), HttpOnly: true}
 	}
 	sess.IsNew = true
-	sess.ID = newSessionID()
 	sess.Values = make(map[interface{}]interface{})
 	return sess, nil
 }
@@ -314,12 +317,51 @@ func (s *ServerStore) Get(r *http.Request, name string) (*sessions.Session, erro
 	return sess, nil
 }
 
+// oldIDKey — служебный ключ в Values, хранящий ID предыдущей сессии при
+// RenewToken (M2, PASS-13). Save извлекает и удаляет его перед записью,
+// затем удаляет старую запись в backend после успешного сохранения новой.
+const oldIDKey = "__session_old_id__"
+
 // Save сохраняет сессию и пишет cookie.
 func (s *ServerStore) Save(r *http.Request, w http.ResponseWriter, sess *sessions.Session) error {
 	// Если ID пуст (должно быть из New/Get) — генерируем.
 	if sess.ID == "" {
 		sess.ID = newSessionID()
 	}
+
+	// M2 (PASS-13): старая сессия (от RenewToken) удаляется ТОЛЬКО после
+	// успешной записи новой — при сбое backend старые данные не теряются.
+	var oldID string
+	if v, ok := sess.Values[oldIDKey]; ok {
+		if str, strOK := v.(string); strOK {
+			oldID = str
+		}
+		delete(sess.Values, oldIDKey)
+	}
+
+	// M1 (PASS-13): MaxAge < 0 — семантика gorilla «удалить куку» (logout/clear).
+	// Раньше cookie получала MaxAge=-1, но backend-запись жила полный TTL (24ч):
+	// данные сессии оставались на сервере после «удаления». Теперь удаляем
+	// запись из backend и не пишем новую.
+	if sess.Options != nil && sess.Options.MaxAge < 0 {
+		_ = s.backend.Delete(sess.ID)
+		if oldID != "" && oldID != sess.ID {
+			_ = s.backend.Delete(oldID)
+		}
+		cookie := &http.Cookie{
+			Name:     sess.Name(),
+			Value:    "",
+			Path:     sess.Options.Path,
+			Domain:   sess.Options.Domain,
+			MaxAge:   -1,
+			HttpOnly: true,
+			Secure:   sess.Options.Secure,
+			SameSite: sess.Options.SameSite,
+		}
+		http.SetCookie(w, cookie)
+		return nil
+	}
+
 	data := make(map[string]any, len(sess.Values))
 	for k, v := range sess.Values {
 		key, ok := k.(string)
@@ -334,6 +376,12 @@ func (s *ServerStore) Save(r *http.Request, w http.ResponseWriter, sess *session
 	}
 	if err := s.backend.Set(sess.ID, data, ttl); err != nil {
 		return err
+	}
+	// Новая сессия записана — теперь можно безопасно удалить старую.
+	if oldID != "" && oldID != sess.ID {
+		if err := s.backend.Delete(oldID); err != nil {
+			log.Warn().Err(err).Msg("sessionstore: failed to delete old session after renew")
+		}
 	}
 	encoded, err := securecookie.EncodeMulti(sess.Name(), sess.ID, s.codecs...)
 	if err != nil {
@@ -352,8 +400,6 @@ func (s *ServerStore) Save(r *http.Request, w http.ResponseWriter, sess *session
 		}
 		if sess.Options.MaxAge > 0 {
 			cookie.MaxAge = sess.Options.MaxAge
-		} else if sess.Options.MaxAge < 0 {
-			cookie.MaxAge = -1
 		}
 		cookie.Secure = sess.Options.Secure
 		cookie.SameSite = sess.Options.SameSite
@@ -363,10 +409,13 @@ func (s *ServerStore) Save(r *http.Request, w http.ResponseWriter, sess *session
 }
 
 // RenewToken (Session fixation, PASS-11): перевыпускает session ID ТОГО ЖЕ
-// объекта сессии (данные сохраняются), удаляет старую запись в backend.
-// Мутирует переданную сессию — критично для совместимости с gin-contrib,
-// который держит ссылку на объект gorilla-сессии. Вызывающий должен затем
-// вызвать Save (перезапишет cookie новым ID).
+// объекта сессии (данные сохраняются). Мутирует переданную сессию — критично
+// для совместимости с gin-contrib, который держит ссылку на объект
+// gorilla-сессии. Вызывающий должен затем вызвать Save (перезапишет cookie).
+//
+// M2 (PASS-13): старая сессия удаляется из backend ТОЛЬКО после успешной
+// записи новой (в Save). Раньше Delete выполнялся здесь ДО Save — при сбое
+// backend данные сессии терялись без возможности отката.
 func (s *ServerStore) RenewToken(_ *http.Request, _ http.ResponseWriter, sess *sessions.Session) (*sessions.Session, error) {
 	oldID := sess.ID
 	// Новая сессия с новым ID; переносим Options и Values.
@@ -374,13 +423,15 @@ func (s *ServerStore) RenewToken(_ *http.Request, _ http.ResponseWriter, sess *s
 	if err != nil {
 		return nil, err
 	}
+	// RenewToken обязан выдать новый ID (fixation) — генерируем явно, т.к.
+	// New теперь откладывает генерацию до Save (M5).
+	news.ID = newSessionID()
+	news.IsNew = true
 	news.Options = sess.Options
 	news.Values = sess.Values
-	// Удаляем старую сессию.
-	if oldID != "" {
-		if err := s.backend.Delete(oldID); err != nil {
-			return nil, err
-		}
+	// Запоминаем старый ID (Save удалит его после успешной записи новой).
+	if oldID != "" && oldID != news.ID {
+		news.Values[oldIDKey] = oldID
 	}
 	// Мутируем исходный объект (gin-contrib держит ссылку на него).
 	*sess = *news

@@ -12,6 +12,7 @@ import (
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/sanitize"
+	"gengine-0/internal/pkg/sessionstore"
 	"gengine-0/internal/pkg/storage"
 	"gengine-0/internal/pkg/validation"
 
@@ -457,6 +458,9 @@ func (h *ProfileHandler) ChangePassword(c *gin.Context) {
 	}
 	setSecureCookie(c, "jwt", "", -1, "/")
 	setSecureCookie(c, "refresh_token", "", -1, "/")
+	// M3 (PASS-13): смена пароля — серверная сессия тоже удаляется
+	// (не остаётся pending/2FA-данных после принудительного повторного входа).
+	sessionstore.DeleteGinSession(c)
 
 	c.Redirect(http.StatusFound, "/profile")
 }

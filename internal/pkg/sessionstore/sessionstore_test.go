@@ -10,6 +10,7 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 	gcsessions "github.com/gin-contrib/sessions"
+	"github.com/gorilla/sessions"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -104,6 +105,70 @@ func TestServerStore_BadCookie_ReturnsNewSession(t *testing.T) {
 	sess, err := store.Get(req, "gengine_session")
 	require.NoError(t, err)
 	assert.True(t, sess.IsNew, "forged cookie must yield a new session (not error)")
+	// M5 (PASS-13): мусорная кука БЕЗ реальной записи не должна создавать
+	// запись в backend — ID откладывается до Save.
+	assert.Empty(t, sess.ID, "new session from forged cookie must have no ID until Save")
+	_, ok, err := store.backend.Get(sess.ID)
+	require.NoError(t, err)
+	assert.False(t, ok, "no backend record until Save")
+}
+
+func TestServerStore_Save_MaxAgeNegative_DeletesBackend(t *testing.T) {
+	// M1 (PASS-13): MaxAge<0 («удалить куку») должен удалять backend-запись,
+	// а не оставлять её до TTL.
+	auth, enc := testKeys()
+	store := NewInMemoryStore(auth, enc)
+
+	req := httptest.NewRequest("GET", "http://example.com/", nil)
+	w := httptest.NewRecorder()
+	sess, err := store.New(req, "gengine_session")
+	require.NoError(t, err)
+	sess.Values["pending_user_id"] = uint(7)
+	require.NoError(t, store.Save(req, w, sess))
+	id := sess.ID
+	_, ok, err := store.backend.Get(id)
+	require.NoError(t, err)
+	assert.True(t, ok, "session must exist before delete")
+
+	// Устанавливаем MaxAge<0 и сохраняем — backend-запись удаляется.
+	sess.Options = &sessions.Options{Path: "/", MaxAge: -1, HttpOnly: true}
+	w2 := httptest.NewRecorder()
+	require.NoError(t, store.Save(req, w2, sess))
+	_, ok, err = store.backend.Get(id)
+	require.NoError(t, err)
+	assert.False(t, ok, "backend record must be deleted on MaxAge<0")
+}
+
+func TestServerStore_RenewToken_DeletesOldAfterNewSave(t *testing.T) {
+	// M2 (PASS-13): старая сессия удаляется ТОЛЬКО после успешной записи новой.
+	auth, enc := testKeys()
+	store := NewInMemoryStore(auth, enc)
+
+	req := httptest.NewRequest("GET", "http://example.com/", nil)
+	w := httptest.NewRecorder()
+	sess, err := store.New(req, "gengine_session")
+	require.NoError(t, err)
+	sess.Values["user_id"] = uint(9)
+	require.NoError(t, store.Save(req, w, sess))
+	oldID := sess.ID
+
+	// RenewToken ещё до Save — новая запись ещё не создана, старая жива.
+	renewed, err := store.RenewToken(req, w, sess)
+	require.NoError(t, err)
+	assert.NotEqual(t, oldID, renewed.ID)
+	_, okOld, err := store.backend.Get(oldID)
+	require.NoError(t, err)
+	assert.True(t, okOld, "old session must still exist before new Save")
+
+	// После Save — старая удалена, новая существует.
+	w2 := httptest.NewRecorder()
+	require.NoError(t, store.Save(req, w2, renewed))
+	_, okNew, err := store.backend.Get(renewed.ID)
+	require.NoError(t, err)
+	assert.True(t, okNew, "new session must exist after Save")
+	_, okOld, err = store.backend.Get(oldID)
+	require.NoError(t, err)
+	assert.False(t, okOld, "old session must be deleted after new Save")
 }
 
 func TestServerStore_ValkeyBackend_RoundTrip(t *testing.T) {

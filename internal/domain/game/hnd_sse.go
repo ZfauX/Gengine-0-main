@@ -432,9 +432,12 @@ func sseConnect(mgr *SSEManager, c *gin.Context, gameID uint) {
 	session := mgr.RegisterSession(gameID, c.ClientIP(), w, flusher)
 	if session == nil {
 		// Лимит превышен или менеджер остановлен — соединение не зарегистрировано.
-		// После апгрейда заголовков вернуть JSON нельзя (chunked уже начат),
-		// просто закрываем соединение.
+		// Заголовки text/event-stream уже отправлены, вернуть JSON нельзя —
+		// завершаем поток чистым SSE-событием, чтобы клиент не висел в
+		// недочитанном chunked-ответе (M4, PASS-13).
 		log.Warn().Str("ip", c.ClientIP()).Msg("SSE: connection rejected (limit/stopped)")
+		_, _ = w.Write([]byte("event: error\ndata: {\"type\":\"limit_reached\"}\n\n"))
+		flusher.Flush()
 		return
 	}
 	defer mgr.UnregisterSession(session)

@@ -635,6 +635,37 @@ func SSERateLimit(window time.Duration, limit int) gin.HandlerFunc {
 	}
 }
 
+// uploadRateLimiter — per-user лимитер загрузок файлов (M6, PASS-13):
+// аватары, фото игр. Использует shared Valkey-клиент (меж-инстансный) через
+// newSharedLimiter, при его отсутствии — in-memory. Ключ — userID.
+var uploadRateLimiter *RateLimiter
+
+func InitUploadRateLimiter(window time.Duration, limit int) {
+	uploadRateLimiter = newSharedLimiter(window, limit)
+}
+
+func UploadRateLimit(window time.Duration, limit int) gin.HandlerFunc {
+	rl := uploadRateLimiter
+	if rl == nil {
+		rl = newSharedLimiter(window, limit)
+	}
+	return func(c *gin.Context) {
+		userID := c.GetUint("userID")
+		if userID == 0 {
+			c.Next()
+			return
+		}
+		key := fmt.Sprintf("upload:%d", userID)
+		result := rl.Allow(key)
+		setRateLimitHeaders(c, result)
+		if !result.Allowed {
+			respondRateLimitError(c, ErrRateLimitUpload, result)
+			return
+		}
+		c.Next()
+	}
+}
+
 var passwordResetRateLimiter *RateLimiter
 
 func InitPasswordResetRateLimiter(window time.Duration, limit int) {

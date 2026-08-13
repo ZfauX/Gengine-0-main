@@ -84,6 +84,7 @@ type ServerConfig struct {
 	RateLimitSSE            int           // лимит SSE-соединений в минуту (по умолчанию 10)
 	RateLimitAPI            int           // лимит API-запросов в минуту (по умолчанию 60)
 	RateLimitPasswordReset  int           // лимит сбросов пароля в минуту (по умолчанию 5)
+	RateLimitUploadRequests int           // лимит загрузок файлов в минуту на пользователя (по умолчанию 20)
 
 	// WebAuthn (passkeys) — origins через запятую, RPID по умолчанию из BaseURL
 	WebAuthnRPID    string // relying party ID (например: localhost, example.com)
@@ -257,6 +258,7 @@ func LoadConfig() (*Config, error) {
 	cfg.Server.RateLimitCodeSubmission = getEnvAsInt("RATE_LIMIT_CODE_SUBMISSION", CodeSubmissionRateLimit)
 	cfg.Server.RateLimitSSE = getEnvAsInt("RATE_LIMIT_SSE", SSERateLimit)
 	cfg.Server.RateLimitAPI = getEnvAsInt("RATE_LIMIT_API", APIRateLimit)
+	cfg.Server.RateLimitUploadRequests = getEnvAsInt("RATE_LIMIT_UPLOAD", UploadRateLimit)
 	cfg.Server.RateLimitPasswordReset = getEnvAsInt("RATE_LIMIT_PASSWORD_RESET", PasswordResetRateLimit)
 
 	// Log level
