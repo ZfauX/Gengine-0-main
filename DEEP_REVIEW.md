@@ -240,5 +240,6 @@
   - admin #5: audit-логирование CreateBackup/DownloadBackup/RotateBackups + nil-проверки auditService в ToggleAdmin/DeleteGame.
   - admin #6: опциональное AES-256-GCM шифрование бэкапов (BACKUP_ENCRYPTION_KEY; hex/base64 32 байта); plaintext удаляется; Download расшифровывает во временный файл.
   - S-H1: опциональное требование Basic-подписи вебхука (YKASSA_REQUIRE_WEBHOOK_AUTH=true) — для кастомных отправителей; ЮKassa по умолчанию без подписи (IP-allowlist).
+  - S-M2: per-user лимитеры (личный чат, комнаты, поиск, WebAuthn, платежи) теперь используют ОБЩИЙ Valkey-клиент (SetSharedValkeyClient + newSharedLimiter) при его наличии — меж-инстансная координация бюджета; БЕЗ Valkey работают на in-memory (single-instance), без падений (unit-тест TestSharedLimiter_WorksWithoutValkey).
   - Проверки: build ✅, test-short ✅, test-integration ✅, golangci-lint ✅ (0 issues), E2E 14/14 ✅.
 - Ограничения: аудиторы упёрлись в лимит шагов — не покрыты admin-домен, часть game svc_*, team/tournament/payment полностью, полная инвентаризация шаблонов на XSS, IDOR game/level-маршрутов.

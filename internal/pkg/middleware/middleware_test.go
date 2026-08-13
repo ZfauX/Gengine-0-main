@@ -950,3 +950,36 @@ func TestRateLimiter_ValkeyFailClosedVsOpen(t *testing.T) {
 	assert.False(t, resClosed.Allowed, "fail-closed должен отклонять при сбое Valkey")
 	assert.Zero(t, resClosed.Remaining)
 }
+
+// S-M2 (PASS-8): newSharedLimiter работает БЕЗ Valkey (in-memory fallback) —
+// сервер не падает и лимитирует per-instance. С зарегистрированным клиентом —
+// использует Valkey (fail-open).
+func TestSharedLimiter_WorksWithoutValkey(t *testing.T) {
+	// Гарантируем отсутствие shared-клиента (тесты могут идти после main).
+	// SetSharedValkeyClient(nil) сбрасывает.
+	middleware.SetSharedValkeyClient(nil)
+
+	rl := middleware.NewSharedLimiterForTest(time.Minute, 2)
+	defer rl.Stop()
+
+	// Без Valkey — in-memory лимитер работает нормально.
+	for i := 0; i < 2; i++ {
+		res := rl.Allow("shared:no-valkey")
+		assert.True(t, res.Allowed)
+	}
+	res := rl.Allow("shared:no-valkey")
+	assert.False(t, res.Allowed, "третий вызов должен быть отклонён")
+
+	// С Valkey-клиентом на несуществующий адрес — fail-open (пропускает),
+	// т.е. при недоступном Valkey лимитер не блокирует всё подряд.
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1", DialTimeout: 200 * time.Millisecond, ReadTimeout: 200 * time.Millisecond})
+	defer client.Close()
+	middleware.SetSharedValkeyClient(client)
+	rlValkey := middleware.NewSharedLimiterForTest(time.Minute, 2)
+	defer rlValkey.Stop()
+	resV := rlValkey.Allow("shared:valkey-down")
+	assert.True(t, resV.Allowed, "fail-open: сбой Valkey не должен блокировать")
+
+	// Сброс после теста.
+	middleware.SetSharedValkeyClient(nil)
+}

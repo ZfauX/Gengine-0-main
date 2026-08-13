@@ -231,6 +231,9 @@ func run() error {
 		valkeyClient := cache.NewValkeyClient(cfg.Valkey.Host, cfg.Valkey.Port, cfg.Valkey.Password, cfg.Valkey.PoolSize, cfg.Valkey.MinIdleConns, cfg.Valkey.MaxRetries)
 		if valkeyClient != nil {
 			useValkey = true
+			// S-M2 (PASS-8): общий клиент для per-user лимитеров (личный чат,
+			// комнаты, поиск, WebAuthn, платежи) — меж-инстансная координация.
+			middleware.SetSharedValkeyClient(valkeyClient)
 			// Глобальный/SSE/API — fail-open: при outage Valkey сайт остаётся доступен
 			// (их задача — защита от флуда, а не от подбора учётных данных).
 			middleware.InitGlobalRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitGlobalRequests)

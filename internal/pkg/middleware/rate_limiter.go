@@ -234,6 +234,37 @@ func NewValkeyRateLimiter(client *redis.Client, window time.Duration, limit int)
 	return &RateLimiter{store: newValkeyStore(client, window, limit)}
 }
 
+// ---------- S-M2 (PASS-8): shared Valkey-клиент для per-user лимитеров ----------
+
+// sharedValkeyClient — общий Valkey-клиент, устанавливается из main.go, когда
+// Valkey доступен. Per-user лимитеры (личный чат, создание комнат, поиск,
+// WebAuthn, платежи) используют его для меж-инстансной координации бюджета;
+// при отсутствии — работают на in-memory (single-instance).
+var sharedValkeyClient *redis.Client
+
+// SetSharedValkeyClient (S-M2, PASS-8) регистрирует общий Valkey-клиент для
+// per-user лимитеров. Вызывается из main.go при успешном подключении к Valkey.
+// Безопасно вызывать до регистрации маршрутов (middleware создают лимитеры
+// при первом вызове фабрики).
+func SetSharedValkeyClient(client *redis.Client) {
+	sharedValkeyClient = client
+}
+
+// newSharedLimiter (S-M2, PASS-8): фабрика для per-user лимитеров — Valkey,
+// если клиент зарегистрирован, иначе in-memory. Работает БЕЗ Valkey (fallback),
+// лимиты просто per-instance.
+func newSharedLimiter(window time.Duration, limit int) *RateLimiter {
+	if sharedValkeyClient != nil {
+		return NewValkeyRateLimiter(sharedValkeyClient, window, limit)
+	}
+	return NewRateLimiter(window, limit)
+}
+
+// NewSharedLimiterForTest (S-M2, PASS-8): экспортируемая обёртка для unit-тестов.
+func NewSharedLimiterForTest(window time.Duration, limit int) *RateLimiter {
+	return newSharedLimiter(window, limit)
+}
+
 // NewValkeyRateLimiterFailClosed создаёт Valkey-лимитер с fail-closed поведением:
 // при недоступности Valkey запросы отклоняются (S-46-1, pass 46). Используется
 // для критичных лимитеров (логин, регистрация, 2FA, коды, сброс пароля).
@@ -363,7 +394,7 @@ func LoginRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 // инициализированный с RateLimitLoginRequests (5), и переданный limit
 // (например 10) игнорировался (мёртвый параметр).
 func OAuthRateLimit(window time.Duration, limit int) gin.HandlerFunc {
-	rl := NewRateLimiter(window, limit)
+	rl := newSharedLimiter(window, limit)
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
 		result := rl.Allow("oauth:" + ip)
@@ -380,7 +411,7 @@ func OAuthRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 // пользователей — раньше /api/users/search делил login:<ip> лимитер с парольным
 // входом (5/5мин), и спам дешёвым поиском блокировал вход всем за NAT.
 func SearchRateLimit(window time.Duration, limit int) gin.HandlerFunc {
-	rl := NewRateLimiter(window, limit)
+	rl := newSharedLimiter(window, limit)
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
 		result := rl.Allow("search:" + ip)
@@ -396,7 +427,7 @@ func SearchRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 // WebAuthnRateLimit (S-M1, PASS-8): отдельный бюджет для публичных WebAuthn
 // begin/finish — раньше делил login:<ip> бюджет (спам begin блокировал вход).
 func WebAuthnRateLimit(window time.Duration, limit int) gin.HandlerFunc {
-	rl := NewRateLimiter(window, limit)
+	rl := newSharedLimiter(window, limit)
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
 		result := rl.Allow("webauthn:" + ip)
@@ -413,7 +444,7 @@ func WebAuthnRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 // Раньше /payments/create делил codeSubmissionRateLimiter с вводом игровых кодов
 // (общий бюджет + мёртвые параметры 5/мин — фактически применялся 10/мин).
 func PaymentRateLimit(window time.Duration, limit int) gin.HandlerFunc {
-	rl := NewRateLimiter(window, limit)
+	rl := newSharedLimiter(window, limit)
 	return func(c *gin.Context) {
 		userID := c.GetUint("userID")
 		if userID == 0 {
@@ -437,7 +468,7 @@ func PaymentRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 // аутентифицированный атакующий обходил ротацией IP. Действие аутентифицировано —
 // лимитируем по userID.
 func PersonalChatRateLimit(window time.Duration, limit int) gin.HandlerFunc {
-	rl := NewRateLimiter(window, limit)
+	rl := newSharedLimiter(window, limit)
 	return func(c *gin.Context) {
 		userID := c.GetUint("userID")
 		if userID == 0 {
@@ -456,7 +487,7 @@ func PersonalChatRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 // CreateRoomRateLimit (DEEP-REVIEW PASS-6 L7): per-USER лимит на создание
 // комнат чата — менеджер не должен плодить неограниченное число комнат.
 func CreateRoomRateLimit(window time.Duration, limit int) gin.HandlerFunc {
-	rl := NewRateLimiter(window, limit)
+	rl := newSharedLimiter(window, limit)
 	return func(c *gin.Context) {
 		userID := c.GetUint("userID")
 		result := rl.Allow(fmt.Sprintf("create_room:%d", userID))
