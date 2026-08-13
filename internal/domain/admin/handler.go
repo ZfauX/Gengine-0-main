@@ -17,6 +17,7 @@ import (
 	"gengine-0/internal/pkg/i18n"
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
+	"gengine-0/internal/pkg/validation"
 
 	csrf "gengine-0/internal/pkg/csrf"
 
@@ -257,8 +258,15 @@ func (h *AdminHandler) CreateUser(c *gin.Context) {
 	name := strings.TrimSpace(c.PostForm("name"))
 	password := c.PostForm("password")
 
-	if email == "" || name == "" || len(password) < 8 {
+	if email == "" || name == "" {
 		render.SetFlash(c, "error", i18n.T("admin.create_user_invalid"))
+		c.Redirect(http.StatusFound, "/admin/users")
+		return
+	}
+	// PASS-8 LOW #2: единая валидация пароля с регистрацией/сменой — раньше
+	// только len>=8 (слабый пароль от админа).
+	if err := validation.ValidatePasswordStrength(password); err != nil {
+		render.SetFlash(c, "error", err.Error())
 		c.Redirect(http.StatusFound, "/admin/users")
 		return
 	}

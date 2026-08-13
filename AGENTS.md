@@ -78,6 +78,16 @@ storage.FileStorage        ← filesystem abstraction
 - **Valkey cache never hits for `*Game` objects** — `cacheGetGame()` helper handles JSON→struct conversion
 - DeleteByPrefix invalidates all cached entries under a key prefix
 
+### Valkey (rate limiters) — production recommendation (PASS-8)
+- **Рекомендация: в production настроить Valkey (`VALKEY_HOST`/`VALKEY_PORT`).** Без него всё работает на
+  in-memory лимитерах (single-instance), но при НЕСКОЛЬКИХ инстансах за балансировщиком бюджеты
+  rate-limit'ов умножаются на N (обход брутфорс-защиты и спам-лимитов).
+- Критичные лимитеры (login, register, 2FA, коды, сброс пароля) — **fail-closed** при недоступности Valkey
+  (защита от брутфорса не отключается вместе с кэшем); глобальный/SSE/API — fail-open (сайт остаётся доступен).
+- Per-user лимитеры (личный чат, создание комнат, поиск, WebAuthn, платежи) используют **общий Valkey-клиент**
+  (`SetSharedValkeyClient` + `newSharedLimiter`) при его наличии; без Valkey — in-memory fallback.
+- Конфиг rate-limit: `RATE_LIMIT_*` (см. `.env.example`).
+
 ### Auth & Security
 - JWT in httpOnly cookie named `jwt`; refresh token in `refresh_token` cookie
 - Middleware: `AuthRequired` (redirects to `/auth/login`), `OptionalAuth` (passthrough)

@@ -5,6 +5,7 @@ import (
 	"context"
 	"strconv"
 
+	"gengine-0/internal/pkg/metrics"
 	"gengine-0/internal/pkg/sqlutil"
 
 	"github.com/rs/zerolog/log"
@@ -57,6 +58,9 @@ func (s *Service) Log(userID uint, action, objectType string, objectID uint, det
 		Details:    details,
 	}
 	if err := s.DB.Create(&e).Error; err != nil {
+		// PASS-8 LOW #1: ошибка не прерывает бизнес-логику, но логируется
+		// и инкрементит метрику — алерт при молчаливой потере событий.
+		metrics.AuditFailuresTotal.Inc()
 		log.Error().Err(err).
 			Str("action", action).
 			Uint("user", userID).

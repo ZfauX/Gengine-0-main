@@ -146,6 +146,13 @@ var (
 		Help: "Total number of cache misses",
 	}, []string{"cache_name"})
 
+	// AuditFailuresTotal (PASS-8 LOW #1): счётчик ошибок записи журнала аудита —
+	// алерт при росте (журнал не должен молча терять события).
+	AuditFailuresTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "gengine_audit_write_failures_total",
+		Help: "Total number of audit log write failures",
+	})
+
 	// --- RUM / Web Vitals (pass 29, идея 2) ---
 
 	// RumWebVitals - гистограммы Core Web Vitals с клиента (LCP/INP/CLS/FCP/TTFB).

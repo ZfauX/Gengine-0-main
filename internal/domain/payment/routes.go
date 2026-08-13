@@ -24,5 +24,7 @@ func RegisterRoutes(r *gin.RouterGroup, h *PaymentHandler, authService *user.Aut
 	}
 
 	// Вебхук ЮKassa — публичный (не требует JWT), проверка по IP внутри сервиса.
-	r.POST("/payments/webhook", h.Webhook)
+	// PASS-8 LOW #3: per-IP лимит — защита от флуда при компрометации прокси
+	// (сам вебхук уже защищён IP-allowlist ЮKassa).
+	r.POST("/payments/webhook", middleware.IPRateLimit(1*time.Minute, 120), h.Webhook)
 }
