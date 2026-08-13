@@ -1,0 +1,195 @@
+# DEEP_REVIEW — Gengine-0 (PASS 12)
+
+> Глубокое ревью после закрытия PASS-9.
+> Метод: pprof-профилирование (PPROF_ENABLED=true, :6060, loopback) + 3 параллельных аудита (@reviewer, @security, @perf) + эмпирическая проверка каждого HIGH/MEDIUM finding.
+> Архивы: `DEEP_REVIEW_2026-08-11_pass{1,2,3,4}.md`, `DEEP_REVIEW_2026-08-12_pass5.md`, `DEEP_REVIEW_2026-08-12_pass7.md`, `DEEP_REVIEW_2026-08-13_pass{8,9}.md`.
+
+---
+
+## 🔬 pprof-результаты (PASS 10)
+
+| Профиль | Результат | Вывод |
+|---|---|---|
+| **goroutine** | 18 в покое | ✅ Без утечек (стабильно с PASS-5..9). |
+| **heap inuse** | 19.5 MB | ✅ Норма. 46% — инициализационная память `golang.org/x/net/webdav` (swaggo/files, не код). |
+| **heap alloc** | 133 MB cumulative | ⚠️ `text/template evalCall` 31.1%, `bytes.Buffer.String` 9.8%, `reflect.Value.call` 17.6% — рендер HTML. |
+| **cpu** | 49.5% cgocall (network), template 20% cum | ✅ Рендер снизился с 40% до 20% (пул PASS-9), zerolog ушёл из топа (F1 PASS-10). |
+| **pprof bind** | `127.0.0.1:6060` | ✅ loopback. |
+
+**Вывод**: утечек нет; главные фиксы PASS-9/PASS-10 подтверждены профилем (рендер −50%, логирование −31%). Остаточная статья — HTML-рендер (отражённые вызовы `T` в layout).
+
+---
+
+## 🔴 HIGH (reviewer + security)
+
+### H1. `GormLogger.Trace`: `GetLevel()` не работает → оптимизация мёртвая + SQL-ошибки терялись 🔍✅ (подтверждено)
+- **Файл**: `internal/pkg/logging/gorm.go:65`.
+- **Проблема**: `log.Logger.GetLevel()` возвращает уровень ИНСТАНСА (всегда Trace, т.к. main.go не вызывает `.Level()`), а не глобальный. Итог: `fc()`/regexp выполнялись на каждый запрос (оптимизация F1 не работала), и при Info/Warn SQL-ошибки (`err != nil`) вообще не логировались.
+- **Фикс**: ✅ `zerolog.GlobalLevel()`; при `err != nil` — `log.Warn()` независимо от уровня (наблюдаемость).
+
+### H2. `pg_dump` создаёт файл с 0644 до chmod (TOCTOU): plaintext-секреты читаемы во время дампа 🔍✅
+- **Файл**: `internal/domain/admin/service.go:163-187`.
+- **Проблема**: `pg_dump -f` создаёт файл с правами по умолчанию; `chmod 0600` — ПОСЛЕ завершения (минуты). Любой локальный пользователь читает дамп с паролями/2FA-секретами.
+- **Фикс**: ✅ `os.OpenFile(O_CREATE|O_EXCL, 0600)` ДО pg_dump; BackupDir `0755→0700`.
+
+### H3. Смена email без пароля → захват аккаунта через украденную сессию 🔍✅
+- **Файл**: `profile_handler.go:322-364`, `profile-show.html`.
+- **Проблема**: email менялся по одному JWT; атакующий с XSS/утечкой куки менял email, сбрасывал пароль на новый адрес → захват аккаунта.
+- **Фикс**: ✅ смена email требует `current_password` (bcrypt-проверка); поле добавлено в форму.
+
+---
+
+## 🟠 MEDIUM (reviewer)
+
+### M1. `userMsgLimiters` растёт бесконечно (per-user token bucket) 🔍✅
+- **Файл**: `monitor/handler.go:376-388`.
+- **Проблема**: map per-user лимитеров без eviction — при миллионах юзеров утечка памяти.
+- **Фикс**: ✅ `lastUsed` в `wsMessageLimiter` + lazy sweep при `len > 10000` (удаление неактивных >10 мин).
+
+### M2. GetVotingResults/StartVoting: sentinel маппинг не везде (403 → 500) 🔍✅
+- **Файл**: `monitor/service.go:79`, `monitor/handler.go:1591`.
+- **Проблема**: `StartVoting` возвращал сырой `errors.New`, `GetVotingResults` маппил `ErrAccessDenied` в 500.
+- **Фикс**: ✅ `ErrVotingNotManager` в StartVoting; `errors.Is(ErrAccessDenied)` → 403 в хендлере.
+
+### M3. Временный `.decrypted` файл с детерминированным именем (гонка параллельных Download) 🔍✅
+- **Файл**: `admin/service.go:380`.
+- **Проблема**: два параллельных Download перезаписывали один файл; cleanup не всегда удалял (Windows).
+- **Фикс**: ✅ уникальное имя через `randomHex(8)`.
+
+### M4. `BackupService`: fail-open при невалидном ключе шифрования 🔍✅
+- **Файл**: `admin/service.go:89`.
+- **Проблема**: невалидный `BACKUP_ENCRYPTION_KEY` давал Warn и писал дампы в plaintext.
+- **Фикс**: ✅ `NewBackupService` возвращает ошибку (fail-closed); wire/тесты обновлены.
+
+---
+
+## 🟠 MEDIUM (perf)
+
+### P-1. `LoggerMiddleware`: логирует /static/ + maskQuery до проверки уровня 🔍✅
+- **Файл**: `middleware/logger.go:50-87`.
+- **Проблема**: каждый запрос статики (4+ на страницу) → Info-запись + аллокации maskQuery.
+- **Фикс**: ✅ успешные /static/, /uploads/, favicon не логируются на Info (метрики сохранены).
+
+### P-2. `bytes.Buffer.String()` копия — приемлемо 🔍
+- **Файл**: `render/helper.go:261`.
+- **Вердикт**: копия обязательна (буфер из sync.Pool переиспользуется, строка живёт до рендера layout). Безопасно не убрать; с pool одна копия ~50-100KB на страницу.
+
+### P-3. `text/template evalCall` 31% — ~52 отражённых вызова `T` в layout 🔍
+- **Файл**: `templates/layout.html`.
+- **Рекомендация**: предвычислить частые ключи (layout.meta_description ×3, nav.notifications ×4 и т.д.) в `data` или через переменные шаблона; HTTP-кэш анонимных страниц.
+
+---
+
+## 🟢 LOW (reviewer/security)
+
+- **L1** `password_reset_service.go:43-46` — мёртвое крипто-чтение (`rand.Read` в `b`, результат не используется).
+- **L2** `calendar/handler.go:311-314` — ICS-кэш (`ics:host`) не эвиктится.
+- **L3** `monitor/handler.go` — `hasSessionCookie` использует `strings.Contains` (ложное совпадение на `gengine_session_x`).
+- **L4** `admin/service.go` — `randomHex` fallback на `time.Now()` (предсказуемые имена при сбое rand).
+- **L5** `auth_handler.go:584` — reset/verify-коды в URL (Referer-риск).
+- **L6** `logger.go` — `backupWG.Add` маленькое окно гонки с `WaitForBackups` (отложено, low).
+
+---
+
+## ✅ Проверено — проблем НЕ найдено
+
+- **JWT/роли**: HMAC закреплён, jti-blacklist, роль из БД fail-closed.
+- **Refresh-токены**: SHA-256, семья + атомарный ClaimAndCreate, revoke при reuse, fingerprint.
+- **OAuth**: state 128-бит + ConstantTimeCompare + provider-binding + TTL.
+- **2FA**: TOTP/backup с bcrypt, lockout backoff, pending TTL, step-up на /admin.
+- **Webhook ЮKassa**: IP-allowlist + Basic + API-подтверждение + сумма в копейках + атомарный succeeded.
+- **SSRF (push)**: блокировка приватных IP в DialContext + DNS-rebinding.
+- **Uploads**: path-traversal, MIME-магия, случайные имена, 0600, nosniff.
+- **Export**: csvSafe (formula), права экспорта, PDF/Excel — модератор/капитан.
+- **Cache**: DeleteByPrefix — deadlock устранён, порядок локов согласован (evictCallback сам чистит префиксы).
+- **N+1**: batch-CASE, UpsertMany, COUNT OVER, singleflight, advisory lock — образцово.
+
+---
+
+## 💡 Предложения по улучшению кодовой базы (приоритет)
+
+1. **P-3**: дедуп `T()` вызовов в layout (предвычисленные переводы в data) — −5-15% рендера.
+2. **L1**: удалить мёртвый `rand.Read`.
+3. **L5**: перенести verify-код из URL в POST-форму (Referer-риск).
+4. **L2**: eviction ICS-кэша.
+5. **P-2**: HTTP-кэш анонимных публичных страниц (Cache-Control) — снимает рендер целиком.
+
+---
+
+## 💡 Предложения по пользовательскому опыту (UX)
+
+1. **Смена email**: теперь требует пароль — жертва украденной сессии защищена; добавить уведомление на старый email.
+2. **PDF-экспорт**: длинные вопросы переносятся (MultiCell) — документ читаем.
+3. **Производительность**: пул рендера + кэш анонимных страниц → быстрее отклик.
+
+---
+
+## 📋 Статус
+
+- 3 аудита: ✅ проведены; HIGH/MEDIUM findings — ✅ эмпирически проверены.
+- **Исправлено в этом проходе: 8 findings** ✅ (H1, H2, H3, M1, M2, M3, M4, P-1) + тесты.
+- **Второй проход (L1-L6, P-3, refresh, session): исправлено 11/11** ✅
+  - L1: удалён мёртвый `rand.Read` в `password_reset_service`.
+  - L2: `evictCalendarCache` вызывается и из `CalendarICal` (ICS-ключи больше не растут).
+  - L3: `hasSessionCookie` через `Request.Cookie` (точный парсинг, не `strings.Contains`).
+  - L4: `randomHex` возвращает ошибку при сбое rand (admin + storage) — нет предсказуемых имён файлов.
+  - L5: verify-код убран из URL — добавлена GET-форма `/auth/verify` (+i18n); письмо даёт код и ссылку на форму.
+  - L6: `BeginShutdown` блокирует новые фоновые бэкапы при shutdown (гонка Add/Wait устранена).
+  - P-3: дедуп 11 дублирующихся `T()` вызовов в layout (предвычисленные переменные) — −5-15% рендера.
+  - Refresh: токен принимается ТОЛЬКО из httpOnly cookie (не из JSON-тела) + проверка DeviceID.
+  - Session fixation: `session.Clear()` при успешном логине и OAuth-callback (сброс чужих pending/oauth/2FA-флагов).
+  - P-2 (HTTP-кэш анонимных страниц): ОТКЛОНЕНО — страницы содержат CSRF/nonce, персональные на каждый запрос; кэш сломал бы формы.
+  - Проверки: build ✅, test-short ✅, test-integration ✅, golangci-lint ✅ (0 issues), E2E 14/14 ✅.
+- Отложено (требует продукта/рефакторинга): P-2 (см. выше), HTTP-кэш анонимных страниц.
+
+---
+
+## 🔒 PASS-11: server-side session store (полный fix session fixation) ✅
+
+- **Замена** `cookie.NewStore` (gin-contrib/sessions) на серверный store `internal/pkg/sessionstore`:
+  - В cookie — только подписанный (securecookie HMAC+AES) session ID; данные (`pending_user_id`, `oauth_state`, `2fa_verified_*`) — на сервере (Valkey или in-memory). Один ID = одна сессия, ID отзывается на сервере.
+  - Backend: `valkeyBackend` (go-redis, prefix `gengine:session`, TTL 24ч, multi-instance) или `memoryBackend` (map+mutex+TTL, sweep при >10000, single-instance, теряется при рестарте — документировано в README).
+  - Внедрение: `main.go` создаёт store (Valkey если настроен, иначе memory) → `App.SetSessionStore` → `router.go` регистрирует в `sessions.Sessions("gengine_session", store)`. Секреты те же (`SESSION_SECRET` + sha256-derived encryption key).
+- **`RenewToken` (фикс fixation)**: при успешной аутентификации перевыпускается session ID — старая подсунутая кука недействительна:
+  - `Login` (`auth_handler.go`) — после `session.Clear()`, до установки pending-флагов.
+  - `Verify2FA` (`two_factor_handler.go`) — после установки `2fa_verified_*` (событие повышения доверия).
+  - `OAuthCallback` (`auth_handler.go`) — после `session.Clear()`.
+  - Реализация: `sessionstore.RenewGinSession(c)` (глобальный регистр store из main.go) — берёт ту же gorilla-сессию через Registry, мутирует ID, удаляет старую запись backend, сохраняет новую.
+- **Совместимость**: `ServerStore` реализует `gorilla/sessions.Store` + `Options(gin-contrib)`; метод `New`/`Get` возвращает новую сессию при невалидной/поддельной куке (не ошибку); `IsNew` сохраняет семантику.
+- **Проверки**: build ✅, test-short ✅, golangci-lint ✅, E2E 14/14 ✅ (без Valkey — in-memory fallback).
+- **Ограничение**: без Valkey сессии in-memory (single-instance, сброс при рестарте). Для production multi-instance — `VALKEY_HOST`/`VALKEY_PORT` (как rate-limiters, PASS-8).
+
+---
+
+## 🌐 PASS-12: горизонтальное масштабирование (multi-instance) ✅
+
+### Cross-instance WebSocket/SSE через Valkey pub/sub
+- **Проблема**: RoomHub и SSEManager держат подключения в памяти КОНКРЕТНОГО инстанса; при N инстансах сообщение с инстанса A не доходило до клиентов инстанса B.
+- **Решение**: пакет `internal/pkg/realtimebus` (Bus: `Publish`/`Subscribe`/`Close`; Valkey-реализация на go-redis с авто-reconnect + backoff; `NoopBus` для пустого конфига).
+  - `RoomHub.SetPubSub(bus, instanceID)` → `BroadcastToRoom` = publish в `gengine:ws` + локальная рассылка; подписчик вызывает `enqueueLocal` (не повторяет publish).
+  - `SSEManager.SetPubSub(bus, instanceID)` → `Broadcast` = publish в `gengine:sse` + `broadcastLocal`; подписчик вызывает `broadcastLocal` (без повторного publish).
+  - **Anti-эхо**: каждое сообщение несёт `origin = instanceID` (uuid.NewString из main.go); инстанс пропускает свои сообщения — клиент получает каждое ровно 1 раз.
+  - Fail-open: ошибка публикации не блокирует локальную рассылку; без Valkey (VALKEY_HOST пуст) — прежнее локальное поведение.
+- **Внедрение**: `main.go` создаёт `realtimeBus` в блоке Valkey, `hub.SetPubSub(realtimeBus, instanceID)` сразу, `deps.Services.SSEMgr.SetPubSub(...)` после NewDependencies. Stop: `hub.Stop`/`SSEManager.Stop` отменяют подписку.
+- **Найден и исправлен pre-existing race**: `dispatchToRoom` писал кэш `roomClients[roomID]` под `RLock` → `concurrent map write` при двух параллельных dispatch (воспроизводился pub/sub-тестом). Исправлено: запись кэша только под полным Lock (upgrade RLock→Lock с перепроверкой).
+
+### Advisory lock в миграциях
+- `MigrateFromDir` берёт `pg_advisory_lock(5123456)` на отдельном соединении до применения и снимает в любом случае (defer). Параллельный старт N инстансов больше не даёт гонку "таблица уже существует".
+
+### Инфраструктурная документация
+- `deploy/multi-instance/README.md` — архитектура, конфигурация Valkey, nginx (TLS + sticky + WS upgrade + SSE без буферизации), ограничения (общий storage, email-воркеры).
+- `deploy/multi-instance/nginx.conf.example` — рабочий конфиг nginx.
+- `deploy/multi-instance/gengine-app@.service` — systemd-шаблон для N реплик.
+- `deploy/systemd/README.md` — добавлен раздел про multi-instance.
+
+### Проверки
+- build ✅, golangci-lint ✅ (0 issues), test-short ✅ (включая 5-кратные прогоны realtimebus/websocket/SSE pub-sub на miniredis), E2E 14/14 ✅.
+
+### Валидация на реальном Valkey (podman, 2026-08-13) ✅
+- Поднят контейнер `valkey/valkey:7-alpine` через podman machine (порт 6380).
+- E2E 14/14 с сервером, подключённым к реальному Valkey (`Valkey: connected successfully`).
+- В Valkey подтверждены живые ключи: `gengine:session:*` (сессии PASS-11), `login:::1`, `global:::1`, `personal_chat:*`, `search:::1` (rate-limiters), `reviews:game:*`, `rating:game:*` (кэш).
+- Новые интеграционные тесты (build tag `integration`, `VALKEY_HOST`/`VALKEY_PORT`):
+  - `TestRoomHub_PubSub_RealValkey` — сообщение инстанса 1 доставлено клиенту инстанса 2 через реальный pub/sub ✅
+  - `TestSSEManager_PubSub_RealValkey` — SSE-событие инстанса 1 получено сессией инстанса 2 ✅
+- Причина прошлого «нет интернета»: был включён AmneziaVPN (WireGuard-адаптер ломал сеть WSL/podman). После его отключения pull и pub/sub работают.
