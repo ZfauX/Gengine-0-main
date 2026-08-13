@@ -31,7 +31,7 @@ import (
 )
 
 // =============================================================================
-// Вспомогательные функции для настройки тестов
+// Р вЂ™РЎРѓР С—Р С•Р СР С•Р С–Р В°РЎвЂљР ВµР В»РЎРЉР Р…РЎвЂ№Р Вµ РЎвЂћРЎС“Р Р…Р С”РЎвЂ Р С‘Р С‘ Р Т‘Р В»РЎРЏ Р Р…Р В°РЎРѓРЎвЂљРЎР‚Р С•Р в„–Р С”Р С‘ РЎвЂљР ВµРЎРѓРЎвЂљР С•Р Р†
 // =============================================================================
 
 func setupAdminTestDB(t *testing.T) *gorm.DB {
@@ -64,20 +64,20 @@ func createTestGame(t *testing.T, db *gorm.DB, authorID uint, name string, isDra
 }
 
 // =============================================================================
-// Тесты для BackupService
+// Р СћР ВµРЎРѓРЎвЂљРЎвЂ№ Р Т‘Р В»РЎРЏ BackupService
 // =============================================================================
 
 func TestBackupService_CreateNow(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test (requires pg_dump)")
 	}
-	// Проверяем наличие pg_dump в системе
+	// Р СџРЎР‚Р С•Р Р†Р ВµРЎР‚РЎРЏР ВµР С Р Р…Р В°Р В»Р С‘РЎвЂЎР С‘Р Вµ pg_dump Р Р† РЎРѓР С‘РЎРѓРЎвЂљР ВµР СР Вµ
 	_, err := exec.LookPath("pg_dump")
 	if err != nil {
 		t.Skip("pg_dump not found in PATH, skipping test")
 	}
 
-	// Создаём временную директорию для бэкапов
+	// Р РЋР С•Р В·Р Т‘Р В°РЎвЂР С Р Р†РЎР‚Р ВµР СР ВµР Р…Р Р…РЎС“РЎР‹ Р Т‘Р С‘РЎР‚Р ВµР С”РЎвЂљР С•РЎР‚Р С‘РЎР‹ Р Т‘Р В»РЎРЏ Р В±РЎРЊР С”Р В°Р С—Р С•Р Р†
 	tmpDir, err := os.MkdirTemp("", "backup_create")
 	require.NoError(t, err)
 	defer func() { _ = os.RemoveAll(tmpDir) }()
@@ -92,29 +92,29 @@ func TestBackupService_CreateNow(t *testing.T) {
 		Password: "test",
 		Name:     "testdb",
 	}
-	svc := admin.NewBackupService(backupRepo, tmpDir, 10, dbCfg)
+	svc := admin.NewBackupService(backupRepo, tmpDir, 10, dbCfg, "")
 
 	err = svc.CreateNow(context.Background())
 	require.NoError(t, err)
 
-	// Проверяем, что файл создан
+	// Р СџРЎР‚Р С•Р Р†Р ВµРЎР‚РЎРЏР ВµР С, РЎвЂЎРЎвЂљР С• РЎвЂћР В°Р в„–Р В» РЎРѓР С•Р В·Р Т‘Р В°Р Р…
 	files, err := os.ReadDir(tmpDir)
 	require.NoError(t, err)
 	assert.Len(t, files, 1)
 
-	// Проверяем, что запись в БД создана
+	// Р СџРЎР‚Р С•Р Р†Р ВµРЎР‚РЎРЏР ВµР С, РЎвЂЎРЎвЂљР С• Р В·Р В°Р С—Р С‘РЎРѓРЎРЉ Р Р† Р вЂР вЂќ РЎРѓР С•Р В·Р Т‘Р В°Р Р…Р В°
 	var count int64
 	db.Model(&admin.Backup{}).Count(&count)
 	assert.Equal(t, int64(1), count)
 
-	// Проверяем, что файл не пустой
+	// Р СџРЎР‚Р С•Р Р†Р ВµРЎР‚РЎРЏР ВµР С, РЎвЂЎРЎвЂљР С• РЎвЂћР В°Р в„–Р В» Р Р…Р Вµ Р С—РЎС“РЎРѓРЎвЂљР С•Р в„–
 	info, err := os.Stat(filepath.Join(tmpDir, files[0].Name()))
 	require.NoError(t, err)
 	assert.Greater(t, info.Size(), int64(0))
 }
 
-// TestBackupService_Download: скачивание существующего бэкапа возвращает путь,
-// несуществующего — ошибку (T-M1).
+// TestBackupService_Download: РЎРѓР С”Р В°РЎвЂЎР С‘Р Р†Р В°Р Р…Р С‘Р Вµ РЎРѓРЎС“РЎвЂ°Р ВµРЎРѓРЎвЂљР Р†РЎС“РЎР‹РЎвЂ°Р ВµР С–Р С• Р В±РЎРЊР С”Р В°Р С—Р В° Р Р†Р С•Р В·Р Р†РЎР‚Р В°РЎвЂ°Р В°Р ВµРЎвЂљ Р С—РЎС“РЎвЂљРЎРЉ,
+// Р Р…Р ВµРЎРѓРЎС“РЎвЂ°Р ВµРЎРѓРЎвЂљР Р†РЎС“РЎР‹РЎвЂ°Р ВµР С–Р С• РІР‚вЂќ Р С•РЎв‚¬Р С‘Р В±Р С”РЎС“ (T-M1).
 func TestBackupService_Download(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test (requires pg_dump)")
@@ -131,7 +131,7 @@ func TestBackupService_Download(t *testing.T) {
 	db := setupAdminTestDB(t)
 	backupRepo := admin.NewGormBackupRepo(db)
 	dbCfg := config.DatabaseConfig{Host: "localhost", Port: "5432", User: "test", Password: "test", Name: "testdb"}
-	svc := admin.NewBackupService(backupRepo, tmpDir, 10, dbCfg)
+	svc := admin.NewBackupService(backupRepo, tmpDir, 10, dbCfg, "")
 
 	require.NoError(t, svc.CreateNow(context.Background()))
 
@@ -145,7 +145,7 @@ func TestBackupService_Download(t *testing.T) {
 	assert.Greater(t, info.Size(), int64(0))
 
 	_, err = svc.Download(context.Background(), 999999)
-	assert.Error(t, err, "несуществующий бэкап должен давать ошибку")
+	assert.Error(t, err, "Р Р…Р ВµРЎРѓРЎС“РЎвЂ°Р ВµРЎРѓРЎвЂљР Р†РЎС“РЎР‹РЎвЂ°Р С‘Р в„– Р В±РЎРЊР С”Р В°Р С— Р Т‘Р С•Р В»Р В¶Р ВµР Р… Р Т‘Р В°Р Р†Р В°РЎвЂљРЎРЉ Р С•РЎв‚¬Р С‘Р В±Р С”РЎС“")
 }
 
 func TestBackupService_RotateBackups(t *testing.T) {
@@ -177,7 +177,7 @@ func TestBackupService_RotateBackups(t *testing.T) {
 		Password: "test",
 		Name:     "testdb",
 	}
-	svc := admin.NewBackupService(backupRepo, tmpDir, 3, dbCfg)
+	svc := admin.NewBackupService(backupRepo, tmpDir, 3, dbCfg, "")
 
 	err = svc.RotateBackups(context.Background())
 	require.NoError(t, err)
@@ -196,19 +196,19 @@ func TestBackupService_GetMaxBackups(t *testing.T) {
 	backupRepo := admin.NewGormBackupRepo(db)
 	dbCfg := config.DatabaseConfig{}
 
-	svc := admin.NewBackupService(backupRepo, "/tmp", 7, dbCfg)
+	svc := admin.NewBackupService(backupRepo, "/tmp", 7, dbCfg, "")
 	assert.Equal(t, 7, svc.GetMaxBackups())
 
-	svc2 := admin.NewBackupService(backupRepo, "/tmp", 0, dbCfg)
+	svc2 := admin.NewBackupService(backupRepo, "/tmp", 0, dbCfg, "")
 	assert.Equal(t, 10, svc2.GetMaxBackups())
 }
 
 // =============================================================================
-// Тесты для AdminHandler (только редиректы, без HTML-рендеринга)
+// Р СћР ВµРЎРѓРЎвЂљРЎвЂ№ Р Т‘Р В»РЎРЏ AdminHandler (РЎвЂљР С•Р В»РЎРЉР С”Р С• РЎР‚Р ВµР Т‘Р С‘РЎР‚Р ВµР С”РЎвЂљРЎвЂ№, Р В±Р ВµР В· HTML-РЎР‚Р ВµР Р…Р Т‘Р ВµРЎР‚Р С‘Р Р…Р С–Р В°)
 // =============================================================================
 
-// setupAdminHandlerForRedirect создаёт роутер с минимальными настройками,
-// достаточными для тестирования действий, возвращающих редирект.
+// setupAdminHandlerForRedirect РЎРѓР С•Р В·Р Т‘Р В°РЎвЂРЎвЂљ РЎР‚Р С•РЎС“РЎвЂљР ВµРЎР‚ РЎРѓ Р СР С‘Р Р…Р С‘Р СР В°Р В»РЎРЉР Р…РЎвЂ№Р СР С‘ Р Р…Р В°РЎРѓРЎвЂљРЎР‚Р С•Р в„–Р С”Р В°Р СР С‘,
+// Р Т‘Р С•РЎРѓРЎвЂљР В°РЎвЂљР С•РЎвЂЎР Р…РЎвЂ№Р СР С‘ Р Т‘Р В»РЎРЏ РЎвЂљР ВµРЎРѓРЎвЂљР С‘РЎР‚Р С•Р Р†Р В°Р Р…Р С‘РЎРЏ Р Т‘Р ВµР в„–РЎРѓРЎвЂљР Р†Р С‘Р в„–, Р Р†Р С•Р В·Р Р†РЎР‚Р В°РЎвЂ°Р В°РЎР‹РЎвЂ°Р С‘РЎвЂ¦ РЎР‚Р ВµР Т‘Р С‘РЎР‚Р ВµР С”РЎвЂљ.
 func setupAdminHandlerForRedirect(t *testing.T) (*gin.Engine, *gorm.DB, *admin.AdminHandler) {
 	gin.SetMode(gin.TestMode)
 	db := setupAdminTestDB(t)
@@ -221,7 +221,7 @@ func setupAdminHandlerForRedirect(t *testing.T) (*gin.Engine, *gorm.DB, *admin.A
 
 	backupRepo := admin.NewGormBackupRepo(db)
 	dbCfg := config.DatabaseConfig{Host: "localhost", Port: "5432", User: "test", Password: "test", Name: "testdb"}
-	backupService := admin.NewBackupService(backupRepo, "/tmp", 10, dbCfg)
+	backupService := admin.NewBackupService(backupRepo, "/tmp", 10, dbCfg, "")
 
 	auditService := audit.NewService(db)
 
@@ -233,13 +233,13 @@ func setupAdminHandlerForRedirect(t *testing.T) (*gin.Engine, *gorm.DB, *admin.A
 
 	r := gin.New()
 
-	// Сессия и CSRF (необходимы для csrf.GetToken, даже если ответ — редирект)
+	// Р РЋР ВµРЎРѓРЎРѓР С‘РЎРЏ Р С‘ CSRF (Р Р…Р ВµР С•Р В±РЎвЂ¦Р С•Р Т‘Р С‘Р СРЎвЂ№ Р Т‘Р В»РЎРЏ csrf.GetToken, Р Т‘Р В°Р В¶Р Вµ Р ВµРЎРѓР В»Р С‘ Р С•РЎвЂљР Р†Р ВµРЎвЂљ РІР‚вЂќ РЎР‚Р ВµР Т‘Р С‘РЎР‚Р ВµР С”РЎвЂљ)
 	sessionSecret := "test-admin-secret-key-32chr!!"
 	store := cookie.NewStore([]byte(sessionSecret))
 	r.Use(sessions.Sessions("gengine_test_session", store))
 	r.Use(csrf.Middleware(sessionSecret, false, nil))
 
-	// Эмулируем авторизацию
+	// Р В­Р СРЎС“Р В»Р С‘РЎР‚РЎС“Р ВµР С Р В°Р Р†РЎвЂљР С•РЎР‚Р С‘Р В·Р В°РЎвЂ Р С‘РЎР‹
 	r.Use(func(c *gin.Context) {
 		c.Set("userID", adminUser.ID)
 		c.Set("IsAdmin", true)
@@ -248,7 +248,7 @@ func setupAdminHandlerForRedirect(t *testing.T) (*gin.Engine, *gorm.DB, *admin.A
 
 	adminGroup := r.Group("/admin")
 	{
-		// Регистрируем только те маршруты, которые нужны для редиректов
+		// Р В Р ВµР С–Р С‘РЎРѓРЎвЂљРЎР‚Р С‘РЎР‚РЎС“Р ВµР С РЎвЂљР С•Р В»РЎРЉР С”Р С• РЎвЂљР Вµ Р СР В°РЎР‚РЎв‚¬РЎР‚РЎС“РЎвЂљРЎвЂ№, Р С”Р С•РЎвЂљР С•РЎР‚РЎвЂ№Р Вµ Р Р…РЎС“Р В¶Р Р…РЎвЂ№ Р Т‘Р В»РЎРЏ РЎР‚Р ВµР Т‘Р С‘РЎР‚Р ВµР С”РЎвЂљР С•Р Р†
 		adminGroup.GET("/users/:id/toggle-admin", handler.ToggleAdmin)
 		adminGroup.GET("/users/:id/delete", handler.DeleteUser)
 		adminGroup.GET("/games/:id/delete", handler.DeleteGame)
@@ -325,18 +325,18 @@ func TestAdminHandler_RotateBackups(t *testing.T) {
 		require.NoError(t, backupRepo.Create(context.Background(), b))
 	}
 
-	// Создаём новый сервис с ограничением в 3 бекапа
+	// Р РЋР С•Р В·Р Т‘Р В°РЎвЂР С Р Р…Р С•Р Р†РЎвЂ№Р в„– РЎРѓР ВµРЎР‚Р Р†Р С‘РЎРѓ РЎРѓ Р С•Р С–РЎР‚Р В°Р Р…Р С‘РЎвЂЎР ВµР Р…Р С‘Р ВµР С Р Р† 3 Р В±Р ВµР С”Р В°Р С—Р В°
 	dbCfg := config.DatabaseConfig{Host: "localhost", Port: "5432", User: "test", Password: "test", Name: "testdb"}
-	backupService := admin.NewBackupService(backupRepo, tmpDir, 3, dbCfg)
+	backupService := admin.NewBackupService(backupRepo, tmpDir, 3, dbCfg, "")
 
-	// Обработчик с этим сервисом
+	// Р С›Р В±РЎР‚Р В°Р В±Р С•РЎвЂљРЎвЂЎР С‘Р С” РЎРѓ РЎРЊРЎвЂљР С‘Р С РЎРѓР ВµРЎР‚Р Р†Р С‘РЎРѓР С•Р С
 	userRepo := user.NewGormUserRepo(db)
 	gameRepo := game.NewGormGameRepo(db)
 	auditSvc := audit.NewService(db)
 	refreshTokenRepo := user.NewGormRefreshTokenRepo(db)
 	handler := admin.NewAdminHandler(userRepo, gameRepo, nil, team.NewGormTeamRepo(db), backupService, auditSvc, refreshTokenRepo, nil)
 
-	// Новый роутер для теста, без CSRF (RotateBackups не использует csrf.GetToken)
+	// Р СњР С•Р Р†РЎвЂ№Р в„– РЎР‚Р С•РЎС“РЎвЂљР ВµРЎР‚ Р Т‘Р В»РЎРЏ РЎвЂљР ВµРЎРѓРЎвЂљР В°, Р В±Р ВµР В· CSRF (RotateBackups Р Р…Р Вµ Р С‘РЎРѓР С—Р С•Р В»РЎРЉР В·РЎС“Р ВµРЎвЂљ csrf.GetToken)
 	r2 := gin.New()
 	sessionSecret := "rotate-test-secret-key-32chr!"
 	store := cookie.NewStore([]byte(sessionSecret))
@@ -361,7 +361,7 @@ func TestAdminHandler_RotateBackups(t *testing.T) {
 }
 
 // =============================================================================
-// Тесты для audit.Service
+// Р СћР ВµРЎРѓРЎвЂљРЎвЂ№ Р Т‘Р В»РЎРЏ audit.Service
 // =============================================================================
 
 func TestAuditService_LogAndList(t *testing.T) {

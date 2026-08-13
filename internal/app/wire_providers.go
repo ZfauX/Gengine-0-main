@@ -210,7 +210,7 @@ func wrapBlackboxVoteService(blackboxRepo monitor.BlackboxRepository, coAuthorSv
 }
 
 func wrapBackupService(backupRepo admin.BackupRepository, cfg *config.Config) *admin.BackupService {
-	return admin.NewBackupService(backupRepo, "backups", cfg.Server.MaxBackups, cfg.Database)
+	return admin.NewBackupService(backupRepo, "backups", cfg.Server.MaxBackups, cfg.Database, cfg.Server.BackupEncryptionKey)
 }
 
 func wrapCalendarHandler(gameRepo game.GameRepository, cfg *config.Config) *calendar.CalendarHandler {

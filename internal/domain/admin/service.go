@@ -3,7 +3,10 @@ package admin
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -41,6 +44,10 @@ type BackupService struct {
 	dbPassword string
 	dbName     string
 
+	// encryptionKey (admin #6, PASS-8): AES-256 ключ шифрования бэкапов
+	// (32 байта). Пустой — бэкапы не шифруются (защита только chmod 0600).
+	encryptionKey []byte
+
 	// backupMu (DEEP-REVIEW PASS-4 H5): сериализует CreateNow — повторный клик
 	// во время дампа не запускает конкурирующий pg_dump.
 	backupMu sync.Mutex
@@ -63,11 +70,12 @@ func NewBackupService(
 	backupDir string,
 	maxBackups int,
 	dbCfg config.DatabaseConfig,
+	encryptionKey string,
 ) *BackupService {
 	if maxBackups <= 0 {
 		maxBackups = 10
 	}
-	return &BackupService{
+	s := &BackupService{
 		backupRepo: backupRepo,
 		BackupDir:  backupDir,
 		MaxBackups: maxBackups,
@@ -77,6 +85,29 @@ func NewBackupService(
 		dbPassword: dbCfg.Password,
 		dbName:     dbCfg.Name,
 	}
+	// admin #6: ключ из env (hex 64 символа = 32 байта AES-256).
+	if key, err := decodeBackupKey(encryptionKey); err != nil {
+		log.Warn().Err(err).Msg("Backup: invalid BACKUP_ENCRYPTION_KEY, backups will be stored unencrypted")
+	} else if key != nil {
+		s.encryptionKey = key
+		log.Info().Msg("Backup: AES-256 encryption enabled for backups")
+	}
+	return s
+}
+
+// decodeBackupKey разбирает BACKUP_ENCRYPTION_KEY: hex (64 символа) или
+// base64 (44 символа) — всегда 32 байта. Пустая строка → nil (без шифрования).
+func decodeBackupKey(raw string) ([]byte, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	if decoded, err := hex.DecodeString(raw); err == nil && len(decoded) == 32 {
+		return decoded, nil
+	}
+	if decoded, err := base64.StdEncoding.DecodeString(raw); err == nil && len(decoded) == 32 {
+		return decoded, nil
+	}
+	return nil, fmt.Errorf("ожидается 32-байтный ключ (hex 64 или base64 44 символа)")
 }
 
 // CreateNowAsync запускает CreateNow в фоновой горутине (DEEP-REVIEW PASS-4 H5):
@@ -155,6 +186,15 @@ func (s *BackupService) CreateNow(ctx context.Context) error {
 		log.Warn().Err(chmodErr).Str("file", filepath).Msg("Backup: failed to chmod backup file to 0600")
 	}
 
+	// admin #6 (PASS-8): шифруем дамп AES-256-GCM (если ключ настроен) —
+	// plaintext-файл удаляется после шифрования.
+	if encPath, encErr := s.encryptBackupFile(filepath); encErr != nil {
+		return fmt.Errorf("не удалось зашифровать бэкап: %w", encErr)
+	} else if encPath != filepath {
+		filepath = encPath
+		filename += ".enc"
+	}
+
 	info, err := os.Stat(filepath)
 	var size int64
 	if err == nil {
@@ -204,6 +244,16 @@ func (s *BackupService) Download(ctx context.Context, backupID uint) (string, er
 
 	if _, err := os.Stat(absPath); os.IsNotExist(err) {
 		return "", fmt.Errorf("файл бекапа не найден")
+	}
+
+	// admin #6 (PASS-8): если бэкап зашифрован — расшифровываем во временный
+	// файл и возвращаем его путь (хендлер отдаёт c.File).
+	if strings.HasSuffix(absPath, ".enc") {
+		plainPath, err := s.decryptBackupFile(absPath)
+		if err != nil {
+			return "", err
+		}
+		return plainPath, nil
 	}
 	return absPath, nil
 }
@@ -266,4 +316,70 @@ func (s *BackupService) isWithinBackupDir(path string) bool {
 // GetMaxBackups возвращает текущее значение лимита бекапов.
 func (s *BackupService) GetMaxBackups() int {
 	return s.MaxBackups
+}
+
+// encryptBackupFile (admin #6, PASS-8): шифрует файл AES-256-GCM на месте.
+// Формат: 12-байт nonce || ciphertext. Возвращает путь к зашифрованному файлу.
+func (s *BackupService) encryptBackupFile(srcPath string) (string, error) {
+	if len(s.encryptionKey) != 32 {
+		return srcPath, nil // шифрование не включено
+	}
+	plain, err := os.ReadFile(srcPath)
+	if err != nil {
+		return "", err
+	}
+	block, err := aes.NewCipher(s.encryptionKey)
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", err
+	}
+	ciphertext := gcm.Seal(nonce, nonce, plain, nil)
+	encPath := srcPath + ".enc"
+	if err := os.WriteFile(encPath, ciphertext, 0600); err != nil {
+		return "", err
+	}
+	// Удаляем незашифрованный дамп (plaintext не должен оставаться на диске).
+	errors.LogSilently(os.Remove(srcPath), "Backup: failed to remove plaintext dump after encryption")
+	return encPath, nil
+}
+
+// decryptBackupFile (admin #6, PASS-8): расшифровывает .enc в директории
+// бекапов (для Download). Возвращает путь к временному расшифрованному файлу.
+func (s *BackupService) decryptBackupFile(encPath string) (string, error) {
+	if len(s.encryptionKey) != 32 {
+		return encPath, nil // не зашифрован
+	}
+	data, err := os.ReadFile(encPath)
+	if err != nil {
+		return "", err
+	}
+	block, err := aes.NewCipher(s.encryptionKey)
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	if len(data) < gcm.NonceSize() {
+		return "", fmt.Errorf("зашифрованный бэкап повреждён (короткий файл)")
+	}
+	nonce, ciphertext := data[:gcm.NonceSize()], data[gcm.NonceSize():]
+	plain, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return "", fmt.Errorf("не удалось расшифровать бэкап: %w", err)
+	}
+	// Временный файл в директории бекапов (ротация его не видит — без записи в БД).
+	plainPath := encPath + ".decrypted"
+	if err := os.WriteFile(plainPath, plain, 0600); err != nil {
+		return "", err
+	}
+	return plainPath, nil
 }

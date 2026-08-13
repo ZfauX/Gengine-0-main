@@ -399,7 +399,10 @@ func (h *AdminHandler) ToggleAdmin(c *gin.Context) {
 	}
 
 	adminID := c.GetUint("userID")
-	h.auditService.Log(adminID, "toggle_admin_role", "user", u.ID, "new_role: "+u.Role)
+	// admin #5 (PASS-8): nil-проверка auditService (как в DeleteUser).
+	if h.auditService != nil {
+		h.auditService.Log(adminID, "toggle_admin_role", "user", u.ID, "new_role: "+u.Role)
+	}
 	c.Redirect(http.StatusFound, "/admin/users")
 }
 
@@ -590,7 +593,10 @@ func (h *AdminHandler) DeleteGame(c *gin.Context) {
 	}
 
 	adminID := c.GetUint("userID")
-	h.auditService.Log(adminID, "delete_game", "game", req.ID, "")
+	// admin #5 (PASS-8): nil-проверка auditService.
+	if h.auditService != nil {
+		h.auditService.Log(adminID, "delete_game", "game", req.ID, "")
+	}
 	c.Redirect(http.StatusFound, "/admin/games")
 }
 
@@ -800,6 +806,10 @@ func (h *AdminHandler) CreateBackup(c *gin.Context) {
 		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
+	// admin #5 (PASS-8): чувствительное действие — логируем в audit.
+	if h.auditService != nil {
+		h.auditService.Log(c.GetUint("userID"), "backup.create", "backups", 0, "")
+	}
 	render.SetFlash(c, "success", "Создание бекапа запущено в фоне")
 	c.Redirect(http.StatusFound, "/admin/backups")
 }
@@ -836,6 +846,11 @@ func (h *AdminHandler) DownloadBackup(c *gin.Context) {
 		}
 		return
 	}
+	// admin #5 (PASS-8): скачивание полного дампа БД (пароли/2FA-секреты) —
+	// чувствительное действие, логируем в audit.
+	if h.auditService != nil {
+		h.auditService.Log(c.GetUint("userID"), "backup.download", "backups", req.ID, path)
+	}
 	c.File(path)
 }
 
@@ -855,6 +870,10 @@ func (h *AdminHandler) RotateBackups(c *gin.Context) {
 		log.Error().Err(err).Msg("RotateBackups failed")
 		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
+	}
+	// admin #5 (PASS-8): удаление бэкапов — логируем в audit.
+	if h.auditService != nil {
+		h.auditService.Log(c.GetUint("userID"), "backup.rotate", "backups", 0, "")
 	}
 	c.Redirect(http.StatusFound, "/admin/backups")
 }

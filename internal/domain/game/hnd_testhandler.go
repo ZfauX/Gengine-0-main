@@ -63,6 +63,20 @@ func (h *TestHandler) TestPage(c *gin.Context) {
 		return
 	}
 
+	// IDOR MEDIUM #4 (PASS-8): тестовая страница раскрывала тестовые
+	// прохождения (ID команд/статусы) любой публичной игры любому залогиненному
+	// пользователю — проверка только GetByID (видимость), без прав менеджера.
+	isManager, mgrErr := h.gameService.IsUserManager(c.Request.Context(), uint(gameID), userID)
+	if mgrErr != nil {
+		log.Error().Err(mgrErr).Int("game_id", gameID).Msg("GameHandler.TestPage: failed to check manager rights")
+		render.RenderErrorPage(c, http.StatusInternalServerError)
+		return
+	}
+	if !isManager {
+		render.RenderErrorPage(c, http.StatusForbidden)
+		return
+	}
+
 	var testPassings []GamePassing
 	if err := h.passingService.ListTestPassings(c.Request.Context(), g.ID, &testPassings); err != nil {
 		log.Error().Err(err).Int("game_id", gameID).Msg("GameHandler.TestPage: failed to list test passings")

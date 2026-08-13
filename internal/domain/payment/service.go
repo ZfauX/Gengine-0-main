@@ -432,6 +432,11 @@ func webhookEventStatus(event string) string {
 // подделки), и true в остальных случаях (заголовка нет / заголовок верный).
 func (s *PaymentService) verifyWebhookAuth(authHeader string) (bool, error) {
 	if authHeader == "" {
+		// S-H1 (PASS-8): если оператор включил YKASSA_REQUIRE_WEBHOOK_AUTH —
+		// подпись ОБЯЗАТЕЛЬНА (иначе кастомный отправитель подделывает IP-allowlist).
+		if s.cfg.RequireWebhookAuth {
+			return false, fmt.Errorf("%w: missing Authorization", ErrWebhookUnauthorized)
+		}
 		// Заголовка нет — легитимный вебхук ЮKassa (IP-allowlist ниже).
 		return true, nil
 	}

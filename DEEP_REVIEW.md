@@ -233,4 +233,12 @@
   - S-L2: `YKASSA_WEBHOOK_KEY` обязателен в strict-режиме (не fallback на SecretKey).
   - S-M3: max backoff 24ч→1ч (меньше DoS-ущерб) + мягкий троттлинг (300мс) на неверный пароль.
   - S-M4: per-user token bucket в чате (агрегирует соединения).
+- **Оставшиеся (третий проход) — исправлено:**
+  - IDOR MEDIUM #3: full-preview теперь ТОЛЬКО для менеджеров (403 для остальных) — не-менеджер не получит тексты вопросов до старта.
+  - IDOR MEDIUM #4: /games/:id/test проверяет IsUserManager (тестовые прохождения не раскрываются любому).
+  - admin #4: подтверждено, что CASCADE (payments/teams ON DELETE CASCADE) уже закрывает сирот — фикс не требуется.
+  - admin #5: audit-логирование CreateBackup/DownloadBackup/RotateBackups + nil-проверки auditService в ToggleAdmin/DeleteGame.
+  - admin #6: опциональное AES-256-GCM шифрование бэкапов (BACKUP_ENCRYPTION_KEY; hex/base64 32 байта); plaintext удаляется; Download расшифровывает во временный файл.
+  - S-H1: опциональное требование Basic-подписи вебхука (YKASSA_REQUIRE_WEBHOOK_AUTH=true) — для кастомных отправителей; ЮKassa по умолчанию без подписи (IP-allowlist).
+  - Проверки: build ✅, test-short ✅, test-integration ✅, golangci-lint ✅ (0 issues), E2E 14/14 ✅.
 - Ограничения: аудиторы упёрлись в лимит шагов — не покрыты admin-домен, часть game svc_*, team/tournament/payment полностью, полная инвентаризация шаблонов на XSS, IDOR game/level-маршрутов.

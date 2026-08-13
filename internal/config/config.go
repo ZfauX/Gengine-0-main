@@ -56,21 +56,24 @@ type ServerConfig struct {
 	PprofPort string
 	// PprofBind — адрес привязки pprof-сервера (DEEP-REVIEW PASS-4 H2).
 	// По умолчанию 127.0.0.1 — pprof не должен быть доступен извне без auth.
-	PprofBind         string
-	MaxBackups        int    // максимальное количество сохраняемых архивов логов
-	LogFilePath       string // путь к файлу логов (по умолчанию "logs/app.log")
-	LogMaxSize        int    // максимальный размер файла лога в МБ (по умолчанию 100)
-	LogMaxAge         int    // максимальное количество дней хранения логов (по умолчанию 28)
-	LogCompress       bool   // сжимать ли архивы (по умолчанию true)
-	LogFormat         string // формат вывода логов: "console" или "json" (по умолчанию "console")
-	StaticDir         string // путь к статическим файлам (по умолчанию "static")
-	UploadsDir        string // путь к загружаемым файлам (по умолчанию "uploads")
-	MaxUploadSize     int    // максимальный размер загружаемого файла в байтах (по умолчанию 5MB)
-	MaxBodySize       int    // максимальный размер тела запроса в байтах (по умолчанию 10MB)
-	TrustedProxies    string // доверенные прокси через запятую (например: 127.0.0.1,192.168.0.0/24)
-	CORSOrigins       string // разрешённые CORS-источники через запятую (например: https://example.com,http://localhost:3000)
-	StrictMode        bool   // строгий режим: неверные переменные окружения вызывают ошибку вместо fallback
-	ForceSecureCookie bool   // принудительно устанавливать Secure-флаг на куках (даже без TLS)
+	PprofBind   string
+	MaxBackups  int    // максимальное количество сохраняемых архивов логов
+	LogFilePath string // путь к файлу логов (по умолчанию "logs/app.log")
+	LogMaxSize  int    // максимальный размер файла лога в МБ (по умолчанию 100)
+	LogMaxAge   int    // максимальное количество дней хранения логов (по умолчанию 28)
+	LogCompress bool   // сжимать ли архивы (по умолчанию true)
+	LogFormat   string // формат вывода логов: "console" или "json" (по умолчанию "console")
+	StaticDir   string // путь к статическим файлам (по умолчанию "static")
+	// BackupEncryptionKey (admin #6, PASS-8): AES-256 ключ (hex/base64, 32 байта)
+	// для шифрования бэкапов БД. Пуст → бэкапы не шифруются (только chmod 0600).
+	BackupEncryptionKey string
+	UploadsDir          string // путь к загружаемым файлам (по умолчанию "uploads")
+	MaxUploadSize       int    // максимальный размер загружаемого файла в байтах (по умолчанию 5MB)
+	MaxBodySize         int    // максимальный размер тела запроса в байтах (по умолчанию 10MB)
+	TrustedProxies      string // доверенные прокси через запятую (например: 127.0.0.1,192.168.0.0/24)
+	CORSOrigins         string // разрешённые CORS-источники через запятую (например: https://example.com,http://localhost:3000)
+	StrictMode          bool   // строгий режим: неверные переменные окружения вызывают ошибку вместо fallback
+	ForceSecureCookie   bool   // принудительно устанавливать Secure-флаг на куках (даже без TLS)
 
 	// Rate limiting — настраиваются через env с дефолтами из constants.go
 	RateLimitWindow         time.Duration // окно rate limiter (по умолчанию 1m)
@@ -201,6 +204,10 @@ type PaymentConfig struct {
 	WebhookKey string // ключ подписи вебхуков (если отличается от SecretKey)
 	Currency   string // валюта платежей (по умолчанию RUB)
 	ReturnURL  string // URL возврата после оплаты (если пусто — BaseURL + /profile)
+	// RequireWebhookAuth (S-H1, PASS-8): требовать Basic-подпись на вебхуке.
+	// ЮKassa официально НЕ шлёт Basic — включать только при кастомном
+	// отправителе/прокси с подписью (осознанный trade-off безопасность>совместимость).
+	RequireWebhookAuth bool
 }
 
 // VAPIDConfig содержит VAPID-ключи для Web Push.
@@ -233,6 +240,8 @@ func LoadConfig() (*Config, error) {
 	cfg.Server.LogCompress = getEnvAsBool("LOG_COMPRESS", true)
 	cfg.Server.LogFormat = getEnvOrDefault("LOG_FORMAT", "console") // console или json
 	cfg.Server.StaticDir = getEnvOrDefault("STATIC_DIR", "static")
+	// admin #6 (PASS-8): AES-ключ шифрования бэкапов (BACKUP_ENCRYPTION_KEY).
+	cfg.Server.BackupEncryptionKey = os.Getenv("BACKUP_ENCRYPTION_KEY")
 	cfg.Server.UploadsDir = getEnvOrDefault("UPLOADS_DIR", "uploads")
 	cfg.Server.MaxUploadSize = getEnvAsInt("MAX_UPLOAD_SIZE", 5<<20)
 	cfg.Server.MaxBodySize = getEnvAsInt("MAX_BODY_SIZE", 10<<20)
@@ -379,6 +388,8 @@ func LoadConfig() (*Config, error) {
 	if cfg.Payments.Currency == "" {
 		cfg.Payments.Currency = "RUB"
 	}
+	// S-H1 (PASS-8): опционально требовать Basic-подпись вебхука.
+	cfg.Payments.RequireWebhookAuth = os.Getenv("YKASSA_REQUIRE_WEBHOOK_AUTH") == "true"
 	if cfg.Payments.ReturnURL == "" {
 		cfg.Payments.ReturnURL = cfg.Server.BaseURL + "/profile"
 	}

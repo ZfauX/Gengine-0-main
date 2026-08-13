@@ -106,6 +106,18 @@ func (h *FullPreviewHandler) FullPreview(c *gin.Context) {
 		})
 		return
 	}
+	// IDOR MEDIUM #3 (PASS-8): full-preview — инструмент МЕНЕДЖЕРА (кнопка на
+	// странице рендерится только под {{if .IsManager}}). Раньше не-менеджер
+	// перебором :id получал тексты всех вопросов публичной игры до старта
+	// (утечка игрового контента). Тексты вопросов доступны только менеджеру.
+	if !isManager {
+		appErr := apperr.Forbidden("Нет доступа к предпросмотру игры")
+		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
+			"error": appErr.Message,
+			"code":  appErr.Code,
+		})
+		return
+	}
 
 	levels, err := h.getPreviewLevels(c.Request.Context(), uint(gameID))
 	if err != nil {
