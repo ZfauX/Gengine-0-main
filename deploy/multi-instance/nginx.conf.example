@@ -1,0 +1,77 @@
+# deploy/multi-instance/nginx.conf.example
+#
+# Пример конфигурации nginx для балансировки N инстансов Gengine.
+# Вставьте в /etc/nginx/nginx.conf (или /etc/nginx/conf.d/gengine.conf) и
+# настройте server_name/ssl-пути под свой домен.
+#
+# ВАЖНО (S-M4): если TLS терминируется здесь, каждый инстанс должен видеть
+# безопасное соединение. В .env инстансов укажите TRUSTED_PROXIES=127.0.0.1
+# (или адрес nginx) ЛИБО FORCE_SECURE_COOKIE=true. Иначе CSRF/JWT cookie
+# станут Secure и HTML-формы сломаются по HTTP между nginx и инстансом.
+
+upstream gengine_backend {
+    # ip_hash — sticky sessions для WebSocket/SSE (меньше пересоединений).
+    # Для корректности cross-instance (pub/sub) sticky НЕ обязателен,
+    # но снижает нагрузку на переустановку соединений.
+    ip_hash;
+
+    server 127.0.0.1:8080;   # gengine-app@1
+    server 127.0.0.1:8081;   # gengine-app@2
+    server 127.0.0.1:8082;   # gengine-app@3
+    # Добавляйте инстансы по мере масштабирования:
+    # server 127.0.0.1:8083;
+}
+
+server {
+    listen 80;
+    server_name gengine.example.com;
+    # Редирект на HTTPS
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name gengine.example.com;
+
+    ssl_certificate     /etc/nginx/ssl/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    client_max_body_size 20m;   # фото уровней/аватары
+
+    # --- WebSocket (глобальный чат / личные чаты) ---
+    location /ws/ {
+        proxy_pass http://gengine_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # --- SSE (игровые уведомления) — без буферизации! ---
+    location ~ ^/game/.*/sse$ {
+        proxy_pass http://gengine_backend;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
+    }
+
+    # --- Обычный HTTP/HTTPS ---
+    location / {
+        proxy_pass http://gengine_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

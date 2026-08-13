@@ -44,6 +44,12 @@ type RoomHub struct {
 	// клиента из комнаты. Используется для presence-онлайн-индикатора в чате.
 	// Вызов синхронный из runLoop — колбэк должен быть быстрым (без блокировок).
 	onRoomChange func(roomID string)
+
+	// busFields (MULTI-INSTANCE, PASS-12): cross-instance рассылка через
+	// Valkey pub/sub. Защищается busMu (устанавливается один раз до Run,
+	// читается из broadcast-горутин).
+	busMu     sync.RWMutex
+	busFields *busFields
 }
 
 // SetOnRoomChange регистрирует колбэк изменения состава комнаты (IDEA-6).
@@ -334,24 +340,43 @@ func (h *RoomHub) roomWorker(roomID string, queue chan *Message) {
 // пересобирается только после удаления закрытых клиентов.
 func (h *RoomHub) dispatchToRoom(roomID string, data []byte) {
 	h.mu.RLock()
-	room, ok := h.rooms[roomID]
-	if !ok {
+	if _, ok := h.rooms[roomID]; !ok {
 		h.mu.RUnlock()
 		return
 	}
 	clients := h.roomClients[roomID]
+	upgraded := false
 	if clients == nil {
 		// Кэша нет (первая рассылка после мутации) — собираем слайс.
-		clients = make([]*Client, 0, len(room))
-		for client := range room {
-			clients = append(clients, client)
+		// Запись в map только под ПОЛНЫМ Lock (RLock допускает параллельные
+		// чтения, но не записи — concurrent map write при двух dispatchToRoom
+		// из разных roomWorker, PASS-12).
+		h.mu.RUnlock()
+		h.mu.Lock()
+		upgraded = true
+		// Перепроверяем после смены лока: комната могла исчезнуть, кэш — появиться.
+		room, ok := h.rooms[roomID]
+		if !ok {
+			h.mu.Unlock()
+			return
 		}
-		h.roomClients[roomID] = clients
+		clients = h.roomClients[roomID]
+		if clients == nil {
+			clients = make([]*Client, 0, len(room))
+			for client := range room {
+				clients = append(clients, client)
+			}
+			h.roomClients[roomID] = clients
+		}
 	}
 	// Копируем заголовок слайса, чтобы итерация шла по снимку; элементы
-	// слайса не мутируются, поэтому безопасно читать без лока после RUnlock.
+	// слайса не мутируются, поэтому безопасно читать без лока после Unlock.
 	snapshot := clients[:len(clients):len(clients)]
-	h.mu.RUnlock()
+	if upgraded {
+		h.mu.Unlock()
+	} else {
+		h.mu.RUnlock()
+	}
 
 	removed := false
 	// Рассылка БЕЗ удержания лока
@@ -423,6 +448,9 @@ func (h *RoomHub) Stop() {
 		return
 	}
 	h.stopped = true
+	// Отменяем pub/sub-подписку (MULTI-INSTANCE PASS-12) — после остановки
+	// хаба remote-сообщения рассылать некому.
+	h.StopPubSub()
 	// Закрываем done под тем же локом, чтобы никакой новый register
 	// не мог пройти между установкой stopped и закрытием done
 	close(h.done)
@@ -467,17 +495,16 @@ func (h *RoomHub) UnregisterClient(client *Client) {
 	}
 }
 
-// BroadcastToRoom отправляет сообщение всем клиентам в комнате.
-// Неблокирующая: при переполнении буфера сообщение отбрасывается, чтобы не
-// задерживать обработчики HTTP/WS после коммита транзакции.
+// BroadcastToRoom отправляет сообщение всем клиентам в комнате — локальным
+// (этот инстанс) и на других инстансах (через Valkey pub/sub, MULTI-INSTANCE
+// PASS-12). Неблокирующая: при переполнении буфера сообщение отбрасывается,
+// чтобы не задерживать обработчики HTTP/WS после коммита транзакции.
 func (h *RoomHub) BroadcastToRoom(roomID string, data []byte) {
-	select {
-	case h.broadcast <- &Message{Room: roomID, Data: data}:
-	case <-h.done:
-		log.Warn().Str("room", roomID).Msg("RoomHub: broadcast failed, hub is stopped")
-	default:
-		log.Warn().Str("room", roomID).Msg("RoomHub: broadcast buffer full, dropping message")
-	}
+	// Сначала публикуем в Valkey (другие инстансы рассылают локально),
+	// затем — локальная рассылка. Публикация fail-open: ошибка не блокирует
+	// локальную доставку.
+	h.publishToBus(roomID, data)
+	h.enqueueLocal(roomID, data)
 }
 
 type Message struct {

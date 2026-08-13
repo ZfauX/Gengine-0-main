@@ -66,6 +66,12 @@ type SSEManager struct {
 	totalConns    int
 	connsPerIP    map[string]int
 	wg            sync.WaitGroup
+
+	// sseBus (MULTI-INSTANCE, PASS-12): cross-instance рассылка через Valkey
+	// pub/sub. busMu защищает конфигурацию (устанавливается один раз до
+	// первого Broadcast, читается из Broadcast-горутин).
+	busMu  sync.RWMutex
+	sseBus *sseBusFields
 }
 
 const (
@@ -145,6 +151,8 @@ func (m *SSEManager) Stop() {
 	m.stopOnce.Do(func() {
 		m.mu.Lock()
 		m.stopped = true
+		// Отменяем pub/sub-подписку (MULTI-INSTANCE PASS-12).
+		m.StopPubSub()
 		close(m.stopCh)
 		for _, sessions := range m.sessions {
 			for _, s := range sessions {
@@ -309,8 +317,19 @@ func (m *SSEManager) UnregisterSession(session *SSESession) {
 	}
 }
 
-// Broadcast отправляет событие всем подписчикам игры
+// Broadcast отправляет событие всем подписчикам игры — локальным (этот
+// инстанс) и на других инстансах (через Valkey pub/sub, MULTI-INSTANCE
+// PASS-12). Сначала публикует в канал, затем рассылает локально.
 func (m *SSEManager) Broadcast(gameID uint, eventType string, data any) {
+	// Cross-instance публикация (fail-open) до локальной рассылки.
+	m.publishToBus(gameID, eventType, data)
+	m.broadcastLocal(gameID, eventType, data)
+}
+
+// broadcastLocal рассылает событие локальным подписчикам ЭТОГО инстанса.
+// Не публикует в Valkey — используется и из Broadcast (после publish), и из
+// подписчика (для события от другого инстанса).
+func (m *SSEManager) broadcastLocal(gameID uint, eventType string, data any) {
 	// Захватываем mu ДО wg.Add, чтобы не конфликтовать с Stop() (wg.Wait).
 	// Проверяем stopped — после Stop() новые Broadcast не регистрируются.
 	// P-M1 (PASS-8): RLock вместо Lock — broadcast'и РАЗНЫХ игр больше не

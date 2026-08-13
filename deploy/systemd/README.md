@@ -91,3 +91,14 @@ systemctl --user restart gengine-app   # миграции применит entry
 ## Логирование
 
 `journalctl --user -u gengine-app` (app пишет и в stdout, и в `logs/app.log` в volume).
+
+## Горизонтальное масштабирование (multi-instance)
+
+Для запуска **нескольких инстансов** за балансировщиком (nginx) см.
+[`deploy/multi-instance/README.md`](../multi-instance/README.md):
+
+- шаблон `gengine-app@.service` — N реплик через `systemctl --user enable --now gengine-app@{1,2,3}`;
+- `nginx.conf.example` — балансировка + TLS + WebSocket upgrade + SSE без буферизации;
+- WebSocket/SSE работают cross-instance через **Valkey pub/sub** (PASS-12);
+- миграции защищены **advisory lock** — безопасный одновременный старт реплик;
+- общий storage для uploads/backups обязателен (см. раздел 6 документа).

@@ -1,4 +1,4 @@
-# DEEP_REVIEW — Gengine-0 (PASS 10)
+# DEEP_REVIEW — Gengine-0 (PASS 12)
 
 > Глубокое ревью после закрытия PASS-9.
 > Метод: pprof-профилирование (PPROF_ENABLED=true, :6060, loopback) + 3 параллельных аудита (@reviewer, @security, @perf) + эмпирическая проверка каждого HIGH/MEDIUM finding.
@@ -158,3 +158,29 @@
 - **Совместимость**: `ServerStore` реализует `gorilla/sessions.Store` + `Options(gin-contrib)`; метод `New`/`Get` возвращает новую сессию при невалидной/поддельной куке (не ошибку); `IsNew` сохраняет семантику.
 - **Проверки**: build ✅, test-short ✅, golangci-lint ✅, E2E 14/14 ✅ (без Valkey — in-memory fallback).
 - **Ограничение**: без Valkey сессии in-memory (single-instance, сброс при рестарте). Для production multi-instance — `VALKEY_HOST`/`VALKEY_PORT` (как rate-limiters, PASS-8).
+
+---
+
+## 🌐 PASS-12: горизонтальное масштабирование (multi-instance) ✅
+
+### Cross-instance WebSocket/SSE через Valkey pub/sub
+- **Проблема**: RoomHub и SSEManager держат подключения в памяти КОНКРЕТНОГО инстанса; при N инстансах сообщение с инстанса A не доходило до клиентов инстанса B.
+- **Решение**: пакет `internal/pkg/realtimebus` (Bus: `Publish`/`Subscribe`/`Close`; Valkey-реализация на go-redis с авто-reconnect + backoff; `NoopBus` для пустого конфига).
+  - `RoomHub.SetPubSub(bus, instanceID)` → `BroadcastToRoom` = publish в `gengine:ws` + локальная рассылка; подписчик вызывает `enqueueLocal` (не повторяет publish).
+  - `SSEManager.SetPubSub(bus, instanceID)` → `Broadcast` = publish в `gengine:sse` + `broadcastLocal`; подписчик вызывает `broadcastLocal` (без повторного publish).
+  - **Anti-эхо**: каждое сообщение несёт `origin = instanceID` (uuid.NewString из main.go); инстанс пропускает свои сообщения — клиент получает каждое ровно 1 раз.
+  - Fail-open: ошибка публикации не блокирует локальную рассылку; без Valkey (VALKEY_HOST пуст) — прежнее локальное поведение.
+- **Внедрение**: `main.go` создаёт `realtimeBus` в блоке Valkey, `hub.SetPubSub(realtimeBus, instanceID)` сразу, `deps.Services.SSEMgr.SetPubSub(...)` после NewDependencies. Stop: `hub.Stop`/`SSEManager.Stop` отменяют подписку.
+- **Найден и исправлен pre-existing race**: `dispatchToRoom` писал кэш `roomClients[roomID]` под `RLock` → `concurrent map write` при двух параллельных dispatch (воспроизводился pub/sub-тестом). Исправлено: запись кэша только под полным Lock (upgrade RLock→Lock с перепроверкой).
+
+### Advisory lock в миграциях
+- `MigrateFromDir` берёт `pg_advisory_lock(5123456)` на отдельном соединении до применения и снимает в любом случае (defer). Параллельный старт N инстансов больше не даёт гонку "таблица уже существует".
+
+### Инфраструктурная документация
+- `deploy/multi-instance/README.md` — архитектура, конфигурация Valkey, nginx (TLS + sticky + WS upgrade + SSE без буферизации), ограничения (общий storage, email-воркеры).
+- `deploy/multi-instance/nginx.conf.example` — рабочий конфиг nginx.
+- `deploy/multi-instance/gengine-app@.service` — systemd-шаблон для N реплик.
+- `deploy/systemd/README.md` — добавлен раздел про multi-instance.
+
+### Проверки
+- build ✅, golangci-lint ✅ (0 issues), test-short ✅ (включая 5-кратные прогоны realtimebus/websocket/SSE pub-sub на miniredis), E2E 14/14 ✅.

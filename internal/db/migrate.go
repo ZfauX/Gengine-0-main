@@ -16,6 +16,11 @@ import (
 	"gorm.io/gorm"
 )
 
+// migrationLockTimeout — максимальное время ожидания advisory lock на миграции
+// (MULTI-INSTANCE, PASS-12): если другой инстанс мигрирует дольше, стартующий
+// инстанс падает с явной ошибкой (не бесконечно ждёт).
+const migrationLockTimeout = 10 * time.Minute
+
 // hasAppliedMigrations проверяет, есть ли уже применённые миграции в БД.
 func hasAppliedMigrations(gdb *gorm.DB) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -64,11 +69,42 @@ func cleanupGameSettings(gdb *gorm.DB) {
 
 // MigrateFromDir запускает миграции из указанной папки (или автоопределение,
 // если dir пустой).
+//
+// MULTI-INSTANCE (PASS-12): берёт PostgreSQL advisory lock на время миграций,
+// чтобы при одновременном старте N инстансов приложение не применяло миграции
+// параллельно (гонка: один инстанс создаёт таблицу, второй падает на "already
+// exists"). Инстансы, не получившие lock, ждут — после завершения мигрировавшего
+// они увидят уже применённую схему (m.Up() вернёт ErrNoChange).
 func MigrateFromDir(gdb *gorm.DB, migrationsDir string) error {
 	sqlDB, err := gdb.DB()
 	if err != nil {
 		return fmt.Errorf("не удалось получить sql.DB: %w", err)
 	}
+
+	// Advisory lock (MULTI-INSTANCE, PASS-12). Используем отдельное соединение,
+	// чтобы lock не был привязан к соединению из пула (которое может закрыться).
+	// Фиксированный ключ (5123456) — один и тот же для всех инстансов.
+	const migrationLockKey = 5123456
+	lockConn, err := sqlDB.Conn(context.Background())
+	if err != nil {
+		return fmt.Errorf("не удалось получить соединение для migration lock: %w", err)
+	}
+	defer func() { _ = lockConn.Close() }()
+
+	lockCtx, lockCancel := context.WithTimeout(context.Background(), migrationLockTimeout)
+	defer lockCancel()
+	if _, lockErr := lockConn.ExecContext(lockCtx, "SELECT pg_advisory_lock($1)", migrationLockKey); lockErr != nil {
+		return fmt.Errorf("не удалось взять advisory lock на миграции: %w", lockErr)
+	}
+	// Освобождаем lock в любом случае (успех или ошибка).
+	defer func() {
+		unlockCtx, unlockCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer unlockCancel()
+		if _, uErr := lockConn.ExecContext(unlockCtx, "SELECT pg_advisory_unlock($1)", migrationLockKey); uErr != nil {
+			log.Warn().Err(uErr).Msg("MigrateFromDir: failed to release advisory lock")
+		}
+	}()
+	log.Info().Msg("MigrateFromDir: advisory lock acquired")
 
 	driver, err := postgres.WithInstance(sqlDB, &postgres.Config{})
 	if err != nil {

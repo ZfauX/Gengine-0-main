@@ -33,6 +33,7 @@ import (
 	"gengine-0/internal/pkg/i18n"
 	"gengine-0/internal/pkg/logging"
 	"gengine-0/internal/pkg/middleware"
+	"gengine-0/internal/pkg/realtimebus"
 	"gengine-0/internal/pkg/sessionstore"
 	"gengine-0/internal/pkg/storage"
 	ws "gengine-0/internal/pkg/websocket"
@@ -41,6 +42,7 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -229,6 +231,12 @@ func run() error {
 	// (например, регистрация 3/10мин), игнорируя RATE_LIMIT_* из конфига.
 	rateLimitWindow := cfg.Server.RateLimitWindow
 	useValkey := false
+	// MULTI-INSTANCE (PASS-12): уникальный идентификатор инстанса для
+	// anti-эхо в cross-instance pub/sub (WebSocket/SSE).
+	instanceID := uuid.NewString()
+	// realtimeBus (MULTI-INSTANCE PASS-12): cross-instance real-time шина.
+	// nil, если Valkey недоступен — WebSocket/SSE работают локально.
+	var realtimeBus realtimebus.Bus
 	// SessionStore (PASS-11, session fixation): server-side store — Valkey если
 	// доступен, иначе in-memory. В cookie только session ID; данные на сервере.
 	sessionSecret := []byte(cfg.Session.Secret)
@@ -243,6 +251,11 @@ func run() error {
 			// S-M2 (PASS-8): общий клиент для per-user лимитеров (личный чат,
 			// комнаты, поиск, WebAuthn, платежи) — меж-инстансная координация.
 			middleware.SetSharedValkeyClient(valkeyClient)
+			// MULTI-INSTANCE (PASS-12): cross-instance real-time шина (WebSocket +
+			// SSE) через Valkey pub/sub. instanceID — уникальный идентификатор
+			// ЭТОГО инстанса (anti-эхо при рассылке).
+			realtimeBus = realtimebus.NewValkeyBus(valkeyClient)
+			hub.SetPubSub(realtimeBus, instanceID)
 			// Глобальный/SSE/API — fail-open: при outage Valkey сайт остаётся доступен
 			// (их задача — защита от флуда, а не от подбора учётных данных).
 			middleware.InitGlobalRateLimiterWithValkey(valkeyClient, rateLimitWindow, cfg.Server.RateLimitGlobalRequests)
@@ -296,6 +309,11 @@ func run() error {
 
 	deps := app.NewDependencies(database, cfg, hub, localStorage, appCache)
 	appInstance := app.NewApp(database, localStorage, hub, cfg, ".", deps)
+	// MULTI-INSTANCE (PASS-12): cross-instance SSE через Valkey pub/sub.
+	// SSEManager создаётся внутри wire — настраиваем через deps.Services.
+	if realtimeBus != nil {
+		deps.Services.SSEMgr.SetPubSub(realtimeBus, instanceID)
+	}
 	// PASS-11 (session fixation): server-side session store (Valkey/in-memory).
 	if sessionStore != nil {
 		appInstance.SetSessionStore(sessionStore)

@@ -1,0 +1,62 @@
+# deploy/multi-instance/gengine-app@.service
+# systemd user unit-шаблон для N инстансов Gengine (Podman rootless).
+#
+# Поднять 3 инстанса:
+#   systemctl --user enable --now gengine-app@{1,2,3}
+#
+# Каждый инстанс %i публикует свой внешний порт:
+#   gengine-app@1 → 8081
+#   gengine-app@2 → 8082
+#   gengine-app@3 → 8083
+# (внутри контейнера приложение слушает PORT из .env, см. gengine-app.service).
+#
+# ПРИМЕЧАНИЕ (multi-instance):
+#   - Все инстансы используют ОБЩИЙ Valkey (VALKEY_HOST=valkey) — сессии,
+#     JTI-blacklist, rate-limiters и pub/sub (WebSocket/SSE) общие.
+#   - Все инстансы используют ОБЩУЮ PostgreSQL (DB_HOST=db).
+#   - Общий storage: см. --volume gengine-uploads (общий том на хосте) или
+#     NFS-путь. ВАЖНО: файлы, загруженные через инстанс 1, должны быть видны
+#     инстансу 2 (см. deploy/multi-instance/README.md, раздел 6).
+#   - Миграции: entrypoint применяет их с advisory lock — безопасно даже при
+#     одновременном старте всех реплик.
+#   - Порт наружу начинаем с 8081, чтобы не конфликтовать с одиночным
+#     gengine-app.service (:8080). При желании измените --publish.
+
+[Unit]
+Description=Gengine application server %i (Podman)
+Documentation=file:deploy/multi-instance/README.md
+After=network-online.target gengine-db.service gengine-valkey.service
+Wants=network-online.target
+Requires=gengine-db.service gengine-valkey.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+
+ExecStartPre=-/usr/bin/podman rm -f gengine-app-%i
+ExecStartPre=-/usr/bin/podman volume create gengine-uploads
+ExecStartPre=-/usr/bin/podman volume create gengine-backups
+ExecStartPre=-/usr/bin/podman network create gengine-net
+
+# .env для инстансов. Используем один общий файл ИЛИ per-instance:
+#   %h/.config/gengine/gengine-%i.env (скопируйте .env.example → gengine-1.env).
+# DB_HOST=db, VALKEY_HOST=valkey — DNS-имена контейнеров в сети gengine-net.
+ExecStart=/usr/bin/podman run --name gengine-app-%i \
+    --replace \
+    --network gengine-net \
+    --publish 808%i:8080 \
+    --volume gengine-uploads:/app/uploads:Z \
+    --volume gengine-backups:/app/backups:Z \
+    --volume %h/.config/gengine/gengine-%i.env:/app/.env:ro,Z \
+    --health-cmd="wget --spider -q http://localhost:8080/healthz" \
+    --health-interval=30s \
+    --health-timeout=10s \
+    --health-retries=3 \
+    gengine:latest
+
+ExecStop=/usr/bin/podman stop -t 30 gengine-app-%i
+ExecStopPost=-/usr/bin/podman rm -f gengine-app-%i
+
+[Install]
+WantedBy=default.target
