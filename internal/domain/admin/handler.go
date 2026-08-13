@@ -843,7 +843,7 @@ func (h *AdminHandler) DownloadBackup(c *gin.Context) {
 		return
 	}
 
-	path, err := h.backupService.Download(c.Request.Context(), req.ID)
+	path, cleanup, err := h.backupService.Download(c.Request.Context(), req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			log.Warn().Uint("backup_id", req.ID).Msg("DownloadBackup: backup not found")
@@ -853,6 +853,11 @@ func (h *AdminHandler) DownloadBackup(c *gin.Context) {
 			render.RenderErrorPage(c, http.StatusInternalServerError)
 		}
 		return
+	}
+	// security HIGH #1 (PASS-10): удаляем временный расшифрованный файл после
+	// отдачи — иначе plaintext-дамп с паролями/2FA-секретами остаётся на диске.
+	if cleanup != nil {
+		defer cleanup()
 	}
 	// admin #5 (PASS-8): скачивание полного дампа БД (пароли/2FA-секреты) —
 	// чувствительное действие, логируем в audit.

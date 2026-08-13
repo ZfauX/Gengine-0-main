@@ -20,6 +20,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -341,6 +342,28 @@ func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 
 	cleanName := sanitize.StripHTML(input.Name)
 	cleanEmail := sanitize.StripHTML(input.Email)
+
+	// Security HIGH (PASS-10): смена email требует текущий пароль — иначе
+	// украденная сессия (XSS/утечка JWT) позволяет захватить аккаунт
+	// (сменить email → сбросить пароль на новый адрес).
+	curUser, getErr := h.userSvc.GetByID(c.Request.Context(), userID)
+	if getErr != nil {
+		log.Error().Err(getErr).Uint("user", userID).Msg("UpdateProfile: failed to load user")
+		render.RenderErrorPage(c, http.StatusInternalServerError)
+		return
+	}
+	if !strings.EqualFold(curUser.Email, cleanEmail) {
+		if input.CurrentPassword == "" || bcrypt.CompareHashAndPassword([]byte(curUser.Password), []byte(input.CurrentPassword)) != nil {
+			errs.Add("email", errors.New("для смены email введите текущий пароль"))
+			render.Page(c, http.StatusBadRequest, "profile-show.html", gin.H{
+				"Title":  "Профиль",
+				"Errors": errs,
+				"Error":  errs.Error(),
+				"csrf":   csrf.GetToken(c),
+			})
+			return
+		}
+	}
 
 	if err := h.profileSvc.UpdateProfile(c.Request.Context(), userID, cleanName, cleanEmail); err != nil {
 		log.Error().Err(err).Uint("user", userID).Msg("UpdateProfile: failed to update")

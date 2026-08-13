@@ -181,7 +181,10 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	blackboxRepository := repos.Blackbox
 	blackboxVoteService := wrapBlackboxVoteService(blackboxRepository, coAuthorService, db, cfg)
 	backupRepository := repos.Backup
-	backupService := wrapBackupService(backupRepository, cfg)
+	backupService, err := wrapBackupService(backupRepository, cfg)
+	if err != nil {
+		return nil, err
+	}
 	calendarHandler := wrapCalendarHandler(gameRepository, cfg)
 	pushSubscriptionRepository := repos.PushSub
 	pushHandler := wrapPushHandler(pushSubscriptionRepository, cfg)

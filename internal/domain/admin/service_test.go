@@ -92,7 +92,8 @@ func TestBackupService_CreateNow(t *testing.T) {
 		Password: "test",
 		Name:     "testdb",
 	}
-	svc := admin.NewBackupService(backupRepo, tmpDir, 10, dbCfg, "")
+	svc, svcErr := admin.NewBackupService(backupRepo, tmpDir, 10, dbCfg, "")
+	require.NoError(t, svcErr)
 
 	err = svc.CreateNow(context.Background())
 	require.NoError(t, err)
@@ -131,20 +132,24 @@ func TestBackupService_Download(t *testing.T) {
 	db := setupAdminTestDB(t)
 	backupRepo := admin.NewGormBackupRepo(db)
 	dbCfg := config.DatabaseConfig{Host: "localhost", Port: "5432", User: "test", Password: "test", Name: "testdb"}
-	svc := admin.NewBackupService(backupRepo, tmpDir, 10, dbCfg, "")
+	svc, svcErr := admin.NewBackupService(backupRepo, tmpDir, 10, dbCfg, "")
+	require.NoError(t, svcErr)
 
 	require.NoError(t, svc.CreateNow(context.Background()))
 
 	var backup admin.Backup
 	require.NoError(t, db.First(&backup).Error)
 
-	path, err := svc.Download(context.Background(), backup.ID)
+	path, cleanup, err := svc.Download(context.Background(), backup.ID)
 	require.NoError(t, err)
+	if cleanup != nil {
+		defer cleanup()
+	}
 	info, statErr := os.Stat(path)
 	require.NoError(t, statErr)
 	assert.Greater(t, info.Size(), int64(0))
 
-	_, err = svc.Download(context.Background(), 999999)
+	_, _, err = svc.Download(context.Background(), 999999)
 	assert.Error(t, err, "Р Р…Р ВµРЎРѓРЎС“РЎвЂ°Р ВµРЎРѓРЎвЂљР Р†РЎС“РЎР‹РЎвЂ°Р С‘Р в„– Р В±РЎРЊР С”Р В°Р С— Р Т‘Р С•Р В»Р В¶Р ВµР Р… Р Т‘Р В°Р Р†Р В°РЎвЂљРЎРЉ Р С•РЎв‚¬Р С‘Р В±Р С”РЎС“")
 }
 
@@ -177,7 +182,8 @@ func TestBackupService_RotateBackups(t *testing.T) {
 		Password: "test",
 		Name:     "testdb",
 	}
-	svc := admin.NewBackupService(backupRepo, tmpDir, 3, dbCfg, "")
+	svc, svcErr := admin.NewBackupService(backupRepo, tmpDir, 3, dbCfg, "")
+	require.NoError(t, svcErr)
 
 	err = svc.RotateBackups(context.Background())
 	require.NoError(t, err)
@@ -196,10 +202,12 @@ func TestBackupService_GetMaxBackups(t *testing.T) {
 	backupRepo := admin.NewGormBackupRepo(db)
 	dbCfg := config.DatabaseConfig{}
 
-	svc := admin.NewBackupService(backupRepo, "/tmp", 7, dbCfg, "")
+	svc, svcErr := admin.NewBackupService(backupRepo, "/tmp", 7, dbCfg, "")
+	require.NoError(t, svcErr)
 	assert.Equal(t, 7, svc.GetMaxBackups())
 
-	svc2 := admin.NewBackupService(backupRepo, "/tmp", 0, dbCfg, "")
+	svc2, svcErr2 := admin.NewBackupService(backupRepo, "/tmp", 0, dbCfg, "")
+	require.NoError(t, svcErr2)
 	assert.Equal(t, 10, svc2.GetMaxBackups())
 }
 
@@ -221,7 +229,8 @@ func setupAdminHandlerForRedirect(t *testing.T) (*gin.Engine, *gorm.DB, *admin.A
 
 	backupRepo := admin.NewGormBackupRepo(db)
 	dbCfg := config.DatabaseConfig{Host: "localhost", Port: "5432", User: "test", Password: "test", Name: "testdb"}
-	backupService := admin.NewBackupService(backupRepo, "/tmp", 10, dbCfg, "")
+	backupService, bsErr := admin.NewBackupService(backupRepo, "/tmp", 10, dbCfg, "")
+	require.NoError(t, bsErr)
 
 	auditService := audit.NewService(db)
 
@@ -327,7 +336,8 @@ func TestAdminHandler_RotateBackups(t *testing.T) {
 
 	// Р РЋР С•Р В·Р Т‘Р В°РЎвЂР С Р Р…Р С•Р Р†РЎвЂ№Р в„– РЎРѓР ВµРЎР‚Р Р†Р С‘РЎРѓ РЎРѓ Р С•Р С–РЎР‚Р В°Р Р…Р С‘РЎвЂЎР ВµР Р…Р С‘Р ВµР С Р Р† 3 Р В±Р ВµР С”Р В°Р С—Р В°
 	dbCfg := config.DatabaseConfig{Host: "localhost", Port: "5432", User: "test", Password: "test", Name: "testdb"}
-	backupService := admin.NewBackupService(backupRepo, tmpDir, 3, dbCfg, "")
+	backupService, bsErr := admin.NewBackupService(backupRepo, tmpDir, 3, dbCfg, "")
+	require.NoError(t, bsErr)
 
 	// Р С›Р В±РЎР‚Р В°Р В±Р С•РЎвЂљРЎвЂЎР С‘Р С” РЎРѓ РЎРЊРЎвЂљР С‘Р С РЎРѓР ВµРЎР‚Р Р†Р С‘РЎРѓР С•Р С
 	userRepo := user.NewGormUserRepo(db)

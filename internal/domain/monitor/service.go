@@ -30,6 +30,10 @@ var (
 	// sentinel-ошибки вместо сравнения err.Error() со строками в handler.
 	ErrVotingAlreadyActive = errors.New("голосование уже активно")
 	ErrVotingAlreadyHeld   = errors.New("голосование уже было проведено")
+	// ErrVotingNotManager (reviewer #5, PASS-10): закрыть голосование может
+	// только автор/модератор игры — раньше handler маппил 403 по русской
+	// строке err.Error(), что ломается при локализации/изменении текста.
+	ErrVotingNotManager = errors.New("только автор или модератор может завершить голосование")
 )
 
 type BlackboxVoteService struct {
@@ -72,7 +76,7 @@ func (s *BlackboxVoteService) StartVoting(ctx context.Context, gamePassingID, le
 		return err
 	}
 	if !ok {
-		return errors.New("только автор или модератор может запустить голосование")
+		return ErrVotingNotManager
 	}
 
 	session, err := s.blackboxRepo.GetSessionByPassingAndLevel(ctx, gamePassingID, levelID)
@@ -270,7 +274,7 @@ func (s *BlackboxVoteService) CloseVoting(ctx context.Context, sessionID, userID
 		return "", err
 	}
 	if !ok {
-		return "", errors.New("только автор или модератор может завершить голосование")
+		return "", ErrVotingNotManager
 	}
 
 	// Закрытие + подсчёт голосов в одной транзакции с блокировкой сессии:

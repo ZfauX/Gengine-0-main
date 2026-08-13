@@ -218,13 +218,18 @@ func (c *Cache) trackPrefix(key string) {
 }
 
 func (c *Cache) DeleteByPrefix(prefix string) {
+	// Reviewer #2 (PASS-10): устраняем гонку «копирование ключей → удаление»
+	// и re-entrant deadlock. Ключи читаются под prefixLock.RLock (копия),
+	// затем удаляются под mu.Lock: каждый lru.Remove вызывает evictCallback,
+	// который сам (под mu.Lock → prefixLock) убирает ключ из prefixKeys и
+	// keyPrefixes. Мы НЕ трогаем prefixKeys напрямую — иначе двойной лок
+	// (re-entrant) при вызове evictCallback из lru.Remove.
 	c.prefixLock.RLock()
 	keys, exists := c.prefixKeys[prefix]
 	if !exists || len(keys) == 0 {
 		c.prefixLock.RUnlock()
 		return
 	}
-	// Копируем ключи для удаления
 	keysCopy := make([]string, 0, len(keys))
 	for key := range keys {
 		keysCopy = append(keysCopy, key)
@@ -234,25 +239,10 @@ func (c *Cache) DeleteByPrefix(prefix string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, key := range keysCopy {
+		// evictCallback (под mu.Lock) сам удалит key из ttlKeys и префиксов.
 		c.lru.Remove(key)
 		delete(c.ttlKeys, key)
 	}
-
-	c.prefixLock.Lock()
-	// H3 (PASS-8): НЕ удаляем всю запись prefixKeys[prefix] — между копированием
-	// ключей (RLock выше) и этой секцией конкурентный Set мог добавить НОВЫЙ
-	// ключ в prefixKeys[prefix]; delete всей записи стёр бы его трекинг, и ключ
-	// остался бы в LRU навсегда без инвалидации (stale-кэш). Достаточно удалить
-	// каждый СТАРЫЙ ключ из всех его префиксов через keyPrefixes.
-	for _, key := range keysCopy {
-		if keyPrefixes, ok := c.keyPrefixes[key]; ok {
-			for p := range keyPrefixes {
-				delete(c.prefixKeys[p], key)
-			}
-			delete(c.keyPrefixes, key)
-		}
-	}
-	c.prefixLock.Unlock()
 }
 
 func (c *Cache) Flush() {

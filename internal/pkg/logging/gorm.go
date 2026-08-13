@@ -6,9 +6,14 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm/logger"
 )
+
+// sqlRedactRe (perf F1, PASS-10): прекомпилированный regexp — раньше
+// regexp.MustCompile выполнялся на КАЖДЫЙ SQL-запрос (компиляция + аллокации).
+var sqlRedactRe = regexp.MustCompile(`'[^']*@[^']*'`)
 
 // GormLogger адаптирует zerolog для GORM v2.
 type GormLogger struct {
@@ -45,10 +50,8 @@ func (l *GormLogger) Error(_ context.Context, msg string, data ...any) {
 
 // redactSensitive заменяет потенциально конфиденциальные данные в SQL-запросах
 func redactSensitive(sql string) string {
-	result := sql
-	// Заменяем email-подобные строки в кавычках
-	result = regexp.MustCompile(`'[^']*@[^']*'`).ReplaceAllString(result, "'***@***'")
-	return result
+	// perf F1 (PASS-10): прекомпилированный regexp вместо MustCompile на каждый вызов.
+	return sqlRedactRe.ReplaceAllString(sql, "'***@***'")
 }
 
 // Trace логирует SQL-запросы GORM.
@@ -57,6 +60,27 @@ func (l *GormLogger) Trace(_ context.Context, begin time.Time, fc func() (sql st
 		return
 	}
 	elapsed := time.Since(begin)
+	// perf F1 (PASS-10): fc() вызывается ТОЛЬКО когда Debug-лог реально включён —
+	// раньше GORM форматировал полный SQL на каждый запрос даже при LogLevel=Warn.
+	// Reviewer H1 (PASS-10): используем zerolog.GlobalLevel() — GetLevel() инстанса
+	// всегда TraceLevel, т.к. main.go не вызывает Logger.Level().
+	if zerolog.GlobalLevel() > zerolog.DebugLevel {
+		// Форматирование SQL дорогое; для Warn/Error достаточно метаданных.
+		// SQL-ОШИБКИ логируются на уровне Warn, чтобы не терять наблюдаемость
+		// в production (раньше при Info/Warn err молча пропадал).
+		if err != nil {
+			log.Warn().
+				Dur("elapsed", elapsed).
+				Err(err).
+				Msg("GORM trace (SQL error)")
+			return
+		}
+		log.Debug().
+			Dur("elapsed", elapsed).
+			Err(err).
+			Msg("GORM trace")
+		return
+	}
 	sql, rows := fc()
 	log.Debug().
 		Dur("elapsed", elapsed).

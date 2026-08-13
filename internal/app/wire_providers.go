@@ -209,7 +209,7 @@ func wrapBlackboxVoteService(blackboxRepo monitor.BlackboxRepository, coAuthorSv
 	return monitor.NewBlackboxVoteService(blackboxRepo, coAuthorSvc, db, cfg)
 }
 
-func wrapBackupService(backupRepo admin.BackupRepository, cfg *config.Config) *admin.BackupService {
+func wrapBackupService(backupRepo admin.BackupRepository, cfg *config.Config) (*admin.BackupService, error) {
 	return admin.NewBackupService(backupRepo, "backups", cfg.Server.MaxBackups, cfg.Database, cfg.Server.BackupEncryptionKey)
 }
 

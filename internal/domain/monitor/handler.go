@@ -109,10 +109,14 @@ type wsMessageLimiter struct {
 	tokens float64
 	// lastRefill — время последнего пополнения токенов.
 	lastRefill time.Time
+	// lastUsed (M1, PASS-10): время последнего вызова Allow — для eviction
+	// per-user лимитеров (иначе map растёт бесконечно).
+	lastUsed time.Time
 }
 
 func newWSMessageLimiter(limit int, window time.Duration) *wsMessageLimiter {
-	return &wsMessageLimiter{limit: limit, window: window, tokens: float64(limit), lastRefill: time.Now()}
+	now := time.Now()
+	return &wsMessageLimiter{limit: limit, window: window, tokens: float64(limit), lastRefill: now, lastUsed: now}
 }
 
 // Allow возвращает true, если сообщение можно принять.
@@ -121,6 +125,7 @@ func (l *wsMessageLimiter) Allow() bool {
 	defer l.mu.Unlock()
 
 	now := time.Now()
+	l.lastUsed = now
 	// Пополняем токены пропорционально прошедшему времени (rate = limit/window).
 	elapsed := now.Sub(l.lastRefill)
 	if elapsed > 0 {
@@ -373,18 +378,45 @@ func NewMonitorHandler(
 // allowUserMessage (S-M4, PASS-8): per-user token bucket — агрегирует все
 // соединения пользователя. Лимит выше per-connection (30/5с), но общий:
 // 50 сокетов не дают ~100 msg/сек, бюджет делится между ними.
+// M1 (PASS-10): lazy sweep — при len > cap удаляем записи, не активные 10 мин
+// (иначе map растёт бесконечно с числом уникальных пользователей).
 func (h *MonitorHandler) allowUserMessage(userID uint) bool {
 	if userID == 0 {
 		return true // аноним — per-connection лимитер ниже уже защищает
 	}
 	h.userMsgMu.Lock()
 	defer h.userMsgMu.Unlock()
+
 	limiter := h.userMsgLimiters[userID]
 	if limiter == nil {
+		if len(h.userMsgLimiters) >= userMsgLimiterMaxEntries {
+			h.sweepUserMsgLimiters()
+		}
 		limiter = newWSMessageLimiter(30, 5*time.Second)
 		h.userMsgLimiters[userID] = limiter
 	}
 	return limiter.Allow()
+}
+
+// userMsgLimiterMaxEntries (M1, PASS-10): верхняя граница per-user лимитеров.
+const userMsgLimiterMaxEntries = 10000
+
+// userMsgLimiterIdleTTL (M1, PASS-10): запись, не использованная дольше этого
+// срока, считается мёртвой и удаляется при sweep.
+const userMsgLimiterIdleTTL = 10 * time.Minute
+
+// sweepUserMsgLimiters (M1, PASS-10): удаляет неактивные per-user лимитеры.
+// Вызывается под userMsgMu при превышении cap (не чаще, чем по мере роста).
+func (h *MonitorHandler) sweepUserMsgLimiters() {
+	cutoff := time.Now().Add(-userMsgLimiterIdleTTL)
+	for uid, limiter := range h.userMsgLimiters {
+		limiter.mu.Lock()
+		idle := limiter.lastUsed.Before(cutoff)
+		limiter.mu.Unlock()
+		if idle {
+			delete(h.userMsgLimiters, uid)
+		}
+	}
 }
 
 // MonitorPage отображает HTML-страницу мониторинга.
@@ -1557,6 +1589,15 @@ func (h *MonitorHandler) GetVotingResults(c *gin.Context) {
 	}
 	results, err := h.blackboxVoteService.GetVotingResults(c.Request.Context(), req.SessionID, userID)
 	if err != nil {
+		// M3 (PASS-10): «нет прав» → 403 через sentinel; прочие (БД/сеть) → 500.
+		if errors.Is(err, ErrAccessDenied) {
+			appErr := apperrors.Forbidden(render.LocalizeError(c, err.Error()))
+			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
+				"error": appErr.Message,
+				"code":  appErr.Code,
+			})
+			return
+		}
 		log.Error().Err(err).Uint("session_id", req.SessionID).Msg("GetVotingResults: failed to get results")
 		appErr := apperrors.Wrap(err, "MonitorHandler")
 		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
@@ -1595,9 +1636,10 @@ func (h *MonitorHandler) CloseVoting(c *gin.Context) {
 	winner, err := h.blackboxVoteService.CloseVoting(c.Request.Context(), req.SessionID, userID)
 	if err != nil {
 		log.Error().Err(err).Uint("session_id", req.SessionID).Uint("user_id", userID).Msg("CloseVoting: failed to close voting")
-		// M3 (PASS-6): только «нет прав» → 403; прочие (БД/сеть) → 500.
-		// Раньше любая ошибка (в т.ч. 5xx) маппилась в 403.
-		if strings.Contains(err.Error(), "только автор или модератор") {
+		// M3 (PASS-6) + reviewer #5 (PASS-10): «нет прав» → 403 через sentinel
+		// (раньше сравнение по русской строке err.Error() — ломалось при
+		// локализации); прочие (БД/сеть) → 500.
+		if errors.Is(err, ErrVotingNotManager) {
 			appErr := apperrors.Forbidden(render.LocalizeError(c, err.Error()))
 			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
 				"error": appErr.Message,

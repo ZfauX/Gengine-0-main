@@ -262,9 +262,14 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 
 	// M4 (pass 30): если контент-шаблон определяет блок "ExtraHead"
 	// (например, OG-теги на games-show), рендерим его в layout.
+	// perf F3 (PASS-10): headBuf из sync.Pool — раньше свежий буфер на каждую
+	// страницу с ExtraHead (вторая копия строки + аллокация).
 	if tmpl.Lookup("ExtraHead") != nil {
-		var headBuf bytes.Buffer
-		if err := tmpl.ExecuteTemplate(&headBuf, "ExtraHead", data); err != nil {
+		//nolint:errcheck // sync.Pool.Get возвращает any, ошибки нет (ложное срабатывание)
+		headBuf := bufferPool.Get().(*bytes.Buffer)
+		headBuf.Reset()
+		defer bufferPool.Put(headBuf)
+		if err := tmpl.ExecuteTemplate(headBuf, "ExtraHead", data); err != nil {
 			log.Error().Err(err).Msg("Render: ExtraHead template execution error")
 		} else {
 			data["ExtraHead"] = template.HTML(headBuf.String())

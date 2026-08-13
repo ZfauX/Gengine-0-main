@@ -179,6 +179,11 @@ type ResetInput struct {
 type UpdateProfileInput struct {
 	Name  string `form:"name" json:"name" binding:"required,min=2,max=50"`
 	Email string `form:"email" json:"email" binding:"required,email"`
+	// CurrentPassword (security HIGH, PASS-10): обязателен при СМЕНЕ email —
+	// защита от захвата аккаунта через украденную сессию (XSS/утечку JWT).
+	// Раньше email менялся по одному JWT без пароля → атакующий менял email,
+	// сбрасывал пароль на новый адрес и захватывал аккаунт.
+	CurrentPassword string `form:"current_password" json:"current_password"`
 }
 
 type ChangePasswordInput struct {

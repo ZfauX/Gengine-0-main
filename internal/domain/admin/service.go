@@ -65,13 +65,16 @@ func (s *BackupService) WaitForBackups() {
 }
 
 // NewBackupService создаёт новый BackupService.
+// Security M3 (PASS-10): при невалидном BACKUP_ENCRYPTION_KEY возвращается
+// ошибка (fail-closed) — раньше ключ игнорировался с Warn, и дампы писались
+// в plaintext (секреты: пароли/2FA/refresh-хеши).
 func NewBackupService(
 	backupRepo BackupRepository,
 	backupDir string,
 	maxBackups int,
 	dbCfg config.DatabaseConfig,
 	encryptionKey string,
-) *BackupService {
+) (*BackupService, error) {
 	if maxBackups <= 0 {
 		maxBackups = 10
 	}
@@ -87,12 +90,12 @@ func NewBackupService(
 	}
 	// admin #6: ключ из env (hex 64 символа = 32 байта AES-256).
 	if key, err := decodeBackupKey(encryptionKey); err != nil {
-		log.Warn().Err(err).Msg("Backup: invalid BACKUP_ENCRYPTION_KEY, backups will be stored unencrypted")
+		return nil, fmt.Errorf("невалидный BACKUP_ENCRYPTION_KEY (ожидается 32 байта hex/base64): %w", err)
 	} else if key != nil {
 		s.encryptionKey = key
 		log.Info().Msg("Backup: AES-256 encryption enabled for backups")
 	}
-	return s
+	return s, nil
 }
 
 // decodeBackupKey разбирает BACKUP_ENCRYPTION_KEY: hex (64 символа) или
@@ -138,7 +141,8 @@ func (s *BackupService) CreateNowAsync(reqCtx context.Context) error {
 
 // CreateNow выполняет pg_dump и сохраняет файл.
 func (s *BackupService) CreateNow(ctx context.Context) error {
-	if err := os.MkdirAll(s.BackupDir, 0755); err != nil {
+	// Security HIGH (PASS-10): директория бэкапов с секретами — 0700 (было 0755).
+	if err := os.MkdirAll(s.BackupDir, 0700); err != nil {
 		return fmt.Errorf("не удалось создать директорию бекапов: %w", err)
 	}
 
@@ -152,6 +156,19 @@ func (s *BackupService) CreateNow(ctx context.Context) error {
 	nonce := randomHex(4)
 	filename := fmt.Sprintf("backup_%s_%s.sql", timestamp, nonce)
 	filepath := filepath.Join(s.BackupDir, filename)
+
+	// Security HIGH (PASS-10): создаём файл с правами 0600 ДО pg_dump — иначе
+	// pg_dump создаёт дамп с дефолтными правами (0644), и plaintext-файл с
+	// хешами паролей/2FA-секретами читается любым локальным пользователем во
+	// время многоминутного дампа (TOCTOU до старого chmod после).
+	dumpFile, openErr := os.OpenFile(filepath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if openErr != nil {
+		return fmt.Errorf("не удалось создать файл дампа с правами 0600: %w", openErr)
+	}
+	// Close после создания: права уже установлены, pg_dump перезапишет содержимое.
+	if closeErr := dumpFile.Close(); closeErr != nil {
+		return fmt.Errorf("не удалось закрыть файл дампа: %w", closeErr)
+	}
 
 	// DEEP-REVIEW PASS-2 (#8): собственный таймаут и НЕЗАВИСИМЫЙ контекст —
 	// раньше dumpCtx = WithTimeout(ctx, ...) наследовал клиентский ctx, и
@@ -219,43 +236,49 @@ func (s *BackupService) List(ctx context.Context) ([]Backup, error) {
 	return s.backupRepo.List(ctx)
 }
 
-// Download возвращает путь к файлу бекапа по ID.
+// Download возвращает путь к файлу бекапа по ID и cleanup-функцию, которую
+// ВЫЗЫВАЮЩИЙ обязан выполнить после отдачи (defer). Для зашифрованных бекапов
+// возвращается временный расшифрованный файл — cleanup удаляет его, иначе
+// plaintext-дамп с паролями/2FA-секретами остаётся на диске навсегда
+// (security HIGH #1, PASS-10).
 // SEC1: путь к файлу проверяется — он обязан лежать внутри BackupDir.
 // Defense-in-depth: даже при компрометации записи в БД бекап-сервис не
 // отдаст произвольный файл файловой системы.
-func (s *BackupService) Download(ctx context.Context, backupID uint) (string, error) {
+func (s *BackupService) Download(ctx context.Context, backupID uint) (string, func(), error) {
 	backup, err := s.backupRepo.GetByID(ctx, backupID)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
 	absBackupDir, err := filepath.Abs(s.BackupDir)
 	if err != nil {
-		return "", fmt.Errorf("некорректная директория бекапов: %w", err)
+		return "", nil, fmt.Errorf("некорректная директория бекапов: %w", err)
 	}
 	absPath, err := filepath.Abs(backup.FilePath)
 	if err != nil {
-		return "", fmt.Errorf("некорректный путь бекапа: %w", err)
+		return "", nil, fmt.Errorf("некорректный путь бекапа: %w", err)
 	}
 	rel, err := filepath.Rel(absBackupDir, absPath)
 	if err != nil || rel == ".." || len(rel) >= 3 && rel[:3] == ".."+string(os.PathSeparator) {
-		return "", fmt.Errorf("путь бекапа выходит за пределы директории бекапов")
+		return "", nil, fmt.Errorf("путь бекапа выходит за пределы директории бекапов")
 	}
 
 	if _, err := os.Stat(absPath); os.IsNotExist(err) {
-		return "", fmt.Errorf("файл бекапа не найден")
+		return "", nil, fmt.Errorf("файл бекапа не найден")
 	}
 
 	// admin #6 (PASS-8): если бэкап зашифрован — расшифровываем во временный
-	// файл и возвращаем его путь (хендлер отдаёт c.File).
+	// файл; cleanup удалит его после отдачи (security HIGH #1, PASS-10).
 	if strings.HasSuffix(absPath, ".enc") {
 		plainPath, err := s.decryptBackupFile(absPath)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
-		return plainPath, nil
+		return plainPath, func() {
+			errors.LogSilently(os.Remove(plainPath), "Backup: failed to remove decrypted temp file")
+		}, nil
 	}
-	return absPath, nil
+	return absPath, func() {}, nil
 }
 
 // RotateBackups удаляет самые старые бекапы, если их количество превышает MaxBackups.
@@ -376,8 +399,10 @@ func (s *BackupService) decryptBackupFile(encPath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("не удалось расшифровать бэкап: %w", err)
 	}
-	// Временный файл в директории бекапов (ротация его не видит — без записи в БД).
-	plainPath := encPath + ".decrypted"
+	// Временный файл в директории бекапов с УНИКАЛЬНЫМ именем (M2, PASS-10) —
+	// раньше `encPath + ".decrypted"` детерминирован: два параллельных Download
+	// перезаписывали один файл (гона на c.File). cleanup удалит его после отдачи.
+	plainPath := encPath + ".decrypted." + randomHex(8)
 	if err := os.WriteFile(plainPath, plain, 0600); err != nil {
 		return "", err
 	}

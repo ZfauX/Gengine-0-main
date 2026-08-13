@@ -66,7 +66,6 @@ func (r *gormMonitorRepo) AggregateGameSnapshot(ctx context.Context, gameID uint
 			FROM attempts a
 			JOIN level_progresses lp2 ON lp2.id = a.level_progress_id
 			WHERE lp2.game_passing_id IN (SELECT id FROM game_passings WHERE game_id = ?)
-			AND a.created_at >= NOW() - INTERVAL '1 hour'
 			GROUP BY a.level_progress_id
 		) ac ON ac.level_progress_id = lp.id
 		LEFT JOIN LATERAL (

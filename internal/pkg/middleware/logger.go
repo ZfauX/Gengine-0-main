@@ -66,14 +66,21 @@ func LoggerMiddleware() gin.HandlerFunc {
 		method := c.Request.Method
 		statusStr := strconv.Itoa(status)
 
-		log.Info().
-			Int("status", status).
-			Str("method", method).
-			Str("path", path).
-			Dur("latency", latency).
-			Str("ip", getRealIP(c)).
-			Int("size", c.Writer.Size()).
-			Msg("HTTP запрос")
+		// perf #4 (PASS-10): успешные статические/загрузочные запросы не шумят
+		// в Info-логах (метрики обновляются ниже) — иначе каждая страница с
+		// 4+ статикой добавляет 4 Info-записи + аллокации maskQuery.
+		if status < 400 && (strings.HasPrefix(path, "/static/") || strings.HasPrefix(path, "/uploads/") || path == "/favicon.ico") {
+			// метрики всё равно обновляем
+		} else {
+			log.Info().
+				Int("status", status).
+				Str("method", method).
+				Str("path", path).
+				Dur("latency", latency).
+				Str("ip", getRealIP(c)).
+				Int("size", c.Writer.Size()).
+				Msg("HTTP запрос")
+		}
 
 		// Обновляем метрики Prometheus
 		metrics.RequestsTotal.WithLabelValues(method, c.FullPath(), statusStr).Inc()
