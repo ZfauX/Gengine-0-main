@@ -280,17 +280,22 @@ func (rl *RateLimiter) Stop() {
 	rl.store.Stop()
 }
 
+// setRateLimitHeaders (L7, PASS-13): заголовки X-RateLimit-* ставятся ТОЛЬКО
+// при превышении лимита (429). Раньше на каждый запрос аллоцировались 3 строки
+// (strconv.Itoa/FormatInt), хотя клиенты этих заголовков не читают (нет ни в
+// JS, ни в шаблонах) — для успешных запросов это мёртвые аллокации.
 func setRateLimitHeaders(c *gin.Context, result RateLimitResult) {
+	if result.Allowed {
+		return
+	}
 	c.Header("X-RateLimit-Limit", strconv.Itoa(result.Limit))
 	c.Header("X-RateLimit-Remaining", strconv.Itoa(result.Remaining))
 	c.Header("X-RateLimit-Reset", strconv.FormatInt(result.ResetUnix, 10))
-	if !result.Allowed {
-		retryAfter := int(time.Until(time.Unix(result.ResetUnix, 0)).Seconds())
-		if retryAfter < 0 {
-			retryAfter = 0
-		}
-		c.Header("Retry-After", strconv.Itoa(retryAfter))
+	retryAfter := int(time.Until(time.Unix(result.ResetUnix, 0)).Seconds())
+	if retryAfter < 0 {
+		retryAfter = 0
 	}
+	c.Header("Retry-After", strconv.Itoa(retryAfter))
 }
 
 func respondRateLimitError(c *gin.Context, message error, result RateLimitResult) {

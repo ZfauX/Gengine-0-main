@@ -137,7 +137,10 @@ func (s *BlackboxVoteService) Vote(ctx context.Context, sessionID, voterTeamID, 
 		return err
 	}
 	if !session.IsOpen {
-		return errors.New("голосование закрыто")
+		// MEDIUM #3 (PASS-13): возвращаем sentinel, а не свежий errors.New —
+		// хендлер мапит errors.Is(err, ErrVotingClosed) → 400; иначе голос
+		// после закрытия уходил в 500 с шумом в логах.
+		return ErrVotingClosed
 	}
 
 	// Проверка членства: пользователь должен быть участником команды voterTeamID

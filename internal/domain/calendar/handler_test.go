@@ -226,7 +226,9 @@ func TestCalendarHandler_CalendarData(t *testing.T) {
 	month := int(now.Month())
 
 	startOfMonth := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
-	endOfMonth := time.Date(year, time.Month(month)+1, 1, 0, 0, 0, 0, time.UTC).Add(-time.Second)
+	// MEDIUM #4 (PASS-13): запрос идёт с запасом ±24ч (TZ-сдвиг границы месяца).
+	queryStart := startOfMonth.Add(-24 * time.Hour)
+	queryEnd := time.Date(year, time.Month(month)+1, 1, 0, 0, 0, 0, time.UTC).Add(24 * time.Hour)
 
 	startsAt1 := time.Date(year, time.Month(month), 15, 10, 0, 0, 0, time.UTC)
 	games := []game.Game{
@@ -244,7 +246,7 @@ func TestCalendarHandler_CalendarData(t *testing.T) {
 		},
 	}
 
-	mockRepo.On("ListByDateRange", mock.Anything, startOfMonth, endOfMonth).Return(games, nil)
+	mockRepo.On("ListByDateRange", mock.Anything, queryStart, queryEnd).Return(games, nil)
 
 	req := httptest.NewRequest("GET", "/api/v1/calendar", nil)
 	w := httptest.NewRecorder()
@@ -286,9 +288,10 @@ func TestCalendarHandler_CalendarData_Error(t *testing.T) {
 	year := now.Year()
 	month := int(now.Month())
 	startOfMonth := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
-	endOfMonth := time.Date(year, time.Month(month)+1, 1, 0, 0, 0, 0, time.UTC).Add(-time.Second)
+	queryStart := startOfMonth.Add(-24 * time.Hour)
+	queryEnd := time.Date(year, time.Month(month)+1, 1, 0, 0, 0, 0, time.UTC).Add(24 * time.Hour)
 
-	mockRepo.On("ListByDateRange", mock.Anything, startOfMonth, endOfMonth).Return([]game.Game{}, errors.New("db error"))
+	mockRepo.On("ListByDateRange", mock.Anything, queryStart, queryEnd).Return([]game.Game{}, errors.New("db error"))
 
 	req := httptest.NewRequest("GET", "/api/v1/calendar", nil)
 	w := httptest.NewRecorder()
@@ -314,9 +317,10 @@ func TestCalendarHandler_CalendarData_WithCustomYearMonth(t *testing.T) {
 	year := 2025
 	month := 1
 	startOfMonth := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
-	endOfMonth := time.Date(year, time.Month(month)+1, 1, 0, 0, 0, 0, time.UTC).Add(-time.Second)
+	queryStart := startOfMonth.Add(-24 * time.Hour)
+	queryEnd := time.Date(year, time.Month(month)+1, 1, 0, 0, 0, 0, time.UTC).Add(24 * time.Hour)
 
-	mockRepo.On("ListByDateRange", mock.Anything, startOfMonth, endOfMonth).Return([]game.Game{}, nil)
+	mockRepo.On("ListByDateRange", mock.Anything, queryStart, queryEnd).Return([]game.Game{}, nil)
 
 	req := httptest.NewRequest("GET", "/api/v1/calendar?year=2025&month=1", nil)
 	w := httptest.NewRecorder()

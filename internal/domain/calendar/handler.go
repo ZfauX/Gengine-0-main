@@ -103,6 +103,13 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 		req.Month = int(now.Month())
 	}
 
+	// MEDIUM #4 (PASS-13): запрашиваем с запасом в обе стороны (24ч), потому
+	// что tz_offset может сдвинуть локальную дату события в соседний месяц
+	// (например, 31-го 23:30 UTC при +3 → 1-го следующего месяца 02:30).
+	// Иначе событие «пропадало» из календаря на границе месяца.
+	queryStart := time.Date(req.Year, time.Month(req.Month), 1, 0, 0, 0, 0, time.UTC).Add(-24 * time.Hour)
+	queryEnd := time.Date(req.Year, time.Month(req.Month)+1, 1, 0, 0, 0, 0, time.UTC).Add(24 * time.Hour)
+
 	startOfMonth := time.Date(req.Year, time.Month(req.Month), 1, 0, 0, 0, 0, time.UTC)
 	endOfMonth := time.Date(req.Year, time.Month(req.Month)+1, 1, 0, 0, 0, 0, time.UTC).Add(-time.Second)
 
@@ -128,7 +135,7 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 	sfCtx := context.WithoutCancel(ctx)
 	sfKey := "month:" + cacheKey
 	gamesVal, sfErr, _ := h.sfGroup.Do(sfKey, func() (any, error) {
-		return h.gameRepo.ListByDateRange(sfCtx, startOfMonth, endOfMonth)
+		return h.gameRepo.ListByDateRange(sfCtx, queryStart, queryEnd)
 	})
 	if sfErr != nil {
 		log.Error().Err(sfErr).Int("year", req.Year).Int("month", req.Month).Msg("CalendarData: failed to list games")
@@ -160,6 +167,11 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 		}
 		// TZ-1 (pass 33): локальное время пользователя для даты-ячейки и времени.
 		localStart := g.StartsAt.Add(time.Duration(tzOffset) * time.Minute)
+		// MEDIUM #4 (PASS-13): сдвинутые TZ события из соседнего месяца не
+		// должны попадать в сетку текущего — фильтруем по локальной дате.
+		if localStart.Before(startOfMonth) || localStart.After(endOfMonth) {
+			continue
+		}
 		dateStr := localStart.Format("2006-01-02")
 		events[dateStr] = append(events[dateStr], gin.H{
 			"id":   g.ID,

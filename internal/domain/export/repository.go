@@ -34,7 +34,13 @@ func NewGormExportRepo(db *gorm.DB) ExportRepository {
 
 func (r *gormExportRepo) GetGameWithLevels(ctx context.Context, gameID uint) (*game.Game, []level.Level, error) {
 	var g game.Game
-	if err := r.db.WithContext(ctx).Preload("Author").First(&g, gameID).Error; err != nil {
+	// LOW #11 (PASS-13): Preload("Author") с ограничением полей — раньше
+	// грузилась полная строка users (password_hash/email в память зря).
+	if err := r.db.WithContext(ctx).
+		Preload("Author", func(db *gorm.DB) *gorm.DB {
+			return db.Select("id", "name", "avatar_path")
+		}).
+		First(&g, gameID).Error; err != nil {
 		return nil, nil, err
 	}
 	var levels []level.Level

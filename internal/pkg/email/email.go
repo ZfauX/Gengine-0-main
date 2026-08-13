@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
+	"net"
 	"net/smtp"
 	"strings"
 	"sync"
@@ -22,11 +23,17 @@ import (
 const (
 	defaultMaxAttempts   = 5
 	retryQueueBufferSize = 256
+
+	// smtpTimeout (MEDIUM #6, PASS-13): общий таймаут на соединение, каждый
+	// шаг SMTP-протокола и запись тела. Раньше при зависшем сервере воркер
+	// очереди блокировался бесконечно, мешая graceful shutdown.
+	smtpTimeout = 30 * time.Second
 )
 
 // Email status constants
 const (
 	EmailStatusPending = "pending"
+	EmailStatusSending = "sending"
 	EmailStatusSent    = "sent"
 	EmailStatusFailed  = "failed"
 	EmailStatusRetry   = "retry"
@@ -198,12 +205,35 @@ func (s *EmailService) processPendingEmails(ctx context.Context, batchSize int) 
 		return nil
 	}
 
+	// HIGH #1 (PASS-13): атомарный захват выбранных строк. FOR UPDATE SKIP
+	// LOCKED вне транзакции (автокоммит) снимает блокировку сразу после SELECT —
+	// два воркера могли выбрать одни и те же строки и отправить письмо дважды.
+	// Переходим pending/retry → sending атомарным UPDATE: строки, уже взятые
+	// другим воркером, не затронуты (RowsAffected==0) и пропускаются.
+	claimable := make([]QueuedEmail, 0, len(emails))
+	for i := range emails {
+		e := emails[i]
+		res := s.db.WithContext(ctx).Model(&QueuedEmail{}).
+			Where("id = ? AND status IN (?, ?)", e.ID, EmailStatusPending, EmailStatusRetry).
+			Update("status", EmailStatusSending)
+		if res.Error != nil {
+			log.Error().Err(res.Error).Uint("email_id", e.ID).Msg("processPendingEmails: claim failed")
+			continue
+		}
+		if res.RowsAffected == 1 {
+			claimable = append(claimable, e)
+		}
+	}
+	if len(claimable) == 0 {
+		return nil
+	}
+
 	// Параллельная отправка с лимитом concurrent workers
 	const maxConcurrent = 10
 	sem := make(chan struct{}, maxConcurrent)
 	var wg sync.WaitGroup
 
-	for i := range emails {
+	for i := range claimable {
 		wg.Add(1)
 		go func(e *QueuedEmail) {
 			defer wg.Done()
@@ -217,7 +247,7 @@ func (s *EmailService) processPendingEmails(ctx context.Context, batchSize int) 
 			defer func() { <-sem }() // release semaphore
 
 			s.sendEmailWithRetry(ctx, e)
-		}(&emails[i])
+		}(&claimable[i])
 	}
 
 	wg.Wait()
@@ -259,9 +289,10 @@ func (s *EmailService) sendEmailWithRetry(ctx context.Context, email *QueuedEmai
 		return
 	}
 
-	// Используем атомарный UPDATE с increment attempts и проверкой статуса
-	// чтобы избежать race condition между воркерами
-	result := s.db.Model(email).Where("status IN (?, ?)", EmailStatusPending, EmailStatusRetry).
+	// Используем атомарный UPDATE с increment attempts и проверкой статуса,
+	// чтобы избежать race condition между воркерами. Статус уже "sending" —
+	// обновляем только его (другие воркеры строку не трогают).
+	result := s.db.Model(email).Where("status = ?", EmailStatusSending).
 		Updates(map[string]any{
 			"attempts":   gorm.Expr("attempts + 1"),
 			"status":     gorm.Expr("CASE WHEN attempts + 1 >= ? THEN ? ELSE ? END", defaultMaxAttempts, EmailStatusFailed, EmailStatusRetry),
@@ -395,6 +426,11 @@ func SendEmail(cfg *config.Config, to, subject, body string) error {
 
 	addr := fmt.Sprintf("%s:%d", cfg.SMTP.Host, cfg.SMTP.Port)
 
+	// MEDIUM #6 (PASS-13): таймауты SMTP — раньше smtp.Dial/tls.Dial и
+	// блокирующие Write без deadline могли висеть бесконечно при недоступном
+	// сервере, блокируя воркер очереди и graceful shutdown.
+	dialer := &net.Dialer{Timeout: smtpTimeout}
+
 	headers := make(map[string]string)
 	headers["From"] = sanitizeHeaderValue(cfg.SMTP.From)
 	headers["To"] = sanitizeHeaderValue(to)
@@ -421,9 +457,17 @@ func SendEmail(cfg *config.Config, to, subject, body string) error {
 
 	if cfg.SMTP.Port == 465 {
 		tlsConfig := &tls.Config{ServerName: cfg.SMTP.Host}
-		conn, dialErr := tls.Dial("tcp", addr, tlsConfig)
+		rawConn, dialErr := dialer.Dial("tcp", addr)
 		if dialErr != nil {
-			return fmt.Errorf("failed to connect TLS: %w", dialErr)
+			return fmt.Errorf("failed to dial: %w", dialErr)
+		}
+		if deadlineErr := rawConn.SetDeadline(time.Now().Add(smtpTimeout)); deadlineErr != nil {
+			log.Warn().Err(deadlineErr).Msg("SendEmail: SetDeadline failed")
+		}
+		conn := tls.Client(rawConn, tlsConfig)
+		if handshakeErr := conn.Handshake(); handshakeErr != nil {
+			_ = rawConn.Close()
+			return fmt.Errorf("failed to connect TLS: %w", handshakeErr)
 		}
 		defer func() {
 			if closeErr := conn.Close(); closeErr != nil {
@@ -467,9 +511,17 @@ func SendEmail(cfg *config.Config, to, subject, body string) error {
 			return fmt.Errorf("failed to close data writer: %w", closeErr)
 		}
 	} else {
-		conn, dialErr := smtp.Dial(addr)
+		rawConn, dialErr := dialer.Dial("tcp", addr)
 		if dialErr != nil {
 			return fmt.Errorf("failed to dial: %w", dialErr)
+		}
+		if deadlineErr := rawConn.SetDeadline(time.Now().Add(smtpTimeout)); deadlineErr != nil {
+			log.Warn().Err(deadlineErr).Msg("SendEmail: SetDeadline failed")
+		}
+		conn, clientErr := smtp.NewClient(rawConn, cfg.SMTP.Host)
+		if clientErr != nil {
+			_ = rawConn.Close()
+			return fmt.Errorf("failed to create SMTP client: %w", clientErr)
 		}
 		defer func() {
 			if closeErr := conn.Close(); closeErr != nil {

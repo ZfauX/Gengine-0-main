@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"gengine-0/internal/pkg/util"
@@ -34,6 +35,14 @@ type MonitorService struct {
 	cache    *lru.Cache[uint, *cachedSnapshot]
 	cacheTTL time.Duration
 	sfGroup  singleflight.Group
+
+	// epochs (MEDIUM #2, PASS-13): счётчик версий снапшота игры. InvalidateCache
+	// инкрементирует эпоху; in-flight singleflight-вычисление, завершившееся
+	// после инвалидации, видит старую эпоху и НЕ пишет в кэш (иначе stale-данные,
+	// прочитанные до мутации, перезаписали бы свежие). Forget не отменяет
+	// вычисление — epoch закрывает гонку.
+	epochMu sync.Mutex
+	epochs  map[uint]uint64
 }
 
 type cachedSnapshot struct {
@@ -57,6 +66,7 @@ func NewMonitorService(db *gorm.DB) *MonitorService {
 		db:       db,
 		cache:    cache,
 		cacheTTL: 30 * time.Second,
+		epochs:   make(map[uint]uint64),
 	}
 }
 
@@ -93,6 +103,9 @@ func (s *MonitorService) GetOrFetchSnapshot(ctx context.Context, gameID uint) ([
 
 	// Используем singleflight для группировки одновременных запросов
 	key := fmt.Sprintf("snapshot:%d", gameID)
+	// MEDIUM #2 (PASS-13): фиксируем эпоху до загрузки — если за время
+	// вычисления была инвалидация (эпоха изменилась), результат не пишем.
+	epoch := s.epochCurrent(gameID)
 	result, err, _ := s.sfGroup.Do(key, func() (any, error) {
 		// Повторная проверка кэша (без промоушена) — защита от гонки.
 		if cached, ok := s.cache.Peek(gameID); ok && time.Since(cached.timestamp) < s.cacheTTL {
@@ -110,6 +123,12 @@ func (s *MonitorService) GetOrFetchSnapshot(ctx context.Context, gameID uint) ([
 		jsonData, marshalErr := json.Marshal(snapshot)
 		if marshalErr != nil {
 			return nil, marshalErr
+		}
+		// MEDIUM #2 (PASS-13): если во время расчёта была инвалидация — не
+		// перезаписываем кэш устаревшими данными (Forget не отменяет in-flight).
+		if s.epochCurrent(gameID) != epoch {
+			log.Debug().Uint("game_id", gameID).Msg("MonitorService: skipping cache write (epoch changed during compute)")
+			return snapshot, nil
 		}
 		// lru.Add сам вытесняет самый старый элемент при превышении maxMonitorCacheSize.
 		s.cache.Add(gameID, &cachedSnapshot{
@@ -191,6 +210,18 @@ func (s *MonitorService) InvalidateCache(gameID uint) {
 	// P-4 (pass 39): форсим singleflight — иначе пересчёт, начатый до
 	// инвалидации, перезапишет кэш данными, прочитанными до изменений.
 	s.sfGroup.Forget(fmt.Sprintf("snapshot:%d", gameID))
+	// MEDIUM #2 (PASS-13): Forget не отменяет in-flight вычисление. Инкремент
+	// эпохи заставляет его пропустить запись в кэш (см. epochCurrent в Do).
+	s.epochMu.Lock()
+	s.epochs[gameID]++
+	s.epochMu.Unlock()
+}
+
+// epochCurrent возвращает текущую эпоху снапшота игры (0 если не инвалидировался).
+func (s *MonitorService) epochCurrent(gameID uint) uint64 {
+	s.epochMu.Lock()
+	defer s.epochMu.Unlock()
+	return s.epochs[gameID]
 }
 
 // teamAggregatedData — данные для batch-анализа подозрительного поведения.

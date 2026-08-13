@@ -171,3 +171,40 @@
 
 ### Проверки финальных фиксов
 - build ✅ (обычная и `-tags=swagger`), golangci-lint ✅ (0 issues), test-short ✅, E2E 14/14 ✅.
+
+---
+
+## ✅ Дополнительная волна (PASS-13, аудит непроверенных областей + LOW) — коммит 0974a72
+
+Проверены области, которые аудиторы не успели прочитать в первой волне. Найдены и исправлены:
+
+### HIGH
+- **Email queue: дубликаты писем** — `FOR UPDATE SKIP LOCKED` вне транзакции (автокоммит снимает lock сразу после SELECT): два воркера выбирали одни и те же строки. Исправлено: атомарный `pending/retry → sending` до отправки (статус `EmailStatusSending`); конкурирующий воркер видит `RowsAffected==0` и пропускает.
+
+### MEDIUM
+- **Vote: 500 вместо 400** — пред-локовая проверка возвращала `errors.New("голосование закрыто")` вместо sentinel `ErrVotingClosed`; хендлер мапил `errors.Is` → любой голос после закрытия уходил в 500. Исправлено.
+- **MonitorService: stale-снапшот после инвалидации** — `singleflight.Forget` не отменяет in-flight расчёт, старый результат перезаписывал свежий. Исправлено: эпоха (`epochs map[uint]uint64`), in-flight видит изменившуюся эпоху и не пишет в кэш.
+- **SMTP без таймаутов** — `smtp.Dial`/`tls.Dial`/блокирующие Write без deadline висли бесконечно. Исправлено: `net.Dialer{Timeout}` + `SetDeadline` (30с) для обеих веток (465/TLS и 587/STARTTLS).
+- **Calendar: событие пропадало на границе месяца** — TZ-сдвиг выносил дату в соседний месяц, но запрос был строго по UTC-месяцу. Исправлено: запрос с запасом ±24ч + фильтр по локальной дате.
+- **CSV-импорт N+1** — `tx.Where` на каждую позицию (~10k round-trip). Исправлено: предзагрузка всех уровней игры одним запросом в `levelMap`.
+
+### LOW
+- excelize `f.Close()` (оба экспорта) — освобождение ресурсов.
+- Payment: `truncateUTF8` по рунам (не байтам) для description/metadata — невалидный UTF-8 больше не уходит в ЮKassa.
+- Export `Preload("Author")` — только `id, name, avatar_path` (password_hash/email не читаются зря).
+- Payment: не игнорируются `json.Marshal`/`io.ReadAll` ошибки.
+- Payment `resumePendingPayment` — использует сохранённые description/metadata из записи (не текущего запроса).
+- `SetRateLimitHeaders` — заголовки только при `!Allowed` (L7, ранее отклонено — сделано).
+
+### Оптимизации, сделанные по просьбе «даже если выгода низкая»
+- **P-3: HTML-кэш анонимных публичных GET** (`/`, `/games`): кэш 30с с ПЛЕЙСХОЛДЕРАМИ nonce/CSRF, при отдаче подставляются свежие значения текущего запроса. CSP/CSRF не ослабляются. Тесты: `htmlcache_test.go`.
+- **Defense-in-depth**: `GamePlayService.SubmitTestCode` проверяет права через `HasPermissionTx` (не только хендлер).
+
+### Не исправлено (документировано, минорные/компромиссы)
+- LOW #12: CSV-экспорт теряет Description/Type уровня (экспорт ≠ полный round-trip backup).
+- LOW #13: `copyTeamProgress` — мелкая копия (указатели `*uint` общие с кэшем) — сейчас никто не мутирует.
+- LOW #14: `GetOrFetchSnapshotJSON` отдаёт общий `[]byte` — безопасно при текущих read-only потребителях.
+- LOW #15: письма капитанам — N отдельных INSERT в цикле (приемлемо, SMTP асинхронный).
+
+### Проверки
+- build ✅, golangci-lint ✅ (0 issues), test-short ✅ (включая обновлённые calendar-тесты), E2E 14/14 ✅.

@@ -573,6 +573,18 @@ func (s *GamePlayService) SubmitTestCode(ctx context.Context, passingID, userID 
 			return ErrTestingOnly
 		}
 
+		// Defense-in-depth (PASS-13): проверяем права В СЕРВИСЕ, а не только в
+		// хендлере. SkipLevelTest уже так делает (HasPermissionTx). Раньше
+		// SubmitTestCode полагался на IsUserManager в хендлере — если будущий
+		// вызов придёт из другого пути, автор мог бы «пройти» чужой тест.
+		ok, permErr := s.coAuthorSvc.HasPermissionTx(ctx, tx, passing.GameID, userID, RoleModerator)
+		if permErr != nil {
+			return fmt.Errorf("ошибка проверки прав: %w", permErr)
+		}
+		if !ok {
+			return errors.New("доступ запрещён: только автор или соавтор может отправлять тестовый код")
+		}
+
 		attempt = &Attempt{
 			LevelProgressID: progress.ID,
 			Code:            code,

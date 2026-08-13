@@ -4,7 +4,6 @@ package export
 import (
 	"context"
 	"encoding/csv"
-	stderrors "errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -16,6 +15,7 @@ import (
 	"gengine-0/internal/pkg/util"
 
 	"github.com/go-pdf/fpdf"
+	"github.com/rs/zerolog/log"
 	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
 )
@@ -305,7 +305,18 @@ func (s *ExportService) ImportGameFromCSV(ctx context.Context, gameID uint, r io
 			return fmt.Errorf("игра не найдена: %w", err)
 		}
 
+		// MEDIUM #5 (PASS-13): предзагружаем ВСЕ уровни игры одним запросом —
+		// раньше tx.Where на каждую новую позицию давал N+1 (до ~10k round-trip
+		// на файл в 5000 строк) и держал долгий lock. levelMap заполняется
+		// существующими уровнями; новые добавляются в цикле.
 		levelMap := make(map[int]*level.Level)
+		var existingLevels []level.Level
+		if err := tx.Where("game_id = ?", gameID).Find(&existingLevels).Error; err != nil {
+			return fmt.Errorf("не удалось загрузить уровни игры: %w", err)
+		}
+		for i := range existingLevels {
+			levelMap[existingLevels[i].Position] = &existingLevels[i]
+		}
 
 		records := 0
 		for {
@@ -342,31 +353,26 @@ func (s *ExportService) ImportGameFromCSV(ctx context.Context, gameID uint, r io
 
 			lvl, exists := levelMap[pos]
 			if !exists {
-				var existing level.Level
-				err := tx.Where("game_id = ? AND position = ?", gameID, pos).First(&existing).Error
-				if err == nil {
-					lvl = &existing
-					// E3: re-import уровня — заменяем вопросы/ответы, а не
-					// дописываем дубликаты (backup/restore итеративная правка).
-					// Unscoped: DB-каскад answers→questions сработает только на
-					// физическом удалении, soft-delete оставил бы сироты.
-					if delErr := tx.Unscoped().Where("level_id = ?", lvl.ID).Delete(&level.Question{}).Error; delErr != nil {
-						return fmt.Errorf("не удалось удалить старые вопросы уровня: %w", delErr)
-					}
-				} else if stderrors.Is(err, gorm.ErrRecordNotFound) {
-					newLevel := level.Level{
-						GameID:   gameID,
-						Name:     levelName,
-						Position: pos,
-					}
-					if createErr := tx.Create(&newLevel).Error; createErr != nil {
-						return fmt.Errorf("не удалось создать уровень: %w", createErr)
-					}
-					lvl = &newLevel
-				} else {
-					return fmt.Errorf("не удалось найти уровень: %w", err)
+				// MEDIUM #5 (PASS-13): уровень не был предзагружен (новый) —
+				// создаём. Существующие уже в levelMap из предзагрузки.
+				newLevel := level.Level{
+					GameID:   gameID,
+					Name:     levelName,
+					Position: pos,
 				}
+				if createErr := tx.Create(&newLevel).Error; createErr != nil {
+					return fmt.Errorf("не удалось создать уровень: %w", createErr)
+				}
+				lvl = &newLevel
 				levelMap[pos] = lvl
+			} else {
+				// E3: re-import уровня — заменяем вопросы/ответы, а не
+				// дописываем дубликаты (backup/restore итеративная правка).
+				// Unscoped: DB-каскад answers→questions сработает только на
+				// физическом удалении, soft-delete оставил бы сироты.
+				if delErr := tx.Unscoped().Where("level_id = ?", lvl.ID).Delete(&level.Question{}).Error; delErr != nil {
+					return fmt.Errorf("не удалось удалить старые вопросы уровня: %w", delErr)
+				}
 			}
 
 			// P2 (PASS-5): батч-вставка вопросов/ответов уровня вместо
@@ -570,6 +576,12 @@ func (s *ExportService) ExportGameToExcel(ctx context.Context, gameID uint, w io
 	}
 
 	f := excelize.NewFile()
+	// LOW #10 (PASS-13): закрываем excelize-файл.
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil {
+			log.Warn().Err(closeErr).Msg("ExportGameToExcel: excelize close failed")
+		}
+	}()
 	if deleteErr := f.DeleteSheet("Sheet1"); deleteErr != nil {
 		return fmt.Errorf("ошибка удаления листа: %w", deleteErr)
 	}
@@ -665,6 +677,12 @@ func (s *ExportService) ExportResultsToExcel(ctx context.Context, gameID uint, w
 	}
 
 	f := excelize.NewFile()
+	// LOW #10 (PASS-13): закрываем excelize-файл.
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil {
+			log.Warn().Err(closeErr).Msg("ExportResultsToExcel: excelize close failed")
+		}
+	}()
 	if deleteErr := f.DeleteSheet("Sheet1"); deleteErr != nil {
 		return fmt.Errorf("ошибка удаления листа: %w", deleteErr)
 	}

@@ -275,7 +275,28 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 		}
 	}
 
-	c.HTML(status, "layout.html", data)
+	// P-3 (PASS-13): HTML-кэш анонимных публичных GET. Сначала пробуем кэш
+	// (с подстановкой свежих nonce/CSRF), при промахе рендерим layout в буфер
+	// и сохраняем результат.
+	if tryServeAnonCache(c, status, data) {
+		return
+	}
+
+	// Рендерим layout в буфер: при кэшировании нужен сам HTML (не gin-рендер),
+	// иначе невозможно сохранить его в кэш. Для не-кэшируемых страниц это тоже
+	// безопасно (c.Data вместо c.HTML — тот же HTML, тот же Content-Type).
+	//nolint:errcheck // sync.Pool.Get возвращает any, ошибки нет (ложное срабатывание)
+	layoutBuf := bufferPool.Get().(*bytes.Buffer)
+	layoutBuf.Reset()
+	defer bufferPool.Put(layoutBuf)
+	if err := tmpl.ExecuteTemplate(layoutBuf, "layout.html", data); err != nil {
+		log.Error().Err(err).Msg("Render: layout template execution error")
+		c.String(http.StatusInternalServerError, i18n.T("generic.server_error"))
+		return
+	}
+	// Сохраняем в кэш анонимных страниц (если применимо).
+	storeAnonCache(c, data, layoutBuf.Bytes())
+	c.Data(status, "text/html; charset=utf-8", layoutBuf.Bytes())
 }
 
 // RenderError рендерит страницу ошибки с заданным статусом и сообщением.

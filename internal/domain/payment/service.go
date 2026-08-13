@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/notification"
@@ -26,6 +27,16 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/rs/zerolog/log"
 )
+
+// truncateUTF8 (LOW #8, PASS-13): обрезает строку до maxLen РУН (не байт).
+// Срез по байтам для кириллицы оставлял невалидный UTF-8 хвост.
+func truncateUTF8(s string, maxLen int) string {
+	if utf8.RuneCountInString(s) <= maxLen {
+		return s
+	}
+	runes := []rune(s)
+	return string(runes[:maxLen])
+}
 
 // YooKassaAPI — базовый URL API ЮKassa.
 const YooKassaAPI = "https://api.yookassa.ru/v3"
@@ -212,7 +223,10 @@ func (s *PaymentService) yooKassaCreatePayment(ctx context.Context, amountKopeck
 			"return_url": returnURL,
 		},
 	}
-	body, _ := json.Marshal(payload)
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("yookassa: marshal payload: %w", err)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, YooKassaAPI+"/payments", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -227,7 +241,12 @@ func (s *PaymentService) yooKassaCreatePayment(ctx context.Context, amountKopeck
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
+	// LOW #9 (PASS-13): не игнорируем ошибку чтения тела — раньше пустой
+	// respBody давал криптовое сообщение об ошибке при json.Unmarshal пустоты.
+	respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
+	if readErr != nil {
+		return nil, fmt.Errorf("yookassa: read response body: %w", readErr)
+	}
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		return nil, fmt.Errorf("yookassa: create payment failed (%d): %s", resp.StatusCode, string(respBody))
 	}
@@ -252,7 +271,10 @@ func (s *PaymentService) yooKassaGetPayment(ctx context.Context, paymentID strin
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
+	respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
+	if readErr != nil {
+		return nil, fmt.Errorf("yookassa: read response body: %w", readErr)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("yookassa: get payment failed (%d): %s", resp.StatusCode, string(respBody))
 	}
@@ -285,12 +307,10 @@ func (s *PaymentService) CreatePayment(ctx context.Context, userID uint, amountK
 		return nil, "", fmt.Errorf("сумма должна быть от %d до %d копеек", minKopecks, maxKopecks)
 	}
 	// PASS-8 (#8): ограничение длины description/metadata (уходят в ЮKassa).
-	if len(description) > 255 {
-		description = description[:255]
-	}
-	if len(metadata) > 500 {
-		metadata = metadata[:500]
-	}
+	// LOW #8 (PASS-13): режем по РУНАМ (не по байтам) — иначе кириллица
+	// обрезалась на половине символа и в ЮKassa/БД уходил невалидный UTF-8.
+	description = truncateUTF8(description, 255)
+	metadata = truncateUTF8(metadata, 500)
 
 	// DEEP-REVIEW PASS-5 H1: идемпотентность. Раньше idemKey генерировался
 	// заново на каждый вызов — GetByIdempotencyKey по свежему ключу никогда
@@ -366,7 +386,17 @@ createNew:
 // ЮKassa с тем же ключом идемпотентности (ЮKassa вернёт тот же платёж).
 func (s *PaymentService) resumePendingPayment(ctx context.Context, p *Payment, description, metadata string) (*Payment, string, error) {
 	returnURL := s.cfg.ReturnURL
-	return s.createAtYooKassa(ctx, p, description, returnURL, p.IdempotencyKey)
+	// LOW #7 (PASS-13): при ретрае используем СОХРАНЁННЫЕ description/metadata
+	// из записи (p.Description/p.Metadata), а не значения текущего запроса —
+	// иначе локальная запись и платёж ЮKassa расходились бы. Параметры —
+	// fallback, если запись создана до появления полей.
+	if p.Description == "" {
+		p.Description = description
+	}
+	if p.Metadata == "" {
+		p.Metadata = metadata
+	}
+	return s.createAtYooKassa(ctx, p, p.Description, returnURL, p.IdempotencyKey)
 }
 
 // createAtYooKassa вызывает API и обновляет запись реальным payment_id.
