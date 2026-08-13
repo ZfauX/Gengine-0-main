@@ -644,6 +644,7 @@ var ruMessages = map[string]string{
 	"profile.new_password":          "Новый пароль",
 	"profile.change_password_btn":   "Сменить пароль",
 	"profile.change_password_same":  "Новый пароль должен отличаться от текущего",
+	"profile.change_password_wrong": "Неверный текущий пароль",
 	"profile.achievements":          "Достижения",
 	"profile.no_achievements":       "Пока нет достижений.",
 	"profile.all_achievements":      "Все достижения →",

@@ -15,6 +15,9 @@ import (
 type TournamentRepository interface {
 	Create(ctx context.Context, t *Tournament) error
 	GetByID(ctx context.Context, id uint) (*Tournament, error) // ДОЛЖЕН возвращать два значения
+	// GetByIDs (P-4, PASS-9): загрузка нескольких турниров одним запросом БЕЗ
+	// Preload Author (для начисления очков Author не нужен) — убирает N+1.
+	GetByIDs(ctx context.Context, ids []uint) ([]*Tournament, error)
 	Update(ctx context.Context, t *Tournament) error
 	List(ctx context.Context) ([]Tournament, error)
 	Delete(ctx context.Context, id uint) error
@@ -68,6 +71,23 @@ func (r *gormTournamentRepo) GetByID(ctx context.Context, id uint) (*Tournament,
 	}
 	return &t, nil
 }
+func (r *gormTournamentRepo) GetByIDs(ctx context.Context, ids []uint) ([]*Tournament, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var tournaments []Tournament
+	// P-4 (PASS-9): без Preload("Author") — для начисления очков достаточно
+	// полей очков; один запрос вместо K×GetByID (N+1).
+	err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&tournaments).Error
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*Tournament, 0, len(tournaments))
+	for i := range tournaments {
+		result = append(result, &tournaments[i])
+	}
+	return result, nil
+}
 func (r *gormTournamentRepo) Update(ctx context.Context, t *Tournament) error {
 	return r.db.WithContext(ctx).Save(t).Error
 }
@@ -111,9 +131,14 @@ func (r *gormTournamentGameRepo) RemoveGame(ctx context.Context, tournamentID, g
 }
 func (r *gormTournamentGameRepo) ListGames(ctx context.Context, tournamentID uint) ([]game.Game, error) {
 	var games []game.Game
-	err := r.db.WithContext(ctx).Joins("JOIN tournament_games ON tournament_games.game_id = games.id").
+	// P-5 (PASS-9): Select без тяжёлых колонок (description/search_vector) + LIMIT —
+	// UI показывает карточки игр (id/name/cover/starts/author), не полные описания.
+	err := r.db.WithContext(ctx).
+		Select("games.id, games.name, games.cover_path, games.starts_at, games.author_id, games.is_draft, games.visibility").
+		Joins("JOIN tournament_games ON tournament_games.game_id = games.id").
 		Where("tournament_games.tournament_id = ?", tournamentID).
 		Order("tournament_games.order_index ASC").
+		Limit(200).
 		Find(&games).Error
 	return games, err
 }

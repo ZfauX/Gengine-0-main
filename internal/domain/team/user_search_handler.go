@@ -72,6 +72,13 @@ func (h *UserSearchHandler) NewInvitationForm(c *gin.Context) {
 
 	userID := c.GetUint("userID")
 
+	// L9 (PASS-9): форма приглашения — только для управляющих командой
+	// (раньше любой авторизованный видел форму/подтверждал наличие команды).
+	if !middleware.IsAdmin(c) && !h.teamSvc.CanManageTeam(c.Request.Context(), uint(teamID), userID) {
+		render.RenderError(c, http.StatusForbidden, render.Tr(c, "handler.forbidden"))
+		return
+	}
+
 	render.Page(c, http.StatusOK, "invitations-new.html", gin.H{
 		"Title":         "Новое приглашение",
 		"TeamID":        uint(teamID),

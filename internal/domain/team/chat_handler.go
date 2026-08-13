@@ -51,7 +51,13 @@ func (h *ChatHandler) TeamChatPage(c *gin.Context) {
 		return
 	}
 
-	isMember, _ := h.teamSvc.teamRepo.IsMember(c.Request.Context(), uint(teamID), userID)
+	// L2 (PASS-9): ошибка IsMember не должна давать ложный 403 — логируем и 500.
+	isMember, memberErr := h.teamSvc.teamRepo.IsMember(c.Request.Context(), uint(teamID), userID)
+	if memberErr != nil {
+		log.Error().Err(memberErr).Uint("team_id", uint(teamID)).Uint("user_id", userID).Msg("TeamChat: failed to check membership")
+		render.RenderErrorPage(c, http.StatusInternalServerError)
+		return
+	}
 	if !isMember && team.CaptainID != userID && !middleware.IsAdmin(c) {
 		render.RenderErrorPage(c, http.StatusForbidden)
 		return

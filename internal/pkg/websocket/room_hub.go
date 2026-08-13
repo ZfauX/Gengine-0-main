@@ -356,8 +356,10 @@ func (h *RoomHub) dispatchToRoom(roomID string, data []byte) {
 	removed := false
 	// Рассылка БЕЗ удержания лока
 	for _, client := range snapshot {
-		if client.IsClosed() {
-			// Удаляем из оригинальной map под локом
+		// P-6 (PASS-9): сначала неблокирующая проверка Done — иначе при закрытом
+		// done И готовом Send select выбирал случайно и закрытый клиент не удалялся.
+		select {
+		case <-client.Done():
 			h.mu.Lock()
 			if h.rooms[roomID] == nil {
 				h.mu.Unlock()
@@ -367,10 +369,12 @@ func (h *RoomHub) dispatchToRoom(roomID string, data []byte) {
 			removed = true
 			h.mu.Unlock()
 			continue
+		default:
 		}
 		select {
 		case client.Send <- data:
 		case <-client.Done():
+			// Клиент закрылся во время отправки — удаляем.
 			h.mu.Lock()
 			if h.rooms[roomID] == nil {
 				h.mu.Unlock()

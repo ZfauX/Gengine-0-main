@@ -274,6 +274,16 @@ func (s *ExportService) ExportTeamResultsToCSV(ctx context.Context, gameID, team
 	return csvWriter.Error()
 }
 
+// ensurePDFSpace (L6, PASS-9): если до нижнего поля страницы осталось меньше
+// need мм — добавляет новую страницу (длинный MultiCell не обрезается на стыке).
+func ensurePDFSpace(pdf *fpdf.Fpdf, need float64) {
+	_, pageH := pdf.GetPageSize()
+	y := pdf.GetY()
+	if pageH-y < need {
+		pdf.AddPage()
+	}
+}
+
 // ImportGameFromCSV парсит CSV и создаёт уровни/вопросы/ответы для указанной игры.
 // DEEP-REVIEW PASS-4 M2: лимит записей (5000) и валидация позиций (1..10000) —
 // раньше произвольный CSV мог создать тысячи уровней в одной транзакции
@@ -462,13 +472,16 @@ func (s *ExportService) ExportGameToPDF(ctx context.Context, gameID uint, w io.W
 
 		for _, q := range lvl.Questions {
 			pdf.SetFont("DejaVu", "B", 11)
-			pdf.Cell(0, 7, fmt.Sprintf("Вопрос: %s", q.Text))
-			pdf.Ln(6)
+			// L6 (PASS-9): MultiCell переносит длинные тексты (Cell — обрезает);
+			// ensurePDFSpace добавляет страницу, если текст не помещается.
+			pdf.MultiCell(0, 7, fmt.Sprintf("Вопрос: %s", q.Text), "", "L", false)
+			pdf.Ln(3)
 
 			if q.Hint != "" {
 				pdf.SetFont("DejaVu", "", 10)
-				pdf.Cell(0, 6, fmt.Sprintf("Подсказка: %s", q.Hint))
-				pdf.Ln(5)
+				ensurePDFSpace(pdf, 15)
+				pdf.MultiCell(0, 6, fmt.Sprintf("Подсказка: %s", q.Hint), "", "L", false)
+				pdf.Ln(2)
 			}
 
 			if len(q.Answers) > 0 {
@@ -477,8 +490,9 @@ func (s *ExportService) ExportGameToPDF(ctx context.Context, gameID uint, w io.W
 				for i, a := range q.Answers {
 					codes[i] = a.Code
 				}
-				pdf.Cell(0, 6, fmt.Sprintf("Ответы: %s", strings.Join(codes, ", ")))
-				pdf.Ln(6)
+				ensurePDFSpace(pdf, 12)
+				pdf.MultiCell(0, 6, fmt.Sprintf("Ответы: %s", strings.Join(codes, ", ")), "", "L", false)
+				pdf.Ln(3)
 			}
 		}
 		pdf.Ln(3)

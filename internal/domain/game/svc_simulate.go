@@ -65,7 +65,10 @@ func (s *SimulateService) Simulate(ctx context.Context, gameID, userID uint) (*S
 			timer.Stop()
 			return nil, ctx.Err()
 		}
-		step := SimulateStep{LevelName: lvl.Name, Code: code, Duration: time.Since(stepStart), Success: true}
+		// L3 (PASS-9): если код определить нельзя — шаг не успешен (раньше
+		// всегда Success: true, и «невозможно определить» выглядело прохождением).
+		success := code != "невозможно определить"
+		step := SimulateStep{LevelName: lvl.Name, Code: code, Duration: time.Since(stepStart), Success: success}
 		result.Log = append(result.Log, step)
 		result.LevelsPassed++
 		stepStart = time.Now()

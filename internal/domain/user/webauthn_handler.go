@@ -490,7 +490,11 @@ func (h *WebAuthnHandler) FinishLogin(c *gin.Context) {
 
 	wc, err := h.webauthnRepo.GetByCredentialID(c.Request.Context(), credential.ID)
 	if err == nil {
-		_ = h.webauthnRepo.UpdateSignCount(c.Request.Context(), wc.ID, credential.Authenticator.SignCount, credential.Flags.BackupState)
+		// L5 (PASS-9): при сбое обновления sign_count следующий вход мог дать
+		// ложный CloneWarning (отказ легитимному пользователю) — логируем.
+		if updateErr := h.webauthnRepo.UpdateSignCount(c.Request.Context(), wc.ID, credential.Authenticator.SignCount, credential.Flags.BackupState); updateErr != nil {
+			log.Error().Err(updateErr).Uint("webauthn_id", wc.ID).Msg("FinishLogin: failed to update sign_count")
+		}
 	}
 
 	h.auditSvc.Log(waUserTyped.user.ID, "webauthn_login", "user", waUserTyped.user.ID, "Вход по passkey")

@@ -24,7 +24,7 @@ func (r *gormProfileRepo) GetPublicProfileStats(ctx context.Context, userID uint
 	var stats UserStats
 	err := r.db.WithContext(ctx).Table("users").
 		Select(`
-			(SELECT COUNT(*) FROM games WHERE author_id = ? AND deleted_at IS NULL) AS games_created,
+			(SELECT COUNT(*) FROM games WHERE author_id = ? AND is_draft = false AND visibility = 'public' AND deleted_at IS NULL) AS games_created,
 			(SELECT COUNT(*) FROM game_passings
 			   JOIN team_members ON team_members.team_id = game_passings.team_id
 			  WHERE game_passings.status = 'finished' AND team_members.user_id = ?) AS games_played,
@@ -52,9 +52,11 @@ func (r *gormProfileRepo) IsFollowing(ctx context.Context, followerID, authorID 
 
 func (r *gormProfileRepo) GetRecentGames(ctx context.Context, authorID uint) ([]RecentGame, error) {
 	var games []RecentGame
+	// L8 (PASS-9): публичный профиль показывает только игры с visibility='public' —
+	// раньше раскрывались названия «по ссылке»/скрытых игр автора.
 	err := r.db.WithContext(ctx).Table("games").
 		Select("id, name, is_draft, cover_path, created_at").
-		Where("author_id = ? AND is_draft = false AND deleted_at IS NULL", authorID).
+		Where("author_id = ? AND is_draft = false AND visibility = 'public' AND deleted_at IS NULL", authorID).
 		Order("created_at DESC").
 		Limit(6).
 		Find(&games).Error

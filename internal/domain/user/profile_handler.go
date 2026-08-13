@@ -408,12 +408,19 @@ func (h *ProfileHandler) ChangePassword(c *gin.Context) {
 	}
 
 	if err := h.userSvc.ChangePassword(c.Request.Context(), userID, input.OldPassword, input.NewPassword); err != nil {
-		log.Error().Err(err).Uint("user", userID).Msg("ChangePassword: failed to update")
-		render.Page(c, http.StatusBadRequest, "profile-show.html", gin.H{
-			"Title": "Профиль",
-			"Error": "Неверный текущий пароль",
-			"csrf":  csrf.GetToken(c),
-		})
+		// L7 (PASS-9): неверный пароль/блокировка — пользовательская ошибка (400);
+		// прочие (DB-сбой) — 500 с общим текстом (раньше всё маскировалось под
+		// «Неверный текущий пароль», скрывая реальную причину от мониторинга).
+		if errors.Is(err, ErrChangePasswordWrong) {
+			render.Page(c, http.StatusBadRequest, "profile-show.html", gin.H{
+				"Title": "Профиль",
+				"Error": render.Tr(c, "profile.change_password_wrong"),
+				"csrf":  csrf.GetToken(c),
+			})
+			return
+		}
+		log.Error().Err(err).Uint("user", userID).Msg("ChangePassword: internal failure")
+		render.RenderErrorPage(c, http.StatusInternalServerError)
 		return
 	}
 

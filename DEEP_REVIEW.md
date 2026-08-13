@@ -155,5 +155,18 @@
 
 - 3 аудита: ✅ проведены; HIGH/MEDIUM findings — ✅ эмпирически проверены (H1, H2, S-H1, S-H2, M1-M4, P-2, P-3).
 - **Исправлено в этом проходе: 11 findings** ✅ (H1, H2, S-H1, S-H2, M1, M2, M3, M4, P-2, P-3 + тесты).
-- Проверки: build ✅, test-short ✅, test-integration ✅, golangci-lint ✅ (0 issues), E2E 14/14 ✅ (до фиксов).
+- **Второй проход (все оставшиеся): исправлено 11/11** ✅
+  - P-1: `render.Page` — `sync.Pool` буферов + short-circuit сессии без cookie `gengine_session=` (топ-аллокатор по pprof).
+  - L8: публичный профиль фильтрует `visibility='public'` (RecentGames + games_created) — не раскрывает «по ссылке»/скрытые игры.
+  - P-4: `GetByIDs` одним запросом без Preload Author (убирает N+1 в UpdateScoresForGame).
+  - P-5: `ListGames` — Select без tsvector/description + Limit(200).
+  - L9: `NewInvitationForm` — проверка `CanManageTeam` (SearchUsers уже был защищён S-45-1).
+  - L6: PDF — MultiCell для вопросов/подсказок/ответов + `ensurePDFSpace` (AddPage на границе).
+  - L7: смена пароля — `ErrChangePasswordWrong` → 400, прочие ошибки → 500 (новый i18n ключ).
+  - P-6: WS `dispatchToRoom` — убран `IsClosed()` из цикла; неблокирующая проверка Done до отправки (закрытый клиент гарантированно удаляется).
+  - L1: 2FA Verify — переиспользует `user` вместо второго GetByID.
+  - L2: TeamChat — ошибка `IsMember` → 500 (не ложный 403).
+  - L3: Simulate — `Success = code != "невозможно определить"`.
+  - L5: WebAuthn `UpdateSignCount` — логирует ошибку.
+  - Проверки: build ✅, test-short ✅, test-integration ✅, golangci-lint ✅ (0 issues), E2E 14/14 ✅.
 - Отложено (требует продукта/инфраструктуры): P-1 (пул рендера), P-4/P-5, P-6, L1-L9.

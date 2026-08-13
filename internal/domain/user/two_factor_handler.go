@@ -159,12 +159,12 @@ func (h *TwoFactorHandler) Verify(c *gin.Context) {
 	if oldToken, err := c.Cookie("jwt"); err == nil && oldToken != "" {
 		h.authService.RevokeJWT(c.Request.Context(), oldToken)
 	}
-	if userObj, err := h.userRepo.GetByID(c.Request.Context(), userID); err == nil {
-		if newToken, jwtErr := h.authService.GenerateJWT(*userObj); jwtErr == nil {
-			setSecureCookie(c, "jwt", newToken, int(h.jwtAccessExpiry.Seconds()), "/")
-		} else {
-			log.Error().Err(jwtErr).Uint("user_id", userID).Msg("Verify: failed to regenerate JWT")
-		}
+	// L1 (PASS-9): переиспользуем user из первого чтения — раньше второй
+	// GetByID сразу после первого (свежесть некритична для генерации токена).
+	if newToken, jwtErr := h.authService.GenerateJWT(*user); jwtErr == nil {
+		setSecureCookie(c, "jwt", newToken, int(h.jwtAccessExpiry.Seconds()), "/")
+	} else {
+		log.Error().Err(jwtErr).Uint("user_id", userID).Msg("Verify: failed to regenerate JWT")
 	}
 
 	c.Redirect(http.StatusFound, returnURL)

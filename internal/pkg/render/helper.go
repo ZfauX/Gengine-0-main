@@ -140,6 +140,28 @@ func watchTemplates(baseDir, pattern string, funcMap template.FuncMap) {
 	}
 }
 
+// gengineSessionCookie — имя cookie сессии (должно совпадать с router.go:
+// sessions.Sessions("gengine_session", store)).
+const gengineSessionCookie = "gengine_session"
+
+// bufferPool (P-1, PASS-9): sync.Pool буферов для двухпроходного рендера.
+// Раньше каждый HTML-запрос аллоцировал bytes.Buffer (~50-100KB) — топ-аллокатор
+// по pprof (bytes.growSlice 17.4%, ShowLoginForm 15.26% cum).
+var bufferPool = sync.Pool{
+	New: func() any { return new(bytes.Buffer) },
+}
+
+// hasSessionCookie — дешёвая проверка наличия cookie сессии до sessions.Default:
+// для анонимных запросов (большинство публичных GET) сессия гарантированно пустая,
+// открывать её (3-5 аллокаций Registry/Values) не нужно.
+func hasSessionCookie(c *gin.Context) bool {
+	raw := c.GetHeader("Cookie")
+	if raw == "" {
+		return false
+	}
+	return strings.Contains(raw, gengineSessionCookie+"=")
+}
+
 // Page рендерит указанный подшаблон в буфер, вставляет результат как ContentHTML в layout.html.
 // contentTemplate — имя шаблона (например "auth-login.html"), которое должно быть определено в общем наборе.
 func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
@@ -190,19 +212,22 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 	// Хендлеры ставят SetFlash(c, "error"|"success"|"gameplay_error"|"gameplay_hint", msg).
 	// P7 (PASS-6): сессия открывается ОДИН раз — раньше каждый GetFlash делал
 	// sessions.Default(c) (парсинг cookie на каждый ключ).
-	session := sessions.Default(c)
-	for _, key := range []string{"error", "success", "flash", "gameplay_error", "gameplay_hint"} {
-		if flash := getFlashFromSession(session, key); flash != "" {
-			data["Flash"] = flash
-			switch key {
-			case "error", "gameplay_error":
-				data["FlashType"] = "error"
-			case "gameplay_hint":
-				data["FlashType"] = "info"
-			default:
-				data["FlashType"] = "success"
+	// P-1 (PASS-9): без cookie сессии сессия не открывается вовсе (анонимные GET).
+	if hasSessionCookie(c) {
+		session := sessions.Default(c)
+		for _, key := range []string{"error", "success", "flash", "gameplay_error", "gameplay_hint"} {
+			if flash := getFlashFromSession(session, key); flash != "" {
+				data["Flash"] = flash
+				switch key {
+				case "error", "gameplay_error":
+					data["FlashType"] = "error"
+				case "gameplay_hint":
+					data["FlashType"] = "info"
+				default:
+					data["FlashType"] = "success"
+				}
+				break
 			}
-			break
 		}
 	}
 
@@ -221,8 +246,13 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 		data["CanonicalURL"] = canonical
 	}
 
-	var buf bytes.Buffer
-	if err := tmpl.ExecuteTemplate(&buf, contentTemplate, data); err != nil {
+	// P-1 (PASS-9): буфер из sync.Pool — раньше `var buf bytes.Buffer` на каждый запрос.
+	//nolint:errcheck // sync.Pool.Get возвращает any, ошибки нет (ложное срабатывание)
+	buf := bufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufferPool.Put(buf)
+
+	if err := tmpl.ExecuteTemplate(buf, contentTemplate, data); err != nil {
 		log.Error().Err(err).Msg("Render: template execution error")
 		c.String(http.StatusInternalServerError, i18n.T("generic.server_error"))
 		return
