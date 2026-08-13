@@ -72,6 +72,8 @@ func RegisterRoutes(
 
 		authGroup.POST("/reset", middleware.PasswordResetRateLimit(1*time.Minute, 5), authHandler.ResetPassword)
 
+		// L5 (PASS-10): GET-форма ввода verify-кода (письмо ведёт сюда без кода в URL).
+		authGroup.GET("/verify", authHandler.VerifyEmailForm)
 		authGroup.POST("/verify", middleware.PasswordResetRateLimit(1*time.Minute, 10), authHandler.VerifyEmail)
 
 		// 2FA login verification (public — used after password login)

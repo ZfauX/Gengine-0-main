@@ -40,11 +40,8 @@ func NewPasswordResetService(
 }
 
 func (s *PasswordResetService) GenerateToken(ctx context.Context, user User) (string, error) {
-	b := make([]byte, passwordResetTokenBytes)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("не удалось сгенерировать токен: %w", err)
-	}
-
+	// L1 (PASS-10): убран мёртвый rand.Read в `b` (результат не использовался) —
+	// код генерируется ниже в codeBytes.
 	codeBytes := make([]byte, 16)
 	if _, err := rand.Read(codeBytes); err != nil {
 		return "", fmt.Errorf("не удалось сгенерировать код сброса: %w", err)

@@ -23,12 +23,14 @@ import (
 )
 
 // randomHex (DEEP-REVIEW PASS-4 H5): крипто-нонс для имён файлов бекапов.
-func randomHex(n int) string {
+// L4 (PASS-10): при сбое rand.Read возвращаем ошибку — предсказуемое имя
+// (fallback на time.Now) не должно использоваться для файлов с секретами.
+func randomHex(n int) (string, error) {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
-		return fmt.Sprintf("%d", time.Now().UnixNano())
+		return "", fmt.Errorf("не удалось сгенерировать случайное имя: %w", err)
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }
 
 // ---------- BackupService ----------
@@ -56,6 +58,19 @@ type BackupService struct {
 	// shutdown сервер ждёт завершения активного pg_dump (иначе процесс убивает
 	// дамп посреди записи).
 	backupWG sync.WaitGroup
+
+	// backupStopping (L6, PASS-10): флаг graceful shutdown — новые фоновые
+	// дампы не стартуют, когда процесс уже завершается (устраняет гонку
+	// Add(1) с WaitForBackups → неотслеживаемая горутина pg_dump).
+	backupStopping bool
+}
+
+// BeginShutdown (L6, PASS-10): помечает сервис останавливающимся — новые
+// CreateNowAsync отклоняются, активные дампы дожидаются через WaitForBackups.
+func (s *BackupService) BeginShutdown() {
+	s.backupMu.Lock()
+	s.backupStopping = true
+	s.backupMu.Unlock()
 }
 
 // WaitForBackups (L10): ожидает завершения активных фоновых дампов
@@ -121,6 +136,12 @@ func (s *BackupService) CreateNowAsync(reqCtx context.Context) error {
 	if !s.backupMu.TryLock() {
 		return fmt.Errorf("создание бекапа уже выполняется")
 	}
+	// L6 (PASS-10): под backupMu — если начался graceful shutdown, новые
+	// дампы не стартуют (иначе горутина pg_dump остаётся неотслеживаемой).
+	if s.backupStopping {
+		s.backupMu.Unlock()
+		return fmt.Errorf("сервер останавливается, создание бекапа отклонено")
+	}
 	s.backupWG.Add(1) // L10 (PASS-6): отслеживаем фоновый дамп
 	go func() {
 		// L5 (PASS-5): recover — паника в фоновой горутине не должна ронять процесс.
@@ -153,7 +174,10 @@ func (s *BackupService) CreateNow(ctx context.Context) error {
 	// DEEP-REVIEW PASS-4 H5: ms-таймстамп недостаточно — два клика в одну ms
 	// перезаписывали файл. Добавлен крипто-нонс (4 байта hex) как в storage.
 	timestamp := time.Now().Format("20060102_150405.000")
-	nonce := randomHex(4)
+	nonce, nonceErr := randomHex(4)
+	if nonceErr != nil {
+		return fmt.Errorf("не удалось сгенерировать имя бекапа: %w", nonceErr)
+	}
 	filename := fmt.Sprintf("backup_%s_%s.sql", timestamp, nonce)
 	filepath := filepath.Join(s.BackupDir, filename)
 
@@ -402,7 +426,11 @@ func (s *BackupService) decryptBackupFile(encPath string) (string, error) {
 	// Временный файл в директории бекапов с УНИКАЛЬНЫМ именем (M2, PASS-10) —
 	// раньше `encPath + ".decrypted"` детерминирован: два параллельных Download
 	// перезаписывали один файл (гона на c.File). cleanup удалит его после отдачи.
-	plainPath := encPath + ".decrypted." + randomHex(8)
+	randPart, randErr := randomHex(8)
+	if randErr != nil {
+		return "", randErr
+	}
+	plainPath := encPath + ".decrypted." + randPart
 	if err := os.WriteFile(plainPath, plain, 0600); err != nil {
 		return "", err
 	}

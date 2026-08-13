@@ -155,11 +155,10 @@ var bufferPool = sync.Pool{
 // для анонимных запросов (большинство публичных GET) сессия гарантированно пустая,
 // открывать её (3-5 аллокаций Registry/Values) не нужно.
 func hasSessionCookie(c *gin.Context) bool {
-	raw := c.GetHeader("Cookie")
-	if raw == "" {
-		return false
-	}
-	return strings.Contains(raw, gengineSessionCookie+"=")
+	// L3 (PASS-10): точный парсинг cookie — strings.Contains("gengine_session=")
+	// ложно совпадал с `gengine_session_x=...`.
+	_, err := c.Request.Cookie(gengineSessionCookie)
+	return err == nil
 }
 
 // Page рендерит указанный подшаблон в буфер, вставляет результат как ContentHTML в layout.html.

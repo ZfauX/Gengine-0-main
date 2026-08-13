@@ -71,8 +71,11 @@ func (s *EmailVerificationService) SendVerificationEmail(ctx context.Context, us
 	if err := email.Enqueue(
 		user.Email,
 		"Подтверждение email",
-		fmt.Sprintf("Код подтверждения: %s\n\nПерейдите по ссылке: %s/auth/verify?code=%s",
-			verificationCode, s.cfg.Server.BaseURL, verificationCode),
+		// L5 (PASS-10): код НЕ передаётся в URL (?code=) — только в теле письма
+		// для ручного ввода. Ссылка ведёт на форму /auth/verify (без секрета
+		// в GET), устраняя Referer-риск и мёртвую ссылку на POST-маршрут.
+		fmt.Sprintf("Код подтверждения: %s\n\nВведите его на странице: %s/auth/verify\n\nЕсли вы не регистрировались — проигнорируйте это письмо.",
+			verificationCode, s.cfg.Server.BaseURL),
 	); err != nil {
 		log.Error().Err(err).Str("email", user.Email).Msg("SendVerificationEmail: failed to enqueue email")
 		// Удаляем токен по хешу, так как письмо не ушло

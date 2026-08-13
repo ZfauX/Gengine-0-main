@@ -128,5 +128,16 @@
 
 - 3 аудита: ✅ проведены; HIGH/MEDIUM findings — ✅ эмпирически проверены.
 - **Исправлено в этом проходе: 8 findings** ✅ (H1, H2, H3, M1, M2, M3, M4, P-1) + тесты.
-- Проверки: build ✅, test-short ✅, test-integration ✅, golangci-lint ✅ (0 issues), E2E 14/14 ✅.
-- Отложено (требует продукта/рефакторинга): P-2, P-3, L1-L6.
+- **Второй проход (L1-L6, P-3, refresh, session): исправлено 11/11** ✅
+  - L1: удалён мёртвый `rand.Read` в `password_reset_service`.
+  - L2: `evictCalendarCache` вызывается и из `CalendarICal` (ICS-ключи больше не растут).
+  - L3: `hasSessionCookie` через `Request.Cookie` (точный парсинг, не `strings.Contains`).
+  - L4: `randomHex` возвращает ошибку при сбое rand (admin + storage) — нет предсказуемых имён файлов.
+  - L5: verify-код убран из URL — добавлена GET-форма `/auth/verify` (+i18n); письмо даёт код и ссылку на форму.
+  - L6: `BeginShutdown` блокирует новые фоновые бэкапы при shutdown (гонка Add/Wait устранена).
+  - P-3: дедуп 11 дублирующихся `T()` вызовов в layout (предвычисленные переменные) — −5-15% рендера.
+  - Refresh: токен принимается ТОЛЬКО из httpOnly cookie (не из JSON-тела) + проверка DeviceID.
+  - Session fixation: `session.Clear()` при успешном логине и OAuth-callback (сброс чужих pending/oauth/2FA-флагов).
+  - P-2 (HTTP-кэш анонимных страниц): ОТКЛОНЕНО — страницы содержат CSRF/nonce, персональные на каждый запрос; кэш сломал бы формы.
+  - Проверки: build ✅, test-short ✅, test-integration ✅, golangci-lint ✅ (0 issues), E2E 14/14 ✅.
+- Отложено (требует продукта/рефакторинга): P-2 (см. выше), миграция на Valkey-session store (полный fix session fixation), HTTP-кэш анонимных страниц.

@@ -613,8 +613,10 @@ func run() error {
 	}
 
 	// 5.2 Дожидаемся активного фонового pg_dump (L10, PASS-6) — иначе процесс
-	// убивает дамп посреди записи.
+	// убивает дамп посреди записи. L6 (PASS-10): BeginShutdown блокирует новые
+	// дампы — устраняет гонку Add(1) с Wait (неотслеживаемая горутина).
 	if deps.Services.Backup != nil {
+		deps.Services.Backup.BeginShutdown()
 		deps.Services.Backup.WaitForBackups()
 		log.Info().Msg("Фоновые бекапы завершены")
 	}

@@ -140,6 +140,16 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	// Session fixation (PASS-10): при УСПЕШНОМ логине сбрасываем ВСЮ cookie-сессию —
+	// удаляем чужие pending_*/oauth_state/2fa_verified флаги, которые могли быть
+	// подсунуты в куку (fixation через подстановку валидной сессии). Все флаги
+	// ниже (pending 2FA, step-up) выставляются заново уже для ЭТОГО входа.
+	loginSession := sessions.Default(c)
+	loginSession.Clear()
+	if err := loginSession.Save(); err != nil {
+		log.Error().Err(err).Msg("Login: failed to reset session (fixation)")
+	}
+
 	// Check if user has 2FA enabled — require TOTP before issuing tokens
 	if user != nil && user.TwoFactorEnabled {
 		// Store pending login info in session (no JWT stored — only issued after TOTP)
@@ -321,18 +331,17 @@ func (h *AuthHandler) TwoFALoginVerify(c *gin.Context) {
 // @Failure 401 {object} map[string]interface{} "Невалидный refresh-токен"
 // @Router /auth/refresh [post]
 func (h *AuthHandler) RefreshToken(c *gin.Context) {
+	// Security (PASS-10): refresh-токен ТОЛЬКО из httpOnly cookie — приём из
+	// JSON-тела убран (расширял поверхность кражи: токен в теле = в логах
+	// прокси/снифе; XSS может прочитать чужой токен из ответа).
 	refreshToken, err := c.Cookie("refresh_token")
 	if err != nil || refreshToken == "" {
-		var input RefreshTokenInput
-		if bindErr := c.ShouldBindJSON(&input); bindErr != nil || input.RefreshToken == "" {
-			appErr := apperrors.Unauthorized("refresh token required")
-			c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
-				"error": appErr.Message,
-				"code":  appErr.Code,
-			})
-			return
-		}
-		refreshToken = input.RefreshToken
+		appErr := apperrors.Unauthorized("refresh token required")
+		c.AbortWithStatusJSON(appErr.HTTPStatus, gin.H{
+			"error": appErr.Message,
+			"code":  appErr.Code,
+		})
+		return
 	}
 
 	deviceID := c.GetHeader("X-Device-ID")
@@ -711,6 +720,22 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/auth/login")
 }
 
+// VerifyEmailForm показывает форму ввода кода подтверждения email (GET).
+// L5 (PASS-10): письмо ведёт сюда БЕЗ кода в URL — раньше код передавался
+// в GET-параметре (?code=), что создавало Referer-риск и мёртвую ссылку
+// (маршрут /auth/verify только POST).
+// @Summary Форма подтверждения email
+// @Tags auth
+// @Produce html
+// @Success 200 {string} html "Форма подтверждения"
+// @Router /auth/verify [get]
+func (h *AuthHandler) VerifyEmailForm(c *gin.Context) {
+	render.Page(c, http.StatusOK, "auth-verify_form.html", gin.H{
+		"Title": render.Tr(c, "auth.verify_email_title"),
+		"csrf":  csrf.GetToken(c),
+	})
+}
+
 // VerifyEmail подтверждает email пользователя.
 // @Summary Подтверждение email
 // @Description Активирует email пользователя по коду из письма
@@ -869,6 +894,14 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 			})
 		}
 		return
+	}
+
+	// Session fixation (PASS-10): после успешного OAuth сбрасываем cookie-сессию
+	// (oauth_state и любые чужие флаги) — флаги 2FA/pending выставляются заново.
+	oauthSess := sessions.Default(c)
+	oauthSess.Clear()
+	if saveErr := oauthSess.Save(); saveErr != nil {
+		log.Error().Err(saveErr).Msg("OAuthCallback: failed to reset session (fixation)")
 	}
 
 	// 2FA: если у пользователя включена двухфакторная аутентификация — не выдаём

@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/rs/zerolog/log"
 )
@@ -73,13 +72,14 @@ func validateExtension(ext string) bool {
 // Используется для nonce в имени сохраняемого файла (DEEP-REVIEW PASS-2 #22):
 // предсказуемое имя {userID}_{unixnano} заменено на случайное, чтобы внешний
 // наблюдатель не мог перечислить/угадать пути чужих файлов.
-func randomHex(n int) string {
+// L4 (PASS-10): при сбое rand.Read возвращаем ошибку — fallback на time.Now
+// давал предсказуемые имена (enumeration-риск).
+func randomHex(n int) (string, error) {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
-		// Крайне маловероятный fallback — не блокируем запись из-за энтропии.
-		return fmt.Sprintf("%d", time.Now().UnixNano())
+		return "", fmt.Errorf("не удалось сгенерировать случайное имя файла: %w", err)
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }
 
 func (s *LocalStorage) Save(baseDir string, reader io.Reader, originalName string, userID uint, maxSize int64, allowedMIMETypes []string) (string, error) {
@@ -140,7 +140,11 @@ func (s *LocalStorage) Save(baseDir string, reader io.Reader, originalName strin
 	}
 
 	// DEEP-REVIEW PASS-2 (#22): случайный nonce вместо предсказуемого unixnano.
-	filename := fmt.Sprintf("%d_%s%s", userID, randomHex(8), ext)
+	nonce, nonceErr := randomHex(8)
+	if nonceErr != nil {
+		return "", nonceErr
+	}
+	filename := fmt.Sprintf("%d_%s%s", userID, nonce, ext)
 	fullPath := filepath.Join(baseDir, filename)
 
 	// Проверка выхода за пределы директории (защита от симлинков/подмены).

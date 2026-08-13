@@ -155,6 +155,18 @@ func (s *RefreshTokenService) RefreshAccessToken(ctx context.Context, refreshTok
 		return "", "", stderrors.New("отпечаток клиента не совпадает — используйте токен с того же устройства")
 	}
 
+	// PASS-10 (security): привязка к DeviceID — если токен выдан для конкретного
+	// устройства (X-Device-ID), refresh с другого устройства отклоняется.
+	// Fingerprint (IP/24+UA) не различает пользователей за одним NAT/браузером,
+	// а DeviceID — уникальный per-клиент идентификатор.
+	if stored.DeviceID != "" && stored.DeviceID != deviceID {
+		log.Warn().Uint("user_id", stored.UserID).Str("family_id", stored.FamilyID).Msg("RefreshAccessToken: device mismatch — token revoked")
+		if revokeErr := s.refreshTokenRepo.Revoke(ctx, stored.ID); revokeErr != nil {
+			log.Error().Err(revokeErr).Uint("user_id", stored.UserID).Msg("RefreshAccessToken: failed to revoke token on device mismatch")
+		}
+		return "", "", stderrors.New("refresh-токен привязан к другому устройству")
+	}
+
 	user, err := s.userRepo.GetByID(ctx, stored.UserID)
 	if err != nil {
 		return "", "", stderrors.New("пользователь не найден")

@@ -183,32 +183,40 @@ func (h *CalendarHandler) CalendarData(c *gin.Context) {
 	// F-1 (pass 34) + L13 (PASS-6): evict просроченные записи — иначе map
 	// растёт с каждым (year, month, tzOffset) навсегда. При свежем всплеске
 	// (>512 живых записей) принудительно урезаем до cap (самые старые).
-	const calendarCacheMax = 512
-	if len(h.cache) > calendarCacheMax {
-		now := time.Now()
-		for k, e := range h.cache {
-			if now.After(e.expires) {
-				delete(h.cache, k)
-			}
-		}
-		for len(h.cache) > calendarCacheMax {
-			var oldestKey string
-			var oldestExp time.Time
-			first := true
-			for k, e := range h.cache {
-				if first || e.expires.Before(oldestExp) {
-					oldestKey, oldestExp, first = k, e.expires, false
-				}
-			}
-			if first {
-				break
-			}
-			delete(h.cache, oldestKey)
-		}
-	}
+	h.evictCalendarCache()
 	h.cacheMu.Unlock()
 
 	c.Data(http.StatusOK, "application/json; charset=utf-8", body)
+}
+
+// evictCalendarCache (L2, PASS-10): удаляет просроченные записи и при
+// превышении cap урезает map. Вызывается под cacheMu (из CalendarData и
+// CalendarICal — иначе ключи ics:<host> растут без ограничения).
+func (h *CalendarHandler) evictCalendarCache() {
+	const calendarCacheMax = 512
+	if len(h.cache) <= calendarCacheMax {
+		return
+	}
+	now := time.Now()
+	for k, e := range h.cache {
+		if now.After(e.expires) {
+			delete(h.cache, k)
+		}
+	}
+	for len(h.cache) > calendarCacheMax {
+		var oldestKey string
+		var oldestExp time.Time
+		first := true
+		for k, e := range h.cache {
+			if first || e.expires.Before(oldestExp) {
+				oldestKey, oldestExp, first = k, e.expires, false
+			}
+		}
+		if first {
+			break
+		}
+		delete(h.cache, oldestKey)
+	}
 }
 
 // CalendarICal экспортирует предстоящие игры в формате iCalendar (.ics).
@@ -308,9 +316,11 @@ func (h *CalendarHandler) CalendarICal(c *gin.Context) {
 
 	sb.WriteString("END:VCALENDAR\r\n")
 
-	// Сохраняем в кэш (ключ с host — M9).
+	// Сохраняем в кэш (ключ с host — M9). L2 (PASS-10): evict просроченные —
+	// иначе ключи ics:<host> растут без ограничения при множестве Host.
 	h.cacheMu.Lock()
 	h.cache[icsCacheKey] = calendarCacheEntry{data: []byte(sb.String()), expires: time.Now().Add(calendarCacheTTL)}
+	h.evictCalendarCache()
 	h.cacheMu.Unlock()
 
 	h.writeICS(c, []byte(sb.String()))
