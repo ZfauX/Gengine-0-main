@@ -221,4 +221,16 @@
     P-M4 LIMIT, P-L1 i18n fast-path, P-L3 token bucket, L1/L2/L3.
   - Бонус: найден и исправлен предсуществующий флаки-баг `SkipLevelTest` (HasPermission без tx внутри транзакции → HasPermissionTx).
   - Проверки: build ✅, test-short ✅, test-integration ✅, golangci-lint ✅ (0 issues), E2E 14/14 ✅.
+- **Дополнительный аудит (admin+payment+IDOR) — исправлено:**
+  - IDOR CRITICAL: `DeleteLevelFromActiveGame` не проверял `lvl.GameID == gameID` (удаление чужого уровня) → фикс.
+  - IDOR HIGH: `GetTeamRoute` без сверки `passing.GameID == gameID` (чтение маршрута чужой команды) → фикс + интерфейс/mock.
+  - Payment #1 (TOCTOU CreatePayment): уникальный индекс уже был (PASS-6 H1); добавлена идемпотентная обработка 23505 (возврат существующего pending вместо 500).
+  - Payment #2: отдельный `PaymentRateLimit` (общий бюджет с кодами + мёртвые параметры) → фикс.
+  - Payment #3: `CancelIfPending` (canceled не откатывает succeeded).
+  - Payment #7: `pendingExpiry` (зависший pending >2ч помечается canceled, создаётся новый платёж).
+  - Payment #8: валидация суммы/длины в сервисе (defense-in-depth).
+  - S-L1: ChangePassword/SetLockedUntil/2FA lockUser → `LockAccountWithBackoff` (гонка lock_count).
+  - S-L2: `YKASSA_WEBHOOK_KEY` обязателен в strict-режиме (не fallback на SecretKey).
+  - S-M3: max backoff 24ч→1ч (меньше DoS-ущерб) + мягкий троттлинг (300мс) на неверный пароль.
+  - S-M4: per-user token bucket в чате (агрегирует соединения).
 - Ограничения: аудиторы упёрлись в лимит шагов — не покрыты admin-домен, часть game svc_*, team/tournament/payment полностью, полная инвентаризация шаблонов на XSS, IDOR game/level-маршрутов.

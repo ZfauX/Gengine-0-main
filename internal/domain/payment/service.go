@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -22,11 +23,22 @@ import (
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/notification"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/rs/zerolog/log"
 )
 
 // YooKassaAPI — базовый URL API ЮKassa.
 const YooKassaAPI = "https://api.yookassa.ru/v3"
+
+// isUniqueViolation (PASS-8) определяет PostgreSQL unique violation (23505) —
+// для идемпотентной обработки гонки двух параллельных CreatePayment.
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505"
+	}
+	return false
+}
 
 // yooKassaIPRanges — IP-адреса, с которых ЮKassa шлёт вебхуки.
 var yooKassaIPRanges = []string{
@@ -36,6 +48,11 @@ var yooKassaIPRanges = []string{
 	"77.75.154.128/25",
 	"2a02:5180::/32",
 }
+
+// pendingExpiry (PASS-8 #7): срок жизни pending-платежа. По истечении
+// повторная оплата той же суммы создаёт новый платёж (зависший помечается
+// canceled), а не возвращает нерабочий confirmation URL вечно.
+const pendingExpiry = 2 * time.Hour
 
 // PaymentService — работа с платежами ЮKassa.
 type PaymentService struct {
@@ -257,6 +274,23 @@ func (s *PaymentService) CreatePayment(ctx context.Context, userID uint, amountK
 	if !s.Enabled() {
 		return nil, "", fmt.Errorf("платежи не настроены")
 	}
+	// PASS-8 (#8): defense-in-depth — валидация суммы в сервисе (handler
+	// валидирует рубли, но прямой вызов сервиса не должен протаскивать
+	// 0/отрицательные/абсурдные суммы).
+	const (
+		minKopecks = int64(50 * 100)     // 50 ₽
+		maxKopecks = int64(100000 * 100) // 100 000 ₽
+	)
+	if amountKopecks < minKopecks || amountKopecks > maxKopecks {
+		return nil, "", fmt.Errorf("сумма должна быть от %d до %d копеек", minKopecks, maxKopecks)
+	}
+	// PASS-8 (#8): ограничение длины description/metadata (уходят в ЮKassa).
+	if len(description) > 255 {
+		description = description[:255]
+	}
+	if len(metadata) > 500 {
+		metadata = metadata[:500]
+	}
 
 	// DEEP-REVIEW PASS-5 H1: идемпотентность. Раньше idemKey генерировался
 	// заново на каждый вызов — GetByIdempotencyKey по свежему ключу никогда
@@ -264,6 +298,18 @@ func (s *PaymentService) CreatePayment(ctx context.Context, userID uint, amountK
 	// Теперь переиспользуем существующий pending-платёж пользователя на ту же
 	// сумму (retry после сбоя API/БД возвращает прежнюю запись).
 	if existing, findErr := s.repo.GetPendingByUserAndAmount(ctx, userID, amountKopecks); findErr == nil && existing != nil {
+		// PASS-8 (#7): зависший pending (вебхук потерялся, пользователь не
+		// оплатил, ЮKassa не прислал canceled) блокировал повторную оплату той
+		// же суммы навсегда. По истечении pendingExpiry — помечаем canceled и
+		// создаём свежий платёж ниже.
+		if time.Since(existing.CreatedAt) > pendingExpiry {
+			if cancelErr := s.repo.CancelIfPending(ctx, existing.ID); cancelErr != nil {
+				log.Warn().Err(cancelErr).Uint("payment", existing.ID).Msg("CreatePayment: failed to expire stale pending")
+			} else {
+				log.Info().Uint("payment", existing.ID).Uint("user_id", existing.UserID).Msg("CreatePayment: expired stale pending payment")
+				goto createNew
+			}
+		}
 		log.Info().Uint("payment", existing.ID).Uint("user_id", existing.UserID).Msg("CreatePayment: returning existing pending payment (idempotency)")
 		// Если у существующей записи уже есть confirmation URL — отдаём его;
 		// иначе пробуем довызвать ЮKassa ниже.
@@ -273,6 +319,7 @@ func (s *PaymentService) CreatePayment(ctx context.Context, userID uint, amountK
 		return s.resumePendingPayment(ctx, existing, description, metadata)
 	}
 
+createNew:
 	idemKey, err := newIdempotencyKey()
 	if err != nil {
 		return nil, "", err
@@ -296,6 +343,19 @@ func (s *PaymentService) CreatePayment(ctx context.Context, userID uint, amountK
 		Metadata:       metadata,
 	}
 	if createErr := s.repo.Create(ctx, p); createErr != nil {
+		// TOCTOU (PASS-8): уникальный индекс (user_id, amount) WHERE pending
+		// защищает от двойного платежа, но при гонке двух параллельных запросов
+		// второй INSERT падает с 23505 — перечитываем и возвращаем существующий
+		// pending (идемпотентный ответ, а не 500).
+		if isUniqueViolation(createErr) {
+			if existing, findErr := s.repo.GetPendingByUserAndAmount(ctx, userID, amountKopecks); findErr == nil && existing != nil {
+				log.Info().Uint("payment", existing.ID).Uint("user_id", existing.UserID).Msg("CreatePayment: race detected, returning existing pending payment")
+				if existing.ConfirmationURL != "" {
+					return existing, existing.ConfirmationURL, nil
+				}
+				return s.resumePendingPayment(ctx, existing, description, metadata)
+			}
+		}
 		return nil, "", createErr
 	}
 
@@ -489,8 +549,12 @@ func (s *PaymentService) HandleWebhook(ctx context.Context, remoteIP, authHeader
 			s.notifyPaymentSucceeded(ctx, local)
 		}
 	case "canceled":
-		if err := s.repo.UpdateStatus(ctx, local.ID, StatusCanceled); err != nil {
-			return err
+		// PASS-8 (#3): canceled только из pending — НЕ откатываем succeeded.
+		// Раньше отмена/спор после оплаты сбрасывал confirmed-статус в БД
+		// (ложная потеря привилегии для будущей логики).
+		res := s.repo.CancelIfPending(ctx, local.ID)
+		if res != nil {
+			return res
 		}
 	default:
 		// waiting_for_capture / pending — без изменений.

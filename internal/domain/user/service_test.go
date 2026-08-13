@@ -697,12 +697,15 @@ func TestExtraString(t *testing.T) {
 	}
 }
 
-// S-4 (pass 31): экспоненциальный backoff при блокировке аккаунта.
+// S-4 (pass 31) + S-M3 (PASS-8): экспоненциальный backoff при блокировке.
 // lockCount = число уже случившихся блокировок; первая (0) → 5 мин.
+// Максимум снижен с 24ч до 1ч (уменьшает DoS-ущерб при ротации IP атакующим).
 func TestBackoffDuration(t *testing.T) {
 	assert.Equal(t, 5*time.Minute, backoffDuration(0))  // 1-я блокировка: 5 мин
 	assert.Equal(t, 10*time.Minute, backoffDuration(1)) // 2-я: 10 мин
 	assert.Equal(t, 20*time.Minute, backoffDuration(2)) // 3-я: 20 мин
-	assert.Equal(t, 24*time.Hour, backoffDuration(20))  // кап
-	assert.Equal(t, 24*time.Hour, backoffDuration(100)) // переполнение страхуется
+	assert.Equal(t, 40*time.Minute, backoffDuration(3)) // 4-я: 40 мин
+	assert.Equal(t, 1*time.Hour, backoffDuration(5))    // кап: 1ч (было 24ч)
+	assert.Equal(t, 1*time.Hour, backoffDuration(20))   // кап
+	assert.Equal(t, 1*time.Hour, backoffDuration(100))  // переполнение страхуется
 }

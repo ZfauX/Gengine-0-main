@@ -20,7 +20,7 @@ func RegisterRoutes(r *gin.RouterGroup, h *PaymentHandler, authService *user.Aut
 		// M4 (PASS-5): rate-limit на создание платежа — аутентифицированный
 		// пользователь не должен флудить pending-записями и outbound-вызовами
 		// к api.yookassa.ru (ресурсный спам).
-		protected.POST("/create", middleware.CodeSubmissionRateLimit(1*time.Minute, 5), h.Create)
+		protected.POST("/create", middleware.PaymentRateLimit(1*time.Minute, 5), h.Create)
 	}
 
 	// Вебхук ЮKassa — публичный (не требует JWT), проверка по IP внутри сервиса.

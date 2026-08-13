@@ -22,6 +22,9 @@ type PaymentRepository interface {
 	// MarkSucceededIfPending (L6, PASS-7): атомарный переход pending→succeeded
 	// (UPDATE WHERE status <> 'succeeded'); true, если переход совершён этим вызовом.
 	MarkSucceededIfPending(ctx context.Context, id uint) (bool, error)
+	// CancelIfPending (PASS-8 #3): атомарный переход pending→canceled
+	// (UPDATE WHERE status = 'pending') — не откатывает succeeded.
+	CancelIfPending(ctx context.Context, id uint) error
 	// UpdateAfterCreate обновляет платёж после успешного ответа ЮKassa
 	// (реальный payment_id, статус, URL подтверждения). DEEP-REVIEW HIGH #7.
 	UpdateAfterCreate(ctx context.Context, id uint, paymentID, status, confirmationURL string) error
@@ -101,6 +104,14 @@ func (r *gormPaymentRepo) MarkSucceededIfPending(ctx context.Context, id uint) (
 		return false, res.Error
 	}
 	return res.RowsAffected > 0, nil
+}
+
+// CancelIfPending (PASS-8 #3): атомарный переход pending→canceled —
+// не трогает succeeded (отмена/спор после оплаты не сбрасывает подтверждение).
+func (r *gormPaymentRepo) CancelIfPending(ctx context.Context, id uint) error {
+	return r.db.WithContext(ctx).Model(&Payment{}).
+		Where("id = ? AND status = ?", id, StatusPending).
+		Update("status", StatusCanceled).Error
 }
 
 func (r *gormPaymentRepo) UpdateAfterCreate(ctx context.Context, id uint, paymentID, status, confirmationURL string) error {

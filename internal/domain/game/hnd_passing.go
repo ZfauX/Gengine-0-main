@@ -385,15 +385,16 @@ func (h *PassingHandler) SetTeamRoute(c *gin.Context) {
 // GetTeamRoute возвращает маршрут команды (JSON).
 func (h *PassingHandler) GetTeamRoute(c *gin.Context) {
 	var req struct {
+		GameID    int `uri:"id" binding:"required"`
 		PassingID int `uri:"passing_id" binding:"required"`
 	}
 	if err := c.ShouldBindUri(&req); err != nil {
 		render.RenderError(c, http.StatusBadRequest, render.Tr(c, "handler.invalid_id"))
 		return
 	}
-	route, err := h.passingService.GetTeamRoute(c.Request.Context(), uint(req.PassingID))
+	route, err := h.passingService.GetTeamRoute(c.Request.Context(), uint(req.GameID), uint(req.PassingID))
 	if err != nil {
-		log.Error().Err(err).Int("passing_id", req.PassingID).Msg("GetTeamRoute: failed")
+		log.Error().Err(err).Int("game_id", req.GameID).Int("passing_id", req.PassingID).Msg("GetTeamRoute: failed")
 		render.RenderError(c, http.StatusInternalServerError, render.LocalizeError(c, err.Error()))
 		return
 	}

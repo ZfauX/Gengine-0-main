@@ -74,6 +74,9 @@ const (
 	oauthHTTPTimeout            = 15 * time.Second
 	passwordResetExpiry         = 1 * time.Hour
 	emailVerificationExpiry     = 24 * time.Hour
+	// loginThrottleDelay (S-M3, PASS-8): мягкая задержка на неверный пароль —
+	// замедляет брутфорс, не блокируя аккаунт (DoS через lockout ротацией IP).
+	loginThrottleDelay = 300 * time.Millisecond
 )
 
 // ---------- AuthService ----------
@@ -182,6 +185,9 @@ func (s *AuthService) Login(ctx context.Context, emailStr, password string) (*Us
 	}
 
 	if bcryptErr := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); bcryptErr != nil {
+		// S-M3 (PASS-8): мягкий троттлинг — небольшая задержка на неверный пароль
+		// (дороже брутфорс, не блокирует легитимного пользователя).
+		time.Sleep(loginThrottleDelay)
 		// Атомарный инкремент счётчика неудачных попыток (без race condition)
 		newAttempts, incErr := s.userRepo.AtomicIncrementFailedAttempts(ctx, user.ID)
 		if incErr != nil {
@@ -230,17 +236,20 @@ func (s *AuthService) GenerateJWT(user User) (string, error) {
 }
 
 // backoffDuration возвращает длительность блокировки аккаунта (S-4, pass 31):
-// 5 мин при первой блокировке, удваивается с каждой последующей, максимум 24ч.
+// 5 мин при первой блокировке, удваивается с каждой последующей.
+// S-M3 (PASS-8): максимум снижен 24ч → 1ч — атакующий с ротируемых IP
+// блокирует жертву максимум на час (раньше — на сутки; DoS-ущерб меньше,
+// а экспонента всё ещё тормозит настоящий брутфорс).
 func backoffDuration(lockCount int) time.Duration {
 	const (
 		baseLockDuration = 5 * time.Minute
-		maxLockDuration  = 24 * time.Hour
+		maxLockDuration  = 1 * time.Hour
 	)
 	if lockCount <= 0 {
 		return baseLockDuration
 	}
 	// lockCount-ая блокировка: base * 2^(lockCount). Переполнение страхуем.
-	if lockCount >= 10 { // 5 мин * 2^10 = ~3.5 дней → уже за cap
+	if lockCount >= 5 { // 5 мин * 2^5 = 2.5ч → уже за cap
 		return maxLockDuration
 	}
 	d := baseLockDuration << uint(lockCount) // 5 * 2^lockCount
@@ -497,14 +506,10 @@ func (s *UserService) AtomicIncrementFailedAttempts(ctx context.Context, userID 
 // SetLockedUntil блокирует аккаунт с экспоненциальным backoff (S-4, pass 31):
 // длительность зависит от текущего lock_count, счётчик инкрементируется.
 func (s *UserService) SetLockedUntil(ctx context.Context, userID uint) error {
-	// S-5 (pass 32): атомарный backoff-лок (как в Login) — инкремент lock_count
-	// в одном UPDATE, без гонки и с единой логикой длительности.
-	u, err := s.userRepo.GetByID(ctx, userID)
-	if err != nil {
-		return err
-	}
-	duration := backoffDuration(u.LockCount)
-	_, err = s.userRepo.AtomicLockAccount(ctx, userID, time.Now().Add(duration))
+	// S-5 (pass 32) + S-L1 (PASS-8): атомарный backoff-лок (как в Login) —
+	// инкремент lock_count и расчёт длительности ВНУТРИ одного UPDATE. Раньше
+	// читали устаревший user.LockCount (гонка между параллельными попытками).
+	_, err := s.userRepo.LockAccountWithBackoff(ctx, userID)
 	return err
 }
 
@@ -570,6 +575,8 @@ func (s *UserService) ChangePassword(ctx context.Context, id uint, oldPassword, 
 	}
 
 	if bcryptErr := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(oldPassword)); bcryptErr != nil {
+		// S-M3 (PASS-8): мягкий троттлинг на неверный старый пароль.
+		time.Sleep(loginThrottleDelay)
 		// Атомарный инкремент счётчика неудачных попыток (как в Login).
 		newAttempts, incErr := s.userRepo.AtomicIncrementFailedAttempts(ctx, user.ID)
 		if incErr != nil {
@@ -577,13 +584,15 @@ func (s *UserService) ChangePassword(ctx context.Context, id uint, oldPassword, 
 			return incErr
 		}
 		if newAttempts >= 5 {
-			duration := backoffDuration(user.LockCount)
-			lockedUntil := time.Now().Add(duration)
-			if _, lockErr := s.userRepo.AtomicLockAccount(ctx, user.ID, lockedUntil); lockErr != nil {
+			// S-L1 (PASS-8): LockAccountWithBackoff — длительность считается ВНУТРИ
+			// SQL по фактическому lock_count. Раньше читали устаревший user.LockCount
+			// (гонка: два параллельных неверных ввода оба ставили 5 мин вместо backoff).
+			newCount, lockErr := s.userRepo.LockAccountWithBackoff(ctx, user.ID)
+			if lockErr != nil {
 				log.Error().Err(lockErr).Uint("user_id", user.ID).Msg("ChangePassword: failed to lock account")
 				return lockErr
 			}
-			log.Debug().Uint("user_id", user.ID).Int("lock_count", user.LockCount).Dur("duration", duration).Msg("ChangePassword: account locked with backoff")
+			log.Debug().Uint("user_id", user.ID).Int("lock_count", newCount).Msg("ChangePassword: account locked with backoff")
 		}
 		return ErrChangePasswordWrong
 	}

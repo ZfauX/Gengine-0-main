@@ -169,7 +169,16 @@ func (s *GamePassingService) SetTeamRoute(ctx context.Context, gameID, passingID
 }
 
 // GetTeamRoute возвращает маршрут команды (C-1).
-func (s *GamePassingService) GetTeamRoute(ctx context.Context, passingID uint) ([]GamePassingLevel, error) {
+// HIGH #2 (PASS-8): проверяем, что passing принадлежит gameID — раньше
+// менеджер игры A мог читать маршрут команды игры B (cross-game утечка).
+func (s *GamePassingService) GetTeamRoute(ctx context.Context, gameID, passingID uint) ([]GamePassingLevel, error) {
+	passing, err := s.repo.GetByID(ctx, passingID)
+	if err != nil {
+		return nil, err
+	}
+	if passing.GameID != gameID {
+		return nil, ErrPassingNotInGame
+	}
 	return s.repo.GetTeamRoute(ctx, passingID)
 }
 

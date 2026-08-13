@@ -195,6 +195,11 @@ func (s *GameAdminService) DeleteLevelFromActiveGame(ctx context.Context, gameID
 		if err := tx.First(&lvl, levelID).Error; err != nil {
 			return err
 		}
+		// IDOR (PASS-8, CRITICAL): уровень должен принадлежать игре из URL —
+		// иначе менеджер игры A удаляет уровень чужой игры B (cross-game).
+		if lvl.GameID != gameID {
+			return ErrLevelNotInGame
+		}
 		if lvl.DeletedAt.Valid {
 			return errors.New("уровень уже удалён")
 		}

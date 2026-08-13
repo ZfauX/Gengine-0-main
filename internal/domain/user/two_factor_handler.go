@@ -41,13 +41,10 @@ func NewTwoFactorHandler(twoFactorSvc *TwoFactorService, authService *AuthServic
 }
 
 // lockUser блокирует аккаунт с экспоненциальным backoff (S-1/S-4, pass 33).
+// S-L1 (PASS-8): LockAccountWithBackoff — длительность считается в SQL по
+// фактическому lock_count (раньше — по устаревшему чтению, гонка).
 func (h *TwoFactorHandler) lockUser(ctx context.Context, userID uint) error {
-	u, err := h.userRepo.GetByID(ctx, userID)
-	if err != nil {
-		return err
-	}
-	duration := backoffDuration(u.LockCount)
-	_, err = h.userRepo.AtomicLockAccount(ctx, userID, time.Now().Add(duration))
+	_, err := h.userRepo.LockAccountWithBackoff(ctx, userID)
 	return err
 }
 

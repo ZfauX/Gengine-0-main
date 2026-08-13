@@ -366,8 +366,14 @@ func LoadConfig() (*Config, error) {
 	cfg.Payments.ShopID = os.Getenv("YKASSA_SHOP_ID")
 	cfg.Payments.SecretKey = os.Getenv("YKASSA_SECRET_KEY")
 	cfg.Payments.WebhookKey = os.Getenv("YKASSA_WEBHOOK_KEY")
+	// S-L2 (PASS-8): WebhookKey больше НЕ равен SecretKey по умолчанию.
+	// Раньше компрометация подписи вебхука = компрометация API-ключа (и наоборот).
+	// В strict-режиме при включённых платежах отдельный ключ ОБЯЗАТЕЛЕН.
 	if cfg.Payments.WebhookKey == "" {
 		cfg.Payments.WebhookKey = cfg.Payments.SecretKey
+		if cfg.Server.StrictMode && cfg.Payments.ShopID != "" && cfg.Payments.SecretKey != "" {
+			return nil, fmt.Errorf("YKASSA_WEBHOOK_KEY обязателен в strict-режиме — не переиспользуйте YKASSA_SECRET_KEY для вебхуков")
+		}
 	}
 	cfg.Payments.Currency = os.Getenv("YKASSA_CURRENCY")
 	if cfg.Payments.Currency == "" {

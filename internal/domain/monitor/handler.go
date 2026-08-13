@@ -288,6 +288,13 @@ type MonitorHandler struct {
 	// клиента комната остаётся помеченной, пока в ней есть другие участники.
 	chatRooms   map[string]int
 	chatRoomsMu sync.Mutex
+
+	// userMsgLimiters (S-M4, PASS-8): per-USER token bucket на сообщения чата.
+	// Раньше лимит 10/5с был на соединение — атакующий открывал 50 сокетов
+	// и слал ~100 msg/сек (обход + broadcast-амплификация). Теперь общий
+	// бюджет на пользователя агрегирует все его соединения.
+	userMsgMu       sync.Mutex
+	userMsgLimiters map[uint]*wsMessageLimiter
 }
 
 // markChatRoom инкрементирует счётчик клиентов комнаты (вызывается из ChatWS).
@@ -359,7 +366,25 @@ func NewMonitorHandler(
 		userService:         userSvc,
 		gameService:         gameSvc,
 		coAuthorSvc:         coAuthorSvc,
+		userMsgLimiters:     make(map[uint]*wsMessageLimiter),
 	}
+}
+
+// allowUserMessage (S-M4, PASS-8): per-user token bucket — агрегирует все
+// соединения пользователя. Лимит выше per-connection (30/5с), но общий:
+// 50 сокетов не дают ~100 msg/сек, бюджет делится между ними.
+func (h *MonitorHandler) allowUserMessage(userID uint) bool {
+	if userID == 0 {
+		return true // аноним — per-connection лимитер ниже уже защищает
+	}
+	h.userMsgMu.Lock()
+	defer h.userMsgMu.Unlock()
+	limiter := h.userMsgLimiters[userID]
+	if limiter == nil {
+		limiter = newWSMessageLimiter(30, 5*time.Second)
+		h.userMsgLimiters[userID] = limiter
+	}
+	return limiter.Allow()
 }
 
 // MonitorPage отображает HTML-страницу мониторинга.
@@ -836,6 +861,12 @@ func (h *MonitorHandler) ChatWS(c *gin.Context) {
 			}
 			cleanContent := sanitize.StripHTML(msgData.Content)
 			if cleanContent == "" {
+				continue
+			}
+			// S-M4 (PASS-8): общий per-user лимит ПЕРЕД per-connection —
+			// несколько сокетов пользователя делят один бюджет.
+			if !h.allowUserMessage(userID) {
+				log.Warn().Str("room_id", roomID).Uint("user_id", userID).Msg("ChatWS: per-user message rate limit exceeded")
 				continue
 			}
 			if !msgLimiter.Allow() {

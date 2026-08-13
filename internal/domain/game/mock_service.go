@@ -515,18 +515,18 @@ func (mr *MockGamePassingServiceInterfaceMockRecorder) GetTeamAnswer(ctx, levelI
 }
 
 // GetTeamRoute mocks base method.
-func (m *MockGamePassingServiceInterface) GetTeamRoute(ctx context.Context, passingID uint) ([]GamePassingLevel, error) {
+func (m *MockGamePassingServiceInterface) GetTeamRoute(ctx context.Context, gameID, passingID uint) ([]GamePassingLevel, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetTeamRoute", ctx, passingID)
+	ret := m.ctrl.Call(m, "GetTeamRoute", ctx, gameID, passingID)
 	ret0, _ := ret[0].([]GamePassingLevel)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetTeamRoute indicates an expected call of GetTeamRoute.
-func (mr *MockGamePassingServiceInterfaceMockRecorder) GetTeamRoute(ctx, passingID any) *gomock.Call {
+func (mr *MockGamePassingServiceInterfaceMockRecorder) GetTeamRoute(ctx, gameID, passingID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTeamRoute", reflect.TypeOf((*MockGamePassingServiceInterface)(nil).GetTeamRoute), ctx, passingID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTeamRoute", reflect.TypeOf((*MockGamePassingServiceInterface)(nil).GetTeamRoute), ctx, gameID, passingID)
 }
 
 // GetTeamsByCaptain mocks base method.

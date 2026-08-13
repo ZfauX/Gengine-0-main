@@ -409,6 +409,28 @@ func WebAuthnRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 	}
 }
 
+// PaymentRateLimit (PASS-8 #2): отдельный per-user бюджет на создание платежей.
+// Раньше /payments/create делил codeSubmissionRateLimiter с вводом игровых кодов
+// (общий бюджет + мёртвые параметры 5/мин — фактически применялся 10/мин).
+func PaymentRateLimit(window time.Duration, limit int) gin.HandlerFunc {
+	rl := NewRateLimiter(window, limit)
+	return func(c *gin.Context) {
+		userID := c.GetUint("userID")
+		if userID == 0 {
+			c.Next()
+			return
+		}
+		key := fmt.Sprintf("payment:%d", userID)
+		result := rl.Allow(key)
+		setRateLimitHeaders(c, result)
+		if !result.Allowed {
+			respondRateLimitError(c, ErrRateLimitCode, result)
+			return
+		}
+		c.Next()
+	}
+}
+
 // PersonalChatRateLimit (DEEP-REVIEW PASS-4 M5 / PASS-5 M3): per-USER лимит на
 // создание личного чата. Раньше ключ был per-IP — за reverse-proxy без
 // TRUSTED_PROXIES все пользователи делили один бюджет (429 для всех), и

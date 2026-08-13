@@ -54,7 +54,9 @@ type GamePassingServiceInterface interface {
 	// Фаза 3 (C-1..C-5, pass 45). DEEP-REVIEW PASS-5 H3: gameID передаётся
 	// для проверки принадлежности passing/level игре (cross-game IDOR).
 	SetTeamRoute(ctx context.Context, gameID, passingID uint, levelIDs []uint) error
-	GetTeamRoute(ctx context.Context, passingID uint) ([]GamePassingLevel, error)
+	// GetTeamRoute (HIGH #2, PASS-8): gameID для сверки passing.GameID — иначе
+	// менеджер игры A читал маршрут команды игры B (cross-game утечка контента).
+	GetTeamRoute(ctx context.Context, gameID, passingID uint) ([]GamePassingLevel, error)
 	SetTeamStartTime(ctx context.Context, gameID, passingID uint, startTime *time.Time) error
 	SetTeamAnswer(ctx context.Context, gameID, levelID, teamID uint, code, hint string) error
 	GetTeamAnswer(ctx context.Context, levelID, teamID uint) (*LevelTeamAnswer, error)
