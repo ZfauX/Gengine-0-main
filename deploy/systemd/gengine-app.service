@@ -1,0 +1,50 @@
+# deploy/systemd/gengine-app.service
+# systemd user unit для Gengine-приложения (Podman rootless).
+#
+# Сборка образа:
+#   podman build -t gengine:latest .
+#   podman tag gengine:latest gengine:$(git describe --tags --always)
+#
+# Зависит от gengine-db и gengine-valkey (network gengine-net). Environment
+# из ~/.config/gengine/gengine.env (см. .env.example). entrypoint.sh в образе
+# применяет миграции (./gengine -migrate) и запускает сервер.
+
+[Unit]
+Description=Gengine application server (Podman)
+Documentation=file:deploy/systemd/README.md
+After=network-online.target gengine-db.service gengine-valkey.service
+Wants=network-online.target
+Requires=gengine-db.service gengine-valkey.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+
+ExecStartPre=-/usr/bin/podman rm -f gengine-app
+ExecStartPre=-/usr/bin/podman volume create gengine-uploads
+ExecStartPre=-/usr/bin/podman volume create gengine-backups
+ExecStartPre=-/usr/bin/podman network create gengine-net
+
+# gengine.env содержит PORT/DB_*/VALKEY_*/JWT_SECRET/... (см. .env.example).
+# DB_HOST=db, DB_PORT=5432, VALKEY_HOST=valkey, VALKEY_PORT=6379 —
+# DNS-имена контейнеров в сети gengine-net.
+# Порт наружу — 8080 (внутри контейнера слушает PORT из gengine.env).
+ExecStart=/usr/bin/podman run --name gengine-app \
+    --replace \
+    --network gengine-net \
+    --publish 8080:8080 \
+    --volume gengine-uploads:/app/uploads:Z \
+    --volume gengine-backups:/app/backups:Z \
+    --volume %h/.config/gengine/gengine.env:/app/.env:ro,Z \
+    --health-cmd="wget --spider -q http://localhost:8080/healthz" \
+    --health-interval=30s \
+    --health-timeout=10s \
+    --health-retries=3 \
+    gengine:latest
+
+ExecStop=/usr/bin/podman stop -t 30 gengine-app
+ExecStopPost=-/usr/bin/podman rm -f gengine-app
+
+[Install]
+WantedBy=default.target

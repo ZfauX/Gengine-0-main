@@ -1,0 +1,35 @@
+# deploy/systemd/gengine-valkey.service
+# systemd user unit для Valkey-контейнера (Podman rootless).
+# Valkey — recommended для production (PASS-8): общий бэкенд rate-limit'ов
+# между инстансами + кэш. См. AGENTS.md «Valkey (rate limiters)».
+
+[Unit]
+Description=Gengine Valkey cache/rate-limiter (Podman)
+Documentation=file:deploy/systemd/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+
+ExecStartPre=-/usr/bin/podman rm -f gengine-valkey
+ExecStartPre=-/usr/bin/podman volume create gengine-valkeydata
+
+ExecStart=/usr/bin/podman run --name gengine-valkey \
+    --replace \
+    --network gengine-net \
+    --volume gengine-valkeydata:/data:Z \
+    --health-cmd="valkey-cli ping" \
+    --health-interval=10s \
+    --health-timeout=5s \
+    --health-retries=5 \
+    valkey/valkey:7.2-alpine \
+    valkey-server --appendonly yes
+
+ExecStop=/usr/bin/podman stop -t 30 gengine-valkey
+ExecStopPost=-/usr/bin/podman rm -f gengine-valkey
+
+[Install]
+WantedBy=default.target

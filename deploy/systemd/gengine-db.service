@@ -1,0 +1,46 @@
+# deploy/systemd/gengine-db.service
+# systemd user unit для PostgreSQL-контейнера (Podman rootless).
+#
+# Установка (rootless):
+#   install -Dm644 gengine-db.service ~/.config/systemd/user/gengine-db.service
+#   install -Dm600 gengine-db.env ~/.config/gengine/gengine-db.env
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now gengine-db
+#   loginctl enable-linger $USER   # чтобы unit работал без входа в систему
+#
+# Для rootful (системный режим): замените /usr/bin/podman на systemctl --system,
+# а каталог ~/.config/gengine на /etc/gengine.
+
+[Unit]
+Description=Gengine PostgreSQL database (Podman)
+Documentation=file:deploy/systemd/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+
+# Подготовка: удаляем старый контейнер (если остался после сбоя), создаём volume.
+ExecStartPre=-/usr/bin/podman rm -f gengine-db
+ExecStartPre=-/usr/bin/podman volume create gengine-pgdata
+
+# PostgreSQL 18 (совпадает с docker-compose.yml и Dockerfile postgresql18-client).
+# POSTGRES_* берутся из gengine-db.env (отдельный файл — postgres не понимает DB_*).
+ExecStart=/usr/bin/podman run --name gengine-db \
+    --replace \
+    --network gengine-net \
+    --volume gengine-pgdata:/var/lib/postgresql/data:Z \
+    --env-file=%h/.config/gengine/gengine-db.env \
+    --health-cmd="pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" \
+    --health-interval=10s \
+    --health-timeout=5s \
+    --health-retries=5 \
+    postgres:18-alpine
+
+ExecStop=/usr/bin/podman stop -t 30 gengine-db
+ExecStopPost=-/usr/bin/podman rm -f gengine-db
+
+[Install]
+WantedBy=default.target
