@@ -15,10 +15,12 @@ package sessionstore
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -107,6 +109,88 @@ func newValkeyBackend(client *redis.Client, prefix string) *valkeyBackend {
 	return &valkeyBackend{client: client, prefix: prefix}
 }
 
+// typedValue — типизированная сериализация значения в Valkey (JSON).
+// Стандартный json.Unmarshal в map[string]any превращает uint/int64/float в
+// float64, что ломает сессии (pending_user_id.(uint) и т.п.) — см. известное
+// ограничение с *Game в cache. Храним JSON-массив [тип, значение].
+type typedValue struct {
+	T string `json:"t"`
+	V string `json:"v"`
+}
+
+func encodeTypedValue(v any) typedValue {
+	switch val := v.(type) {
+	case uint:
+		return typedValue{T: "uint", V: strconv.FormatUint(uint64(val), 10)}
+	case uint64:
+		return typedValue{T: "uint64", V: strconv.FormatUint(val, 10)}
+	case int:
+		return typedValue{T: "int", V: strconv.Itoa(val)}
+	case int64:
+		return typedValue{T: "int64", V: strconv.FormatInt(val, 10)}
+	case string:
+		return typedValue{T: "string", V: val}
+	case bool:
+		return typedValue{T: "bool", V: strconv.FormatBool(val)}
+	case float64:
+		return typedValue{T: "float64", V: strconv.FormatFloat(val, 'g', -1, 64)}
+	case time.Time:
+		return typedValue{T: "time", V: val.Format(time.RFC3339Nano)}
+	case []byte:
+		return typedValue{T: "bytes", V: base64.StdEncoding.EncodeToString(val)}
+	case nil:
+		return typedValue{T: "nil", V: ""}
+	default:
+		// Неизвестный тип (например struct) — JSON-сериализация.
+		raw, err := json.Marshal(val)
+		if err != nil {
+			return typedValue{T: "nil", V: ""}
+		}
+		return typedValue{T: "json", V: string(raw)}
+	}
+}
+
+func (tv typedValue) Decode() (any, error) {
+	switch tv.T {
+	case "uint":
+		v, err := strconv.ParseUint(tv.V, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		return uint(v), nil
+	case "uint64":
+		return strconv.ParseUint(tv.V, 10, 64)
+	case "int":
+		v, err := strconv.Atoi(tv.V)
+		if err != nil {
+			return nil, err
+		}
+		return v, nil
+	case "int64":
+		return strconv.ParseInt(tv.V, 10, 64)
+	case "string":
+		return tv.V, nil
+	case "bool":
+		return strconv.ParseBool(tv.V)
+	case "float64":
+		return strconv.ParseFloat(tv.V, 64)
+	case "time":
+		return time.Parse(time.RFC3339Nano, tv.V)
+	case "bytes":
+		return base64.StdEncoding.DecodeString(tv.V)
+	case "nil":
+		return nil, nil
+	case "json":
+		var v any
+		if err := json.Unmarshal([]byte(tv.V), &v); err != nil {
+			return nil, err
+		}
+		return v, nil
+	default:
+		return nil, fmt.Errorf("sessionstore: unknown typed value type %q", tv.T)
+	}
+}
+
 func (b *valkeyBackend) key(id string) string { return b.prefix + ":" + id }
 
 func (b *valkeyBackend) Get(id string) (map[string]any, bool, error) {
@@ -117,15 +201,27 @@ func (b *valkeyBackend) Get(id string) (map[string]any, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	var data map[string]any
-	if err := json.Unmarshal(raw, &data); err != nil {
+	var typed map[string]typedValue
+	if err := json.Unmarshal(raw, &typed); err != nil {
 		return nil, false, err
+	}
+	data := make(map[string]any, len(typed))
+	for k, tv := range typed {
+		v, err := tv.Decode()
+		if err != nil {
+			return nil, false, err
+		}
+		data[k] = v
 	}
 	return data, true, nil
 }
 
 func (b *valkeyBackend) Set(id string, data map[string]any, ttl time.Duration) error {
-	raw, err := json.Marshal(data)
+	typed := make(map[string]typedValue, len(data))
+	for k, v := range data {
+		typed[k] = encodeTypedValue(v)
+	}
+	raw, err := json.Marshal(typed)
 	if err != nil {
 		return err
 	}
