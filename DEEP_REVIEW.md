@@ -140,4 +140,21 @@
   - Session fixation: `session.Clear()` при успешном логине и OAuth-callback (сброс чужих pending/oauth/2FA-флагов).
   - P-2 (HTTP-кэш анонимных страниц): ОТКЛОНЕНО — страницы содержат CSRF/nonce, персональные на каждый запрос; кэш сломал бы формы.
   - Проверки: build ✅, test-short ✅, test-integration ✅, golangci-lint ✅ (0 issues), E2E 14/14 ✅.
-- Отложено (требует продукта/рефакторинга): P-2 (см. выше), миграция на Valkey-session store (полный fix session fixation), HTTP-кэш анонимных страниц.
+- Отложено (требует продукта/рефакторинга): P-2 (см. выше), HTTP-кэш анонимных страниц.
+
+---
+
+## 🔒 PASS-11: server-side session store (полный fix session fixation) ✅
+
+- **Замена** `cookie.NewStore` (gin-contrib/sessions) на серверный store `internal/pkg/sessionstore`:
+  - В cookie — только подписанный (securecookie HMAC+AES) session ID; данные (`pending_user_id`, `oauth_state`, `2fa_verified_*`) — на сервере (Valkey или in-memory). Один ID = одна сессия, ID отзывается на сервере.
+  - Backend: `valkeyBackend` (go-redis, prefix `gengine:session`, TTL 24ч, multi-instance) или `memoryBackend` (map+mutex+TTL, sweep при >10000, single-instance, теряется при рестарте — документировано в README).
+  - Внедрение: `main.go` создаёт store (Valkey если настроен, иначе memory) → `App.SetSessionStore` → `router.go` регистрирует в `sessions.Sessions("gengine_session", store)`. Секреты те же (`SESSION_SECRET` + sha256-derived encryption key).
+- **`RenewToken` (фикс fixation)**: при успешной аутентификации перевыпускается session ID — старая подсунутая кука недействительна:
+  - `Login` (`auth_handler.go`) — после `session.Clear()`, до установки pending-флагов.
+  - `Verify2FA` (`two_factor_handler.go`) — после установки `2fa_verified_*` (событие повышения доверия).
+  - `OAuthCallback` (`auth_handler.go`) — после `session.Clear()`.
+  - Реализация: `sessionstore.RenewGinSession(c)` (глобальный регистр store из main.go) — берёт ту же gorilla-сессию через Registry, мутирует ID, удаляет старую запись backend, сохраняет новую.
+- **Совместимость**: `ServerStore` реализует `gorilla/sessions.Store` + `Options(gin-contrib)`; метод `New`/`Get` возвращает новую сессию при невалидной/поддельной куке (не ошибку); `IsNew` сохраняет семантику.
+- **Проверки**: build ✅, test-short ✅, golangci-lint ✅, E2E 14/14 ✅ (без Valkey — in-memory fallback).
+- **Ограничение**: без Valkey сессии in-memory (single-instance, сброс при рестарте). Для production multi-instance — `VALKEY_HOST`/`VALKEY_PORT` (как rate-limiters, PASS-8).

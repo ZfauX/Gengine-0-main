@@ -14,6 +14,7 @@ import (
 	"gengine-0/internal/pkg/storage"
 	ws "gengine-0/internal/pkg/websocket"
 
+	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -56,6 +57,11 @@ type App struct {
 	Hub          *ws.RoomHub
 	BaseDir      string
 	Deps         *Dependencies
+
+	// SessionStore (PASS-11): server-side session store (Valkey или in-memory) —
+	// заменяет cookie.NewStore для защиты от session fixation. Устанавливается
+	// из main.go через SetSessionStore до SetupRouter.
+	SessionStore sessions.Store
 }
 
 func NewApp(
@@ -74,6 +80,11 @@ func NewApp(
 		BaseDir:      baseDir,
 		Deps:         deps,
 	}
+}
+
+// SetSessionStore (PASS-11) внедряет server-side session store до SetupRouter.
+func (app *App) SetSessionStore(store sessions.Store) {
+	app.SessionStore = store
 }
 
 func (app *App) SetupRouter() (*gin.Engine, error) {

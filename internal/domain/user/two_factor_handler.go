@@ -10,6 +10,7 @@ import (
 	"gengine-0/internal/pkg/i18n"
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
+	"gengine-0/internal/pkg/sessionstore"
 
 	csrf "gengine-0/internal/pkg/csrf"
 
@@ -147,6 +148,11 @@ func (h *TwoFactorHandler) Verify(c *gin.Context) {
 	// Сохраняем флаг верификации в сессии (привязан к userID)
 	session := sessions.Default(c)
 	set2FAVerified(session, userID)
+	// PASS-11 (session fixation): 2FA-проверка — событие повышения доверия.
+	// Перевыпускаем session ID, чтобы подсунутая pre-2FA кука не работала.
+	if err := sessionstore.RenewGinSession(c); err != nil {
+		log.Error().Err(err).Msg("Verify: failed to renew session token (fixation)")
+	}
 	if err := session.Save(); err != nil {
 		log.Error().Err(err).Msg("Verify: failed to save session")
 	}

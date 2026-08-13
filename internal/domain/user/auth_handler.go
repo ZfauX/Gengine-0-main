@@ -15,6 +15,7 @@ import (
 	"gengine-0/internal/pkg/recaptcha"
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/sanitize"
+	"gengine-0/internal/pkg/sessionstore"
 	"gengine-0/internal/pkg/validation"
 
 	csrf "gengine-0/internal/pkg/csrf"
@@ -140,12 +141,18 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	// Session fixation (PASS-10): при УСПЕШНОМ логине сбрасываем ВСЮ cookie-сессию —
+	// Session fixation (PASS-10/PASS-11): при УСПЕШНОМ логине сбрасываем ВСЮ cookie-сессию —
 	// удаляем чужие pending_*/oauth_state/2fa_verified флаги, которые могли быть
 	// подсунуты в куку (fixation через подстановку валидной сессии). Все флаги
 	// ниже (pending 2FA, step-up) выставляются заново уже для ЭТОГО входа.
 	loginSession := sessions.Default(c)
 	loginSession.Clear()
+	// PASS-11: server-side store позволяет перевыпустить session ID (старая
+	// подсунутая кука становится недействительной). Вызываем ДО установки
+	// pending-флагов, чтобы они записались под новым ID.
+	if err := sessionstore.RenewGinSession(c); err != nil {
+		log.Error().Err(err).Msg("Login: failed to renew session token (fixation)")
+	}
 	if err := loginSession.Save(); err != nil {
 		log.Error().Err(err).Msg("Login: failed to reset session (fixation)")
 	}
@@ -896,10 +903,15 @@ func (h *AuthHandler) OAuthCallback(c *gin.Context) {
 		return
 	}
 
-	// Session fixation (PASS-10): после успешного OAuth сбрасываем cookie-сессию
+	// Session fixation (PASS-10/PASS-11): после успешного OAuth сбрасываем cookie-сессию
 	// (oauth_state и любые чужие флаги) — флаги 2FA/pending выставляются заново.
+	// PASS-11: server-side store позволяет перевыпустить session ID — подсунутая
+	// ранее кука становится недействительной.
 	oauthSess := sessions.Default(c)
 	oauthSess.Clear()
+	if renewErr := sessionstore.RenewGinSession(c); renewErr != nil {
+		log.Error().Err(renewErr).Msg("OAuthCallback: failed to renew session token (fixation)")
+	}
 	if saveErr := oauthSess.Save(); saveErr != nil {
 		log.Error().Err(saveErr).Msg("OAuthCallback: failed to reset session (fixation)")
 	}

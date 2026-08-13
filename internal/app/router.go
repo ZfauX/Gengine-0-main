@@ -33,6 +33,7 @@ import (
 	"gengine-0/internal/pkg/templatefuncs"
 
 	"gengine-0/internal/config"
+	"gengine-0/internal/pkg/sessionstore"
 
 	_ "gengine-0/docs"
 
@@ -41,7 +42,6 @@ import (
 	csrf "gengine-0/internal/pkg/csrf"
 
 	"github.com/gin-contrib/sessions"
-	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog/log"
@@ -51,20 +51,30 @@ import (
 )
 
 func (app *App) setupEngine(r *gin.Engine) error {
-	// Два ключа: первый — HMAC-подпись, второй — шифрование (AES). Клиент не сможет прочитать
-	// содержимое сессии (pending_user_id, oauth_state, 2fa_verified_*).
+	// PASS-11 (session fixation): server-side session store (Valkey или in-memory)
+	// вместо cookie.NewStore. В cookie — только подписанный session ID; данные
+	// (pending_user_id, oauth_state, 2fa_verified_*) — на сервере. Это позволяет
+	// отзывать сессии и перевыпускать ID при логине/2FA/OAuth (RenewToken).
 	sessionSecret := []byte(app.Config.Session.Secret)
 	encryptionKey := sha256.Sum256([]byte(app.Config.Session.Secret + ":enc"))
-	store := cookie.NewStore(sessionSecret, encryptionKey[:])
+	var store sessions.Store
+	if app.SessionStore != nil {
+		store = app.SessionStore
+	} else {
+		// Fallback на in-memory server-side (если main не внедрил — например тесты).
+		store = sessionstore.NewInMemoryStore(sessionSecret, encryptionKey[:])
+	}
 	// Secure-флаг сессии (S-M4): как для JWT-кук — TLS, reverse-proxy
 	// (TrustedProxies) или FORCE_SECURE_COOKIE. Иначе session-cookie уходит
 	// по HTTP за TLS-терминирующим прокси.
-	store.Options(sessions.Options{
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteStrictMode,
-		Secure:   app.Config.TLS.CertFile != "" || app.Config.Server.TrustedProxies != "" || app.Config.Server.ForceSecureCookie,
-	})
+	if opts, ok := store.(interface{ Options(sessions.Options) }); ok {
+		opts.Options(sessions.Options{
+			Path:     "/",
+			HttpOnly: true,
+			SameSite: http.SameSiteStrictMode,
+			Secure:   app.Config.TLS.CertFile != "" || app.Config.Server.TrustedProxies != "" || app.Config.Server.ForceSecureCookie,
+		})
+	}
 
 	// Загрузчик настроек темы для авторизованных пользователей (используется auth-мидлварями)
 	// A-1 (pass 42): через ProfileService из DI вместо raw *gorm.DB (как было в

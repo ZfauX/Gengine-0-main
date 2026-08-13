@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"flag"
 	"fmt"
@@ -32,6 +33,7 @@ import (
 	"gengine-0/internal/pkg/i18n"
 	"gengine-0/internal/pkg/logging"
 	"gengine-0/internal/pkg/middleware"
+	"gengine-0/internal/pkg/sessionstore"
 	"gengine-0/internal/pkg/storage"
 	ws "gengine-0/internal/pkg/websocket"
 
@@ -227,10 +229,17 @@ func run() error {
 	// (например, регистрация 3/10мин), игнорируя RATE_LIMIT_* из конфига.
 	rateLimitWindow := cfg.Server.RateLimitWindow
 	useValkey := false
+	// SessionStore (PASS-11, session fixation): server-side store — Valkey если
+	// доступен, иначе in-memory. В cookie только session ID; данные на сервере.
+	sessionSecret := []byte(cfg.Session.Secret)
+	sessionEncKey := sha256.Sum256([]byte(cfg.Session.Secret + ":enc"))
+	var sessionStore *sessionstore.ServerStore
 	if cfg.Valkey.Host != "" {
 		valkeyClient := cache.NewValkeyClient(cfg.Valkey.Host, cfg.Valkey.Port, cfg.Valkey.Password, cfg.Valkey.PoolSize, cfg.Valkey.MinIdleConns, cfg.Valkey.MaxRetries)
 		if valkeyClient != nil {
 			useValkey = true
+			// PASS-11: server-side session store в Valkey (multi-instance).
+			sessionStore = sessionstore.NewValkeyStore(valkeyClient, "gengine:session", sessionSecret, sessionEncKey[:])
 			// S-M2 (PASS-8): общий клиент для per-user лимитеров (личный чат,
 			// комнаты, поиск, WebAuthn, платежи) — меж-инстансная координация.
 			middleware.SetSharedValkeyClient(valkeyClient)
@@ -260,6 +269,9 @@ func run() error {
 		middleware.InitAPIRateLimiter(rateLimitWindow, cfg.Server.RateLimitAPI)
 		middleware.InitPasswordResetRateLimiter(rateLimitWindow, cfg.Server.RateLimitPasswordReset)
 		middleware.InitOAuthRateLimiter(rateLimitWindow, cfg.Server.RateLimitLoginRequests)
+		// PASS-11: без Valkey — in-memory server-side сессии (single-instance).
+		// Сессии теряются при рестарте — пользователь входит заново (приемлемо).
+		sessionStore = sessionstore.NewInMemoryStore(sessionSecret, sessionEncKey[:])
 	}
 
 	// --- Инициализация persistent-очереди email (только если SMTP включён) ---
@@ -284,6 +296,13 @@ func run() error {
 
 	deps := app.NewDependencies(database, cfg, hub, localStorage, appCache)
 	appInstance := app.NewApp(database, localStorage, hub, cfg, ".", deps)
+	// PASS-11 (session fixation): server-side session store (Valkey/in-memory).
+	if sessionStore != nil {
+		appInstance.SetSessionStore(sessionStore)
+		// Глобальный регистр для RenewGinSession (перевыпуск session ID при
+		// логине/2FA/OAuth из хендлеров, где нет доступа к store).
+		sessionstore.SetDefault(sessionStore)
+	}
 	r, err := appInstance.SetupRouter()
 	if err != nil {
 		log.Error().Err(err).Msg("failed to setup routes")
