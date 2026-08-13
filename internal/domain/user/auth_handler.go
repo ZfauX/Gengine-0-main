@@ -470,7 +470,14 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	errs := validation.FieldErrors{}
 	if err := c.ShouldBind(&input); err != nil {
 		errs.Add("name", validation.ValidateString("Имя", input.Name, 1, 128))
-		errs.Add("email", validation.ValidateString("Email", input.Email, 1, 255))
+		// L5 (PASS-13): при ошибке bind email проверяем и по формату (ValidateEmail),
+		// а не только по длине — иначе пользователь с невалидным email получает
+		// общую «некорректные данные» вместо конкретной ошибки поля.
+		if eErr := validation.ValidateEmail(input.Email); eErr != nil {
+			errs.Add("email", eErr)
+		} else {
+			errs.Add("email", validation.ValidateString("Email", input.Email, 1, 255))
+		}
 		// L11 (PASS-3): выровнено с binding min=8 и ValidatePasswordStrength.
 		errs.Add("password", validation.ValidateString("Пароль", input.Password, 8, 128))
 		if !errs.HasErrors() {
@@ -590,7 +597,10 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 
 	user, err := h.userService.GetByEmail(c.Request.Context(), input.Email)
 	if err != nil {
-		log.Debug().Str("email", input.Email).Msg("ForgotPassword: user not found")
+		// L2 (PASS-13): НЕ логируем email в debug — это oracle перечисления
+		// аккаунтов в логах (при LOG_LEVEL=debug). Пользователю в любом случае
+		// отвечаем generic-сообщением (не раскрываем существование аккаунта).
+		log.Debug().Msg("ForgotPassword: user not found")
 	} else {
 		resetCode, genErr := h.passwordResetSvc.GenerateToken(c.Request.Context(), *user)
 		if genErr != nil {

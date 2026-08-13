@@ -136,3 +136,38 @@
 - **UX: 8 предложений**.
 - Проверки текущего кода: build ✅, golangci-lint ✅ (0 issues), test-short ✅, E2E 14/14 ✅ (с реальным Valkey).
 - Рекомендуемый порядок фикса: H1 → M1-M3 (корректность сессий/логаута) → M4-M6 (SSE/rate-limit) → P-1..P-3 (память и рендер) → остальное.
+
+## ✅ Выполненные фиксы (PASS-13, коммиты 925c94b + 8f5c0d8)
+
+### HIGH/MEDIUM (коммит 925c94b)
+- **H1**: onGameFinished добавлен в bgWg — shutdown дожидается расчёта результатов до закрытия БД.
+- **M1**: sessionstore.Save с MaxAge<0 удаляет backend-запись (+тест).
+- **M2**: RenewToken удаляет старую сессию ТОЛЬКО после успешного Save (+тест).
+- **M3**: Logout/LogoutAll/ChangePassword вызывают DeleteGinSession.
+- **M4**: SSE при лимите после заголовков пишет error-событие и флашит.
+- **M5**: sessionstore.New не генерирует ID до Save (мусорная кука не создаёт запись).
+- **M6**: per-user rate-limit на UploadAvatar/UploadPhoto (RATE_LIMIT_UPLOAD=20/мин).
+- **M7**: глобальный/SSE/API rate-limiters переведены на in-memory (убран round-trip в Valkey).
+- **LOW (важные)**: realtimeBus.Close()/valkeyClient.Close() и pprof.Shutdown при shutdown.
+
+### LOW + оптимизации (коммит 8f5c0d8)
+- **L1**: og:image строится из cfg.Server.BaseURL (Host-header injection закрыт).
+- **L2**: ForgotPassword не логирует email (oracle закрыт).
+- **L3**: CORS origin без протокола пропускается с warn (не молчаливый http://).
+- **L4**: audit-лог бэкапа — только имя файла (не полный путь).
+- **L5**: Register валидирует email через ValidateEmail (конкретная ошибка поля).
+- **L6**: templatefuncs initials/truncate — utf8.DecodeRuneInString без []rune.
+- **L7**: ОТКЛОНЕНО — X-RateLimit-* заголовки полезны клиентам, код уже использует strconv.
+- **L8**: SSE кэширует http.NewResponseController (не на каждое событие).
+- **P-1**: swagger вынесен за build-tag `swagger` (−51% heap: 9.5MB docs не грузятся в prod; `make build-swagger` для dev).
+- **P-2**: полный precompute T() в layout.html (~25 ключей, убран evalCall).
+- **P-3**: ОТКЛОНЕНО — HTML-кэш анонимов: страницы содержат nonce/CSRF, кэш ослабил бы CSP (как PASS-10 P-2).
+- **P-4**: GetUserGamesView кэшируется 60с.
+- **P-5**: IsUserManager кэшируется 60с per game:user + viewerID==0 сразу false; инвалидация при изменении соавторов.
+- **P-6**: cacheGetJSON — дженерик (убран reflect из горячего пути).
+- **P-7**: cacheGetInt64 — GetBytes + strconv.ParseInt (убран json.Unmarshal в any + Sscanf).
+- **P-8**: trackPrefix — инкрементальная сборка префиксов (без Split+N×Join).
+- **P-9**: покрыт L8 (SSE controller); formatDate — time.Format неизбежен.
+
+### Проверки финальных фиксов
+- build ✅ (обычная и `-tags=swagger`), golangci-lint ✅ (0 issues), test-short ✅, E2E 14/14 ✅.

@@ -17,14 +17,28 @@ func (s *GameService) GetUserGamesView(ctx context.Context, userID uint) string 
 	if userID == 0 {
 		return "table"
 	}
+	// P-4 (PASS-13): настройка просмотра игр стабильна (меняется только при
+	// сохранении) — кэшируем 60с, убирая SELECT users.games_view на каждый
+	// вход на /games (одна из самых горячих страниц).
+	cacheKey := fmt.Sprintf("user_games_view:%d", userID)
+	if s.cache != nil {
+		if v, ok := s.cache.Get(cacheKey); ok {
+			if str, strOK := v.(string); strOK {
+				return str
+			}
+		}
+	}
 	view, err := s.userRepo.GetGamesView(ctx, userID)
 	if err != nil {
 		return "table"
 	}
 	if view != "cards" {
-		return "table"
+		view = "table"
 	}
-	return "cards"
+	if s.cache != nil {
+		s.cache.Set(cacheKey, view, userGamesViewCacheTTL)
+	}
+	return view
 }
 
 // ListReviews делегирует ReviewService.

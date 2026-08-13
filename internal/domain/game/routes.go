@@ -58,6 +58,9 @@ func RegisterRoutes(r *gin.RouterGroup, deps *GameDeps) {
 		coAuthorSvc,
 		auditSvc,
 	)
+	if deps.Cfg != nil {
+		gameHandler.WithBaseURL(deps.Cfg.Server.BaseURL)
+	}
 
 	// Создаём специализированные обработчики для каждого поддомена
 	passingHandler := NewPassingHandler(

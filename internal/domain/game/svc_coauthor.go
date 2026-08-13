@@ -4,6 +4,8 @@ package game
 import (
 	"context"
 	"errors"
+	"sync"
+	"time"
 
 	"gengine-0/internal/pkg/rolecache"
 
@@ -56,7 +58,25 @@ type CoAuthorService struct {
 	repo      CoAuthorRepository
 	userRepo  userRepository
 	roleCache *rolecache.Cache
+
+	// managerCache (P-5, PASS-13): TTL-кэш результата IsUserManager per
+	// game:user. Страница игры вызывает IsUserManager 1-2 раза — SELECT role +
+	// UNION-запрос на каждый просмотр. Состав авторов меняется редко (60с TTL).
+	managerMu    sync.RWMutex
+	managerCache map[uint64]managerCacheEntry
 }
+
+// managerCacheEntry — запись кэша IsUserManager.
+type managerCacheEntry struct {
+	isManager bool
+	expires   time.Time
+}
+
+// managerCacheTTL — TTL кэша менеджерских прав (P-5, PASS-13).
+const managerCacheTTL = 60 * time.Second
+
+// maxManagerCacheEntries — верхняя граница кэша (lazy sweep).
+const maxManagerCacheEntries = 4096
 
 // userRepository — минимальный контракт, нужный для проверки роли (избегаем
 // циклической зависимости game→user).
@@ -65,7 +85,10 @@ type userRepository interface {
 }
 
 func NewCoAuthorService() *CoAuthorService {
-	return &CoAuthorService{roleCache: rolecache.New()}
+	return &CoAuthorService{
+		roleCache:    rolecache.New(),
+		managerCache: make(map[uint64]managerCacheEntry),
+	}
 }
 
 // WithRepository внедряет репозиторий соавторов (A-1, pass 32): устраняет
@@ -125,11 +148,58 @@ func (s *CoAuthorService) InvalidateRoleCache(userID uint) {
 // IsUserManager проверяет, является ли пользователь автором или соавтором игры.
 // Оптимизация: использует один запрос с UNION вместо двух отдельных запросов.
 // P0-3 (pass 45): супер-админ всегда менеджер.
+// P-5 (PASS-13): результат кэшируется на 60с per game:user (страница игры
+// вызывает IsUserManager 1-2 раза; состав авторов меняется редко).
 func (s *CoAuthorService) IsUserManager(ctx context.Context, gameID, userID uint) (bool, error) {
+	if userID == 0 {
+		return false, nil // анонимный зритель — не менеджер (без запросов)
+	}
 	if s.isSuperAdmin(ctx, userID) {
 		return true, nil
 	}
-	return s.repo.IsUserManager(ctx, gameID, userID)
+	key := managerCacheKey(gameID, userID)
+	now := time.Now()
+	s.managerMu.RLock()
+	if e, ok := s.managerCache[key]; ok && now.Before(e.expires) {
+		s.managerMu.RUnlock()
+		return e.isManager, nil
+	}
+	s.managerMu.RUnlock()
+
+	isManager, err := s.repo.IsUserManager(ctx, gameID, userID)
+	if err != nil {
+		return false, err
+	}
+
+	s.managerMu.Lock()
+	// Lazy sweep: не даём map расти неограниченно.
+	if len(s.managerCache) > maxManagerCacheEntries {
+		for k, e := range s.managerCache {
+			if !now.Before(e.expires) {
+				delete(s.managerCache, k)
+			}
+		}
+	}
+	s.managerCache[key] = managerCacheEntry{isManager: isManager, expires: now.Add(managerCacheTTL)}
+	s.managerMu.Unlock()
+	return isManager, nil
+}
+
+// managerCacheKey строит ключ кэша (gameID в старших 32 битах, userID в младших).
+func managerCacheKey(gameID, userID uint) uint64 {
+	return uint64(gameID)<<32 | uint64(userID)
+}
+
+// InvalidateManagerCache сбрасывает кэш менеджерских прав игры (вызывается
+// после добавления/удаления соавтора — права применяются без ожидания TTL).
+func (s *CoAuthorService) InvalidateManagerCache(gameID uint) {
+	s.managerMu.Lock()
+	for k := range s.managerCache {
+		if k>>32 == uint64(gameID) {
+			delete(s.managerCache, k)
+		}
+	}
+	s.managerMu.Unlock()
 }
 
 // HasPermission проверяет наличие у пользователя конкретной роли/права в игре.

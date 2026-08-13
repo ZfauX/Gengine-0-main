@@ -41,6 +41,10 @@ type GameHandler struct {
 	gameService     GameServiceInterface
 	coAuthorService CoAuthorServiceInterface
 	auditService    AuditServiceInterface
+	// baseURL (L1, PASS-13): канонический внешний URL (cfg.Server.BaseURL).
+	// Используется для og:image вместо Host-заголовка — защита от
+	// Host-header injection в соцсетевых превью.
+	baseURL string
 }
 
 func NewGameHandler(
@@ -53,6 +57,12 @@ func NewGameHandler(
 		coAuthorService: coAuthorService,
 		auditService:    auditSvc,
 	}
+}
+
+// WithBaseURL задаёт канонический внешний URL (cfg.Server.BaseURL).
+func (h *GameHandler) WithBaseURL(baseURL string) *GameHandler {
+	h.baseURL = baseURL
+	return h
 }
 
 func LimitRequestBody(c *gin.Context, maxBytes int64) error {
@@ -225,11 +235,18 @@ func (h *GameHandler) Show(c *gin.Context) {
 		if strings.HasPrefix(g.CoverPath, "http://") || strings.HasPrefix(g.CoverPath, "https://") {
 			ogImage = g.CoverPath
 		} else {
-			scheme := "http"
-			if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
-				scheme = "https"
+			// L1 (PASS-13): для absolute og:image используем канонический baseURL
+			// (cfg.Server.BaseURL) вместо Host-заголовка — иначе Host-header
+			// injection в соцсетевых превью (SEO-манипуляции/фишинг).
+			if h.baseURL != "" {
+				ogImage = strings.TrimRight(h.baseURL, "/") + g.CoverPath
+			} else {
+				scheme := "http"
+				if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
+					scheme = "https"
+				}
+				ogImage = scheme + "://" + c.Request.Host + g.CoverPath
 			}
-			ogImage = scheme + "://" + c.Request.Host + g.CoverPath
 		}
 	}
 

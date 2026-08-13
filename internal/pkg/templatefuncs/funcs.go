@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"gengine-0/internal/pkg/i18n"
 	"gengine-0/internal/pkg/sanitize"
@@ -138,6 +139,21 @@ func csrfToken() string {
 
 // truncate обрезает строку до maxLen символов.
 func truncate(s string, maxLen int) string {
+	// maxLen <= 0: сохраняем прежнее поведение — «обрезать всё» ("...").
+	if maxLen <= 0 {
+		return "..."
+	}
+	// L6 (PASS-13): без полной []rune-конверсии. Если строка ASCII — срез по
+	// байтам эквивалентен срезу по рунам. Для UTF-8 итерируем по рунам, пока
+	// не наберём maxLen (избегаем копии всего слайса).
+	if len(s) <= maxLen {
+		return s
+	}
+	// Быстрый путь: весь нужный префикс умещается в maxLen байт и границы
+	// рун не разрезаны (для ASCII-подобного текста так почти всегда).
+	if isASCIIPrefix(s, maxLen) {
+		return s[:maxLen] + "..."
+	}
 	runes := []rune(s)
 	if len(runes) <= maxLen {
 		return s
@@ -145,16 +161,35 @@ func truncate(s string, maxLen int) string {
 	return string(runes[:maxLen]) + "..."
 }
 
+// isASCIIPrefix проверяет, что первые n байт строки — ASCII (не разрезают
+// многобайтовую руну). Для pure-ASCII текста позволяет обойтись без []rune.
+func isASCIIPrefix(s string, n int) bool {
+	if n > len(s) {
+		n = len(s)
+	}
+	for i := 0; i < n; i++ {
+		if s[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
+}
+
 // initials возвращает первую руну строки в верхнем регистре (HIGH-2).
 // Go-шаблонный `slice` режет строку по байтам — для кириллицы это даёт
 // битый символ. Здесь работаем по рунам.
+// L6 (PASS-13): первая руна через utf8.DecodeRuneInString — без полной
+// []rune-конверсии (аллокация на каждый вызов в таблицах).
 func initials(s interface{}) string {
 	str, ok := s.(string)
 	if !ok || str == "" {
 		return "?"
 	}
-	runes := []rune(str)
-	return strings.ToUpper(string(runes[0]))
+	r, _ := utf8.DecodeRuneInString(str)
+	if r == utf8.RuneError {
+		return "?"
+	}
+	return strings.ToUpper(string(r))
 }
 
 // formatDate форматирует дату локализованно (C9): ru → "02.01.2006",

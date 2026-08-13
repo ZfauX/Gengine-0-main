@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -861,8 +862,10 @@ func (h *AdminHandler) DownloadBackup(c *gin.Context) {
 	}
 	// admin #5 (PASS-8): скачивание полного дампа БД (пароли/2FA-секреты) —
 	// чувствительное действие, логируем в audit.
+	// L4 (PASS-13): в audit не пишем полный путь к расшифрованному дампу
+	// (абсолютный путь = утечка метаданных в журнале) — только имя файла.
 	if h.auditService != nil {
-		h.auditService.Log(c.GetUint("userID"), "backup.download", "backups", req.ID, path)
+		h.auditService.Log(c.GetUint("userID"), "backup.download", "backups", req.ID, filepath.Base(path))
 	}
 	c.File(path)
 }

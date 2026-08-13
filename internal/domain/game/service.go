@@ -11,7 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"mime/multipart"
-	"reflect"
+	"strconv"
 	"time"
 
 	"gengine-0/internal/config"
@@ -30,6 +30,9 @@ import (
 const (
 	filterDraft     = "draft"
 	filterPublished = "published"
+
+	// userGamesViewCacheTTL (P-4, PASS-13): TTL кэша настройки просмотра игр.
+	userGamesViewCacheTTL = 60 * time.Second
 )
 
 // ErrGameNotFound — игра не найдена либо недоступна для просмотра
@@ -197,7 +200,9 @@ func cacheGetGame(store cache.CacheStore, ctx context.Context, key string) (*Gam
 // json.Unmarshal (иначе type assertion против map[string]any всегда падает и
 // кэш молча не хитнит); для in-memory — JSON round-trip через target.
 // Set выполняется обычным SetWithCtx (который уже маршалит в JSON).
-func cacheGetJSON(store cache.CacheStore, ctx context.Context, key string, target any) bool {
+// P-6 (PASS-13): дженерик-версия — компилятор генерирует типизированные
+// ветки, убирая reflect (TypeOf/ValueOf) из горячего пути кэш-хитов.
+func cacheGetJSON[T any](store cache.CacheStore, ctx context.Context, key string, target *T) bool {
 	if vc, ok := store.(*cache.ValkeyCache); ok {
 		raw, ok := vc.GetBytesWithCtx(ctx, key)
 		if !ok {
@@ -214,11 +219,11 @@ func cacheGetJSON(store cache.CacheStore, ctx context.Context, key string, targe
 		return false
 	}
 	// P-2 (pass 39): для in-memory Cache значение уже типизировано — делаем
-	// прямую копию через reflect вместо Marshal+Unmarshal (JSON round-trip на
-	// каждый хит листинга/отзывов). Shallow-копия: мапы/слайсы разделяют
-	// underlying, но кэш read-only на время жизни записи.
-	if reflect.TypeOf(cached) == reflect.TypeOf(target).Elem() {
-		reflect.ValueOf(target).Elem().Set(reflect.ValueOf(cached))
+	// прямую копию через type assertion вместо Marshal+Unmarshal. Для слайсов
+	// это shallow-копия (мапы/слайсы разделяют underlying, но кэш read-only
+	// на время жизни записи).
+	if v, ok := cached.(T); ok {
+		*target = v
 		return true
 	}
 	data, err := json.Marshal(cached)
@@ -233,7 +238,20 @@ func cacheGetJSON(store cache.CacheStore, ctx context.Context, key string, targe
 
 // cacheGetInt64 читает int64 из кэша (число хранится как JSON-число/строка в
 // обоих реализациях). Используется для version-ключа листинга (PF3).
+// P-7 (PASS-13): для Valkey читаем байты напрямую (без json.Unmarshal в any);
+// fmt.Sscanf заменён на strconv.ParseInt.
 func cacheGetInt64(store cache.CacheStore, ctx context.Context, key string) (int64, bool) {
+	if vc, ok := store.(*cache.ValkeyCache); ok {
+		raw, ok := vc.GetBytesWithCtx(ctx, key)
+		if !ok {
+			return 0, false
+		}
+		n, err := strconv.ParseInt(string(raw), 10, 64)
+		if err != nil {
+			return 0, false
+		}
+		return n, true
+	}
 	cached, ok := store.GetWithCtx(ctx, key)
 	if !ok {
 		return 0, false
@@ -246,8 +264,7 @@ func cacheGetInt64(store cache.CacheStore, ctx context.Context, key string) (int
 	case float64:
 		return int64(v), true
 	case string:
-		var n int64
-		if _, err := fmt.Sscanf(v, "%d", &n); err == nil {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
 			return n, true
 		}
 	}

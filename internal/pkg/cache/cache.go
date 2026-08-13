@@ -202,10 +202,16 @@ func (c *Cache) trackPrefix(key string) {
 	c.prefixLock.Lock()
 	defer c.prefixLock.Unlock()
 
-	parts := strings.Split(key, ":")
+	// P-8 (PASS-13): инкрементальная сборка префиксов вместо strings.Split +
+	// N×strings.Join (квадратичные аллокации по числу сегментов ключа).
 	prefixes := make(map[string]bool)
-	for i := range parts {
-		prefix := strings.Join(parts[:i+1], ":")
+	prefix := ""
+	for _, part := range strings.Split(key, ":") {
+		if prefix == "" {
+			prefix = part
+		} else {
+			prefix = prefix + ":" + part
+		}
 		if c.prefixKeys[prefix] == nil {
 			c.prefixKeys[prefix] = make(map[string]bool)
 		}

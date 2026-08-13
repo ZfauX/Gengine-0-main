@@ -38,6 +38,8 @@ type CoAuthorServiceInterface interface {
 	Add(ctx context.Context, gameID, newCoAuthorID, ownerID uint, role string, permissions []string) error
 	Remove(ctx context.Context, gameID, coAuthorUserID, ownerID uint) error
 	List(ctx context.Context, gameID uint) ([]CoAuthor, error)
+	// P-5 (PASS-13): сброс кэша менеджерских прав после изменения состава авторов.
+	InvalidateManagerCache(gameID uint)
 }
 
 type AuditServiceInterface interface {

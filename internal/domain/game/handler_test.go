@@ -243,6 +243,11 @@ func (m *MockCoAuthorService) List(ctx context.Context, gameID uint) ([]CoAuthor
 	return args.Get(0).([]CoAuthor), args.Error(1)
 }
 
+// InvalidateManagerCache (P-5, PASS-13): no-op в моке.
+func (m *MockCoAuthorService) InvalidateManagerCache(gameID uint) {
+	m.Called(gameID)
+}
+
 // MockAuditService — мок для AuditServiceInterface
 type MockAuditService struct {
 	mock.Mock

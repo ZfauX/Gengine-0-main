@@ -8,7 +8,7 @@ SWAGGER_INIT=swag init -g $(MAIN_PATH)/main.go -o ./docs
 GO=go
 GOLANGCI=golangci-lint
 
-.PHONY: all build run test lint swagger clean help i18n-check
+.PHONY: all build build-swagger run test lint swagger clean help i18n-check
 
 # По умолчанию: сборка
 all: build
@@ -20,6 +20,11 @@ css:
 # Сборка приложения (включая CSS)
 build: css
 	$(GO) build -ldflags "-X main.version=$(shell git describe --tags --always --dirty) -X main.buildDate=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)" -o $(BINARY_NAME) $(MAIN_PATH)
+
+# Сборка приложения С /swagger (P-1, PASS-13): по умолчанию /swagger вынесен
+# за build-tag и docs не грузится в память (~9.5MB, 51% heap). Для dev/доков:
+build-swagger: css
+	$(GO) build -tags=swagger -ldflags "-X main.version=$(shell git describe --tags --always --dirty) -X main.buildDate=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)" -o $(BINARY_NAME) $(MAIN_PATH)
 
 # Запуск миграций
 migrate:

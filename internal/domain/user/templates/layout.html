@@ -13,22 +13,46 @@
 {{$LLogout := T $.Lang "nav.logout"}}
 {{$LLogin := T $.Lang "nav.login"}}
 {{$LRegister := T $.Lang "nav.register"}}
+{{/* P-2 (PASS-13): полный precompute — остальные T-вызовы layout убирают evalCall. */}}
+{{$LMetaKeywords := T $.Lang "layout.meta_keywords"}}
+{{$LOfflineToast := T $.Lang "layout.offline_toast"}}
+{{$LOnlineToast := T $.Lang "layout.online_toast"}}
+{{$LConfirmTitle := T $.Lang "layout.confirm_title"}}
+{{$LConfirmCancel := T $.Lang "layout.confirm_cancel"}}
+{{$LConfirmOK := T $.Lang "layout.confirm_ok"}}
+{{$LClose := T $.Lang "layout.close"}}
+{{$LSending := T $.Lang "js.sending"}}
+{{$LPushSaveFailed := T $.Lang "js.push_save_failed"}}
+{{$LPushActive := T $.Lang "js.push_active"}}
+{{$LPushDisabled := T $.Lang "js.push_disabled"}}
+{{$LPushUnsupported := T $.Lang "js.push_unsupported"}}
+{{$LPushMisconfigured := T $.Lang "js.push_misconfigured"}}
+{{$LSkipToContent := T $.Lang "layout.skip_to_content"}}
+{{$LNavAria := T $.Lang "layout.nav_aria_label"}}
+{{$LAllNotifications := T $.Lang "nav.all_notifications"}}
+{{$LMobileMenu := T $.Lang "layout.mobile_menu"}}
+{{$LMainContent := T $.Lang "layout.main_content"}}
+{{$LBreadcrumbAria := T $.Lang "layout.breadcrumb_aria"}}
+{{$LNoContent := T $.Lang "layout.no_content"}}
+{{$LFooterRights := T $.Lang "layout.footer_rights"}}
+{{$LNotifNone := T $.Lang "layout.notif_none"}}
+{{$LNotifLoadError := T $.Lang "layout.notif_load_error"}}
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="csrf-token" content="{{.csrf}}" />
-    <meta name="description" content="{{.Description | default (T $.Lang "layout.meta_description")}}">
-    <meta name="keywords" content="{{ T $.Lang "layout.meta_keywords" }}">
+    <meta name="description" content="{{.Description | default $LMetaDesc}}">
+    <meta name="keywords" content="{{ $LMetaKeywords }}">
     <meta name="author" content="Gengine-0">
     <!-- UX-6 (pass 40): OG-теги — соцсети и мессенджеры собирают превью ссылок.
          og:image не добавляем: нет статического превью (static/img отсутствует). -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Gengine-0">
     <meta property="og:title" content="{{.Title}}">
-    <meta property="og:description" content="{{.Description | default (T $.Lang "layout.meta_description")}}">
+    <meta property="og:description" content="{{.Description | default $LMetaDesc}}">
     <meta name="twitter:card" content="summary">
     <meta name="twitter:title" content="{{.Title}}">
-    <meta name="twitter:description" content="{{.Description | default (T $.Lang "layout.meta_description")}}">
+    <meta name="twitter:description" content="{{.Description | default $LMetaDesc}}">
     <meta name="theme-color" content="#2563eb" id="theme-color-meta">
     <link rel="manifest" href="/static/manifest.json">
     <script nonce="{{.csp_nonce}}">
@@ -128,18 +152,18 @@
     {{.ExtraHead}}
 </head>
 <body class="bg-gray-100 dark:bg-gray-900 min-h-screen"
-      data-i18n-offline="{{ T $.Lang "layout.offline_toast" }}"
-      data-i18n-online="{{ T $.Lang "layout.online_toast" }}"
-      data-i18n-confirm-title="{{ T $.Lang "layout.confirm_title" }}"
-      data-i18n-confirm-cancel="{{ T $.Lang "layout.confirm_cancel" }}"
-      data-i18n-confirm-ok="{{ T $.Lang "layout.confirm_ok" }}"
-      data-i18n-close="{{ T $.Lang "layout.close" }}"
-      data-i18n-sending="{{ T $.Lang "js.sending" }}"
-      data-i18n-push-save-failed="{{ T $.Lang "js.push_save_failed" }}"
-      data-i18n-push-active="{{ T $.Lang "js.push_active" }}"
-      data-i18n-push-disabled="{{ T $.Lang "js.push_disabled" }}"
-      data-i18n-push-unsupported="{{ T $.Lang "js.push_unsupported" }}"
-      data-i18n-push-misconfigured="{{ T $.Lang "js.push_misconfigured" }}">
+data-i18n-offline="{{ $LOfflineToast }}"
+data-i18n-online="{{ $LOnlineToast }}"
+data-i18n-confirm-title="{{ $LConfirmTitle }}"
+data-i18n-confirm-cancel="{{ $LConfirmCancel }}"
+data-i18n-confirm-ok="{{ $LConfirmOK }}"
+data-i18n-close="{{ $LClose }}"
+data-i18n-sending="{{ $LSending }}"
+data-i18n-push-save-failed="{{ $LPushSaveFailed }}"
+data-i18n-push-active="{{ $LPushActive }}"
+data-i18n-push-disabled="{{ $LPushDisabled }}"
+data-i18n-push-unsupported="{{ $LPushUnsupported }}"
+data-i18n-push-misconfigured="{{ $LPushMisconfigured }}">
 
     <!-- Flash-сообщения -->
     {{if .Flash}}
@@ -177,10 +201,10 @@
     <div id="top-progress-bar" class="fixed top-0 left-0 z-[100] h-1 bg-blue-600 transition-all duration-300 ease-out w-0 opacity-0"></div>
 
     <!-- Skip link для клавиатурных пользователей -->
-    <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[110] focus:bg-blue-600 focus:text-white focus:px-4 focus:py-2 focus:rounded-md">{{ T $.Lang "layout.skip_to_content" }}</a>
+    <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[110] focus:bg-blue-600 focus:text-white focus:px-4 focus:py-2 focus:rounded-md">{{ $LSkipToContent }}</a>
 
     <!-- Навигация -->
-    <nav class="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 shadow-sm" aria-label="{{ T $.Lang "layout.nav_aria_label" }}">
+    <nav class="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 shadow-sm" aria-label="{{ $LNavAria }}">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between items-center h-16">
                 <!-- Логотип -->
@@ -211,7 +235,7 @@
                             <div id="notificationList" class="max-h-96 overflow-y-auto">
                             </div>
                             <div class="p-3 border-t border-gray-200 dark:border-gray-700 text-center">
-                                <a href="/notifications" class="text-sm text-blue-600 hover:text-blue-700">{{ T $.Lang "nav.all_notifications" }}</a>
+                                <a href="/notifications" class="text-sm text-blue-600 hover:text-blue-700">{{ $LAllNotifications }}</a>
                             </div>
                         </div>
                     </div>
@@ -256,7 +280,7 @@
                         <button data-lang="ru" aria-label="Русский" aria-pressed="{{if eq .Lang "ru"}}true{{else}}false{{end}}" class="lang-btn px-2 py-1 text-xs rounded {{if eq .Lang "ru"}}bg-primary-600 text-white{{else}}text-gray-500 dark:text-gray-400 hover:text-gray-700{{end}}">RU</button>
                         <button data-lang="en" aria-label="English" aria-pressed="{{if eq .Lang "en"}}true{{else}}false{{end}}" class="lang-btn px-2 py-1 text-xs rounded {{if eq .Lang "en"}}bg-primary-600 text-white{{else}}text-gray-500 dark:text-gray-400 hover:text-gray-700{{end}}">EN</button>
                     </div>
-                    <button id="hamburgerBtn" class="p-2 -m-2 text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-md" aria-label="{{ T $.Lang "layout.mobile_menu" }}" aria-expanded="false" aria-controls="mobileMenu">
+                    <button id="hamburgerBtn" class="p-2 -m-2 text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-md" aria-label="{{ $LMobileMenu }}" aria-expanded="false" aria-controls="mobileMenu">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
                     </button>
                 </div>
@@ -284,10 +308,10 @@
     </nav>
 
     <!-- Основной контент -->
-    <main id="main-content" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8" role="main" aria-label="{{ T $.Lang "layout.main_content" }}">
+    <main id="main-content" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8" role="main" aria-label="{{ $LMainContent }}">
         <!-- Breadcrumb навигация -->
         {{if .Breadcrumbs}}
-        <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-4" aria-label="{{ T $.Lang "layout.breadcrumb_aria" }}">
+        <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-4" aria-label="{{ $LBreadcrumbAria }}">
             <div class="flex flex-wrap items-center gap-1 text-sm">
                 {{range $i, $crumb := .Breadcrumbs}}
                     {{if $i}}<span class="text-gray-500 dark:text-gray-600 mx-1" aria-hidden="true">›</span>{{end}}
@@ -299,7 +323,7 @@
         {{if .ContentHTML}}
             {{.ContentHTML}}
         {{else}}
-            <p class="text-gray-500 dark:text-gray-400">{{ T $.Lang "layout.no_content" }}</p>
+            <p class="text-gray-500 dark:text-gray-400">{{ $LNoContent }}</p>
         {{end}}
     </main>
 
@@ -317,7 +341,7 @@
 
     <!-- Футер (опционально) -->
     <footer class="border-t border-gray-200 dark:border-gray-700 mt-12 py-6 text-center text-sm text-gray-500 dark:text-gray-400" role="contentinfo">
-        &copy; 2026 Gengine-0 · {{ T $.Lang "layout.footer_rights" }}
+        &copy; 2026 Gengine-0 · {{ $LFooterRights }}
     </footer>
 
     {{.ExtraScripts}}
@@ -664,7 +688,7 @@
                     .then(function(resp) { return resp.json(); })
                     .then(function(data) {
                         if (!data.notifications || data.notifications.length === 0) {
-                            list.innerHTML = '<div class="p-4 text-center text-gray-500 dark:text-gray-400">{{ T $.Lang "layout.notif_none" }}</div>';
+                            list.innerHTML = '<div class="p-4 text-center text-gray-500 dark:text-gray-400">{{ $LNotifNone }}</div>';
                             return;
                         }
                         var html = '';
@@ -679,7 +703,7 @@
                         list.innerHTML = html;
                     })
                     .catch(function(err) {
-                        list.innerHTML = '<div class="p-4 text-center text-red-500">{{ T $.Lang "layout.notif_load_error" }}</div>';
+                        list.innerHTML = '<div class="p-4 text-center text-red-500">{{ $LNotifLoadError }}</div>';
                     });
             }
 

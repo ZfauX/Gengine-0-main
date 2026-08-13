@@ -101,10 +101,13 @@ func TestRouter_PublicRoutes(t *testing.T) {
 		wantStatus int
 	}{
 		{
-			name:       "swagger UI требует авторизации (redirect на login)",
+			// P-1 (PASS-13): /swagger вынесен за build-tag `swagger` — в обычной
+			// сборке маршрут не зарегистрирован (404). Сборка -tags=swagger
+			// регистрирует его под admin+2FA (см. swagger.go).
+			name:       "swagger UI недоступен без build-tag swagger (404)",
 			method:     "GET",
 			path:       "/swagger/index.html",
-			wantStatus: http.StatusFound,
+			wantStatus: http.StatusNotFound,
 		},
 		{
 			name:       "login page",

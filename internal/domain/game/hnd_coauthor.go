@@ -163,6 +163,8 @@ func (h *CoAuthorHandler) AddCoAuthor(c *gin.Context) {
 		h.renderCoAuthorManagePage(c, gameID, errs)
 		return
 	}
+	// P-5 (PASS-13): состав авторов изменился — сбрасываем кэш менеджерских прав.
+	h.coAuthorSvc.InvalidateManagerCache(uint(gameID))
 	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/co-authors")
 }
 
@@ -200,5 +202,7 @@ func (h *CoAuthorHandler) RemoveCoAuthor(c *gin.Context) {
 		}
 		return
 	}
+	// P-5 (PASS-13): состав авторов изменился — сбрасываем кэш менеджерских прав.
+	h.coAuthorSvc.InvalidateManagerCache(uint(gameID))
 	c.Redirect(http.StatusFound, "/games/"+c.Param("id")+"/co-authors")
 }

@@ -32,6 +32,10 @@ type SSESession struct {
 	// Broadcast больше не пишет в ResponseWriter синхронно, медленный клиент
 	// не блокирует хендлер/воркер — события просто дропаются при переполнении.
 	ch chan []byte
+	// rc (L8, PASS-13): закешированный http.NewResponseController — создаётся
+	// один раз при регистрации, а не на каждое событие (12+ аллокаций/мин
+	// на сессию раньше).
+	rc *http.ResponseController
 }
 
 // sseWriteTimeout — таймаут на запись в SSE-соединение (защита от slow-reader DoS).
@@ -40,8 +44,7 @@ const sseWriteTimeout = 10 * time.Second
 
 // write записывает данные в SSE-соединение с таймаутом. Вызывается под s.mu.
 func (s *SSESession) write(data []byte) error {
-	rc := http.NewResponseController(s.w)
-	if err := rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout)); err != nil {
+	if err := s.rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout)); err != nil {
 		// NewResponseController поддерживается в Go 1.20+ для net/http.
 		// Если deadline установить нельзя — пишем без него (старое поведение).
 		log.Debug().Err(err).Msg("SSE: SetWriteDeadline failed, writing without deadline")
@@ -205,6 +208,7 @@ func (m *SSEManager) RegisterSession(gameID uint, ip string, w http.ResponseWrit
 		done:     make(chan struct{}),
 		remoteIP: ip,
 		ch:       make(chan []byte, 16),
+		rc:       http.NewResponseController(w),
 	}
 	// Writer goroutine (P-M2): единственный писатель в ResponseWriter.
 	// Завершается по done (сессия закрыта).

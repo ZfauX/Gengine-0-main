@@ -35,8 +35,6 @@ import (
 	"gengine-0/internal/config"
 	"gengine-0/internal/pkg/sessionstore"
 
-	_ "gengine-0/docs"
-
 	corsLib "github.com/gin-contrib/cors"
 
 	csrf "gengine-0/internal/pkg/csrf"
@@ -45,8 +43,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog/log"
-	swaggerFiles "github.com/swaggo/files"
-	ginSwagger "github.com/swaggo/gin-swagger"
 	"gorm.io/gorm"
 )
 
@@ -122,9 +118,10 @@ func (app *App) setupEngine(r *gin.Engine) error {
 			if o == "*" || strings.HasPrefix(o, "http://") || strings.HasPrefix(o, "https://") {
 				trimmed = append(trimmed, o)
 			} else if o != "" {
-				prefixed := "http://" + o
-				log.Warn().Str("origin", o).Str("fixed", prefixed).Msg("CORS: origin missing protocol, auto-fixed to " + prefixed)
-				trimmed = append(trimmed, prefixed)
+				// L3 (PASS-13): origin без протокола — ошибка конфигурации, а не
+				// повод молча подставить http:// (могло быть HTTPS, и тогда
+				// credentialed-доступ уходил бы по HTTP). Пропускаем и предупреждаем.
+				log.Warn().Str("origin", o).Msg("CORS: origin missing protocol, skipped (укажите http:// или https://)")
 			}
 		}
 		if len(trimmed) > 0 {
@@ -183,9 +180,9 @@ func (app *App) setupEngine(r *gin.Engine) error {
 	// S5: добавлен 2FA step-up (как на /admin/*), чтобы украденный JWT не давал
 	// доступ к метрикам и полной документации API.
 	twoFactorMW := user.TwoFactorRequired(app.Deps.Services.TwoFactor, app.Deps.Repos.User)
-	r.GET("/swagger/*any", middleware.AuthRequired(app.Deps.Services.Auth), twoFactorMW, middleware.AdminRequired(), func(c *gin.Context) {
-		ginSwagger.WrapHandler(swaggerFiles.Handler)(c)
-	})
+	// P-1 (PASS-13): /swagger вынесен за build-tag `swagger` — в обычной
+	// сборке не регистрируется (не грузит docs в память, −51% heap).
+	app.registerSwagger(r, twoFactorMW)
 	r.GET("/metrics", middleware.AuthRequired(app.Deps.Services.Auth), twoFactorMW, middleware.AdminRequired(), func(c *gin.Context) {
 		gin.WrapH(promhttp.Handler())(c)
 	})
