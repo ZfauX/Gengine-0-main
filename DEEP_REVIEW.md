@@ -184,3 +184,12 @@
 
 ### Проверки
 - build ✅, golangci-lint ✅ (0 issues), test-short ✅ (включая 5-кратные прогоны realtimebus/websocket/SSE pub-sub на miniredis), E2E 14/14 ✅.
+
+### Валидация на реальном Valkey (podman, 2026-08-13) ✅
+- Поднят контейнер `valkey/valkey:7-alpine` через podman machine (порт 6380).
+- E2E 14/14 с сервером, подключённым к реальному Valkey (`Valkey: connected successfully`).
+- В Valkey подтверждены живые ключи: `gengine:session:*` (сессии PASS-11), `login:::1`, `global:::1`, `personal_chat:*`, `search:::1` (rate-limiters), `reviews:game:*`, `rating:game:*` (кэш).
+- Новые интеграционные тесты (build tag `integration`, `VALKEY_HOST`/`VALKEY_PORT`):
+  - `TestRoomHub_PubSub_RealValkey` — сообщение инстанса 1 доставлено клиенту инстанса 2 через реальный pub/sub ✅
+  - `TestSSEManager_PubSub_RealValkey` — SSE-событие инстанса 1 получено сессией инстанса 2 ✅
+- Причина прошлого «нет интернета»: был включён AmneziaVPN (WireGuard-адаптер ломал сеть WSL/podman). После его отключения pull и pub/sub работают.
