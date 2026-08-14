@@ -8,7 +8,10 @@ on:
     branches: [ master, develop ]
 
 env:
-  GO_VERSION: '1.25'
+  # 1.25.13 — патч с фиксами stdlib уязвимостей (GO-2026-6088..6218):
+  # net/url, html/template, crypto/tls, net/http, encoding/xml, encoding/asn1,
+  # x/net/idna. '1.25' резолвится в уязвимую 1.25.12 — govulncheck падает.
+  GO_VERSION: '1.25.13'
   GOLANGCI_LINT_VERSION: v2.12.2
   GOVULNCHECK_VERSION: latest
   DOCKER_IMAGE_NAME: gengine

@@ -1,5 +1,6 @@
 # Dockerfile
-FROM golang:1.25-alpine AS builder
+# 1.25.13 — патч с фиксами stdlib уязвимостей (см. .github/workflows/go.yml).
+FROM golang:1.25.13-alpine AS builder
 
 WORKDIR /app
 
