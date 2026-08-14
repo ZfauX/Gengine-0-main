@@ -90,6 +90,35 @@ func (s *EmailService) Send(to, subject, body string) error {
 	return nil
 }
 
+// SendBatch ставит несколько писем в очередь одним транзакционным батчем
+// (LOW #15, PASS-13): цикл Send → N отдельных INSERT; для рассылки капитанам
+// десятков команд это десятки быстрых round-trip к БД.
+func (s *EmailService) SendBatch(items []EmailItem) error {
+	if !s.cfg.SMTP.Enabled {
+		return fmt.Errorf("SMTP is not enabled")
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	emails := make([]QueuedEmail, 0, len(items))
+	for _, it := range items {
+		emails = append(emails, QueuedEmail{
+			Recipient: it.To,
+			Subject:   it.Subject,
+			Body:      it.Body,
+			Status:    EmailStatusPending,
+		})
+	}
+	return s.db.CreateInBatches(emails, 200).Error
+}
+
+// EmailItem — одно письмо для SendBatch.
+type EmailItem struct {
+	To      string
+	Subject string
+	Body    string
+}
+
 // StartWorker запускает воркер, который периодически отправляет письма из очереди.
 // Теперь включает два канала обработки:
 //  1. processPendingEmails — обработка pending-писем из БД

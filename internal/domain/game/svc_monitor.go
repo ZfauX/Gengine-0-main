@@ -151,14 +151,27 @@ func (s *MonitorService) GetOrFetchSnapshot(ctx context.Context, gameID uint) ([
 	return copyTeamProgress(teamProgress), nil
 }
 
-// copyTeamProgress возвращает копию слайса TeamProgress, чтобы вызывающий не
-// мог мутировать кэшированные данные (DEEP-REVIEW MEDIUM #14).
+// copyTeamProgress возвращает ГЛУБОКУЮ копию слайса TeamProgress, чтобы
+// вызывающий не мог мутировать кэшированные данные (DEEP-REVIEW MEDIUM #14).
+// LOW #13 (PASS-13): указатели CurrentLevel/Place тоже копируются — иначе
+// мелкая копия делила бы *uint/*int с кэшем, и мутация вызывающего портила
+// кэшированный снапшот.
 func copyTeamProgress(src []TeamProgress) []TeamProgress {
 	if src == nil {
 		return nil
 	}
 	dst := make([]TeamProgress, len(src))
-	copy(dst, src)
+	for i := range src {
+		dst[i] = src[i]
+		if src[i].CurrentLevel != nil {
+			v := *src[i].CurrentLevel
+			dst[i].CurrentLevel = &v
+		}
+		if src[i].Place != nil {
+			v := *src[i].Place
+			dst[i].Place = &v
+		}
+	}
 	return dst
 }
 
@@ -169,8 +182,12 @@ func (s *MonitorService) GetOrFetchSnapshotJSON(ctx context.Context, gameID uint
 	// P-3 (pass 39): thread-safe LRU — Get() промоутит элемент без ручных локов.
 	if cached, ok := s.cache.Get(gameID); ok && time.Since(cached.timestamp) < s.cacheTTL {
 		if cached.json != nil {
-			bytes := cached.json
-			return bytes, nil
+			// LOW #14 (PASS-13): возвращаем копию — раньше поллер SSE рассылал
+			// ОБЩИЙ []byte всем подписчикам; любой будущий append/мутация в
+			// одном потребителе сломал бы остальных (хрупкий контракт).
+			cp := make([]byte, len(cached.json))
+			copy(cp, cached.json)
+			return cp, nil
 		}
 	}
 

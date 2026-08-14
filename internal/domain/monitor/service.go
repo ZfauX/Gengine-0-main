@@ -117,13 +117,17 @@ func (s *BlackboxVoteService) StartVoting(ctx context.Context, gamePassingID, le
 			log.Error().Err(err).Uint("game_id", g.ID).Msg("failed to load captains for voting start email")
 		}
 
-		for _, emailAddr := range captains {
-			if err := email.Enqueue(
-				emailAddr,
-				i18n.T("monitor.vote_started_subject"),
-				i18n.TF("monitor.vote_started_body", g.Name),
-			); err != nil {
-				log.Error().Err(err).Str("game", g.Name).Msg("failed to enqueue voting start email")
+		// LOW #15 (PASS-13): батч-постановка писем одним INSERT вместо N
+		// отдельных (рассылка капитанам десятков команд).
+		if len(captains) > 0 {
+			subject := i18n.T("monitor.vote_started_subject")
+			body := i18n.TF("monitor.vote_started_body", g.Name)
+			items := make([]email.EmailItem, 0, len(captains))
+			for _, emailAddr := range captains {
+				items = append(items, email.EmailItem{To: emailAddr, Subject: subject, Body: body})
+			}
+			if err := email.EnqueueBatch(items); err != nil {
+				log.Error().Err(err).Str("game", g.Name).Msg("failed to enqueue voting start emails")
 			}
 		}
 	}

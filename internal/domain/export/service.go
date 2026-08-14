@@ -148,7 +148,7 @@ func (s *ExportService) ExportGameToCSV(ctx context.Context, gameID uint, w io.W
 
 	csvWriter := csv.NewWriter(w)
 
-	if err := csvWriter.Write([]string{"level_position", "level_name", "question_text", "hint", "answers"}); err != nil {
+	if err := csvWriter.Write([]string{"level_position", "level_name", "level_type", "level_description", "question_text", "hint", "answers"}); err != nil {
 		return fmt.Errorf("ошибка записи CSV-заголовка: %w", err)
 	}
 
@@ -161,6 +161,11 @@ func (s *ExportService) ExportGameToCSV(ctx context.Context, gameID uint, w io.W
 			if err := csvWriter.Write([]string{
 				strconv.Itoa(lvl.Position),
 				csvSafe(lvl.Name),
+				csvSafe(lvl.Type),
+				// LOW #12 (PASS-13): раньше Description/Type уровня не экспортировались —
+				// CSV-экспорт позиционировался как «резервная копия», но round-trip
+				// терял эти поля. Теперь колонки добавлены (импорт читает 7 полей).
+				csvSafe(lvl.Description),
 				csvSafe(q.Text),
 				csvSafe(q.Hint),
 				// M5 (PASS-5): экранируем "|" внутри кодов — round-trip не ломает
@@ -329,8 +334,10 @@ func (s *ExportService) ImportGameFromCSV(ctx context.Context, gameID uint, r io
 			}
 			// L7 (PASS-5): строка с <5 полями — не молчаливый пропуск (данные
 			// терялись незаметно), а явная ошибка.
+			// LOW #12 (PASS-13): импорт принимает и старые 5-полевые файлы, и
+			// новые 7-полевые (level_type, level_description добавлены).
 			if len(record) < 5 {
-				return fmt.Errorf("недостаточно полей в строке %d (нужно 5)", records+1)
+				return fmt.Errorf("недостаточно полей в строке %d (нужно минимум 5)", records+1)
 			}
 			records++
 			if records > maxImportRecords {
@@ -347,18 +354,33 @@ func (s *ExportService) ImportGameFromCSV(ctx context.Context, gameID uint, r io
 				return fmt.Errorf("недопустимая позиция уровня: %d", pos)
 			}
 			levelName := record[1]
-			questionText := record[2]
-			hint := record[3]
-			answersStr := record[4]
+			levelType := ""
+			levelDesc := ""
+			if len(record) >= 7 {
+				levelType = record[2]
+				levelDesc = record[3]
+			}
+			var questionText, hint, answersStr string
+			if len(record) >= 7 {
+				questionText = record[4]
+				hint = record[5]
+				answersStr = record[6]
+			} else {
+				questionText = record[2]
+				hint = record[3]
+				answersStr = record[4]
+			}
 
 			lvl, exists := levelMap[pos]
 			if !exists {
 				// MEDIUM #5 (PASS-13): уровень не был предзагружен (новый) —
 				// создаём. Существующие уже в levelMap из предзагрузки.
 				newLevel := level.Level{
-					GameID:   gameID,
-					Name:     levelName,
-					Position: pos,
+					GameID:      gameID,
+					Name:        levelName,
+					Position:    pos,
+					Description: levelDesc,
+					Type:        levelType,
 				}
 				if createErr := tx.Create(&newLevel).Error; createErr != nil {
 					return fmt.Errorf("не удалось создать уровень: %w", createErr)
@@ -372,6 +394,18 @@ func (s *ExportService) ImportGameFromCSV(ctx context.Context, gameID uint, r io
 				// физическом удалении, soft-delete оставил бы сироты.
 				if delErr := tx.Unscoped().Where("level_id = ?", lvl.ID).Delete(&level.Question{}).Error; delErr != nil {
 					return fmt.Errorf("не удалось удалить старые вопросы уровня: %w", delErr)
+				}
+				// LOW #12 (PASS-13): обновляем type/description при re-import
+				// (новые 7-полевые файлы; для 5-полевых значения пустые — не трогаем).
+				if len(record) >= 7 {
+					if updErr := tx.Model(lvl).Updates(map[string]any{
+						"type":        levelType,
+						"description": levelDesc,
+					}).Error; updErr != nil {
+						return fmt.Errorf("не удалось обновить уровень: %w", updErr)
+					}
+					lvl.Type = levelType
+					lvl.Description = levelDesc
 				}
 			}
 

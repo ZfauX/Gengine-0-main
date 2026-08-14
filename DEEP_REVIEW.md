@@ -208,3 +208,18 @@
 
 ### Проверки
 - build ✅, golangci-lint ✅ (0 issues), test-short ✅ (включая обновлённые calendar-тесты), E2E 14/14 ✅.
+
+---
+
+## ✅ Финальная волна LOW (PASS-13, коммит 6f1b4e1)
+
+- **LOW #12**: CSV-экспорт теперь пишет `level_type`, `level_description` (7 колонок);
+  импорт принимает и старые 5-полевые, и новые 7-полевые файлы; re-import
+  обновляет type/description существующих уровней.
+- **LOW #13**: `copyTeamProgress` — глубокая копия (`CurrentLevel *uint`, `Place *int`
+  больше не разделяются с кэшем).
+- **LOW #14**: `GetOrFetchSnapshotJSON` возвращает копию `[]byte` (поллер SSE не
+  делит общий буфер между подписчиками).
+- **LOW #15**: `email.EnqueueBatch`/`SendBatch` — письма капитанам ставятся одним
+  транзакционным батчем вместо N отдельных INSERT.
+- Проверки: build ✅, golangci-lint ✅, test-short ✅, E2E 14/14 ✅.

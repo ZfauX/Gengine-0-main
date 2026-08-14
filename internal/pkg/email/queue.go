@@ -91,3 +91,11 @@ func Enqueue(to, subject, body string) error {
 	}
 	return globalService.Send(to, subject, body)
 }
+
+// EnqueueBatch ставит несколько писем одним батчем (LOW #15, PASS-13).
+func EnqueueBatch(items []EmailItem) error {
+	if globalService == nil {
+		return fmt.Errorf("email service is not initialized")
+	}
+	return globalService.SendBatch(items)
+}
