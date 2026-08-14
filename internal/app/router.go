@@ -415,7 +415,7 @@ func (app *App) registerTournamentRoutes(r *gin.RouterGroup) {
 }
 
 func (app *App) registerCalendarRoutes(r *gin.RouterGroup) {
-	calendar.RegisterRoutes(r, app.Deps.Services.CalendarHandler)
+	calendar.RegisterRoutes(r, app.Deps.Services.CalendarHandler, app.Deps.Services.Auth)
 }
 
 func (app *App) registerMonitorRoutes(r *gin.RouterGroup) {

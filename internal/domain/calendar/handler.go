@@ -67,7 +67,8 @@ func (h *CalendarHandler) WithBaseURL(baseURL string) *CalendarHandler {
 // @Router /calendar [get]
 func (h *CalendarHandler) CalendarPage(c *gin.Context) {
 	render.Page(c, http.StatusOK, "calendar-page.html", gin.H{
-		"Title": "Календарь игр",
+		"Title":         "Календарь игр",
+		"CurrentUserID": c.GetUint("userID"),
 	})
 }
 
