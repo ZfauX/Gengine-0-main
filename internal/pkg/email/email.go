@@ -390,6 +390,22 @@ func (s *EmailService) processRetryJob(ctx context.Context, job retryJob) {
 		return
 	}
 
+	// H4 (PASS-15): атомарный claim ДО отправки. Раньше письмо отправлялось
+	// до перехода pending/retry→sending, а scheduleRetry не выставлял
+	// scheduled_at → batch-воркер мог выбрать то же письмо и отправить
+	// ДУБЛИКАТ (оба SMTP-вызова успешны). Claim гарантирует, что только один
+	// путь владеет письмом.
+	claim := s.db.Model(&email).Where("id = ? AND status IN (?, ?)", email.ID, EmailStatusPending, EmailStatusRetry).
+		Update("status", EmailStatusSending)
+	if claim.Error != nil {
+		log.Error().Err(claim.Error).Uint("email_id", email.ID).Msg("processRetryJob: claim failed")
+		return
+	}
+	if claim.RowsAffected == 0 {
+		log.Warn().Uint("email_id", email.ID).Msg("processRetryJob: email already claimed by another worker")
+		return
+	}
+
 	sendErr := SendEmail(s.cfg, email.Recipient, email.Subject, email.Body)
 	if sendErr == nil {
 		now := time.Now()
@@ -403,8 +419,9 @@ func (s *EmailService) processRetryJob(ctx context.Context, job retryJob) {
 		return
 	}
 
-	// Используем атомарный UPDATE для защиты от race condition между воркерами
-	result := s.db.Model(&email).Where("status IN (?, ?)", EmailStatusPending, EmailStatusRetry).
+	// Атомарный UPDATE: письмо уже в статусе 'sending' (мы его захватили) —
+	// обновляем только его, другие воркеры строку не трогают (H4, PASS-15).
+	result := s.db.Model(&email).Where("status = ?", EmailStatusSending).
 		Updates(map[string]any{
 			"attempts":   gorm.Expr("attempts + 1"),
 			"status":     gorm.Expr("CASE WHEN attempts + 1 >= ? THEN ? ELSE ? END", defaultMaxAttempts, EmailStatusFailed, EmailStatusRetry),

@@ -45,7 +45,11 @@ func setTrustedDeviceCookie(c *gin.Context, userID uint, secret string) {
 	payload := fmt.Sprintf("%d:%d", userID, expiry)
 	sig := hmacSHA256Hex(secret, payload)
 	value := payload + ":" + sig
-	c.SetCookie(trustedDeviceCookie, value, int(trustedDeviceTTL.Seconds()), "/", "", false, true)
+	// H6 (PASS-15): Secure-флаг доверенной куки соответствует JWT/refresh
+	// (передаётся из cfg.Server). Раньше secure=false — кука дающая обход
+	// 2FA уходила по HTTP (MITM).
+	secure := trustedSecureFlag()
+	c.SetCookie(trustedDeviceCookie, value, int(trustedDeviceTTL.Seconds()), "/", "", secure, true)
 }
 
 // isTrustedDevice проверяет trusted-device cookie: подпись валидна, userID
@@ -85,7 +89,7 @@ func isTrustedDevice(c *gin.Context, userID uint, secret string) bool {
 
 // clearTrustedDeviceCookie удаляет trusted-device cookie (logout).
 func clearTrustedDeviceCookie(c *gin.Context) {
-	c.SetCookie(trustedDeviceCookie, "", -1, "/", "", false, true)
+	c.SetCookie(trustedDeviceCookie, "", -1, "/", "", trustedSecureFlag(), true)
 }
 
 // trustedDeviceSecret — глобальный секрет trusted-device cookie (UX-2).
@@ -93,9 +97,22 @@ func clearTrustedDeviceCookie(c *gin.Context) {
 // Хранится глобально, т.к. TwoFactorRequired — самостоятельный middleware.
 var trustedDeviceSecret string
 
+// trustedDeviceSecure — глобальный Secure-флаг trusted-device cookie (H6, PASS-15).
+var trustedDeviceSecure bool
+
 // SetTrustedSecret регистрирует секрет для trusted-device cookie.
 func SetTrustedSecret(secret string) {
 	trustedDeviceSecret = secret
+}
+
+// SetTrustedSecure (H6, PASS-15): задаёт Secure-флаг trusted-device cookie.
+func SetTrustedSecure(secure bool) {
+	trustedDeviceSecure = secure
+}
+
+// trustedSecureFlag возвращает текущий Secure-флаг.
+func trustedSecureFlag() bool {
+	return trustedDeviceSecure
 }
 
 // hmacSHA256Hex возвращает hex-кодированную HMAC-SHA256 подпись payload.

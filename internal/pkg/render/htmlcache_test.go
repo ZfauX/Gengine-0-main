@@ -15,11 +15,18 @@ import (
 func TestAnonCacheKey(t *testing.T) {
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest("GET", "/games?page=2", nil)
-	assert.Equal(t, "/games?page=2|ru", anonCacheKey(c))
+	// M1 (PASS-15): ключ включает tz_offset (0 по умолчанию).
+	assert.Equal(t, "/games?page=2|ru|tz0", anonCacheKey(c))
 
 	c2, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c2.Request = httptest.NewRequest("GET", "/", nil)
-	assert.Equal(t, "/|ru", anonCacheKey(c2))
+	assert.Equal(t, "/|ru|tz0", anonCacheKey(c2))
+
+	// Разный tz_offset → разные ключи.
+	c3, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c3.Request = httptest.NewRequest("GET", "/", nil)
+	c3.Request.AddCookie(&http.Cookie{Name: "tz_offset", Value: "180"})
+	assert.Equal(t, "/|ru|tz180", anonCacheKey(c3))
 }
 
 func TestIsCacheableAnon(t *testing.T) {

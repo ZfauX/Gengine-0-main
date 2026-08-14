@@ -271,6 +271,16 @@ func (h *RoomHub) runLoop() {
 			if queue == nil {
 				// Первый broadcast в комнату — создаём очередь и воркер.
 				h.mu.Lock()
+				// M8 (PASS-15): перепроверяем комнату ПОД Lock — между RLock-
+				// проверкой и созданием очереди комната могла быть удалена.
+				// Раньше осиротевшая очередь оставалась в roomQueues навсегда,
+				// и при пересоздании комнаты broadcast находил queue != nil,
+				// не создавал воркер → чат молча дропался.
+				_, roomExistsNow := h.rooms[msg.Room]
+				if !roomExistsNow {
+					h.mu.Unlock()
+					continue
+				}
 				queue = h.roomQueues[msg.Room]
 				if queue == nil {
 					queue = make(chan *Message, hubChanCapacity)

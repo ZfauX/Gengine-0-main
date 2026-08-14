@@ -245,6 +245,15 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 		data["CanonicalURL"] = canonical
 	}
 
+	// P-3 (PASS-13): HTML-кэш анонимных публичных GET.
+	// H1 (PASS-15): проверяем кэш ДО рендера content-шаблона — раньше
+	// tryServeAnonCache вызывался после ExecuteTemplate, и на кэш-хите
+	// самый дорогой шаг (content-template walk) исполнялся впустую.
+	// isCacheableAnon и ключ не зависят от контента — перестановка безопасна.
+	if tryServeAnonCache(c, status, data) {
+		return
+	}
+
 	// P-1 (PASS-9): буфер из sync.Pool — раньше `var buf bytes.Buffer` на каждый запрос.
 	//nolint:errcheck // sync.Pool.Get возвращает any, ошибки нет (ложное срабатывание)
 	buf := bufferPool.Get().(*bytes.Buffer)
@@ -273,13 +282,6 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 		} else {
 			data["ExtraHead"] = template.HTML(headBuf.String())
 		}
-	}
-
-	// P-3 (PASS-13): HTML-кэш анонимных публичных GET. Сначала пробуем кэш
-	// (с подстановкой свежих nonce/CSRF), при промахе рендерим layout в буфер
-	// и сохраняем результат.
-	if tryServeAnonCache(c, status, data) {
-		return
 	}
 
 	// Рендерим layout в буфер: при кэшировании нужен сам HTML (не gin-рендер),

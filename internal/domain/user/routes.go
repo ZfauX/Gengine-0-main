@@ -49,6 +49,12 @@ func RegisterRoutes(
 	// хендлере для установки cookie).
 	SetTrustedSecret(cfg.Session.Secret)
 	twoFactorHandler.WithTrustedSecret(cfg.Session.Secret)
+	// H6 (PASS-15): Secure-флаг trusted cookie — как у JWT/refresh (S-M4):
+	// TLS / reverse-proxy / FORCE_SECURE_COOKIE. Иначе кука обхода 2FA уходит
+	// по HTTP (MITM).
+	trustedSecure := cfg.TLS.CertFile != "" || cfg.Server.TrustedProxies != "" || cfg.Server.ForceSecureCookie
+	SetTrustedSecure(trustedSecure)
+	twoFactorHandler.WithTrustedSecure(trustedSecure)
 
 	// S-44-2 (pass 44): отдельный ключ OAuth — не делит бюджет с парольным логином.
 	oauthRateLimit := middleware.OAuthRateLimit(5*time.Minute, 10)
@@ -116,7 +122,7 @@ func RegisterRoutes(
 
 		profileGroup.POST("/avatar", middleware.UploadRateLimit(5*time.Minute, 20), profileHandler.UploadAvatar)
 
-		profileGroup.POST("/update", profileHandler.UpdateProfile)
+		profileGroup.POST("/update", middleware.UploadRateLimit(5*time.Minute, 20), profileHandler.UpdateProfile)
 
 		profileGroup.POST("/theme-settings", profileHandler.UpdateThemeSettings)
 

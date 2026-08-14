@@ -30,6 +30,10 @@ type TwoFactorHandler struct {
 	// cookie («Запомнить это устройство на 30 дней»). Устанавливается из
 	// routes.go (cfg.Session.Secret).
 	trustedSecret string
+	// trustedSecure (H6, PASS-15): Secure-флаг trusted-device cookie — должен
+	// соответствовать JWT/refresh (TLS/reverse-proxy/FORCE_SECURE_COOKIE).
+	// Раньше cookie уходила по HTTP (MITM-риск обхода 2FA).
+	trustedSecure bool
 }
 
 // NewTwoFactorHandler создаёт новый handler 2FA.
@@ -49,6 +53,13 @@ func NewTwoFactorHandler(twoFactorSvc *TwoFactorService, authService *AuthServic
 // секрет для HMAC-подписи trusted-device cookie.
 func (h *TwoFactorHandler) WithTrustedSecret(secret string) *TwoFactorHandler {
 	h.trustedSecret = secret
+	return h
+}
+
+// WithTrustedSecure (H6, PASS-15): задаёт Secure-флаг trusted-device cookie
+// (из cfg.Server: TLS/reverse-proxy/FORCE_SECURE_COOKIE — как JWT/refresh).
+func (h *TwoFactorHandler) WithTrustedSecure(secure bool) *TwoFactorHandler {
+	h.trustedSecure = secure
 	return h
 }
 
@@ -162,7 +173,10 @@ func (h *TwoFactorHandler) Verify(c *gin.Context) {
 	// UX-2 (PASS-13): «запомнить это устройство на 30 дней» — ставим
 	// trusted-device cookie (подписанную, с TTL), чтобы не вводить TOTP
 	// на доверенных устройствах повторно.
+	// H6 (PASS-15): синхронизируем Secure-флаг из конфига (глобальный для
+	// middleware и хендлера).
 	if h.trustedSecret != "" && c.PostForm("remember_device") == "1" {
+		SetTrustedSecure(h.trustedSecure)
 		setTrustedDeviceCookie(c, userID, h.trustedSecret)
 	}
 	// PASS-11 (session fixation): 2FA-проверка — событие повышения доверия.
@@ -686,5 +700,8 @@ func (h *TwoFactorHandler) Disable(c *gin.Context) {
 
 	render.SetFlash(c, "success", i18n.T("twofa.success_disabled"))
 	clear2FASessionFlag(c)
+	// H5 (PASS-15): отключение 2FA отзывает trusted-device cookie — иначе
+	// старый cookie продолжал бы обходить step-up, хотя 2FA уже выключена.
+	clearTrustedDeviceCookie(c)
 	c.Redirect(http.StatusFound, "/profile")
 }

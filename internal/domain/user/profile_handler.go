@@ -475,6 +475,10 @@ func (h *ProfileHandler) ChangePassword(c *gin.Context) {
 	// M3 (PASS-13): смена пароля — серверная сессия тоже удаляется
 	// (не остаётся pending/2FA-данных после принудительного повторного входа).
 	sessionstore.DeleteGinSession(c)
+	// H5 (PASS-15): смена пароля отзывает trusted-device cookie 2FA — иначе
+	// украденный «запомнить устройство» cookie переживал смену пароля и давал
+	// обход 2FA до 30 дней.
+	clearTrustedDeviceCookie(c)
 
 	c.Redirect(http.StatusFound, "/profile")
 }

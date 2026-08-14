@@ -19,7 +19,7 @@ package render
 import (
 	"bytes"
 	"net/http"
-	"strings"
+	"strconv"
 	"sync"
 	"time"
 
@@ -65,14 +65,17 @@ var cachedAnonPaths = map[string]bool{
 	"/games": true,
 }
 
-// anonCacheKey строит ключ кэша: path + "?" + query + lang.
+// anonCacheKey строит ключ кэша: path + "?" + query + lang + tzOffset.
+// M1 (PASS-15): TZOffset входит в ключ — иначе даты рендерятся в TZ первого
+// анонима, чей запрос попал в кэш, и второй аноним с другим tz видит чужие.
 func anonCacheKey(c *gin.Context) string {
 	lang := string(i18n.FromCtx(c))
+	tz := tzOffsetFromCookie(c)
 	q := c.Request.URL.RawQuery
 	if q == "" {
-		return c.Request.URL.Path + "|" + lang
+		return c.Request.URL.Path + "|" + lang + "|tz" + strconv.Itoa(tz)
 	}
-	return c.Request.URL.Path + "?" + q + "|" + lang
+	return c.Request.URL.Path + "?" + q + "|" + lang + "|tz" + strconv.Itoa(tz)
 }
 
 // isCacheableAnon определяет, можно ли кэшировать запрос: GET, статус 200,
@@ -113,17 +116,17 @@ func tryServeAnonCache(c *gin.Context, status int, data gin.H) bool {
 	if ok && now.Before(e.expires) {
 		body := e.body
 		anonHTMLCache.mu.Unlock()
-		// Подставляем СВЕЖИЕ nonce/CSRF текущего запроса (плейсхолдеры → значения).
+		// H2 (PASS-15): подстановка nonce/CSRF через bytes.ReplaceAll — без
+		// string-конверсий и полных копий HTML (раньше string→2×Replace→[]byte).
+		out := body
 		nonce := middleware.GetCSPNonce(c)
-		csrf := data["csrf"]
-		html := string(body)
 		if nonce != "" {
-			html = strings.ReplaceAll(html, noncePlaceholder, nonce)
+			out = bytes.ReplaceAll(out, []byte(noncePlaceholder), []byte(nonce))
 		}
-		if csrfStr, ok := csrf.(string); ok && csrfStr != "" {
-			html = strings.ReplaceAll(html, csrfPlaceholder, csrfStr)
+		if csrfStr, ok := data["csrf"].(string); ok && csrfStr != "" {
+			out = bytes.ReplaceAll(out, []byte(csrfPlaceholder), []byte(csrfStr))
 		}
-		c.Data(status, "text/html; charset=utf-8", []byte(html))
+		c.Data(status, "text/html; charset=utf-8", out)
 		return true
 	}
 	// Промах — снимаем lock и даём Page отрендерить; результат запишется
@@ -138,14 +141,15 @@ func storeAnonCache(c *gin.Context, data gin.H, rendered []byte) {
 	if !isCacheableAnon(c) {
 		return
 	}
-	// Заменяем реальные nonce/CSRF на плейсхолдеры в кэшируемом HTML.
-	html := string(rendered)
+	// H2 (PASS-15): заменяем реальные nonce/CSRF на плейсхолдеры через
+	// bytes.ReplaceAll — без string-конверсий и копий.
+	out := rendered
 	nonce := middleware.GetCSPNonce(c)
 	if nonce != "" {
-		html = strings.ReplaceAll(html, nonce, noncePlaceholder)
+		out = bytes.ReplaceAll(out, []byte(nonce), []byte(noncePlaceholder))
 	}
 	if csrfStr, ok := data["csrf"].(string); ok && csrfStr != "" {
-		html = strings.ReplaceAll(html, csrfStr, csrfPlaceholder)
+		out = bytes.ReplaceAll(out, []byte(csrfStr), []byte(csrfPlaceholder))
 	}
 
 	key := anonCacheKey(c)
@@ -160,7 +164,7 @@ func storeAnonCache(c *gin.Context, data gin.H, rendered []byte) {
 			}
 		}
 	}
-	anonHTMLCache.items[key] = htmlCacheEntry{body: []byte(html), expires: now.Add(htmlCacheTTL)}
+	anonHTMLCache.items[key] = htmlCacheEntry{body: out, expires: now.Add(htmlCacheTTL)}
 }
 
 // clearAnonCache очищает кэш (для тестов).

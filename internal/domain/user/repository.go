@@ -295,20 +295,27 @@ func (r *gormUserRepo) DashboardTeams(ctx context.Context, userID uint) ([]Dashb
 		       COALESCE(gp.game_id, 0) as game_id,
 		       COALESCE(gp.status, '') as passing_status,
 		       COALESCE(g.name, '') as game_name,
-		       -- UX-5: прогресс прохождения (завершённые уровни / всего уровней)
-		       (SELECT COUNT(*) FROM level_progresses lp
-		         JOIN levels l ON l.id = lp.level_id
-		         WHERE lp.game_passing_id = gp.id AND lp.finished_at IS NOT NULL
-		           AND l.deleted_at IS NULL) AS completed_levels,
-		       (SELECT COUNT(*) FROM levels l WHERE l.game_id = gp.game_id
-		         AND l.deleted_at IS NULL) AS total_levels,
-		       (SELECT l2.position FROM level_progresses lp2
-		         JOIN levels l2 ON l2.id = lp2.level_id
-		         WHERE lp2.game_passing_id = gp.id AND lp2.finished_at IS NULL
-		         ORDER BY l2.position ASC LIMIT 1) AS current_position
+		       -- M3 (PASS-15): прогресс одним LEFT JOIN LATERAL вместо 3
+		       -- коррелированных подзапросов на строку (3×N → 1 проход).
+		       COALESCE(prog.completed_levels, 0) AS completed_levels,
+		       COALESCE(prog.total_levels, 0) AS total_levels,
+		       prog.current_position
 		FROM teams t
 		LEFT JOIN game_passings gp ON gp.team_id = t.id AND gp.status IN ('accepted', 'started', 'finished')
 		LEFT JOIN games g ON g.id = gp.game_id AND g.deleted_at IS NULL
+		LEFT JOIN LATERAL (
+			SELECT
+				(SELECT COUNT(*) FROM level_progresses lp
+				  JOIN levels l ON l.id = lp.level_id
+				  WHERE lp.game_passing_id = gp.id AND lp.finished_at IS NOT NULL
+				    AND l.deleted_at IS NULL) AS completed_levels,
+				(SELECT COUNT(*) FROM levels l WHERE l.game_id = gp.game_id
+				  AND l.deleted_at IS NULL) AS total_levels,
+				(SELECT l2.position FROM level_progresses lp2
+				  JOIN levels l2 ON l2.id = lp2.level_id
+				  WHERE lp2.game_passing_id = gp.id AND lp2.finished_at IS NULL
+				  ORDER BY l2.position ASC LIMIT 1) AS current_position
+		) prog ON true
 		WHERE t.id IN (
 			SELECT id FROM teams WHERE captain_id = ?
 			UNION

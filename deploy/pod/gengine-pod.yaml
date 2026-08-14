@@ -22,6 +22,8 @@ spec:
       env:
         - name: POSTGRES_USER
           value: gengine
+        # M5 (PASS-15): тестовый пароль! В production — podman secret / k8s
+        # Secrets / envFrom. НЕ копируйте в прод без замены.
         - name: POSTGRES_PASSWORD
           value: gengine
         - name: POSTGRES_DB
@@ -76,6 +78,9 @@ spec:
           value: "6379"
         - name: BASE_URL
           value: http://127.0.0.1:8080
+        # M5 (PASS-15): ТЕСТОВЫЕ секреты/админ-пароль. В production —
+        # podman secret / k8s Secrets. RATE_LIMIT_*=100000 и PPROF — только
+        # для тестов; в прод уберите PPROF_ENABLED и поставьте реальные лимиты.
         - name: JWT_SECRET
           value: pod-jwt-secret-0123456789abcdef0123456789abcdef
         - name: SESSION_SECRET
@@ -98,6 +103,17 @@ spec:
           value: "100000"
         - name: RATE_LIMIT_API
           value: "100000"
+        # M4 (PASS-15): JSON-логи — console-формат zerolog тратит ~10% CPU
+        # (ANSI + посимвольное форматирование) в контейнере, где вывод и так
+        # собирается podman/k8s-рантаймом.
+        - name: LOG_FORMAT
+          value: json
+        # pprof (P-1, PASS-13): отдельный debug-сервер на 127.0.0.1:6060.
+        # Включать только для профилирования (не в production).
+        - name: PPROF_ENABLED
+          value: "true"
+        - name: PPROF_PORT
+          value: "6060"
         # TrustedProxies пуст → Secure-флаг cookie=false (работает по HTTP)
       volumeMounts:
         - name: uploads

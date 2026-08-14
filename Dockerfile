@@ -25,6 +25,13 @@ WORKDIR /app
 
 RUN apk add --no-cache ca-certificates tzdata postgresql18-client
 
+# H3 (PASS-15): GOMEMLIMIT — в контейнере Go иначе считает память ВСЕЙ машины
+# (cgroup-лимит игнорируется), что при пиковом heap даёт OOM-kill или GC-спайки.
+# 384MiB ≈ 75% от типового лимита pod 512Mi. В k8s/podman задавайте близко к
+# ресурсу контейнера (см. deploy/pod/README.md). Опционально GOGC=off при
+# GOMEMLIMIT для минимального GC-оверхеда.
+ENV GOMEMLIMIT=384MiB
+
 # Бинарник
 COPY --from=builder /app/gengine .
 

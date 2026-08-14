@@ -162,4 +162,32 @@
 - **Оптимизации: 10** (P-1..P-10), обоснованы pprof.
 - **UX: 8 предложений**.
 - Проверки: build ✅, golangci-lint ✅ (0 issues), test-short ✅, E2E 14/14 (в pod).
+
+---
+
+## ✅ Выполненные фиксы (PASS-15, коммит)
+
+### HIGH (все 6)
+- **H1**: `tryServeAnonCache` перенесён ДО рендера content-шаблона — на кэш-хите content-template walk больше не исполняется (главный выигрыш для анонимных `/` и `/games`).
+- **H2**: подстановка nonce/CSRF через `bytes.ReplaceAll` — без string-конверсий и полных копий HTML.
+- **H3**: `ENV GOMEMLIMIT=384MiB` в Dockerfile (защита от OOM/GC-спайков в pod).
+- **H4**: email `processRetryJob` — атомарный claim (pending/retry→sending) ДО отправки; обновление статуса по `WHERE status='sending'`. Дублкоты писем исключены.
+- **H5**: `clearTrustedDeviceCookie` при смене пароля (`ChangePassword`) и отключении 2FA (`Disable`).
+- **H6**: Secure-флаг trusted-device cookie из конфига (TLS/reverse-proxy/FORCE_SECURE_COOKIE) — не уходит по HTTP.
+
+### MEDIUM (6 из 8)
+- **M1**: TZOffset включён в ключ HTML-кэша (даты не в чужом TZ).
+- **M2**: rate-limit на `/profile/update` (UploadRateLimit 20/5мин).
+- **M3**: DashboardTeams — `LEFT JOIN LATERAL` вместо 3 коррелированных подзапросов.
+- **M4**: `LOG_FORMAT=json` в pod-манифесте (−10% CPU zerolog).
+- **M5**: предупреждения о тестовых секретах/pprof в pod-манифесте.
+- **M8**: RoomHub — перепроверка комнаты под Lock при создании очереди (нет осиротевших очередей).
+
+### Отложено (оптимизации с ограниченной выгодой / требуют миграций)
+- **M6** (CREATE INDEX без CONCURRENTLY блокирует большие таблицы) — trade-off задокументирован.
+- **M7** (sessions round-trip) — требуется точечная проверка ленивой загрузки.
+- **P-9/P-10/P-6** (префикс-кэш, push-кэш, page 2+ кэш) — следующий проход.
+
+### Проверки
+- build ✅, golangci-lint ✅ (0 issues), test-short ✅ (все пакеты), E2E 14/14 (в pod с новым образом).
 - Рекомендуемый порядок: H1-H3 (производительность кэша и OOM) → H4 (email дубликаты) → H5-H6 (trusted 2FA) → M1-M3 → остальное.
