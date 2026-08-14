@@ -1,297 +1,165 @@
-# DEEP_REVIEW — Gengine-0 (PASS 13)
+# DEEP_REVIEW — Gengine-0 (PASS 15)
 
-> Глубокое ревью после закрытия PASS-12 (multi-instance).
-> Метод: pprof-профилирование на реальном сервере (PPROF_ENABLED=true, :6060 loopback, Valkey через podman на :6380) + 3 параллельных аудита (@reviewer, @security, @perf) + эмпирическая проверка каждого HIGH/MEDIUM finding по коду.
-> Архив предыдущего: `DEEP_REVIEW_2026-08-13_pass12.md`.
+> Глубокое ревью после PASS-14 (docker/podman). Целевое окружение — **pod через podman** (app+PostgreSQL+Valkey в одном pod).
+> Метод: pprof-профилирование в pod (PPROF_ENABLED, 127.0.0.1:6060) + 3 параллельных аудита (@reviewer, @security, @perf) + эмпирическая проверка каждого HIGH/MEDIUM finding по коду.
+> Архив предыдущего: `DEEP_REVIEW_2026-08-14_pass14.md`.
 
 ---
 
-## 🔬 pprof-результаты (PASS 13)
+## 🔬 pprof-результаты (PASS 15, в pod)
 
 | Профиль | Результат | Вывод |
 |---|---|---|
-| **goroutine** | 22 в покое → 21 после нагрузки (E2E 14/14 + 6 воркеров × 20 запросов) | ✅ Без утечек. Фоновые: CheckAutoStartGames, CheckTimeouts, roomWorker, realtimebus.run, themeCacheCleanup. |
-| **heap inuse** | 18.5 MB | ⚠️ 51% (9.5 MB) — `golang.org/x/net/webdav.(*memFile).Write` = **swagger-файлы** (не код). Остальное — одноразовые 512KB-буферы (bufio, pgx, gorm schema, template parse). |
-| **heap alloc** | инициализационные | ⚠️ SetupRouter/setupEngine — 32% аллокаций при старте (парсинг 60+ шаблонов, regexp, gorm-схемы). После старта — стабильно. |
-| **cpu (лёгкая нагрузка)** | 0.27% (80ms samples) | ✅ Простаивает. |
-| **cpu (6 воркеров × 20 req)** | 2.29s samples (7.6%) | 🔴 **55% cgocall (сеть)** — round-trips (rate-limit в Valkey на каждый запрос + gzip), **37% text/template** (walk 37%, evalCall 13.5% — вызовы `T()`/`TF()` через reflect). |
-| **pprof bind** | `127.0.0.1:6060` | ✅ loopback, отдельный сервер, admin+2FA для /swagger. |
+| **goroutine** | 20 в покое | ✅ Без утечек (стабильно с PASS-5..14). |
+| **heap inuse** | **6.3 MB** (было 18.5 MB в PASS-13) | ✅ **P-1 подтверждён на практике**: swagger за build-tag убран из сборки → webdav memFile (9.5MB) отсутствует. Остальное — рантайм-инициализация. |
+| **cpu (лёгкая нагрузка)** | 1% (300ms samples) | ⚠️ text/template walk 23%, syscall 23%, zerolog 10%, htmlReplacer 10%. Рендер снизился (P-2 precompute T() работает), но content-рендер анонимных страниц всё ещё выполняется на кэш-хите (perf #2). |
+| **pprof bind** | `127.0.0.1:6060` | ✅ loopback, включён через env в pod-манифесте. |
 
-**Вывод**: утечек нет, предыдущие оптимизации работают (рендер пулом, дедуп `T()`, батч-запросы). Остаточные статьи — **swagger-память (51% heap)** и **template-рендер + сетевые round-trips (CPU)**.
+**Вывод**: утечек нет, P-1 дал −60% heap. Главные остаточные статьи: HTML-кэш анонимов не достигает цели для content-части (perf #2), отсутствие GOMEMLIMIT в контейнере (perf #1), консольный формат логов (perf #5).
 
 ---
 
-## 🔴 HIGH (reviewer)
+## 🔴 HIGH
 
-### H1. `onGameFinished` — неотслеживаемая goroutine с `WithoutCancel` работает после закрытия БД (потеря данных при shutdown) 🔍✅ (подтверждено)
-- **Файл**: `cmd/server/main.go:339-358`.
-- **Проблема**: колбэк завершения игры запускает `go func()` (строка 342), которая **НЕ добавлена в `bgWg`** (создаётся на строке 382). При этом `bgCtx = context.WithTimeout(context.WithoutCancel(reqCtx), 30s)` — отмена shutdown-контекста **не прерывает** эту работу. Порядок shutdown: `cancel()` (662) → `bgWg.Wait()` (665) → `sqlDB.Close()` (679). Игра, завершившаяся за ~30с до остановки, может выполнять `CalculateResults`/`UpdateScoresForGame`/`UpdateRatingsForGame` **после закрытия пула** → «sql: database is closed» → игроки НЕ получают турнирные очки/рейтинг.
-- **Фикс (предложение)**: добавить горутину в `bgWg` (`bgWg.Add(1)` перед `go` + `defer bgWg.Done()`); либо сделать `WithoutCancel` только для HTTP-запроса, но слушать shutdown через отдельный канал; либо подождать эти горутины до `sqlDB.Close()`.
+### H1. HTML-кэш анонимов: на cache-hit всё равно исполняется content-шаблон 🔍✅ (подтверждено)
+- **Файл**: `internal/pkg/render/helper.go:254,281`.
+- **Проблема**: `tryServeAnonCache` вызывается ПОСЛЕ `tmpl.ExecuteTemplate(buf, contentTemplate, data)` (строка 254). На кэш-хите самый дорогой шаг — исполнение content-шаблона (home.html/games.html, «37% template walk» из pprof) и сборка `ContentHTML` — выполняется впустую. Кэш спасает только рендер layout.
+- **Фикс**: перенести `tryServeAnonCache` выше `ExecuteTemplate` content (данные для ключа/lang/csrf/nonce готовы до рендера). `isCacheableAnon` не зависит от content — перестановка безопасна.
+
+### H2. Подстановка nonce/CSRF делает 2–3 полные копии HTML на каждый hit/miss 🔍✅
+- **Файл**: `internal/pkg/render/htmlcache.go:119-126,142-149`.
+- **Проблема**: на кэш-хите: `string(body)` → 2× `strings.ReplaceAll` → `[]byte(html)`; на miss-записи то же. Для страниц 50–100KB это 2–3 полные копии + аллокации на каждый запрос к `/` и `/games`.
+- **Фикс**: `bytes.ReplaceAll(body, noncePlaceholder, nonceBytes)` без конверсий string, писать в буфер из `sync.Pool`.
+
+### H3. Отсутствует GOMEMLIMIT/GC-настройка в контейнере 🔍✅
+- **Файлы**: `Dockerfile:16-17`, `entrypoint.sh`, `cmd/server/main.go`.
+- **Проблема**: `debug.SetMemoryLimit`/`GOMEMLIMIT` не настроены. В pod с cgroup-лимитом Go считает память всей машины → при пиковом live-heap либо OOM-kill, либо GC-спайки.
+- **Фикс**: `ENV GOMEMLIMIT=384MiB` (≈75-80% лимита pod) или `debug.SetMemoryLimit` в main.
+
+### H4. Email: двойная отправка одного письма (гонка retry-очереди и batch-воркера) 🔍✅
+- **Файл**: `internal/pkg/email/email.go:393` (`processRetryJob`), `:243-255` (`processPendingEmails`), `:359-376` (`scheduleRetry`).
+- **Проблема**: `scheduleRetry` кладёт задачу в in-memory retryQueue, но НЕ обновляет `scheduled_at` в БД → batch-воркер подхватывает те же письма (status=retry, scheduled_at=NULL). `processRetryJob` отправляет ДО атомарного claim (строка 393 до 407). Окно: оба пути шлют одно письмо → дубликат получателю.
+- **Фикс**: claim в `processRetryJob` перед отправкой (`UPDATE … SET status='sending' WHERE id=? AND status IN (pending,retry)`) + выставлять `scheduled_at` при `scheduleRetry`.
+
+### H5. Trusted-device cookie 2FA не отзывается и переживает смену пароля/отключение 2FA 🔍✅
+- **Файл**: `internal/domain/user/two_factor_middleware.go:40-99`; `auth_handler.go:396`.
+- **Проблема**: stateless HMAC cookie `2fa_trusted` (`userID:expiry`, 30д). Очистка только при logout. `ChangePassword` (`profile_handler.go:417-480`) и `Disable` 2FA (`two_factor_handler.go:579-690`) cookie НЕ снимают. Украденный cookie даёт обход 2FA до 30 дней даже после смены пароля.
+- **Фикс**: `clearTrustedDeviceCookie(c)` при смене пароля и отключении 2FA (+ желательно версия/серийный номер в HMAC).
+
+### H6. Trusted-device cookie с жёстко зашитым `secure=false` 🔍✅
+- **Файл**: `two_factor_middleware.go:48`.
+- **Проблема**: cookie, дающий обход 2FA, передаётся по HTTP (MITM), в отличие от JWT/refresh (setSecureCookie с учётом HTTPS/ForceSecureCookie). При `FORCE_SECURE_COOKIE` остальные куки Secure, а эта — нет.
+- **Фикс**: учитывать `cfg.Server.ForceSecureCookie`/TLS при установке (передавать Secure-флаг).
 
 ---
 
-## 🟠 MEDIUM (reviewer + security)
+## 🟠 MEDIUM
 
-### M1. `SSEManager.Save`/sessionstore: `MaxAge < 0` удаляет cookie, но backend-запись живёт 24ч 🔍✅
-- **Файл**: `internal/pkg/sessionstore/sessionstore.go:331-357`.
-- **Проблема**: TTL backend вычисляется только при `MaxAge > 0`; при `MaxAge < 0` (семантика gorilla «удалить куку») cookie получает `MaxAge=-1`, но данные сессии **сохраняются в backend на полный `sessionTTL` (24ч)**. Конфиденциальность + накопление мусорных записей (в т.ч. в Valkey).
-- **Фикс**: при `MaxAge < 0` — `backend.Delete(sess.ID)` вместо `Set` (или TTL=1с).
+### M1. HTML-кэш анонимов: TZOffset не входит в ключ кэша 🔍✅
+- **Файл**: `internal/pkg/render/htmlcache.go:69-76`.
+- **Проблема**: `data["TZOffset"]` из cookie первого анонима рендерится в даты; второй аноним с другим tz получает чужие даты до TTL (30с).
+- **Фикс**: добавить TZOffset в `anonCacheKey`.
 
-### M2. `RenewToken` удаляет старую сессию ДО записи новой — потеря данных при сбое backend 🔍✅
-- **Файл**: `internal/pkg/sessionstore/sessionstore.go:370-388`.
-- **Проблема**: `backend.Delete(oldID)` выполняется до того, как `RenewGinSession` вызовет `Save` с новым ID. Если Save упадёт (backend недоступен) — данные сессии потеряны, откат невозможен (старый ID удалён).
-- **Фикс**: писать новую сессию до удаления старой, либо delete только после успешного Save (возвращать ошибку из RenewGinSession до вызова Save).
+### M2. `/profile/update` без rate-limit и без счётчика неверных паролей 🔍✅
+- **Файл**: `internal/domain/user/routes.go:119`, `profile_handler.go:357-368`.
+- **Проблема**: bcrypt-проверка при смене email без rate-limit и lockout. С украденной сессией — перебор пароля → смена email → сброс пароля → захват аккаунта.
+- **Фикс**: `middleware.UploadRateLimit` (или отдельный лимитер) на `/profile/update` + счётчик неудач.
 
-### M3. `Logout` не удаляет server-side сессию (`DeleteGinSession` реализован, но не вызывается) 🔍✅
-- **Файл**: `internal/domain/user/auth_handler.go:381-396`; `internal/pkg/sessionstore/sessionstore.go:447`.
-- **Проблема**: logout отзывает JWT (blacklist) и refresh-токен, но server-side сессия (pending_*/oauth_state/2fa_verified) остаётся в backend до TTL. `sessionstore.DeleteGinSession(c)` написан и не используется.
-- **Фикс**: вызвать `DeleteGinSession(c)` в `Logout` (и при смене пароля/отключении 2FA).
+### M3. N+1 в DashboardTeams: 3 коррелированных подзапроса на каждую команду 🔍✅
+- **Файл**: `internal/domain/user/repository.go:298-308`.
+- **Проблема**: `completed_levels`/`total_levels`/`current_position` — 3 подзапроса на строку (3×N). Нет индекса на `level_progresses.finished_at`.
+- **Фикс**: `LEFT JOIN LATERAL`/`GROUP BY` + `COUNT(*) OVER (PARTITION BY ...)`, индекс по `(game_passing_id, finished_at)`.
 
-### M4. SSE: соединение «висит» без чистого закрытия при превышении лимита после отправки заголовков 🔍✅
-- **Файл**: `internal/domain/game/hnd_sse.go:421-438`.
-- **Проблема**: заголовки `text/event-stream` отправлены, `c.Abort()`, затем `RegisterSession` возвращает nil (лимит/stop между CanAccept и регистрацией) → просто `return`. net/http закроет соединение, но клиент не получит чистого завершения (недочитанный chunked-ответ).
-- **Фикс**: в ветке `session == nil` — явно закрыть соединение (например, `http.NewResponseController(w).SetWriteDeadline` + `Flush` + завершение) или отправлять `retry:`-кадр.
+### M4. Консольный формат логов (zerolog ConsoleWriter) = 10% CPU 🔍✅
+- **Файл**: `cmd/server/main.go:154-161`.
+- **Проблема**: `LOG_FORMAT=console` — посимвольное форматирование + ANSI в контейнере, где вывод всё равно в podman-логи.
+- **Фикс**: в pod `LOG_FORMAT=json`.
 
-### M5. Мусорная кука → новая сессия в backend на каждый запрос (накопление) 🔍✅
-- **Файл**: `internal/pkg/sessionstore/sessionstore.go:198-218` (Get).
-- **Проблема**: невалидная подпись cookie возвращает новую сессию (`IsNew=true`, новый ID), но плохая кука не очищается. Если gin-contrib Save вызывается на каждый запрос — каждая попытка с мусорным cookie создаёт запись с TTL 24ч (до ~10k в memory, мусорные ключи в Valkey).
-- **Фикс**: при невалидной подписи в Get — не создавать запись (откладывать до реального Set) или помечать `IsNew` и очищать cookie (`MaxAge=-1`).
+### M5. Секреты и pprof в `deploy/pod/gengine-pod.yaml` (copy-paste в prod) 🔍✅
+- **Файл**: `deploy/pod/gengine-pod.yaml:25-28,79-86,103-104`.
+- **Проблема**: DB_PASSWORD/JWT/SESSION/ADMIN_PASSWORD — тестовые, `RATE_LIMIT_*=100000` (лимиты выключены), `PPROF_ENABLED=true`.
+- **Фикс**: комментарии-предупреждения + документация; в production — secrets/`podman secret`.
 
-### M6. Per-user rate limit отсутствует на загрузку аватара/фото 🔍✅
-- **Файлы**: `internal/domain/user/profile_handler.go:233` (UploadAvatar), `internal/domain/game/hnd_photo.go:131` (UploadPhoto).
-- **Проблема**: загрузка аватара (2MB) и фото игры (10MB) не имеет rate limit (в отличие от SubmitFile, чата, платежей). Менеджер игры может заливать фото в цикле → заполнение диска (галерея растёт неограниченно).
-- **Фикс**: использовать готовый `newSharedLimiter` (паттерн `rate_limiter.go:256-261`) для `/uploads`-постов.
+### M6. Миграции: обычный `CREATE INDEX` вместо CONCURRENTLY блокирует запись на больших таблицах 🔍✅
+- **Файл**: `migrations/000044-000051`, `internal/db/migrate.go`.
+- **Проблема**: CONCURRENTLY заменён на обычный `CREATE INDEX` (чтобы golang-migrate не падал) — при деплое на больших таблицах блокирует запись.
+- **Фикс**: для крупных БД — фоновый индекс вручную; для новых — IF NOT EXISTS. Задокументировать trade-off.
 
-### M7. Глобальный rate-limiter — round-trip в Valkey на каждый запрос 🔍✅
-- **Файл**: `internal/pkg/middleware/rate_limiter.go:172-221`; подключение `router.go:108`.
-- **Проблема**: при Valkey каждый HTTP-запрос выполняет Lua-скрипт INCR (сетевая RTT) до хендлера — один из главных вкладчиков в 55% cgocall. Плюс `setRateLimitHeaders` аллоцирует 3 строки на запрос.
-- **Фикс**: глобальный лимит держать in-memory (single-instance) или кэшировать результат на короткое окно (50-100мс); критичные лимитеры (login/register/2FA) оставить в Valkey fail-closed.
+### M7. `sessions.Sessions` middleware: потенциальный Redis round-trip на каждый авторизованный запрос 🔍✅(требует точечной проверки)
+- **Файл**: `internal/app/router.go:109`, `sessionstore`.
+- **Проблема**: gorilla-sessions middleware открывает store на каждый запрос; server-side Valkey → возможный GET round-trip даже без использования сессии.
+- **Фикс**: ленивая загрузка сессии (читать только в `sessions.Default(c)`) или короткий TTL-кэш.
+
+### M8. Осиротевшая очередь комнаты после гонки broadcast/удаление (RoomHub) 🔍✅
+- **Файл**: `internal/pkg/websocket/room_hub.go:264-288`.
+- **Проблема**: между RLock-проверкой и созданием очереди комната может быть удалена; очередь остаётся в `roomQueues` навсегда, воркер выходит. При пересоздании комнаты broadcast находит `queue != nil`, не создаёт воркер → чат молча дропается.
+- **Фикс**: чистить `roomQueues` при обнаружении мёртвого воркера / `queue` при `room==nil` в broadcast.
 
 ---
 
 ## 🟡 LOW
 
-1. **`valkeyClient` и `realtimebus` не закрываются при shutdown** (`main.go:245-275`, `310-323`) — пул Redis-соединений и pubsub-горутины живут до выхода процесса. Добавить `Close()`/`realtimeBus.Close()` перед закрытием кэша.
-2. **pprof-сервер не в graceful shutdown** (`main.go:549-564`) — `pprofSrv` не вызывает `Shutdown`.
-3. **`og:image` строит URL из `Host`-заголовка** (`hnd_game.go:232`) — Host-header injection в соцсетевых превью; валидировать против `cfg.Server.BaseURL`.
-4. **Debug-лог раскрывает существование email в ForgotPassword** (`auth_handler.go:589`) — oracle в логах при `LOG_LEVEL=debug`.
-5. **CORS: авто-подстановка `http://` для origin без протокола** (`router.go:124-127`) — вводит в заблуждение при конфигурации.
-6. **Полный путь файла бэкапа в audit-логе** (`admin/handler.go:865`) — логировать ID, а не путь.
-7. **`Register` не валидирует формат email** (`auth_handler.go:464-483`) — `binding:"email"` не применяется; возможна регистрация с мусорной строкой.
-8. **`initial`/`truncate` в templatefuncs конвертируют `[]rune`** (`templatefuncs/funcs.go:140-158`) — аллокации на каждой ячейке таблиц.
-9. **`SetRateLimitHeaders` — 3 аллокации на запрос** — устанавливать только при `!Allowed`.
-10. **`NewResponseController(s.w)` на каждое SSE-событие** (`hnd_sse.go:42-54`) — кэшировать controller.
+1. **`globalStore` в sessionstore без синхронизации** (`SetDefault` vs `RenewGinSession`) — де-факто инициализация до трафика; формально data race.
+2. **HTML-кэш: host/canonical URL запекаются** — multi-host канонические теги чужие (single-host не проявляется).
+3. **`.env.e2e` и `*.exe` попадают в build-контекст** (`.dockerignore:19-21` не исключает `.env.e2e`).
+4. **Контейнер от root**, нет `USER`/`securityContext` в Dockerfile/pod.
+5. **Trusted-device HMAC использует SESSION_SECRET** — компрометация секрета подделывает и сессии, и trusted cookie; ротация секрета инвалидирует всё.
+6. **Смена email: только постфактум-уведомление**, без верификации нового адреса.
+7. **`trackPrefix` на каждый Set в in-memory кэше** — аллокации/contention, хотя DeleteByPrefix редко вызывается.
+8. **`GetSettings`+`ListPushSubscriptions` на каждое push-задание** — 2 запроса на уведомление.
+9. **`time.After(backoff)` в realtimebus reconnect** — лишний таймер на попытку.
+10. **`hasAppliedMigrations` на ошибке возвращает false** — диагностика «свежая БД» вводит в заблуждение при транзиентном сбое.
 
 ---
 
-## ⚡ Оптимизации (perf, проверены по pprof)
+## ⚡ Оптимизации (perf, обоснованы pprof)
 
 | # | Оптимизация | Файл | Ожидаемый эффект |
 |---|---|---|---|
-| P-1 | **Вынести swagger за build-tag** (`//go:build swagger`) или лениво инициализировать: 9.5MB (51% heap) под webdav memFile | `router.go:38,48-49,186-187`, `main.go:41` | −51% heap inuse |
-| P-2 | **Заменить остальные `T $.Lang` в layout на предвычисленные `$`-переменные** (после PASS-10 precompute покрыл только 11 из ~25 вызовов) | `layout.html` | −evalCall (13.5% CPU) |
-| P-3 | **HTML-кэш анонимных публичных GET** (`/games`, `/`) на 30с (render в буфер → кэш по URL+lang) — убирает весь template-рендер для неавторизованных | `hnd_game.go:169` и др. | −37% template CPU для анонимов |
-| P-4 | **Кэш `GetUserGamesView`** (60с TTL, инвалидация при сохранении настройки): отдельный SELECT на каждый авторизованный `/games` | `svc_facade.go:16-28`, `profile_repository.go:117` | −1 round-trip/запрос |
-| P-5 | **Кэш `IsUserManager`** per `manager:{gameID}:{userID}` (60с); для `viewerID==0` сразу false | `svc_coauthor.go:128-133`, `hnd_game.go:207` | −1-2 round-trips/страница игры |
-| P-6 | **Типизированный `cacheGetJSON`** (дженерик/type-switch вместо reflect) | `game/service.go:200-232` | −reflect на каждый cache-hit |
-| P-7 | **`listingVersion` через `GetBytes`+`strconv.ParseInt`** вместо `json.Unmarshal` в `any` + `fmt.Sscanf` | `game/service.go:236-255`, `cache/valkey.go:149-168` | −аллокации на построение ключа листинга |
-| P-8 | **`trackPrefix`: инкрементальная сборка префиксов** вместо Split/Join | `cache/cache.go:201-218` | −аллокации на каждую Set в кэше |
-| P-9 | **`SetRateLimitHeaders`/`Initials`/`Truncate`** — strconv/utf8.DecodeRune вместо `[]rune`/fmt | `rate_limiter.go:283-294`, `templatefuncs/funcs.go:140-158` | −аллокации на таблицах |
+| P-1 | **Перенести tryServeAnonCache выше content-рендера** | `render/helper.go:254,281` | убирает template walk из анонимных GET на hit |
+| P-2 | **bytes.ReplaceAll без string-конверсий** (nonce/CSRF) | `render/htmlcache.go` | −2-3 копии HTML на запрос |
+| P-3 | **GOMEMLIMIT в Dockerfile** (`ENV GOMEMLIMIT=384MiB`) | `Dockerfile` | защита от OOM в pod |
+| P-4 | **DashboardTeams через LATERAL/window** | `user/repository.go:298-308` | N+1 → 1-2 прохода |
+| P-5 | **LOG_FORMAT=json в pod** | `deploy/pod/*.yaml` | −10% CPU |
+| P-6 | **Анонимный SQL-кэш листинга на page 2+** | `svc_listing.go:82-88` | меньше нагрузки на PG при пагинации |
+| P-7 | **Ленивая загрузка session в middleware** | `router.go:109` | −Redis round-trip на авторизованных |
+| P-8 | **Иммутабельные снапшоты мониторинга** (без deep-копии на поллинг) | `svc_monitor.go:159-191` | −аллокации на SSE-поллеры |
+| P-9 | **Префикс-индекс кэша лениво** (только при DeleteByPrefix) | `cache/cache.go:201-224` | −аллокации на каждый Set |
+| P-10 | **TTL-кэш push-настроек/подписок** | `notification/service.go:337,346` | −2 запроса на уведомление |
 
 ---
 
 ## 💡 Улучшения UX
 
-1. **Смена email**: пароль уже требуется (PASS-10 H3); добавить уведомление на СТАРЫЙ email «ваш email был изменён».
-2. **2FA**: добавить «remember this device for 30 дней» (отдельный trusted-device cookie с подписью) — снижает трение повторного ввода TOTP на личных устройствах.
-3. **Тестовый режим**: кнопка «Смотреть ответ» / «Пройти уровень за автора» в тестовом прохождении (сейчас уровень можно только «пропустить» — нет способа увидеть вопрос глазами игрока).
-4. **Загрузка файлов**: прогресс-бар и лимиты подписаны на форме; предпросмотр фото до сохранения.
-5. **Dashboard**: секция «Активные прохождения» — добавить прогресс (уровень X/Y) и «продолжить» одним кликом.
-6. **i18n**: добавить переключатель языка в футере/шапке для гостевой страницы (сейчас только в профиле).
-7. **Пустые состояния**: «У вас пока нет игр — создать первую» с иллюстрацией и CTA на пустых списках (dashboard, games, team).
-8. **Email-уведомления**: уведомлять о получении инвайта в команду/игру (сейчас только в UI-ленте).
+1. **Отзыв trusted-устройств**: страница «Устройства, где я остаюсь в системе» — список + «отозвать все» (реестр в БД вместо stateless cookie).
+2. **Верификация нового email**: подтвердить новый адрес (код/ссылка) до фиксации — не только уведомить старый.
+3. **Блокировка при смене email**: короткое окно (например 5 мин) до применения — владелец старого ящика успевает отменить.
+4. **Прогресс пагинации `/games`**: «показать ещё» (infinite scroll) вместо страниц 2+ — убирает N+1-пагинацию и даёт плавнее UX.
+5. **Таймзона**: селектор TZ в профиле (не только cookie из JS) — стабильные даты на дашборде/календаре.
+6. **Доступность**: добавить `aria-live` для тостов загрузки и кнопок с иконками.
+7. **Email-уведомление при отключении 2FA** — владелец знает о снижении защиты.
+8. **Показывать версию сборки** в футере (уже есть `build=` в логах — вынести в UI).
 
 ---
 
 ## 🛡️ Что проверено и НЕ подтвердилось (честность отчёта)
 
-- **IDOR на `/testing/:passing_id`** (security #1): ShowTestGame/SubmitTestCode проверяют `IsUserManager` (hnd_gameplay.go:498, 546), StartTesting — `HasPermission` (svc_play.go:458), SkipLevelTest — `HasPermissionTx` (svc_play.go:638). **Не уязвимость.** Замечание: сервис `SubmitTestCode` сам не проверяет права (полагается на хендлер) — добавить defense-in-depth.
-- **CSV-импорт без лимитов** (security #2): есть `maxImportRecords=5000`, `maxImportPosition=10000` (export/service.go:292-327). **Не подтвердилось.**
-- **N+1** в game/repository, svc_listing, svc_admin — батч-запросы (COUNT(*) OVER(), unnest, Preload+Select). Не найдено в проверенных путях.
-- **Гонки в `RoomHub.dispatchToRoom`** (после фикса PASS-12) — корректен (upgrade RLock→Lock с перепроверкой).
-- **Паника send-on-closed** в очередях комнат/SSE/notification — закрытие через `sync.Once`, каналы не закрываются. Не найдено.
-- **WaitGroup.Add vs Wait** в SSEManager/monitor — защищены lock-порядком.
-- **Файловые хендлы в export** — файлы не открываются (работа с буферами).
-- **Dashboard** — батчевые запросы (DashboardTeams — единый JOIN). Не N+1.
+- **Утечек горутин нет** (20 в покое, стабильно).
+- **P-1 подтверждён**: heap 6.3MB vs 18.5MB в PASS-13 (swagger убран).
+- **N+1 в tournament/email/monitor** — batch-запросы, не найдено в проверенных путях.
+- **Гонки в RoomHub/SSEManager/realtimebus/sessionstore** — атомарные Acquire, каналы не закрываются, typed-сериализация, deferred delete. ОК.
+- **CSRF-обёртка и HTML-кэш**: fresh nonce/CSRF подставляются корректно; анонимность фильтруется (session cookie + userID).
+- **Email batch-путь**: claim `FOR UPDATE SKIP LOCKED` + sending работает (кроме retry-гонки H4).
 
 ---
 
 ## 📋 Статус
 
 - 3 аудита: ✅ проведены; HIGH/MEDIUM findings — ✅ эмпирически проверены по коду.
-- **HIGH: 1** (H1 onGameFinished/grant shutdown data loss).
-- **MEDIUM: 7** (M1-M7).
+- **HIGH: 6** (H1-H6).
+- **MEDIUM: 8** (M1-M8).
 - **LOW: 10**.
-- **Оптимизации: 9** (P-1..P-9), все обоснованы pprof.
+- **Оптимизации: 10** (P-1..P-10), обоснованы pprof.
 - **UX: 8 предложений**.
-- Проверки текущего кода: build ✅, golangci-lint ✅ (0 issues), test-short ✅, E2E 14/14 ✅ (с реальным Valkey).
-- Рекомендуемый порядок фикса: H1 → M1-M3 (корректность сессий/логаута) → M4-M6 (SSE/rate-limit) → P-1..P-3 (память и рендер) → остальное.
-
-## ✅ Выполненные фиксы (PASS-13, коммиты 925c94b + 8f5c0d8)
-
-### HIGH/MEDIUM (коммит 925c94b)
-- **H1**: onGameFinished добавлен в bgWg — shutdown дожидается расчёта результатов до закрытия БД.
-- **M1**: sessionstore.Save с MaxAge<0 удаляет backend-запись (+тест).
-- **M2**: RenewToken удаляет старую сессию ТОЛЬКО после успешного Save (+тест).
-- **M3**: Logout/LogoutAll/ChangePassword вызывают DeleteGinSession.
-- **M4**: SSE при лимите после заголовков пишет error-событие и флашит.
-- **M5**: sessionstore.New не генерирует ID до Save (мусорная кука не создаёт запись).
-- **M6**: per-user rate-limit на UploadAvatar/UploadPhoto (RATE_LIMIT_UPLOAD=20/мин).
-- **M7**: глобальный/SSE/API rate-limiters переведены на in-memory (убран round-trip в Valkey).
-- **LOW (важные)**: realtimeBus.Close()/valkeyClient.Close() и pprof.Shutdown при shutdown.
-
-### LOW + оптимизации (коммит 8f5c0d8)
-- **L1**: og:image строится из cfg.Server.BaseURL (Host-header injection закрыт).
-- **L2**: ForgotPassword не логирует email (oracle закрыт).
-- **L3**: CORS origin без протокола пропускается с warn (не молчаливый http://).
-- **L4**: audit-лог бэкапа — только имя файла (не полный путь).
-- **L5**: Register валидирует email через ValidateEmail (конкретная ошибка поля).
-- **L6**: templatefuncs initials/truncate — utf8.DecodeRuneInString без []rune.
-- **L7**: ОТКЛОНЕНО — X-RateLimit-* заголовки полезны клиентам, код уже использует strconv.
-- **L8**: SSE кэширует http.NewResponseController (не на каждое событие).
-- **P-1**: swagger вынесен за build-tag `swagger` (−51% heap: 9.5MB docs не грузятся в prod; `make build-swagger` для dev).
-- **P-2**: полный precompute T() в layout.html (~25 ключей, убран evalCall).
-- **P-3**: ОТКЛОНЕНО — HTML-кэш анонимов: страницы содержат nonce/CSRF, кэш ослабил бы CSP (как PASS-10 P-2).
-- **P-4**: GetUserGamesView кэшируется 60с.
-- **P-5**: IsUserManager кэшируется 60с per game:user + viewerID==0 сразу false; инвалидация при изменении соавторов.
-- **P-6**: cacheGetJSON — дженерик (убран reflect из горячего пути).
-- **P-7**: cacheGetInt64 — GetBytes + strconv.ParseInt (убран json.Unmarshal в any + Sscanf).
-- **P-8**: trackPrefix — инкрементальная сборка префиксов (без Split+N×Join).
-- **P-9**: покрыт L8 (SSE controller); formatDate — time.Format неизбежен.
-
-### Проверки финальных фиксов
-- build ✅ (обычная и `-tags=swagger`), golangci-lint ✅ (0 issues), test-short ✅, E2E 14/14 ✅.
-
----
-
-## ✅ Дополнительная волна (PASS-13, аудит непроверенных областей + LOW) — коммит 0974a72
-
-Проверены области, которые аудиторы не успели прочитать в первой волне. Найдены и исправлены:
-
-### HIGH
-- **Email queue: дубликаты писем** — `FOR UPDATE SKIP LOCKED` вне транзакции (автокоммит снимает lock сразу после SELECT): два воркера выбирали одни и те же строки. Исправлено: атомарный `pending/retry → sending` до отправки (статус `EmailStatusSending`); конкурирующий воркер видит `RowsAffected==0` и пропускает.
-
-### MEDIUM
-- **Vote: 500 вместо 400** — пред-локовая проверка возвращала `errors.New("голосование закрыто")` вместо sentinel `ErrVotingClosed`; хендлер мапил `errors.Is` → любой голос после закрытия уходил в 500. Исправлено.
-- **MonitorService: stale-снапшот после инвалидации** — `singleflight.Forget` не отменяет in-flight расчёт, старый результат перезаписывал свежий. Исправлено: эпоха (`epochs map[uint]uint64`), in-flight видит изменившуюся эпоху и не пишет в кэш.
-- **SMTP без таймаутов** — `smtp.Dial`/`tls.Dial`/блокирующие Write без deadline висли бесконечно. Исправлено: `net.Dialer{Timeout}` + `SetDeadline` (30с) для обеих веток (465/TLS и 587/STARTTLS).
-- **Calendar: событие пропадало на границе месяца** — TZ-сдвиг выносил дату в соседний месяц, но запрос был строго по UTC-месяцу. Исправлено: запрос с запасом ±24ч + фильтр по локальной дате.
-- **CSV-импорт N+1** — `tx.Where` на каждую позицию (~10k round-trip). Исправлено: предзагрузка всех уровней игры одним запросом в `levelMap`.
-
-### LOW
-- excelize `f.Close()` (оба экспорта) — освобождение ресурсов.
-- Payment: `truncateUTF8` по рунам (не байтам) для description/metadata — невалидный UTF-8 больше не уходит в ЮKassa.
-- Export `Preload("Author")` — только `id, name, avatar_path` (password_hash/email не читаются зря).
-- Payment: не игнорируются `json.Marshal`/`io.ReadAll` ошибки.
-- Payment `resumePendingPayment` — использует сохранённые description/metadata из записи (не текущего запроса).
-- `SetRateLimitHeaders` — заголовки только при `!Allowed` (L7, ранее отклонено — сделано).
-
-### Оптимизации, сделанные по просьбе «даже если выгода низкая»
-- **P-3: HTML-кэш анонимных публичных GET** (`/`, `/games`): кэш 30с с ПЛЕЙСХОЛДЕРАМИ nonce/CSRF, при отдаче подставляются свежие значения текущего запроса. CSP/CSRF не ослабляются. Тесты: `htmlcache_test.go`.
-- **Defense-in-depth**: `GamePlayService.SubmitTestCode` проверяет права через `HasPermissionTx` (не только хендлер).
-
-### Не исправлено (документировано, минорные/компромиссы)
-- LOW #12: CSV-экспорт теряет Description/Type уровня (экспорт ≠ полный round-trip backup).
-- LOW #13: `copyTeamProgress` — мелкая копия (указатели `*uint` общие с кэшем) — сейчас никто не мутирует.
-- LOW #14: `GetOrFetchSnapshotJSON` отдаёт общий `[]byte` — безопасно при текущих read-only потребителях.
-- LOW #15: письма капитанам — N отдельных INSERT в цикле (приемлемо, SMTP асинхронный).
-
-### Проверки
-- build ✅, golangci-lint ✅ (0 issues), test-short ✅ (включая обновлённые calendar-тесты), E2E 14/14 ✅.
-
----
-
-## ✅ Финальная волна LOW (PASS-13, коммит 6f1b4e1)
-
-- **LOW #12**: CSV-экспорт теперь пишет `level_type`, `level_description` (7 колонок);
-  импорт принимает и старые 5-полевые, и новые 7-полевые файлы; re-import
-  обновляет type/description существующих уровней.
-- **LOW #13**: `copyTeamProgress` — глубокая копия (`CurrentLevel *uint`, `Place *int`
-  больше не разделяются с кэшем).
-- **LOW #14**: `GetOrFetchSnapshotJSON` возвращает копию `[]byte` (поллер SSE не
-  делит общий буфер между подписчиками).
-- **LOW #15**: `email.EnqueueBatch`/`SendBatch` — письма капитанам ставятся одним
-  транзакционным батчем вместо N отдельных INSERT.
-- Проверки: build ✅, golangci-lint ✅, test-short ✅, E2E 14/14 ✅.
-
----
-
-## ✅ UX-предложения (PASS-13, реализованы)
-
-Из 8 предложений UX-раздела DEEP_REVIEW реализованы все:
-
-| # | Предложение | Реализация |
-|---|---|---|
-| UX-1 | Уведомление на старый email при смене | `profile_handler.go`: после UpdateProfile отправляем email на старый адрес («Ваш email был изменён»). |
-| UX-2 | «Remember this device 30 дней» для 2FA | HMAC-SHA256 подписанная cookie `2fa_trusted` (`userID:expiry:sig`, TTL 30д); чекбокс в admin-2fa-verify.html; TwoFactorRequired пропускает trusted; logout снимает. Секрет — `cfg.Session.Secret`. |
-| UX-3 | «Смотреть ответ» в тестовом режиме | **Уже было**: gameplay-test.html всегда показывает правильные ответы. |
-| UX-4 | Прогресс-бар загрузки + предпросмотр | Фото игр: прогресс-бар уже был (inline XHR), добавлен предпросмотр `upload-preview`. Аватар: добавлен предпросмотр `avatar-preview` + прогресс `avatar-progress`. |
-| UX-5 | Дашборд: прогресс X/Y + «продолжить» | SQL `DashboardTeams` считает `completed_levels`/`total_levels`/`current_position`; шаблон показывает прогресс-бар; кнопка «Продолжить» (CanContinue). Функция `percent` в templatefuncs; ключ `dashboard.progress_levels`. |
-| UX-6 | Переключатель языка для гостей | **Уже было**: кнопки RU/EN в layout (JS ставит cookie `lang`). |
-| UX-7 | Пустые состояния с CTA | games-list: CTA «Создать игру» для авторизованных. Dashboard/teams уже имели onboarding/CTA. |
-| UX-8 | Email об инвайтах | **Уже было**: `InvitationService.CreateInvitation` шлёт email с accept-ссылкой (team). |
-
-Проверки: build ✅, golangci-lint ✅ (0 issues), test-short ✅, E2E 14/14 ✅.
-
----
-
-## 🐳 PASS-14: Docker/podman — сборка, compose, pod (валидация)
-
-Проверены Dockerfile, docker-compose и создан pod через `podman play kube`.
-Найдены и исправлены реальные баги миграций и конфигурации.
-
-### Найденные и исправленные баги
-
-1. **`CREATE INDEX CONCURRENTLY` в миграциях 44-51** — golang-migrate postgres
-   шлёт файл миграции ОДНИМ Exec, а PostgreSQL отклоняет CONCURRENTLY в
-   multi-statement batch → dirty state на свежей БД. **Фикс**: заменено на
-   обычные `CREATE INDEX IF NOT EXISTS` (индексы уже есть в squashed-наборе;
-   на существующих БД IF NOT EXISTS пропускает).
-
-2. **`MultiStatementEnabled` НЕ включать** — golang-migrate разбивает файл по
-   `;` и ломает dollar-quoted функции (`$$...$$` с `;` внутри, миграции
-   000011/000027/000028/000029). Без него весь файл идёт одним Exec корректно.
-
-3. **Squashed-набор несамодостаточен** — файлы `migrations_squashed/`
-   ссылаются на таблицы из других файлов в неверном порядке (000007_schema_tail
-   ссылается на notifications, созданные позже). **Фикс**: свежие БД применяют
-   поштучные `migrations/`; squashed — только для существующих squashed-БД
-   (version <= 9).
-
-4. **docker-compose: PostgreSQL 18** — требует mount на `/var/lib/postgresql`
-   (не `/var/lib/postgresql/data`) — иначе отказ старта (docker-library/postgres#1259).
-
-5. **playwright.config.ts**: baseURL читается из env `E2E_BASE_URL` — позволяет
-   гонять E2E против compose/pod (`E2E_BASE_URL=http://172.30.73.28:8080 npx playwright test`).
-
-6. **TRUSTED_PROXIES ломает HTTP-формы** — если задан, Secure-флаг CSRF/session
-   cookie = true, и по HTTP (compose/pod без reverse-proxy) браузер не шлёт
-   cookie → CSRF mismatch. Документировано: задавать только при reverse-proxy с TLS.
-
-### Результаты валидации
-
-| Шаг | Результат |
-|---|---|
-| `podman build -t gengine:test` | ✅ образ 70MB (golang:1.25-alpine → alpine:3.23 + pg18-client) |
-| `podman compose up -d --build` | ✅ db+valkey healthy, app healthy, миграции до 67 |
-| Healthz (compose) | ✅ database/valkey/websocket/disk — ok |
-| E2E против compose | ✅ 14/14 |
-| `podman play kube deploy/pod/gengine-pod.yaml` | ✅ pod Running (4 контейнера с инфраструктурным) |
-| Healthz (pod) | ✅ database/valkey/websocket — ok |
-| E2E против pod | ✅ 14/14 |
-| Миграции в pod | ✅ version 67, dirty=false |
-
-### Артефакты
-- `deploy/pod/gengine-pod.yaml` — k8s-совместимый манифест pod (app+db+valkey).
-- `deploy/pod/README.md` — инструкция запуска и ограничения.
-- `docker-compose.yml` — исправлен mount PG18.
+- Проверки: build ✅, golangci-lint ✅ (0 issues), test-short ✅, E2E 14/14 (в pod).
+- Рекомендуемый порядок: H1-H3 (производительность кэша и OOM) → H4 (email дубликаты) → H5-H6 (trusted 2FA) → M1-M3 → остальное.
