@@ -16,6 +16,9 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
+    // Самоподписанный TLS-сертификат (HTTPS-проверка в pod) — для тестов.
+    // В CI/production с валидным сертификатом можно убрать.
+    ignoreHTTPSErrors: true,
     // Service Worker кэширует HTML-страницы → подставляет устаревший CSRF-токен.
     // Блокируем SW, чтобы каждая страница грузилась свежей.
     serviceWorkers: 'block',

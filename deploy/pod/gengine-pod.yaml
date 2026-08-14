@@ -77,7 +77,7 @@ spec:
         - name: VALKEY_PORT
           value: "6379"
         - name: BASE_URL
-          value: http://127.0.0.1:8080
+          value: https://172.30.73.28:8080
         # M5 (PASS-15): ТЕСТОВЫЕ секреты/админ-пароль. В production —
         # podman secret / k8s Secrets. RATE_LIMIT_*=100000 и PPROF — только
         # для тестов; в прод уберите PPROF_ENABLED и поставьте реальные лимиты.
@@ -115,14 +115,24 @@ spec:
         - name: PPROF_PORT
           value: "6060"
         # TrustedProxies пуст → Secure-флаг cookie=false (работает по HTTP)
+        # TLS (HTTPS-проверка): самоподписанный сертификат в deploy/certs.
+        # При заданных TLS_CERT_FILE/TLS_KEY_FILE сервер включает HTTPS.
+        # В production — реальный сертификат (Let's Encrypt / k8s ingress).
+        - name: TLS_CERT_FILE
+          value: /certs/server.crt
+        - name: TLS_KEY_FILE
+          value: /certs/server.key
       volumeMounts:
         - name: uploads
           mountPath: /app/uploads
         - name: backups
           mountPath: /app/backups
+        - name: certs
+          mountPath: /certs
+          readOnly: true
       readinessProbe:
         exec:
-          command: ["wget", "--spider", "-q", "http://localhost:8080/healthz"]
+          command: ["wget", "--spider", "-q", "https://localhost:8080/healthz", "--no-check-certificate"]
         initialDelaySeconds: 10
         periodSeconds: 10
 
@@ -137,6 +147,12 @@ spec:
       emptyDir: {}
     - name: backups
       emptyDir: {}
+    - name: certs
+      # TLS-сертификат (deploy/certs/server.{crt,key}). В podman hostPath
+      # указывает на каталог внутри VM; в k8s — секрет/volume.
+      hostPath:
+        path: /app/certs
+        type: Directory
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

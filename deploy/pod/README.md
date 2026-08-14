@@ -60,6 +60,32 @@ podman pod rm gengine-pod      # -f чтобы удалить не глядя
 podman volume rm gengine-pgdata gengine-valkeydata
 ```
 
+## HTTPS (самоподписанный сертификат, PASS-15)
+
+Манифест поддерживает TLS через `TLS_CERT_FILE`/`TLS_KEY_FILE` (сертификат
+монтируется из hostPath `/certs`). Для HTTPS-проверки:
+
+```bash
+# 1. Сгенерировать самоподписанный сертификат (openssl в alpine-контейнере)
+podman run --rm -v "$(pwd)/deploy/certs:/certs" docker.io/library/alpine:3.23 \
+  sh -c "apk add --no-cache openssl >/dev/null && \
+    openssl req -x509 -newkey rsa:2048 -nodes -keyout /certs/server.key \
+    -out /certs/server.crt -days 365 -subj '/CN=gengine.local' \
+    -addext 'subjectAltName=DNS:gengine.local,IP:127.0.0.1'"
+
+# 2. Скопировать сертификаты в VM (podman machine) — hostPath /app/certs
+#    (или положить на путь, указанный в hostPath манифеста)
+
+# 3. Сервер поднимется на HTTPS (ListenAndServeTLS)
+curl -sk https://localhost:8080/healthz
+
+# 4. E2E через HTTPS (самоподписанный — ignoreHTTPSErrors уже включён)
+E2E_BASE_URL=https://<host>:8080 npx playwright test
+```
+
+> ВНИМАНИЕ: `deploy/certs/` в `.gitignore` — сертификаты не коммитятся.
+> В production используйте валидный сертификат (Let's Encrypt / k8s ingress).
+
 ## Альтернативы
 
 - **docker-compose**: `podman compose up -d --build` (см. `docker-compose.yml`).

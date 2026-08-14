@@ -66,3 +66,6 @@ uploads/
 /playwright-report/
 /.env.e2e
 
+
+# TLS-сертификаты (не коммитить)
+deploy/certs/
