@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/smtp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -470,7 +471,9 @@ func SendEmail(cfg *config.Config, to, subject, body string) error {
 		return fmt.Errorf("SMTP is not enabled")
 	}
 
-	addr := fmt.Sprintf("%s:%d", cfg.SMTP.Host, cfg.SMTP.Port)
+	// net.JoinHostPort корректно обрабатывает IPv6-адреса (ставит [ ]),
+	// в отличие от fmt.Sprintf("%s:%d", ...), который ловит go vet (net-dial).
+	addr := net.JoinHostPort(cfg.SMTP.Host, strconv.Itoa(cfg.SMTP.Port))
 
 	// MEDIUM #6 (PASS-13): таймауты SMTP — раньше smtp.Dial/tls.Dial и
 	// блокирующие Write без deadline могли висеть бесконечно при недоступном
@@ -638,7 +641,8 @@ func SendBatch(cfg *config.Config, messages []EmailMessage) error {
 		return nil
 	}
 
-	addr := fmt.Sprintf("%s:%d", cfg.SMTP.Host, cfg.SMTP.Port)
+	// net.JoinHostPort корректно обрабатывает IPv6 (см. комментарий в SendEmail).
+	addr := net.JoinHostPort(cfg.SMTP.Host, strconv.Itoa(cfg.SMTP.Port))
 
 	var auth smtp.Auth
 	if cfg.SMTP.User != "" && cfg.SMTP.Password != "" {

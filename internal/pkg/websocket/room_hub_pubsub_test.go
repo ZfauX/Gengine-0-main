@@ -90,41 +90,62 @@ func TestRoomHub_PubSub_NoEcho(t *testing.T) {
 		return hub1.RoomClientCount("room") == 1 && hub2.RoomClientCount("room") == 1
 	}, 3*time.Second, 10*time.Millisecond)
 
-	// Публикуем N раз (ретраи против асинхронной подписки).
-	const n = 3
-	for range n {
-		hub1.BroadcastToRoom("room", []byte("x"))
-		time.Sleep(120 * time.Millisecond)
-	}
-
-	// Каждый клиент должен получить РОВНО n сообщений: n от легитимной
-	// рассылки (локально + через подписку от другого инстанса), без эха
-	// (собственное сообщение не рассылается повторно).
-	for range n {
+	// Подписка Redis pub/sub устанавливается асинхронно: пока она не готова,
+	// первые публикации теряются (флейк под -race/CI). Прогреваем подписку —
+	// публикуем «ready» с ретраями, пока ОБА клиента не получат хотя бы одно.
+	publishWithRetry(hub1, "room", []byte("ready"))
+	waitReady := func(ch <-chan []byte, label string) {
+		t.Helper()
 		select {
-		case <-got1:
+		case <-ch:
 		case <-time.After(5 * time.Second):
-			t.Fatal("local client did not receive expected message")
+			t.Fatalf("%s did not receive ready message", label)
 		}
 	}
-	for range n {
-		select {
-		case <-got2:
-		case <-time.After(5 * time.Second):
-			t.Fatal("remote client did not receive expected message")
+	waitReady(got1, "local client")
+	waitReady(got2, "remote client")
+
+	// Вычитываем из каналов возможные лишние «ready» (ретраи доставили
+	// несколько), чтобы каналы были пустыми перед контрольной публикацией.
+	drain := func(ch <-chan []byte) {
+		t.Helper()
+		for {
+			select {
+			case <-ch:
+			case <-time.After(200 * time.Millisecond):
+				return
+			}
 		}
 	}
+	drain(got1)
+	drain(got2)
 
-	// После всех легитимных сообщений лишних (эхо) быть не должно.
-	select {
-	case msg := <-got1:
-		t.Fatalf("local client received echo message: %s", msg)
-	case <-time.After(500 * time.Millisecond):
+	// Подписка гарантированно готова. Публикуем ОДНО контрольное сообщение:
+	// каждый клиент должен получить его РОВНО один раз (доставка без эха —
+	// собственное сообщение отправитель пропускает, anti-echo).
+	hub1.BroadcastToRoom("room", []byte("control"))
+	receiveControl := func(ch <-chan []byte, label string) {
+		t.Helper()
+		select {
+		case msg := <-ch:
+			assert.Equal(t, "control", string(msg), "%s client got wrong message", label)
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%s client did not receive control message", label)
+		}
 	}
-	select {
-	case msg := <-got2:
-		t.Fatalf("remote client received duplicate message: %s", msg)
-	case <-time.After(500 * time.Millisecond):
+	receiveControl(got1, "local")
+	receiveControl(got2, "remote")
+
+	// После контрольного сообщения лишних (эхо/дубликатов) быть не должно.
+	for _, c := range []struct {
+		ch    <-chan []byte
+		label string
+	}{{got1, "local"}, {got2, "remote"}} {
+		select {
+		case msg := <-c.ch:
+			t.Fatalf("%s client received extra message: %s", c.label, msg)
+		case <-time.After(500 * time.Millisecond):
+		}
 	}
 }
 
