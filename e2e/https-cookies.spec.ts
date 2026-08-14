@@ -1,9 +1,15 @@
 // e2e/https-cookies.spec.ts
-// Временный тест: проверка Secure/HttpOnly/SameSite флагов cookie через HTTPS.
+// Проверка флагов cookie (Secure/HttpOnly/SameSite) в зависимости от протокола:
+//   - HTTPS (E2E_BASE_URL=https://…): ВСЕ cookie должны быть Secure+HttpOnly,
+//     а JS-куки (tz_offset, lang) — Secure (не HttpOnly).
+//   - HTTP (CI/localhost): Secure-флаг должен быть ВЫКЛЮЧЕН. Если сервер
+//     форсирует Secure на HTTP (FORCE_SECURE_COOKIE/TRUSTED_PROXIES), браузер
+//     не сохраняет cookie → авторизация ломается (известный CI-кейс PASS-15).
 import { test, expect } from '@playwright/test';
 
-test('HTTPS: все cookie Secure+HttpOnly', async ({ page, context }) => {
+test('Cookie flags: Secure+HttpOnly согласованы с протоколом', async ({ page, context }) => {
   const base = process.env.E2E_BASE_URL || 'http://localhost:8081';
+  const isHttps = base.startsWith('https://');
 
   // Открываем login (ставит CSRF cookie)
   await page.goto(base + '/auth/login');
@@ -37,12 +43,18 @@ test('HTTPS: все cookie Secure+HttpOnly', async ({ page, context }) => {
   }));
   console.log('COOKIES_AFTER_LOGIN=' + JSON.stringify(flags, null, 2));
 
-  // Проверяем Secure для ВСЕХ cookie (безопасный транспорт).
-  // HttpOnly — только для серверных cookie (jwt/refresh/session/csrf);
   // JS-куки (tz_offset, lang) ставятся скриптом и не могут быть HttpOnly.
   const jsCookies = new Set(['tz_offset', 'lang']);
+
   for (const c of cookies) {
-    expect(c.secure, `cookie ${c.name} должен быть Secure на HTTPS`).toBe(true);
+    if (isHttps) {
+      // На HTTPS каждая cookie должна ходить только по TLS.
+      expect(c.secure, `cookie ${c.name} должен быть Secure на HTTPS`).toBe(true);
+    } else {
+      // На HTTP Secure-флаг быть не должен — иначе браузер не сохранит cookie
+      // и сессия/CSRF сломаются (FORCE_SECURE_COOKIE=true ломает HTTP-формы).
+      expect(c.secure, `cookie ${c.name} НЕ должен быть Secure на HTTP`).toBe(false);
+    }
     if (!jsCookies.has(c.name)) {
       expect(c.httpOnly, `cookie ${c.name} должен быть HttpOnly`).toBe(true);
     }
