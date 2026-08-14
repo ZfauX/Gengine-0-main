@@ -5,5 +5,5 @@
 -- ORDER BY started_at ASC LIMIT batch. Существующие partial-индексы
 -- (game_passing_id, finished_at) / (game_passing_id, created_at) не покрывают
 -- сортировку по started_at незавершённых прогрессов → полная сортировка.
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_level_progresses_unfinished_started
+CREATE INDEX IF NOT EXISTS idx_level_progresses_unfinished_started
     ON level_progresses(started_at) WHERE finished_at IS NULL;

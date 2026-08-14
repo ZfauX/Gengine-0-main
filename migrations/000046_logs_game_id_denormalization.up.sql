@@ -12,5 +12,5 @@ UPDATE logs SET game_id = gp.game_id
 FROM game_passings gp
 WHERE gp.id = logs.game_passing_id AND logs.game_id = 0;
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_logs_game_created
+CREATE INDEX IF NOT EXISTS idx_logs_game_created
     ON logs(game_id, created_at DESC);

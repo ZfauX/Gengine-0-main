@@ -7,5 +7,5 @@
 -- прогресс первого уровня с ON CONFLICT (game_passing_id, level_id). Частичный индекс
 -- не блокирует повторное создание после soft-delete прогресса и не падает, если в БД
 -- уже есть дубликаты среди удалённых строк.
-CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_level_progresses_passing_level
+CREATE UNIQUE INDEX IF NOT EXISTS idx_level_progresses_passing_level
     ON level_progresses(game_passing_id, level_id) WHERE deleted_at IS NULL;

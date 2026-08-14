@@ -39,7 +39,11 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # PostgreSQL 18: mount на /var/lib/postgresql (не data) — иначе
+      # контейнер отказывается стартовать с предупреждением об upgrade
+      # (см. docker-library/postgres#1259). PGDATA автоматически кладётся
+      # в подкаталог.
+      - pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
       interval: 10s

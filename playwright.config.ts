@@ -1,5 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 
+// baseURL из окружения (E2E_BASE_URL) — позволяет гонять тесты против
+// поднятого контейнера/compose (:8080) или локального dev-сервера (:8081).
+const baseURL = process.env.E2E_BASE_URL || 'http://localhost:8081';
+
 export default defineConfig({
   testDir: './e2e',
   timeout: 30000,
@@ -8,7 +12,7 @@ export default defineConfig({
   retries: 0,
   reporter: [['list']],
   use: {
-    baseURL: 'http://localhost:8081',
+    baseURL,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',

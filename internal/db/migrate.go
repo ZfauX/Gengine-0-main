@@ -106,6 +106,11 @@ func MigrateFromDir(gdb *gorm.DB, migrationsDir string) error {
 	}()
 	log.Info().Msg("MigrateFromDir: advisory lock acquired")
 
+	// MultiStatementEnabled НЕ включаем (PASS-14): golang-migrate разбивает
+	// файл по ";" и ломает dollar-quoted функции ($$...$$ с ";" внутри,
+	// например миграция 000011 games_search_vector). Вместо этого миграции
+	// 44-51 были переведены с CREATE INDEX CONCURRENTLY на обычные CREATE
+	// INDEX — pgx/ExecContext выполняет весь файл одним statement корректно.
 	driver, err := postgres.WithInstance(sqlDB, &postgres.Config{})
 	if err != nil {
 		return fmt.Errorf("не удалось создать драйвер миграции: %w", err)
