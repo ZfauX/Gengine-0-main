@@ -162,20 +162,33 @@
             {{if .Dashboard.ActivePassings}}
             <ul class="divide-y divide-gray-100">
                 {{range .Dashboard.ActivePassings}}
-                <li class="py-2 flex justify-between items-center text-sm">
-                    <span>
-                        <span class="font-medium text-gray-800 dark:text-gray-100">{{.GameName}}</span>
-                        <span class="text-gray-500">—</span>
-                        {{.TeamName}}
-                        <span class="inline-block ml-2 px-2 py-0.5 text-xs font-semibold rounded-full 
-                            {{if eq .PassingStatus "started"}}bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200
-                            {{else if eq .PassingStatus "accepted"}}bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200
-                            {{else}}bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100{{end}}">
-                            {{if eq .PassingStatus "started"}}{{ T $.Lang "passing.status_started" }}{{else if eq .PassingStatus "accepted"}}{{ T $.Lang "passing.status_accepted" }}{{else}}{{ T $.Lang "passing.status_unknown" }}{{end}}
+                <li class="py-3 text-sm">
+                    <div class="flex justify-between items-center gap-2 flex-wrap">
+                        <span>
+                            <span class="font-medium text-gray-800 dark:text-gray-100">{{.GameName}}</span>
+                            <span class="text-gray-500">—</span>
+                            {{.TeamName}}
+                            <span class="inline-block ml-2 px-2 py-0.5 text-xs font-semibold rounded-full 
+                                {{if eq .PassingStatus "started"}}bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200
+                                {{else if eq .PassingStatus "accepted"}}bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200
+                                {{else}}bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100{{end}}">
+                                {{if eq .PassingStatus "started"}}{{ T $.Lang "passing.status_started" }}{{else if eq .PassingStatus "accepted"}}{{ T $.Lang "passing.status_accepted" }}{{else}}{{ T $.Lang "passing.status_unknown" }}{{end}}
+                            </span>
                         </span>
-                    </span>
-                    {{if eq .PassingStatus "started"}}
-                    <a href="/game/{{.PassingID}}" class="btn btn-primary text-xs">{{ T $.Lang "dashboard.continue" }}</a>
+                        {{if .CanContinue}}
+                        <a href="/game/{{.PassingID}}" class="btn btn-primary text-xs">{{ T $.Lang "dashboard.continue" }}</a>
+                        {{end}}
+                    </div>
+                    {{if gt .TotalLevels 0}}
+                    <!-- UX-5 (PASS-13): прогресс прохождения (уровень X из Y) -->
+                    <div class="mt-2 flex items-center gap-2">
+                        <div class="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                            <div class="h-full bg-blue-600 rounded-full" style="width: {{percent .CompletedLevels .TotalLevels}}%"></div>
+                        </div>
+                        <span class="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                            {{if eq .PassingStatus "started"}}{{ TF $.Lang "dashboard.progress_levels" .CompletedLevels .TotalLevels }}{{else}}{{ TF $.Lang "dashboard.progress_levels" .CompletedLevels .TotalLevels }}{{end}}
+                        </span>
+                    </div>
                     {{end}}
                 </li>
                 {{end}}

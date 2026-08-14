@@ -48,6 +48,11 @@ type DashboardPassingWithGame struct {
 	GameName      string
 	GameID        uint
 	PassingID     uint
+	// UX-5 (PASS-13): прогресс и позиция текущего уровня для «продолжить».
+	CompletedLevels int
+	TotalLevels     int
+	CurrentPosition int
+	CanContinue     bool
 }
 
 type DashboardInvitation struct {
@@ -95,12 +100,22 @@ func (s *UserDashboardService) GetDashboard(ctx context.Context, userID uint) (*
 		// Активные прохождения
 		if r.PassingID != 0 && r.GameName != "" &&
 			(r.PassingStatus == "started" || r.PassingStatus == "accepted") {
+			// UX-5 (PASS-13): «продолжить» доступно, пока есть незавершённые уровни.
+			canContinue := r.PassingStatus == "started" && r.TotalLevels > 0 && r.CompletedLevels < r.TotalLevels
+			curPos := 0
+			if r.CurrentPosition != nil {
+				curPos = *r.CurrentPosition
+			}
 			dash.ActivePassings = append(dash.ActivePassings, DashboardPassingWithGame{
-				PassingStatus: r.PassingStatus,
-				TeamName:      r.TeamName,
-				GameName:      r.GameName,
-				GameID:        r.GameID,
-				PassingID:     r.PassingID,
+				PassingStatus:   r.PassingStatus,
+				TeamName:        r.TeamName,
+				GameName:        r.GameName,
+				GameID:          r.GameID,
+				PassingID:       r.PassingID,
+				CompletedLevels: r.CompletedLevels,
+				TotalLevels:     r.TotalLevels,
+				CurrentPosition: curPos,
+				CanContinue:     canContinue,
 			})
 		}
 	}

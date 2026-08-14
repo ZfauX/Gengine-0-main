@@ -392,6 +392,8 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	setSecureCookie(c, "jwt", "", -1, "/")
 	setSecureCookie(c, "refresh_token", "", -1, "/")
 	clear2FASessionFlag(c)
+	// UX-2 (PASS-13): снимаем trusted-device cookie при logout.
+	clearTrustedDeviceCookie(c)
 	// M3 (PASS-13): удаляем server-side сессию.
 	sessionstore.DeleteGinSession(c)
 	c.Redirect(http.StatusFound, "/")

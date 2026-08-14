@@ -13,6 +13,8 @@
                    class="flex-1 text-sm text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
             <button type="submit" id="upload-btn" class="btn btn-primary text-sm whitespace-nowrap">{{ T $.Lang "photos.upload_button" }}</button>
         </form>
+        <!-- UX-4 (PASS-13): предпросмотр выбранного фото. -->
+        <img id="upload-preview" class="hidden mt-3 max-h-40 rounded-lg shadow-sm object-contain" alt="">
         <div id="upload-progress" class="mt-3 hidden">
             <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                 <div id="upload-progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-150"></div>
@@ -94,6 +96,17 @@
             const fileInput = this.querySelector('input[type="file"]');
             const file = fileInput.files[0];
             if (!file) return;
+
+            // UX-4 (PASS-13): предпросмотр выбранного фото до загрузки.
+            const preview = document.getElementById('upload-preview');
+            if (preview) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    preview.src = e.target.result;
+                    preview.classList.remove('hidden');
+                };
+                reader.readAsDataURL(file);
+            }
 
             const formData = new FormData();
             formData.append('photo', file);

@@ -223,3 +223,22 @@
 - **LOW #15**: `email.EnqueueBatch`/`SendBatch` — письма капитанам ставятся одним
   транзакционным батчем вместо N отдельных INSERT.
 - Проверки: build ✅, golangci-lint ✅, test-short ✅, E2E 14/14 ✅.
+
+---
+
+## ✅ UX-предложения (PASS-13, реализованы)
+
+Из 8 предложений UX-раздела DEEP_REVIEW реализованы все:
+
+| # | Предложение | Реализация |
+|---|---|---|
+| UX-1 | Уведомление на старый email при смене | `profile_handler.go`: после UpdateProfile отправляем email на старый адрес («Ваш email был изменён»). |
+| UX-2 | «Remember this device 30 дней» для 2FA | HMAC-SHA256 подписанная cookie `2fa_trusted` (`userID:expiry:sig`, TTL 30д); чекбокс в admin-2fa-verify.html; TwoFactorRequired пропускает trusted; logout снимает. Секрет — `cfg.Session.Secret`. |
+| UX-3 | «Смотреть ответ» в тестовом режиме | **Уже было**: gameplay-test.html всегда показывает правильные ответы. |
+| UX-4 | Прогресс-бар загрузки + предпросмотр | Фото игр: прогресс-бар уже был (inline XHR), добавлен предпросмотр `upload-preview`. Аватар: добавлен предпросмотр `avatar-preview` + прогресс `avatar-progress`. |
+| UX-5 | Дашборд: прогресс X/Y + «продолжить» | SQL `DashboardTeams` считает `completed_levels`/`total_levels`/`current_position`; шаблон показывает прогресс-бар; кнопка «Продолжить» (CanContinue). Функция `percent` в templatefuncs; ключ `dashboard.progress_levels`. |
+| UX-6 | Переключатель языка для гостей | **Уже было**: кнопки RU/EN в layout (JS ставит cookie `lang`). |
+| UX-7 | Пустые состояния с CTA | games-list: CTA «Создать игру» для авторизованных. Dashboard/teams уже имели onboarding/CTA. |
+| UX-8 | Email об инвайтах | **Уже было**: `InvitationService.CreateInvitation` шлёт email с accept-ссылкой (team). |
+
+Проверки: build ✅, golangci-lint ✅ (0 issues), test-short ✅, E2E 14/14 ✅.

@@ -26,6 +26,10 @@ type TwoFactorHandler struct {
 	authService     *AuthService
 	userRepo        UserRepository
 	jwtAccessExpiry time.Duration
+	// trustedSecret (UX-2, PASS-13): секрет для HMAC-подписи trusted-device
+	// cookie («Запомнить это устройство на 30 дней»). Устанавливается из
+	// routes.go (cfg.Session.Secret).
+	trustedSecret string
 }
 
 // NewTwoFactorHandler создаёт новый handler 2FA.
@@ -39,6 +43,13 @@ func NewTwoFactorHandler(twoFactorSvc *TwoFactorService, authService *AuthServic
 		userRepo:        userRepo,
 		jwtAccessExpiry: jwtAccessExpiry,
 	}
+}
+
+// WithTrustedSecret (UX-2, PASS-13): включает «запомнить устройство» —
+// секрет для HMAC-подписи trusted-device cookie.
+func (h *TwoFactorHandler) WithTrustedSecret(secret string) *TwoFactorHandler {
+	h.trustedSecret = secret
+	return h
 }
 
 // lockUser блокирует аккаунт с экспоненциальным backoff (S-1/S-4, pass 33).
@@ -148,6 +159,12 @@ func (h *TwoFactorHandler) Verify(c *gin.Context) {
 	// Сохраняем флаг верификации в сессии (привязан к userID)
 	session := sessions.Default(c)
 	set2FAVerified(session, userID)
+	// UX-2 (PASS-13): «запомнить это устройство на 30 дней» — ставим
+	// trusted-device cookie (подписанную, с TTL), чтобы не вводить TOTP
+	// на доверенных устройствах повторно.
+	if h.trustedSecret != "" && c.PostForm("remember_device") == "1" {
+		setTrustedDeviceCookie(c, userID, h.trustedSecret)
+	}
 	// PASS-11 (session fixation): 2FA-проверка — событие повышения доверия.
 	// Перевыпускаем session ID, чтобы подсунутая pre-2FA кука не работала.
 	if err := sessionstore.RenewGinSession(c); err != nil {

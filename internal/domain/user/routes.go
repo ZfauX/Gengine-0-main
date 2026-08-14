@@ -44,6 +44,11 @@ func RegisterRoutes(
 	dashboardHandler := NewDashboardHandler(dashboardSvc)
 
 	twoFactorHandler := NewTwoFactorHandler(twoFactorSvc, authSvc, userRepo, cfg.JWT.AccessExpiry)
+	// UX-2 (PASS-13): «запомнить устройство 30 дней» — секрет для HMAC-подписи
+	// trusted-device cookie (глобально для TwoFactorRequired middleware и в
+	// хендлере для установки cookie).
+	SetTrustedSecret(cfg.Session.Secret)
+	twoFactorHandler.WithTrustedSecret(cfg.Session.Secret)
 
 	// S-44-2 (pass 44): отдельный ключ OAuth — не делит бюджет с парольным логином.
 	oauthRateLimit := middleware.OAuthRateLimit(5*time.Minute, 10)

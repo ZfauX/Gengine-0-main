@@ -66,6 +66,20 @@ func FuncMap() template.FuncMap {
 		"csrfToken":           csrfToken,
 		"default":             defaultValue,
 		"truncate":            truncate,
+		// percent (UX-5, PASS-13): процент завершения (часть/всего, 0..100).
+		"percent": func(part, total int) int {
+			if total <= 0 {
+				return 0
+			}
+			p := int(float64(part) / float64(total) * 100)
+			if p < 0 {
+				return 0
+			}
+			if p > 100 {
+				return 100
+			}
+			return p
+		},
 		// richText — F-2 (pass 45): санитизированный rich-text для рендера
 		// (WYSIWYG описаний). Возвращает template.HTML — безопасно, т.к.
 		// значение проходит через bluemonday-политику.

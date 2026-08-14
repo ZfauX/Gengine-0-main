@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gengine-0/internal/config"
+	"gengine-0/internal/pkg/email"
 	"gengine-0/internal/pkg/middleware"
 	"gengine-0/internal/pkg/render"
 	"gengine-0/internal/pkg/sanitize"
@@ -384,6 +385,19 @@ func (h *ProfileHandler) UpdateProfile(c *gin.Context) {
 		})
 		return
 	}
+
+	// UX-1 (PASS-13): при смене email уведомляем СТАРЫЙ адрес — владелец
+	// предыдущего почтового ящика узнаёт о смене (защита от захвата/ошибки).
+	if !strings.EqualFold(curUser.Email, cleanEmail) && curUser.Email != "" {
+		subject := "Ваш email был изменён"
+		body := "Здравствуйте!\n\nВаш email на Gengine-0 был изменён на: " + cleanEmail + ".\n" +
+			"Если вы не меняли email — немедленно восстановите доступ через сброс пароля.\n\n" +
+			"— Команда Gengine-0"
+		if enqErr := email.Enqueue(curUser.Email, subject, body); enqErr != nil {
+			log.Warn().Err(enqErr).Uint("user", userID).Msg("UpdateProfile: failed to notify old email")
+		}
+	}
+
 	c.Redirect(http.StatusFound, "/profile")
 }
 

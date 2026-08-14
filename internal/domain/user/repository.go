@@ -34,6 +34,11 @@ type DashboardTeamRow struct {
 	GameID        uint
 	PassingStatus string
 	GameName      string
+	// UX-5 (PASS-13): прогресс прохождения — завершённые/всего уровней и
+	// позиция текущего уровня (для «продолжить»).
+	CompletedLevels int
+	TotalLevels     int
+	CurrentPosition *int
 }
 
 type DashboardInvitationRow struct {
@@ -289,7 +294,18 @@ func (r *gormUserRepo) DashboardTeams(ctx context.Context, userID uint) ([]Dashb
 		       COALESCE(gp.id, 0) as passing_id,
 		       COALESCE(gp.game_id, 0) as game_id,
 		       COALESCE(gp.status, '') as passing_status,
-		       COALESCE(g.name, '') as game_name
+		       COALESCE(g.name, '') as game_name,
+		       -- UX-5: прогресс прохождения (завершённые уровни / всего уровней)
+		       (SELECT COUNT(*) FROM level_progresses lp
+		         JOIN levels l ON l.id = lp.level_id
+		         WHERE lp.game_passing_id = gp.id AND lp.finished_at IS NOT NULL
+		           AND l.deleted_at IS NULL) AS completed_levels,
+		       (SELECT COUNT(*) FROM levels l WHERE l.game_id = gp.game_id
+		         AND l.deleted_at IS NULL) AS total_levels,
+		       (SELECT l2.position FROM level_progresses lp2
+		         JOIN levels l2 ON l2.id = lp2.level_id
+		         WHERE lp2.game_passing_id = gp.id AND lp2.finished_at IS NULL
+		         ORDER BY l2.position ASC LIMIT 1) AS current_position
 		FROM teams t
 		LEFT JOIN game_passings gp ON gp.team_id = t.id AND gp.status IN ('accepted', 'started', 'finished')
 		LEFT JOIN games g ON g.id = gp.game_id AND g.deleted_at IS NULL

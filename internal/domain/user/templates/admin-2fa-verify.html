@@ -21,6 +21,12 @@
                        class="form-input text-center text-2xl tracking-widest" placeholder="000000">
             </div>
 
+            <!-- UX-2 (PASS-13): «запомнить это устройство на 30 дней» -->
+            <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
+                <input type="checkbox" name="remember_device" value="1" class="rounded border-gray-300 dark:border-gray-600">
+                {{ T $.Lang "twofa.remember_device" }}
+            </label>
+
             <button type="submit" class="btn btn-primary w-full">{{ T $.Lang "twofa.admin_verify_button" }}</button>
         </form>
 

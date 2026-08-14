@@ -2,10 +2,14 @@
 package user
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-contrib/sessions"
@@ -18,10 +22,95 @@ import (
 // бессрочный доступ к /admin/*. Step-up теперь ограничен по времени.
 const twoFAStepUpTTL = 15 * time.Minute
 
+// trustedDeviceCookie — имя cookie «запомнить это устройство» (UX-2, PASS-13).
+// Содержит подписанный payload: userID:unixExpiry:hmac.
+const trustedDeviceCookie = "2fa_trusted"
+
+// trustedDeviceTTL — срок жизни trusted cookie (30 дней).
+const trustedDeviceTTL = 30 * 24 * time.Hour
+
 // session2FAKey возвращает ключ флага 2FA, привязанный к userID, чтобы флаг
 // не "перетекал" между аккаунтами на одном браузере.
 func session2FAKey(userID uint) string {
 	return "2fa_verified_" + strconv.FormatUint(uint64(userID), 10)
+}
+
+// setTrustedDeviceCookie ставит trusted-device cookie (UX-2, PASS-13):
+// payload = userID:expiryUnix, подписан HMAC-SHA256 от trustedSecret.
+func setTrustedDeviceCookie(c *gin.Context, userID uint, secret string) {
+	if secret == "" {
+		return
+	}
+	expiry := time.Now().Add(trustedDeviceTTL).Unix()
+	payload := fmt.Sprintf("%d:%d", userID, expiry)
+	sig := hmacSHA256Hex(secret, payload)
+	value := payload + ":" + sig
+	c.SetCookie(trustedDeviceCookie, value, int(trustedDeviceTTL.Seconds()), "/", "", false, true)
+}
+
+// isTrustedDevice проверяет trusted-device cookie: подпись валидна, userID
+// совпадает, срок не истёк. Только если trustedSecret задан.
+func isTrustedDevice(c *gin.Context, userID uint, secret string) bool {
+	if secret == "" {
+		return false
+	}
+	val, err := c.Cookie(trustedDeviceCookie)
+	if err != nil || val == "" {
+		return false
+	}
+	// payload:signature
+	idx := strings.LastIndex(val, ":")
+	if idx <= 0 {
+		return false
+	}
+	payload := val[:idx]
+	sig := val[idx+1:]
+	if !hmacSHA256Equal(secret, payload, sig) {
+		return false
+	}
+	parts := strings.SplitN(payload, ":", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	id, err1 := strconv.ParseUint(parts[0], 10, 64)
+	expUnix, err2 := strconv.ParseInt(parts[1], 10, 64)
+	if err1 != nil || err2 != nil {
+		return false
+	}
+	if uint(id) != userID {
+		return false
+	}
+	return time.Now().Unix() < expUnix
+}
+
+// clearTrustedDeviceCookie удаляет trusted-device cookie (logout).
+func clearTrustedDeviceCookie(c *gin.Context) {
+	c.SetCookie(trustedDeviceCookie, "", -1, "/", "", false, true)
+}
+
+// trustedDeviceSecret — глобальный секрет trusted-device cookie (UX-2).
+// Устанавливается из routes.go через SetTrustedSecret (cfg.Session.Secret).
+// Хранится глобально, т.к. TwoFactorRequired — самостоятельный middleware.
+var trustedDeviceSecret string
+
+// SetTrustedSecret регистрирует секрет для trusted-device cookie.
+func SetTrustedSecret(secret string) {
+	trustedDeviceSecret = secret
+}
+
+// hmacSHA256Hex возвращает hex-кодированную HMAC-SHA256 подпись payload.
+func hmacSHA256Hex(secret, payload string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(payload))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// hmacSHA256Equal проверяет подпись через constant-time сравнение.
+func hmacSHA256Equal(secret, payload, sig string) bool {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(payload))
+	expected := hex.EncodeToString(mac.Sum(nil))
+	return hmac.Equal([]byte(expected), []byte(sig))
 }
 
 // is2FAVerified проверяет, что step-up 2FA подтверждён и не истёк.
@@ -94,6 +183,13 @@ func TwoFactorRequired(twoFactorSvc *TwoFactorService, userRepo UserRepository) 
 
 		// Если 2FA не включена — пропускаем
 		if !userObj.TwoFactorEnabled {
+			c.Next()
+			return
+		}
+
+		// UX-2 (PASS-13): «запомнить это устройство» — trusted-device cookie
+		// заменяет повторный step-up на доверенных устройствах (30 дней).
+		if trustedDeviceSecret != "" && isTrustedDevice(c, userIDVal, trustedDeviceSecret) {
 			c.Next()
 			return
 		}

@@ -20,9 +20,9 @@
             <!-- Аватар -->
             <div class="flex-shrink-0 flex flex-col items-center">
                 {{if .User.AvatarPath}}
-                    <img src="{{.User.AvatarPath}}" alt="{{ T $.Lang "profile.avatar_alt" }}" class="w-32 h-32 rounded-full object-cover border-2 border-gray-200 dark:border-gray-700">
+                    <img id="avatar-preview" src="{{.User.AvatarPath}}" alt="{{ T $.Lang "profile.avatar_alt" }}" class="w-32 h-32 rounded-full object-cover border-2 border-gray-200 dark:border-gray-700">
                 {{else}}
-                    <div class="w-32 h-32 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-4xl text-gray-500 dark:text-gray-400">
+                    <div id="avatar-placeholder" class="w-32 h-32 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-4xl text-gray-500 dark:text-gray-400">
                         {{if .User.Name}}{{ initials .User.Name }}{{else}}?{{end}}
                     </div>
                 {{end}}
@@ -31,6 +31,12 @@
                     <input type="file" name="avatar" accept="image/jpeg,image/png,image/webp" class="hidden" id="avatar-input">
                     <button type="button" id="avatar-btn" class="btn btn-outline text-xs">{{ T $.Lang "profile.change_avatar" }}</button>
                 </form>
+                <!-- UX-4 (PASS-13): индикатор загрузки аватара -->
+                <div id="avatar-progress" class="hidden mt-2 w-32">
+                    <div class="h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                        <div id="avatar-progress-fill" class="h-full bg-blue-600 rounded-full" style="width:0%"></div>
+                    </div>
+                </div>
             </div>
 
             <!-- Форма обновления профиля -->
@@ -270,6 +276,7 @@
             });
             // Автоматическая отправка формы при выборе файла + клиентская
             // валидация (U-14): размер и тип до загрузки.
+            // UX-4 (PASS-13): предпросмотр аватара + индикатор загрузки.
             avatarInput.addEventListener('change', function() {
                 const file = this.files && this.files[0];
                 if (!file) return;
@@ -283,6 +290,26 @@
                     this.value = '';
                     return;
                 }
+                // Предпросмотр выбранного файла.
+                const placeholder = document.getElementById('avatar-placeholder');
+                let img = document.getElementById('avatar-preview');
+                if (!img && placeholder) {
+                    // Нет img (нет аватара) — создаём временный и прячем placeholder.
+                    placeholder.style.display = 'none';
+                    img = document.createElement('img');
+                    img.id = 'avatar-preview';
+                    img.className = 'w-32 h-32 rounded-full object-cover border-2 border-gray-200 dark:border-gray-700';
+                    placeholder.parentNode.insertBefore(img, placeholder.nextSibling);
+                }
+                if (img) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) { img.src = e.target.result; };
+                    reader.readAsDataURL(file);
+                }
+                const bar = document.getElementById('avatar-progress');
+                if (bar) bar.classList.remove('hidden');
+                const fill = document.getElementById('avatar-progress-fill');
+                if (fill) fill.style.width = '30%';
                 const form = document.getElementById('avatar-form');
                 if (form) form.submit();
             });
