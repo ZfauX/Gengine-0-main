@@ -1,0 +1,145 @@
+# deploy/pod/gengine-pod.yaml
+#
+# Pod Gengine-0: app + PostgreSQL + Valkey в одном pod (общий network namespace).
+# Контейнеры общаются через localhost. Запуск:
+#   podman play kube deploy/pod/gengine-pod.yaml
+#   podman pod start gengine-pod
+#
+# ВНИМАНИЕ: секреты (DB_PASSWORD, JWT_SECRET) для теста. В production —
+# через k8s Secrets / podman secret.
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gengine-pod
+  labels:
+    app: gengine
+spec:
+  containers:
+    # ---------- PostgreSQL ----------
+    - name: db
+      image: docker.io/library/postgres:18-alpine
+      env:
+        - name: POSTGRES_USER
+          value: gengine
+        - name: POSTGRES_PASSWORD
+          value: gengine
+        - name: POSTGRES_DB
+          value: gengine
+        # PostgreSQL 18: PGDATA в подкаталоге (mount на /var/lib/postgresql)
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+      volumeMounts:
+        - name: pgdata
+          mountPath: /var/lib/postgresql
+      readinessProbe:
+        exec:
+          command: ["pg_isready", "-U", "gengine"]
+        initialDelaySeconds: 5
+        periodSeconds: 5
+
+    # ---------- Valkey ----------
+    - name: valkey
+      image: docker.io/valkey/valkey:7.2-alpine
+      args: ["valkey-server", "--appendonly", "yes"]
+      volumeMounts:
+        - name: valkeydata
+          mountPath: /data
+      readinessProbe:
+        exec:
+          command: ["valkey-cli", "ping"]
+        initialDelaySeconds: 3
+        periodSeconds: 5
+
+    # ---------- App ----------
+    - name: app
+      image: localhost/gengine:test
+      ports:
+        - containerPort: 8080
+          hostPort: 8080
+      env:
+        - name: DB_HOST
+          value: 127.0.0.1
+        - name: DB_PORT
+          value: "5432"
+        - name: DB_USER
+          value: gengine
+        - name: DB_PASSWORD
+          value: gengine
+        - name: DB_NAME
+          value: gengine
+        - name: DB_SSLMODE
+          value: disable
+        - name: VALKEY_HOST
+          value: 127.0.0.1
+        - name: VALKEY_PORT
+          value: "6379"
+        - name: BASE_URL
+          value: http://127.0.0.1:8080
+        - name: JWT_SECRET
+          value: pod-jwt-secret-0123456789abcdef0123456789abcdef
+        - name: SESSION_SECRET
+          value: pod-session-secret-0123456789abcdef0123456789abcdef
+        - name: ADMIN_EMAIL
+          value: admin@pod.test
+        - name: ADMIN_PASSWORD
+          value: AdminPod123456!
+        - name: SMTP_ENABLED
+          value: "false"
+        - name: RATE_LIMIT_GLOBAL
+          value: "100000"
+        - name: RATE_LIMIT_LOGIN
+          value: "100000"
+        - name: RATE_LIMIT_REGISTRATION
+          value: "100000"
+        - name: RATE_LIMIT_CODE_SUBMISSION
+          value: "100000"
+        - name: RATE_LIMIT_SSE
+          value: "100000"
+        - name: RATE_LIMIT_API
+          value: "100000"
+        # TrustedProxies пуст → Secure-флаг cookie=false (работает по HTTP)
+      volumeMounts:
+        - name: uploads
+          mountPath: /app/uploads
+        - name: backups
+          mountPath: /app/backups
+      readinessProbe:
+        exec:
+          command: ["wget", "--spider", "-q", "http://localhost:8080/healthz"]
+        initialDelaySeconds: 10
+        periodSeconds: 10
+
+  volumes:
+    - name: pgdata
+      persistentVolumeClaim:
+        claimName: gengine-pgdata
+    - name: valkeydata
+      persistentVolumeClaim:
+        claimName: gengine-valkeydata
+    - name: uploads
+      emptyDir: {}
+    - name: backups
+      emptyDir: {}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gengine-pgdata
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gengine-valkeydata
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 512Mi

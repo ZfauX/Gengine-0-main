@@ -242,3 +242,56 @@
 | UX-8 | Email об инвайтах | **Уже было**: `InvitationService.CreateInvitation` шлёт email с accept-ссылкой (team). |
 
 Проверки: build ✅, golangci-lint ✅ (0 issues), test-short ✅, E2E 14/14 ✅.
+
+---
+
+## 🐳 PASS-14: Docker/podman — сборка, compose, pod (валидация)
+
+Проверены Dockerfile, docker-compose и создан pod через `podman play kube`.
+Найдены и исправлены реальные баги миграций и конфигурации.
+
+### Найденные и исправленные баги
+
+1. **`CREATE INDEX CONCURRENTLY` в миграциях 44-51** — golang-migrate postgres
+   шлёт файл миграции ОДНИМ Exec, а PostgreSQL отклоняет CONCURRENTLY в
+   multi-statement batch → dirty state на свежей БД. **Фикс**: заменено на
+   обычные `CREATE INDEX IF NOT EXISTS` (индексы уже есть в squashed-наборе;
+   на существующих БД IF NOT EXISTS пропускает).
+
+2. **`MultiStatementEnabled` НЕ включать** — golang-migrate разбивает файл по
+   `;` и ломает dollar-quoted функции (`$$...$$` с `;` внутри, миграции
+   000011/000027/000028/000029). Без него весь файл идёт одним Exec корректно.
+
+3. **Squashed-набор несамодостаточен** — файлы `migrations_squashed/`
+   ссылаются на таблицы из других файлов в неверном порядке (000007_schema_tail
+   ссылается на notifications, созданные позже). **Фикс**: свежие БД применяют
+   поштучные `migrations/`; squashed — только для существующих squashed-БД
+   (version <= 9).
+
+4. **docker-compose: PostgreSQL 18** — требует mount на `/var/lib/postgresql`
+   (не `/var/lib/postgresql/data`) — иначе отказ старта (docker-library/postgres#1259).
+
+5. **playwright.config.ts**: baseURL читается из env `E2E_BASE_URL` — позволяет
+   гонять E2E против compose/pod (`E2E_BASE_URL=http://172.30.73.28:8080 npx playwright test`).
+
+6. **TRUSTED_PROXIES ломает HTTP-формы** — если задан, Secure-флаг CSRF/session
+   cookie = true, и по HTTP (compose/pod без reverse-proxy) браузер не шлёт
+   cookie → CSRF mismatch. Документировано: задавать только при reverse-proxy с TLS.
+
+### Результаты валидации
+
+| Шаг | Результат |
+|---|---|
+| `podman build -t gengine:test` | ✅ образ 70MB (golang:1.25-alpine → alpine:3.23 + pg18-client) |
+| `podman compose up -d --build` | ✅ db+valkey healthy, app healthy, миграции до 67 |
+| Healthz (compose) | ✅ database/valkey/websocket/disk — ok |
+| E2E против compose | ✅ 14/14 |
+| `podman play kube deploy/pod/gengine-pod.yaml` | ✅ pod Running (4 контейнера с инфраструктурным) |
+| Healthz (pod) | ✅ database/valkey/websocket — ok |
+| E2E против pod | ✅ 14/14 |
+| Миграции в pod | ✅ version 67, dirty=false |
+
+### Артефакты
+- `deploy/pod/gengine-pod.yaml` — k8s-совместимый манифест pod (app+db+valkey).
+- `deploy/pod/README.md` — инструкция запуска и ограничения.
+- `docker-compose.yml` — исправлен mount PG18.

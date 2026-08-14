@@ -139,8 +139,14 @@ func MigrateFromDir(gdb *gorm.DB, migrationsDir string) error {
 				log.Info().Msg("БД содержит миграции — применяем поштучные файлы")
 			}
 		} else {
-			migrationsDir = "migrations_squashed"
-			log.Info().Msg("Свежая БД — применяем сгруппированные миграции")
+			// Свежая БД. Раньше применялся squashed-набор, но он оказался
+			// НЕСАМОДОСТАТОЧНЫМ (PASS-14): файлы ссылаются на таблицы из других
+			// squashed-файлов в неверном порядке (например 000007_schema_tail
+			// ссылается на notifications, созданные позже) → миграции падали
+			// в dirty на свежей БД (docker/podman). Поштучные миграции (migrations/)
+			// полностью работоспособны — применяем их с нуля.
+			migrationsDir = "migrations"
+			log.Info().Msg("Свежая БД — применяем поштучные миграции (squashed-набор несамодостаточен)")
 		}
 	}
 
