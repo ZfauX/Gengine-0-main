@@ -77,6 +77,13 @@ type NotificationService struct {
 	unreadMu    sync.Mutex
 	unreadCache map[uint]unreadEntry
 
+	// subsCache (P-10, PASS-15): TTL-кэш push-подписок пользователя. При
+	// массовой рассылке (турнир/игра на сотни участников) sendWebPush на
+	// каждое уведомление делал ListPushSubscriptions — N запросов к БД.
+	// Кэш 10с (подписки стабильны) + инвалидация при удалении подписки.
+	subsMu    sync.Mutex
+	subsCache map[uint]subsEntry
+
 	// push pool (H7, pass 30): отправка Web Push идёт через фиксированный пул
 	// воркеров вместо неограниченных goroutine — всплеск уведомлений больше
 	// не порождает тысячи параллельных HTTP-запросов к push-провайдеру.
@@ -97,6 +104,12 @@ type pushJob struct {
 	notif  Notification
 }
 
+// subsEntry — кэш подписок пользователя (P-10, PASS-15).
+type subsEntry struct {
+	subs    []user.PushSubscription
+	expires time.Time
+}
+
 // Размер пула и очереди — эмпирически: 4 воркера × лимит подписок на юзера,
 // очередь 256 буферизует всплеск (например, старт турнира с 200 участниками).
 const (
@@ -112,11 +125,50 @@ type unreadEntry struct {
 
 const unreadCacheTTL = 30 * time.Second
 
+// subsCacheTTL (P-10, PASS-15): TTL кэша push-подписок — 10с достаточно для
+// массовых рассылок; подписки меняются редко (инвалидация при удалении).
+const subsCacheTTL = 10 * time.Second
+
+// getSubs возвращает подписки из кэша, если они свежие.
+func (s *NotificationService) getSubs(userID uint) ([]user.PushSubscription, bool) {
+	s.subsMu.Lock()
+	defer s.subsMu.Unlock()
+	e, ok := s.subsCache[userID]
+	if !ok || time.Now().After(e.expires) {
+		return nil, false
+	}
+	return e.subs, true
+}
+
+// setSubs кладёт подписки в кэш.
+func (s *NotificationService) setSubs(userID uint, subs []user.PushSubscription) {
+	s.subsMu.Lock()
+	defer s.subsMu.Unlock()
+	// Lazy sweep: не даём карте расти неограниченно.
+	if len(s.subsCache) > 512 {
+		now := time.Now()
+		for id, e := range s.subsCache {
+			if now.After(e.expires) {
+				delete(s.subsCache, id)
+			}
+		}
+	}
+	s.subsCache[userID] = subsEntry{subs: subs, expires: time.Now().Add(subsCacheTTL)}
+}
+
+// invalidateSubs сбрасывает кэш подписок (после удаления подписки).
+func (s *NotificationService) invalidateSubs(userID uint) {
+	s.subsMu.Lock()
+	delete(s.subsCache, userID)
+	s.subsMu.Unlock()
+}
+
 func NewNotificationService(repo NotificationRepository, hub *ws.RoomHub) *NotificationService {
 	return &NotificationService{
 		repo:        repo,
 		hub:         hub,
 		unreadCache: make(map[uint]unreadEntry),
+		subsCache:   make(map[uint]subsEntry),
 		// S-45-3 (pass 45): клиент с блокировкой приватных IP на DialContext.
 		pushHTTPClient: newPushHTTPClient(),
 	}
@@ -334,9 +386,16 @@ func (s *NotificationService) sendWebPush(ctx context.Context, userID uint, n *N
 
 	var subs []user.PushSubscription
 	var err error
-	subs, err = s.repo.ListPushSubscriptions(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("load push subscriptions: %w", err)
+	// P-10 (PASS-15): подписки из TTL-кэша (10с) — при массовых рассылках
+	// это 1 запрос на burst, а не N на каждое уведомление.
+	if cached, ok := s.getSubs(userID); ok {
+		subs = cached
+	} else {
+		subs, err = s.repo.ListPushSubscriptions(ctx, userID)
+		if err != nil {
+			return fmt.Errorf("load push subscriptions: %w", err)
+		}
+		s.setSubs(userID, subs)
 	}
 	if len(subs) == 0 {
 		return nil
@@ -393,6 +452,8 @@ func (s *NotificationService) sendWebPush(ctx context.Context, userID uint, n *N
 			if err := s.repo.DeletePushSubscription(ctx, sub.ID); err != nil {
 				log.Warn().Err(err).Uint("sub_id", sub.ID).Msg("webpush: failed to delete stale subscription")
 			}
+			// P-10 (PASS-15): подписки изменились — сбрасываем кэш пользователя.
+			s.invalidateSubs(userID)
 		} else if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 			log.Warn().Int("status", resp.StatusCode).Uint("user_id", userID).Msg("webpush: unexpected response status")
 		}

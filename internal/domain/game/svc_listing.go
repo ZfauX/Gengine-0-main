@@ -77,9 +77,10 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 	// DEEP-REVIEW P1 (pass 46): кэшируем и авторизованный листинг (раньше только
 	// анонимный — каждый залогиненный заход на /games бил в PostgreSQL).
 	// Ключ включает ViewerID (listingCacheKey), поэтому «мои/публичные» игры
-	// не смешиваются между пользователями. Как и раньше — только page 1 без
-	// поиска/даты (самые горячие ключи), чтобы не фрагментировать кэш.
-	if page == 1 && filter.Search == "" && filter.DateFrom == "" && filter.DateTo == "" {
+	// не смешиваются между пользователями. Без поиска/дат (самые горячие).
+	// P-6 (PASS-15): кэш расширен на page 2..10 — пагинация анонимов больше
+	// не бьёт в PostgreSQL на каждую страницу (версионный ключ инвалидируется).
+	if page >= 1 && page <= 10 && filter.Search == "" && filter.DateFrom == "" && filter.DateTo == "" {
 		cacheKey = s.listingCacheKey(ctx, filter, sort, page, perPage)
 		var entry listingCacheEntry
 		if cacheGetJSON(s.cache, ctx, cacheKey, &entry) {

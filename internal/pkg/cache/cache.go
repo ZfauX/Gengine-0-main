@@ -33,6 +33,10 @@ type Cache struct {
 	prefixLock  sync.RWMutex
 	prefixKeys  map[string]map[string]bool
 	keyPrefixes map[string]map[string]bool
+	// prefixTracked (P-9, PASS-15): префикс-индекс строится ЛЕНИВО — только
+	// при первом DeleteByPrefix (он используется редко, например leaderboard).
+	// До этого Set/Delete/evict НЕ аллоцируют на префиксы (trackPrefix).
+	prefixTracked bool
 	// ttlKeys — ключи с ненулевым TTL (F-2, pass 35). removeExpired
 	// итерирует только их, а не весь LRU (lru.Keys() мог быть O(n)
 	// при maxSize=0 и тысячах ключей каждые 60с под mu.Lock).
@@ -68,6 +72,11 @@ func NewCacheWithLRU(defaultTTL, cleanupInterval time.Duration, maxSize int) *Ca
 		// F-2 (pass 35): при вытеснении LRU чистим ttlKeys. evictCallback
 		// вызывается под c.mu.Lock (из Add/Remove), поэтому delete без lock.
 		delete(c.ttlKeys, key)
+		// P-9 (PASS-15): если префикс-индекс не строился — карты пусты,
+		// пропускаем без локов.
+		if !c.prefixTracked {
+			return
+		}
 		c.prefixLock.Lock()
 		if prefixes, ok := c.keyPrefixes[key]; ok {
 			for p := range prefixes {
@@ -174,7 +183,11 @@ func (c *Cache) Set(key string, value any, ttl time.Duration) {
 		delete(c.ttlKeys, key)
 	}
 	c.lru.Add(key, cacheItem{value: value, expires: expires})
-	c.trackPrefix(key)
+	// P-9 (PASS-15): префикс-индекс ленивый — trackPrefix только если
+	// DeleteByPrefix уже использовался (иначе нет аллокаций на каждый Set).
+	if c.prefixTracked {
+		c.trackPrefix(key)
+	}
 }
 
 const defaultCacheTTL = 5 * time.Minute
@@ -188,6 +201,10 @@ func (c *Cache) Delete(key string) {
 	defer c.mu.Unlock()
 	c.lru.Remove(key)
 	delete(c.ttlKeys, key)
+	// P-9 (PASS-15): если индекс не строился — пропускаем.
+	if !c.prefixTracked {
+		return
+	}
 	c.prefixLock.Lock()
 	if prefixes, ok := c.keyPrefixes[key]; ok {
 		for p := range prefixes {
@@ -230,6 +247,19 @@ func (c *Cache) DeleteByPrefix(prefix string) {
 	// который сам (под mu.Lock → prefixLock) убирает ключ из prefixKeys и
 	// keyPrefixes. Мы НЕ трогаем prefixKeys напрямую — иначе двойной лок
 	// (re-entrant) при вызове evictCallback из lru.Remove.
+	//
+	// P-9 (PASS-15): первый DeleteByPrefix включает ленивый префикс-индекс
+	// и строит его из существующих ключей (O(n) разово); дальше Set/Delete
+	// поддерживают индекс инкрементально.
+	c.mu.Lock()
+	if !c.prefixTracked {
+		c.prefixTracked = true
+		for _, key := range c.lru.Keys() {
+			c.trackPrefix(key)
+		}
+	}
+	c.mu.Unlock()
+
 	c.prefixLock.RLock()
 	keys, exists := c.prefixKeys[prefix]
 	if !exists || len(keys) == 0 {
