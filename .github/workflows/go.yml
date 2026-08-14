@@ -181,7 +181,8 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # Node 20 deprecated на GitHub runners (2025-09) — используют 24.
+          node-version: '24'
           cache: npm
 
       - name: Install npm dependencies
