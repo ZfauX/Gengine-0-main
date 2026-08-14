@@ -191,7 +191,9 @@ data-i18n-push-misconfigured="{{ $LPushMisconfigured }}">
             try {
                 var offset = -new Date().getTimezoneOffset();
                 if (document.cookie.indexOf('tz_offset=' + offset + ';') === -1) {
-                    document.cookie = 'tz_offset=' + offset + '; path=/; max-age=31536000; SameSite=Lax';
+                    // PASS-15: Secure-флаг на HTTPS (иначе cookie уходит по HTTP).
+                    var secure = location.protocol === 'https:' ? '; Secure' : '';
+                    document.cookie = 'tz_offset=' + offset + '; path=/; max-age=31536000; SameSite=Lax' + secure;
                 }
             } catch (e) {}
         })();
@@ -518,7 +520,9 @@ data-i18n-push-misconfigured="{{ $LPushMisconfigured }}">
         // while removing previous _lang params so they don't accumulate.
         document.querySelectorAll('.lang-btn').forEach(function(btn) {
             btn.addEventListener('click', function() {
-                document.cookie = 'lang=' + btn.getAttribute('data-lang') + '; path=/; max-age=31536000; SameSite=Lax';
+                // PASS-15: Secure-флаг на HTTPS.
+                var secure = location.protocol === 'https:' ? '; Secure' : '';
+                document.cookie = 'lang=' + btn.getAttribute('data-lang') + '; path=/; max-age=31536000; SameSite=Lax' + secure;
                 var params = new URLSearchParams(window.location.search);
                 params.delete('_lang'); // remove all accumulated cache-buster params
                 params.set('_lang', Date.now());

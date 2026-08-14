@@ -213,3 +213,32 @@
 - **M6**: `CREATE INDEX` (без CONCURRENTLY) в миграциях 44-51 блокирует запись
   на больших таблицах при деплое — осознанный trade-off: CONCURRENTLY нельзя
   в multi-statement batch golang-migrate. Для больших БД — фоновый индекс вручную.
+
+---
+
+## 🔒 HTTPS-проверка (PASS-15, полный стек)
+
+Проверено всё, что можно через HTTPS (pod с самоподписанным сертификатом):
+
+| Проверка | Результат |
+|---|---|
+| `https://…/healthz` | ✅ 200 (db/valkey/ws/disk — ok) |
+| TLS-рукопожатие | ✅ ALPN http/1.1, сертификат gengine.local (SAN: IP 127.0.0.1, 172.30.73.28) |
+| **Secure-флаги cookie** | ✅ JWT, refresh_token, gengine_session, _csrf_token — **Secure + HttpOnly + SameSite=Strict** |
+| **JS-cookie** | ✅ `tz_offset`, `lang` — **Secure** на HTTPS (НАЙДЕНЫ и исправлены: раньше без Secure — уходили по HTTP) |
+| **Trusted-2FA cookie** | ✅ Secure (H6) |
+| **HSTS** | ✅ `max-age=63072000; includeSubDomains; preload` |
+| **CSP** | ✅ nonce, `connect-src … wss:` (WebSocket через HTTPS разрешён) |
+| X-Content-Type-Options | ✅ nosniff |
+| X-Frame-Options | ✅ DENY |
+| Referrer-Policy / Permissions-Policy | ✅ strict-origin / запрещены чувствительные |
+| HTTP→HTTPS | HTTP-запросы отклоняются (400) — сервер слушает только TLS |
+| **WSS** | ✅ WebSocket работает через WSS (E2E two-users chat 12-14) |
+| **SSE** | ✅ маршруты существуют (302 для анонима, авторизация работает) |
+| **E2E через HTTPS** | ✅ 15 passed (14 стандартных + cookie-флаг тест) |
+
+### Найденный и исправленный баг
+- `tz_offset` и `lang` cookie ставились JS **без Secure** — на HTTPS уходили по
+  HTTP. Исправлено в `layout.html` (Secure при `location.protocol === 'https:'`).
+- Добавлен тест `e2e/https-cookies.spec.ts`: проверяет Secure для всех cookie
+  и HttpOnly для серверных (JS-куки не могут быть HttpOnly).
