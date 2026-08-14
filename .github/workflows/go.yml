@@ -261,7 +261,8 @@ jobs:
 
       - name: Upload Playwright report on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        # v7 (не v4 — v4 таргетирует Node 20, deprecated на GitHub runners).
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: |

@@ -4,6 +4,7 @@
 //     в JS-шаблоне дня ({{if .CurrentUserID}});
 //   - аноним видит навбар «Войти» и НЕ видит кнопку «Создать игру».
 import { test, expect } from '@playwright/test';
+import { registerUser, loginUser, uniqueEmail } from './helpers';
 
 test('calendar показывает состояние авторизации', async ({ browser }) => {
   const base = process.env.E2E_BASE_URL || 'http://localhost:8081';
@@ -21,14 +22,14 @@ test('calendar показывает состояние авторизации', 
   expect(anonBody).not.toContain('href="/games/new"');
   await anonCtx.close();
 
-  // --- Авторизованный контекст (admin из pod-манифеста) ---
+  // --- Авторизованный контекст (новый пользователь через регистрацию) ---
   const authCtx = await browser.newContext();
   const page = await authCtx.newPage();
-  await page.goto(base + '/auth/login');
-  await page.fill('input[name="email"]', 'admin@pod.test');
-  await page.fill('input[name="password"]', 'AdminPod123456!');
-  await page.click('button[type="submit"]');
-  await page.waitForLoadState('networkidle');
+  const email = uniqueEmail('cal');
+  const password = 'Password123!';
+  await registerUser(page, email, password);
+  await loginUser(page, email, password);
+  await expect(page).toHaveURL(/\/dashboard/, { timeout: 15000 });
   console.log('AFTER_LOGIN_URL=' + page.url());
 
   await page.goto(base + '/calendar');
