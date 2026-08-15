@@ -836,3 +836,177 @@ pgx-типы, i18n) — не hot-path, не требует вмешательс�
 - **Закрыто**: 9 кандидатов (сертификаты, uploads, IDOR, PII, XSS, RUM, SSRF, RoomHub, миграции).
 - **pprof**: heap 6.7MB (снизился), 21 goroutine, CPU ~4.6% (TLS) — утечек нет.
 - **Приоритет**: H1 (копия), M1 (SSE-утечка), H2/H3 (hot-path), M2 (пароль в манифесте).
+
+---
+
+# DEEP_REVIEW — Gengine-0 (PASS 19, повторное ревью #4)
+
+> Целевое окружение: **pod через podman**. Метод: pprof в pod (heap/goroutine/cpu) + 3
+> параллельных аудита (@reviewer, @security, @perf) с фокусом на ранее не прочитанные
+> файлы (svc_crud/cover/admin/rating, fullpreview, simulate, geolocation, audit) +
+> эмпирическая проверка каждого HIGH/MEDIUM по коду.
+
+---
+
+## 🔬 pprof-результаты (PASS 19, в pod)
+
+| Профиль | Результат | Вывод |
+|---|---|---|
+| **goroutine** | 21 в покое | ✅ Утечек нет (стабильно с PASS-15). |
+| **heap inuse** | **8.4 MB** | ⚠️ Стартовые аллокации: bufio (2.6MB), excelize (0.65MB), regexp (1MB), i18n (0.5MB). Не hot-path. |
+| **cpu (лёгкая нагрузка 300 req)** | 5.1% (510ms samples) | ⚠️ **37% TLS (FIPS bigmod)** + syscall 12% — прикладной код чист. |
+| **pprof bind** | `127.0.0.1:6060` | ✅ loopback. |
+
+**Вывод**: утечек нет; heap 8.4MB (инициализация), CPU чист. Профилирование подтверждает
+отсутствие горячих точек в прикладном коде — доминирует TLS-шифрование.
+
+---
+
+## 🔴 HIGH (новые)
+
+### H1. Кэш ответов уровня НЕ хитится с Valkey (регресс PASS-18 H2) 🔍✅ (подтверждено)
+- **Файл**: `internal/domain/game/svc_attempt.go:153-166`.
+- **Проблема**: `loadLevelWithAnswers` читает через `s.cache.GetWithCtx(ctx, key)` + `v.(level.Level)`.
+  Для in-memory кэша — работает; для **Valkey** (`VALKEY_HOST/PORT`, рекомендованная конфигурация)
+  `GetWithCtx` возвращает `map[string]any` (JSON-unmarshal) → assertion всегда false → кэш
+  МЁРТВ → на каждую попытку SubmitCode снова `Preload("Questions.Answers")` = 2 запроса
+  (цель PASS-18 не достигнута в production).
+- **Фикс**: использовать `cacheGetJSON[level.Level]` (аналог cacheGetGame/cacheGetRating),
+  который корректно работает и с Valkey (GetBytesWithCtx + json.Unmarshal), и с in-memory.
+
+### H2. SSE-фильтр passing_id ломается для cross-instance событий (регресс PASS-18 M1) 🔍✅ (подтверждено)
+- **Файл**: `hnd_sse.go:372-377` + `sse_pubsub.go:66-90`.
+- **Проблема**: `broadcastLocal` извлекает `dm["passing_id"].(uint)`. Локальные вызовы кладут
+  `uint` — фильтр работает. Но события с ДРУГОГО инстанса приходят через `handleRemoteBroadcast`
+  (`json.Unmarshal` → `float64`) → assertion падает → `eventPassingID == 0` → **фильтр молча
+  отключается**: участник команды A получает `hint_available`/`level_completed` команды B
+  в multi-instance (тактическая утечка возвращается).
+- **Фикс**: извлекать `passing_id` типобезопасно (switch по uint/float64/int64) или прокидывать
+  passingID отдельным полем `sseBusMsg`.
+
+---
+
+## 🟠 MEDIUM (новые)
+
+### M1. Публикация игры без уровней через cover-роут 🔍✅ (подтверждено, security)
+- **Файл**: `svc_cover.go:53` (`IsDraft: dto.IsDraft`) vs `svc_crud.go:53` (жёстко `IsDraft=true`) +
+  `svc_crud.go:135` (Publish проверяет `CountLevelsByGame > 0`).
+- **Проблема**: через cover-роут клиент может создать игру сразу `IsDraft=false`, минуя guard
+  Publish «нельзя опубликовать игру без уровней». Игра без уровней появляется в публичных списках.
+- **Фикс**: в cover-пути при `IsDraft=false` проверять `CountLevelsByGame > 0`, либо всегда
+  создавать черновик (публикация — только через Publish).
+
+### M2. UpdateGameWithCover удаляет старую обложку до коммита БД 🔍✅ (подтверждено)
+- **Файл**: `svc_cover.go:102-122`.
+- **Проблема**: сохранить новый файл → удалить старый → `gameRepo.Update`. Если Update упадёт,
+  в БД останется старый путь (файл уже удалён) → битая обложка; новый файл — сирота.
+- **Фикс**: сначала Update БД, затем удалять старый файл (после успешного коммита).
+
+### M3. Ошибка storage.Delete глотается, путь в БД затирается 🔍✅ (подтверждено)
+- **Файл**: `svc_cover.go:102-108`.
+- **Проблема**: `storage.Delete` вернул ошибку → только log.Error, но `CoverPath=""` и БД
+  сохраняет пустой путь; файл остаётся на диске (орфан).
+- **Фикс**: при ошибке удаления не очищать путь в БД (вернуть ошибку/оставить старый путь).
+
+### M4. ForceFinishGame/DisqualifyTeam не заполняют ResultDuration/FinishedAt 🔍✅ (подтверждено)
+- **Файл**: `helpers.go:50-62` (finishPassingProgress) + `svc_admin.go:93-103,152-160`.
+- **Проблема**: принудительно завершённые прохождения получают нулевую длительность в
+  результатах/лидерборде.
+- **Фикс**: в finishPassingProgress выставлять `FinishedAt = now` и `ResultDuration = now - CreatedAt`.
+
+### M5. Уведомления капитанам наследуют отменяемый request-контекст 🔍✅ (подтверждено)
+- **Файл**: `svc_admin.go:294,346` (`context.WithTimeout(ctx, ...)`).
+- **Проблема**: notifyCaptainsAboutFinish/Disqualification вызываются ПОСЛЕ коммита, но строят
+  таймаут от `ctx` запроса — при отключении админа письма молча не отправятся.
+- **Фикс**: `context.WithoutCancel(ctx)` (как gameFinishedCallback).
+
+### M6. ChatRoomIDs делает 5-8 последовательных запросов 🔍✅ (подтверждено, perf)
+- **Файл**: `monitor/handler.go:1077-1170`.
+- **Проблема**: IsUserManager + GetPassingByUser + 4× GetOrCreateRoom на каждую загрузку чата.
+- **Фикс**: один SELECT всех комнат игры + создание недостающих батчем; кэш roomID 5-10с.
+
+### M7. Geolocation: 3 запроса на каждый GPS-update 🔍✅ (подтверждено, perf)
+- **Файл**: `hnd_geolocation.go:71-90`.
+- **Проблема**: каждый POST location (rate-limit 60/мин) делает GetByID + IsTeamMember + upsert.
+- **Фикс**: короткий TTL-кэш «passingID→(teamID,status,memberOK)» на 30-60с.
+
+### M8. audit: синхронный INSERT + OFFSET-пагинация 🔍✅ (подтверждено, perf)
+- **Файл**: `pkg/audit/audit.go:52-69,99-106`.
+- **Проблема**: Log() — синхронный INSERT на 84 callsite (1 RTT на каждое админ-действие);
+  List с OFFSET на глубоких страницах O(N).
+- **Фикс**: буферизованная асинхронная запись (канал + батч) с метрикой; keyset-пагинация.
+
+### M9. Leaderboard версионируется только в памяти инстанса 🔍✅ (подтверждено, security)
+- **Файл**: `svc_rating.go:40-42,208`.
+- **Проблема**: в multi-instance инстанс B отдаёт устаревший кэш лидерборда до 5 минут.
+- **Фикс**: версия через Valkey (общий счётчик) или TTL-кэш.
+
+### M10. Исключённый из команды участник читает командный чат 🔍✅ (подтверждено, security)
+- **Файл**: `monitor/handler.go:872-997` (read-loop проверяет членство только при отправке).
+- **Проблема**: после исключения участник остаётся подключённым и читает командный чат до
+  дисконнекта/таймаута (пассивный доступ).
+- **Фикс**: при изменении членства закрывать сокеты участников (hub.CloseRoomClients) или
+  периодический re-check в read-loop.
+
+---
+
+## 🟡 LOW (новые)
+
+- **L1**: Simulate считает пустой код успехом; LevelsPassed++ даже для неуспешных шагов.
+- **L2**: SnapshotDispatcher — возможны перекрывающиеся fn при тяжёлом пересчёте.
+- **L3**: GetLocationsByGameWithFreshness не фильтрует по окну свежести (название вводит в заблуждение).
+- **L4**: audit.List молча отбрасывает ошибочный userIDStr-фильтр; глубокий OFFSET.
+- **L5**: кэш лидерборда держит устаревшие имена/аватары до 5 минут.
+- **L6**: GetStats глотает ошибки рейтинга/отзывов (страница «нет рейтинга» без признака сбоя).
+- **L7**: player_locations растёт бессрочно (нет джоба очистки старых).
+- **L8**: 5-секундное окно perm-cache после исключения (если не все пути инвалидируют).
+- **L9**: ADMIN_PASSWORD плейсхолдер известен (не fail-fast при запуске с заглушкой).
+- **L10**: CI adminpass123 (11 символов, 2 класса) может не пройти requireStrongPassword.
+
+---
+
+## 🔍 Проверено и закрыто (кандидаты HIGH/MEDIUM, НЕ подтвердились)
+
+| Пункт | Статус | Детали |
+|---|---|---|
+| **Конфликт chat_rooms уникальных индексов** | ✅ Закрыто | 000064/000067 — частичные (WITH WHERE room_type=... AND deleted_at IS NULL), не конфликтуют. |
+| **Индекс player_ratings(score)** | ✅ Закрыто | `idx_player_ratings_score` уже есть (000038). |
+| **`.env`/certs в git** | ✅ Закрыто | `git ls-files` — пусто. |
+| **CRUD/обложки/full-preview права** | ✅ Закрыто | Update/Publish — CanEditContent; Delete — владелец; FullPreview — IsUserManager ДО отдачи ответов. |
+| **Geolocation доступ** | ✅ Закрыто | UpdateLocation — членство + status; LocationsByGame — под GameManager. |
+| **Monitor data/WS права** | ✅ Закрыто | MonitorData/GameRooms/LogsWS — gameManager; Vote/CloseVoting — членство + FOR UPDATE. |
+| **svc_attempt cache утечка ответов** | ✅ Закрыто | ответы кэшируются server-side, клиенту не отдаются. |
+| **dashboard errgroup гонки** | ✅ Закрыто | разные поля структуры — data race отсутствует. |
+| **chat rooms гонки GetOrCreate** | ✅ Закрыто | уникальные индексы + повторный SELECT при race. |
+
+---
+
+## 💡 Предложения по улучшению (PASS 19)
+
+### Быстрые победы
+1. **H1**: cacheGetJSON для level:answers (Valkey-hit восстановить).
+2. **H2**: типобезопасное извлечение passing_id (switch uint/float64).
+3. **M1**: guard публикации без уровней в cover-пути.
+
+### Оптимизация
+4. **M6/M7**: кэш roomID в чате, TTL-кэш геолокации.
+5. **M8**: асинхронный audit-INSERT.
+
+### Безопасность
+6. **M10**: закрывать сокеты исключённых участников.
+7. **L9**: fail-fast на ADMIN_PASSWORD-заглушку в production.
+
+### UX
+8. **M4**: ResultDuration для принудительно завершённых игр (корректные результаты).
+9. **L5**: обновлять имена в лидерборде.
+
+---
+
+## 🎯 Итог PASS-19
+
+- **HIGH**: 2 новых (H1 Valkey-cache регресс, H2 SSE float64 регресс) — оба «регрессии» фиксов PASS-18, важны.
+- **MEDIUM**: 10 новых (M1-M10).
+- **LOW**: 10 новых (L1-L10).
+- **Закрыто**: 9 кандидатов (индексы chat_rooms/player_ratings, .env, права CRUD/geolocation/monitor, cache, errgroup).
+- **pprof**: heap 8.4MB, 21 goroutine, CPU ~5.1% (TLS) — утечек нет.
+- **Приоритет**: H1 (Valkey), H2 (SSE multi-instance), M1 (публикация без уровней), M10 (чат после исключения).
