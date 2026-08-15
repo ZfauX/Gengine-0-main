@@ -36,6 +36,10 @@ type SSESession struct {
 	// один раз при регистрации, а не на каждое событие (12+ аллокаций/мин
 	// на сессию раньше).
 	rc *http.ResponseController
+	// passingID (M1, PASS-18): фильтр сессии. 0 = менеджер/страница игры —
+	// получает ВСЕ события игры. Иначе участник команды получает только
+	// события своего прохождения (чтобы не видеть подсказки чужих команд).
+	passingID uint
 }
 
 // sseWriteTimeout — таймаут на запись в SSE-соединение (защита от slow-reader DoS).
@@ -182,10 +186,21 @@ func toJSON(v any) string {
 	return string(data)
 }
 
-// RegisterSession добавляет новое SSE-подключение для игры.
-// Возвращает nil, если менеджер остановлен или лимит соединений превышен
-// (DEEP-REVIEW PASS-3 H2 — лимиты проверяются атомарно внутри).
+// RegisterSession добавляет новое SSE-подключение для игры (менеджер/страница —
+// получает все события). Возвращает nil, если менеджер остановлен или лимит
+// соединений превышен (DEEP-REVIEW PASS-3 H2 — лимиты проверяются атомарно внутри).
 func (m *SSEManager) RegisterSession(gameID uint, ip string, w http.ResponseWriter, flush http.Flusher) *SSESession {
+	return m.registerSession(gameID, 0, ip, w, flush)
+}
+
+// RegisterSessionPassing (M1, PASS-18): SSE-подключение участника команды —
+// сессия получает только события своего passing_id.
+func (m *SSEManager) RegisterSessionPassing(gameID, passingID uint, ip string, w http.ResponseWriter, flush http.Flusher) *SSESession {
+	return m.registerSession(gameID, passingID, ip, w, flush)
+}
+
+// registerSession — общая регистрация; passingID=0 означает «все события игры».
+func (m *SSEManager) registerSession(gameID, passingID uint, ip string, w http.ResponseWriter, flush http.Flusher) *SSESession {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -203,12 +218,13 @@ func (m *SSEManager) RegisterSession(gameID uint, ip string, w http.ResponseWrit
 	}
 
 	session := &SSESession{
-		w:        w,
-		flush:    flush,
-		done:     make(chan struct{}),
-		remoteIP: ip,
-		ch:       make(chan []byte, 16),
-		rc:       http.NewResponseController(w),
+		w:         w,
+		flush:     flush,
+		done:      make(chan struct{}),
+		remoteIP:  ip,
+		ch:        make(chan []byte, 16),
+		rc:        http.NewResponseController(w),
+		passingID: passingID,
 	}
 	// Writer goroutine (P-M2): единственный писатель в ResponseWriter.
 	// Завершается по done (сессия закрыта).
@@ -350,6 +366,16 @@ func (m *SSEManager) broadcastLocal(gameID uint, eventType string, data any) {
 	m.mu.RUnlock()
 	defer m.wg.Done()
 
+	// M1 (PASS-18): извлекаем passing_id из data для фильтрации сессий
+	// участников (менеджеры с passingID=0 получают всё). Без passing_id —
+	// рассылка всем.
+	var eventPassingID uint
+	if dm, ok := data.(map[string]any); ok {
+		if pid, ok := dm["passing_id"].(uint); ok {
+			eventPassingID = pid
+		}
+	}
+
 	payload := map[string]any{
 		"type":    eventType,
 		"game_id": gameID,
@@ -365,6 +391,10 @@ func (m *SSEManager) broadcastLocal(gameID uint, eventType string, data any) {
 	eventBytes := []byte(event)
 
 	for _, s := range sessions {
+		// M1: участник команды получает только события СВОЕГО прохождения.
+		if s.passingID != 0 && eventPassingID != 0 && s.passingID != eventPassingID {
+			continue
+		}
 		// Неблокирующая отправка (P-M2): медленный клиент не держит Broadcast.
 		// Канал не закрывается при отписке — отправка в него безопасна.
 		s.enqueue(eventBytes)
@@ -381,7 +411,7 @@ func (m *SSEManager) broadcastLocal(gameID uint, eventType string, data any) {
 // @Router /game/{passing_id}/sse [get]
 // @Security JWT
 // sseConnect устанавливает SSE-соединение для указанной игры.
-func sseConnect(mgr *SSEManager, c *gin.Context, gameID uint) {
+func sseConnect(mgr *SSEManager, c *gin.Context, gameID, passingID uint) {
 	origin := c.Request.Header.Get("Origin")
 	if origin != "" {
 		// Точное сравнение host (не prefix-match): http://example.com.evil.com НЕ допускается.
@@ -433,7 +463,14 @@ func sseConnect(mgr *SSEManager, c *gin.Context, gameID uint) {
 	// в уже начатый chunked-ответ (иначе клиент получит ERR_INCOMPLETE_CHUNKED_ENCODING).
 	c.Abort()
 
-	session := mgr.RegisterSession(gameID, c.ClientIP(), w, flusher)
+	// M1 (PASS-18): участник команды подписывается с фильтром по passing_id —
+	// не получает события (подсказки/уровни) чужих команд. Менеджер — всё.
+	var session *SSESession
+	if passingID != 0 {
+		session = mgr.RegisterSessionPassing(gameID, passingID, c.ClientIP(), w, flusher)
+	} else {
+		session = mgr.RegisterSession(gameID, c.ClientIP(), w, flusher)
+	}
 	if session == nil {
 		// Лимит превышен или менеджер остановлен — соединение не зарегистрировано.
 		// Заголовки text/event-stream уже отправлены, вернуть JSON нельзя —
@@ -491,7 +528,9 @@ func SSEHandler(mgr *SSEManager, gameRepo GameRepository, passingRepo GamePassin
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
 			return
 		}
-		sseConnect(mgr, c, passing.GameID)
+		// M1 (PASS-18): участник подписывается только на СВОЁ прохождение —
+		// иначе видел бы подсказки/уровни чужих команд (тактическая утечка).
+		sseConnect(mgr, c, passing.GameID, uint(passingID))
 	}
 }
 
@@ -509,7 +548,7 @@ func SSEGameHandler(mgr *SSEManager, gameRepo GameRepository, passingRepo GamePa
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": render.Tr(c, "handler.forbidden")})
 			return
 		}
-		sseConnect(mgr, c, uint(gameID))
+		sseConnect(mgr, c, uint(gameID), 0)
 	}
 }
 

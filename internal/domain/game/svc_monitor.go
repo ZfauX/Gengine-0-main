@@ -201,7 +201,11 @@ func (s *MonitorService) GetOrFetchSnapshotJSON(ctx context.Context, gameID uint
 	// заполнения json (старая запись) — тогда cached.json == nil и метод
 	// вернул бы (nil, nil). Маршалим сами и обновляем кэш.
 	if cached, ok := s.cache.Get(gameID); ok && cached.json != nil {
-		return cached.json, nil
+		// H1 (PASS-18): всегда возвращаем КОПИЮ — ветка выше (LOW #14) делает
+		// cp, а эта возвращала cached.json напрямую (мутация сломала бы кэш).
+		cp := make([]byte, len(cached.json))
+		copy(cp, cached.json)
+		return cp, nil
 	}
 	jsonData, marshalErr := json.Marshal(snapshot)
 	if marshalErr != nil {

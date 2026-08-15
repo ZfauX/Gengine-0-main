@@ -161,6 +161,10 @@ func storeAnonCache(c *gin.Context, data gin.H, rendered []byte) {
 	if csrfStr, ok := data["csrf"].(string); ok && csrfStr != "" {
 		out = bytes.ReplaceAll(out, []byte(csrfStr), []byte(csrfPlaceholder))
 	}
+	// M5 (PASS-18): bytes.ReplaceAll возвращает ТУ ЖЕ slice, если плейсхолдер
+	// не найден (например, шаблон без nonce) — тогда out алиасит layoutBuf из
+	// sync.Pool, который перезапишется следующим запросом. Всегда копируем.
+	out = bytes.Clone(out)
 
 	key := anonCacheKey(c)
 	now := time.Now()

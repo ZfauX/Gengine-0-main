@@ -68,6 +68,14 @@ func (m *mockRepo) ListByUser(ctx context.Context, userID uint, offset, limit in
 	return nil, 0, nil
 }
 
+func (m *mockRepo) ListRecentByUser(ctx context.Context, userID uint, limit int) ([]Notification, error) {
+	if m.listFn != nil {
+		items, _, err := m.listFn(ctx, userID, 0, limit, false)
+		return items, err
+	}
+	return nil, nil
+}
+
 func (m *mockRepo) MarkAsRead(ctx context.Context, userID, notificationID uint) (bool, error) {
 	if m.markAsReadFn != nil {
 		return m.markAsReadFn(ctx, userID, notificationID)

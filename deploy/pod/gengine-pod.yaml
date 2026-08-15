@@ -87,8 +87,12 @@ spec:
           value: pod-session-secret-0123456789abcdef0123456789abcdef
         - name: ADMIN_EMAIL
           value: admin@pod.test
+        # M2 (PASS-18): не храним реальный пароль в манифесте — заглушка,
+        # проходящая requireStrongPassword (upper/lower/digit/special).
+        # EnsureAdmin создаст админа с этим значением; в production задавайте
+        # через podman secret / k8s Secrets / envFrom.
         - name: ADMIN_PASSWORD
-          value: AdminPod123456!
+          value: __Set_A_Str0ng_Passw0rd__
         - name: SMTP_ENABLED
           value: "false"
         - name: RATE_LIMIT_GLOBAL

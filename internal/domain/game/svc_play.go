@@ -296,12 +296,34 @@ func (s *GamePlayService) UseHint(ctx context.Context, passingID, userID uint) (
 			return ErrGameNotStarted
 		}
 		var settings GameSetting
-		if findErr := tx.Where("game_id = ?", gameID).First(&settings).Error; findErr != nil {
-			if errors.Is(findErr, gorm.ErrRecordNotFound) {
-				// M-1: gameID из CheckTeamMembership (passing загружен Select("status") — GameID=0).
-				settings = *defaultGameSetting(gameID)
+		// M9 (PASS-18): настройки игры кэшируются (как в GetGameplayData) —
+		// раньше читались из БД на каждый вызов подсказки.
+		if s.cache != nil {
+			cacheKey := fmt.Sprintf("game:settings:%d", gameID)
+			var cachedGameSetting *GameSetting
+			if cacheGetJSON(s.cache, ctx, cacheKey, &cachedGameSetting) && cachedGameSetting != nil {
+				settings = *cachedGameSetting
 			} else {
-				return fmt.Errorf("failed to load game settings: %w", findErr)
+				gs, gsErr := s.gameRepo.GetGameSettingByGameID(ctx, gameID)
+				if gsErr != nil {
+					if !errors.Is(gsErr, gorm.ErrRecordNotFound) {
+						return fmt.Errorf("failed to load game settings: %w", gsErr)
+					}
+					settings = *defaultGameSetting(gameID)
+				} else if gs == nil {
+					settings = *defaultGameSetting(gameID)
+				} else {
+					settings = *gs
+				}
+				s.cache.SetWithCtx(ctx, cacheKey, settings, 60*time.Second)
+			}
+		} else {
+			if findErr := tx.Where("game_id = ?", gameID).First(&settings).Error; findErr != nil {
+				if errors.Is(findErr, gorm.ErrRecordNotFound) {
+					settings = *defaultGameSetting(gameID)
+				} else {
+					return fmt.Errorf("failed to load game settings: %w", findErr)
+				}
 			}
 		}
 
@@ -494,7 +516,10 @@ func (s *GamePlayService) StartTesting(ctx context.Context, gameID, userID uint)
 			CaptainID: userID,
 		}
 		var existingTeam team.Team
-		teamErr := tx.Where("name = ?", testTeam.Name).First(&existingTeam).Error
+		// M6 (PASS-18): ищем ТОЛЬКО СВОЮ тест-команду (name + captain_id) —
+		// раньше WHERE name = ? мог найти чужую реальную команду `_test_5` и
+		// создать тестовый passing на неё.
+		teamErr := tx.Where("name = ? AND captain_id = ?", testTeam.Name, userID).First(&existingTeam).Error
 		switch {
 		case teamErr == nil:
 			// #3: блокируем строку команды — два параллельных StartTesting не

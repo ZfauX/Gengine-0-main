@@ -19,16 +19,23 @@ type SnapshotDispatcher struct {
 
 	mu     sync.Mutex
 	timers map[uint]*time.Timer
-	closed bool
+	// versions (M3, PASS-18): монотонный счётчик на игру. Schedule
+	// инкрементирует версию; flush удаляет таймер ТОЛЬКО если версия
+	// актуальна (защита от гонки «старый flush удаляет новый таймер»).
+	// Используем uint64 вместо сравнения указателей таймеров — это не
+	// создаёт data race на переменную, захваченную замыканием.
+	versions map[uint]uint64
+	closed   bool
 }
 
 // NewSnapshotDispatcher создаёт дебаунс-диспетчер. fn вызывается асинхронно
 // для каждой игры после паузы delay без новых событий.
 func NewSnapshotDispatcher(delay time.Duration, fn func(gameID uint)) *SnapshotDispatcher {
 	return &SnapshotDispatcher{
-		delay:  delay,
-		fn:     fn,
-		timers: make(map[uint]*time.Timer),
+		delay:    delay,
+		fn:       fn,
+		timers:   make(map[uint]*time.Timer),
+		versions: make(map[uint]uint64),
 	}
 }
 
@@ -46,19 +53,28 @@ func (d *SnapshotDispatcher) Schedule(gameID uint) {
 	if t, ok := d.timers[gameID]; ok {
 		t.Stop()
 	}
+	d.versions[gameID]++
+	version := d.versions[gameID]
 	d.timers[gameID] = time.AfterFunc(d.delay, func() {
-		d.flush(gameID)
+		d.flush(gameID, version)
 	})
 }
 
-// flush удаляет таймер и вызывает рабочую функцию вне блокировки.
-func (d *SnapshotDispatcher) flush(gameID uint) {
+// flush удаляет таймер (если его версия актуальна) и вызывает рабочую функцию.
+func (d *SnapshotDispatcher) flush(gameID uint, version uint64) {
 	d.mu.Lock()
 	if d.closed {
 		d.mu.Unlock()
 		return
 	}
+	// M3: удаляем таймер только если версия НЕ устарела — если Schedule уже
+	// перезаписал map (новая версия), старый flush не трогает (новый сработает).
+	if d.versions[gameID] != version {
+		d.mu.Unlock()
+		return
+	}
 	delete(d.timers, gameID)
+	delete(d.versions, gameID)
 	d.mu.Unlock()
 
 	d.fn(gameID)
@@ -77,5 +93,6 @@ func (d *SnapshotDispatcher) Close() {
 		t.Stop()
 	}
 	d.timers = make(map[uint]*time.Timer)
+	d.versions = make(map[uint]uint64)
 	d.mu.Unlock()
 }

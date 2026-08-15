@@ -2,11 +2,11 @@
 package monitor
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"net"
 	"net/http"
 	"net/url"
@@ -152,6 +152,9 @@ type monitorGamePoller struct {
 	// lastData — последний отправленный payload (P-M3): идентичные снапшоты
 	// не рассылаем повторно каждую секунду.
 	lastData []byte
+	// lastFingerprint (M10, PASS-18): FNV-1a от lastData — сравнение хеша
+	// вместо bytes.Equal по всему JSON (O(1) против O(N) каждые 5с).
+	lastFingerprint uint64
 }
 
 // subscribeMonitor добавляет подписчика для указанной игры. Если сборщик не запущен — запускает его.
@@ -190,11 +193,16 @@ func subscribeMonitor(gameID uint, snapFn func(context.Context) ([]byte, error))
 					}
 					poller.subMu.Lock()
 					// P-M3: снапшот не изменился — не рассылаем дубли.
-					if bytes.Equal(poller.lastData, data) {
+					// M10 (PASS-18): FNV-1a хеш вместо bytes.Equal (O(1)).
+					h := fnv.New64a()
+					_, _ = h.Write(data)
+					fp := h.Sum64()
+					if fp == poller.lastFingerprint && poller.lastData != nil {
 						poller.subMu.Unlock()
 						continue
 					}
 					poller.lastData = data
+					poller.lastFingerprint = fp
 					for _, s := range poller.subscribers {
 						select {
 						case s.ch <- data:
@@ -374,6 +382,14 @@ func (h *MonitorHandler) setupChatPresence() {
 			return
 		}
 		h.hub.BroadcastToRoom(roomID, payload)
+
+		// M4 (PASS-18): комната пуста — удаляем запись presenceLast, иначе
+		// map росла бесконечно с новыми ID личных/командных комнат.
+		if count == 0 {
+			h.presenceLastMu.Lock()
+			delete(h.presenceLast, roomID)
+			h.presenceLastMu.Unlock()
+		}
 	})
 }
 

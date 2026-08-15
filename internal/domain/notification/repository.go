@@ -24,6 +24,9 @@ type NotificationRepository interface {
 	CreateNotification(ctx context.Context, n *Notification) error
 	CountUnread(ctx context.Context, userID uint) (int64, error)
 	ListByUser(ctx context.Context, userID uint, offset, limit int, onlyUnread bool) ([]Notification, int64, error)
+	// ListRecentByUser (M7, PASS-18): лёгкая выборка последних N уведомлений
+	// без COUNT(*) OVER() и полных колонок — для дашборда.
+	ListRecentByUser(ctx context.Context, userID uint, limit int) ([]Notification, error)
 	MarkAsRead(ctx context.Context, userID, notificationID uint) (bool, error)
 	MarkAllAsRead(ctx context.Context, userID uint) error
 	// DeleteOldRead удаляет прочитанные уведомления старше cutoff (P-2, pass 33:
@@ -114,6 +117,19 @@ func (r *gormNotificationRepo) ListByUser(ctx context.Context, userID uint, offs
 		notifications = append(notifications, rows[i].Notification)
 	}
 	return notifications, total, nil
+}
+
+// ListRecentByUser — лёгкая выборка последних N уведомлений (M7, PASS-18):
+// без window-count и лишних колонок; для дашборда «последние уведомления».
+func (r *gormNotificationRepo) ListRecentByUser(ctx context.Context, userID uint, limit int) ([]Notification, error) {
+	var notifications []Notification
+	err := r.db.WithContext(ctx).
+		Select("id", "type", "title", "body", "link", "read", "created_at").
+		Where("user_id = ?", userID).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&notifications).Error
+	return notifications, err
 }
 
 func (r *gormNotificationRepo) MarkAsRead(ctx context.Context, userID, notificationID uint) (bool, error) {

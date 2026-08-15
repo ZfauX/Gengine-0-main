@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/errgroup"
 )
 
 // ---------- UserDashboardService ----------
@@ -86,76 +87,92 @@ type DashboardInvitation struct {
 }
 
 // GetDashboard собирает данные для дашборда с оптимизированными запросами.
-// Использует 3 запроса вместо 7 за счёт JOIN (запросы — в репозитории, C1).
+// M7 (PASS-18): независимые запросы выполняются ПАРАЛЛЕЛЬНО (errgroup) —
+// раньше 4 round-trip последовательно на каждую загрузку дашборда.
 func (s *UserDashboardService) GetDashboard(ctx context.Context, userID uint) (*UserDashboard, error) {
 	var dash UserDashboard
 
+	g, gctx := errgroup.WithContext(ctx)
+
 	// 1. Авторские игры
-	authoredGames, err := s.userRepo.DashboardAuthoredGames(ctx, userID)
-	if err != nil {
-		log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to get authored games")
-		return &dash, fmt.Errorf("failed to get authored games: %w", err)
-	}
-	for _, g := range authoredGames {
-		dash.AuthoredGames = append(dash.AuthoredGames, DashboardGame(g))
-	}
+	g.Go(func() error {
+		authoredGames, err := s.userRepo.DashboardAuthoredGames(gctx, userID)
+		if err != nil {
+			return fmt.Errorf("failed to get authored games: %w", err)
+		}
+		for _, gg := range authoredGames {
+			dash.AuthoredGames = append(dash.AuthoredGames, DashboardGame(gg))
+		}
+		return nil
+	})
 
 	// 2. Единый запрос: команды + прохождения + названия игр через JOIN
-	rows, err := s.userRepo.DashboardTeams(ctx, userID)
-	if err != nil {
-		log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to get teams data")
-		return &dash, fmt.Errorf("failed to get teams data: %w", err)
-	}
+	g.Go(func() error {
+		rows, err := s.userRepo.DashboardTeams(gctx, userID)
+		if err != nil {
+			return fmt.Errorf("failed to get teams data: %w", err)
+		}
 
-	seenTeams := make(map[uint]bool)
-	for _, r := range rows {
-		// Добавляем команду в список (один раз)
-		if !seenTeams[r.TeamID] {
-			seenTeams[r.TeamID] = true
-			team := DashboardTeam{ID: r.TeamID, Name: r.TeamName}
-			twg := DashboardTeamWithGame{Team: team, Game: DashboardGame{}}
-			if r.CaptainID == userID {
-				dash.CaptainTeams = append(dash.CaptainTeams, twg)
-			} else {
-				dash.MemberTeams = append(dash.MemberTeams, twg)
+		seenTeams := make(map[uint]bool)
+		for _, r := range rows {
+			// Добавляем команду в список (один раз)
+			if !seenTeams[r.TeamID] {
+				seenTeams[r.TeamID] = true
+				team := DashboardTeam{ID: r.TeamID, Name: r.TeamName}
+				twg := DashboardTeamWithGame{Team: team, Game: DashboardGame{}}
+				if r.CaptainID == userID {
+					dash.CaptainTeams = append(dash.CaptainTeams, twg)
+				} else {
+					dash.MemberTeams = append(dash.MemberTeams, twg)
+				}
+			}
+			// Активные прохождения
+			if r.PassingID != 0 && r.GameName != "" &&
+				(r.PassingStatus == "started" || r.PassingStatus == "accepted") {
+				// UX-5 (PASS-13): «продолжить» доступно, пока есть незавершённые уровни.
+				canContinue := r.PassingStatus == "started" && r.TotalLevels > 0 && r.CompletedLevels < r.TotalLevels
+				curPos := 0
+				if r.CurrentPosition != nil {
+					curPos = *r.CurrentPosition
+				}
+				dash.ActivePassings = append(dash.ActivePassings, DashboardPassingWithGame{
+					PassingStatus:   r.PassingStatus,
+					TeamName:        r.TeamName,
+					GameName:        r.GameName,
+					GameID:          r.GameID,
+					PassingID:       r.PassingID,
+					CompletedLevels: r.CompletedLevels,
+					TotalLevels:     r.TotalLevels,
+					CurrentPosition: curPos,
+					CanContinue:     canContinue,
+				})
 			}
 		}
-		// Активные прохождения
-		if r.PassingID != 0 && r.GameName != "" &&
-			(r.PassingStatus == "started" || r.PassingStatus == "accepted") {
-			// UX-5 (PASS-13): «продолжить» доступно, пока есть незавершённые уровни.
-			canContinue := r.PassingStatus == "started" && r.TotalLevels > 0 && r.CompletedLevels < r.TotalLevels
-			curPos := 0
-			if r.CurrentPosition != nil {
-				curPos = *r.CurrentPosition
-			}
-			dash.ActivePassings = append(dash.ActivePassings, DashboardPassingWithGame{
-				PassingStatus:   r.PassingStatus,
-				TeamName:        r.TeamName,
-				GameName:        r.GameName,
-				GameID:          r.GameID,
-				PassingID:       r.PassingID,
-				CompletedLevels: r.CompletedLevels,
-				TotalLevels:     r.TotalLevels,
-				CurrentPosition: curPos,
-				CanContinue:     canContinue,
-			})
-		}
-	}
+		return nil
+	})
 
 	// 3. Приглашения (некритично: ошибка логируется, дашборд рендерится без них)
-	if err := s.loadInvitations(ctx, &dash, userID); err != nil {
-		log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to load invitations")
-	}
-
-	// 4. Последние уведомления (UX-1, PASS-16): некритично — дашборд рендерится
-	// без них, если загрузчик не настроен или репозиторий недоступен.
-	if s.recentNotifsLoad != nil {
-		if err := s.loadRecentNotifications(ctx, &dash, userID); err != nil {
-			log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to load notifications")
+	g.Go(func() error {
+		if err := s.loadInvitations(gctx, &dash, userID); err != nil {
+			log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to load invitations")
 		}
+		return nil
+	})
+
+	// 4. Последние уведомления (UX-1, PASS-16): некритично.
+	if s.recentNotifsLoad != nil {
+		g.Go(func() error {
+			if err := s.loadRecentNotifications(gctx, &dash, userID); err != nil {
+				log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to load notifications")
+			}
+			return nil
+		})
 	}
 
+	if err := g.Wait(); err != nil {
+		log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: one of parallel loads failed")
+		return &dash, err
+	}
 	return &dash, nil
 }
 

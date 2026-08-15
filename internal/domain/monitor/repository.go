@@ -14,6 +14,7 @@ import (
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/user"
 
+	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -288,7 +289,18 @@ func (r *gormChatRepo) SaveMessage(ctx context.Context, roomID, userID uint, con
 	if err := r.db.WithContext(ctx).Create(&msg).Error; err != nil {
 		return nil, err
 	}
-	return r.GetMessageByID(ctx, msg.ID)
+	// H3 (PASS-18): заполняем User лёгким SELECT вместо GetMessageByID
+	// (который делал First + Preload = 2 доп. запроса на каждое сообщение).
+	// Нужны только id/name/avatar_path для WS-payload.
+	if err := r.db.WithContext(ctx).
+		Model(&user.User{}).
+		Select("id", "name", "avatar_path").
+		Where("id = ?", userID).
+		Take(&msg.User).Error; err != nil {
+		// Имя не критично для доставки сообщения — не роняем SaveMessage.
+		log.Debug().Err(err).Uint("user_id", userID).Msg("SaveMessage: failed to load author name")
+	}
+	return &msg, nil
 }
 
 // GetByID возвращает комнату чата по ID (для проверки прав в ChatWS).

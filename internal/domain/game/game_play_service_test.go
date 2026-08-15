@@ -8,6 +8,7 @@ import (
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/user"
+	"gengine-0/internal/pkg/cache"
 	"gengine-0/internal/pkg/websocket"
 	"gengine-0/internal/testutil"
 
@@ -23,7 +24,7 @@ func setupGamePlayTest(t *testing.T) (*gorm.DB, *game.GamePlayService, *game.Lev
 	hub.Run()
 	t.Cleanup(hub.Stop)
 
-	attemptSvc := game.NewAttemptService()
+	attemptSvc := game.NewAttemptService(&cache.NoopCache{})
 	progressSvc := game.NewLevelProgressService(db).WithRepository(game.NewGormLevelProgressRepo(db))
 	monitorSvc := game.NewMonitorService(db).WithRepository(game.NewGormMonitorRepo(db))
 	coAuthorSvc := game.NewCoAuthorService().WithRepository(game.NewGormCoAuthorRepo(db))

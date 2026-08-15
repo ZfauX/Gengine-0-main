@@ -21,9 +21,9 @@ func TestGetDashboard_InvitationErrorIsNonFatal(t *testing.T) {
 	svc := NewUserDashboardService(repo, nil)
 	ctx := context.Background()
 
-	repo.EXPECT().DashboardAuthoredGames(ctx, uint(5)).Return([]DashboardGameRow{}, nil)
-	repo.EXPECT().DashboardTeams(ctx, uint(5)).Return([]DashboardTeamRow{}, nil)
-	repo.EXPECT().DashboardInvitations(ctx, uint(5)).Return([]DashboardInvitationRow{}, errors.New("db down"))
+	repo.EXPECT().DashboardAuthoredGames(gomock.Any(), uint(5)).Return([]DashboardGameRow{}, nil)
+	repo.EXPECT().DashboardTeams(gomock.Any(), uint(5)).Return([]DashboardTeamRow{}, nil)
+	repo.EXPECT().DashboardInvitations(gomock.Any(), uint(5)).Return([]DashboardInvitationRow{}, errors.New("db down"))
 
 	dash, err := svc.GetDashboard(ctx, 5)
 	require.NoError(t, err, "ошибка приглашений не должна валить дашборд")
@@ -39,8 +39,11 @@ func TestGetDashboard_TeamsErrorIsFatal(t *testing.T) {
 	svc := NewUserDashboardService(repo, nil)
 	ctx := context.Background()
 
-	repo.EXPECT().DashboardAuthoredGames(ctx, uint(5)).Return([]DashboardGameRow{}, nil)
-	repo.EXPECT().DashboardTeams(ctx, uint(5)).Return([]DashboardTeamRow{}, errors.New("db down"))
+	repo.EXPECT().DashboardAuthoredGames(gomock.Any(), uint(5)).Return([]DashboardGameRow{}, nil)
+	repo.EXPECT().DashboardTeams(gomock.Any(), uint(5)).Return([]DashboardTeamRow{}, errors.New("db down"))
+	// errgroup запускает ВСЕ ветки параллельно — invitations тоже вызывается
+	// (контекст отменяется после первой ошибки, но вызов уже ушёл).
+	repo.EXPECT().DashboardInvitations(gomock.Any(), uint(5)).Return([]DashboardInvitationRow{}, nil).AnyTimes()
 
 	_, err := svc.GetDashboard(ctx, 5)
 	require.Error(t, err)
@@ -55,10 +58,10 @@ func TestGetDashboard_Success(t *testing.T) {
 	svc := NewUserDashboardService(repo, nil)
 	ctx := context.Background()
 
-	repo.EXPECT().DashboardAuthoredGames(ctx, uint(7)).Return(
+	repo.EXPECT().DashboardAuthoredGames(gomock.Any(), uint(7)).Return(
 		[]DashboardGameRow{{ID: 1, Name: "Game A"}}, nil)
-	repo.EXPECT().DashboardTeams(ctx, uint(7)).Return([]DashboardTeamRow{}, nil)
-	repo.EXPECT().DashboardInvitations(ctx, uint(7)).Return(
+	repo.EXPECT().DashboardTeams(gomock.Any(), uint(7)).Return([]DashboardTeamRow{}, nil)
+	repo.EXPECT().DashboardInvitations(gomock.Any(), uint(7)).Return(
 		[]DashboardInvitationRow{{ID: 3, TeamID: 4, TeamName: "Team", Status: "pending"}}, nil)
 
 	dash, err := svc.GetDashboard(ctx, 7)
@@ -77,12 +80,12 @@ func TestGetDashboard_ActivePassingsFiltered(t *testing.T) {
 	svc := NewUserDashboardService(repo, nil)
 	ctx := context.Background()
 
-	repo.EXPECT().DashboardAuthoredGames(ctx, uint(9)).Return([]DashboardGameRow{}, nil)
-	repo.EXPECT().DashboardTeams(ctx, uint(9)).Return([]DashboardTeamRow{
+	repo.EXPECT().DashboardAuthoredGames(gomock.Any(), uint(9)).Return([]DashboardGameRow{}, nil)
+	repo.EXPECT().DashboardTeams(gomock.Any(), uint(9)).Return([]DashboardTeamRow{
 		{TeamID: 1, TeamName: "Alpha", CaptainID: 9, PassingID: 11, GameID: 22, GameName: "G", PassingStatus: "started"},
 		{TeamID: 2, TeamName: "Beta", CaptainID: 9, PassingID: 12, GameID: 23, GameName: "H", PassingStatus: "finished"},
 	}, nil)
-	repo.EXPECT().DashboardInvitations(ctx, uint(9)).Return([]DashboardInvitationRow{}, nil)
+	repo.EXPECT().DashboardInvitations(gomock.Any(), uint(9)).Return([]DashboardInvitationRow{}, nil)
 
 	dash, err := svc.GetDashboard(ctx, 9)
 	require.NoError(t, err)

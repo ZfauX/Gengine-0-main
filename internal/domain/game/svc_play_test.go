@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"gengine-0/internal/pkg/cache"
 	ws "gengine-0/internal/pkg/websocket"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -59,7 +60,7 @@ func TestSubmitCode_TeamIDFromMembership(t *testing.T) {
 
 	mock.ExpectRollback()
 
-	attemptSvc := NewAttemptService()
+	attemptSvc := NewAttemptService(&cache.NoopCache{})
 	monitorSvc := NewMonitorService(gormDB)
 	coAuthorSvc := NewCoAuthorService()
 	hub := ws.NewRoomHub()

@@ -236,7 +236,8 @@ func wrapProfileService(db *gorm.DB) *user.ProfileService {
 // notification→user иначе даёт import cycle).
 func wrapUserDashboardService(userRepo user.UserRepository, notificationRepo notification.NotificationRepository) *user.UserDashboardService {
 	loadRecent := func(ctx context.Context, userID uint) ([]user.DashboardNotification, error) {
-		items, _, err := notificationRepo.ListByUser(ctx, userID, 0, 5, false)
+		// M7 (PASS-18): ListRecentByUser — лёгкий SELECT без COUNT(*) OVER().
+		items, err := notificationRepo.ListRecentByUser(ctx, userID, 5)
 		if err != nil {
 			return nil, err
 		}
@@ -255,6 +256,12 @@ func wrapUserDashboardService(userRepo user.UserRepository, notificationRepo not
 		return out, nil
 	}
 	return user.NewUserDashboardService(userRepo, loadRecent)
+}
+
+// wrapAttemptService (H2, PASS-18): AttemptService получил кэш ответов уровня
+// (TTL 30с) — убрать reload Level.Questions.Answers на каждую отправку кода.
+func wrapAttemptService(cacheStore cache.CacheStore) *game.AttemptService {
+	return game.NewAttemptService(cacheStore)
 }
 
 // wrapSimulateService — симуляция прохождения (M17, pass 30: раньше
