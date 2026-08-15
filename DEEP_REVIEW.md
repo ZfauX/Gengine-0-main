@@ -648,3 +648,191 @@ pgx-типы, i18n) — не hot-path, не требует вмешательс�
 - **Закрыто**: 9 кандидатов (каскады, .env, XSS, валидация, OAuth/WebAuthn, webhook, CSV-injection, backup, N+1).
 - **pprof**: heap 9.3MB (стартовые аллокации), 21 goroutine, CPU ~6.8% (TLS) — утечек нет.
 - **Приоритет**: H1 (гонка), H2 (DoS блокировки), M6 (платежи), M3 (экспорт-права).
+
+---
+
+# DEEP_REVIEW — Gengine-0 (PASS 18, повторное ревью #3)
+
+> Целевое окружение: **pod через podman**. Метод: pprof в pod (heap/goroutine/cpu) + 3
+> параллельных аудита (@reviewer, @security, @perf) с фокусом на game hot-path (SubmitCode),
+> monitor (чат/пполлер), snapshot/мониторинг, dashboard + эмпирическая проверка каждого
+> HIGH/MEDIUM по коду.
+
+---
+
+## 🔬 pprof-результаты (PASS 18, в pod)
+
+| Профиль | Результат | Вывод |
+|---|---|---|
+| **goroutine** | 21 в покое | ✅ Утечек нет (стабильно с PASS-15). |
+| **heap inuse** | **6.7 MB** (было 9.3 в PASS-17) | ✅ Снизился: стартовые аллокации (validator, codec, deepcopy, regexp), не hot-path. |
+| **cpu (лёгкая нагрузка 300 req)** | 4.6% (460ms samples) | ⚠️ **41% TLS (FIPS bigmod)** + syscall 13% — прикладной код чист. |
+| **pprof bind** | `127.0.0.1:6060` | ✅ loopback. |
+
+**Вывод**: heap снизился до 6.7MB (убрали лишние инициализации в прошлых раундах), CPU чист.
+Профилирование подтверждает: горячих точек в прикладном коде нет, доминирует TLS.
+
+---
+
+## 🔴 HIGH (новые)
+
+### H1. GetOrFetchSnapshotJSON возвращает кэш без копии (нарушение LOW #14) 🔍✅ (подтверждено)
+- **Файл**: `internal/domain/game/svc_monitor.go:203-204` vs `:188-190`.
+- **Проблема**: на основном кэш-хите (188-190) возвращается **копия** `[]byte`, но на ветке
+  «json устарел / nil» (203-204) возвращается `cached.json` **напрямую**. Любой будущий
+  потребитель, сделавший append/мутацию, испортит LRU-запись — контракт LOW #14 нарушается.
+- **Фикс**: единообразно возвращать копию (`append([]byte(nil), cached.json...)`).
+
+### H2. SubmitCode: полный reload Level.Questions.Answers на каждую попытку 🔍✅ (подтверждено, perf)
+- **Файл**: `internal/domain/game/svc_attempt.go:33-34` + `svc_progress.go:98-99`.
+- **Проблема**: комментарий в svc_attempt.go:30 ошибочен — `GetCurrentProgressForUpdate`
+  НЕ прелоадит Level (svc_progress.go:98 «без Preload уровня»). SubmitCodeWithTx выполняет
+  `Preload("Questions.Answers").First(&lvl, ...)` на КАЖДУЮ отправку кода (2 запроса на
+  горячем пути). Граф ответов уровня статичен на время игры.
+- **Фикс**: кэшировать ответы уровня (по levelID, инвалидация при редактировании) или
+  проверять ответы через SQL `EXISTS` без загрузки графа.
+
+### H3. SaveMessage: повторный SELECT после INSERT (чат) 🔍✅ (подтверждено, perf)
+- **Файл**: `monitor/repository.go:282-292`.
+- **Проблема**: `Create` уже заполняет ID/CreatedAt, затем `GetMessageByID` — ещё SELECT +
+  Preload User на каждое сообщение чата (2 запроса вместо 1). Плюс двойная санитизация в
+  ChatWS (handler.go:918 и :971).
+- **Фикс**: возвращать созданный msg напрямую (User заполнить одним JOIN/кэшем имени);
+  убрать вторую StripHTML.
+
+---
+
+## 🟠 MEDIUM (новые)
+
+### M1. SSE: утечка прогресса других команд 🔍✅ (подтверждено, security)
+- **Файл**: `hnd_sse.go:494` — `sseConnect(mgr, c, passing.GameID)` подписывает участника
+  команды на ВСЮ игру; `broadcastLocal(gameID,...)` шлёт `hint_available`/`level_completed`
+  всех команд. Участник команды A видит использование подсказок командой B (тактическая
+  утечка в соревновании).
+- **Фикс**: подписывать SSE по passing_id (или фильтровать события по passing_id; менеджерам
+  оставить game-wide).
+
+### M2. Захардкоженный admin-пароль в отслеживаемом манифесте 🔍✅ (подтверждено, security)
+- **Файл**: `deploy/pod/gengine-pod.yaml:91` (`ADMIN_PASSWORD: AdminPod123456!`).
+- **Проблема**: реальная строка пароля в git; gitleaks-allowlist её не покрывает. Копипаста
+  в прод = известный админ-пароль.
+- **Фикс**: плейсхолдер `__SET_A_STRONG_PASSWORD__` (или gitleaks-правило на `ADMIN_PASSWORD`
+  в этом файле).
+
+### M3. Schedule/flush гонка в debounce-диспетчере снапшотов 🔍✅ (подтверждено, reviewer)
+- **Файл**: `svc_snapshot.go:37-65`.
+- **Проблема**: flush старого таймера может удалить НОВЫЙ таймер из map (после перезаписи
+  Schedule) → двойной/потерянный ProcessSnapshot. Смягчено advisory-lock + идемпотентной
+  рассылкой.
+- **Фикс**: в flush сравнивать `d.timers[gameID] == t` (передавать таймер в замыкание).
+
+### M4. presenceLast растёт без sweep 🔍✅ (подтверждено, reviewer+security)
+- **Файл**: `monitor/handler.go:308,362`.
+- **Проблема**: запись в `presenceLast` на каждую комнату никогда не удаляется → неограниченный
+  рост при активном использовании личных/командных комнат. (Аналог chatRooms решён.)
+- **Фикс**: удалять при `RoomClientCount(roomID) == 0` или ленивый sweep.
+
+### M5. storeAnonCache может алиасить буфер из sync.Pool 🔍✅ (подтверждено, perf+reviewer)
+- **Файл**: `htmlcache.go:150-177`.
+- **Проблема**: `bytes.ReplaceAll` возвращает ту же slice, если плейсхолдер не найден →
+  `out` ссылается на backing-array `layoutBuf`, который после putBuffer перезаписывается.
+  Сейчас nonce/csrf есть всегда, но контракт хрупкий.
+- **Фикс**: `bytes.Clone(out)` перед кэшированием.
+
+### M6. StartTesting переиспользует чужую команду `_test_<userID>` 🔍✅ (подтверждено, reviewer)
+- **Файл**: `svc_play.go:492-525`.
+- **Проблема**: `WHERE name = ?` находит любую команду с таким именем (включая чужую
+  реальную команду, названную `_test_5`), создавая тестовый passing на чужую команду.
+- **Фикс**: `AND captain_id = ?` или проверка принадлежности.
+
+### M7. Dashboard: 4 последовательных запроса + тяжёлый ListByUser(5) 🔍✅ (подтверждено, perf)
+- **Файл**: `dashboard_service.go:94-157` + `wire_providers.go:238-256`.
+- **Проблема**: 4 независимых запроса последовательно; `ListByUser(0,5)` тянет
+  `notifications.*` + `COUNT(*) OVER()` по всем уведомлениям ради 5 строк.
+- **Фикс**: errgroup для независимых запросов; лёгкий `ListRecentByUser` (SELECT нужных
+  колонок LIMIT 5, без window-count) + TTL-кэш.
+
+### M8. DashboardTeams: LATERAL с 3 коррелированными подзапросами на строку 🔍✅ (подтверждено, perf)
+- **Файл**: `user/repository.go:290-328`.
+- **Проблема**: на каждую команду пользователя — 3 подзапроса по level_progresses/levels.
+  Для десятков команд — сотни коррелированных выборок на визит дашборда.
+- **Фикс**: один проход по level_progresses для всех passings (GROUP BY game_passing_id).
+
+### M9. UseHint не использует кэш настроек игры 🔍✅ (подтверждено, perf)
+- **Файл**: `svc_play.go:298-306`.
+- **Проблема**: `GetGameplayData` кэширует GameSetting (60с), но UseHint читает из БД на
+  каждый вызов подсказки.
+- **Фикс**: использовать `game:settings:%d` кэш с fallback.
+
+### M10. Poller SSE: полная копия JSON + bytes.Equal каждые 5с 🔍✅ (подтверждено, perf)
+- **Файл**: `monitor/handler.go:179-205` + `svc_monitor.go:181-192`.
+- **Проблема**: каждый тик (5с) на игру — копия `[]byte` кэша + полное сравнение JSON.
+  O(N × размер_снапшота).
+- **Фикс**: fingerprint (длина/CRC32/версия) вместо полного сравнения.
+
+---
+
+## 🟡 LOW (новые)
+
+- **L1**: `svc_play.go:189` — `map[bool]string{...}` аллоцируется на каждый SubmitCode.
+- **L2**: `tx.Save(progress)` пишет все колонки вместо точечного `Updates` (UseHint/CompleteLevel).
+- **L3**: `svc_passing.go:222-230` — validTransitions map пересоздаётся на каждый вызов.
+- **L4**: `gameplay-show.html:554` — `data.level_name` не отправляется бэкендом → «undefined» в toast.
+- **L5**: `monitor/handler.go:914-966` — нет лимита длины Content после StripHTML (до 32KB/сообщение).
+- **L6**: `RoomUserIDs` аллоцирует map на каждый presence.
+- **L7**: `audit.go:100` — offset без верхней границы (perPage клампить в handler).
+- **L8**: `storeAnonCache`/`GetOrFetchSnapshotJSON` — см. H1/M5 (копии).
+- **L9**: `GetGameplayData` на ошибке SubmitCode — ~10 запросов на одну неверную попытку (H2 смежный).
+- **L10**: `/api/games/{id}/stats` грузит все reviews без лимита.
+- **L11**: `CloseVoting` шлёт письма по одному (Enqueue вместо EnqueueBatch).
+
+---
+
+## 🔍 Проверено и закрыто (кандидаты, НЕ подтвердились)
+
+| Пункт | Статус | Детали |
+|---|---|---|
+| **Приватный ключ TLS в git** | ✅ Закрыто | `git ls-files deploy/certs/ .env` — пусто (в .gitignore). |
+| **Uploads magic-bytes** | ✅ Закрыто | `local_storage.go` — `http.DetectContentType`, path-traversal/symlink заблокированы, chmod 0600/0700. |
+| **IDOR дашборд-уведомления** | ✅ Закрыто | userID строго из контекста; чужых уведомлений нет. |
+| **PII в поиске** | ✅ Закрыто | email маскируется для не-админов; аноним — пустая строка. |
+| **XSS в новых попапах/JS** | ✅ Закрыто | CSP nonce, escapeHtml в showToast, ThemeMode allowlist. |
+| **RUM валидация** | ✅ Закрыто | IPRateLimit 60/мин, NaN/Inf клампы, page truncation. |
+| **SSRF/CSRF новые маршруты** | ✅ Закрыто | новых SSRF-потенциалов нет; формы под gorilla/csrf. |
+| **RoomHub runLoop/Acquire, SSE wg.Add под RLock** | ✅ Закрыто | атомарность, идемпотентный unregister, корректный wg.Add. |
+| **Миграции 000070/000071** | ✅ Закрыто | закрывают audit_logs(created_at), users(email) trgm. |
+
+---
+
+## 💡 Предложения по улучшению (PASS 18)
+
+### Быстрые победы (1-2 дня)
+1. **H1**: копия `cached.json` в GetOrFetchSnapshotJSON (одна строка).
+2. **M2**: плейсхолдер для ADMIN_PASSWORD в манифесте.
+3. **M5**: `bytes.Clone(out)` в storeAnonCache.
+4. **M4**: sweep presenceLast.
+
+### Оптимизация (эффект на hot-path)
+5. **H2**: кэш/`EXISTS` для проверки ответов уровня — −2 запроса с каждого SubmitCode.
+6. **H3**: убрать GetMessageByID после Create в чате — −1 запрос/сообщение.
+7. **M7**: errgroup + лёгкий ListRecentByUser — быстрее дашборд.
+8. **M8**: GROUP BY вместо LATERAL в DashboardTeams.
+
+### Безопасность
+9. **M1**: скоупинг SSE по passing_id (закрыть тактическую утечку).
+10. **M6**: проверка captain_id при переиспользовании test-команды.
+
+### UX
+11. **L4**: добавить level_name в SSE-payload (исправить «undefined»).
+12. **L5**: лимит длины чат-сообщения (4000 символов).
+
+---
+
+## 🎯 Итог PASS-18
+
+- **HIGH**: 3 новых (H1 snapshot-копия, H2 SubmitCode reload, H3 чат 2 запроса) — подтверждены.
+- **MEDIUM**: 10 новых (M1-M10).
+- **LOW**: 11 новых (L1-L11).
+- **Закрыто**: 9 кандидатов (сертификаты, uploads, IDOR, PII, XSS, RUM, SSRF, RoomHub, миграции).
+- **pprof**: heap 6.7MB (снизился), 21 goroutine, CPU ~4.6% (TLS) — утечек нет.
+- **Приоритет**: H1 (копия), M1 (SSE-утечка), H2/H3 (hot-path), M2 (пароль в манифесте).
