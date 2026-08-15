@@ -4,6 +4,7 @@ package game
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"gengine-0/internal/pkg/cache"
@@ -18,6 +19,12 @@ type RatingService struct {
 	db    *gorm.DB
 	repo  RatingRepository
 	cache cache.CacheStore
+
+	// leaderboardVersion (L7, PASS-16): версионный ключ лидерборда. При
+	// изменении рейтинга инкрементируем счётчик в памяти — GetLeaderboard
+	// читает кэш по ключу leaderboard:v<N>:limit:N, и старые записи просто
+	// перестают попадать в ключ (без DeleteByPrefix/SCAN по Valkey).
+	leaderboardVersion atomic.Int64
 }
 
 func NewRatingService(db *gorm.DB, c cache.CacheStore) *RatingService {
@@ -25,6 +32,13 @@ func NewRatingService(db *gorm.DB, c cache.CacheStore) *RatingService {
 		c = &cache.NoopCache{}
 	}
 	return &RatingService{db: db, cache: c}
+}
+
+// bumpLeaderboardVersion инвалидирует кэш лидерборда O(1): увеличивает
+// версию, которая входит в ключ кэша. Раньше — DeleteByPrefix("leaderboard")
+// (Valkey SCAN+DEL по всем ключам при каждом изменении рейтинга).
+func (s *RatingService) bumpLeaderboardVersion() {
+	s.leaderboardVersion.Add(1)
 }
 
 // WithRepository устанавливает репозиторий чтения рейтинга (A-2, pass 31).
@@ -71,7 +85,7 @@ func (s *RatingService) UpdateRatingsForGame(ctx context.Context, gameID uint) e
 			return err
 		}
 		if len(passings) == 0 {
-			s.cache.DeleteByPrefixWithCtx(ctx, "leaderboard")
+			s.bumpLeaderboardVersion()
 			return nil
 		}
 
@@ -162,7 +176,7 @@ func (s *RatingService) UpdateRatingsForGame(ctx context.Context, gameID uint) e
 			}
 		}
 
-		s.cache.DeleteByPrefixWithCtx(ctx, "leaderboard")
+		s.bumpLeaderboardVersion()
 		return nil
 	})
 }
@@ -187,8 +201,11 @@ type LeaderboardEntry struct {
 }
 
 // GetLeaderboard возвращает топ игроков с кэшированием.
+// L7 (PASS-16): версионный ключ — при инвалидации bumpLeaderboardVersion
+// меняет префикс, старые записи перестают попадать в ключ (без SCAN по
+// Valkey, который был при DeleteByPrefix).
 func (s *RatingService) GetLeaderboard(ctx context.Context, limit int) ([]LeaderboardEntry, error) {
-	cacheKey := fmt.Sprintf("leaderboard:limit:%d", limit)
+	cacheKey := fmt.Sprintf("leaderboard:v%d:limit:%d", s.leaderboardVersion.Load(), limit)
 
 	var cached []LeaderboardEntry
 	if cacheGetJSON(s.cache, ctx, cacheKey, &cached) {

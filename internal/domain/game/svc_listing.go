@@ -14,6 +14,7 @@ import (
 	"gengine-0/internal/pkg/sqlutil"
 
 	"github.com/rs/zerolog/log"
+	"gorm.io/gorm"
 )
 
 // GameListingService отвечает за списки игр, фильтрацию и сортировку.
@@ -50,9 +51,60 @@ func NewGameListingService(gameRepo GameRepository, cacheStore cache.CacheStore)
 }
 
 // listingCacheEntry — кэшированный результат анонимного листинга.
+// L9 (PASS-16): храним DTO GameCard, а не полные Game — в JSON не попадают
+// nil-слайсы (Levels/Passings/Reviews/CoAuthors/Notes), Description,
+// RegistrationDeadline и прочие поля, не нужные карточкам. Кэш листинга
+// (Valkey) и память меньше примерно на порядок на запись.
 type listingCacheEntry struct {
-	Games []Game
+	Games []GameCard
 	Total int64
+}
+
+// GameCard — DTO карточки игры в списке (L9). Поля, которые реально читает
+// games-list.html (card/table view) + AuthorName для подписи автора.
+type GameCard struct {
+	ID               uint
+	Name             string
+	CoverPath        string
+	StartsAt         *time.Time
+	IsDraft          bool
+	Visibility       string
+	RatingValue      float64
+	ParticipantCount int
+	AuthorID         uint
+	AuthorName       string
+}
+
+// toCard конвертирует Game (результат SQL с заполненным Author.Name) в DTO.
+func (g Game) toCard() GameCard {
+	return GameCard{
+		ID:               g.ID,
+		Name:             g.Name,
+		CoverPath:        g.CoverPath,
+		StartsAt:         g.StartsAt,
+		IsDraft:          g.IsDraft,
+		Visibility:       g.Visibility,
+		RatingValue:      g.RatingValue,
+		ParticipantCount: g.ParticipantCount,
+		AuthorID:         g.AuthorID,
+		AuthorName:       g.Author.Name,
+	}
+}
+
+// toGame восстанавливает Game из DTO (для шаблонов, ожидающих .Author.Name).
+func (c GameCard) toGame() Game {
+	return Game{
+		Model:            gorm.Model{ID: c.ID},
+		Name:             c.Name,
+		CoverPath:        c.CoverPath,
+		StartsAt:         c.StartsAt,
+		IsDraft:          c.IsDraft,
+		Visibility:       c.Visibility,
+		RatingValue:      c.RatingValue,
+		ParticipantCount: c.ParticipantCount,
+		AuthorID:         c.AuthorID,
+		Author:           user.User{Name: c.AuthorName},
+	}
 }
 
 // listingCacheKey строит детерминированный ключ кэша по параметрам фильтра/сортировки.
@@ -109,14 +161,20 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 	// DEEP-REVIEW P1 (pass 46): кэшируем и авторизованный листинг (раньше только
 	// анонимный — каждый залогиненный заход на /games бил в PostgreSQL).
 	// Ключ включает ViewerID (listingCacheKey), поэтому «мои/публичные» игры
-	// не смешиваются между пользователями. Без поиска/дат (самые горячие).
+	// не смешиваются между пользователями. Без дат (самые горячие).
 	// P-6 (PASS-15): кэш расширен на page 2..10 — пагинация анонимов больше
 	// не бьёт в PostgreSQL на каждую страницу (версионный ключ инвалидируется).
-	if page >= 1 && page <= 10 && filter.Search == "" && filter.DateFrom == "" && filter.DateTo == "" {
+	// L8 (PASS-16): поиск тоже кэшируется — listingCacheKey содержит filter.Search,
+	// поэтому кэш уникален по запросу; раньше каждый анонимный поиск бил в PG.
+	if page >= 1 && page <= 10 && filter.DateFrom == "" && filter.DateTo == "" {
 		cacheKey = s.listingCacheKey(ctx, filter, sort, page, perPage)
 		var entry listingCacheEntry
 		if cacheGetJSON(s.cache, ctx, cacheKey, &entry) {
-			return entry.Games, entry.Total, nil
+			games := make([]Game, len(entry.Games))
+			for i, c := range entry.Games {
+				games[i] = c.toGame()
+			}
+			return games, entry.Total, nil
 		}
 	}
 
@@ -255,7 +313,12 @@ func (s *GameListingService) ListFilteredPaginated(ctx context.Context, filter G
 		}
 	}
 	if cacheKey != "" {
-		s.cache.SetWithCtx(ctx, cacheKey, listingCacheEntry{Games: games, Total: total}, 30*time.Second)
+		// L9 (PASS-16): в кэш пишем DTO-карточки (без лишних полей Game).
+		cards := make([]GameCard, len(games))
+		for i, g := range games {
+			cards[i] = g.toCard()
+		}
+		s.cache.SetWithCtx(ctx, cacheKey, listingCacheEntry{Games: cards, Total: total}, 30*time.Second)
 	}
 	return games, total, nil
 }
