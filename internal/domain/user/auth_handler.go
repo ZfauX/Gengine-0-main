@@ -606,7 +606,9 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	} else {
 		resetCode, genErr := h.passwordResetSvc.GenerateToken(c.Request.Context(), *user)
 		if genErr != nil {
-			log.Error().Err(genErr).Str("email", input.Email).Msg("ForgotPassword: failed to generate token")
+			// L5 (PASS-16): email НЕ логируем — PII в логах противоречит
+			// анти-enumeration (выше уже скрываем email при отсутствии юзера).
+			log.Error().Err(genErr).Uint("user_id", user.ID).Msg("ForgotPassword: failed to generate token")
 		} else if !h.cfg.SMTP.Enabled {
 			// S7: код сброса НЕ логируем вовсе (даже частично — 16 бит энтропии
 			// при доступе к логам перебираются). Логируем только факт генерации;

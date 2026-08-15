@@ -33,6 +33,10 @@ const (
 	NotificationTypeTimeWarning         NotificationType = "time_warning"
 	NotificationTypeTimeExpired         NotificationType = "time_expired"
 	NotificationTypeInfo                NotificationType = "info"
+	// NotificationTypeGameReminder (M6, PASS-16): напоминание о предстоящей игре.
+	// Для дедупликации используется уникальный частичный индекс
+	// (user_id, game_id) WHERE type='game_reminder' — см. миграцию 000068.
+	NotificationTypeGameReminder NotificationType = "game_reminder"
 )
 
 // Notification represents a user notification stored in the database.
@@ -273,6 +277,18 @@ func (s *NotificationService) GetEmailNotificationFlags(ctx context.Context, use
 
 // Create создаёт новое push-уведомление
 func (s *NotificationService) Create(ctx context.Context, userID uint, ntype NotificationType, title, body, link string) error {
+	return s.create(ctx, userID, 0, ntype, title, body, link)
+}
+
+// CreateForGame создаёт уведомление, привязанное к игре (M6, PASS-16).
+// Используется фоновым воркером напоминаний о предстоящих играх: уникальный
+// частичный индекс (user_id, game_id) WHERE type='game_reminder' + OnConflict
+// DoNothing в CreateNotification исключают дубликаты.
+func (s *NotificationService) CreateForGame(ctx context.Context, userID uint, gameID uint, ntype NotificationType, title, body, link string) error {
+	return s.create(ctx, userID, gameID, ntype, title, body, link)
+}
+
+func (s *NotificationService) create(ctx context.Context, userID uint, gameID uint, ntype NotificationType, title, body, link string) error {
 	notification := &Notification{
 		UserID: userID,
 		Type:   ntype,
@@ -280,6 +296,10 @@ func (s *NotificationService) Create(ctx context.Context, userID uint, ntype Not
 		Body:   body,
 		Link:   link,
 		Read:   false,
+	}
+	if gameID != 0 {
+		gid := gameID
+		notification.GameID = &gid
 	}
 
 	if err := s.repo.CreateNotification(ctx, notification); err != nil {
@@ -497,10 +517,15 @@ func (s *NotificationService) getUnreadCount(ctx context.Context, userID uint) i
 	}
 	s.unreadMu.Unlock()
 
-	count, err := s.repo.CountUnread(ctx, userID)
+	// M1 (PASS-16): WithoutCancel — COUNT не должен обрываться из-за отменённого
+	// request-context (клиент отключился): иначе счётчик 0 кэшировался на 30с и
+	// все пользователи видели «0 непрочитанных».
+	count, err := s.repo.CountUnread(context.WithoutCancel(ctx), userID)
 	if err != nil {
 		log.Error().Err(err).Uint("user_id", userID).Msg("getUnreadCount: failed")
-		count = 0
+		// M1 (PASS-16): при ошибке НЕ кэшируем count=0 — вернуть 0 для текущего
+		// запроса, но не показывать «0 непрочитанных» остальным 30 секунд.
+		return 0
 	}
 
 	s.unreadMu.Lock()

@@ -530,7 +530,11 @@ func run() error {
 						for _, uid := range userIDs {
 							title := i18n.T("notif.upcoming_game_title")
 							body := fmt.Sprintf("%s: %s", i18n.T("notif.upcoming_game_body"), game.Name)
-							if err := deps.Services.Notification.Create(ctx, uid, notification.NotificationTypeInfo, title, body, link); err != nil {
+							// M6 (PASS-16): type=game_reminder + game_id в уведомлении.
+							// Уникальный частичный индекс (user_id, game_id) +
+							// OnConflict DoNothing защищают от дубликатов при
+							// повторном попадании игры в выборку (сдвиг даты).
+							if err := deps.Services.Notification.CreateForGame(ctx, uid, game.ID, notification.NotificationTypeGameReminder, title, body, link); err != nil {
 								log.Debug().Err(err).Uint("user_id", uid).Uint("game_id", game.ID).Msg("Upcoming game reminder: create failed")
 							}
 						}

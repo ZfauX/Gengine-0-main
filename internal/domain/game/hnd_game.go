@@ -118,6 +118,13 @@ func parseGameDatesFromForm(c *gin.Context, startsAtStr, registrationDeadlineStr
 func (h *GameHandler) List(c *gin.Context) {
 	userID := c.GetUint("userID")
 
+	// M8 (PASS-16): на анонимном кэш-хите HTML отдаём страницу ДО загрузки
+	// данных из БД/Valkey — раньше ListFilteredPaginated выполнялся всегда,
+	// и на кэш-хите данные грузились впустую (2 Valkey GET или SQL).
+	if userID == 0 && render.TryServeAnonPageCache(c) {
+		return
+	}
+
 	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
 	if err != nil || page < 1 {
 		page = 1

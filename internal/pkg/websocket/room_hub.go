@@ -3,6 +3,7 @@ package websocket
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -19,7 +20,10 @@ type RoomHub struct {
 	broadcast  chan *Message
 	done       chan struct{}
 	wg         sync.WaitGroup
-	stopped    bool
+	// stopped (L2, PASS-16): atomic.Bool — раньше обычный bool, а isStopped()
+	// брал полный h.mu.Lock() на каждый register/broadcast (hot path). Чтение
+	// через atomic дешёвое и lock-free; запись — только в Stop.
+	stopped atomic.Bool
 
 	// roomClients (P-M2, PASS-8): кэш слайса клиентов комнаты для рассылки.
 	// dispatchToRoom больше не аллоцирует слайс на КАЖДОЕ сообщение чата.
@@ -116,7 +120,7 @@ func (h *RoomHub) SetLimits(maxTotalConns, maxConnsPerIP int) {
 func (h *RoomHub) CanAccept(ip string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.stopped {
+	if h.stopped.Load() {
 		return false
 	}
 	if h.maxTotalConns > 0 && h.totalConns >= h.maxTotalConns {
@@ -137,7 +141,7 @@ func (h *RoomHub) CanAccept(ip string) bool {
 func (h *RoomHub) Acquire(ip string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.stopped {
+	if h.stopped.Load() {
 		return false
 	}
 	if h.maxTotalConns > 0 && h.totalConns >= h.maxTotalConns {
@@ -400,7 +404,7 @@ func (h *RoomHub) dispatchToRoom(roomID string, data []byte) {
 				h.mu.Unlock()
 				continue
 			}
-			delete(h.rooms[roomID], client)
+			h.removeClosedClientLocked(roomID, client)
 			removed = true
 			h.mu.Unlock()
 			continue
@@ -415,7 +419,7 @@ func (h *RoomHub) dispatchToRoom(roomID string, data []byte) {
 				h.mu.Unlock()
 				continue
 			}
-			delete(h.rooms[roomID], client)
+			h.removeClosedClientLocked(roomID, client)
 			removed = true
 			h.mu.Unlock()
 		default:
@@ -438,11 +442,25 @@ func (h *RoomHub) dispatchToRoom(roomID string, data []byte) {
 	h.mu.Unlock()
 }
 
+// removeClosedClientLocked удаляет закрытого клиента из комнаты и декрементит
+// счётчики соединений. L1 (PASS-16): раньше удаление в dispatchToRoom не
+// сбрасывало registered и не вызывало decConnectionNoLock — если writePump не
+// успел вызвать UnregisterClient (например, паника до defer), счётчики
+// totalConns/connsPerIP текли до перезапуска.
+// Вызывается под h.mu.Lock(). Безопасно для двойного decrement: сброшенный
+// registered заставляет unregister-ветку пропустить клиента.
+func (h *RoomHub) removeClosedClientLocked(roomID string, client *Client) {
+	delete(h.rooms[roomID], client)
+	if client.registered {
+		client.registered = false
+		h.decConnectionNoLock(client.RemoteIP)
+	}
+}
+
 // isStopped проверяет, остановлен ли хаб.
+// L2 (PASS-16): atomic.Load без лока — раньше полный Lock на hot path.
 func (h *RoomHub) isStopped() bool {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.stopped
+	return h.stopped.Load()
 }
 
 // IsStopped проверяет, остановлен ли хаб (публичный метод для health check).
@@ -453,11 +471,11 @@ func (h *RoomHub) IsStopped() bool {
 // Stop останавливает хаб и закрывает все соединения, отправив CloseMessage.
 func (h *RoomHub) Stop() {
 	h.mu.Lock()
-	if h.stopped {
+	if h.stopped.Load() {
 		h.mu.Unlock()
 		return
 	}
-	h.stopped = true
+	h.stopped.Store(true)
 	// Отменяем pub/sub-подписку (MULTI-INSTANCE PASS-12) — после остановки
 	// хаба remote-сообщения рассылать некому.
 	h.StopPubSub()

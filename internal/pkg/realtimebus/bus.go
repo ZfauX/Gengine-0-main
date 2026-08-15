@@ -73,6 +73,13 @@ type valkeyBus struct {
 	pubsub *redis.PubSub
 	// subscribed — true, когда Redis подтвердил SUBSCRIBE (первый runOnce).
 	subscribed bool
+	// readyCh (M4, PASS-16): закрывается при ПЕРВОЙ установке подписки ИЛИ при
+	// провале первого runOnce (Valkey недоступен). waitReady слушает его, чтобы
+	// не крутиться весь subscribeReadyTimeout, когда подписка заведомо не
+	// установится (раньше старт приложения задерживался до 5с×2 вызова).
+	readyCh     chan struct{}
+	readyOnce   sync.Once
+	startFailed bool
 }
 
 // subscribeReadyTimeout — сколько ждать подтверждения подписки Redis.
@@ -87,6 +94,7 @@ func NewValkeyBus(client *redis.Client) Bus {
 		client:   client,
 		handlers: make(map[string]func(channel string, payload []byte)),
 		closeCh:  make(chan struct{}),
+		readyCh:  make(chan struct{}),
 	}
 }
 
@@ -139,30 +147,24 @@ func (b *valkeyBus) Subscribe(ctx context.Context, channel string, handler func(
 }
 
 // waitReady блокирует, пока runOnce не подтвердит подписку (или таймаут/close).
+// M4 (PASS-16): ждём по каналу readyCh — runOnce закрывает его при успехе ИЛИ
+// при провале первого подключения (Valkey недоступен), так что waitReady не
+// крутится весь subscribeReadyTimeout впустую.
 func (b *valkeyBus) waitReady(ctx context.Context) {
 	timeout := time.NewTimer(subscribeReadyTimeout)
 	defer timeout.Stop()
-	for {
+	select {
+	case <-b.readyCh:
 		b.mu.Lock()
-		if b.closed {
-			b.mu.Unlock()
-			return
-		}
-		ready := b.subscribed
+		failed := b.startFailed
 		b.mu.Unlock()
-		if ready {
-			return
+		if failed {
+			log.Warn().Msg("realtimebus: subscribe failed to start (Valkey unreachable), continuing with reconnect")
 		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-b.closeCh:
-			return
-		case <-timeout.C:
-			log.Warn().Msg("realtimebus: subscribe ready timeout (pub/sub may drop first messages)")
-			return
-		case <-time.After(5 * time.Millisecond):
-		}
+	case <-ctx.Done():
+	case <-b.closeCh:
+	case <-timeout.C:
+		log.Warn().Msg("realtimebus: subscribe ready timeout (pub/sub may drop first messages)")
 	}
 }
 
@@ -231,11 +233,22 @@ func (b *valkeyBus) runOnce(ctx context.Context) error {
 	// возвращается до установки подписки). Пока не подтверждено — сообщения
 	// могут теряться, и первая публикация уходит в никуда.
 	if !b.waitSubscribeAck(ctx, pubsub) {
+		// M4 (PASS-16): если это была ПЕРВАЯ установка и она провалилась
+		// (Valkey недоступен), сообщаем waitReady — иначе он крутил бы весь
+		// subscribeReadyTimeout (5с) впустую, задерживая старт приложения.
+		b.mu.Lock()
+		if !b.subscribed && ctx.Err() == nil && !b.closed {
+			b.startFailed = true
+		}
+		b.mu.Unlock()
+		b.readyOnce.Do(func() { close(b.readyCh) })
 		return ctx.Err()
 	}
 	b.mu.Lock()
 	b.subscribed = true
 	b.mu.Unlock()
+	// Сообщаем waitReady, что подписка установлена (первый запуск).
+	b.readyOnce.Do(func() { close(b.readyCh) })
 
 	ch := pubsub.Channel()
 	for {

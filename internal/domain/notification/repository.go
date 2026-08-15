@@ -69,7 +69,12 @@ func (r *gormNotificationRepo) UpsertSettings(ctx context.Context, userID uint, 
 }
 
 func (r *gormNotificationRepo) CreateNotification(ctx context.Context, n *Notification) error {
-	return r.db.WithContext(ctx).Create(n).Error
+	// M6 (PASS-16): DoNothing на конфликте — частичный уникальный индекс
+	// (user_id, game_id) WHERE type='game_reminder' защищает от дубликатов
+	// напоминаний о предстоящих играх (см. миграцию 000068). Других уникальных
+	// индексов на notifications нет, поэтому DoNothing затрагивает только
+	// game_reminder.
+	return r.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(n).Error
 }
 
 func (r *gormNotificationRepo) CountUnread(ctx context.Context, userID uint) (int64, error) {

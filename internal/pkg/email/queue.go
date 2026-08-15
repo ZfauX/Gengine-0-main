@@ -16,6 +16,11 @@ const (
 	defaultEmailWorkers   = 5
 	defaultEmailInterval  = 10 * time.Second
 	defaultEmailBatchSize = 10
+	// shutdownWaitTimeout (M2, PASS-16): сколько ждать завершения воркеров при
+	// shutdown. Должно быть >= 2×smtpTimeout (30с) — воркер, заблокированный в
+	// SendEmail (до 30с на SMTP-операцию), должен успеть завершиться ДО закрытия
+	// БД в main.go. Иначе письмо теряется/паникует при записи статуса в закрытую БД.
+	shutdownWaitTimeout = 2 * smtpTimeout
 )
 
 var (
@@ -77,7 +82,7 @@ func ShutdownQueue() {
 		}()
 		select {
 		case <-done:
-		case <-time.After(10 * time.Second):
+		case <-time.After(shutdownWaitTimeout):
 			log.Warn().Msg("Email worker shutdown timed out")
 		}
 	}

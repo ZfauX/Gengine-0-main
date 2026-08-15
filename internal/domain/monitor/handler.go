@@ -300,7 +300,18 @@ type MonitorHandler struct {
 	// бюджет на пользователя агрегирует все его соединения.
 	userMsgMu       sync.Mutex
 	userMsgLimiters map[uint]*wsMessageLimiter
+
+	// presenceLast (M9, PASS-16): дебаунс presence-рассылки — не чаще одного
+	// сообщения в presenceDebounce на комнату. Колбэк хаба срабатывает на
+	// КАЖДЫЙ join/leave; без дебаунса при штурме подключений в комнату
+	// уходила лавина {type:"presence"} всем участникам.
+	presenceLast   map[string]time.Time
+	presenceLastMu sync.Mutex
 }
+
+// presenceDebounce — минимальный интервал между presence-рассылками в одну
+// комнату (M9, PASS-16). 500мс достаточно для онлайн-индикатора.
+const presenceDebounce = 500 * time.Millisecond
 
 // markChatRoom инкрементирует счётчик клиентов комнаты (вызывается из ChatWS).
 func (h *MonitorHandler) markChatRoom(roomID string) {
@@ -334,11 +345,23 @@ func (h *MonitorHandler) isChatRoom(roomID string) bool {
 
 // setupChatPresence подключает presence-онлайн-индикатор (IDEA-6): при
 // изменении состава чат-комнаты в неё рассылается {type:"presence", count, user_ids}.
+// M9 (PASS-16): дебаунс — не чаще presenceDebounce (500мс) на комнату.
 func (h *MonitorHandler) setupChatPresence() {
 	h.hub.SetOnRoomChange(func(roomID string) {
 		if !h.isChatRoom(roomID) {
 			return
 		}
+		// Дебаунс: пропускаем частые мутации одной комнаты (лавина presence
+		// при массовых подключениях/отключениях).
+		now := time.Now()
+		h.presenceLastMu.Lock()
+		if last, ok := h.presenceLast[roomID]; ok && now.Sub(last) < presenceDebounce {
+			h.presenceLastMu.Unlock()
+			return
+		}
+		h.presenceLast[roomID] = now
+		h.presenceLastMu.Unlock()
+
 		count := h.hub.RoomClientCount(roomID)
 		userIDs := h.hub.RoomUserIDs(roomID)
 		payload, err := json.Marshal(gin.H{
@@ -372,6 +395,7 @@ func NewMonitorHandler(
 		gameService:         gameSvc,
 		coAuthorSvc:         coAuthorSvc,
 		userMsgLimiters:     make(map[uint]*wsMessageLimiter),
+		presenceLast:        make(map[string]time.Time),
 	}
 }
 

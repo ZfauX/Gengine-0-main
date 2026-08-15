@@ -27,6 +27,12 @@ func (i cacheItem) expired() bool {
 	return !i.expires.IsZero() && time.Now().After(i.expires)
 }
 
+// Cache — in-memory LRU кэш с TTL и префиксной инвалидацией.
+//
+// КОНТРАКТ ИММУТАБЕЛЬНОСТИ (M3, PASS-16): Get возвращает тот же объект
+// (указатель), что был передан в Set, БЕЗ копирования. Вызывающий НЕ должен
+// мутировать полученное значение — иначе он испортит кэш для всех. Если
+// кэшируемый объект может быть изменён после Get — копируйте его на границе.
 type Cache struct {
 	mu          sync.RWMutex
 	lru         *lru.Cache[string, cacheItem]

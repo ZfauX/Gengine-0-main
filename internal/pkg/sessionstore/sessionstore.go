@@ -195,7 +195,9 @@ func (tv typedValue) Decode() (any, error) {
 func (b *valkeyBackend) key(id string) string { return b.prefix + ":" + id }
 
 func (b *valkeyBackend) Get(id string) (map[string]any, bool, error) {
-	raw, err := b.client.Get(ctx(), b.key(id)).Bytes()
+	ctx, cancel := ctxWithTimeout()
+	defer cancel()
+	raw, err := b.client.Get(ctx, b.key(id)).Bytes()
 	if err == redis.Nil {
 		return nil, false, nil
 	}
@@ -226,11 +228,15 @@ func (b *valkeyBackend) Set(id string, data map[string]any, ttl time.Duration) e
 	if err != nil {
 		return err
 	}
-	return b.client.Set(ctx(), b.key(id), raw, ttl).Err()
+	ctx, cancel := ctxWithTimeout()
+	defer cancel()
+	return b.client.Set(ctx, b.key(id), raw, ttl).Err()
 }
 
 func (b *valkeyBackend) Delete(id string) error {
-	return b.client.Del(ctx(), b.key(id)).Err()
+	ctx, cancel := ctxWithTimeout()
+	defer cancel()
+	return b.client.Del(ctx, b.key(id)).Err()
 }
 
 // ---- Store (реализация gorilla/sessions.Store) ----
@@ -304,7 +310,11 @@ func (s *ServerStore) Get(r *http.Request, name string) (*sessions.Session, erro
 	}
 	data, ok, err := s.backend.Get(id)
 	if err != nil {
-		return sess, nil // backend недоступен — fallback на новую сессию
+		// M5 (PASS-16): backend недоступен (таймаут Valkey). Fail-open — возвращаем
+		// новую сессию, чтобы сайт не падал, но НЕ логируем каждый запрос (шум
+		// при длительном простое Valkey). JWT-аутентификация от сессии не зависит;
+		// деградация: теряются flash-сообщения/CSRF-state до восстановления Valkey.
+		return sess, nil
 	}
 	if !ok {
 		return sess, nil // сессия истекла/удалена
@@ -510,6 +520,10 @@ func DeleteGinSession(c *gin.Context) {
 	_ = globalStore.backend.Delete(gorillaSess.ID)
 }
 
-func ctx() context.Context {
-	return context.Background()
+// ctxWithTimeout (M5, PASS-16): все Valkey-операции сессий выполняются с
+// deadline — раньше context.Background() без таймаута блокировал запрос до
+// дефолтных таймаутов go-redis (~3с на операцию) при зависшем Valkey.
+// 2с достаточно для локального Valkey и не держит пользовательский запрос.
+func ctxWithTimeout() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 2*time.Second)
 }

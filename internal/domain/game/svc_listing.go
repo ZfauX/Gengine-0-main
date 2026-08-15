@@ -23,7 +23,23 @@ type GameListingService struct {
 	searchVectorExists  bool
 	searchVectorMu      sync.RWMutex
 	searchVectorChecked bool
+
+	// versionCache (M7, PASS-16): кэш текущей версии листинга в памяти.
+	// Раньше каждый запрос листинга делал GET games:list:version в Valkey
+	// (RTT) ПЛЮС GET самого кэша — 2 round-trip на каждый просмотр /games,
+	// даже на HTML-кэш-хите. Теперь version читается из памяти и лишь
+	// периодически сверяется с Valkey. Инвалидация version происходит через
+	// SetWithCtx("games:list:version", ...) в других сервисах — короткий TTL
+	// (200мс) гарантирует, что пишущий сервис увидит свежую версию быстро,
+	// а читающие не бьют в Valkey на каждый запрос.
+	versionMu    sync.RWMutex
+	versionCache int64
+	versionOK    bool
+	versionRead  time.Time
 }
+
+// listingVersionTTL — как долго кэшировать version в памяти (M7).
+const listingVersionTTL = 200 * time.Millisecond
 
 // NewGameListingService создаёт новый сервис списков.
 func NewGameListingService(gameRepo GameRepository, cacheStore cache.CacheStore) *GameListingService {
@@ -61,11 +77,27 @@ func (s *GameListingService) listingCacheKey(ctx context.Context, filter GameFil
 
 // listingVersion возвращает текущую версию анонимного листинга.
 // 0 — если версия ещё не устанавливалась (первый запуск, кэш пуст).
+// M7 (PASS-16): читаем из памяти (listingVersionTTL), а не из Valkey на
+// каждый запрос — экономия 1 RTT на каждый листинг.
 func (s *GameListingService) listingVersion(ctx context.Context) int64 {
+	s.versionMu.RLock()
+	valid := s.versionOK && time.Since(s.versionRead) < listingVersionTTL
+	if valid {
+		v := s.versionCache
+		s.versionMu.RUnlock()
+		return v
+	}
+	s.versionMu.RUnlock()
+
 	v, ok := cacheGetInt64(s.cache, ctx, "games:list:version")
 	if !ok {
 		return 0
 	}
+	s.versionMu.Lock()
+	s.versionCache = v
+	s.versionOK = true
+	s.versionRead = time.Now()
+	s.versionMu.Unlock()
 	return v
 }
 

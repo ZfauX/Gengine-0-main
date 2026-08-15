@@ -100,6 +100,15 @@ func isCacheableAnon(c *gin.Context) bool {
 	return true
 }
 
+// TryServeAnonPageCache (M8, PASS-16): публичная обёртка над tryServeAnonCache
+// для вызова из хендлеров ДО загрузки данных. Позволяет на анонимном кэш-хите
+// вообще не ходить в БД/Valkey за данными листинга (раньше Page вызывала кэш
+// ПОСЛЕ ListFilteredPaginated — данные грузились впустую).
+// Возвращает true, если ответ полностью отдан из кэша.
+func TryServeAnonPageCache(c *gin.Context) bool {
+	return tryServeAnonCache(c, http.StatusOK, gin.H{})
+}
+
 // tryServeAnonCache пробует отдать кэшированную версию страницы. Возвращает
 // true, если запрос полностью обработан (кэш-хит). Перед вызовом data должен
 // быть полностью подготовлен (lang, nonce, csrf) — ключ и allowlist проверяются
