@@ -148,16 +148,17 @@ func (s *AttemptService) AcceptPendingAttemptWithTx(ctx context.Context, tx *gor
 }
 
 // loadLevelWithAnswers загружает уровень с графом Questions.Answers,
-// используя TTL-кэш (H2, PASS-18). Ключ level:answers:<id>.
+// используя TTL-кэш (H2, PASS-18; H1 fix PASS-19). Ключ level:answers:<id>.
+// H1 (PASS-19): cacheGetJSON работает и с Valkey (GetBytesWithCtx +
+// json.Unmarshal), и с in-memory — раньше v.(level.Level) не хитился с Valkey
+// (JSON → map[string]any), и Preload выполнялся на каждую попытку.
 // ВАЖНО: возвращаемое значение НЕ мутировать (контракт иммутабельности кэша).
 func (s *AttemptService) loadLevelWithAnswers(ctx context.Context, tx *gorm.DB, levelID uint) (*level.Level, error) {
 	key := fmt.Sprintf("level:answers:%d", levelID)
-	if v, ok := s.cache.GetWithCtx(ctx, key); ok {
-		if lvl, ok := v.(level.Level); ok {
-			return &lvl, nil
-		}
-	}
 	var lvl level.Level
+	if cacheGetJSON(s.cache, ctx, key, &lvl) {
+		return &lvl, nil
+	}
 	if err := tx.WithContext(ctx).Preload("Questions.Answers").First(&lvl, levelID).Error; err != nil {
 		return nil, err
 	}

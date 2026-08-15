@@ -46,7 +46,9 @@ func CheckTeamMembership(tx *gorm.DB, passingID, userID uint) (gameID, teamID ui
 	return 0, 0, errors.New("вы не являетесь участником этой команды")
 }
 
-// finishPassingProgress завершает все незавершённые прогрессы прохождения
+// finishPassingProgress завершает все незавершённые прогрессы прохождения.
+// M4 (PASS-19): заполняет ResultDuration (раньше принудительно завершённые
+// прохождения имели нулевую длительность в результатах/лидерборде).
 func finishPassingProgress(tx *gorm.DB, passing *GamePassing, now time.Time) error {
 	result := tx.Model(&LevelProgress{}).
 		Where("game_passing_id = ? AND finished_at IS NULL", passing.ID).
@@ -58,5 +60,12 @@ func finishPassingProgress(tx *gorm.DB, passing *GamePassing, now time.Time) err
 		return result.Error
 	}
 	passing.Status = StatusFinished
+	// Длительность: от времени старта команды (StartTime) или создания passing.
+	start := passing.CreatedAt
+	if passing.StartTime != nil {
+		start = *passing.StartTime
+	}
+	dur := now.Sub(start)
+	passing.ResultDuration = &dur
 	return tx.Save(passing).Error
 }

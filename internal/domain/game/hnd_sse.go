@@ -366,13 +366,33 @@ func (m *SSEManager) broadcastLocal(gameID uint, eventType string, data any) {
 	m.mu.RUnlock()
 	defer m.wg.Done()
 
-	// M1 (PASS-18): извлекаем passing_id из data для фильтрации сессий
-	// участников (менеджеры с passingID=0 получают всё). Без passing_id —
-	// рассылка всем.
+	// M1 (PASS-18) + H2 (PASS-19): извлекаем passing_id типобезопасно.
+	// Локальные вызовы кладут uint; события из Valkey pub/sub после
+	// json.Unmarshal содержат float64 — иначе фильтр молча отключался
+	// (все сессии команды получали чужие подсказки в multi-instance).
 	var eventPassingID uint
 	if dm, ok := data.(map[string]any); ok {
-		if pid, ok := dm["passing_id"].(uint); ok {
-			eventPassingID = pid
+		switch v := dm["passing_id"].(type) {
+		case uint:
+			eventPassingID = v
+		case uint64:
+			eventPassingID = uint(v)
+		case int:
+			if v > 0 {
+				eventPassingID = uint(v)
+			}
+		case int64:
+			if v > 0 {
+				eventPassingID = uint(v)
+			}
+		case float64:
+			if v > 0 && v == float64(uint64(v)) {
+				eventPassingID = uint(v)
+			}
+		case json.Number:
+			if n, err := v.Int64(); err == nil && n > 0 {
+				eventPassingID = uint(n)
+			}
 		}
 	}
 

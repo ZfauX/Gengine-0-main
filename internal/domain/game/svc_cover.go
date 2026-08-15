@@ -42,6 +42,10 @@ func NewGameCoverService(
 }
 
 // CreateGameWithCover создаёт игру с загрузкой обложки.
+// M1 (PASS-19): игра ВСЕГДА создаётся черновиком (как CRUDService.Create) —
+// раньше dto.IsDraft из клиента позволял опубликовать игру БЕЗ уровней,
+// минуя guard Publish (проверка CountLevelsByGame). Публикация — только
+// через Publish после добавления уровней.
 func (s *GameCoverService) CreateGameWithCover(ctx context.Context, dto *CreateGameDTO, authorID uint) (*Game, error) {
 	game := &Game{
 		Name:                 dto.Name,
@@ -50,7 +54,7 @@ func (s *GameCoverService) CreateGameWithCover(ctx context.Context, dto *CreateG
 		Visibility:           dto.Visibility,
 		StartsAt:             dto.StartsAt,
 		RegistrationDeadline: dto.RegistrationDeadline,
-		IsDraft:              dto.IsDraft,
+		IsDraft:              true,
 		AuthorID:             authorID,
 	}
 
@@ -99,11 +103,13 @@ func (s *GameCoverService) UpdateGameWithCover(ctx context.Context, gameID uint,
 	game.RegistrationDeadline = dto.RegistrationDeadline
 	// IsDraft не изменяется через Update — только через Publish()
 
+	// Собираем старые пути для удаления ПОСЛЕ успешного Update (M2, PASS-19):
+	// раньше файл удалялся ДО коммита БД — при ошибке Update оставалась битая
+	// обложка (в БД старый путь, файла нет).
+	var oldCoversToDelete []string
 	if dto.DeleteCover {
 		if game.CoverPath != "" {
-			if err := s.storage.Delete(game.CoverPath); err != nil {
-				log.Error().Err(err).Str("path", game.CoverPath).Msg("UpdateGameWithCover: failed to delete cover")
-			}
+			oldCoversToDelete = append(oldCoversToDelete, game.CoverPath)
 			game.CoverPath = ""
 		}
 	} else if dto.CoverFile != nil {
@@ -112,14 +118,26 @@ func (s *GameCoverService) UpdateGameWithCover(ctx context.Context, gameID uint,
 			return fmt.Errorf("не удалось сохранить новую обложку: %w", err)
 		}
 		if game.CoverPath != "" {
-			if err := s.storage.Delete(game.CoverPath); err != nil {
-				log.Error().Err(err).Str("path", game.CoverPath).Msg("UpdateGameWithCover: failed to delete old cover")
-			}
+			oldCoversToDelete = append(oldCoversToDelete, game.CoverPath)
 		}
 		game.CoverPath = newPath
 	}
 
-	return s.gameRepo.Update(ctx, game)
+	if err := s.gameRepo.Update(ctx, game); err != nil {
+		// M2: Update упал — возвращаем ошибку, старые файлы НЕ удаляем
+		// (в БД остался прежний путь). Новый файл (если загружали) — сирота,
+		// но целостность БД важнее; cleanup можно добавить отдельно.
+		return err
+	}
+
+	// M3 (PASS-19): удаляем старые обложки только после успешного Update;
+	// ошибка Delete не затирает путь в БД (файл уже отсоединён).
+	for _, old := range oldCoversToDelete {
+		if delErr := s.storage.Delete(old); delErr != nil {
+			log.Error().Err(delErr).Str("path", old).Msg("UpdateGameWithCover: failed to delete old cover")
+		}
+	}
+	return nil
 }
 
 // saveCoverFile — внутренняя функция для загрузки файла обложки с проверками.

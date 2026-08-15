@@ -4,6 +4,8 @@ package audit
 import (
 	"context"
 	"strconv"
+	"sync"
+	"time"
 
 	"gengine-0/internal/pkg/metrics"
 	"gengine-0/internal/pkg/sqlutil"
@@ -38,17 +40,54 @@ type EntryWithUser struct {
 	TotalCount int64 `json:"-"`
 }
 
+// auditBatchSize (M8, PASS-19): батч-INSERT асинхронного воркера аудита.
+const auditBatchSize = 50
+
+// auditFlushInterval — максимальная задержка записи батча (M8).
+const auditFlushInterval = 500 * time.Millisecond
+
 // Service записывает и читает события аудита.
+// M8 (PASS-19): Log() шлёт запись в канал (non-blocking), асинхронный воркер
+// делает батч-INSERT (ранее синхронный INSERT на каждый лог = 1 RTT на
+// горячем пути админ-действий). Ошибки воркера логируются + метрика.
 type Service struct {
 	DB *gorm.DB
+
+	mu       sync.Mutex
+	queue    chan Entry
+	closed   bool
+	done     chan struct{}
+	workerWg sync.WaitGroup
 }
 
-// NewService создаёт новый Service.
+// NewService создаёт новый Service и запускает асинхронный воркер записи.
 func NewService(db *gorm.DB) *Service {
-	return &Service{DB: db}
+	s := &Service{
+		DB:    db,
+		queue: make(chan Entry, 512),
+		done:  make(chan struct{}),
+	}
+	s.workerWg.Add(1)
+	go s.worker()
+	return s
 }
 
-// Log создаёт запись аудита. Ошибки только логирует (не прерывает бизнес-логику).
+// Stop завершает воркер и дожидается записи накопленных событий.
+// Вызывается при graceful shutdown (main.go).
+func (s *Service) Stop() {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
+	s.closed = true
+	close(s.done)
+	s.mu.Unlock()
+	s.workerWg.Wait()
+}
+
+// Log создаёт запись аудита. Non-blocking: при переполнении очереди запись
+// дропается с метрикой (не прерывает бизнес-логику).
 func (s *Service) Log(userID uint, action, objectType string, objectID uint, details string) {
 	e := Entry{
 		UserID:     userID,
@@ -57,14 +96,53 @@ func (s *Service) Log(userID uint, action, objectType string, objectID uint, det
 		ObjectID:   objectID,
 		Details:    details,
 	}
-	if err := s.DB.Create(&e).Error; err != nil {
-		// PASS-8 LOW #1: ошибка не прерывает бизнес-логику, но логируется
-		// и инкрементит метрику — алерт при молчаливой потере событий.
+	select {
+	case s.queue <- e:
+	default:
 		metrics.AuditFailuresTotal.Inc()
-		log.Error().Err(err).
-			Str("action", action).
-			Uint("user", userID).
-			Msg("audit: failed to log entry")
+		log.Warn().Str("action", action).Msg("audit: queue full, dropping entry")
+	}
+}
+
+// worker читает очередь и пишет батчами.
+func (s *Service) worker() {
+	defer s.workerWg.Done()
+	var batch []Entry
+	ticker := time.NewTicker(auditFlushInterval)
+	defer ticker.Stop()
+
+	flush := func() {
+		if len(batch) == 0 {
+			return
+		}
+		if err := s.DB.Create(&batch).Error; err != nil {
+			metrics.AuditFailuresTotal.Inc()
+			log.Error().Err(err).Int("n", len(batch)).Msg("audit: failed to flush batch")
+		}
+		batch = batch[:0]
+	}
+
+	for {
+		select {
+		case <-s.done:
+			// Дреним остаток очереди (best-effort).
+			for {
+				select {
+				case e := <-s.queue:
+					batch = append(batch, e)
+				default:
+					flush()
+					return
+				}
+			}
+		case e := <-s.queue:
+			batch = append(batch, e)
+			if len(batch) >= auditBatchSize {
+				flush()
+			}
+		case <-ticker.C:
+			flush()
+		}
 	}
 }
 

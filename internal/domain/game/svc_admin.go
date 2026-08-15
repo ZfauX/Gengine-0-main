@@ -291,7 +291,9 @@ func (s *GameAdminService) notifyCaptainsAboutFinish(ctx context.Context, teamID
 	if s.cfg == nil || !s.cfg.SMTP.Enabled || len(teamIDs) == 0 {
 		return
 	}
-	notifyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	// M5 (PASS-19): WithoutCancel — уведомления после коммита не должны
+	// отменяться из-за disconnect/таймаута запроса админа.
+	notifyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 
 	var teams []team.Team
@@ -343,7 +345,7 @@ func (s *GameAdminService) notifyCaptainAboutDisqualification(ctx context.Contex
 	if s.cfg == nil || !s.cfg.SMTP.Enabled {
 		return
 	}
-	notifyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	notifyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	if s.teamRepo == nil {
 		log.Warn().Uint("team", teamID).Msg("notifyCaptainAboutDisqualification: teamRepo is nil, skipping")

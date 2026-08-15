@@ -623,6 +623,12 @@ func run() error {
 		log.Info().Msg("Email-очередь остановлена")
 	}
 
+	// 2.1. Flush асинхронного аудита (M8, PASS-19) — до закрытия БД.
+	if deps.AuditSvc != nil {
+		deps.AuditSvc.Stop()
+		log.Info().Msg("Audit-воркер остановлен")
+	}
+
 	// 3. Останавливаем SSE-менеджер ДО HTTP-сервера — закрывает все SSE-сессии
 	//    (иначе srv.Shutdown() ждёт бесконечные SSE-потоки до таймаута).
 	if deps.Services.SSEMgr != nil {
