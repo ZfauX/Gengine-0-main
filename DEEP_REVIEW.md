@@ -474,3 +474,177 @@
 - **LOW**: 9 подтверждённых.
 - **UX/код**: 20 предложений (3 быстрых победы + 17 улучшений).
 - **pprof**: heap 5.6MB, 21 goroutine, CPU ~6% под нагрузкой — приложение лёгкое, утечек нет.
+
+---
+
+# DEEP_REVIEW — Gengine-0 (PASS 17, повторное ревью #2)
+
+> Целевое окружение: **pod через podman**. Метод: pprof в pod (heap/goroutine/cpu) + 3
+> параллельных аудита (@reviewer, @security, @perf) с фокусом на НОВЫЕ области (user/2FA,
+> admin, tournament, export, payment, level, monitor) + эмпирическая проверка каждого
+> HIGH/MEDIUM по коду.
+
+---
+
+## 🔬 pprof-результаты (PASS 17, в pod)
+
+| Профиль | Результат | Вывод |
+|---|---|---|
+| **goroutine** | 21 в покое | ✅ Утечек нет (стабильно). |
+| **heap inuse** | **9.3 MB** (было 5.6 MB) | ⚠️ Вырос на ~3.7MB — в основном рантайм-инициализация: `bufio.NewWriterSize` (1.6MB), `regexp` (2MB), `pgx type Map` (0.5MB), `i18n.map` (1MB). Это стартовые аллокации, не утечка; рост связан с расширением i18n-словарей и pgx-типов. |
+| **cpu (лёгкая нагрузка 300 req)** | 6.8% (690ms samples) | ⚠️ **53.6% TLS (FIPS bigmod)** — HTTPS-шифрование; прикладной код чист. |
+| **pprof bind** | `127.0.0.1:6060` | ✅ loopback, не проброшен наружу. |
+
+**Вывод**: утечек нет; CPU доминирует TLS. Heap вырос из-за инициализации (буферы, regexp,
+pgx-типы, i18n) — не hot-path, не требует вмешательства.
+
+---
+
+## 🔴 HIGH (новые)
+
+### H1. Гонка данных на package-глобалах trustedDeviceSecret/trustedDeviceSecure 🔍✅ (подтверждено)
+- **Файл**: `internal/domain/user/two_factor_middleware.go:98-116` + `two_factor_handler.go:179`.
+- **Проблема**: глобальные `trustedDeviceSecret`/`trustedDeviceSecure`; `SetTrustedSecure(h.trustedSecure)`
+  вызывается из `TwoFactorHandler.Verify` **на каждый запрос**, а `trustedSecureFlag()` читается
+  параллельно в `setTrustedDeviceCookie`/`clearTrustedDeviceCookie`/`TwoFactorRequired` —
+  data race (поймает `-race`).
+- **Фикс**: задавать Secure-флаг один раз при старте (в routes.go, как `SetTrustedSecret`),
+  убрать вызов из хендлера; или защитить глобалы мьютексом/atomic.
+
+### H2. Несоответствие lockout-backoff: Go cap 1ч vs SQL cap 24ч 🔍✅ (подтверждено)
+- **Файл**: `user/service.go:243-260` (`maxLockDuration = 1h`) vs `user/repository.go:571-577`
+  (`LEAST(5 * POWER(2, lock_count), 1440)` минут = до 24ч).
+- **Проблема**: реальная блокировка аккаунта может длиться 24ч (потенциальный DoS на
+  аккаунт), хотя дизайн и логика разблокировки (backoffDuration) заявляют максимум 1ч.
+- **Фикс**: выровнять SQL-кап до 60 минут (`LEAST(..., 60)`) или поднять Go-константу;
+  желательно единый источник правды (SQL cap = Go cap).
+
+---
+
+## 🟠 MEDIUM (новые)
+
+### M1. Tournament_points перезаписывается при игре в 2+ турнирах 🔍✅ (подтверждено)
+- **Файл**: `tournament/service.go:541` (`UPDATE ... SET tournament_points = CASE id ...` —
+  присваивает вместо накопления) + `:261` (`RemoveGame` пересчитывает как СУММУ).
+- **Проблема**: для игры в двух турнирах колонка = очки «последнего турнира», а не сумма.
+- **Фикс**: `tournament_points = tournament_points + CASE ...` (аккумуляция).
+
+### M2. OAuth-пользователи (без пароля) не могут включить 2FA и легко блокируют аккаунт 🔍✅ (подтверждено)
+- **Файл**: `user/two_factor_handler.go:447` — `bcrypt.CompareHashAndPassword(user.Password)`:
+  у OAuth-юзера `Password == ""`, bcrypt всегда ошибается → попытки инкрементируются →
+  после 5 попыток аккаунт блокируется.
+- **Фикс**: для юзеров без пароля пропускать проверку пароля при включении 2FA (или
+  требовать установки пароля отдельным шагом).
+
+### M3. Экспорт полного контента доступен любому соавтору (observer/read-only) 🔍✅ (подтверждено)
+- **Файл**: `export/handler.go:46-67,110,145,177,283,323` — `checkGameAccess` = `IsUserManager`
+  (автор ИЛИ ЛЮБОЙ соавтор без роли), тогда как результаты/статистика требуют `requireModerate`
+  (`CanModerateGame`).
+- **Проблема**: полный дамп игры с правильными ответами (ExportGameCSV/PDF/Excel) доступен
+  соавтору с ролью observer/read-only.
+- **Фикс**: для экспорта контента (вопросы/ответы) требовать `requireModerate`, как для Import.
+
+### M4. JSON-импорт уровней: нет лимита размера multipart-тела 🔍✅ (подтверждено)
+- **Файл**: `level/handler.go:1138-1153` — `c.Request.FormFile` без `http.MaxBytesReader`;
+  `io.LimitReader(5MB)` в `import.go:93` ограничивает только decode, multipart уже в памяти.
+- **Фикс**: `c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 10<<20)` (как в export).
+
+### M5. Шифрование бэкапа читает весь дамп в память 🔍✅ (подтверждено)
+- **Файл**: `admin/service.go:370-398` — `os.ReadFile(srcPath)` для много-гигабайтного дампа.
+- **Фикс**: потоковое шифрование (io.Copy с шифрующим writer), не читать файл целиком.
+
+### M6. Payment MarkSucceededIfPending позволяет canceled→succeeded 🔍✅ (подтверждено)
+- **Файл**: `payment/repository.go:99-107` — `WHERE status <> 'succeeded'`, а не `= 'pending'`;
+  поздний вебхук может «воскресить» отменённый платёж.
+- **Фикс**: `WHERE status = 'pending'` (или запретить переход из canceled).
+
+### M7. Export CSV: полные строки attempts + вопросы по одному INSERT 🔍✅ (подтверждено, perf)
+- **Файл**: `export/service.go:223` (`GetAttemptsByProgressIDs` тянет все колонки для подсчёта),
+  `export/service.go:419-421` (`tx.Create(&question)` на строку CSV).
+- **Фикс**: `Select("id")`/`COUNT GROUP BY`; `CreateInBatches` для вопросов.
+
+### M8. Export CSV/Excel буферизуют файл целиком в bytes.Buffer 🔍✅ (подтверждено, perf)
+- **Файл**: `export/handler.go:114,291,327,367,407,449,545`.
+- **Проблема**: для CSV (потоковый) двойная копия в память не нужна; Excel строит через
+  `SetCellValue` (рефлексия на ячейку) — сотни тысяч вызовов на больших играх.
+- **Фикс**: CSV — стримить в `c.Writer`; Excel — `excelize.StreamWriter` + `SetSheetRow`.
+
+### M9. Admin-дашборд: 5 COUNT(*) без кэша, seq-скан audit_logs 🔍✅ (подтверждено, perf)
+- **Файл**: `admin/handler.go:122-129` + `pkg/audit/audit.go:101-105`.
+- **Проблема**: счётчики на каждый заход в админку; `COUNT(*)` по растущей `audit_logs` —
+  полный скан; `ORDER BY created_at` без индекса.
+- **Фикс**: кэшировать счётчики 30-60с; индекс `audit_logs(created_at DESC)`.
+
+### M10. Monitor чат: SaveMessage 2 запроса, sweepPermCache O(n²) 🔍✅ (подтверждено, perf)
+- **Файл**: `monitor/repository.go:278-288` (INSERT + SELECT), `:123-152` (O(n²) sweep).
+- **Фикс**: `RETURNING` + JOIN для сообщения; heap/пакетное удаление для кэша прав.
+
+---
+
+## 🟡 LOW (новые)
+
+### L1. Неверный err в логе успешного Login 🔍✅ — `user/service.go:221-223` логирует `err` (nil) вместо `resetErr`.
+### L2. ForgotPassword логирует email при выключенном SMTP 🔍✅ — `auth_handler.go:616` (противоречит anti-enumeration).
+### L3. Admin CreateUser не валидирует email 🔍✅ — `admin/handler.go:257-298`.
+### L4. Admin CreateTeam не добавляет капитана в team_members 🔍✅ — проверить семантику «мои команды».
+### L5. Admin ListTeams без верхней границы page 🔍✅ — `admin/handler.go:626` (в отличие от ListUsers cap 10000).
+### L6. Payment webhook игнорирует ошибку ReadAll 🔍✅ — `payment/handler.go:128`.
+### L7. Tournament AddGame не проверяет существование игры 🔍✅ — FK-защита зависит от миграций.
+### L8. Неверные статус-коды tournament (403 вместо 409/400) 🔍✅ — `tournament/handler.go:486,514`.
+### L9. User hard-delete не чистит games/passings/progress/attempts/logs 🔍✅ — `user/repository.go:481-537` (сироты или FK-ошибка).
+### L10. WebAuthn FinishLogin не перевыпускает session ID 🔍✅ — `webauthn_handler.go:361-508`.
+### L11. Enable 2FA не проверяет TwoFactorEnabled 🔍✅ — повторная отправка перегенерирует секрет.
+### L12. EnsureAdmin пересчитывает bcrypt и перезаписывает пароль на каждом старте 🔍✅ — `db/db.go:74-100`.
+### L13. render.bufferPool без ограничения размера 🔍✅ — одна большая страница пиннит большой буфер.
+### L14. htmlcache 2 прохода bytes.ReplaceAll на каждый анонимный хит 🔍✅.
+### L15. gitleaks allowlist слишком широкий (литералы паролей глобально, *_test.go) 🔍✅.
+### L16. CSV-safe (апостроф) виден в ячейках Excel 🔍✅ — UX-грязь, безопасно.
+### L17. SearchUsersLight ILIKE email без индекса 🔍✅; audit Log синхронный INSERT 🔍✅; audit OFFSET-пагинация.
+
+---
+
+## 🔍 Проверено и закрыто (кандидаты HIGH/MEDIUM, НЕ подтвердились)
+
+| Пункт | Статус | Детали |
+|---|---|---|
+| **CSV re-import каскад** | ✅ Закрыто | `answers.question_id REFERENCES questions(id) ON DELETE CASCADE` (000001_init.up.sql:128). |
+| **`.env` в git** | ✅ Закрыто | `git ls-files .env .env.e2e` — пусто (в .gitignore). |
+| **Calendar popover XSS** | ✅ Закрыто | `escapeHtml(game.name)`/`escapeHtml(game.time)` применены. |
+| **ThemeMode валидация** | ✅ Закрыто | whitelist system/time/dark/light + HH:MM валидация. |
+| **OAuth state / refresh family / WebAuthn** | ✅ Закрыто | state + ConstantTimeCompare + TTL; семейная ротация + reuse-revoke; userHandle сверка + CloneWarning. |
+| **Payment webhook подпись** | ✅ Закрыто | IP-allowlist + API-подтверждение + сверка суммы/валюты (int64 копейки) + атомарный claim. |
+| **CSV injection** | ✅ Закрыто | `csvSafe` обрабатывает `= + - @ \t \r` после ведущих пробелов. |
+| **Backup path-traversal** | ✅ Закрыто | isWithinBackupDir + Rel; AES-256-GCM, 0600. |
+| **N+1 в новых областях** | ✅ Закрыто | export/tournament/monitor — Preload с колонками, батчи. |
+
+---
+
+## 💡 Предложения по улучшению (PASS 17)
+
+### Быстрые победы (1-2 дня)
+1. **H1**: убрать SetTrustedSecure из хендлера → один раз в routes.go.
+2. **H2**: выровнять SQL-кап блокировки до 60 минут.
+3. **M6**: `WHERE status = 'pending'` в MarkSucceededIfPending.
+4. **M3**: экспорт контента — requireModerate.
+
+### Оптимизация
+5. **M7/M8**: export CSV — стриминг, вопросы CreateInBatches, Excel StreamWriter.
+6. **M9**: кэш admin-счётчиков + индекс audit_logs(created_at).
+7. **M10**: RETURNING для сообщений чата + фикс O(n²) sweep.
+
+### UX
+8. **Онлайн-индикатор в шапке**: live-счётчик непрочитанных через SSE/WS (уже есть
+   дебаунс presence, но счётчик обновляется при навигации).
+9. **Дашборд**: кэш результата на 15-30с (сейчас 4 запроса на заход).
+10. **2FA для OAuth**: отдельный шаг «установите пароль» перед включением 2FA.
+
+---
+
+## 🎯 Итог PASS-17
+
+- **HIGH**: 2 новых (H1 trusted-globals race, H2 backoff 24ч) — оба подтверждены по коду.
+- **MEDIUM**: 10 новых (M1-M10).
+- **LOW**: 17 новых (L1-L17).
+- **Закрыто**: 9 кандидатов (каскады, .env, XSS, валидация, OAuth/WebAuthn, webhook, CSV-injection, backup, N+1).
+- **pprof**: heap 9.3MB (стартовые аллокации), 21 goroutine, CPU ~6.8% (TLS) — утечек нет.
+- **Приоритет**: H1 (гонка), H2 (DoS блокировки), M6 (платежи), M3 (экспорт-права).
