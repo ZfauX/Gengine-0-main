@@ -537,8 +537,12 @@ func (s *TournamentService) scoreTournamentInTx(tx *gorm.DB, tournament *Tournam
 			passingIDs = append(passingIDs, id)
 		}
 		idPlaceholders := util.JoinPlaceholders(len(passingIDs))
+		// M1 (PASS-17): начисляем К СУЩЕСТВУЮЩИМ очкам (tournament_points +
+		// CASE), а не присваиваем — иначе при игре в 2+ турнирах значение
+		// становилось «последнего турнира», а не суммой (RemoveGame
+		// пересчитывает именно как сумму tournament_scored_points).
 		q := fmt.Sprintf(
-			"UPDATE game_passings SET tournament_points = CASE id %s ELSE tournament_points END WHERE id IN (%s)",
+			"UPDATE game_passings SET tournament_points = tournament_points + (CASE id %s ELSE 0 END) WHERE id IN (%s)",
 			strings.Join(pointsCases, " "),
 			idPlaceholders,
 		)

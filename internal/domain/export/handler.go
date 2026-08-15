@@ -107,7 +107,7 @@ func (h *ExportHandler) ExportGameCSV(c *gin.Context) {
 		return
 	}
 
-	if !h.checkGameAccess(c, gameID) {
+	if !h.requireModerate(c, gameID) {
 		return
 	}
 
@@ -320,7 +320,7 @@ func (h *ExportHandler) ExportGamePDF(c *gin.Context) {
 		return
 	}
 
-	if !h.checkGameAccess(c, gameID) {
+	if !h.requireModerate(c, gameID) {
 		return
 	}
 
@@ -400,7 +400,7 @@ func (h *ExportHandler) ExportGameExcel(c *gin.Context) {
 		return
 	}
 
-	if !h.checkGameAccess(c, gameID) {
+	if !h.requireModerate(c, gameID) {
 		return
 	}
 

@@ -104,12 +104,15 @@ func (r *gormExportRepo) GetLevelsByGame(ctx context.Context, gameID uint) ([]le
 }
 
 // GetAttemptsByProgressIDs возвращает все попытки по списку прогрессов.
+// M7 (PASS-17): Select только нужных колонок — раньше тянулись полные Attempt
+// (Code, FilePath, IsFile, UserID, ссылки) только ради подсчёта по прогрессу.
 func (r *gormExportRepo) GetAttemptsByProgressIDs(ctx context.Context, progressIDs []uint) ([]game.Attempt, error) {
 	var attempts []game.Attempt
 	if len(progressIDs) == 0 {
 		return attempts, nil
 	}
 	err := r.db.WithContext(ctx).
+		Select("id", "level_progress_id").
 		Where("level_progress_id IN ?", progressIDs).
 		Find(&attempts).Error
 	return attempts, err

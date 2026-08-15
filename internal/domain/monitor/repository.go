@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -135,19 +136,22 @@ func (r *gormChatRepo) sweepPermCache() {
 		}
 	}
 	// L6: принудительный cap — удаляем до размера max (самые скорые к истечению).
-	for len(r.permCache) > chatPermCacheMaxEntries {
-		var oldestKey string
-		var oldestExp time.Time
-		first := true
+	// M10 (PASS-17): один проход + sort вместо вложенного цикла (O(n²) при
+	// всплеске свежих записей на горячем пути чата).
+	if len(r.permCache) > chatPermCacheMaxEntries {
+		type entry struct {
+			key string
+			exp time.Time
+		}
+		all := make([]entry, 0, len(r.permCache))
 		for k, e := range r.permCache {
-			if first || e.expires.Before(oldestExp) {
-				oldestKey, oldestExp, first = k, e.expires, false
-			}
+			all = append(all, entry{key: k, exp: e.expires})
 		}
-		if first {
-			break
+		sort.Slice(all, func(i, j int) bool { return all[i].exp.Before(all[j].exp) })
+		toRemove := len(all) - chatPermCacheMaxEntries
+		for i := 0; i < toRemove; i++ {
+			delete(r.permCache, all[i].key)
 		}
-		delete(r.permCache, oldestKey)
 	}
 }
 

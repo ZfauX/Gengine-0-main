@@ -324,6 +324,12 @@ func (s *ExportService) ImportGameFromCSV(ctx context.Context, gameID uint, r io
 		}
 
 		records := 0
+		// M7 (PASS-17): собираем вопросы и ответы в слайсы, вставляем батчем
+		// ПОСЛЕ цикла — раньше tx.Create(&question) на каждую строку (до 5000
+		// INSERT в одной транзакции = 5000 round-trip). Ответы привязаны к
+		// вопросу по индексу; ID вопроса присвоится GORM при CreateInBatches.
+		var pendingQuestions []level.Question
+		var pendingAnswers [][]level.Answer
 		for {
 			record, err := reader.Read()
 			if err == io.EOF {
@@ -409,29 +415,43 @@ func (s *ExportService) ImportGameFromCSV(ctx context.Context, gameID uint, r io
 				}
 			}
 
-			// P2 (PASS-5): батч-вставка вопросов/ответов уровня вместо
-			// построчных INSERT (раньше 5000 записей → ~30k round-trip, 10-20с).
+			// P2 (PASS-5) / M7 (PASS-17): собираем вопросы и ответы, батч после цикла.
 			question := level.Question{
 				LevelID: lvl.ID,
 				Text:    questionText,
 				Hint:    hint,
 			}
-			if err := tx.Create(&question).Error; err != nil {
-				return fmt.Errorf("не удалось создать вопрос: %w", err)
-			}
-
+			var answers []level.Answer
 			if answersStr != "" {
 				// M5 (PASS-5): разэкранирование "|" и "\\" + снятие csvSafe-' —
 				// раньше Split("|") ломал коды с разделителем, а unescapeCSVAnswer
 				// портил реальный апостроф "'=42".
 				codes := unescapeAnswerCodes(answersStr)
 				if len(codes) > 0 {
-					answers := make([]level.Answer, 0, len(codes))
+					answers = make([]level.Answer, 0, len(codes))
 					for _, code := range codes {
-						answers = append(answers, level.Answer{QuestionID: question.ID, Code: code})
+						answers = append(answers, level.Answer{Code: code})
 					}
-					// Один мульти-INSERT вместо N отдельных (P2).
-					if err := tx.CreateInBatches(answers, 200).Error; err != nil {
+				}
+			}
+			// QuestionID заполнится после CreateInBatches; ответы храним по индексу.
+			pendingQuestions = append(pendingQuestions, question)
+			pendingAnswers = append(pendingAnswers, answers)
+		}
+
+		// M7 (PASS-17): батч-вставка всех вопросов (ID присвоится GORM),
+		// затем батч ответов с проставленным QuestionID.
+		if len(pendingQuestions) > 0 {
+			if err := tx.CreateInBatches(pendingQuestions, 200).Error; err != nil {
+				return fmt.Errorf("не удалось создать вопросы: %w", err)
+			}
+			for i := range pendingQuestions {
+				ans := pendingAnswers[i]
+				for j := range ans {
+					ans[j].QuestionID = pendingQuestions[i].ID
+				}
+				if len(ans) > 0 {
+					if err := tx.CreateInBatches(ans, 200).Error; err != nil {
 						return fmt.Errorf("не удалось создать ответы: %w", err)
 					}
 				}

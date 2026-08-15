@@ -93,12 +93,14 @@ func (r *gormPaymentRepo) UpdateStatus(ctx context.Context, id uint, status stri
 }
 
 // MarkSucceededIfPending (L6, PASS-7): атомарный переход в succeeded —
-// только если платёж ещё не succeeded. RowsAffected>0 означает, что именно
+// только если платёж ЕЩЁ В СТАТУСЕ pending. RowsAffected>0 означает, что именно
 // ЭТОТ вызов совершил переход (устраняет гонку двух параллельных webhook'ов,
 // где оба читали pending и слали дубликат уведомления).
+// M6 (PASS-17): статус строго = pending — раньше `<> succeeded` позволял
+// «воскресить» отменённый (canceled) платёж поздним вебхуком.
 func (r *gormPaymentRepo) MarkSucceededIfPending(ctx context.Context, id uint) (bool, error) {
 	res := r.db.WithContext(ctx).Model(&Payment{}).
-		Where("id = ? AND status <> ?", id, StatusSucceeded).
+		Where("id = ? AND status = ?", id, StatusPending).
 		Update("status", StatusSucceeded)
 	if res.Error != nil {
 		return false, res.Error

@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -367,14 +368,18 @@ func (s *BackupService) GetMaxBackups() int {
 
 // encryptBackupFile (admin #6, PASS-8): шифрует файл AES-256-GCM на месте.
 // Формат: 12-байт nonce || ciphertext. Возвращает путь к зашифрованному файлу.
+// M5 (PASS-17): потоковое шифрование (io.Copy) — раньше os.ReadFile грузил
+// много-гигабайтный дамп в память целиком (OOM на больших БД).
 func (s *BackupService) encryptBackupFile(srcPath string) (string, error) {
 	if len(s.encryptionKey) != 32 {
 		return srcPath, nil // шифрование не включено
 	}
-	plain, err := os.ReadFile(srcPath)
+	in, err := os.Open(srcPath)
 	if err != nil {
 		return "", err
 	}
+	defer func() { _ = in.Close() }()
+
 	block, err := aes.NewCipher(s.encryptionKey)
 	if err != nil {
 		return "", err
@@ -384,12 +389,29 @@ func (s *BackupService) encryptBackupFile(srcPath string) (string, error) {
 		return "", err
 	}
 	nonce := make([]byte, gcm.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
+	if _, randErr := rand.Read(nonce); randErr != nil {
+		return "", randErr
+	}
+
+	encPath := srcPath + ".enc"
+	out, err := os.OpenFile(encPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
 		return "", err
 	}
-	ciphertext := gcm.Seal(nonce, nonce, plain, nil)
-	encPath := srcPath + ".enc"
-	if err := os.WriteFile(encPath, ciphertext, 0600); err != nil {
+	// Сначала пишем nonce, затем шифрованный поток.
+	if _, err := out.Write(nonce); err != nil {
+		_ = out.Close()
+		return "", err
+	}
+	sw := cipher.StreamWriter{S: cipher.NewCTR(block, nonce), W: out}
+	if _, err := io.Copy(sw, in); err != nil {
+		_ = out.Close()
+		return "", err
+	}
+	if err := sw.Close(); err != nil {
+		return "", err
+	}
+	if err := out.Close(); err != nil {
 		return "", err
 	}
 	// Удаляем незашифрованный дамп (plaintext не должен оставаться на диске).
@@ -399,14 +421,18 @@ func (s *BackupService) encryptBackupFile(srcPath string) (string, error) {
 
 // decryptBackupFile (admin #6, PASS-8): расшифровывает .enc в директории
 // бекапов (для Download). Возвращает путь к временному расшифрованному файлу.
+// M5 (PASS-17): потоково (AES-CTR), совместим с encryptBackupFile; раньше
+// os.ReadFile + gcm.Open грузили файл целиком в память.
 func (s *BackupService) decryptBackupFile(encPath string) (string, error) {
 	if len(s.encryptionKey) != 32 {
 		return encPath, nil // не зашифрован
 	}
-	data, err := os.ReadFile(encPath)
+	in, err := os.Open(encPath)
 	if err != nil {
 		return "", err
 	}
+	defer func() { _ = in.Close() }()
+
 	block, err := aes.NewCipher(s.encryptionKey)
 	if err != nil {
 		return "", err
@@ -415,14 +441,11 @@ func (s *BackupService) decryptBackupFile(encPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if len(data) < gcm.NonceSize() {
-		return "", fmt.Errorf("зашифрованный бэкап повреждён (короткий файл)")
+	nonce := make([]byte, gcm.NonceSize())
+	if _, readErr := io.ReadFull(in, nonce); readErr != nil {
+		return "", fmt.Errorf("зашифрованный бэкап повреждён (короткий файл): %w", readErr)
 	}
-	nonce, ciphertext := data[:gcm.NonceSize()], data[gcm.NonceSize():]
-	plain, err := gcm.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		return "", fmt.Errorf("не удалось расшифровать бэкап: %w", err)
-	}
+
 	// Временный файл в директории бекапов с УНИКАЛЬНЫМ именем (M2, PASS-10) —
 	// раньше `encPath + ".decrypted"` детерминирован: два параллельных Download
 	// перезаписывали один файл (гона на c.File). cleanup удалит его после отдачи.
@@ -431,7 +454,16 @@ func (s *BackupService) decryptBackupFile(encPath string) (string, error) {
 		return "", randErr
 	}
 	plainPath := encPath + ".decrypted." + randPart
-	if err := os.WriteFile(plainPath, plain, 0600); err != nil {
+	out, err := os.OpenFile(plainPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		return "", err
+	}
+	sr := cipher.StreamReader{S: cipher.NewCTR(block, nonce), R: in}
+	if _, err := io.Copy(out, sr); err != nil {
+		_ = out.Close()
+		return "", err
+	}
+	if err := out.Close(); err != nil {
 		return "", err
 	}
 	return plainPath, nil

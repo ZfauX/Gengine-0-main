@@ -1140,6 +1140,10 @@ func (h *LevelHandler) Import(c *gin.Context) {
 		render.RenderError(c, http.StatusInternalServerError, "Импорт недоступен")
 		return
 	}
+	// M4 (PASS-17): лимит multipart-тела 10MB — раньше FormFile грузил файл
+	// целиком в память/диск БЕЗ ограничения, а LimitReader(5MB) в сервисе
+	// ограничивал только декодирование. Как в export.ImportGame (MaxBytesReader).
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 10<<20)
 	gameID, _ := strconv.Atoi(c.Param("id"))
 	userID := c.GetUint("userID")
 	if gameID <= 0 {

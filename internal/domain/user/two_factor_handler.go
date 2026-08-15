@@ -173,10 +173,10 @@ func (h *TwoFactorHandler) Verify(c *gin.Context) {
 	// UX-2 (PASS-13): «запомнить это устройство на 30 дней» — ставим
 	// trusted-device cookie (подписанную, с TTL), чтобы не вводить TOTP
 	// на доверенных устройствах повторно.
-	// H6 (PASS-15): синхронизируем Secure-флаг из конфига (глобальный для
-	// middleware и хендлера).
+	// H6 (PASS-15): Secure-флаг trusted cookie задаётся ОДИН раз при старте
+	// в routes.go (SetTrustedSecure) — НЕ перезаписываем его на каждый запрос:
+	// параллельные чтения (trustedSecureFlag в middleware) дают data race (H1, PASS-17).
 	if h.trustedSecret != "" && c.PostForm("remember_device") == "1" {
-		SetTrustedSecure(h.trustedSecure)
 		setTrustedDeviceCookie(c, userID, h.trustedSecret)
 	}
 	// PASS-11 (session fixation): 2FA-проверка — событие повышения доверия.
@@ -444,7 +444,12 @@ func (h *TwoFactorHandler) Enable(c *gin.Context) {
 		renderEnableError(render.Tr(c, "handler.wrong_code_try_again"))
 		return
 	}
-	if bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)) != nil {
+	// M2 (PASS-17): у OAuth-пользователей пароля нет (Password == "") —
+	// bcrypt всегда бы не совпал и блокировал аккаунт после 5 попыток.
+	// Для таких аккаунтов не требуем пароль при включении 2FA (аутентификация
+	// уже пройдена через OAuth-сессию). Пароль устанавливается отдельным flow.
+	hasPassword := user.Password != ""
+	if hasPassword && bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)) != nil {
 		// Неверный пароль — инкремент счётчика + backoff-блокировка.
 		if newAttempts, incErr := h.userRepo.AtomicIncrementFailedAttempts(c.Request.Context(), userID); incErr != nil {
 			log.Error().Err(incErr).Uint("user_id", userID).Msg("2fa-enable: atomic increment failed")

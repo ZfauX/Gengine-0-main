@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/team"
@@ -112,12 +113,40 @@ func (h *AdminHandler) Dashboard(c *gin.Context) {
 
 	// PF-6 (pass 29): 5 COUNT были 5 round-trip на каждый заход; теперь один
 	// запрос с подзапросами. Ошибка одного счётчика не роняет весь дашборд.
+	// M9 (PASS-17): результат кэшируется на 30с — COUNT(*) по растущей
+	// audit_logs (полный seq-скан) на каждый заход в админку дорогой.
 	var counts struct {
 		UserCount   int64
 		GameCount   int64
 		TeamCount   int64
 		AuditCount  int64
 		BackupCount int64
+	}
+	const dashboardCountsKey = "admin:dashboard:counts"
+	if h.cacheStore != nil {
+		if v, ok := h.cacheStore.GetWithCtx(ctx, dashboardCountsKey); ok {
+			if cachedCounts, ok := v.(struct {
+				UserCount   int64
+				GameCount   int64
+				TeamCount   int64
+				AuditCount  int64
+				BackupCount int64
+			}); ok {
+				counts = cachedCounts
+				render.Page(c, http.StatusOK, "admin-dashboard.html", gin.H{
+					"Title":         "Админ-панель",
+					"UserCount":     counts.UserCount,
+					"GameCount":     counts.GameCount,
+					"TeamCount":     counts.TeamCount,
+					"AuditCount":    counts.AuditCount,
+					"BackupCount":   counts.BackupCount,
+					"CurrentUserID": c.GetUint("userID"),
+					"IsAdmin":       true,
+					"csrf":          csrf.GetToken(c),
+				})
+				return
+			}
+		}
 	}
 	err := h.gameRepo.RawScan(ctx, &counts, `
 			SELECT
@@ -129,6 +158,8 @@ func (h *AdminHandler) Dashboard(c *gin.Context) {
 		`)
 	if err != nil {
 		log.Error().Err(err).Msg("Dashboard: failed to count dashboard stats")
+	} else if h.cacheStore != nil {
+		h.cacheStore.SetWithCtx(ctx, dashboardCountsKey, counts, 30*time.Second)
 	}
 
 	render.Page(c, http.StatusOK, "admin-dashboard.html", gin.H{

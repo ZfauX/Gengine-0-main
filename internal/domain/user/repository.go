@@ -568,13 +568,15 @@ func (r *gormUserRepo) AtomicLockAccount(ctx context.Context, userID uint, locke
 // LockAccountWithBackoff атомарно блокирует аккаунт, вычисляя длительность
 // блокировки ВНУТРИ SQL по фактическому (новому) lock_count
 // (DEEP-REVIEW MEDIUM #19, pass 46). Формула повторяет backoffDuration:
-// min(5 * 2^(lock_count-1), 1440) минут.
+// min(5 * 2^(lock_count-1), 60) минут. H2 (PASS-17): кап выровнен с Go
+// (maxLockDuration = 1ч) — раньше SQL допускал 24ч блокировку (DoS на аккаунт),
+// а сервис считал максимум 1ч.
 func (r *gormUserRepo) LockAccountWithBackoff(ctx context.Context, userID uint) (int, error) {
 	var newCount int
 	err := r.db.WithContext(ctx).
 		Raw(`UPDATE users
 			SET lock_count = lock_count + 1,
-			    locked_until = now() + (LEAST(5 * POWER(2, lock_count), 1440) || ' minutes')::interval,
+			    locked_until = now() + (LEAST(5 * POWER(2, lock_count), 60) || ' minutes')::interval,
 			    failed_login_attempts = 0
 			WHERE id = ?
 			RETURNING lock_count`, userID).
