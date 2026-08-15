@@ -60,8 +60,12 @@ func TestCreateMigrationFile_Timestamp(t *testing.T) {
 
 func TestEnsureAdmin_CreatesNew(t *testing.T) {
 	db, mock := newMockDB(t)
+	// L12 (PASS-17): сначала проверка существования (COUNT), при 0 — INSERT.
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "users" WHERE email = .+`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	// GORM Create оборачивает INSERT в транзакцию (skip_default_transaction=false).
 	mock.ExpectBegin()
-	mock.ExpectQuery(`INSERT INTO "users" .+ ON CONFLICT \("email"\) DO UPDATE SET "password"=.+`).
+	mock.ExpectQuery(`INSERT INTO "users" .+`).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
 	mock.ExpectCommit()
 
@@ -74,10 +78,27 @@ func TestEnsureAdmin_CreatesNew(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestEnsureAdmin_AlreadyExists(t *testing.T) {
+	db, mock := newMockDB(t)
+	// L12 (PASS-17): если админ уже есть — НЕ хешируем пароль, не пишем в БД.
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "users" WHERE email = .+`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+	cfg := &config.Config{
+		Admin: config.AdminConfig{Email: "admin@test.com", Password: "secret123"},
+	}
+
+	err := EnsureAdmin(db, cfg)
+	assert.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestEnsureAdmin_DBCreateError(t *testing.T) {
 	db, mock := newMockDB(t)
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "users" WHERE email = .+`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 	mock.ExpectBegin()
-	mock.ExpectQuery(`INSERT INTO "users" .+ ON CONFLICT \("email"\) DO UPDATE SET "password"=.+`).
+	mock.ExpectQuery(`INSERT INTO "users" .+`).
 		WillReturnError(assert.AnError)
 	mock.ExpectRollback()
 
@@ -87,21 +108,5 @@ func TestEnsureAdmin_DBCreateError(t *testing.T) {
 
 	err := EnsureAdmin(db, cfg)
 	assert.Error(t, err)
-	assert.NoError(t, mock.ExpectationsWereMet())
-}
-
-func TestEnsureAdmin_ConcurrentCreate(t *testing.T) {
-	db, mock := newMockDB(t)
-	mock.ExpectBegin()
-	mock.ExpectQuery(`INSERT INTO "users" .+ ON CONFLICT \("email"\) DO UPDATE SET "password"=.+`).
-		WillReturnRows(sqlmock.NewRows([]string{"id"})) // no rows = conflict, RowsAffected = 0
-	mock.ExpectCommit()
-
-	cfg := &config.Config{
-		Admin: config.AdminConfig{Email: "admin@test.com", Password: "secret123"},
-	}
-
-	err := EnsureAdmin(db, cfg)
-	assert.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

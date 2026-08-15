@@ -219,7 +219,8 @@ func (s *AuthService) Login(ctx context.Context, emailStr, password string) (*Us
 	// DEEP-REVIEW PASS-2 (#15): условный сброс (только если были попытки/
 	// блокировка) — раньше писали UPDATE на каждый успешный логин.
 	if resetErr := s.userRepo.ResetLoginAttemptsIfNeeded(ctx, user.ID); resetErr != nil {
-		log.Error().Err(err).Uint("user_id", user.ID).Msg("Login: failed to reset failed_login_attempts")
+		// L1 (PASS-17): логировали err (nil), а не resetErr.
+		log.Error().Err(resetErr).Uint("user_id", user.ID).Msg("Login: failed to reset failed_login_attempts")
 	}
 
 	// DEEP-REVIEW PASS-2 (#14): возвращаем user, чтобы handler не делал

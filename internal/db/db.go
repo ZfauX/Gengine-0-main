@@ -13,7 +13,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 )
 
@@ -69,8 +68,20 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 
 // EnsureAdmin создаёт учётную запись администратора, если её ещё нет.
 // Использует учетные данные из cfg.Admin (Email и Password).
-// Операция атомарна: INSERT с ON CONFLICT DO NOTHING исключает гонку.
+// L12 (PASS-17): раньше bcrypt пересчитывался (~100-300мс) и пароль
+// перезаписывался на КАЖДОМ старте (ON CONFLICT DO UPDATE). Теперь — только
+// при создании: существующий админ не трогается (пароль из env не затирает
+// сменённый пользователем).
 func EnsureAdmin(db *gorm.DB, cfg *config.Config) error {
+	var count int64
+	if err := db.Model(&user.User{}).Where("email = ?", cfg.Admin.Email).Count(&count).Error; err != nil {
+		return fmt.Errorf("ensureAdmin: не удалось проверить администратора: %w", err)
+	}
+	if count > 0 {
+		log.Info().Str("email", cfg.Admin.Email).Msg("Администратор уже существует")
+		return nil
+	}
+
 	hashed, err := bcrypt.GenerateFromPassword([]byte(cfg.Admin.Password), crypto.BcryptCost)
 	if err != nil {
 		return fmt.Errorf("ensureAdmin: не удалось захешировать пароль администратора: %w", err)
@@ -84,18 +95,9 @@ func EnsureAdmin(db *gorm.DB, cfg *config.Config) error {
 		EmailVerified: true,
 	}
 
-	result := db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "email"}},
-		DoUpdates: clause.Assignments(map[string]interface{}{"password": string(hashed)}),
-	}).Create(&admin)
-	if result.Error != nil {
-		return fmt.Errorf("ensureAdmin: не удалось создать/обновить администратора: %w", result.Error)
+	if err := db.Create(&admin).Error; err != nil {
+		return fmt.Errorf("ensureAdmin: не удалось создать администратора: %w", err)
 	}
-
-	if result.RowsAffected > 0 {
-		log.Info().Str("email", admin.Email).Msg("Администратор создан")
-	} else {
-		log.Info().Str("email", cfg.Admin.Email).Msg("Администратор уже существует, обновлён пароль")
-	}
+	log.Info().Str("email", admin.Email).Msg("Администратор создан")
 	return nil
 }

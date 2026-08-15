@@ -125,7 +125,14 @@ func (h *PaymentHandler) Create(c *gin.Context) {
 // @Failure 403 {object} map[string]interface{} "Не доверенный IP"
 // @Router /payments/webhook [post]
 func (h *PaymentHandler) Webhook(c *gin.Context) {
-	body, _ := io.ReadAll(io.LimitReader(c.Request.Body, 2*1024*1024))
+	body, readErr := io.ReadAll(io.LimitReader(c.Request.Body, 2*1024*1024))
+	if readErr != nil {
+		// L6 (PASS-17): раньше ошибка чтения молча игнорировалась — ЮKassa
+		// получала 200, платёж оставался pending без повторной попытки.
+		log.Error().Err(readErr).Msg("Payment webhook: failed to read body")
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
+		return
+	}
 	remoteIP := c.ClientIP()
 	// M1 (PASS-3): Authorization (Basic ShopID:WebhookKey) — подпись вебхука.
 	authHeader := c.GetHeader("Authorization")

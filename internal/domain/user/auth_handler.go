@@ -613,7 +613,8 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 			// S7: код сброса НЕ логируем вовсе (даже частично — 16 бит энтропии
 			// при доступе к логам перебираются). Логируем только факт генерации;
 			// в dev-режиме код доступен в ответе/консоли админа иначе.
-			log.Info().Str("email", input.Email).Msg("ForgotPassword: reset link generated (SMTP disabled)")
+			// L2 (PASS-17): email не логируем (PII, anti-enumeration).
+			log.Info().Uint("user_id", user.ID).Msg("ForgotPassword: reset link generated (SMTP disabled)")
 		} else if h.emailSvc != nil {
 			resetURL := h.cfg.Server.BaseURL + "/auth/reset/" + resetCode
 			subject := "Восстановление пароля"

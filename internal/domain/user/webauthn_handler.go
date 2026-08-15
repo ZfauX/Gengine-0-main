@@ -14,6 +14,7 @@ import (
 	"gengine-0/internal/pkg/audit"
 	csrf2 "gengine-0/internal/pkg/csrf"
 	"gengine-0/internal/pkg/render"
+	"gengine-0/internal/pkg/sessionstore"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
@@ -476,6 +477,13 @@ func (h *WebAuthnHandler) FinishLogin(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": render.Tr(c, "handler.internal_error")})
 		return
+	}
+
+	// L10 (PASS-17): перевыпускаем session ID после passkey-логина — как в
+	// парольном Login/OAuth (защита от session fixation). Раньше только 2FA
+	// путь делал RenewGinSession.
+	if renewErr := sessionstore.RenewGinSession(c); renewErr != nil {
+		log.Warn().Err(renewErr).Msg("FinishLogin: session renewal failed")
 	}
 
 	setSecureCookie(c, "jwt", token, int(h.cfg.JWT.AccessExpiry.Seconds()), "/")

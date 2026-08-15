@@ -126,7 +126,8 @@ func tryServeAnonCache(c *gin.Context, status int, data gin.H) bool {
 		body := e.body
 		anonHTMLCache.mu.Unlock()
 		// H2 (PASS-15): подстановка nonce/CSRF через bytes.ReplaceAll — без
-		// string-конверсий и полных копий HTML (раньше string→2×Replace→[]byte).
+		// string-конверсий и полных копий HTML. L14 (PASS-17): общий случай
+		// (оба плейсхолдера) — 2 прохода, но без string-аллокаций.
 		out := body
 		nonce := middleware.GetCSPNonce(c)
 		if nonce != "" {

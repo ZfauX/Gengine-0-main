@@ -382,9 +382,19 @@ func (h *TwoFactorHandler) QRCode(c *gin.Context) {
 	userID := c.GetUint("userID")
 	user, err := h.userRepo.GetByID(c.Request.Context(), userID)
 	if err != nil {
-		c.Status(http.StatusNotFound)
+		render.RenderErrorPage(c, http.StatusNotFound)
 		return
 	}
+
+	// L11 (PASS-17): если 2FA уже включена — не перегенерировать секрет/коды
+	// при повторной отправке формы (раньше можно было «сбросить» свою 2FA
+	// случайным повторным POST).
+	if user.TwoFactorEnabled {
+		render.SetFlash(c, "success", render.Tr(c, "twofa.already_enabled"))
+		c.Redirect(http.StatusFound, "/profile")
+		return
+	}
+
 	png, err := h.twoFactorSvc.GenerateQRCodePNG(secret, user.Email, "Gengine-0", 200)
 	if err != nil {
 		log.Error().Err(err).Msg("QRCode: failed to generate QR PNG")

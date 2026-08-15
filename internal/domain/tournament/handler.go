@@ -483,7 +483,15 @@ func (h *TournamentHandler) AddGame(c *gin.Context) {
 
 	if err := h.tournamentService.AddGame(c.Request.Context(), req.ID, input.GameID, userID); err != nil {
 		log.Error().Err(err).Uint("tournament_id", req.ID).Uint("game_id", input.GameID).Uint("user_id", userID).Msg("TournamentHandler.AddGame: failed to add game")
-		render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, err.Error()))
+		// L8 (PASS-17): точные статус-коды — раньше всё отдавалось как 403.
+		switch {
+		case errors.Is(err, ErrGameAlreadyInTournament):
+			render.RenderError(c, http.StatusConflict, render.LocalizeError(c, err.Error()))
+		case errors.Is(err, ErrGameNotFound):
+			render.RenderError(c, http.StatusNotFound, render.LocalizeError(c, err.Error()))
+		default:
+			render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, err.Error()))
+		}
 		return
 	}
 

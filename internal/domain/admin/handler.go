@@ -295,6 +295,13 @@ func (h *AdminHandler) CreateUser(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/admin/users")
 		return
 	}
+	// L3 (PASS-17): валидация формата email — раньше проверялась только
+	// непустота; некорректный email сохранялся и ломал сброс пароля/уведомления.
+	if vErr := validation.ValidateEmail(email); vErr != nil {
+		render.SetFlash(c, "error", i18n.T("admin.create_user_invalid_email"))
+		c.Redirect(http.StatusFound, "/admin/users")
+		return
+	}
 	// PASS-8 LOW #2: единая валидация пароля с регистрацией/сменой — раньше
 	// только len>=8 (слабый пароль от админа).
 	if err := validation.ValidatePasswordStrength(password); err != nil {
@@ -357,6 +364,11 @@ func (h *AdminHandler) CreateTeam(c *gin.Context) {
 		render.SetFlash(c, "error", i18n.T("admin.create_team_error"))
 		c.Redirect(http.StatusFound, "/admin/teams")
 		return
+	}
+	// L4 (PASS-17): капитан добавляется в team_members (как в TeamService.CreateTeam) —
+	// иначе подсчёты/фильтры по members не видят капитана.
+	if addErr := h.teamRepo.AddMember(c.Request.Context(), team.ID, uint(captainID)); addErr != nil {
+		log.Error().Err(addErr).Uint("team_id", team.ID).Msg("CreateTeam: failed to add captain to members")
 	}
 	if h.auditService != nil {
 		h.auditService.Log(c.GetUint("userID"), "admin.team_create", "teams", team.ID, fmt.Sprintf("name=%s", name))
@@ -656,6 +668,9 @@ func (h *AdminHandler) ListTeams(c *gin.Context) {
 	perPage := 20
 	if p, err := strconv.Atoi(c.DefaultQuery("page", "1")); err == nil && p > 0 {
 		page = p
+	}
+	if page > 10000 {
+		page = 10000 // L5 (PASS-17): граница как в ListUsers — не давать дорогие OFFSET.
 	}
 	if pp, err := strconv.Atoi(c.DefaultQuery("per_page", "20")); err == nil && pp > 0 && pp <= 100 {
 		perPage = pp

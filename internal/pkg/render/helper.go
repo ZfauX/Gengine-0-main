@@ -151,6 +151,17 @@ var bufferPool = sync.Pool{
 	New: func() any { return new(bytes.Buffer) },
 }
 
+// maxPooledBufferSize (L13, PASS-17): буферы больше 1MB в пул не возвращаем —
+// одна очень большая страница иначе навсегда пиннит огромный буфер в sync.Pool.
+const maxPooledBufferSize = 1 << 20
+
+// putBuffer возвращает буфер в пул, если он не разросся сверх лимита.
+func putBuffer(buf *bytes.Buffer) {
+	if buf != nil && buf.Cap() <= maxPooledBufferSize {
+		bufferPool.Put(buf)
+	}
+}
+
 // hasSessionCookie — дешёвая проверка наличия cookie сессии до sessions.Default:
 // для анонимных запросов (большинство публичных GET) сессия гарантированно пустая,
 // открывать её (3-5 аллокаций Registry/Values) не нужно.
@@ -258,7 +269,7 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 	//nolint:errcheck // sync.Pool.Get возвращает any, ошибки нет (ложное срабатывание)
 	buf := bufferPool.Get().(*bytes.Buffer)
 	buf.Reset()
-	defer bufferPool.Put(buf)
+	defer putBuffer(buf)
 
 	if err := tmpl.ExecuteTemplate(buf, contentTemplate, data); err != nil {
 		log.Error().Err(err).Msg("Render: template execution error")
@@ -276,7 +287,7 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 		//nolint:errcheck // sync.Pool.Get возвращает any, ошибки нет (ложное срабатывание)
 		headBuf := bufferPool.Get().(*bytes.Buffer)
 		headBuf.Reset()
-		defer bufferPool.Put(headBuf)
+		defer putBuffer(headBuf)
 		if err := tmpl.ExecuteTemplate(headBuf, "ExtraHead", data); err != nil {
 			log.Error().Err(err).Msg("Render: ExtraHead template execution error")
 		} else {
@@ -290,7 +301,7 @@ func Page(c *gin.Context, status int, contentTemplate string, data gin.H) {
 	//nolint:errcheck // sync.Pool.Get возвращает any, ошибки нет (ложное срабатывание)
 	layoutBuf := bufferPool.Get().(*bytes.Buffer)
 	layoutBuf.Reset()
-	defer bufferPool.Put(layoutBuf)
+	defer putBuffer(layoutBuf)
 	if err := tmpl.ExecuteTemplate(layoutBuf, "layout.html", data); err != nil {
 		log.Error().Err(err).Msg("Render: layout template execution error")
 		c.String(http.StatusInternalServerError, i18n.T("generic.server_error"))

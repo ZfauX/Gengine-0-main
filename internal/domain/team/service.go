@@ -145,6 +145,13 @@ func (s *TeamService) CreateTeam(ctx context.Context, name string, captainID uin
 	}
 	err = s.teamRepo.Create(ctx, team)
 	if err == nil {
+		// L4 (PASS-17): капитан — участник команды в team_members. Раньше
+		// капитан хранился только в teams.captain_id и не попадал в
+		// team_members: подсчёты/фильтры, полагающиеся только на members,
+		// его не видели, а ChangeCaptain требовал «капитан уже участник».
+		if addErr := s.teamRepo.AddMember(ctx, team.ID, captainID); addErr != nil {
+			return team, addErr
+		}
 		metrics.IncTeamsTotal()
 	}
 	return team, err

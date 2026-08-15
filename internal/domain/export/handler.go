@@ -111,16 +111,14 @@ func (h *ExportHandler) ExportGameCSV(c *gin.Context) {
 		return
 	}
 
-	var buf bytes.Buffer
-	if err := h.exportService.ExportGameToCSV(c.Request.Context(), gameID, &buf); err != nil {
-		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportGameCSV: failed to export game to CSV")
-		render.RenderErrorPage(c, http.StatusInternalServerError)
-		return
-	}
-
+	// M8 (PASS-17): стримим CSV напрямую в c.Writer — раньше собирали в
+	// bytes.Buffer, затем c.Data копировал ещё раз (двойная память).
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", "attachment; filename=game_"+strconv.Itoa(int(gameID))+".csv")
-	c.Data(http.StatusOK, "text/csv", buf.Bytes())
+	if err := h.exportService.ExportGameToCSV(c.Request.Context(), gameID, c.Writer); err != nil {
+		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportGameCSV: failed to export game to CSV")
+		return
+	}
 }
 
 // ImportGameForm отображает форму загрузки CSV-файла для импорта.
@@ -288,16 +286,13 @@ func (h *ExportHandler) ExportResultsCSV(c *gin.Context) {
 		return
 	}
 
-	var buf bytes.Buffer
-	if err := h.exportService.ExportResultsToCSV(c.Request.Context(), gameID, &buf); err != nil {
-		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportResultsCSV: failed to export results to CSV")
-		render.RenderErrorPage(c, http.StatusInternalServerError)
-		return
-	}
-
+	// M8 (PASS-17): стримим CSV напрямую в c.Writer (без bytes.Buffer).
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", "attachment; filename=results_"+strconv.Itoa(int(gameID))+".csv")
-	c.Data(http.StatusOK, "text/csv", buf.Bytes())
+	if err := h.exportService.ExportResultsToCSV(c.Request.Context(), gameID, c.Writer); err != nil {
+		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportResultsCSV: failed to export results to CSV")
+		return
+	}
 }
 
 // ExportGamePDF генерирует и отдаёт PDF-файл со всей структурой игры для печати.
@@ -542,14 +537,11 @@ func (h *ExportHandler) ExportTeamResultsCSV(c *gin.Context) {
 		return
 	}
 
-	var buf bytes.Buffer
-	if err := h.exportService.ExportTeamResultsToCSV(c.Request.Context(), gameID, uint(teamID), &buf); err != nil {
-		log.Error().Err(err).Uint("game_id", gameID).Uint("team_id", uint(teamID)).Msg("ExportTeamResultsCSV: failed to export")
-		render.RenderErrorPage(c, http.StatusInternalServerError)
-		return
-	}
-
+	// M8 (PASS-17): стримим CSV напрямую в c.Writer.
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", "attachment; filename=team_"+strconv.Itoa(teamID)+"_results.csv")
-	c.Data(http.StatusOK, "text/csv", buf.Bytes())
+	if err := h.exportService.ExportTeamResultsToCSV(c.Request.Context(), gameID, uint(teamID), c.Writer); err != nil {
+		log.Error().Err(err).Uint("game_id", gameID).Uint("team_id", uint(teamID)).Msg("ExportTeamResultsCSV: failed to export")
+		return
+	}
 }

@@ -1,42 +1,41 @@
-# gitleaks.toml — конфиг секрет-сканера (UX-6, PASS-16).
-# Исключаем заведомо тестовые/CI-секреты, которые задокументированы как
-# «только для теста» (см. deploy/pod/gengine-pod.yaml, .env.e2e, workflow).
-# Реальные прод-секреты в репозиторий попадать НЕ должны.
+# gitleaks.toml — конфиг секрет-сканера (UX-6, PASS-16; L15, PASS-17).
+# Исключаем ТОЛЬКО явные тестовые паттерны в задокументированных файлах
+# «только для теста». Литералы админ-паролей и *_test.go НЕ в allowlist —
+# реальный секрет, случайно попавший в тестовый файл/прод-конфиг, ловится.
 
 title = "Gengine gitleaks config"
 
 [extend]
 useDefault = true
 
-# Паттерны тестовых секретов, разрешённых в репозитории.
+# Тестовые JWT/SESSION секреты, завязанные на имя файла.
 [[allowlist]]
-description = "Тестовые/CI секреты (pod-манифест, .env.e2e, workflow)"
+description = "Тестовые/CI JWT/SESSION секреты в известных тестовых файлах"
 regexes = [
-    # JWT/SESSION секреты CI/pod
     "pod-jwt-secret-[a-f0-9]+",
     "pod-session-secret-[a-f0-9]+",
     "ci-jwt-secret-[a-f0-9]+",
     "ci-session-secret-[a-f0-9]+",
     "test-jwt-secret-[a-z0-9-]+",
     "test-session-secret-[a-z0-9-]+",
-    # Админ-пароли тестовых окружений
-    "AdminPod123456!",
-    "AdminE2E123456!",
-    "adminpass123",
-    # Пароли БД в тестах/CI
-    "POSTGRES_PASSWORD=(gengine|test|change-me)",
-    "DB_PASSWORD=(gengine|test)",
-    # Заглушка вместо пароля
-    "__SET_A_STRONG_PASSWORD__",
 ]
-
-[[allowlist]]
-description = "Файлы, где тестовые секреты ожидаемы"
 paths = [
     "deploy/pod/gengine-pod.yaml",
     ".env.e2e",
     ".github/workflows/go.yml",
     "deploy/systemd/gengine-db.env",
-    "e2e/",
-    "internal/.*_test.go",
+]
+
+# Пароли БД в тестовых/CI окружениях — тоже только в известных файлах.
+[[allowlist]]
+description = "Пароли БД тестовых окружений (gengine/test/заглушка)"
+regexes = [
+    "POSTGRES_PASSWORD=(gengine|test|change-me|__SET_A_STRONG_PASSWORD__)",
+    "DB_PASSWORD=(gengine|test)",
+]
+paths = [
+    "deploy/pod/gengine-pod.yaml",
+    ".env.e2e",
+    ".github/workflows/go.yml",
+    "deploy/systemd/gengine-db.env",
 ]

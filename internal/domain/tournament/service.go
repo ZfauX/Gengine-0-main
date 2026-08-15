@@ -29,6 +29,7 @@ var (
 	ErrTournamentManageForbidden = stderrors.New("только автор турнира может добавлять игры")
 	ErrTournamentRemoveForbidden = stderrors.New("только автор турнира может удалять игры")
 	ErrGameAlreadyInTournament   = stderrors.New("игра уже в турнире")
+	ErrGameNotFound              = stderrors.New("игра не найдена")
 	ErrCaptainOnly               = stderrors.New("только капитан может подать заявку")
 	ErrTeamAlreadyInTournament   = stderrors.New("команда уже участвует в турнире")
 )
@@ -112,6 +113,15 @@ func (s *TournamentService) AddGame(ctx context.Context, tournamentID, gameID, u
 	}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// L7 (PASS-17): несуществующая игра не должна добавляться в турнир —
+		// раньше FK-ошибка/сирота зависела от наличия ограничения.
+		var gameExists int64
+		if err := tx.Model(&game.Game{}).Where("id = ? AND deleted_at IS NULL", gameID).Count(&gameExists).Error; err != nil {
+			return err
+		}
+		if gameExists == 0 {
+			return ErrGameNotFound
+		}
 		var count int64
 		if err := tx.Model(&TournamentGame{}).Where("tournament_id = ? AND game_id = ?", tournamentID, gameID).Count(&count).Error; err != nil {
 			return err
