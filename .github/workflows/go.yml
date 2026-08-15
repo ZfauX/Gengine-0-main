@@ -51,6 +51,14 @@ jobs:
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
 
+      # UX-6 (PASS-16): gitleaks — блокирует коммиты с секретами/ключами
+      # (закоммиченные .key, JWT/DB пароли, test-секреты, попавшие в прод).
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@${{ env.GOVULNCHECK_VERSION }} ./...
 

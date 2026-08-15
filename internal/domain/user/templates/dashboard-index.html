@@ -230,6 +230,30 @@
         {{end}}
     </div>
 
+    <!-- UX-1 (PASS-16): последние уведомления -->
+    {{if .Dashboard.RecentNotifications}}
+    <div class="card mb-6">
+        <div class="flex justify-between items-center mb-3">
+            <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300">{{ T $.Lang "dashboard.recent_notifications" }}</h2>
+            <a href="/notifications" class="text-sm text-blue-600 dark:text-blue-400 hover:underline">{{ T $.Lang "dashboard.all_notifications" }}</a>
+        </div>
+        <ul class="divide-y divide-gray-100 dark:divide-gray-700">
+            {{range .Dashboard.RecentNotifications}}
+            <li class="py-2 flex items-start gap-3">
+                <span class="mt-1 w-2 h-2 rounded-full flex-shrink-0 {{if .Read}}bg-gray-300 dark:bg-gray-600{{else}}bg-blue-500{{end}}" aria-hidden="true"></span>
+                <div class="min-w-0 flex-1">
+                    <a href="{{if .Link}}{{.Link}}{{else}}/notifications{{end}}" class="text-sm font-medium text-gray-800 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400 block truncate">
+                        {{.Title}}{{if not .Read}} <span class="text-blue-500" aria-label="{{ T $.Lang "dashboard.unread" }}">•</span>{{end}}
+                    </a>
+                    {{if .Body}}<p class="text-xs text-gray-500 dark:text-gray-400 truncate">{{.Body}}</p>{{end}}
+                    <span class="text-xs text-gray-400 dark:text-gray-500">{{ formatDateTime $.Lang $.TZOffset .CreatedAt }}</span>
+                </div>
+            </li>
+            {{end}}
+        </ul>
+    </div>
+    {{end}}
+
     <!-- D-2 (pass 45): календарь игр -->
     <div class="card mb-6">
         <h2 class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4">{{ T $.Lang "dashboard.calendar_title" }}</h2>

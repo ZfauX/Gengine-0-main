@@ -134,11 +134,28 @@
         <p class="text-sm text-gray-500 dark:text-gray-400">{{ T $.Lang "profile.theme_settings_desc" }}</p>
         <form action="/profile/theme-settings" method="POST" class="mt-3 space-y-3">
             <input type="hidden" name="_csrf" value="{{.csrf}}">
-            <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
-                <input type="checkbox" name="auto_theme" id="auto-theme" {{if .ThemeSettings.AutoTheme}}checked{{end}} class="w-4 h-4 text-blue-600 dark:text-blue-400 rounded focus:ring-blue-500">
-                <span class="text-gray-700 dark:text-gray-300">{{ T $.Lang "profile.auto_theme_label" }}</span>
-            </label>
-            <div id="theme-times" class="grid grid-cols-1 sm:grid-cols-2 gap-3 {{if not .ThemeSettings.AutoTheme}}opacity-50{{end}}">
+            {{$mode := .ThemeSettings.EffectiveThemeMode}}
+            <!-- UX-5 (PASS-16): выбор режима темы -->
+            <fieldset class="space-y-2">
+                <legend class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ T $.Lang "profile.theme_mode_label" }}</legend>
+                <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+                    <input type="radio" name="theme_mode" value="system" {{if eq $mode "system"}}checked{{end}} class="w-4 h-4 text-blue-600 dark:text-blue-400">
+                    <span class="text-gray-700 dark:text-gray-300">{{ T $.Lang "profile.theme_mode_system" }}</span>
+                </label>
+                <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+                    <input type="radio" name="theme_mode" value="time" {{if or (eq $mode "time") (eq $mode "")}}checked{{end}} class="w-4 h-4 text-blue-600 dark:text-blue-400">
+                    <span class="text-gray-700 dark:text-gray-300">{{ T $.Lang "profile.theme_mode_time" }}</span>
+                </label>
+                <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+                    <input type="radio" name="theme_mode" value="dark" {{if eq $mode "dark"}}checked{{end}} class="w-4 h-4 text-blue-600 dark:text-blue-400">
+                    <span class="text-gray-700 dark:text-gray-300">{{ T $.Lang "profile.theme_mode_dark" }}</span>
+                </label>
+                <label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+                    <input type="radio" name="theme_mode" value="light" {{if eq $mode "light"}}checked{{end}} class="w-4 h-4 text-blue-600 dark:text-blue-400">
+                    <span class="text-gray-700 dark:text-gray-300">{{ T $.Lang "profile.theme_mode_light" }}</span>
+                </label>
+            </fieldset>
+            <div id="theme-times" class="grid grid-cols-1 sm:grid-cols-2 gap-3 {{if or (ne $mode "time") (eq $mode "")}}{{if ne $mode "time"}}opacity-50{{end}}{{end}}">
                 <div>
                     <label for="dark-from" class="form-label">{{ T $.Lang "profile.dark_from" }}</label>
                     <input type="time" name="dark_from" id="dark-from" value="{{.ThemeSettings.DarkFrom}}"

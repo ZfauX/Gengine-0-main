@@ -46,6 +46,13 @@ type ThemeSettings struct {
 	AutoTheme bool   `json:"auto_theme"` // включена ли автоматическая смена темы
 	DarkFrom  string `json:"dark_from"`  // начало тёмной темы, формат "HH:MM" (например "20:00")
 	DarkTo    string `json:"dark_to"`    // конец тёмной темы, формат "HH:MM" (например "07:00")
+	// ThemeMode (UX-5, PASS-16): режим темы.
+	//   "system" — следовать ОС (prefers-color-scheme);
+	//   "time"   — смена по времени (DarkFrom/DarkTo) — старое поведение AutoTheme;
+	//   "dark"   — всегда тёмная;
+	//   "light"  — всегда светлая.
+	// Пустая строка = "time" (обратная совместимость с auto_theme).
+	ThemeMode string `json:"theme_mode,omitempty"`
 }
 
 // DefaultThemeSettings возвращает настройки темы по умолчанию.
@@ -54,7 +61,20 @@ func DefaultThemeSettings() ThemeSettings {
 		AutoTheme: true,
 		DarkFrom:  "20:00",
 		DarkTo:    "07:00",
+		ThemeMode: "time",
 	}
+}
+
+// EffectiveThemeMode возвращает theme_mode с учётом обратной совместимости:
+// если поле пустое — "time" при AutoTheme=true, иначе "light".
+func (ts ThemeSettings) EffectiveThemeMode() string {
+	if ts.ThemeMode != "" {
+		return ts.ThemeMode
+	}
+	if ts.AutoTheme {
+		return "time"
+	}
+	return "light"
 }
 
 // ParseThemeSettings разбирает JSON из БД; пустая строка → значения по умолчанию.

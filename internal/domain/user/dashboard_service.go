@@ -4,18 +4,27 @@ package user
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/rs/zerolog/log"
 )
 
 // ---------- UserDashboardService ----------
 
+// RecentNotificationsLoader (UX-1, PASS-16): колбэк загрузки последних
+// уведомлений. Объявлен здесь как функция без импорта notification-пакета
+// (notification→user иначе дал бы import cycle). Конкретную реализацию
+// подставляет DI (internal/app/wire_providers.go), оборачивая
+// notification.NotificationRepository.
+type RecentNotificationsLoader func(ctx context.Context, userID uint) ([]DashboardNotification, error)
+
 type UserDashboardService struct {
-	userRepo UserRepository
+	userRepo         UserRepository
+	recentNotifsLoad RecentNotificationsLoader
 }
 
-func NewUserDashboardService(userRepo UserRepository) *UserDashboardService {
-	return &UserDashboardService{userRepo: userRepo}
+func NewUserDashboardService(userRepo UserRepository, recentNotifsLoad RecentNotificationsLoader) *UserDashboardService {
+	return &UserDashboardService{userRepo: userRepo, recentNotifsLoad: recentNotifsLoad}
 }
 
 type UserDashboard struct {
@@ -24,6 +33,20 @@ type UserDashboard struct {
 	MemberTeams        []DashboardTeamWithGame
 	ActivePassings     []DashboardPassingWithGame
 	PendingInvitations []DashboardInvitation
+	// RecentNotifications (UX-1, PASS-16): последние N уведомлений — выводятся
+	// на дашборде, чтобы не уходить в /notifications ради нового уведомления.
+	RecentNotifications []DashboardNotification
+}
+
+// DashboardNotification — уведомление на дашборде (подмножество полей).
+type DashboardNotification struct {
+	ID        uint
+	Type      string
+	Title     string
+	Body      string
+	Link      string
+	Read      bool
+	CreatedAt time.Time
 }
 
 type DashboardGame struct {
@@ -125,7 +148,26 @@ func (s *UserDashboardService) GetDashboard(ctx context.Context, userID uint) (*
 		log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to load invitations")
 	}
 
+	// 4. Последние уведомления (UX-1, PASS-16): некритично — дашборд рендерится
+	// без них, если загрузчик не настроен или репозиторий недоступен.
+	if s.recentNotifsLoad != nil {
+		if err := s.loadRecentNotifications(ctx, &dash, userID); err != nil {
+			log.Error().Err(err).Uint("user_id", userID).Msg("GetDashboard: failed to load notifications")
+		}
+	}
+
 	return &dash, nil
+}
+
+// loadRecentNotifications загружает последние уведомления пользователя через
+// колбэк, переданный из DI.
+func (s *UserDashboardService) loadRecentNotifications(ctx context.Context, dash *UserDashboard, userID uint) error {
+	items, err := s.recentNotifsLoad(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("failed to load recent notifications: %w", err)
+	}
+	dash.RecentNotifications = items
+	return nil
 }
 
 // loadInvitations загружает ожидающие приглашения в структуру дашборда.

@@ -18,7 +18,7 @@ func TestGetDashboard_InvitationErrorIsNonFatal(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	repo := NewMockUserRepository(ctrl)
-	svc := NewUserDashboardService(repo)
+	svc := NewUserDashboardService(repo, nil)
 	ctx := context.Background()
 
 	repo.EXPECT().DashboardAuthoredGames(ctx, uint(5)).Return([]DashboardGameRow{}, nil)
@@ -36,7 +36,7 @@ func TestGetDashboard_TeamsErrorIsFatal(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	repo := NewMockUserRepository(ctrl)
-	svc := NewUserDashboardService(repo)
+	svc := NewUserDashboardService(repo, nil)
 	ctx := context.Background()
 
 	repo.EXPECT().DashboardAuthoredGames(ctx, uint(5)).Return([]DashboardGameRow{}, nil)
@@ -52,7 +52,7 @@ func TestGetDashboard_Success(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	repo := NewMockUserRepository(ctrl)
-	svc := NewUserDashboardService(repo)
+	svc := NewUserDashboardService(repo, nil)
 	ctx := context.Background()
 
 	repo.EXPECT().DashboardAuthoredGames(ctx, uint(7)).Return(
@@ -74,7 +74,7 @@ func TestGetDashboard_ActivePassingsFiltered(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	repo := NewMockUserRepository(ctrl)
-	svc := NewUserDashboardService(repo)
+	svc := NewUserDashboardService(repo, nil)
 	ctx := context.Background()
 
 	repo.EXPECT().DashboardAuthoredGames(ctx, uint(9)).Return([]DashboardGameRow{}, nil)

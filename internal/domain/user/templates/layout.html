@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="{{.Lang}}" data-theme-auto="{{with .ThemeSettings}}{{.AutoTheme}}{{end}}" data-theme-from="{{with .ThemeSettings}}{{.DarkFrom}}{{end}}" data-theme-to="{{with .ThemeSettings}}{{.DarkTo}}{{end}}">
+<html lang="{{.Lang}}" data-theme-auto="{{with .ThemeSettings}}{{.AutoTheme}}{{end}}" data-theme-mode="{{with .ThemeSettings}}{{.EffectiveThemeMode}}{{end}}" data-theme-from="{{with .ThemeSettings}}{{.DarkFrom}}{{end}}" data-theme-to="{{with .ThemeSettings}}{{.DarkTo}}{{end}}">
 {{/* P-3 (PASS-10): предвычисленные переводы — убирают дубли отражённых T-вызовов (evalCall 31% CPU). */}}
 {{$LNotif := T $.Lang "nav.notifications"}}
 {{$LTheme := T $.Lang "layout.theme_toggle"}}
@@ -70,6 +70,8 @@
         }
         var ds = document.documentElement.dataset;
         var autoEnabled = ds.themeAuto !== 'false'; // по умолчанию автосмена включена
+        // UX-5 (PASS-16): режим темы — system/time/dark/light (из профиля).
+        var themeMode = ds.themeMode || (autoEnabled ? 'time' : 'light');
         var darkFrom = themeMinutes(ds.themeFrom || '20:00');
         var darkTo = themeMinutes(ds.themeTo || '07:00');
 
@@ -80,14 +82,27 @@
                 dark = true;
             } else if (t === 'light') {
                 dark = false;
-            } else if (autoEnabled) {
-                // Авто: тёмная в заданный период времени или когда система предпочитает тёмную.
-                dark = window.matchMedia('(prefers-color-scheme: dark)').matches || isDarkWindow(darkFrom, darkTo);
+            } else if (themeMode === 'dark') {
+                dark = true;
+            } else if (themeMode === 'light') {
+                dark = false;
+            } else if (themeMode === 'system') {
+                // UX-5: следовать ОС (prefers-color-scheme).
+                dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            } else {
+                // "time": тёмная в заданный период времени (старое поведение).
+                dark = isDarkWindow(darkFrom, darkTo);
             }
         } catch (e) {
-            // localStorage заблокирован (WebView / приватный режим) — всё равно применяем авто-тему
-            if (autoEnabled) {
-                dark = window.matchMedia('(prefers-color-scheme: dark)').matches || isDarkWindow(darkFrom, darkTo);
+            // localStorage заблокирован (WebView / приватный режим) — применяем режим без него.
+            if (themeMode === 'dark') {
+                dark = true;
+            } else if (themeMode === 'light') {
+                dark = false;
+            } else if (themeMode === 'system') {
+                dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            } else {
+                dark = isDarkWindow(darkFrom, darkTo);
             }
         }
         if (dark) { document.documentElement.classList.add('dark'); }

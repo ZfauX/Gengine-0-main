@@ -25,10 +25,6 @@ import (
 	"gorm.io/gorm"
 )
 
-import (
-	_ "gengine-0/docs"
-)
-
 // Injectors from wire.go:
 
 func initializeRepositories(db *gorm.DB) *repositories {
@@ -189,7 +185,7 @@ func initializeServices(db *gorm.DB, repos *repositories, cfg *config.Config, hu
 	pushSubscriptionRepository := repos.PushSub
 	pushHandler := wrapPushHandler(pushSubscriptionRepository, cfg)
 	profileService := wrapProfileService(db)
-	userDashboardService := wrapUserDashboardService(userRepository)
+	userDashboardService := wrapUserDashboardService(userRepository, notificationRepository)
 	appServices := &services{
 		Auth:            authService,
 		RefreshToken:    refreshTokenService,

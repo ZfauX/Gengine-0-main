@@ -11,6 +11,8 @@
             <button id="prev-month" class="btn btn-outline text-sm">{{ T $.Lang "calendar.prev_month" }}</button>
             <h2 id="month-year" class="text-xl font-semibold text-gray-800 dark:text-gray-100 m-0"></h2>
             <div class="flex gap-2">
+                <!-- UX-2 (PASS-16): кнопка «Сегодня» — возврат к текущему месяцу -->
+                <button id="today-btn" type="button" class="btn btn-outline text-sm">{{ T $.Lang "calendar.today" }}</button>
                 <a href="/calendar/export.ics" class="btn btn-outline text-sm" title="{{ T $.Lang "calendar.export_ics" }}">{{ T $.Lang "calendar.export_ics" }}</a>
                 <button id="next-month" class="btn btn-outline text-sm">{{ T $.Lang "calendar.next_month" }}</button>
             </div>
@@ -148,8 +150,11 @@
                 indicator.setAttribute('aria-label', '{{ T $.Lang "calendar.games_label" }} ' + dayGames.length);
                 indicator.onclick = (e) => {
                     e.stopPropagation();
+                    // UX-2 (PASS-16): попап-превью + детальная секция внизу.
+                    showPopover(e, dateStr, dayGames);
                     showGamesForDate(dateStr, dayGames);
                 };
+                indicator.setAttribute('data-calendar-popover-trigger', 'true');
                 cell.appendChild(indicator);
             }
 
@@ -170,6 +175,54 @@
         const map = { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;' };
         return String(text).replace(/[&<>"']/g, m => map[m]);
     }
+
+    // UX-2 (PASS-16): попап-превью игр дня возле ячейки календаря — не нужно
+    // прокручивать к секции внизу, чтобы увидеть игры.
+    let calendarPopover = null;
+
+    function showPopover(event, dateStr, games) {
+        if (calendarPopover) calendarPopover.remove();
+        const pop = document.createElement('div');
+        pop.className = 'absolute z-50 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-3 text-left';
+        const [y, m, d] = dateStr.split('-');
+        pop.innerHTML = `<div class="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-2">${d}.${m}.${y}</div>`;
+        if (games.length === 0) {
+            pop.innerHTML += `<div class="text-sm text-gray-500 dark:text-gray-400">{{ T $.Lang "calendar.no_games" }}</div>`;
+        } else {
+            games.forEach(game => {
+                pop.innerHTML += `<a href="/games/${game.id}" class="block text-sm text-blue-600 dark:text-blue-400 hover:underline py-0.5">${escapeHtml(game.name)} — ${escapeHtml(game.time || '')}</a>`;
+            });
+        }
+        pop.innerHTML += `<button type="button" class="mt-2 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">{{ T $.Lang "calendar.close" }}</button>`;
+        document.body.appendChild(pop);
+
+        // Позиционируем попап около клика, не выходя за экран.
+        const rect = event && event.currentTarget ? event.currentTarget.getBoundingClientRect() : null;
+        let left = rect ? rect.left + window.scrollX : event.clientX + window.scrollX;
+        let top = rect ? rect.bottom + window.scrollY + 4 : event.clientY + window.scrollY + 8;
+        const popRect = pop.getBoundingClientRect();
+        if (left + popRect.width > window.innerWidth - 8) left = window.innerWidth - popRect.width - 8;
+        if (top + popRect.height > window.innerHeight + window.scrollY - 8) {
+            top = (rect ? rect.top + window.scrollY : event.clientY + window.scrollY) - popRect.height - 4;
+        }
+        pop.style.left = left + 'px';
+        pop.style.top = top + 'px';
+        calendarPopover = pop;
+    }
+
+    // Закрытие попапа по клику вне его и по Escape.
+    document.addEventListener('click', function(e) {
+        if (calendarPopover && !calendarPopover.contains(e.target) && !(e.target.closest && e.target.closest('[data-calendar-popover-trigger]'))) {
+            calendarPopover.remove();
+            calendarPopover = null;
+        }
+    });
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && calendarPopover) {
+            calendarPopover.remove();
+            calendarPopover = null;
+        }
+    });
 
     function showGamesForDate(dateStr, games) {
         const container = document.getElementById('selected-day-games');
@@ -214,6 +267,23 @@
         if (newMonth > 11) { newMonth = 0; newYear++; }
         loadCalendar(newYear, newMonth);
     };
+
+    // UX-2 (PASS-16): кнопка «Сегодня» — возврат к текущему месяцу/дню.
+    const todayBtn = document.getElementById('today-btn');
+    if (todayBtn) {
+        todayBtn.onclick = () => {
+            const t = new Date();
+            loadCalendar(t.getFullYear(), t.getMonth());
+            // Показываем игры сегодняшнего дня, если они есть (после загрузки).
+            const todayStr = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
+            // Дождёмся рендера текущего месяца, затем подсветим сегодняшний день.
+            // Ячейки уже подсвечиваются в renderCalendar; показываем секцию дня.
+            const list = document.getElementById('selected-games-list');
+            if (list && list.dataset.date === todayStr) {
+                document.getElementById('selected-day-games')?.classList.remove('hidden');
+            }
+        };
+    }
 
     const now = new Date();
     loadCalendar(now.getFullYear(), now.getMonth());

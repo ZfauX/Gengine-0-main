@@ -1,6 +1,8 @@
 package app
 
 import (
+	"context"
+
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/admin"
 	"gengine-0/internal/domain/calendar"
@@ -229,8 +231,30 @@ func wrapProfileService(db *gorm.DB) *user.ProfileService {
 
 // wrapUserDashboardService — дашборд пользователя (M16, pass 30: раньше
 // создавался локально в routes с ручным NewGormUserRepo, что обходило DI).
-func wrapUserDashboardService(userRepo user.UserRepository) *user.UserDashboardService {
-	return user.NewUserDashboardService(userRepo)
+// UX-1 (PASS-16): колбэк загрузки последних уведомлений подставляется из
+// notification.NotificationRepository (в user-пакете его импортировать нельзя —
+// notification→user иначе даёт import cycle).
+func wrapUserDashboardService(userRepo user.UserRepository, notificationRepo notification.NotificationRepository) *user.UserDashboardService {
+	loadRecent := func(ctx context.Context, userID uint) ([]user.DashboardNotification, error) {
+		items, _, err := notificationRepo.ListByUser(ctx, userID, 0, 5, false)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]user.DashboardNotification, 0, len(items))
+		for _, n := range items {
+			out = append(out, user.DashboardNotification{
+				ID:        n.ID,
+				Type:      string(n.Type),
+				Title:     n.Title,
+				Body:      n.Body,
+				Link:      n.Link,
+				Read:      n.Read,
+				CreatedAt: n.CreatedAt,
+			})
+		}
+		return out, nil
+	}
+	return user.NewUserDashboardService(userRepo, loadRecent)
 }
 
 // wrapSimulateService — симуляция прохождения (M17, pass 30: раньше

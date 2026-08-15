@@ -502,12 +502,18 @@ func (h *ProfileHandler) UpdateThemeSettings(c *gin.Context) {
 	autoTheme := c.PostForm("auto_theme") == "on" || c.PostForm("auto_theme") == "true" || c.PostForm("auto_theme") == "1"
 	darkFrom := strings.TrimSpace(c.PostForm("dark_from"))
 	darkTo := strings.TrimSpace(c.PostForm("dark_to"))
+	// UX-5 (PASS-16): theme_mode — system/time/dark/light.
+	themeMode := strings.TrimSpace(c.PostForm("theme_mode"))
+	if !validThemeMode(themeMode) {
+		themeMode = ""
+	}
 
-	if !autoTheme {
+	// В режимах "system"/"dark"/"light" временной диапазон не нужен.
+	if !autoTheme || themeMode == "system" || themeMode == "dark" || themeMode == "light" {
 		darkFrom, darkTo = "", ""
 	}
 
-	if autoTheme {
+	if autoTheme && (themeMode == "" || themeMode == "time") {
 		if !validThemeTime(darkFrom) || !validThemeTime(darkTo) {
 			render.Page(c, http.StatusBadRequest, "profile-show.html", gin.H{
 				"Title": "Профиль",
@@ -522,6 +528,7 @@ func (h *ProfileHandler) UpdateThemeSettings(c *gin.Context) {
 		AutoTheme: autoTheme,
 		DarkFrom:  darkFrom,
 		DarkTo:    darkTo,
+		ThemeMode: themeMode,
 	}
 
 	if err := h.profileSvc.SaveThemeSettings(c.Request.Context(), userID, ts); err != nil {
@@ -575,4 +582,14 @@ func (h *ProfileHandler) UpdateNotifyGameDays(c *gin.Context) {
 func validThemeTime(s string) bool {
 	t, err := time.Parse("15:04", s)
 	return err == nil && t != (time.Time{})
+}
+
+// validThemeMode проверяет режим темы (UX-5): system/time/dark/light/пустая строка.
+func validThemeMode(m string) bool {
+	switch m {
+	case "", "system", "time", "dark", "light":
+		return true
+	default:
+		return false
+	}
 }
