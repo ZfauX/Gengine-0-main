@@ -53,8 +53,9 @@ jobs:
 
       # UX-6 (PASS-16): gitleaks — блокирует коммиты с секретами/ключами
       # (закоммиченные .key, JWT/DB пароли, test-секреты, попавшие в прод).
+      # v3 — runtime node24 (v2 таргетил Node 20, deprecated на GitHub Actions).
       - name: Secret scan (gitleaks)
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
