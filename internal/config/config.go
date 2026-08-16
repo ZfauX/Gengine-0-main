@@ -139,6 +139,13 @@ type SessionConfig struct {
 	// CSRFSecret — отдельный ключ для CSRF-токенов (S-42-4 pass 42).
 	// Если не задан — используется Session.Secret (совместимость).
 	CSRFSecret string
+
+	// TrustedDeviceSecret — отдельный ключ для HMAC-подписи trusted-device
+	// cookie (обход 2FA на 30 дней). M10 (PASS-20): раньше делил Session.Secret
+	// с session-cookie/CSRF — компрометация одного секрета давала обход 2FA И
+	// подделку CSRF. Если не задан — Session.Secret (совместимость); в
+	// strict-режиме требуется отдельный.
+	TrustedDeviceSecret string
 }
 
 // AdminConfig содержит учётные данные администратора, создаваемого при инициализации.
@@ -333,6 +340,18 @@ func LoadConfig() (*Config, error) {
 		csrfSecret = cfg.Session.Secret
 	}
 	cfg.Session.CSRFSecret = csrfSecret
+
+	// Отдельный ключ trusted-device cookie (M10, PASS-20): опционален,
+	// fallback на SESSION_SECRET; в strict-режиме требуется отдельный, чтобы
+	// компрометация session/CSRF-секрета не давала обход 2FA (trusted-cookie).
+	trustedDeviceSecret := os.Getenv("TRUSTED_DEVICE_SECRET")
+	if trustedDeviceSecret == "" {
+		if cfg.Server.StrictMode {
+			return nil, fmt.Errorf("TRUSTED_DEVICE_SECRET обязателен в strict-режиме (не используйте SESSION_SECRET для trusted-device cookie)")
+		}
+		trustedDeviceSecret = cfg.Session.Secret
+	}
+	cfg.Session.TrustedDeviceSecret = trustedDeviceSecret
 
 	// Администратор – обязателен
 	if cfg.Admin.Email, err = requireEnv("ADMIN_EMAIL"); err != nil {

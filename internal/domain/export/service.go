@@ -445,15 +445,20 @@ func (s *ExportService) ImportGameFromCSV(ctx context.Context, gameID uint, r io
 			if err := tx.CreateInBatches(pendingQuestions, 200).Error; err != nil {
 				return fmt.Errorf("не удалось создать вопросы: %w", err)
 			}
+			// M8 (PASS-20): собираем ВСЕ ответы в один плоский слайс и вставляем
+			// одним CreateInBatches (раньше — отдельный батч на каждый вопрос,
+			// N INSERT-вызовов при 5000+ вопросах).
+			var allAnswers []level.Answer
 			for i := range pendingQuestions {
 				ans := pendingAnswers[i]
 				for j := range ans {
 					ans[j].QuestionID = pendingQuestions[i].ID
 				}
-				if len(ans) > 0 {
-					if err := tx.CreateInBatches(ans, 200).Error; err != nil {
-						return fmt.Errorf("не удалось создать ответы: %w", err)
-					}
+				allAnswers = append(allAnswers, ans...)
+			}
+			if len(allAnswers) > 0 {
+				if err := tx.CreateInBatches(allAnswers, 200).Error; err != nil {
+					return fmt.Errorf("не удалось создать ответы: %w", err)
 				}
 			}
 		}

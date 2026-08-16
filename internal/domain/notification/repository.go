@@ -140,9 +140,12 @@ func (r *gormNotificationRepo) MarkAsRead(ctx context.Context, userID, notificat
 }
 
 func (r *gormNotificationRepo) MarkAllAsRead(ctx context.Context, userID uint) error {
+	// M2 (PASS-20): ставим read_at, чтобы DeleteOldRead мог чистить пакетно
+	// прочитанные уведомления. Раньше read_at оставался NULL → условие
+	// read_at < cutoff не срабатывало → уведомления накапливались бессрочно.
 	return r.db.WithContext(ctx).Model(&Notification{}).
 		Where("user_id = ? AND read = ?", userID, false).
-		Update("read", true).Error
+		Updates(map[string]any{"read": true, "read_at": time.Now()}).Error
 }
 
 // DeleteOldRead удаляет прочитанные уведомления старше cutoff (P-2, pass 33).

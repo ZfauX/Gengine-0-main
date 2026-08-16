@@ -337,7 +337,9 @@ func (h *TeamHandler) AddMember(c *gin.Context) {
 	if err := h.teamService.AddMember(c.Request.Context(), req.TeamID, input.UserID, actorID); err != nil {
 		// A-42-01 (pass 42): errors.Is вместо string-match (как Create в pass 41).
 		switch {
-		case errors.Is(err, ErrUserAlreadyInTeam), errors.Is(err, ErrOnlyCaptainCanAdd):
+		case errors.Is(err, ErrUserAlreadyInTeam), errors.Is(err, ErrOnlyCaptainCanAdd), errors.Is(err, ErrAlreadyInOtherTeam):
+			// M3 (PASS-20): ErrAlreadyInOtherTeam — валидный бизнес-кейс (400),
+			// не ошибка сервера.
 			render.RenderError(c, http.StatusBadRequest, render.LocalizeError(c, err.Error()))
 		default:
 			log.Error().Err(err).Uint("team_id", req.TeamID).Uint("user_id", input.UserID).Uint("actor_id", actorID).Msg("AddMember: failed to add member")
@@ -629,11 +631,14 @@ func (h *InvitationHandler) Create(c *gin.Context) {
 
 	_, err := h.invitationService.CreateInvitation(c.Request.Context(), req.TeamID, input.UserID, userID)
 	if err != nil {
-		// G6 (pass 41): errors.Is вместо string-match — brittle при локализации.
+		// G6 (pass 41): errors.Is вместо string-match — brittle на локализацию.
 		switch {
+		case errors.Is(err, ErrOnlyCaptainCanInvite):
+			// M4 (PASS-20): не-капитан — 403, а не 500.
+			render.RenderError(c, http.StatusForbidden, render.LocalizeError(c, err.Error()))
 		case errors.Is(err, ErrUserNotFound), errors.Is(err, ErrUserAlreadyInTeam), errors.Is(err, ErrInvitationExists):
 			render.Page(c, http.StatusBadRequest, "invitations-new.html", gin.H{
-				"Title": "Новое приглашение",
+				"Title": "Создание приглашения",
 				"Error": render.LocalizeError(c, err.Error()),
 				"csrf":  csrf.GetToken(c),
 			})

@@ -116,6 +116,13 @@ func (s *CoAuthorService) WithRoleCache(c *rolecache.Cache) *CoAuthorService {
 	return s
 }
 
+// GetGameAuthorID возвращает author_id игры лёгким запросом (без Preload
+// Author/GameSetting). M9 (PASS-20): заменяет GetByIDPreloaded в экспорте,
+// где нужен только AuthorID для проверки авторства.
+func (s *CoAuthorService) GetGameAuthorID(ctx context.Context, gameID uint) (uint, error) {
+	return s.repo.GetGameAuthorID(ctx, gameID)
+}
+
 // isSuperAdmin проверяет, что пользователь — админ инсталляции (роль "admin").
 // Супер-админ имеет права на всё (P0-3). Роль кэшируется в общем rolecache.
 func (s *CoAuthorService) isSuperAdmin(ctx context.Context, userID uint) bool {

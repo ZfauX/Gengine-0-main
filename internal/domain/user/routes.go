@@ -46,9 +46,10 @@ func RegisterRoutes(
 	twoFactorHandler := NewTwoFactorHandler(twoFactorSvc, authSvc, userRepo, cfg.JWT.AccessExpiry)
 	// UX-2 (PASS-13): «запомнить устройство 30 дней» — секрет для HMAC-подписи
 	// trusted-device cookie (глобально для TwoFactorRequired middleware и в
-	// хендлере для установки cookie).
-	SetTrustedSecret(cfg.Session.Secret)
-	twoFactorHandler.WithTrustedSecret(cfg.Session.Secret)
+	// хендлере для установки cookie). M10 (PASS-20): отдельный
+	// TrustedDeviceSecret вместо Session.Secret.
+	SetTrustedSecret(cfg.Session.TrustedDeviceSecret)
+	twoFactorHandler.WithTrustedSecret(cfg.Session.TrustedDeviceSecret)
 	// H6 (PASS-15): Secure-флаг trusted cookie — как у JWT/refresh (S-M4):
 	// TLS / reverse-proxy / FORCE_SECURE_COOKIE. Иначе кука обхода 2FA уходит
 	// по HTTP (MITM).
@@ -92,10 +93,12 @@ func RegisterRoutes(
 		authGroup.POST("/2fa/login", middleware.LoginRateLimit(5*time.Minute, 5), authHandler.TwoFALoginVerify)
 
 		// 2FA verification routes (authenticated — used for existing sessions)
+		// H2 (PASS-20): POST-маршруты без AuthRequired теряли userID (c.GetUint("userID")
+		// == 0 → редирект на login) → step-up 2FA не завершался. Добавлен AuthRequired.
 		authGroup.GET("/2fa/verify", middleware.AuthRequired(authSvc), twoFactorHandler.VerifyForm)
-		authGroup.POST("/2fa/verify", middleware.LoginRateLimit(5*time.Minute, 5), twoFactorHandler.Verify)
+		authGroup.POST("/2fa/verify", middleware.AuthRequired(authSvc), middleware.LoginRateLimit(5*time.Minute, 5), twoFactorHandler.Verify)
 		authGroup.GET("/2fa/backup", middleware.AuthRequired(authSvc), twoFactorHandler.BackupForm)
-		authGroup.POST("/2fa/backup", middleware.LoginRateLimit(5*time.Minute, 5), twoFactorHandler.BackupVerify)
+		authGroup.POST("/2fa/backup", middleware.AuthRequired(authSvc), middleware.LoginRateLimit(5*time.Minute, 5), twoFactorHandler.BackupVerify)
 
 		authGroup.GET("/oauth/:provider", oauthRateLimit, authHandler.OAuthLogin)
 

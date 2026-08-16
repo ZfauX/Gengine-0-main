@@ -92,7 +92,11 @@ func (s *TournamentService) Update(ctx context.Context, id uint, updated *Tourna
 	if t.AuthorID != userID {
 		return ErrTournamentEditForbidden
 	}
-	t.Name = updated.Name
+	// M5 (PASS-20): не затираем имя пустой строкой — binding omitempty пропускает
+	// пустое Name, и раньше турнир получал пустое название.
+	if updated.Name != "" {
+		t.Name = updated.Name
+	}
 	t.Description = updated.Description
 	t.PointsForFirst = updated.PointsForFirst
 	t.PointsForSecond = updated.PointsForSecond
@@ -199,6 +203,13 @@ func (s *TournamentService) RemoveGame(ctx context.Context, tournamentID, gameID
 			return fmt.Errorf("нельзя удалить игру из турнира: очки уже начислены")
 		}
 
+		// H1 (PASS-20): берём advisory-lock на gameID — синхронизация с
+		// UpdateScoresForGame (иначе remove↔scoring гонка может списать очки
+		// команды, чьё прохождение ещё не начислено).
+		if lockErr := tx.Exec("SELECT pg_advisory_xact_lock(?)", int64(gameID)).Error; lockErr != nil {
+			return fmt.Errorf("pg_advisory_xact_lock: %w", lockErr)
+		}
+
 		// Get all finished passings for this game — read inside the transaction
 		var passings []game.GamePassing
 		if err = tx.Where("game_id = ? AND status = ?", gameID, game.StatusFinished).Find(&passings).Error; err != nil {
@@ -211,32 +222,42 @@ func (s *TournamentService) RemoveGame(ctx context.Context, tournamentID, gameID
 			teamIDs := make([]uint, 0, len(passings))
 			points := make([]int, 0, len(passings))
 			for _, p := range passings {
-				teamIDs = append(teamIDs, p.TeamID)
 				// M4 (PASS-6): списываем ТОЧНО начисленное значение из
 				// tournament_scored_points (индекс = позиции tournament_id в
 				// tournament_scored_ids). Раньше пересчитывали по ТЕКУЩЕЙ
 				// конфигурации — изменение PointsFor* между финишем и удалением
 				// давало «фантомные» очки.
-				points = append(points, scoredPointsForTournament(p, tournamentID))
+				pt := scoredPointsForTournament(p, tournamentID)
+				// H1 (PASS-20): декрементируем games_played ТОЛЬКО для команд,
+				// у которых очки реально начислены в этом турнире. Раньше points=0
+				// (не начислено) всё равно уменьшал games_played → DELETE
+				// WHERE games_played<=0 удалял валидные результаты других игр.
+				if pt <= 0 {
+					continue
+				}
+				teamIDs = append(teamIDs, p.TeamID)
+				points = append(points, pt)
 			}
 
 			// F-3 (pass 31): batch списание вместо построчного Save/Delete —
 			// один UPDATE через unnest + один DELETE обнулённых результатов.
-			if err = tx.Exec(`
-				UPDATE tournament_results tr
-				SET score = GREATEST(0, tr.score - t.points),
-				    games_played = tr.games_played - 1
-				FROM unnest(?::bigint[], ?::int[]) AS t(team_id, points)
-				WHERE tr.tournament_id = ? AND tr.team_id = t.team_id
-			`, pq.Array(teamIDs), pq.Array(points), tournamentID).Error; err != nil {
-				return err
-			}
-			if err = tx.Exec(`
-				DELETE FROM tournament_results
-				WHERE tournament_id = ? AND team_id = ANY(?)
-				  AND games_played <= 0
-			`, tournamentID, pq.Array(teamIDs)).Error; err != nil {
-				return err
+			if len(teamIDs) > 0 {
+				if err = tx.Exec(`
+					UPDATE tournament_results tr
+					SET score = GREATEST(0, tr.score - t.points),
+					    games_played = tr.games_played - 1
+					FROM unnest(?::bigint[], ?::int[]) AS t(team_id, points)
+					WHERE tr.tournament_id = ? AND tr.team_id = t.team_id
+				`, pq.Array(teamIDs), pq.Array(points), tournamentID).Error; err != nil {
+					return err
+				}
+				if err = tx.Exec(`
+					DELETE FROM tournament_results
+					WHERE tournament_id = ? AND team_id = ANY(?)
+					  AND games_played <= 0
+				`, tournamentID, pq.Array(teamIDs)).Error; err != nil {
+					return err
+				}
 			}
 		}
 

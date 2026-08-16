@@ -593,12 +593,20 @@ func (r *gormChatRepo) InvalidateTeamPermCache(ctx context.Context, teamID uint)
 	if len(roomIDs) == 0 {
 		return nil
 	}
+	// M7 (PASS-20): O(roomIDs × cacheEntries) → O(cacheEntries). Раньше для
+	// каждой комнаты проходили по ВСЕМУ кэшу с HasPrefix. Теперь собираем set
+	// комнат и один раз проходим по кэшу, разбирая roomID из ключа.
 	r.permCacheMu.Lock()
-	for _, roomID := range roomIDs {
-		prefix := strconv.FormatUint(uint64(roomID), 10) + ":"
-		for k := range r.permCache {
-			if strings.HasPrefix(k, prefix) {
-				delete(r.permCache, k)
+	roomSet := make(map[uint]struct{}, len(roomIDs))
+	for _, id := range roomIDs {
+		roomSet[id] = struct{}{}
+	}
+	for k := range r.permCache {
+		if idx := strings.IndexByte(k, ':'); idx > 0 {
+			if roomID, parseErr := strconv.ParseUint(k[:idx], 10, 64); parseErr == nil {
+				if _, ok := roomSet[uint(roomID)]; ok {
+					delete(r.permCache, k)
+				}
 			}
 		}
 	}

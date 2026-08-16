@@ -143,18 +143,24 @@ func (s *TeamService) CreateTeam(ctx context.Context, name string, captainID uin
 		Name:      name,
 		CaptainID: captainID,
 	}
-	err = s.teamRepo.Create(ctx, team)
-	if err == nil {
-		// L4 (PASS-17): капитан — участник команды в team_members. Раньше
-		// капитан хранился только в teams.captain_id и не попадал в
-		// team_members: подсчёты/фильтры, полагающиеся только на members,
-		// его не видели, а ChangeCaptain требовал «капитан уже участник».
-		if addErr := s.teamRepo.AddMember(ctx, team.ID, captainID); addErr != nil {
-			return team, addErr
-		}
-		metrics.IncTeamsTotal()
+	if err := s.teamRepo.Create(ctx, team); err != nil {
+		return nil, err
 	}
-	return team, err
+	// L4 (PASS-17): капитан — участник команды в team_members. Раньше
+	// капитан хранился только в teams.captain_id и не попадал в
+	// team_members: подсчёты/фильтры, полагающиеся только на members,
+	// его не видели, а ChangeCaptain требовал «капитан уже участник».
+	if addErr := s.teamRepo.AddMember(ctx, team.ID, captainID); addErr != nil {
+		// M1 (PASS-20): компенсация — не оставляем команду без капитана.
+		// Раньше команда оставалась в БД (осиротевшая), а пользователь
+		// видел ошибку и создавал вторую команду при повторе.
+		if delErr := s.teamRepo.Delete(ctx, team.ID); delErr != nil {
+			log.Error().Err(delErr).Uint("team_id", team.ID).Msg("CreateTeam: failed to rollback team after AddMember error")
+		}
+		return nil, addErr
+	}
+	metrics.IncTeamsTotal()
+	return team, nil
 }
 
 func (s *TeamService) GetTeamWithMembers(ctx context.Context, teamID uint) (*Team, []user.User, error) {

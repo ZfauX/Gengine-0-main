@@ -402,8 +402,9 @@ func TestMarkAsRead_NotFound(t *testing.T) {
 func TestMarkAllAsRead(t *testing.T) {
 	db, mock := newMockDB(t)
 	mock.ExpectBegin()
+	// M2 (PASS-20): MarkAllAsRead теперь ставит read_at + updated_at (Updates map).
 	mock.ExpectExec(`UPDATE "notifications" SET "read"`).
-		WithArgs(true, sqlmock.AnyArg(), uint(1), false).
+		WithArgs(true, sqlmock.AnyArg(), sqlmock.AnyArg(), uint(1), false).
 		WillReturnResult(sqlmock.NewResult(0, 3))
 	mock.ExpectCommit()
 

@@ -507,13 +507,15 @@ func (h *ExportHandler) ExportTeamResultsCSV(c *gin.Context) {
 	}
 
 	isAuthor := false
-	g, err := h.gameService.GetGameByIDUnchecked(c.Request.Context(), gameID)
+	// M9 (PASS-20): лёгкий запрос author_id вместо GetGameByIDUnchecked
+	// (GetByIDPreloaded тянул Author + GameSetting ради одной колонки).
+	authorID, err := h.coAuthorSvc.GetGameAuthorID(c.Request.Context(), gameID)
 	if err != nil {
-		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportTeamResultsCSV: failed to find game")
+		log.Error().Err(err).Uint("game_id", gameID).Msg("ExportTeamResultsCSV: failed to find game author")
 		render.RenderErrorPage(c, http.StatusNotFound)
 		return
 	}
-	if g.AuthorID == userID {
+	if authorID == userID {
 		isAuthor = true
 	}
 

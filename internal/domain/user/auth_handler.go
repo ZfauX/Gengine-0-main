@@ -365,9 +365,11 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	setSecureCookie(c, "jwt", accessToken, int(h.cfg.JWT.AccessExpiry.Seconds()), "/")
 	setSecureCookie(c, "refresh_token", newRefreshToken, int(h.cfg.JWT.RefreshExpiry.Seconds()), "/")
 
+	// L2 (PASS-20): не возвращаем access_token в теле — токен в httpOnly-cookie,
+	// тело ответа доступно JS (XSS могла бы прочитать токен). Оставляем только
+	// expires_in для информирования клиента.
 	c.JSON(http.StatusOK, gin.H{
-		"access_token": accessToken,
-		"expires_in":   int(h.cfg.JWT.AccessExpiry.Seconds()),
+		"expires_in": int(h.cfg.JWT.AccessExpiry.Seconds()),
 	})
 }
 
@@ -620,7 +622,9 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 			subject := "Восстановление пароля"
 			body := fmt.Sprintf("Здравствуйте, %s!\n\nДля восстановления пароля перейдите по ссылке:\n%s\n\nЕсли вы не запрашивали восстановление пароля, проигнорируйте это письмо.\n\nС уважением,\nКоманда Gengine", user.Name, resetURL)
 			if sendErr := h.emailSvc.Send(user.Email, subject, body); sendErr != nil {
-				log.Error().Err(sendErr).Str("email", input.Email).Msg("ForgotPassword: failed to queue password reset email")
+				// L1 (PASS-20): не логируем email (PII, противоречит
+				// anti-enumeration-политике) — только user.ID.
+				log.Error().Err(sendErr).Uint("user_id", user.ID).Msg("ForgotPassword: failed to queue password reset email")
 			}
 		}
 	}
