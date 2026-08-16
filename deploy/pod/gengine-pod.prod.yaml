@@ -1,0 +1,420 @@
+# =============================================================================
+# deploy/pod/gengine-pod.prod.yaml
+#
+# PRODUCTION конфиг пода Gengine-0 (podman play kube).
+#
+# Целевая машина (снято с хоста, где разрабатывался проект):
+#   CPU : Intel Core i7-4770K @ 3.50GHz — 4 ядра / 8 логических потоков
+#   RAM : 32 GB
+#   Disk: ~59 GB свободно на C:
+#
+# Запуск:
+#   podman secret create db-password   <file-with-password>
+#   podman secret create jwt-secret     <file>
+#   podman secret create session-secret <file>
+#   ... (см. секцию "Секреты" ниже)
+#   podman play kube deploy/pod/gengine-pod.prod.yaml
+#
+# ВАЖНО (отличия от dev-конфига gengine-pod.yaml):
+#   - ресурсные лимиты (CPU/RAM) под реальное железо;
+#   - реальные значения rate-limit (не 100000, как в dev/E2E);
+#   - PPROF_ENABLED=false;
+#   - секреты НЕ вшиты в манифест — через podman secret / k8s Secrets;
+#   - uploads/backups — PVC, а не emptyDir (данные переживают рестарт);
+#   - TLS терминируется reverse-proxy (nginx/caddy), app слушает HTTP.
+# =============================================================================
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gengine-pod
+  labels:
+    app: gengine
+    env: production
+spec:
+  containers:
+    # =========================================================================
+    # PostgreSQL 18 — основное хранилище (игры, уровни, прохождения, команды).
+    # =========================================================================
+    - name: db
+      # Pin мажорной версии: 18 — актуальная stable, уже используется в dev/CI.
+      image: docker.io/library/postgres:18-alpine
+      env:
+        - name: POSTGRES_USER
+          value: gengine
+        # Секрет. Задание через podman secret:
+        #   podman secret create db-password <file>
+        # и здесь: valueFrom.secretKeyRef (k8s) / podman secret. НЕ коммитить.
+        - name: POSTGRES_PASSWORD
+          value: "CHANGE_ME__DB_PASSWORD"
+        - name: POSTGRES_DB
+          value: gengine
+        # PostgreSQL 18: PGDATA переносим в подкаталог (mount на /var/lib/postgresql).
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+      # Тюнинг PostgreSQL под 1.5 GB RAM (см. resources ниже):
+      #   shared_buffers=256MB  — ~25% RAM, рабочий кэш страниц (рекомендация PG).
+      #   effective_cache_size=768MB — подсказка планировщику (~50% RAM, учёт OS cache).
+      #   work_mem=4MB          — дефолт; сортировки/хэши по 4MB на операцию.
+      #   max_connections=100   — дефолт; app-пул DB_MAX_OPEN_CONNS=50 <= 100.
+      #   wal_buffers=16MB      — дефолт PG18.
+      # ВАЖНО: не переопределяем command (entrypoint docker-entrypoint.sh
+      # выполняет initdb при первом старте). «postgres» идёт ПЕРВЫМ в args —
+      # entrypoint видит его как $1 и запускает postgres с -c настройками.
+      args:
+        - "postgres"
+        - "-c"
+        - "shared_buffers=256MB"
+        - "-c"
+        - "effective_cache_size=768MB"
+        - "-c"
+        - "work_mem=4MB"
+        - "-c"
+        - "max_connections=100"
+        - "-c"
+        - "wal_buffers=16MB"
+      resources:
+        # requests — гарантия при дефиците; limits — потолок.
+        requests:
+          cpu: "250m"      # idle-нагрузка минимальна
+          memory: "512Mi"  # стартовый shared_buffers + overhead
+        limits:
+          cpu: "2000m"     # 2 ядра (25% от 8 потоков) — под сложные JOIN/лидерборды
+          memory: "1536Mi" # 1.5 GB: 256MB shared_buffers + work_mem + connection overhead
+      volumeMounts:
+        - name: pgdata
+          mountPath: /var/lib/postgresql
+      readinessProbe:
+        exec:
+          command: ["pg_isready", "-U", "gengine"]
+        initialDelaySeconds: 5
+        periodSeconds: 5
+      livenessProbe:
+        exec:
+          command: ["pg_isready", "-U", "gengine"]
+        initialDelaySeconds: 30
+        periodSeconds: 15
+
+    # =========================================================================
+    # Valkey 7.2 — rate-limit бюджеты (fail-closed критичные) + кэш + SSE pub/sub.
+    # =========================================================================
+    - name: valkey
+      # 7.2-alpine — та же версия, что проверена в dev/CI (не меняем в проде без теста).
+      image: docker.io/valkey/valkey:7.2-alpine
+      args:
+        - "valkey-server"
+        - "--appendonly"
+        - "yes"                # persistence — счётчики rate-limit переживают рестарт
+        - "--maxmemory"
+        - "128mb"              # упираемся в RAM (см. resources), не даём расти бесконечно
+        - "--maxmemory-policy"
+        - "allkeys-lru"        # вытесняем холодный кэш; активные rate-limit счётчики (часто читаются) остаются
+      resources:
+        requests:
+          cpu: "100m"          # single-threaded, idle почти ноль
+          memory: "64Mi"
+        limits:
+          cpu: "500m"          # 0.5 ядра — Valkey single-threaded, >1 ядра бесполезно
+          memory: "256Mi"      # запас под maxmemory 128MB + AOF-буфер + overhead
+      volumeMounts:
+        - name: valkeydata
+          mountPath: /data
+      readinessProbe:
+        exec:
+          command: ["valkey-cli", "ping"]
+        initialDelaySeconds: 3
+        periodSeconds: 5
+      livenessProbe:
+        exec:
+          command: ["valkey-cli", "ping"]
+        initialDelaySeconds: 15
+        periodSeconds: 15
+
+    # =========================================================================
+    # App — Go-сервер Gengine (Gin).
+    # =========================================================================
+    - name: app
+      # Образ собирается CI (job docker) и пушится в GHCR (owner в нижнем регистре).
+      image: ghcr.io/zfaux/gengine:latest
+      ports:
+        - containerPort: 8080
+          # Проброс на хост для reverse-proxy (nginx/caddy) на этом же хосте.
+          hostPort: 8080
+      env:
+        # ---- Server ----
+        - name: GIN_MODE
+          value: "release"          # прод-режим: без debug-логов, кэш шаблонов
+        - name: PORT
+          value: "8080"
+        # Реальный публичный URL (email-ссылки, OAuth redirect). ЗАМЕНИТЬ на домен.
+        - name: BASE_URL
+          value: "https://gengine.example.com"
+
+        # ---- Database (внутри pod — общий network namespace, localhost) ----
+        - name: DB_HOST
+          value: "127.0.0.1"
+        - name: DB_PORT
+          value: "5432"
+        - name: DB_USER
+          value: "gengine"
+        - name: DB_PASSWORD
+          value: "CHANGE_ME__DB_PASSWORD"   # секрет (podman secret), синхронно с db
+        - name: DB_NAME
+          value: "gengine"
+        # disable — трафик не покидает pod (localhost), TLS не даёт пользы,
+        # но экономит handshake. Если БД на отдельном хосте — require.
+        - name: DB_SSLMODE
+          value: "disable"
+        # Пул соединений: 50 open / 25 idle. 50 ≤ max_connections(100) PG,
+        # под 4 ядра — избыточно больше не нужно (меньше контекст-свитчей).
+        - name: DB_MAX_OPEN_CONNS
+          value: "50"
+        - name: DB_MAX_IDLE_CONNS
+          value: "25"
+
+        # ---- Valkey ----
+        - name: VALKEY_HOST
+          value: "127.0.0.1"
+        - name: VALKEY_PORT
+          value: "6379"
+        # Пул клиента: 20 соединений (дефолт) — достаточно для кэша + rate-limit + pub/sub.
+        - name: VALKEY_POOL_SIZE
+          value: "20"
+        - name: VALKEY_MIN_IDLE_CONNS
+          value: "5"
+
+        # ---- Security (секреты — через podman secret, НЕ в манифесте) ----
+        - name: JWT_SECRET
+          value: "CHANGE_ME__JWT_SECRET"            # openssl rand -base64 48
+        - name: SESSION_SECRET
+          value: "CHANGE_ME__SESSION_SECRET"        # openssl rand -base64 48
+        # Отдельные ключи (defense-in-depth): не делить секрет между механизмами.
+        - name: CSRF_SECRET
+          value: "CHANGE_ME__CSRF_SECRET"           # openssl rand -base64 32
+        # PASS-20: отдельный ключ trusted-device cookie (обход 2FA на 30 дней).
+        # Без него в strict-режиме сервер не стартует.
+        - name: TRUSTED_DEVICE_SECRET
+          value: "CHANGE_ME__TRUSTED_DEVICE_SECRET" # openssl rand -base64 32
+        - name: ADMIN_EMAIL
+          value: "admin@example.com"
+        # Админ-пароль: min 12 символов + 3 класса (upper/lower/digit/special).
+        - name: ADMIN_PASSWORD
+          value: "CHANGE_ME__ADMIN_PASSWORD"
+        - name: STRICT_CONFIG
+          value: "true"            # строгая валидация конфига в проде (fail-fast)
+
+        # ---- Logging ----
+        # json — структурированные логи для collection (loki/ELK); ~10% CPU
+        # экономии vs console (M4, PASS-15: ANSI + field-разбор).
+        - name: LOG_FORMAT
+          value: "json"
+        - name: LOG_LEVEL
+          value: "info"
+        # Ротация логов (lumberjack): 100 MB/файл, 10 бэкапов, 28 дней, сжатие.
+        - name: LOG_MAX_SIZE
+          value: "100"
+        - name: LOG_MAX_BACKUPS
+          value: "10"
+
+        # ---- Профилирование ----
+        # false в проде: debug-сервер отключён. Для точечной отладки можно
+        # включить (true + PPROF_BIND=127.0.0.1) на короткое время.
+        - name: PPROF_ENABLED
+          value: "false"
+
+        # ---- Rate limiting (прод-значения; анти-брутфорс/спам) ----
+        # Глобальный: 100 req/мин на IP — щадящий для легитимных, но режет флуд.
+        - name: RATE_LIMIT_GLOBAL
+          value: "100"
+        # Логин: 5/мин на IP+аккаунт (fail-closed) — против перебора паролей.
+        - name: RATE_LIMIT_LOGIN
+          value: "5"
+        # Регистрация: 3/мин — против массовых аккаунтов (спам/боты).
+        - name: RATE_LIMIT_REGISTRATION
+          value: "3"
+        # Отправка кода: 10/мин — против брутфорса ответов.
+        - name: RATE_LIMIT_CODE_SUBMISSION
+          value: "10"
+        # SSE-подключения: 10/мин — против истощения соединений.
+        - name: RATE_LIMIT_SSE
+          value: "10"
+        # API: 60/мин — против скрейпинга.
+        - name: RATE_LIMIT_API
+          value: "60"
+        # Загрузка файлов: 20/мин на пользователя — против заливки мусора.
+        - name: RATE_LIMIT_UPLOAD
+          value: "20"
+
+        # ---- WebSocket ----
+        # 1000 всего / 50 с IP (дефолты) — под 32 GB RAM и 8 потоков этого хватает
+        # с большим запасом; защита от DoS через сокеты.
+        - name: WS_MAX_TOTAL_CONNS
+          value: "1000"
+        - name: WS_MAX_CONNS_PER_IP
+          value: "50"
+
+        # ---- Загрузки/тело запроса ----
+        - name: MAX_UPLOAD_SIZE
+          value: "10485760"        # 10 MB (обложки/аватары)
+        - name: MAX_BODY_SIZE
+          value: "52428800"        # 50 MB (импорт уровней/бэкапы)
+
+        # ---- TLS: app слушает HTTP, TLS терминирует reverse-proxy ----
+        # Рекомендация: nginx/caddy/ingress перед app (Let's Encrypt).
+        # Без reverse-proxy — задать TLS_CERT_FILE/TLS_KEY_FILE и раскомментировать
+        # volume certs ниже.
+        - name: TRUSTED_PROXIES
+          value: "127.0.0.1/32"    # reverse-proxy на этом хосте; для Secure-cookie
+
+        # ---- GOMEMLIMIT (Go soft memory limit) ----
+        # Heap в dev ~10MB, но Excel/PDF-экспорт (excelize) + LRU-кэш временно растут.
+        # Ставим soft-limit 768Mi — GC начнёт работать агрессивнее до упора в cgroup.
+        - name: GOMEMLIMIT
+          value: "768MiB"
+
+        # ---- Внешние сервисы (включить по мере необходимости) ----
+        # SMTP — email-верификация, сброс пароля, уведомления. Критично в проде.
+        - name: SMTP_ENABLED
+          value: "true"
+        - name: SMTP_HOST
+          value: "smtp.example.com"       # CHANGE_ME
+        - name: SMTP_PORT
+          value: "587"
+        - name: SMTP_USER
+          value: "noreply@example.com"    # CHANGE_ME
+        - name: SMTP_PASSWORD
+          value: "CHANGE_ME__SMTP_PASSWORD"
+        - name: SMTP_FROM
+          value: "noreply@example.com"
+
+        # WebAuthn (passkeys) — RPID = домен (без схемы/порта).
+        - name: WEBAUTHN_RPID
+          value: "gengine.example.com"    # CHANGE_ME — ваш домен
+
+        # VAPID (Web Push) — стабильные ключи, чтобы push не сбрасывался при рестарте.
+        # Генерация: openssl ecparam -genkey -name prime256v1 -noout -out vapid.pem
+        #            openssl ec -in vapid.pem -pubout -outform DER | tail -c 65 | base64url
+        - name: VAPID_PUBLIC_KEY
+          value: "CHANGE_ME__VAPID_PUBLIC_KEY"
+        - name: VAPID_PRIVATE_KEY
+          value: "CHANGE_ME__VAPID_PRIVATE_KEY"
+
+        # reCAPTCHA — защита регистрации/форм от ботов.
+        - name: RECAPTCHA_ENABLED
+          value: "false"                  # true + site/secret key при включении
+        - name: RECAPTCHA_SITE_KEY
+          value: ""
+        - name: RECAPTCHA_SECRET_KEY
+          value: ""
+
+        # Sentry — отслеживание ошибок в проде (опционально).
+        - name: SENTRY_ENABLED
+          value: "false"
+        - name: SENTRY_DSN
+          value: ""
+
+        # OAuth-провайдеры (опционально; false по умолчанию).
+        - name: VK_ENABLED
+          value: "false"
+        - name: YANDEX_ENABLED
+          value: "false"
+
+        # AES-256 ключ шифрования бэкапов (hex 64 / base64 44 символа).
+        # Генерация: openssl rand -hex 32
+        - name: BACKUP_ENCRYPTION_KEY
+          value: "CHANGE_ME__BACKUP_ENCRYPTION_KEY"
+
+      resources:
+        requests:
+          cpu: "250m"      # idle — почти ноль
+          memory: "256Mi"  # стартовый heap + пул соединений
+        limits:
+          cpu: "2000m"     # 2 ядра (25% потоков) — пики: Excel/PDF-экспорт, TLS
+          memory: "1024Mi" # 1 GB — запас под экспорт/импорт/кэш (см. GOMEMLIMIT)
+
+      volumeMounts:
+        - name: uploads
+          mountPath: /app/uploads
+        - name: backups
+          mountPath: /app/backups
+      readinessProbe:
+        exec:
+          command: ["wget", "--spider", "-q", "http://localhost:8080/healthz"]
+        initialDelaySeconds: 10
+        periodSeconds: 10
+      livenessProbe:
+        exec:
+          command: ["wget", "--spider", "-q", "http://localhost:8080/healthz"]
+        initialDelaySeconds: 30
+        periodSeconds: 20
+
+  volumes:
+    # ---- Данные PostgreSQL: 10 GiB ----
+    # Оценка: игры+уровни (текст) малы, но логи прохождений (logs через
+    # game_passings) и player_locations растут со временем. 10 GiB — запас на
+    # год+ умеренной активности; легко расширяется (podman volume resize).
+    - name: pgdata
+      persistentVolumeClaim:
+        claimName: gengine-prod-pgdata
+    # ---- Valkey AOF + кэш: 1 GiB ----
+    - name: valkeydata
+      persistentVolumeClaim:
+        claimName: gengine-prod-valkeydata
+    # ---- Загруженные файлы (обложки/аватары): 10 GiB ----
+    # PVC (не emptyDir): файлы переживают перезапуск пода. В dev были emptyDir
+    # (терялись) — в проде это потеря пользовательских загрузок.
+    - name: uploads
+      persistentVolumeClaim:
+        claimName: gengine-prod-uploads
+    # ---- Бэкапы БД (admin export): 10 GiB ----
+    - name: backups
+      persistentVolumeClaim:
+        claimName: gengine-prod-backups
+
+---
+# =============================================================================
+# PersistentVolumeClaim'ы
+# =============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gengine-prod-pgdata
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gengine-prod-valkeydata
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gengine-prod-uploads
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gengine-prod-backups
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
