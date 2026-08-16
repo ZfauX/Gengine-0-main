@@ -2,15 +2,21 @@
 # Исключаем ТОЛЬКО явные тестовые паттерны в задокументированных файлах
 # «только для теста». Литералы админ-паролей и *_test.go НЕ в allowlist —
 # реальный секрет, случайно попавший в тестовый файл/прод-конфиг, ловится.
+# Исключение: детерминированные тестовые JWT/SESSION-секреты config_test.go
+# (path-scoped) — они не секреты, но ловятся generic-api-key по энтропии.
 
 title = "Gengine gitleaks config"
 
 [extend]
 useDefault = true
 
-# Тестовые JWT/SESSION секреты, завязанные на имя файла.
-[[allowlist]]
-description = "Тестовые/CI JWT/SESSION секреты в известных тестовых файлах"
+# Тестовые JWT/SESSION секреты и пароли БД тестовых окружений — только в
+# известных файлах. ВАЖНО: gitleaks v8 ожидает allowlist как единый table
+# (map), а НЕ [[allowlist]] (slice of tables) — иначе ошибка загрузки конфига
+# «'Allowlist' expected a map, got 'slice'».
+[allowlist]
+description = "Тестовые/CI секреты (JWT/SESSION/БД) в известных файлах"
+regexTarget = "match"
 regexes = [
     "pod-jwt-secret-[a-f0-9]+",
     "pod-session-secret-[a-f0-9]+",
@@ -18,24 +24,15 @@ regexes = [
     "ci-session-secret-[a-f0-9]+",
     "test-jwt-secret-[a-z0-9-]+",
     "test-session-secret-[a-z0-9-]+",
-]
-paths = [
-    "deploy/pod/gengine-pod.yaml",
-    ".env.e2e",
-    ".github/workflows/go.yml",
-    "deploy/systemd/gengine-db.env",
-]
-
-# Пароли БД в тестовых/CI окружениях — тоже только в известных файлах.
-[[allowlist]]
-description = "Пароли БД тестовых окружений (gengine/test/заглушка)"
-regexes = [
     "POSTGRES_PASSWORD=(gengine|test|change-me|__SET_A_STRONG_PASSWORD__)",
     "DB_PASSWORD=(gengine|test)",
+    "xK9mP2vL5nQ8wR3tY6uI0oP4sD7fG1hJ",
+    "aB3cD4eF5gH6iJ7kL8mN9oP0qR1sT2uV3wX4yZ",
 ]
 paths = [
     "deploy/pod/gengine-pod.yaml",
     ".env.e2e",
     ".github/workflows/go.yml",
     "deploy/systemd/gengine-db.env",
+    "internal/config/config_test.go",
 ]
