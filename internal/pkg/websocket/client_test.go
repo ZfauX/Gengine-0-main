@@ -61,17 +61,21 @@ func TestClient_WritePump_SendMessage(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = conn.Close() }()
 
-	// Ждём, пока writePump запустится
+	// Ждём, пока клиент реально зарегистрируется в комнате. Раньше здесь было
+	// assert.Eventually(..., func() bool { return true }) — ничего не ждало, и
+	// BroadcastToRoom мог выполниться ДО обработки register в runLoop: комната
+	// ещё не существовала → сообщение дропалось → ReadMessage i/o timeout
+	// (флейк на CI). RoomClientCount == 1 гарантирует, что клиент в h.rooms.
 	assert.Eventually(t, func() bool {
-		return true
-	}, 1*time.Second, 50*time.Millisecond)
+		return hub.RoomClientCount("testroom") == 1
+	}, 3*time.Second, 20*time.Millisecond)
 
 	msg := map[string]string{"event": "test", "data": "hello"}
 	data, err := json.Marshal(msg)
 	require.NoError(t, err)
 	hub.BroadcastToRoom("testroom", data)
 
-	err = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	err = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	require.NoError(t, err)
 	_, dataReceived, err := conn.ReadMessage()
 	require.NoError(t, err)
