@@ -66,6 +66,8 @@ jobs:
   test-unit:
     name: Unit Tests
     runs-on: ubuntu-latest
+    # Целиковый пайплайн: unit идёт после lint (lint — первый gate).
+    needs: lint
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -188,9 +190,9 @@ jobs:
           cache: true
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          # Node 20 deprecated на GitHub runners (2025-09) — используют 24.
+          # Node 24 (не Node 20 — deprecated на GitHub runners).
           node-version: '24'
           cache: npm
 
@@ -283,7 +285,9 @@ jobs:
   docker:
     name: Docker Image
     runs-on: ubuntu-latest
-    needs: build
+    # Целиковый пайплайн: образ собирается ПОСЛЕДНИМ — после всех тестов
+    # (включая E2E). Раньше шёл параллельно с E2E (needs: build).
+    needs: test-e2e
     # GITHUB_TOKEN по умолчанию имеет read-only доступ к packages — без write
     # push в GHCR падает с 'denied: installation not allowed to Create
     # organization package'.
