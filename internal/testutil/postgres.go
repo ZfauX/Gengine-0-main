@@ -65,11 +65,11 @@ func SetupPostgresDB(t *testing.T, models ...any) *gorm.DB {
 	}
 
 	// Создаём схему
-	if err := adminDB.Exec(fmt.Sprintf("CREATE SCHEMA %s", schemaName)).Error; err != nil {
+	if err = adminDB.Exec(fmt.Sprintf("CREATE SCHEMA %s", schemaName)).Error; err != nil {
 		t.Fatalf("Не удалось создать схему %s: %v", schemaName, err)
 	}
 	// Закрываем временное соединение (основное открываем с search_path).
-	if adminSQL, err := adminDB.DB(); err == nil {
+	if adminSQL, dbErr := adminDB.DB(); dbErr == nil {
 		_ = adminSQL.Close()
 	}
 
