@@ -21,6 +21,7 @@ import (
 	"gengine-0/internal/domain/game"
 	"gengine-0/internal/domain/level"
 	"gengine-0/internal/domain/monitor"
+	"gengine-0/internal/domain/notification"
 	"gengine-0/internal/domain/social"
 	"gengine-0/internal/domain/team"
 	"gengine-0/internal/domain/tournament"
@@ -182,6 +183,7 @@ func TestFullGameFlow(t *testing.T) {
 		&social.PlayerRating{}, &social.Follow{},
 		&admin.AuditLog{}, &admin.Backup{}, &audit.Entry{},
 		&tournament.Tournament{}, &tournament.TournamentGame{}, &tournament.TournamentTeam{}, &tournament.TournamentResult{},
+		&notification.Notification{},
 	)
 
 	router := setupTestRouter(t, db, cfg)

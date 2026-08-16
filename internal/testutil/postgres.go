@@ -57,21 +57,32 @@ func SetupPostgresDB(t *testing.T, models ...any) *gorm.DB {
 	}
 	schemaName := "test_" + hex.EncodeToString(randomBytes)
 
-	// Основное подключение к базе (без указания схемы)
+	// Основное подключение к базе (без указания схемы) — только для создания схемы.
 	dsn := testDSN()
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	adminDB, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("Не удалось подключиться к PostgreSQL: %v", err)
 	}
 
 	// Создаём схему
-	if err := db.Exec(fmt.Sprintf("CREATE SCHEMA %s", schemaName)).Error; err != nil {
+	if err := adminDB.Exec(fmt.Sprintf("CREATE SCHEMA %s", schemaName)).Error; err != nil {
 		t.Fatalf("Не удалось создать схему %s: %v", schemaName, err)
 	}
+	// Закрываем временное соединение (основное открываем с search_path).
+	if adminSQL, err := adminDB.DB(); err == nil {
+		_ = adminSQL.Close()
+	}
 
-	// Устанавливаем search_path для нашего подключения
-	if err := db.Exec(fmt.Sprintf("SET search_path TO %s", schemaName)).Error; err != nil {
-		t.Fatalf("Не удалось установить search_path: %v", err)
+	// FIX (PASS-20 CI): задаём search_path в DSN, а не через `SET search_path`.
+	// `SET search_path` действует только на ОДНО соединение пула GORM — при
+	// параллельных запросах (errgroup в dashboard и др.) другие соединения
+	// обращались к public и получали «relation does not exist». pgx кладёт
+	// неизвестные DSN-параметры (включая search_path) в RuntimeParams, которые
+	// применяются к КАЖДОМУ соединению пула как session default.
+	dsnWithSchema := dsn + fmt.Sprintf(" search_path=%s", schemaName)
+	db, err := gorm.Open(postgres.Open(dsnWithSchema), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("Не удалось подключиться к PostgreSQL (search_path): %v", err)
 	}
 
 	// Миграция моделей в этой схеме
