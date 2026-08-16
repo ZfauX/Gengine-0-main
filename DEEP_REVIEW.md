@@ -1010,3 +1010,239 @@ pgx-типы, i18n) — не hot-path, не требует вмешательс�
 - **Закрыто**: 9 кандидатов (индексы chat_rooms/player_ratings, .env, права CRUD/geolocation/monitor, cache, errgroup).
 - **pprof**: heap 8.4MB, 21 goroutine, CPU ~5.1% (TLS) — утечек нет.
 - **Приоритет**: H1 (Valkey), H2 (SSE multi-instance), M1 (публикация без уровней), M10 (чат после исключения).
+
+---
+
+# DEEP_REVIEW — Gengine-0 (PASS 20, повторное ревью #5)
+
+> Целевое окружение: **pod через podman**. Метод: pprof в pod (heap/goroutine/cpu) + 3
+> параллельных аудита (@reviewer — домены notification/calendar/social/team/tournament/payment,
+> @security — user/middleware/security/sessionstore/websocket/recaptcha, @perf — cache/websocket/
+> realtimebus/level/export/monitor/dashboard) + эмпирическая проверка каждой находки по коду.
+
+---
+
+## 🔬 pprof-результаты (PASS 20, в pod)
+
+| Профиль | Результат | Вывод |
+|---|---|---|
+| **goroutine** | 22 в покое | ✅ Утечек нет (+1 — новый audit worker из M8 PASS-19, ожидаемо). |
+| **heap inuse** | **7.3 MB** | ⚠️ Стартовые аллокации: excelize (0.65MB), bluemonday (0.5MB), regexp (1MB), yaml (0.5MB), prometheus (0.5MB), gorm schema. Не hot-path. |
+| **cpu (лёгкая нагрузка)** | 0.42% (50ms / 12s) | ✅ **100% TLS handshake (RSA SignPSS, FIPS bigmod)** — прикладной код чист. |
+| **pprof bind** | `127.0.0.1:6060` | ✅ loopback. |
+
+**Вывод**: утечек нет; heap 7.3MB (инициализация), CPU чист (доминирует TLS). Стабильно с PASS-15.
+
+---
+
+## 🔴 HIGH (новые)
+
+### H1. Tournament RemoveGame декрементирует games_played для НЕ начисленных прохождений → потеря результатов 🔍✅ (подтверждено)
+- **Файл**: `internal/domain/tournament/service.go:204-241` + `scoredPointsForTournament:629-641`.
+- **Проблема**: `RemoveGame` выбирает ВСЕ `finished`-прохождения игры (`game_id AND status=finished`,
+  строка 204, БЕЗ фильтра по турниру), затем `points = scoredPointsForTournament(p, tournamentID)`
+  (строка 220). Для прохождений, которые ещё НЕ начислены в ЭТОМ турнире (`tournament_scored_ids`
+  не содержит tournamentID), `scoredPointsForTournament` возвращает **0**. Но `UPDATE tournament_results
+  SET games_played = tr.games_played - 1` (строка 228) применяется БЕЗУСЛОВНО ко всем `teamIDs`, и
+  `DELETE ... WHERE games_played <= 0` (строка 237) удаляет валидные строки.
+- **Сценарий потери**: команда X в турнире A финишировала игру 1 (начислено, `games_played=1`) и игру 2
+  (scoring ещё не отработал → не начислено). Автор удаляет игру 2 (`scoredCount==0` → не-админ может).
+  `RemoveGame(игра2)`: для X points=0, но `games_played = 1-1 = 0` → `DELETE WHERE games_played <= 0`
+  удаляет строку результата игры 1. Команда теряет очки в лидерборде.
+- **Дополнительно**: `RemoveGame` НЕ берёт `pg_advisory_xact_lock(gameID)` (в отличие от
+  `UpdateScoresForGame:453`) — сценарий реализуем и как гонка.
+- **Фикс**: декрементировать `games_played` только для команд с `points > 0` (фильтровать `teamIDs`
+  по ненулевым `points`), либо взять advisory-lock на `gameID` в начале транзакции.
+
+### H2. POST /auth/2fa/verify и /auth/2fa/backup без AuthRequired → 2FA step-up сломан 🔍✅ (подтверждено)
+- **Файл**: `internal/domain/user/routes.go:96,98` vs `:95,97`.
+- **Проблема**: GET-маршруты `/auth/2fa/verify` и `/auth/2fa/backup` имеют `AuthRequired`, но POST —
+  только `LoginRateLimit`. Оба POST-обработчика (`two_factor_handler.go:101` `Verify`,
+  `:235` `BackupVerify`) берут `c.GetUint("userID")` (строка 101) → без `AuthRequired` всегда `0` →
+  редирект на `/auth/login` (строка 103).
+- **Влияние**: `TwoFactorRequired` (middleware) редиректит админа на `/auth/2fa/verify?return_url=...`
+  (строка 219), форма (GET) показывается, но POST-сабмит TOTP-кода теряет userID → бесконечный цикл
+  login→2fa→login. **Админ с включённой 2FA не может пройти step-up → полностью теряет доступ к
+  `/admin/*`, `/metrics`, `/debug/pprof`, `/swagger`** (DoS на защищённые маршруты). Не эскалация, но
+  функционально-безопасностный дефект критичного потока.
+- **Фикс**: добавить `middleware.AuthRequired(authSvc)` на POST `/auth/2fa/verify` и `/auth/2fa/backup`.
+
+### H3. JSON-импорт уровней: построчный INSERT (~до 100M строк теоретически) + advisory-lock на всю транзакцию 🔍✅ (подтверждено, perf)
+- **Файл**: `internal/domain/level/import.go:160-183` + lock `:108`.
+- **Проблема**: каждый уровень (`tx.Create(lvl)`), вопрос (`tx.Create(q)`) и ответ (`tx.Create(&Answer)`)
+  вставляется ОТДЕЛЬНЫМ INSERT внутри одной транзакции с `pg_advisory_xact_lock(gameID)`.
+  Лимиты: `maxImportLevels=5000`, `maxImportQuestionsPerLevel=200`, `maxImportAnswersPerQuestion=100`
+  (строки 48-50) → теоретически 100M сущностей (реально ограничено `io.LimitReader` 5MB, строка 93,
+  но всё равно сотни тысяч round-trip).
+- **Влияние**: долгая транзакция (секунды-минуты) держит advisory-lock на игру → все операции с игрой
+  (submit attempt и др.) блокируются. CSV-импорт УЖЕ батчится (`export/service.go:445-458`,
+  `CreateInBatches`), а JSON — нет.
+- **Фикс**: собрать уровни/вопросы/ответы в слайсы и вставлять батчами (уровни одним `CreateInBatches`,
+  вопросы одним, ответы одним флэт-батчем после присвоения `QuestionID`).
+
+---
+
+## 🟠 MEDIUM (новые)
+
+### M1. Team CreateTeam не атомарен: осиротевшая команда без капитана 🔍✅ (подтверждено)
+- **Файл**: `internal/domain/team/service.go:146-157`.
+- **Проблема**: `teamRepo.Create` выполняется, затем `AddMember` отдельно. Если `AddMember` вернёт
+  ошибку (гонка `ON CONFLICT DO NOTHING` → `ErrAlreadyInOtherTeam`), команда остаётся БЕЗ капитана,
+  а хендлер показывает ошибку → пользователь повторяет и создаёт вторую команду.
+- **Фикс**: обернуть `Create` + `AddMember` в транзакцию (или удалять команду при неудаче `AddMember`).
+
+### M2. Notification MarkAllAsRead не ставит read_at → retention не чистит 🔍✅ (подтверждено)
+- **Файл**: `internal/domain/notification/repository.go:142-146` vs `:135-139,149-152`.
+- **Проблема**: `MarkAsRead` ставит `read_at: time.Now()`, а `MarkAllAsRead` — только `Update("read",
+  true)`. `DeleteOldRead` чистит по `WHERE read = ? AND read_at < ?` → `read_at IS NULL` не попадает
+  в `read_at < cutoff` (NULL-сравнение) → пакетно прочитанные уведомления накапливаются бессрочно.
+- **Фикс**: в `MarkAllAsRead` добавить `"read_at": time.Now()`.
+
+### M3. Team AddMember: ErrAlreadyInOtherTeam → 500 вместо 400 🔍✅ (подтверждено)
+- **Файл**: `internal/domain/team/handler.go:337-347`.
+- **Проблема**: switch обрабатывает только `ErrUserAlreadyInTeam`/`ErrOnlyCaptainCanAdd` (400), а
+  `ErrAlreadyInOtherTeam` (пользователь в другой команде — валидный бизнес-кейс) попадает в `default` → 500.
+- **Фикс**: добавить `errors.Is(err, ErrAlreadyInOtherTeam)` в первый case.
+
+### M4. Team InvitationHandler.Create: ErrOnlyCaptainCanInvite → 500 вместо 403 🔍✅ (подтверждено)
+- **Файл**: `internal/domain/team/handler.go:630-647`.
+- **Проблема**: switch обрабатывает только `ErrUserNotFound`/`ErrUserAlreadyInTeam`/`ErrInvitationExists`,
+  а `ErrOnlyCaptainCanInvite` → `default` → 500. Также админ не может приглашать (не проверяется `isAdmin`),
+  хотя `InvitationHandler.Index` админа пускает — несогласованность.
+- **Фикс**: case для `ErrOnlyCaptainCanInvite` (403) + пропускать админа.
+
+### M5. Tournament Update: пустое имя затирает название 🔍✅ (подтверждено)
+- **Файл**: `internal/domain/tournament/service.go:87-102` + handler `UpdateTournamentInput.Name`
+  (`binding:"omitempty,min=2,max=200"`).
+- **Проблема**: пустая строка пропускает валидацию (`omitempty`), а `service.Update` безусловно
+  `t.Name = updated.Name` (строка 95) → турнир с пустым именем.
+- **Фикс**: не перезаписывать `Name`, если вход пуст (или убрать `omitempty`).
+
+### M6. Chat: нет составного индекса (room_id, created_at) — сортировка всей истории 🔍✅ (подтверждено, perf)
+- **Файл**: `internal/domain/monitor/model.go:63` + `repository.go:345-353`.
+- **Проблема**: `idx_chat_messages_room` только на `room_id`, а `GetMessages`/`GetMessagesBefore` делают
+  `ORDER BY created_at DESC LIMIT ?` → для комнат с большой историей (общий чат) PostgreSQL сортирует
+  все сообщения комнаты на каждую загрузку истории.
+- **Фикс**: составной индекс `(room_id, created_at DESC)` (миграция).
+
+### M7. InvalidateTeamPermCache: O(roomIDs × cacheEntries) 🔍✅ (подтверждено, perf)
+- **Файл**: `internal/domain/monitor/repository.go:596-606`.
+- **Проблема**: для каждого `roomID` команды проходит по ВСЕЙ `permCache` с `strings.HasPrefix` →
+  квадратичный проход под локом при 10000 записей.
+- **Фикс**: ключовать кэш по `roomID` (вложенная map `roomID → userID → entry`) или индекс
+  `roomID → userIDs` для O(1)-инвалидации.
+
+### M8. CSV-импорт: ответы вставляются CreateInBatches по одному вопросу 🔍✅ (подтверждено, perf)
+- **Файл**: `internal/domain/export/service.go:448-458`.
+- **Проблема**: `pendingAnswers[i]` вставляется отдельным `CreateInBatches(ans, 200)` на КАЖДЫЙ вопрос →
+  N батч-вызовов (при 5000 вопросов — 5000 INSERT-вызовов).
+- **Фикс**: собрать все ответы в один плоский слайс (с `QuestionID` после вставки вопросов) и вставить
+  одним `CreateInBatches`.
+
+### M9. ExportTeamResultsCSV: двойная выборка + полная строка игры ради AuthorID 🔍✅ (подтверждено, perf)
+- **Файл**: `internal/domain/export/handler.go:496,510` + `service.go:188`.
+- **Проблема**: `GetFinishedPassingForTeam` (результат отброшен `_`) затем повторно
+  `GetPassingByGameAndTeam`; `GetGameByIDUnchecked` грузит полную строку игры ради `AuthorID`.
+- **Фикс**: использовать результат первой проверки; `AuthorID` брать лёгким `Select`.
+
+### M10. Единый Session.Secret для 4 механизмов безопасности 🔍✅ (подтверждено, security)
+- **Файл**: `internal/app/app.go:110-114` + `internal/pkg/sessionstore/sessionstore.go:255-259`.
+- **Проблема**: один `Session.Secret` используется для: подпись session-cookie (`authKey`), шифрование
+  (`sha256(Secret+":enc")`), fallback CSRF (`config.go:331-335`) и HMAC trusted-device cookie (обход 2FA
+  на 30 дней, `two_factor_middleware.go:40-53`). Компрометация одного секрета даёт подделку
+  trusted-cookie (обход 2FA) И подделку CSRF-токенов.
+- **Фикс**: отдельные `TRUSTED_DEVICE_SECRET` и обязательный `CSRF_SECRET` (не fallback).
+
+---
+
+## 🟡 LOW (новые)
+
+- **L1**: `auth_handler.go:623` — ForgotPassword логирует `input.Email` (PII в логах, противоречит
+  анти-энумерационной политике). Фикс: логировать только `user.ID`.
+- **L2**: `/auth/refresh` возвращает `access_token` в теле JSON — читается XSS (httpOnly-кука защищает
+  куку, но тело доступно JS).
+- **L3**: `oauth_service.go:175-177` — имена из OAuth (Yandex/VK) пишутся в `user.Name` без
+  `sanitize.StripHTML` (митигировано автоэкранированием `html/template`).
+- **L4**: `middleware/security.go:67-68` — CSP `connect-src 'self' ws: wss:` и `img-src 'self' data:
+  https:` слишком широкие.
+- **L5**: `recaptcha.go:90-97` — проверяется только `Success`, без `hostname`/`action`.
+- **L6**: `oauth_service.go:41` — VK `user_id` через `float64` (потеря точности >2^53; сейчас VK ID меньше).
+- **L7**: `notification/service.go:411-419` — `getSubs` возвращает кэш-слайс без копирования.
+- **L8**: `notification/repository.go:90-120` — `ListByUser` при `OFFSET` > total возвращает `total=0`.
+- **L9**: `payment/service.go:387-399` — `resumePendingPayment` с пустым `IdempotencyKey` (legacy).
+- **L10**: `calendar/handler.go:127` — `c.Data(200, ...)` вместо `http.StatusOK`.
+- **L11**: `social/repository.go:69-94` — `GetSubscriptions`/`GetFollowers` без фильтра
+  `profile_visibility` (не подтверждено — фильтрация в UI).
+- **L12**: `team/service.go:340-345` — `ChangeCaptain` не инвалидирует perm-кэш чата (некритично).
+- **L13**: `websocket/room_hub.go:429-442` — `dispatchToRoom` берёт полный `Lock` даже без `removed`.
+- **L14**: `realtimebus/bus.go:268` — `[]byte(msg.Payload)` копирует строку на каждое сообщение.
+- **L15**: `export/handler.go:322,362,402,444` — PDF/xlsx буферизуют в `bytes.Buffer` + `c.Data`
+  (двойная память; CSV уже стримит).
+- **L16**: `monitor/handler.go:388-392` — `presenceLast` stale-записи для комнат, удалённых
+  `cleanupInactiveClients` (без колбэка).
+- **L17**: `user/model.go:138` — `VerificationCode size:8`, но значение 12 hex-символов (проверить миграцию).
+
+---
+
+## 🔍 Проверено и закрыто (кандидаты HIGH/MEDIUM, НЕ подтвердились)
+
+| Пункт | Статус | Детали |
+|---|---|---|
+| **SQL-инъекции (notification/calendar/social/team/tournament/payment)** | ✅ Закрыто | Все динамические SQL — плейсхолдеры (`?`/`pq.Array`/`gorm.Expr`); `BuildLikePattern` экранирует `%`/`_`; CASE-конструкции из констант. |
+| **XSS** | ✅ Закрыто | `html/template` автоэкранирование; OAuth-имена риск только в неэкранируемом контексте. |
+| **CSRF** | ✅ Закрыто | `gorilla/csrf` (без TrustedOrigins — CVE-2025-47909), `APIOriginGuard` (Origin+Sec-Fetch-Site), SameSite=Strict. |
+| **OAuth state** | ✅ Закрыто | `crypto/rand` 128 бит, `subtle.ConstantTimeCompare`, привязка к провайдеру, TTL 10 мин. |
+| **WebAuthn** | ✅ Закрыто | challenge в server-side сессии, проверка userHandle, CloneWarning→отказ, sign_count. |
+| **JWT** | ✅ Закрыто | HS256, `requireStrongSecret(≥32)`, `SigningMethodHMAC`, iss/aud/nbf/iat, jti-blacklist (Valkey+fallback). |
+| **Пароли** | ✅ Закрыто | bcrypt cost 12, dummy-hash, HIBP k-anonymity. |
+| **Refresh-токены** | ✅ Закрыто | SHA-256 в БД, семейная ротация, детект reuse, device/fingerprint, атомарный claim. |
+| **Session fixation** | ✅ Закрыто | server-side store, RenewToken/Clear, session ID 256 бит. |
+| **Timing attacks** | ✅ Закрыто | `ConstantTimeCompare` (OAuth), `hmac.Equal` (trusted cookie), dummy bcrypt. |
+| **Rate limiting** | ✅ Закрыто | per-IP + per-account lockout (атомарный инкремент + backoff), fail-closed критические лимитеры. |
+| **IDOR** | ✅ Закрыто | `WHERE id=? AND user_id=?`, refresh/сброс/верификация по хешам. |
+| **cache/LRU утечки** | ✅ Закрыто | ленивый префикс-индекс, sweep по ttlKeys, DeleteByPrefix батчит DEL. |
+| **websocket Acquire** | ✅ Закрыто | атомарно под одним локом (без TOCTOU); cleanupInactiveClients под RLock+батч. |
+| **monitor permCache/limiter/rooms** | ✅ Закрыто | TTL 5с, cap 10000, O(n) sweep, удаление при нуле. |
+| **SSE poller** | ✅ Закрыто | один сборщик на игру, корректный unsubscribe, FNV-хэш. |
+| **dashboard errgroup** | ✅ Закрыто | параллельные запросы, разные поля структуры. |
+| **Денежная арифметика** | ✅ Закрыто | целочисленные копейки, проверка переполнения, точная сверка. |
+| **Гонки NotificationService/Calendar/TeamService** | ✅ Закрыто | unreadMu/subsMu/pushMu/cacheMu/membersMetricMu. |
+| **Транзакции (AcceptInvitation/AddGame/RemoveGame/UpdateScores)** | ✅ Закрыто | rollback полный, атомарные claim'ы (ON CONFLICT DO NOTHING). |
+| **N+1 (GetByIDWithMembers/UpdateScoresForGame/RemoveGame/scoreTournament)** | ✅ Закрыто | Preload, batch-upsert, unnest-батч. |
+| **Утечки HTTP-тел (webpush/yookassa)** | ✅ Закрыто | `resp.Body.Close()`/`defer`, `io.LimitReader`. |
+
+---
+
+## 💡 Предложения по улучшению (PASS 20)
+
+### Критичные (правильность/безопасность)
+1. **H1**: RemoveGame декрементировать games_played только для points>0.
+2. **H2**: AuthRequired на POST /auth/2fa/verify и /auth/2fa/backup.
+3. **H3**: батч-INSERT в JSON-импорте уровней (как CSV).
+
+### Оптимизация
+4. **M6**: составной индекс `(room_id, created_at DESC)` для чата.
+5. **M7**: O(1)-инвалидация perm-кэша (вложенная map по roomID).
+6. **M8/M9**: один батч ответов в CSV-импорте; убрать двойную выборку в экспорте команды.
+
+### Безопасность/надёжность
+7. **M10**: раздельные секреты (TRUSTED_DEVICE_SECRET, CSRF_SECRET).
+8. **M1**: атомарный CreateTeam + AddMember.
+9. **M2**: read_at в MarkAllAsRead (retention).
+
+### UX/качество
+10. **M3/M4/M5**: корректные коды ошибок (400/403 вместо 500), не затирать имя турнира.
+11. **L1-L2**: убрать PII из логов, не возвращать access_token в теле /auth/refresh.
+
+---
+
+## 🎯 Итог PASS-20
+
+- **HIGH**: 3 новых (H1 турнирная потеря результатов, H2 2FA step-up сломан, H3 построчный импорт).
+- **MEDIUM**: 10 новых (M1-M10: 5 code review + 4 perf + 1 security).
+- **LOW**: 17 новых (L1-L17).
+- **Закрыто**: 21 кандидат (SQLi/XSS/CSRF/OAuth/WebAuthn/JWT/пароли/refresh/сессии/тайминги/rate-limit/
+  IDOR/cache/websocket/monitor/SSE/dashboard/деньги/гонки/транзакции/N+1/HTTP-тела) — без проблем.
+- **pprof**: heap 7.3MB, 22 goroutine, CPU ~0.42% (TLS) — утечек нет.
+- **Приоритет**: H2 (2FA step-up — блокирует админов), H1 (турнирные результаты), H3 (импорт),
+  M10 (секреты), M1 (осиротевшая команда).
