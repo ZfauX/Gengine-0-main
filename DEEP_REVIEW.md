@@ -1684,3 +1684,9 @@ pgx-типы, i18n) — не hot-path, не требует вмешательс�
 | **Тесты** | ✅ | `encrypt_test.go`: round-trip + tampered-HMAC (ловил бы panic H1). |
 
 **Верификация**: `go build ./...`, `go vet ./...`, `golangci-lint run ./...` — 0 issues; `go test -short -race -p 1 ./...` — все пакеты OK.
+
+### E2E-флейк (коммит `test(e2e)`)
+
+| Пункт | Статус | Что сделано |
+|---|---|---|
+| **two-users.spec.ts:121** флейк | ✅ | `createReconnectingWebSocket.send()` молча теряет сообщение при `readyState !== OPEN`. После принятия личного чата страница перезагружается, и тест кликал send до переподключения WebSocket → первое сообщение дропалось. Добавлен хелпер `waitForChatConnected()` (ждёт `#connection-status` = «Подключено»/«Connected») и вызовы перед send в `two-users.spec.ts` (тесты 63 и 121). E2E: **19 passed** (48s).
