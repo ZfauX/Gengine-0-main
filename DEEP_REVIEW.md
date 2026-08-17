@@ -1246,3 +1246,196 @@ pgx-типы, i18n) — не hot-path, не требует вмешательс�
 - **pprof**: heap 7.3MB, 22 goroutine, CPU ~0.42% (TLS) — утечек нет.
 - **Приоритет**: H2 (2FA step-up — блокирует админов), H1 (турнирные результаты), H3 (импорт),
   M10 (секреты), M1 (осиротевшая команда).
+
+---
+
+# DEEP_REVIEW — Gengine-0 (PASS 21, повторное ревью #6)
+
+> Целевое окружение: **pod через podman**. Метод: pprof в pod (heap/goroutine/cpu) + 3
+> параллельных аудита (@reviewer — admin/game/user домены, @security — crypto/storage/
+> sanitize/validation/csrf/sqlutil/render/errors, @perf — i18n/templatefuncs/metrics/
+> sessionstore/rolecache/logging/svc_snapshot/svc_listing/svc_facade) + эмпирическая
+> проверка каждой находки по коду.
+
+---
+
+## 🔬 pprof-результаты (PASS 21, в pod)
+
+| Профиль | Результат | Вывод |
+|---|---|---|
+| **goroutine** | 22 в покое | ✅ Утечек нет (стабильно с PASS-15; +1 audit worker). |
+| **heap inuse** | **7.9 MB** | ⚠️ Стартовые аллокации: runtime.allocm (2.5MB), pgx stmtcache LRU (1MB), regexp (1MB), excelize (0.65MB), bufio (0.5MB). Не hot-path. |
+| **cpu (лёгкая нагрузка)** | 0.17% (20ms / 12s) | ✅ **100% TLS handshake (RSA SignPSS, FIPS bigmod)** — прикладной код чист. |
+| **pprof bind** | `127.0.0.1:6060` | ✅ loopback. |
+
+**Вывод**: утечек нет; heap 7.9MB (инициализация), CPU чист. Профилирование подтверждает
+отсутствие горячих точек в прикладном коде.
+
+---
+
+## 🔴 HIGH (новые)
+
+### H1. Шифрование бэкапов падает с panic: NewCTR получает IV 12 байт вместо 16 🔍✅ (подтверждено запуском)
+- **Файл**: `internal/domain/admin/service.go:406` (`encryptBackupFile`) и `:461` (`decryptBackupFile`).
+- **Проблема**: `nonce := make([]byte, gcm.NonceSize())` = **12 байт** (AES-GCM nonce), затем
+  `cipher.NewCTR(block, nonce)` (строка 406/461) требует IV длиной == `block.BlockSize()` = **16 байт**.
+  `cipher.NewCTR` паникует `IV length must equal block size` (подтверждено запуском Go-сниппета:
+  `gcm.NonceSize()=12`, `BlockSize()=16`).
+- **Влияние**: при заданном `BACKUP_ENCRYPTION_KEY` (32 байта) **каждый** бэкап падает:
+  - async-путь (`CreateNowAsync`) перехватывает panic через recover, но бэкап НЕ создаётся;
+  - plaintext-дамп `backup_*.sql` **остаётся на диске** (`os.Remove(srcPath)` на строке 418
+    выполняется только после успешного шифрования) — не виден `RotateBackups`, копится бессрочно;
+  - `Download` зашифрованного бэкапа → panic → 500.
+- **Фикс**: для CTR — IV 16 байт (`make([]byte, block.BlockSize())`). Но заявлен «AES-256-GCM»
+  (см. M1) — правильнее перейти на аутентифицированное шифрование (GCM или HMAC-CTR).
+
+---
+
+## 🟠 MEDIUM (новые)
+
+### M1. Бэкап шифруется голым AES-CTR без MAC, заявлен AES-256-GCM 🔍✅ (подтверждено)
+- **Файл**: `internal/domain/admin/service.go:369-420`.
+- **Проблема**: создаётся `cipher.NewGCM` (строка 387), но `gcm.Seal`/`gcm.Open` НЕ вызываются —
+  используется `cipher.NewCTR` без тега аутентичности. Комментарии/логи заявляют «AES-256-GCM».
+  Подмена битов шифротекста (хеши паролей, 2FA-секреты, refresh-хеши в дампе) не детектируется.
+- **Фикс**: GCM (не потоковый, OOM на гигабайтах — см. M5 PASS-17) или **HMAC-CTR**
+  (Encrypt-then-MAC, потоково + аутентифицировано): nonce(16) || ciphertext || mac(32).
+
+### M2. PhotoService.Delete: рассинхрон проверки прав с хендлером 🔍✅ (подтверждено)
+- **Файл**: `internal/domain/game/svc_photo.go:57` vs `hnd_photo.go:295`.
+- **Проблема**: хендлер использует `CanEditContent` (учитывает jsonb `Permissions`), а
+  `PhotoService.Delete` — `hasCoAuthorRole(RoleContentEditor)` (роль, игнорируя `Permissions`).
+  Соавтор `observer` + право `edit_content` пройдёт хендлер, но отклонён сервисом (не эскалация,
+  сервис строже — но неконсистентная логика).
+- **Фикс**: унифицировать через `HasPermission`/`coAuthorHasPermission`.
+
+### M3. profile_handler: админ не может открыть скрытый профиль (вопреки комментарию) 🔍✅ (подтверждено)
+- **Файл**: `internal/domain/user/profile_handler.go:176`.
+- **Проблема**: комментарий «скрытый профиль виден и админам», но проверка только
+  `currentUserID != userID` → 403 без `IsAdmin(c)`. Админ фактически не может просмотреть скрытый профиль.
+- **Фикс**: `if currentUserID != userID && !middleware.IsAdmin(c) { 403 }`.
+
+### M4. Admin dashboard: кэш счётчиков не хитится с Valkey (type-assert к анонимному struct) 🔍✅ (подтверждено)
+- **Файл**: `internal/domain/admin/handler.go:126-149`.
+- **Проблема**: `h.cacheStore.GetWithCtx` + `v.(struct{...5 полей...})`. Для in-memory — работает;
+  для Valkey значение приходит `map[string]any` (JSON-unmarshal) → assertion всегда false → кэш
+  мёртв → `COUNT(*)` по растущей `audit_logs` на каждый заход (регресс цели PASS-17 M9).
+- **Фикс**: кэшировать через `cacheGetJSON`/именованный тип (аналог cacheGetGame/cacheGetRating).
+
+### M5. sqlutil.AddOrder: whitelist пропускает SQL-ключевые слова 🔍✅ (подтверждено, low-impact)
+- **Файл**: `internal/pkg/sqlutil/sqlutil.go:45-57`.
+- **Проблема**: побуквенный whitelist `[a-zA-Z0-9._,\s]` пропускает все буквы/пробелы/запятые →
+  `id UNION SELECT password FROM users` проходит (нет `()`, `;`, `-`, но UNION с литералами возможен).
+  Сейчас `PaginatedQueryBuilder` используется только в тестах (мёртвый код) — эксплуатируемость низкая.
+- **Фикс**: enum разрешённых полей (map[string]bool) вместо строкового whitelist.
+
+### M6. errors: утечка внутренних деталей в HTTP-ответ 🔍✅ (подтверждено)
+- **Файл**: `internal/pkg/errors/errors.go:155-171,320-324`.
+- **Проблема**: `Wrap` подставляет сырой `err.Error()` в `Message`; `JSONResponse` отдаёт `Message`
+  и `Details` клиенту (для `lang != "ru"` — сырое `Message`). Ошибка БД/ФС (имена таблиц, пути,
+  текст запроса) может утечь в ответ.
+- **Фикс**: для `ErrInternal` — фиксированное generic-сообщение клиенту, детали только в лог;
+  `Details` не сериализовать для internal-ошибок.
+
+### M7. rolecache: cache-aside без singleflight → thundering herd на TTL-границе 🔍✅ (подтверждено, perf)
+- **Файл**: `internal/pkg/rolecache/rolecache.go:63`.
+- **Проблема**: на промахе (TTL 5с / после `InvalidateAll`) все конкурентные запросы одного
+  `userID` параллельно вызывают `provider()` (SELECT role) и дублируют запись.
+- **Фикс**: `singleflight.Group` (как в pkg/cache) или GetOrSet вокруг provider.
+
+### M8. sessionstore: sync.Mutex (не RWMutex) + O(n) sweep в hot path Set 🔍✅ (подтверждено, perf)
+- **Файл**: `internal/pkg/sessionstore/sessionstore.go:67,84-91`.
+- **Проблема**: `memoryBackend` использует `sync.Mutex`: `Get` на КАЖДЫЙ запрос берёт эксклюзивный
+  лок (read сериализуется). Плюс sweep при `len(items) > 10000` в `Set` итерирует ВСЕ записи O(n)
+  под локом → блокировка всех session-операций.
+- **Фикс**: `RWMutex` для `Get`; sweep в фоновую горутину (не в hot path `Set`).
+
+### M9. svc_listing: кэш-ключ из сырого query → неограниченный рост ключей 🔍✅ (подтверждено, perf)
+- **Файл**: `internal/domain/game/svc_listing.go:349,126`.
+- **Проблема**: ключ `"games:autocomplete:" + q` и `filter.Search` в `listingCacheKey` — каждый
+  уникальный запрос = новый ключ (Valkey/в памяти). `/api/search/games` не rate-limитится для
+  анонимов (`APIRateLimit` пропускает `userID==0`). В пределах TTL растёт неограниченно ключей.
+- **Фикс**: хешировать/нормализовать query в ключе; лимит длины/числа; префиксная инвалидация.
+
+### M10. svc_listing: COUNT(*) OVER() window на каждый промах кэша 🔍✅ (подтверждено, perf)
+- **Файл**: `internal/domain/game/svc_listing.go:191`.
+- **Проблема**: `COUNT(*) OVER()` считает total по ВСЕМ строкам на каждый промах, включая
+  per-viewer авторизованные листинги (комбинаций viewer×page много). Низкий hit-rate → полный скан.
+- **Фикс**: отдельный `COUNT(*)` только при промахе, либо кэшировать `total` отдельно.
+
+---
+
+## 🟡 LOW (новые)
+
+- **L1**: `push_handler.go:172` — `net.DefaultResolver.LookupHost` без таймаута (медленный DNS блокирует запрос).
+- **L2**: `hnd_settings.go:146-152` — `strconv.Atoi` с `_` — нечисловой ввод молча становится `0`.
+- **L3**: `svc_facade.go:24-29` — `GetUserGamesView` type-assert `v.(string)` — под Valkey не хитится.
+- **L4**: `svc_play.go:318` vs `:813` — один ключ `game:settings:%d`: значение `GameSetting` vs `*GameSetting` (непоследовательно).
+- **L5**: `monitor_repository.go:98` — `LIMIT 500` до группировки по командам (эвристика теряет данные).
+- **L6**: `storage/local_storage.go:150-162` — boundary-проверка строковая, нет `EvalSymlinks`/`O_NOFOLLOW`.
+- **L7**: `storage/local_storage.go:263-266` — при `baseDir==""` граница в `Delete` не проверяется.
+- **L8**: `render/htmlcache.go:108-138` — `TryServeAnonPageCache` с пустым `data` → CSRF-плейсхолдер не подставляется (латентный).
+- **L9**: `validation.go:129-141` — `ValidateURL` не ограничивает схему http/https (ftp/gopher проходят).
+- **L10**: `errors.go:441-452` — `SanitizeMessageForLog` пропускает `session`/`cookie`/`authorization`.
+- **L11**: `sanitize.go:28-30` — rich-ссылки без `rel="noopener noreferrer"` (reverse-tabnabbing).
+- **L12**: `svc_snapshot.go:58` — `time.AfterFunc` на каждый Schedule (аллокация таймера в hot path).
+- **L13**: `templatefuncs/funcs.go:206` — `initials`: `strings.ToUpper(string(r))` = 2 аллокации (→ `unicode.ToUpper`).
+- **L14**: `templatefuncs/funcs.go:87` — `richText` bluemonday-санитизация на каждый рендер (без кэша).
+- **L15**: `logging/gorm.go:78-82` — `log.Debug()`-событие на каждый SQL даже при выключенном debug.
+- **L16**: `logging/logging.go:25` — `GetCorrelationID` генерирует новый uuid при каждом вызове (не «прилипает»).
+- **L17**: `svc_listing.go:316-322` — кэш-запись на каждый промах per-viewer (рост ключей).
+
+---
+
+## 🔍 Проверено и закрыто (кандидаты HIGH/MEDIUM, НЕ подтвердились)
+
+| Пункт | Статус | Детали |
+|---|---|---|
+| **IDOR Phase-3 (cross-game)** | ✅ Закрыто | `GetTeamRoute`/`AttemptsPerUser` под `GameManager` + сервис проверяет `passing.GameID != gameID`. |
+| **Членство в геймплее** | ✅ Закрыто | SubmitCode/UseHint/SubmitFile/AcceptAnswer проверяют `isUserInPassing` до сервиса. |
+| **FullPreview утечка ответов** | ✅ Закрыто | тексты/ответы/подсказки только менеджеру, ранняя утечка до старта закрыта. |
+| **Соавторы (Add/Remove)** | ✅ Закрыто | требуют владельца (`ErrNotOwner`), супер-админ bypass корректен. |
+| **Apply (гонки/лимиты)** | ✅ Закрыто | капитан, IsDraft/visibility, дедлайн, лимит команд, ON CONFLICT. |
+| **SQL-инъекции** | ✅ Закрыто | плейсхолдеры; ORDER BY whitelist (svc_listing); LIKE через EscapeLike; CASE — параметризовано. |
+| **Транзакции (pg_dump/SubmitCode/UseHint/CalculateResults)** | ✅ Закрыто | rollback корректен, колбэки после коммита. |
+| **Гонки кэшей (Profile/Listing/CoAuthor/Monitor)** | ✅ Закрыто | мьютексы/LRU/singleflight; SnapshotDispatcher версионирует таймеры. |
+| **Пути бэкапов (path traversal)** | ✅ Закрыто | `isWithinBackupDir` + `filepath.Rel` в Download/RotateBackups. |
+| **storage (загрузка)** | ✅ Закрыто | sanitizeFilename, `..`-запрет, whitelist расширений, magic-bytes MIME, io.LimitReader. |
+| **csrf** | ✅ Закрыто | gorilla/csrf SameSiteStrictMode, без TrustedOrigins (CVE-2025-47909). |
+| **i18n** | ✅ Закрыто | O(1) map, TF fast-path без Sprintf, read-only после init. |
+| **metrics кардинальность** | ✅ Закрыто | route=FullPath (не фактический путь), vital/status — перечисления. |
+| **sessionstore valkeyBackend** | ✅ Закрыто | typedValue, 2s deadline, fail-open. |
+| **индексы листинга** | ✅ Закрыто | idx_games_draft_visibility_created/name/starts. |
+
+---
+
+## 💡 Предложения по улучшению (PASS 21)
+
+### Критичные
+1. **H1**: исправить IV для CTR (16 байт) или перейти на GCM/HMAC-CTR — иначе бэкапы не создаются.
+2. **M1**: аутентифицированное шифрование бэкапов (HMAC-CTR, потоково).
+
+### Оптимизация
+3. **M4**: cacheGetJSON для admin-счётчиков (Valkey-hit).
+4. **M7/M8**: singleflight в rolecache; RWMutex + фоновый sweep в sessionstore.
+5. **M9/M10**: ограничить рост кэш-ключей листинга; отдельный COUNT.
+
+### Безопасность/надёжность
+6. **M5/M6**: enum вместо whitelist в AddOrder; не утекать внутренние детали в ошибках.
+7. **M2/M3**: унифицировать права фото; пустить админа в скрытый профиль.
+
+### UX/качество
+8. **L1-L4, L12-L17**: таймауты DNS, кэш richText, unicode.ToUpper, guard логов, correlationID в ctx.
+
+---
+
+## 🎯 Итог PASS-21
+
+- **HIGH**: 1 новый (H1 — backup-шифрование panic, CRITICAL для бэкапов).
+- **MEDIUM**: 10 новых (M1-M10: шифрование, права, кэши, sessionstore, sqlutil, errors).
+- **LOW**: 17 новых (L1-L17).
+- **Закрыто**: 15 кандидатов (IDOR/членство/FullPreview/соавторы/Apply/SQLi/транзакции/гонки/
+  пути/бэкапы/storage/csrf/i18n/metrics/sessionstore-valkey/индексы) — без проблем.
+- **pprof**: heap 7.9MB, 22 goroutine, CPU ~0.17% (TLS) — утечек нет.
+- **Приоритет**: H1 (бэкапы не создаются при шифровании), M1 (аутентичность), M4 (кэш админки),
+  M7/M8 (sessionstore/rolecache hot path), M9 (рост ключей листинга).
