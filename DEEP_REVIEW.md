@@ -1439,3 +1439,212 @@ pgx-типы, i18n) — не hot-path, не требует вмешательс�
 - **pprof**: heap 7.9MB, 22 goroutine, CPU ~0.17% (TLS) — утечек нет.
 - **Приоритет**: H1 (бэкапы не создаются при шифровании), M1 (аутентичность), M4 (кэш админки),
   M7/M8 (sessionstore/rolecache hot path), M9 (рост ключей листинга).
+
+---
+
+# DEEP_REVIEW — Gengine-0 (PASS 22, повторное ревью #7)
+
+> Целевое окружение: **pod через podman**. Метод: pprof в pod (heap/goroutine/cpu) + 3
+> параллельных аудита (@reviewer — app/db/team/monitor, @security — middleware/db/realtimebus/
+> websocket, @perf — cache/middleware/websocket/level/game) + эмпирическая проверка по коду.
+> Примечание: субагенты security/perf из конфига всё ещё возвращают пустые ответы (изменения
+> opencode.jsonc не вступили в силу в текущей сессии — кэш агентов на старте), поэтому эти два
+> аудита выполнены через general.
+
+---
+
+## 🔬 pprof-результаты (PASS 22, в pod)
+
+| Профиль | Результат | Вывод |
+|---|---|---|
+| **goroutine** | 22 в покое | ✅ Утечек нет (стабильно с PASS-15). |
+| **heap inuse** | **7.4 MB** | ⚠️ Стартовые: runtime.allocm (2.5MB), excelize (0.65MB), i18n map (0.5MB). Не hot-path. |
+| **cpu (лёгкая нагрузка)** | 0.42% (50ms / 12s) | ✅ Доминирует TLS + context.parentCancelCtx (мелочь) — прикладной код чист. |
+| **pprof bind** | `127.0.0.1:6060` | ✅ loopback. |
+
+**Вывод**: утечек нет; heap 7.4MB (инициализация), CPU чист.
+
+---
+
+## 🔴 HIGH (новые)
+
+### H1. Team SearchPaginated: ambiguous ORDER BY id (JOIN users + Order("id DESC")) → 500 🔍✅ (подтверждено)
+- **Файл**: `internal/domain/team/repository.go:194-204`.
+- **Проблема**: `SearchPaginated` делает `Joins("LEFT JOIN users ON users.id = teams.captain_id")`
+  (строка 200) + `Order("id DESC")` (строка 202). В результирующем SQL колонка `id` есть и в
+  `teams`, и в `users` (обе с `gorm.Model`) → PostgreSQL `42702 column reference "id" is ambiguous`
+  → поиск/пагинация команд возвращает 500. `ListAllPaginated` (строка 191) корректен только
+  потому, что там нет `Joins`.
+- **Фикс**: `Order("teams.id DESC")`.
+
+### H2. GameManager: observer (read-only) получает права на запись 🔍✅ (подтверждено)
+- **Файл**: `internal/pkg/middleware/game_manager.go:23` → `coauthor_repository.go:39-54`.
+- **Проблема**: `GameManager` вызывает `IsUserManager`, который (`repo.IsUserManager`) делает
+  `SELECT COUNT(*) FROM (games WHERE author_id=? UNION co_authors WHERE game_id=? AND user_id=?)`
+  — **без фильтра по роли**. Любой соавтор, включая `RoleObserver` (read-only), считается
+  «менеджером». `GameManager` навешен на мутирующие эндпоинты: `SetTeamRoute`, `SetTeamAnswer`,
+  `SetTeamStartTime`, `AttemptsPerUser` (game/routes.go:138-145), `LocationsByGame` (GPS),
+  `export`, `monitor`.
+- **Вектор**: наблюдатель (приглашённый читать игру) может менять маршруты/ответы/время команд
+  и читать live-координаты игроков. Обход авторизации.
+- **Фикс**: использовать `HasPermissionRole(ctx, gameID, userID, []string{RoleContentEditor, RoleModerator})`
+  (уже есть в репозитории) вместо `IsUserManager`; для каждой группы маршрутов задать требуемую роль.
+
+### H3. gzip.NewWriter без sync.Pool — аллокация flate-компрессора на каждый ответ 🔍✅ (подтверждено, perf)
+- **Файл**: `internal/pkg/middleware/gzip.go:99`.
+- **Проблема**: `gzip.NewWriter(c.Writer)` создаёт flate-компрессор (~64KB истории/hash-таблиц)
+  заново на каждый ответ (HTML + статические JS/CSS). При высоком RPS — непрерывный GC-чурн на
+  hot path каждого запроса.
+- **Фикс**: `sync.Pool` для `*gzip.Writer` + `gz.Reset(w)` (паттерн gin-contrib/gzip).
+
+---
+
+## 🟠 MEDIUM (новые)
+
+### M1. MigrateFromDir: MkdirAll перед ошибкой → молчаливый старт на немигрированной схеме 🔍✅ (подтверждено)
+- **Файл**: `internal/db/migrate.go:153-175`.
+- **Проблема**: при неверной CWD первый запуск делает `os.MkdirAll("migrations")` (строка 154),
+  затем возвращает ошибку (строка 173). Второй запуск: `os.Stat("migrations")` уже НЕ `IsNotExist`
+  → проверка проходит → `m.Up()` применяет 0 миграций → `ErrNoChange` → сервер молча стартует на
+  пустой схеме. Комментарий заявляет «пустая папка не создаётся» — фактически создаётся и
+  подрывает фикс.
+- **Фикс**: не вызывать `MkdirAll` перед возвратом ошибки (сразу возвращать ошибку).
+
+### M2. ChatRoom unique index (GameID, TeamID, PassingID) с NULL не запрещает дубликаты 🔍✅ (подтверждено)
+- **Файл**: `internal/domain/monitor/model.go:31-34`.
+- **Проблема**: составной unique на трёх nullable `*uint` — в PostgreSQL `NULL != NULL`, поэтому
+  general/captains/server/personal-комнаты (все `(game_id, NULL, NULL)`) не дедуплицируются индексом.
+  Защита от гонки find-or-create держится только на логике сервиса.
+- **Фикс**: `UNIQUE ... NULLS NOT DISTINCT` (PG 15+) или уникальный индекс по `COALESCE`, либо
+  re-read-fallback в `GetOrCreate*` (проверить service.go).
+
+### M3. middleware.permissions: параметр requiredRole игнорируется (мёртвый) 🔍✅ (подтверждено, security)
+- **Файл**: `internal/pkg/middleware/permissions.go:11,23`.
+- **Проблема**: проверяет только `IsUserManager` (любая роль), `requiredRole` не сверяется. Сейчас
+  вызывается только в тестах (в production не подключён) — эксплуатации нет, но «middleware для
+  проверки роли» даёт доступ любому соавтору.
+- **Фикс**: передавать `requiredRole` в `HasPermissionRole`, либо удалить параметр.
+
+### M4. OAuth rate-limiter фактически fail-open (расхождение с заявленным fail-closed) 🔍✅ (подтверждено)
+- **Файл**: `internal/pkg/middleware/rate_limiter.go:401` + `cmd/server/main.go:271`.
+- **Проблема**: `InitOAuthRateLimiterWithValkeyFailClosed` записывает fail-closed-инстанс в
+  глобальный `oauthRateLimiter`, но `OAuthRateLimit()` его не использует — создаёт свой
+  `newSharedLimiter` (fail-open). Глобальные `oauthRateLimiter`/`InitOAuthRateLimiter*` — мёртвый код.
+- **Фикс**: использовать fail-closed-инстанс в `OAuthRateLimit`, либо убрать мёртвый код и задокументировать.
+
+### M5. Обход rate-limit через подделку X-Forwarded-For 🔍✅ (подтверждено, security)
+- **Файл**: `internal/pkg/middleware/rate_limiter.go:345,384,556,701` + `router.go:300-316`.
+- **Проблема**: критичные лимитеры (login/register/OAuth/reset) ключуются по `c.ClientIP()`. Если
+  `TRUSTED_PROXIES` задан слишком широким диапазоном (например `0.0.0.0/0`), атакующий ротирует
+  `X-Forwarded-For` и обходит per-IP бюджеты брутфорса. `SetTrustedProxies` принимает произвольные
+  CIDR без валидации.
+- **Фикс**: валидировать/ограничить доверенные CIDR; дополнить per-account-лимитом (по email) на login.
+
+### M6. Pub/sub канал не аутентифицирован: доступ к Valkey = чтение/инжект всех комнат 🔍✅ (подтверждено, security)
+- **Файл**: `internal/pkg/websocket/room_hub_pubsub.go:80-128` + `internal/pkg/realtimebus/bus.go:27-30`.
+- **Проблема**: единый канал `gengine:ws`/`gengine:sse` переносит base64-сообщения ВСЕХ комнат;
+  подписка без авторизации, сообщения без HMAC. `handleRemoteBroadcast` слепо доверяет `msg.Room`/
+  `msg.Data`. Процесс с доступом к Valkey (утечка кредов, SSRF) читает чаты/мониторы и инжектит
+  сообщения в существующие комнаты.
+- **Фикс**: отдельный Valkey-кред/ACL для шины, HMAC-подпись с instance-ключом, per-room каналы.
+
+### M7. SetTeamRoute: N+1 INSERT (по одному в цикле) 🔍✅ (подтверждено, perf)
+- **Файл**: `internal/domain/game/repository.go:630-635`.
+- **Проблема**: маршрут команды вставляется `tx.Create(&row)` на каждый levelID в цикле → N round-trip.
+- **Фикс**: собрать `[]GamePassingLevel` и один `tx.Create(&rows)`.
+
+### M8. Level Duplicate: ответы по одному INSERT на вопрос 🔍✅ (подтверждено, perf)
+- **Файл**: `internal/domain/level/service.go:226-240`.
+- **Проблема**: вопросы вставляются батчем, но ответы — `tx.Create` на каждый вопрос → Q INSERT.
+- **Фикс**: накопить все ответы в один слайс и один `tx.Create`.
+
+### M9. BroadcastToRoom: блокирующий Valkey Publish (до 2с) до локальной рассылки 🔍✅ (подтверждено, perf)
+- **Файл**: `internal/pkg/websocket/room_hub.go:534` + `room_hub_pubsub.go:107-128`.
+- **Проблема**: метод заявлен «неблокирующий», но `publishToBus` делает блокирующий `Publish` с
+  таймаутом 2с на каждый чат-месседж — при деградации Valkey каждый обработчик чата зависает до 2с.
+- **Фикс**: publish в асинхронной горутине (fire-and-forget), либо `[]byte` полем в wsBusMsg (json сам base64-кодирует, убирая ручной encode/decode).
+
+---
+
+## 🟡 LOW (новые)
+
+- **L1**: `db.go:31-36` — DSN через `fmt.Sprintf(password=%s)` — пароль с пробелом/`'` ломает строку. → `url.QueryEscape`.
+- **L2**: `db.go:75-102` — EnsureAdmin Count→Create без транзакции (гонка двух инстансов).
+- **L3**: `team/repository.go:206-221` — AddMember повторное добавление в ту же команду возвращает `ErrAlreadyInOtherTeam` (вводит в заблуждение).
+- **L4**: `team/user_search_handler.go:38` — `teamID, _ := strconv.Atoi(...)` глотает ошибку → `team_id=0` для админа.
+- **L5**: `team/chat_handler.go:48-51` — любая ошибка GetTeamWithMembers → 404 (сбой БД тоже 404, а не 500).
+- **L6**: `app/router.go:227-229` — `payload.Page[:128]` байтовое обрезание (рвёт UTF-8) + `Page` нигде не используется (мёртвый код).
+- **L7**: `app/app.go:115-120` — CSRF-skip через `HasPrefix` (/api → /api-*, /ws → /ws-*).
+- **L8**: `db/migrate.go:62` — cleanupGameSettings `MIN(id)` без учёта `deleted_at`.
+- **L9**: `rate_limiter.go:479` — `if userID == 0 { userID = 0 }` no-op.
+- **L10**: `rate_limiter.go:294-298` — Retry-After/X-RateLimit-Reset по Go-часам, не по TTL Valkey.
+- **L11**: `security.go:27-30` — getLeafletHash возвращает захардкоженный const (при обновлении leaflet CSP сломается).
+- **L12**: `security.go:83` — HSTS по X-Forwarded-Proto (хрупко).
+- **L13**: `logger.go:24-37` — maskQuery не маскирует path/заголовки.
+- **L14**: `cache/cache.go:261-266` — первый DeleteByPrefix строит префикс-индекс O(n) под Lock.
+- **L15**: `logger.go:54` — maskQuery вызывается даже для /static (аллокации впустую).
+- **L16**: `cache/valkey.go:88-92` — Get делает json.Unmarshal в `any` (теряет типы, аллоцирует).
+- **L17**: `game/repository.go:589-600` — ListByGamePaginated: Count + Find (2 запроса) vs COUNT OVER (1).
+- **L18**: `room_hub.go:138` — GetHealthStatus берёт Lock вместо RLock.
+- **L19**: `logger.go:86-92` — c.FullPath() 4 раза (сохранить в переменную).
+
+---
+
+## 🔍 Проверено и закрыто (кандидаты HIGH/MEDIUM, НЕ подтвердились)
+
+| Пункт | Статус | Детали |
+|---|---|---|
+| **uploads.go path traversal** | ✅ Закрыто | `..` до Clean, IsAbs, Join внутри uploadsDir; covers/photos/answers по видимости + параметризовано. |
+| **migrate advisory lock** | ✅ Закрыто | `pg_advisory_lock` на отдельном Conn, таймаут 10 мин, гарантированный unlock. |
+| **monitor poller блокировки** | ✅ Закрыто | monitorPollersMu + subMu — порядок непротиворечив, snapFn вне мьютекса. |
+| **ChatWS read-loop** | ✅ Закрыто | горутина + readCh, прерывание через SetReadDeadline, утечек нет. |
+| **wsMessageLimiter** | ✅ Закрыто | limiter.mu не под userMsgMu, sweep по lastUsed. |
+| **router CORS/metrics/pprof** | ✅ Закрыто | AllowAllOrigins согласован с AllowCredentials; /metrics, /debug/pprof за AuthRequired+2FA+Admin. |
+| **wire_providers DI** | ✅ Закрыто | wrapRefreshTokenService безопасен (wire гарантирует порядок). |
+| **auth middleware** | ✅ Закрыто | роль перечитывается из БД, ошибки не кэшируются, OptionalAuth fail-closed. |
+| **CSRF/Origin** | ✅ Закрыто | gorilla/csrf SameSiteStrict, APIOriginGuard (Sec-Fetch-Site + Origin==Host). |
+| **WebSocket origin** | ✅ Закрыто | deny пустой Origin, точное сравнение host, авторизация ДО Upgrade. |
+| **bodylimit/gzip** | ✅ Закрыто | MaxBytesReader; gzip только ответов (запросы не декомпрессируются → gzip-bomb неприменим). |
+| **EnsureAdmin** | ✅ Закрыто | bcrypt cost 12, параметризовано, без перезаписи админа. |
+| **индексы** | ✅ Закрыто | search_vector GIN, name trgm, is_draft+visibility+starts, team_members(user_id), logs(game_id,created_at), game_passings(team_id,status). |
+| **cache LRU** | ✅ Закрыто | ttlKeys-sweep, ленивый префикс-индекс, singleflight, cleanup в evictCallback. |
+| **Valkey DeleteByPrefix** | ✅ Закрыто | батчит Del по 100 ключей. |
+| **WebSocket per-room** | ✅ Закрыто | очереди/воркеры, кэш roomClients, двухфазный cleanup, idle-выход воркера. |
+| **Level Move/Duplicate** | ✅ Закрыто | advisory lock + FOR UPDATE, ExistsByPosition через EXISTS. |
+| **GetLogsByGameID** | ✅ Закрыто | LIMIT 500 + reverse, COUNT(*) OVER для пагинации. |
+
+---
+
+## 💡 Предложения по улучшению (PASS 22)
+
+### Критичные
+1. **H2**: GameManager → HasPermissionRole (observer не должен писать).
+2. **H1**: `Order("teams.id DESC")` в SearchPaginated.
+
+### Оптимизация
+3. **H3**: sync.Pool для gzip.Writer.
+4. **M7/M8**: батч-INSERT в SetTeamRoute и Level.Duplicate.
+5. **M9**: асинхронный Valkey Publish в BroadcastToRoom.
+
+### Безопасность/надёжность
+6. **M6**: аутентификация pub/sub (HMAC/per-room каналы).
+7. **M5**: валидация TRUSTED_PROXIES + per-account лимит.
+8. **M1**: убрать MkdirAll перед ошибкой миграций.
+9. **M3/M4**: починить/убрать мёртвый requiredRole и OAuth fail-closed.
+
+### UX/качество
+10. **M2**: NULLS NOT DISTINCT для chat_rooms (защита от дубликатов).
+11. **L1-L5, L13**: корректные DSN/коды ошибок/маскирование логов.
+
+---
+
+## 🎯 Итог PASS-22
+
+- **HIGH**: 3 новых (H1 ambiguous ORDER BY, H2 observer-обход авторизации, H3 gzip без пула).
+- **MEDIUM**: 9 новых (M1-M9: миграции, индексы, права, rate-limit, pub/sub, N+1).
+- **LOW**: 19 новых (L1-L19).
+- **Закрыто**: 17 кандидатов (uploads/миграции-lock/поллер/WS-read-loop/лимитер/CORS/DI/auth/CSRF/
+  origin/bodylimit/EnsureAdmin/индексы/cache/Valkey/WebSocket/level/logs) — без проблем.
+- **pprof**: heap 7.4MB, 22 goroutine, CPU ~0.42% (TLS) — утечек нет.
+- **Приоритет**: H2 (observer-обход — реальная дыра авторизации), H1 (500 при поиске команд),
+  H3 (gzip), M6 (pub/sub), M5 (rate-limit).
