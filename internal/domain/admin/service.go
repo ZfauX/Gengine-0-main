@@ -5,7 +5,9 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -366,8 +368,12 @@ func (s *BackupService) GetMaxBackups() int {
 	return s.MaxBackups
 }
 
-// encryptBackupFile (admin #6, PASS-8): шифрует файл AES-256-GCM на месте.
-// Формат: 12-байт nonce || ciphertext. Возвращает путь к зашифрованному файлу.
+// encryptBackupFile (admin #6, PASS-8): шифрует файл AES-256-CTR на месте.
+// Формат: 16-байт IV || ciphertext || 32-байт HMAC-SHA256(ciphertext).
+// H1 (PASS-21): раньше nonce брался gcm.NonceSize() (12 байт), а cipher.NewCTR
+// требует IV = block.BlockSize() (16 байт) — encrypt/decrypt падали с panic
+// "incorrect IV length". M1 (PASS-21): добавлен HMAC (encrypt-then-MAC) —
+// CTR без MAC позволял незаметно подменять ciphertext.
 // M5 (PASS-17): потоковое шифрование (io.Copy) — раньше os.ReadFile грузил
 // много-гигабайтный дамп в память целиком (OOM на больших БД).
 func (s *BackupService) encryptBackupFile(srcPath string) (string, error) {
@@ -384,11 +390,8 @@ func (s *BackupService) encryptBackupFile(srcPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
-	}
-	nonce := make([]byte, gcm.NonceSize())
+	// CTR IV = размер блока AES (16 байт), НЕ gcm.NonceSize() (12).
+	nonce := make([]byte, block.BlockSize())
 	if _, randErr := rand.Read(nonce); randErr != nil {
 		return "", randErr
 	}
@@ -398,12 +401,13 @@ func (s *BackupService) encryptBackupFile(srcPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// Сначала пишем nonce, затем шифрованный поток.
+	// Сначала IV, затем ciphertext (HMAC параллельно), затем HMAC в конец.
 	if _, err := out.Write(nonce); err != nil {
 		_ = out.Close()
 		return "", err
 	}
-	sw := cipher.StreamWriter{S: cipher.NewCTR(block, nonce), W: out}
+	mac := hmac.New(sha256.New, s.encryptionKey)
+	sw := cipher.StreamWriter{S: cipher.NewCTR(block, nonce), W: io.MultiWriter(out, mac)}
 	if _, err := io.Copy(sw, in); err != nil {
 		_ = out.Close()
 		return "", err
@@ -411,18 +415,25 @@ func (s *BackupService) encryptBackupFile(srcPath string) (string, error) {
 	if err := sw.Close(); err != nil {
 		return "", err
 	}
+	if _, err := out.Write(mac.Sum(nil)); err != nil {
+		_ = out.Close()
+		return "", err
+	}
 	if err := out.Close(); err != nil {
 		return "", err
 	}
 	// Удаляем незашифрованный дамп (plaintext не должен оставаться на диске).
+	// H1 (PASS-21): на Windows нельзя удалить открытый файл — закрываем до Remove.
+	errors.LogSilently(in.Close(), "Backup: close plaintext dump failed")
 	errors.LogSilently(os.Remove(srcPath), "Backup: failed to remove plaintext dump after encryption")
 	return encPath, nil
 }
 
 // decryptBackupFile (admin #6, PASS-8): расшифровывает .enc в директории
 // бекапов (для Download). Возвращает путь к временному расшифрованному файлу.
-// M5 (PASS-17): потоково (AES-CTR), совместим с encryptBackupFile; раньше
-// os.ReadFile + gcm.Open грузили файл целиком в память.
+// H1/M1 (PASS-21): IV 16 байт + проверка HMAC (encrypt-then-MAC).
+// Формат файла: 16-байт IV || ciphertext || 32-байт HMAC. Проверка HMAC
+// выполняется ДО записи plaintext (два потоковых прохода — O(1) память).
 func (s *BackupService) decryptBackupFile(encPath string) (string, error) {
 	if len(s.encryptionKey) != 32 {
 		return encPath, nil // не зашифрован
@@ -437,13 +448,32 @@ func (s *BackupService) decryptBackupFile(encPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	gcm, err := cipher.NewGCM(block)
+	stat, err := in.Stat()
 	if err != nil {
 		return "", err
 	}
-	nonce := make([]byte, gcm.NonceSize())
+	// IV(16) + HMAC(32) минимум; ciphertext может быть пустым (пустой дамп).
+	if stat.Size() < int64(sha256.Size) {
+		return "", fmt.Errorf("зашифрованный бэкап повреждён (короткий файл)")
+	}
+	cipherLen := stat.Size() - int64(sha256.Size) // весь файл без хвостового HMAC
+	nonce := make([]byte, block.BlockSize())
 	if _, readErr := io.ReadFull(in, nonce); readErr != nil {
-		return "", fmt.Errorf("зашифрованный бэкап повреждён (короткий файл): %w", readErr)
+		return "", fmt.Errorf("зашифрованный бэкап повреждён (нет IV): %w", readErr)
+	}
+	cipherLen -= int64(len(nonce))
+
+	// Проход 1: HMAC по ciphertext (без хвостовых 32 байт).
+	mac := hmac.New(sha256.New, s.encryptionKey)
+	if _, copyErr := io.CopyN(mac, in, cipherLen); copyErr != nil {
+		return "", fmt.Errorf("зашифрованный бэкап повреждён (чтение ciphertext): %w", copyErr)
+	}
+	expectedMAC := make([]byte, sha256.Size)
+	if _, readErr := io.ReadFull(in, expectedMAC); readErr != nil {
+		return "", fmt.Errorf("зашифрованный бэкап повреждён (нет HMAC): %w", readErr)
+	}
+	if !hmac.Equal(mac.Sum(nil), expectedMAC) {
+		return "", fmt.Errorf("зашифрованный бэкап повреждён или подделан (HMAC mismatch)")
 	}
 
 	// Временный файл в директории бекапов с УНИКАЛЬНЫМ именем (M2, PASS-10) —
@@ -458,12 +488,20 @@ func (s *BackupService) decryptBackupFile(encPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	sr := cipher.StreamReader{S: cipher.NewCTR(block, nonce), R: in}
+	// Проход 2: расшифровываем ciphertext (позиционируемся после IV).
+	if _, seekErr := in.Seek(int64(len(nonce)), io.SeekStart); seekErr != nil {
+		_ = out.Close()
+		_ = os.Remove(plainPath)
+		return "", seekErr
+	}
+	sr := cipher.StreamReader{S: cipher.NewCTR(block, nonce), R: io.LimitReader(in, cipherLen)}
 	if _, err := io.Copy(out, sr); err != nil {
 		_ = out.Close()
+		_ = os.Remove(plainPath)
 		return "", err
 	}
 	if err := out.Close(); err != nil {
+		_ = os.Remove(plainPath)
 		return "", err
 	}
 	return plainPath, nil

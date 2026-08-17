@@ -12,7 +12,11 @@ package game
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
+	"strconv"
 	"time"
 
 	"gengine-0/internal/pkg/realtimebus"
@@ -26,6 +30,32 @@ type sseBusMsg struct {
 	GameID  uint   `json:"game_id"`
 	Type    string `json:"type"`
 	DataRaw string `json:"data"` // JSON-строка
+	Sig     string `json:"sig"`  // base64 HMAC-SHA256(secret, origin|game_id|type|data) (M6, PASS-22)
+}
+
+// signSSEMsg вычисляет HMAC-SHA256 подпись SSE-события (M6, PASS-22).
+func signSSEMsg(secret []byte, origin string, gameID uint, eventType, data string) string {
+	mac := hmac.New(sha256.New, secret)
+	mac.Write([]byte(origin))
+	mac.Write([]byte("|"))
+	mac.Write([]byte(strconv.FormatUint(uint64(gameID), 10)))
+	mac.Write([]byte("|"))
+	mac.Write([]byte(eventType))
+	mac.Write([]byte("|"))
+	mac.Write([]byte(data))
+	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// verifySSEMsg проверяет подпись (M6, PASS-22). Пустой secret — пропускаем
+// (несовместимый инстанс/тест); пустая/неверная Sig — отбрасываем.
+func verifySSEMsg(secret []byte, msg *sseBusMsg) bool {
+	if len(secret) == 0 {
+		return true
+	}
+	want := signSSEMsg(secret, msg.Origin, msg.GameID, msg.Type, msg.DataRaw)
+	// want и msg.Sig — base64-строки одинаковой длины; hmac.Equal устойчив к
+	// timing-атакам. Декодировать не нужно — сравниваем строки.
+	return hmac.Equal([]byte(want), []byte(msg.Sig))
 }
 
 const ssePubSubPublishTimeout = 2 * time.Second
@@ -35,15 +65,17 @@ const ssePubSubPublishTimeout = 2 * time.Second
 type sseBusFields struct {
 	bus        realtimebus.Bus
 	instanceID string
+	secret     []byte // M6 (PASS-22): ключ HMAC-подписи событий
 	ctx        context.Context
 	cancel     context.CancelFunc
 }
 
 // SetPubSub включает cross-instance рассылку SSE. bus == nil — локально.
-func (m *SSEManager) SetPubSub(bus realtimebus.Bus, instanceID string) {
+// secret (M6, PASS-22) — ключ HMAC-подписи (см. cfg.Session.Secret).
+func (m *SSEManager) SetPubSub(bus realtimebus.Bus, instanceID string, secret []byte) {
 	m.busMu.Lock()
 	defer m.busMu.Unlock()
-	m.sseBus = &sseBusFields{bus: bus, instanceID: instanceID}
+	m.sseBus = &sseBusFields{bus: bus, instanceID: instanceID, secret: append([]byte(nil), secret...)}
 	if bus == nil {
 		return
 	}
@@ -78,6 +110,11 @@ func (m *SSEManager) handleRemoteBroadcast(_ string, payload []byte) {
 	if msg.Origin == fields.instanceID {
 		return // эхо собственного сообщения
 	}
+	// M6 (PASS-22): подпись — отбрасываем подделанные публикации в канал.
+	if !verifySSEMsg(fields.secret, &msg) {
+		log.Warn().Str("origin", msg.Origin).Uint("game_id", msg.GameID).Msg("SSE: pub/sub message with invalid HMAC dropped")
+		return
+	}
 	var data any
 	if msg.DataRaw != "" {
 		if err := json.Unmarshal([]byte(msg.DataRaw), &data); err != nil {
@@ -106,6 +143,7 @@ func (m *SSEManager) publishToBus(gameID uint, eventType string, data any) {
 		GameID:  gameID,
 		Type:    eventType,
 		DataRaw: string(raw),
+		Sig:     signSSEMsg(fields.secret, fields.instanceID, gameID, eventType, string(raw)),
 	}
 	payload, err := json.Marshal(msg)
 	if err != nil {

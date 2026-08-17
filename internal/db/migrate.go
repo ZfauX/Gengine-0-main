@@ -151,24 +151,18 @@ func MigrateFromDir(gdb *gorm.DB, migrationsDir string) error {
 	}
 
 	if _, statErr := os.Stat(migrationsDir); os.IsNotExist(statErr) {
-		if mkdirErr := os.MkdirAll(migrationsDir, 0755); mkdirErr != nil {
-			return fmt.Errorf("не удалось создать папку миграций: %w", mkdirErr)
-		}
-		// Если папка только что создана и пуста — используем миграции из individual-директории
+		// M1 (PASS-22): НЕ создаём папку перед ошибкой — раньше MkdirAll создавал
+		// пустую "migrations", и второй запуск из той же CWD не видел IsNotExist →
+		// молча применял 0 миграций (старт на немигрированной схеме).
 		if migrationsDir == "migrations_squashed" {
 			log.Warn().Msg("migrations_squashed не найдены, переключаемся на individual migrations/")
 			migrationsDir = "migrations"
-			// Повторная проверка existence
+			// Повторная проверка existence (без создания)
 			if _, statErr2 := os.Stat(migrationsDir); os.IsNotExist(statErr2) {
-				// DEEP-REVIEW (pass 46): раньше здесь создавалась пустая папка и
-				// возвращался nil — миграции МОЛЧА пропускались, и сервер стартовал
-				// на немгрированной схеме (типично при запуске из другой CWD:
-				// systemd, Docker, cron). Теперь это явная ошибка.
 				abs, _ := filepath.Abs(migrationsDir)
 				return fmt.Errorf("папка миграций не найдена: %s (проверьте рабочую директорию — запустите сервер из корня проекта или укажите MIGRATIONS_DIR)", abs)
 			}
 		} else {
-			// DEEP-REVIEW (pass 46): аналогично — не создаём пустую папку молча.
 			abs, _ := filepath.Abs(migrationsDir)
 			return fmt.Errorf("папка миграций не найдена: %s (запустите сервер из корня проекта)", abs)
 		}

@@ -192,6 +192,14 @@ func (s *CoAuthorService) IsUserManager(ctx context.Context, gameID, userID uint
 	return isManager, nil
 }
 
+// CanManageContent (H2, PASS-22): проверяет, что пользователь может
+// РЕДАКТИРОВАТЬ контент игры (роль >= content_editor, учитывая jsonb
+// Permissions). В отличие от IsUserManager, observer (read-only) — false.
+// Используется middleware.GameManager на мутирующих эндпоинтах.
+func (s *CoAuthorService) CanManageContent(ctx context.Context, gameID, userID uint) (bool, error) {
+	return s.HasPermission(ctx, gameID, userID, RoleContentEditor)
+}
+
 // managerCacheKey строит ключ кэша (gameID в старших 32 битах, userID в младших).
 func managerCacheKey(gameID, userID uint) uint64 {
 	return uint64(gameID)<<32 | uint64(userID)

@@ -199,7 +199,7 @@ func (r *gormTeamRepo) SearchPaginated(ctx context.Context, query string, offset
 		Preload("Captain", func(db *gorm.DB) *gorm.DB { return db.Select("id, name, avatar_path") }).
 		Joins("LEFT JOIN users ON users.id = teams.captain_id").
 		Where("teams.name ILIKE ? OR users.name ILIKE ?", like, like).
-		Offset(offset).Limit(limit).Order("id DESC").
+		Offset(offset).Limit(limit).Order("teams.id DESC"). // H1 (PASS-22): "id" неоднозначен при JOIN с users
 		Find(&teams).Error
 	return teams, err
 }
@@ -215,6 +215,18 @@ func (r *gormTeamRepo) AddMember(ctx context.Context, teamID, userID uint) error
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
+		// L3 (PASS-22): RowsAffected==0 при гонке может означать «уже в ЭТОЙ
+		// команде» (ON CONFLICT (user_id)), а не обязательно «в другой».
+		// Уточняем, чтобы не вводить в заблуждение.
+		var cnt int64
+		if err := r.db.WithContext(ctx).Model(&TeamMember{}).
+			Where("team_id = ? AND user_id = ?", teamID, userID).
+			Count(&cnt).Error; err != nil {
+			return err
+		}
+		if cnt > 0 {
+			return ErrUserAlreadyInTeam
+		}
 		return ErrAlreadyInOtherTeam
 	}
 	return nil

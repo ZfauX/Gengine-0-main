@@ -252,7 +252,9 @@ func run() error {
 			// SSE) через Valkey pub/sub. instanceID — уникальный идентификатор
 			// ЭТОГО инстанса (anti-эхо при рассылке).
 			realtimeBus = realtimebus.NewValkeyBus(valkeyClient)
-			hub.SetPubSub(realtimeBus, instanceID)
+			// M6 (PASS-22): HMAC-подпись pub/sub сообщений (WS+SSE) — кто не знает
+			// instance-секрет, не сможет подделать broadcast через Valkey.
+			hub.SetPubSub(realtimeBus, instanceID, sessionSecret)
 			// Глобальный/SSE/API — in-memory (M7, PASS-13): эти лимитеры защищают
 			// от флуда ОДНОГО инстанса; распределённый флуд за балансировщиком —
 			// задача nginx/LB. Раньше каждый запрос делал round-trip INCR в Valkey
@@ -316,7 +318,7 @@ func run() error {
 	// MULTI-INSTANCE (PASS-12): cross-instance SSE через Valkey pub/sub.
 	// SSEManager создаётся внутри wire — настраиваем через deps.Services.
 	if realtimeBus != nil {
-		deps.Services.SSEMgr.SetPubSub(realtimeBus, instanceID)
+		deps.Services.SSEMgr.SetPubSub(realtimeBus, instanceID, sessionSecret)
 	}
 	// PASS-11 (session fixation): server-side session store (Valkey/in-memory).
 	if sessionStore != nil {

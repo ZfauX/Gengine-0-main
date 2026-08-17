@@ -3,6 +3,8 @@ package db
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 
 	"gengine-0/internal/config"
 	"gengine-0/internal/domain/user"
@@ -28,12 +30,20 @@ import (
 // Возвращает указатель на gorm.DB и ошибку, если соединение не удалось установить.
 // Для логирования используется кастомный GormLogger из пакета logging.
 func Connect(cfg *config.Config) (*gorm.DB, error) {
-	dsn := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		cfg.Database.Host, cfg.Database.Port,
-		cfg.Database.User, cfg.Database.Password,
-		cfg.Database.Name, cfg.Database.SSLMode,
-	)
+	// L1 (PASS-22): DSN через url.URL — пароль с спецсимволами (@, :, /, #)
+	// раньше ломал key=value DSN (fmt.Sprintf без экранирования). UserPassword
+	// делает процентное кодирование, pgx разбирает URL-формат.
+	u := &url.URL{
+		Scheme: "postgres",
+		Host:   net.JoinHostPort(cfg.Database.Host, cfg.Database.Port),
+		Path:   cfg.Database.Name,
+		User:   url.UserPassword(cfg.Database.User, cfg.Database.Password),
+	}
+	q := u.Query()
+	q.Set("sslmode", cfg.Database.SSLMode)
+	u.RawQuery = q.Encode()
+	dsn := u.String()
+
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: &logging.GormLogger{LogLevel: logger.Warn},
 		// Не оборачивать каждую single-row операцию в BEGIN/COMMIT — явные

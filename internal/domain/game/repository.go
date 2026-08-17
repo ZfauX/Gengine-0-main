@@ -627,9 +627,13 @@ func (r *gormGamePassingRepo) SetTeamRoute(ctx context.Context, passingID uint, 
 		if err := tx.Where("game_passing_id = ?", passingID).Delete(&GamePassingLevel{}).Error; err != nil {
 			return err
 		}
+		// M7 (PASS-22): один батч-INSERT вместо N построчных Create.
+		rows := make([]GamePassingLevel, 0, len(levelIDs))
 		for i, levelID := range levelIDs {
-			row := GamePassingLevel{GamePassingID: passingID, LevelID: levelID, OrderIndex: i}
-			if err := tx.Create(&row).Error; err != nil {
+			rows = append(rows, GamePassingLevel{GamePassingID: passingID, LevelID: levelID, OrderIndex: i})
+		}
+		if len(rows) > 0 {
+			if err := tx.Create(&rows).Error; err != nil {
 				return err
 			}
 		}

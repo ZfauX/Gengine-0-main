@@ -54,6 +54,13 @@ type RoomHub struct {
 	// читается из broadcast-горутин).
 	busMu     sync.RWMutex
 	busFields *busFields
+
+	// publishSem (M9, PASS-22): семафор параллельных публикаций в Valkey.
+	// publishToBus идёт асинхронно (fire-and-forget), чтобы недоступность
+	// Valkey (Publish блокируется до pubSubPublishTimeout) не задерживала
+	// локальную рассылку. При переполнении семафора сообщение пропускается
+	// (fail-open — cross-instance доставка деградирует до локальной).
+	publishSem chan struct{}
 }
 
 // SetOnRoomChange регистрирует колбэк изменения состава комнаты (IDEA-6).
@@ -101,6 +108,7 @@ func NewRoomHub() *RoomHub {
 		maxTotalConns: 1000,
 		maxConnsPerIP: 50,
 		connsPerIP:    make(map[string]int),
+		publishSem:    make(chan struct{}, pubSubPublishConcurrency),
 	}
 }
 

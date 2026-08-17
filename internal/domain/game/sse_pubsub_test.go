@@ -26,7 +26,7 @@ func newTestSSEMgrWithBus(t *testing.T, mr *miniredis.Miniredis, instanceID stri
 	t.Cleanup(bus.Close)
 
 	mgr := newTestSSEMgr()
-	mgr.SetPubSub(bus, instanceID)
+	mgr.SetPubSub(bus, instanceID, []byte("test-secret"))
 	t.Cleanup(mgr.Stop)
 	return mgr
 }

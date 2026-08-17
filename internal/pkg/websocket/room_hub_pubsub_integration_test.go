@@ -37,7 +37,7 @@ func newTestHubRealValkey(t *testing.T, instanceID string) (*RoomHub, *redis.Cli
 	t.Cleanup(bus.Close)
 
 	hub := NewRoomHub()
-	hub.SetPubSub(bus, instanceID)
+	hub.SetPubSub(bus, instanceID, []byte("test-secret"))
 	hub.Run()
 	t.Cleanup(hub.Stop)
 	return hub, client

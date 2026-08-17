@@ -36,6 +36,20 @@ func maskQuery(rawQuery string) string {
 	return strings.Join(parts, "&")
 }
 
+// maskPath маскирует чувствительные сегменты в path (L13, PASS-22):
+// /auth/verify/{token} → /auth/verify/***. Защита на будущее — сейчас
+// чувствительные данные передаются только в query (уже маскируются), но
+// токен в path не должен попасть в лог, если такой маршрут появится.
+func maskPath(path string) string {
+	segs := strings.Split(path, "/")
+	for i := 1; i < len(segs); i++ {
+		if sensitiveParams[strings.ToLower(segs[i-1])] {
+			segs[i] = "***"
+		}
+	}
+	return strings.Join(segs, "/")
+}
+
 // getRealIP возвращает реальный IP клиента, если он задан middleware доверенных прокси.
 func getRealIP(c *gin.Context) string {
 	if ip, ok := c.Get("real_ip"); ok {
@@ -50,8 +64,13 @@ func getRealIP(c *gin.Context) string {
 func LoggerMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
-		path := c.Request.URL.Path
-		raw := maskQuery(c.Request.URL.RawQuery)
+		path := maskPath(c.Request.URL.Path)
+		// L15 (PASS-22): не тратим аллокации maskQuery на нечувствительные
+		// статические/загрузочные запросы (query там только ?v=...).
+		raw := ""
+		if !strings.HasPrefix(path, "/static/") && !strings.HasPrefix(path, "/uploads/") && path != "/favicon.ico" {
+			raw = maskQuery(c.Request.URL.RawQuery)
+		}
 		if raw != "" {
 			path = path + "?" + raw
 		}

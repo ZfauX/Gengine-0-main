@@ -6,10 +6,20 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 )
+
+// gzipWriterPool (H3, PASS-22): переиспользуем *gzip.Writer вместо создания
+// flate-компрессора (~64KB истории/hash-таблиц) на каждый ответ. Пул
+// потокобезопасен; Reset сбрасывает состояние под новый ResponseWriter.
+var gzipWriterPool = sync.Pool{
+	New: func() any {
+		return gzip.NewWriter(io.Discard)
+	},
+}
 
 // gzipResponseWriter реализует io.Writer поверх ResponseWriter для потокового сжатия.
 type gzipResponseWriter struct {
@@ -95,14 +105,21 @@ func GzipMiddleware() gin.HandlerFunc {
 			}
 		}
 
-		// Потоковое сжатие: не буферизируем весь ответ в памяти
-		gz := gzip.NewWriter(c.Writer)
+		// Потоковое сжатие: не буферизируем весь ответ в памяти.
+		// H3 (PASS-22): берём writer из пула (не аллоцируем flate на каждый ответ).
+		gzObj := gzipWriterPool.Get()
+		gz, ok := gzObj.(*gzip.Writer)
+		if !ok {
+			gz = gzip.NewWriter(c.Writer)
+		}
+		gz.Reset(c.Writer)
 		// Закрываем в defer — даже при панике хендлера gzip-поток завершится корректно,
 		// иначе Recovery запишет 500 через незакрытый gzip-writer (битый ответ).
 		defer func() {
 			if err := gz.Close(); err != nil {
 				log.Debug().Err(err).Msg("GzipMiddleware: gzip close failed")
 			}
+			gzipWriterPool.Put(gz)
 		}()
 
 		gzWriter := &gzipResponseWriter{

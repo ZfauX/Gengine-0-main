@@ -28,7 +28,7 @@ func newTestHubWithBus(t *testing.T, mr *miniredis.Miniredis, instanceID string)
 	t.Cleanup(bus.Close)
 
 	hub := NewRoomHub()
-	hub.SetPubSub(bus, instanceID)
+	hub.SetPubSub(bus, instanceID, []byte("test-secret"))
 	hub.Run()
 	t.Cleanup(hub.Stop)
 	return hub

@@ -43,6 +43,14 @@ func (s *stubGameAuthorizer) IsUserManager(ctx context.Context, gameID, userID u
 	return s.isManager, s.err
 }
 
+func (s *stubGameAuthorizer) CanManageContent(ctx context.Context, gameID, userID uint) (bool, error) {
+	return s.isManager, s.err
+}
+
+func (s *stubGameAuthorizer) HasPermission(ctx context.Context, gameID, userID uint, requiredRole string) (bool, error) {
+	return s.isManager, s.err
+}
+
 type stubTeamAccessChecker struct {
 	canManage bool
 }
@@ -794,7 +802,7 @@ func TestCodeSubmissionRateLimit_NoUserID(t *testing.T) {
 func TestSecurityHeadersMiddleware(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.Use(middleware.SecurityHeadersMiddleware(true))
+	router.Use(middleware.SecurityHeadersMiddleware(true, ""))
 	router.GET("/test", func(c *gin.Context) {
 		c.String(http.StatusOK, "ok")
 	})

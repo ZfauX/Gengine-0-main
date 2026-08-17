@@ -398,9 +398,19 @@ func LoginRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 // window/limit на каждый вызов — раньше брался глобальный oauthRateLimiter,
 // инициализированный с RateLimitLoginRequests (5), и переданный limit
 // (например 10) игнорировался (мёртвый параметр).
+// M4 (PASS-22): используем глобальный oauthRateLimiter (инициализируется в
+// main.go как FAIL-CLOSED при Valkey). Раньше newSharedLimiter (fail-open)
+// на каждый вызов давал расхождение с заявленным fail-closed. window/limit
+// вызова — fallback для тестов/без инициализации.
 func OAuthRateLimit(window time.Duration, limit int) gin.HandlerFunc {
-	rl := newSharedLimiter(window, limit)
+	// fallback создаётся ОДИН раз при регистрации middleware (не на запрос) —
+	// иначе каждый запрос получал бы свежий бюджет и лимит не работал бы.
+	fallback := newSharedLimiter(window, limit)
 	return func(c *gin.Context) {
+		rl := oauthRateLimiter
+		if rl == nil {
+			rl = fallback
+		}
 		ip := c.ClientIP()
 		result := rl.Allow("oauth:" + ip)
 		setRateLimitHeaders(c, result)
@@ -475,10 +485,9 @@ func PaymentRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 func PersonalChatRateLimit(window time.Duration, limit int) gin.HandlerFunc {
 	rl := newSharedLimiter(window, limit)
 	return func(c *gin.Context) {
+		// L9 (PASS-22): аноним (userID=0) получит общий бюджет автоматически —
+		// no-op присваивание убрано.
 		userID := c.GetUint("userID")
-		if userID == 0 {
-			userID = 0 // аноним — общий бюджет (не должно быть, маршрут под AuthRequired)
-		}
 		result := rl.Allow(fmt.Sprintf("personal_chat:%d", userID))
 		setRateLimitHeaders(c, result)
 		if !result.Allowed {

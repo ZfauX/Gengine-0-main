@@ -16,6 +16,8 @@ package websocket
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"time"
@@ -30,6 +32,31 @@ type wsBusMsg struct {
 	Origin string `json:"origin"` // instanceID отправителя (anti-эхо)
 	Room   string `json:"room"`
 	Data   string `json:"data"` // base64 (бинарно-безопасно)
+	Sig    string `json:"sig"`  // base64 HMAC-SHA256(secret, origin|room|data) (M6, PASS-22)
+}
+
+// signWSMsg вычисляет HMAC-SHA256 подпись сообщения (M6, PASS-22):
+// любой, кто может писать в Valkey pub/sub (или прослушивать канал), не должен
+// уметь подделывать broadcast-сообщения. Ключ — instance-секрет приложения.
+func signWSMsg(secret []byte, origin, room, data string) string {
+	mac := hmac.New(sha256.New, secret)
+	mac.Write([]byte(origin))
+	mac.Write([]byte("|"))
+	mac.Write([]byte(room))
+	mac.Write([]byte("|"))
+	mac.Write([]byte(data))
+	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// verifyWSMsg проверяет подпись. Пустая Sig или несовпадение — отбрасываем.
+func verifyWSMsg(secret []byte, msg *wsBusMsg) bool {
+	if len(secret) == 0 {
+		return true // secret не задан (несовместимый инстанс/тест) — пропускаем
+	}
+	want := signWSMsg(secret, msg.Origin, msg.Room, msg.Data)
+	// want и msg.Sig — base64-строки одинаковой длины; hmac.Equal устойчив к
+	// timing-атакам.
+	return hmac.Equal([]byte(want), []byte(msg.Sig))
 }
 
 // pubSubPublishTimeout — таймаут публикации в Valkey. Ошибка публикации НЕ
@@ -37,23 +64,30 @@ type wsBusMsg struct {
 // клиентов этого инстанса, cross-instance доставка деградирует до локальной.
 const pubSubPublishTimeout = 2 * time.Second
 
+// pubSubPublishConcurrency (M9, PASS-22): макс. число параллельных публикаций
+// в Valkey. Ограничивает фон-горутины publishToBus; при переполнении — скип.
+const pubSubPublishConcurrency = 32
+
 // busFields защищает конфигурацию pub/sub (устанавливается один раз до Run).
 // Доступ к полям синхронизируется через h.busMu (RoomHub).
 type busFields struct {
 	bus        realtimebus.Bus
 	instanceID string
+	secret     []byte // M6 (PASS-22): ключ HMAC-подписи broadcast-сообщений
 	ctx        context.Context
 	cancel     context.CancelFunc
 }
 
 // SetPubSub включает cross-instance рассылку. bus == nil — работаем локально.
 // instanceID — уникальный идентификатор этого инстанса (из main.go).
-func (h *RoomHub) SetPubSub(bus realtimebus.Bus, instanceID string) {
+// secret (M6, PASS-22) — ключ HMAC-подписи сообщений (см. cfg.Session.Secret).
+func (h *RoomHub) SetPubSub(bus realtimebus.Bus, instanceID string, secret []byte) {
 	h.busMu.Lock()
 	defer h.busMu.Unlock()
 	h.busFields = &busFields{
 		bus:        bus,
 		instanceID: instanceID,
+		secret:     append([]byte(nil), secret...),
 	}
 	if bus == nil {
 		return
@@ -92,6 +126,12 @@ func (h *RoomHub) handleRemoteBroadcast(_ string, payload []byte) {
 	if msg.Origin == fields.instanceID {
 		return // эхо собственного сообщения — уже расслано локально
 	}
+	// M6 (PASS-22): подпись — отбрасываем подделанные/несанкционированные
+	// публикации в pub/sub канал.
+	if !verifyWSMsg(fields.secret, &msg) {
+		log.Warn().Str("origin", msg.Origin).Msg("RoomHub: pub/sub message with invalid HMAC dropped")
+		return
+	}
 	data, err := base64.StdEncoding.DecodeString(msg.Data)
 	if err != nil {
 		log.Debug().Err(err).Msg("RoomHub: pub/sub bad base64 payload")
@@ -103,7 +143,10 @@ func (h *RoomHub) handleRemoteBroadcast(_ string, payload []byte) {
 }
 
 // publishToBus публикует сообщение в канал (fail-open). Вызывается из
-// BroadcastToRoom ДО локальной рассылки.
+// BroadcastToRoom ДО локальной рассылки. M9 (PASS-22): публикация асинхронная
+// (фоновые горутины с семафором publishSem) — недоступный/медленный Valkey
+// (Publish блокируется до pubSubPublishTimeout) больше НЕ задерживает
+// локальную рассылку.
 func (h *RoomHub) publishToBus(roomID string, data []byte) {
 	h.busMu.RLock()
 	fields := h.busFields
@@ -115,16 +158,27 @@ func (h *RoomHub) publishToBus(roomID string, data []byte) {
 		Origin: fields.instanceID,
 		Room:   roomID,
 		Data:   base64.StdEncoding.EncodeToString(data),
+		Sig:    signWSMsg(fields.secret, fields.instanceID, roomID, base64.StdEncoding.EncodeToString(data)),
 	}
 	payload, err := json.Marshal(msg)
 	if err != nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), pubSubPublishTimeout)
-	defer cancel()
-	if err := fields.bus.Publish(ctx, realtimebus.WSChannel, payload); err != nil {
-		log.Debug().Err(err).Str("room", roomID).Msg("RoomHub: pub/sub publish failed (local only)")
+	// Семафор: не плодим горутины при пике сообщений/недоступном Valkey.
+	select {
+	case h.publishSem <- struct{}{}:
+	default:
+		log.Debug().Str("room", roomID).Msg("RoomHub: pub/sub publish concurrency limit hit, skipping (local only)")
+		return
 	}
+	go func() {
+		defer func() { <-h.publishSem }()
+		ctx, cancel := context.WithTimeout(context.Background(), pubSubPublishTimeout)
+		defer cancel()
+		if err := fields.bus.Publish(ctx, realtimebus.WSChannel, payload); err != nil {
+			log.Debug().Err(err).Str("room", roomID).Msg("RoomHub: pub/sub publish failed (local only)")
+		}
+	}()
 }
 
 // enqueueLocal кладёт сообщение в канал broadcast (как BroadcastToRoom), НЕ

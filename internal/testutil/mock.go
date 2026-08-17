@@ -27,6 +27,11 @@ func (s *GameAuthorizerStub) HasPermission(ctx context.Context, gameID, userID u
 	return true, nil
 }
 
+// CanManageContent (H2, PASS-22): для stub всегда возвращает true.
+func (s *GameAuthorizerStub) CanManageContent(ctx context.Context, gameID, userID uint) (bool, error) {
+	return true, nil
+}
+
 // NewGameAuthorizerStub создаёт новую заглушку авторизатора.
 func NewGameAuthorizerStub(db *gorm.DB) *GameAuthorizerStub {
 	return &GameAuthorizerStub{DB: db}

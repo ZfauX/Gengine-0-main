@@ -1648,3 +1648,39 @@ pgx-типы, i18n) — не hot-path, не требует вмешательс�
 - **pprof**: heap 7.4MB, 22 goroutine, CPU ~0.42% (TLS) — утечек нет.
 - **Приоритет**: H2 (observer-обход — реальная дыра авторизации), H1 (500 при поиске команд),
   H3 (gzip), M6 (pub/sub), M5 (rate-limit).
+
+---
+
+## ✅ Исправления PASS-22 (коммит `fix(PASS-22)`)
+
+| Пункт | Статус | Что сделано |
+|---|---|---|
+| **H1** SearchPaginated ambiguous ORDER BY | ✅ | `Order("teams.id DESC")` в `team/repository.go` (JOIN с users). |
+| **H2** GameManager observer-обход | ✅ | `GameAuthorizer.CanManageContent` (интерфейс + `CoAuthorService.HasPermission(RoleContentEditor)`); `game_manager.go` использует его; stub'ы обновлены. |
+| **H3** gzip без sync.Pool | ✅ | `gzipWriterPool` + `gz.Reset` + `Put` в defer; type-assert с ok-проверкой (errcheck). |
+| **M1** MigrateFromDir MkdirAll | ✅ | Убран `os.MkdirAll` перед возвратом ошибки «папка миграций не найдена». |
+| **M2** ChatRoom unique index | ✅ | Уже закрыто: частичные unique-индексы 000064/000067 (game_general, team_general, personal, captains, team_flood). Server-комната без unique — редкая гонка, оставлено. |
+| **M3** permissions requiredRole | ✅ | `GameAuthorizer.HasPermission(ctx, gameID, userID, role)`; `RequirePermission` больше не игнорирует requiredRole. |
+| **M4** OAuth rate-limiter fail-open | ✅ | `OAuthRateLimit` использует глобальный `oauthRateLimiter` (fail-closed при Valkey); fallback-лимитер создаётся один раз при регистрации middleware. |
+| **M5** TRUSTED_PROXIES | ✅ | `config.go`: `0.0.0.0/0` и `::/0` запрещены (strict — ошибка, non-strict — игнор с Warn). |
+| **M6** Pub/sub аутентификация | ✅ | HMAC-SHA256 подпись `wsBusMsg`/`sseBusMsg` (encrypt-then-MAC); ключ — `cfg.Session.Secret`; невалидные сообщения отбрасываются. |
+| **M7** SetTeamRoute N+1 | ✅ | Один батч-INSERT `tx.Create(&rows)`. |
+| **M8** Level Duplicate N+1 | ✅ | Один батч всех ответов `tx.Create(&allAnswers)`. |
+| **M9** BroadcastToRoom блокирующий Publish | ✅ | `publishToBus` асинхронный (горутина + семафор `publishSem` 32); недоступный Valkey не задерживает локальную рассылку. |
+| **L1** DSN password | ✅ | `db.go`: DSN через `url.URL` + `url.UserPassword` (процентное кодирование). |
+| **L3** AddMember ErrAlreadyInOtherTeam | ✅ | `repository.go`: при `RowsAffected==0` уточняем — `ErrUserAlreadyInTeam` если уже в этой команде. |
+| **L6** Page[:128] UTF-8 | ✅ | `router.go`: обрезка до валидной руны (`utf8.ValidString`). |
+| **L9** no-op userID=0 | ✅ | Убран мёртвый `if userID == 0 { userID = 0 }`. |
+| **L11** leaflet hash | ✅ | `security.go`: SRI-хэши вычисляются из фактических файлов при старте (fallback на хардкод); `SecurityHeadersMiddleware(forceHSTS, staticDir)`. |
+| **L13** maskQuery path | ✅ | `logger.go`: `maskPath` маскирует чувствительные сегменты path. |
+| **L15** maskQuery для /static | ✅ | `logger.go`: maskQuery не вызывается для /static, /uploads, favicon. |
+
+### PASS-21 (доделаны в этом цикле)
+
+| Пункт | Статус | Что сделано |
+|---|---|---|
+| **H1** backup-шифрование panic | ✅ | `admin/service.go`: IV = `block.BlockSize()` (16 байт, не gcm.NonceSize 12) — `cipher.NewCTR` больше не паникует; на Windows файл закрывается до Remove. |
+| **M1** AES-CTR без MAC | ✅ | Encrypt-then-MAC: формат `IV(16) || ciphertext || HMAC-SHA256(32)`; decrypt проверяет HMAC до записи plaintext (два потоковых прохода, O(1) память). |
+| **Тесты** | ✅ | `encrypt_test.go`: round-trip + tampered-HMAC (ловил бы panic H1). |
+
+**Верификация**: `go build ./...`, `go vet ./...`, `golangci-lint run ./...` — 0 issues; `go test -short -race -p 1 ./...` — все пакеты OK.

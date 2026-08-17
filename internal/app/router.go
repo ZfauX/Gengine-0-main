@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"gengine-0/internal/domain/admin"
 	"gengine-0/internal/domain/calendar"
@@ -105,7 +106,7 @@ func (app *App) setupEngine(r *gin.Engine) error {
 	// HSTS форсируем, когда сервер гарантированно по HTTPS: собственный TLS
 	// либо reverse-proxy (TRUSTED_PROXIES задан) — прокси терминирует TLS.
 	forceHSTS := app.Config.TLS.CertFile != "" || app.Config.Server.TrustedProxies != ""
-	r.Use(middleware.SecurityHeadersMiddleware(forceHSTS))
+	r.Use(middleware.SecurityHeadersMiddleware(forceHSTS, filepath.Join(app.BaseDir, app.Config.Server.StaticDir)))
 	r.Use(sessions.Sessions("gengine_session", store))
 	r.Use(i18n.Middleware(i18n.LangRU))
 	r.Use(middleware.GzipMiddleware())
@@ -225,7 +226,12 @@ func (app *App) setupEngine(r *gin.Engine) error {
 			return
 		}
 		if len(payload.Page) > 128 {
+			// L6 (PASS-22): обрезка по байтам может разорвать UTF-8 символ.
+			// Усекаем до последней валидной руны.
 			payload.Page = payload.Page[:128]
+			for !utf8.ValidString(payload.Page) {
+				payload.Page = payload.Page[:len(payload.Page)-1]
+			}
 		}
 		metrics.IncRumPageLoad()
 		// Клампим значения (M1, pass 30): клиент может прислать мусор

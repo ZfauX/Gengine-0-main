@@ -257,6 +257,24 @@ func LoadConfig() (*Config, error) {
 	cfg.Server.TrustedProxies = getEnvOrDefault("TRUSTED_PROXIES", "")
 	cfg.Server.StrictMode = os.Getenv("STRICT_CONFIG") == "true"
 
+	// M5 (PASS-22): не допускать обход rate-limit через подделку X-Forwarded-For.
+	// 0.0.0.0/0 (или ::/0) доверяет ЛЮБОМУ отправителю заголовка — атакующий
+	// ротирует X-Forwarded-For и обходит per-IP бюджеты брутфорса (login/register/OAuth).
+	if cfg.Server.TrustedProxies != "" {
+		for _, p := range strings.Split(cfg.Server.TrustedProxies, ",") {
+			trimmed := strings.TrimSpace(p)
+			if trimmed == "0.0.0.0/0" || trimmed == "::/0" {
+				if cfg.Server.StrictMode {
+					return nil, fmt.Errorf("TRUSTED_PROXIES=%q запрещён в strict-режиме: доверие всем прокси позволяет обойти rate-limit через X-Forwarded-For", trimmed)
+				}
+				// non-strict: молча не доверяем таким CIDR (убираем из списка).
+				cfg.Server.TrustedProxies = ""
+				log.Warn().Str("cidr", trimmed).Msg("TRUSTED_PROXIES игнорируется: 0.0.0.0/0/::/0 запрещены (обход rate-limit через X-Forwarded-For)")
+				break
+			}
+		}
+	}
+
 	// Rate limits
 	cfg.Server.RateLimitWindow = getEnvAsDuration("RATE_LIMIT_WINDOW", RateLimitWindow)
 	cfg.Server.RateLimitGlobalRequests = getEnvAsInt("RATE_LIMIT_GLOBAL", GlobalRateLimit)

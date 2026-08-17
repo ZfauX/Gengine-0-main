@@ -33,13 +33,13 @@ func TestSSEManager_PubSub_RealValkey(t *testing.T) {
 	t.Cleanup(bus.Close)
 
 	mgr1 := newTestSSEMgr()
-	mgr1.SetPubSub(bus, "sse-real-1")
+	mgr1.SetPubSub(bus, "sse-real-1", []byte("test-secret"))
 	t.Cleanup(mgr1.Stop)
 
 	bus2 := realtimebus.NewValkeyBus(client)
 	t.Cleanup(bus2.Close)
 	mgr2 := newTestSSEMgr()
-	mgr2.SetPubSub(bus2, "sse-real-2")
+	mgr2.SetPubSub(bus2, "sse-real-2", []byte("test-secret"))
 	t.Cleanup(mgr2.Stop)
 
 	// Сессия на инстансе 2 для игры 7.

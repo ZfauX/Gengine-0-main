@@ -3,8 +3,12 @@ package middleware
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 )
@@ -20,26 +24,54 @@ func generateNonce() string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-// getLeafletHash вычисляет SHA-256 hash для Leaflet 1.9.4 JS при старте.
-// Если файл изменится, хеш пересчитается. Генерация:
-//
-//	openssl dgst -sha256 -binary static/js/leaflet.js | base64
-func getLeafletHash() string {
-	const hash = "'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo='"
-	return hash
+// leafletHashes — вычисленные при старте SRI-хэши Leaflet (L11, PASS-22).
+// Раньше были захардкожены — при обновлении файла CSP блокировал бы скрипт.
+// Теперь считаются из фактических файлов; при отсутствии файла — fallback.
+var (
+	leafletHashOnce sync.Once
+	leafletHash     = "'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo='"
+	leafletCSSHash  = "'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY='"
+)
+
+// initLeafletHashes вычисляет SHA-256 хэши static/js/leaflet.js и
+// static/css/leaflet.css. Генерация: openssl dgst -sha256 -binary <file> | base64
+func initLeafletHashes(staticDir string) {
+	leafletHashOnce.Do(func() {
+		if h := sha256File(filepath.Join(staticDir, "js", "leaflet.js")); h != "" {
+			leafletHash = "'sha256-" + h + "'"
+		}
+		if h := sha256File(filepath.Join(staticDir, "css", "leaflet.css")); h != "" {
+			leafletCSSHash = "'sha256-" + h + "'"
+		}
+	})
 }
 
-// getLeafletCSSHash аналогично для Leaflet CSS.
+// sha256File возвращает base64(SHA-256(file)) или "" при ошибке чтения.
+func sha256File(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return base64.StdEncoding.EncodeToString(sum[:])
+}
+
+func getLeafletHash() string {
+	return leafletHash
+}
+
 func getLeafletCSSHash() string {
-	const hash = "'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY='"
-	return hash
+	return leafletCSSHash
 }
 
 // SecurityHeadersMiddleware добавляет базовые защитные заголовки ко всем ответам.
 // forceHSTS — сервер обслуживается по HTTPS (собственный TLS или reverse-proxy,
 // который терминирует TLS). В этом случае HSTS отправляем всегда, а не только
 // когда прокси прокинул X-Forwarded-Proto (иначе HSTS может никогда не прийти).
-func SecurityHeadersMiddleware(forceHSTS bool) gin.HandlerFunc {
+// staticDir (L11, PASS-22): путь к статическим файлам для вычисления SRI-хэшей
+// Leaflet при старте.
+func SecurityHeadersMiddleware(forceHSTS bool, staticDir string) gin.HandlerFunc {
+	initLeafletHashes(staticDir)
 	return func(c *gin.Context) {
 		nonce := generateNonce()
 

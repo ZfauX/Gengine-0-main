@@ -528,6 +528,10 @@ func (a *simpleGameAuthorizer) HasPermission(ctx context.Context, gameID, userID
 	return a.IsUserManager(ctx, gameID, userID)
 }
 
+func (a *simpleGameAuthorizer) CanManageContent(ctx context.Context, gameID, userID uint) (bool, error) {
+	return a.IsUserManager(ctx, gameID, userID)
+}
+
 // simpleActiveGameManager — реализация level.ActiveGameManager для тестов.
 type simpleActiveGameManager struct{}
 

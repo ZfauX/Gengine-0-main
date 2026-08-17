@@ -223,18 +223,19 @@ func (s *LevelService) Duplicate(ctx context.Context, levelID, userID uint) (*Le
 			return nil, err
 		}
 	}
+	// M8 (PASS-22): один батч ВСЕХ ответов вместо одного Create на вопрос.
+	// Вопросы уже вставлены батчем выше; ID заполнены GORM.
+	var allAnswers []Answer
 	for i, q := range original.Questions {
-		if len(q.Answers) == 0 {
-			continue
-		}
-		newAnswers := make([]Answer, 0, len(q.Answers))
 		for _, a := range q.Answers {
-			newAnswers = append(newAnswers, Answer{
+			allAnswers = append(allAnswers, Answer{
 				QuestionID: newQuestions[i].ID,
 				Code:       a.Code,
 			})
 		}
-		if err := tx.Create(&newAnswers).Error; err != nil {
+	}
+	if len(allAnswers) > 0 {
+		if err := tx.Create(&allAnswers).Error; err != nil {
 			return nil, err
 		}
 	}
