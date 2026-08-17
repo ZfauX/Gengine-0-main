@@ -1,5 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
-import { registerUser, loginUser, uniqueEmail } from './helpers';
+import { registerUser, loginUser, uniqueEmail, waitForChatConnected } from './helpers';
 
 // T-4 (pass 47): сценарии с двумя пользователями.
 // Регистрируем двух пользователей, user1 находит user2 через публичный поиск,
@@ -107,6 +107,9 @@ test.describe('Two users', () => {
     await user1.click('#send-btn');
     await expect(user2.locator('#chat-messages')).toContainText('hello from sender', { timeout: 10000 });
 
+    // user2 перезагрузил страницу после принятия — ждём готовности WebSocket,
+    // иначе send() дропнет сообщение (createReconnectingWebSocket).
+    await waitForChatConnected(user2);
     await user2.fill('#chat-input', 'hello from recipient');
     await user2.click('#send-btn');
     await expect(user1.locator('#chat-messages')).toContainText('hello from recipient', { timeout: 10000 });
@@ -158,6 +161,9 @@ test.describe('Two users', () => {
     await expect(user2.locator('#consent-banner')).toBeHidden({ timeout: 10000 });
 
     // user1 (получатель) пишет, user2 видит.
+    // user1 перезагрузил страницу после принятия — ждём готовности WebSocket,
+    // иначе send() дропнет сообщение (createReconnectingWebSocket).
+    await waitForChatConnected(user1);
     await user1.fill('#chat-input', 'accepted by lower-id recipient');
     await user1.click('#send-btn');
     await expect(user2.locator('#chat-messages')).toContainText('accepted by lower-id recipient', { timeout: 10000 });

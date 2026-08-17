@@ -41,3 +41,13 @@ export async function csrfToken(page: Page, url: string): Promise<string> {
   if (!m) throw new Error(`CSRF token not found in ${url}`);
   return m[1];
 }
+
+// Ожидание готовности WebSocket чата перед отправкой сообщения.
+// createReconnectingWebSocket.send() молча теряет сообщение, если сокет ещё
+// не открыт (readyState !== OPEN) — см. static/js/app.js. После перезагрузки
+// страницы (например, после принятия личного чата) надо дождаться onopen,
+// иначе первое сообщение дропается и тест флейкает.
+// #connection-status показывает "Подключено" (ru) / "Connected" (en) при onopen.
+export async function waitForChatConnected(page: Page) {
+  await expect(page.locator('#connection-status')).toHaveText(/Подключено|Connected/, { timeout: 10000 });
+}
